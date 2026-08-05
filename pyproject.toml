@@ -1,0 +1,80 @@
+[project]
+name = "docspec"
+version = "0.1.0"
+description = "Document acquisition, parsing, aggregation, segmentation, releases, and evidence-grounded tagging"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "spicy-regs @ git+https://github.com/civictechdc/spicy-regs.git@f1fcb8c9c8838071e9c45462799db788971baca4",
+    "beautifulsoup4>=4.13,<5",
+    "boto3",
+    "bm25s==0.3.10",
+    "cyclopts",
+    "duckdb>=1.4",
+    "httpx",
+    "jsonschema>=4.23",
+    "loguru",
+    "numpy>=2,<3",
+    "pandas",
+    "polars",
+    "pyarrow==23.0.0",
+    "pymupdf>=1.28,<1.29",
+    "pypdf>=6.14,<7",
+    "pyyaml",
+    "rdflib>=7.1,<8",
+    "tiktoken>=0.9,<1",
+]
+
+[project.optional-dependencies]
+tagging = [
+    "anthropic>=0.120,<1",
+    "openai",
+]
+retrieval = [
+    "ir-measures==0.4.3",
+    "scikit-learn==1.7.2",
+    "scipy>=1.15,<2",
+    "sentence-transformers==5.6.1",
+    "torch==2.10.0",
+]
+docling = [
+    "docling==2.115.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff>=0.12,<0.13",
+]
+
+[project.scripts]
+docspec = "docspec.cli:main"
+build-body-retrieval-corpus = "docspec.corpora.body_retrieval_corpus:main"
+build-document-acceptance-scope = "docspec.corpora.document_acceptance_scope:main"
+build-document-release = "docspec.document_release:main"
+build-document-release-from-files = "docspec.document_file_pipeline:main"
+build-mirrulations-document-corpus = "docspec.corpora.mirrulations_document_corpus:main"
+build-segmentation-evaluation = "docspec.corpora.segmentation_evaluation:main"
+run-segmentation-experiment = "docspec.corpora.segmentation_experiment:main"
+run-segmentation-rerank = "docspec.corpora.segmentation_rerank:main"
+run-segmentation-sparse-retrieval = "docspec.corpora.segmentation_sparse_retrieval:main"
+run-segmentation-tagging = "docspec.corpora.segmentation_tagging:main"
+segment-document-release = "docspec.docpipeline.document_release_segments:main"
+validate-document-release-distribution = "docspec.document_file_pipeline:validate_distribution_main"
+
+[build-system]
+requires = ["uv_build<0.12"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+addopts = "-m 'not integration'"
+testpaths = ["tests"]
+markers = [
+    "integration: live external-service verification",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [
+    "docs",
+]
