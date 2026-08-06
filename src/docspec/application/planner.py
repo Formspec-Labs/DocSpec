@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterator, cast
 
 from docspec.domain.content import SourceItem, SourceItemState
-from docspec.domain.identity import identity_digest
+from docspec.domain.identity import identity_digest, require_text
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
@@ -19,7 +19,17 @@ from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFactory
 from docspec.ports.source_catalog import SourceCatalog
 
-_SELECTION_FIELDS = frozenset({"includeItemIds", "excludeItemIds", "itemIdPrefixes", "mediaTypes", "states"})
+_SELECTION_FIELDS = frozenset(
+    {
+        "includeItemIds",
+        "excludeItemIds",
+        "itemIdPrefixes",
+        "logicalBuckets",
+        "mediaTypes",
+        "sourcePartitions",
+        "states",
+    }
+)
 _ESTIMATE_FIELDS = (
     "estimatedBytes",
     "estimatedPagesOrFrames",
@@ -29,6 +39,7 @@ _ESTIMATE_FIELDS = (
     "estimatedDurationSeconds",
 )
 _PLANNING_STORE_ORDER_COLLECTION = "planner:store-order"
+_SOURCE_PARTITION_METADATA_FIELD = "sourcePartition"
 
 
 def logical_partition(item_id: str, bucket_count: int) -> int:
@@ -104,6 +115,113 @@ def _source_item_digest(item: SourceItem) -> str:
     """Identify the complete canonical source-item description."""
 
     return identity_digest(item.to_dict())
+
+
+def _string_selector(selection: dict[str, Any], field: str) -> tuple[str, ...] | None:
+    if field not in selection:
+        return None
+    value = selection[field]
+    if not isinstance(value, list):
+        raise IntegrityError(f"processing plan selection {field} must be an array")
+    compiled: list[str] = []
+    for index, item in enumerate(value):
+        try:
+            compiled.append(require_text(item, f"processing plan selection {field}[{index}]"))
+        except ValueError as error:
+            raise IntegrityError(str(error)) from error
+    return tuple(dict.fromkeys(compiled))
+
+
+@dataclass(frozen=True, slots=True)
+class _CompiledSelection:
+    """Validated, reusable selection indexes for a streaming planning run."""
+
+    include_item_ids: frozenset[str] | None
+    exclude_item_ids: frozenset[str]
+    item_id_prefixes: tuple[str, ...]
+    logical_buckets: frozenset[int]
+    media_types: frozenset[str]
+    source_partitions: frozenset[str]
+    states: frozenset[SourceItemState]
+
+    @classmethod
+    def compile(cls, value: object, *, partition_count: int) -> _CompiledSelection:
+        if not isinstance(value, dict):
+            raise IntegrityError("processing plan selection must be an object")
+        unknown = set(value) - _SELECTION_FIELDS
+        if unknown:
+            raise IntegrityError(f"processing plan contains unknown selection fields: {sorted(unknown)}")
+
+        include = _string_selector(value, "includeItemIds")
+        exclude = _string_selector(value, "excludeItemIds")
+        prefixes = _string_selector(value, "itemIdPrefixes")
+        media_types = _string_selector(value, "mediaTypes")
+        source_partitions = _string_selector(value, "sourcePartitions")
+        state_values = _string_selector(value, "states")
+
+        states: set[SourceItemState] = set()
+        for state in state_values or ():
+            try:
+                states.add(SourceItemState(state))
+            except ValueError as error:
+                raise IntegrityError(f"processing plan selection contains unknown source-item state {state!r}") from error
+
+        bucket_values = value.get("logicalBuckets", [])
+        if "logicalBuckets" in value and not isinstance(bucket_values, list):
+            raise IntegrityError("processing plan selection logicalBuckets must be an array")
+        logical_buckets: set[int] = set()
+        for index, bucket in enumerate(bucket_values):
+            if not isinstance(bucket, int) or isinstance(bucket, bool) or not 0 <= bucket < partition_count:
+                raise IntegrityError(
+                    "processing plan selection "
+                    f"logicalBuckets[{index}] must be an integer between 0 and {partition_count - 1}"
+                )
+            logical_buckets.add(bucket)
+
+        return cls(
+            None if include is None else frozenset(include),
+            frozenset(exclude or ()),
+            prefixes or (),
+            frozenset(logical_buckets),
+            frozenset(media_types or ()),
+            frozenset(source_partitions or ()),
+            frozenset(states),
+        )
+
+    def validate_source_partitions(self, declared: tuple[str, ...]) -> None:
+        if not self.source_partitions:
+            return
+        unknown = self.source_partitions - frozenset(declared)
+        if unknown:
+            raise IntegrityError(
+                "processing plan selection names source partitions not declared by the catalog: "
+                f"{sorted(unknown)}"
+            )
+
+    def matches(self, item: SourceItem, *, logical_bucket: int) -> bool:
+        if self.include_item_ids is not None and item.item_id not in self.include_item_ids:
+            return False
+        if item.item_id in self.exclude_item_ids:
+            return False
+        if self.item_id_prefixes and not item.item_id.startswith(self.item_id_prefixes):
+            return False
+        if self.logical_buckets and logical_bucket not in self.logical_buckets:
+            return False
+        if self.states and item.state not in self.states:
+            return False
+        if self.source_partitions:
+            source_partition = (item.metadata or {}).get(_SOURCE_PARTITION_METADATA_FIELD)
+            if source_partition is None:
+                return False
+            try:
+                source_partition = require_text(source_partition, "source item sourcePartition")
+            except ValueError as error:
+                raise IntegrityError(f"source item {item.item_id} has invalid sourcePartition: {error}") from error
+            if source_partition not in self.source_partitions:
+                return False
+        return not self.media_types or any(
+            candidate.media_type in self.media_types for candidate in item.candidates
+        )
 
 
 def estimate_item(item: SourceItem, limits: WorkLimits, processor_count: int) -> WorkEstimate:
@@ -187,8 +305,10 @@ class RunPlanner:
         plan = ProcessingPlan.from_dict(self._controls.load(plan_ref))
         if plan.source_catalog != source_catalog_ref or plan.base_release != base_document_release_ref:
             raise IntegrityError("plan inputs differ from the requested source catalog or base release")
+        selection = _CompiledSelection.compile(plan.selection, partition_count=plan.partition_count)
         source_read = self._source_catalog.open(source_catalog_ref)
         source_summary = source_read.summary
+        selection.validate_source_partitions(source_summary.partitions)
         base_reader = self._open_base_reader(base_document_release_ref)
         base = None if base_reader is None else base_reader.release
         if source_summary.kind == "change-set":
@@ -204,6 +324,7 @@ class RunPlanner:
                     source_summary.kind,
                     base_reader,
                     plan_impact,
+                    selection,
                     workspace,
                 ),
             )
@@ -216,6 +337,7 @@ class RunPlanner:
         source_catalog_kind: str,
         base_reader: DocumentCatalogReader | None,
         plan_impact: _PlanImpact,
+        selection: _CompiledSelection,
         workspace: RecordWorkspace,
     ) -> Iterator[StoreRef]:
         """Spool selected entries, then build one bounded partition buffer at a time."""
@@ -228,7 +350,8 @@ class RunPlanner:
             base_reader,
             plan_impact.change_kind,
         ):
-            if not self._selected(item, plan.selection):
+            bucket = logical_partition(item.item_id, plan.partition_count)
+            if not selection.matches(item, logical_bucket=bucket):
                 continue
             if change == ChangeKind.UNCHANGED:
                 continue
@@ -243,7 +366,6 @@ class RunPlanner:
             exceeded = estimate.exceeds(plan.limits)
             if exceeded is not None:
                 raise LimitExceededError(f"source item {item.item_id} exceeds the per-store {exceeded} limit")
-            bucket = logical_partition(item.item_id, plan.partition_count)
             entry = DocumentEntry.create(
                 item,
                 change,
@@ -538,25 +660,6 @@ class RunPlanner:
         if previous.deleted:
             return ChangeKind.ADDED
         return ChangeKind.CHANGED
-
-    @staticmethod
-    def _selected(item: SourceItem, selection: dict[str, Any]) -> bool:
-        unknown = set(selection) - _SELECTION_FIELDS
-        if unknown:
-            raise IntegrityError(f"processing plan contains unknown selection fields: {sorted(unknown)}")
-        include = selection.get("includeItemIds")
-        if include is not None and item.item_id not in include:
-            return False
-        if item.item_id in selection.get("excludeItemIds", ()):
-            return False
-        prefixes = selection.get("itemIdPrefixes")
-        if prefixes and not any(item.item_id.startswith(prefix) for prefix in prefixes):
-            return False
-        states = selection.get("states")
-        if states and item.state.value not in states:
-            return False
-        media_types = selection.get("mediaTypes")
-        return not media_types or any(candidate.media_type in media_types for candidate in item.candidates)
 
     def _save_buffer(self, plan: ProcessingPlan, buffer: _StoreBuffer) -> StoreRef:
         logical = f"bucket-{buffer.partition:05d}/store-{buffer.sequence:08d}"

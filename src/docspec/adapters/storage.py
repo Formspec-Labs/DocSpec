@@ -1517,9 +1517,31 @@ class LocalJsonlRecordStorage:
         _, schema, _ = self._verified_root(reference)
         return schema.identity_field
 
+    def schema(self, reference: LayerRef) -> RecordSchema:
+        """Return the verified logical schema independently of physical members."""
+
+        _, schema, _ = self._verified_root(reference)
+        return schema
+
     def partition_policy(self, reference: LayerRef) -> PartitionPolicy:
         _, _, policy = self._verified_root(reference)
         return policy
+
+
+class RootOnlyBlobProfileStateReachability:
+    """Traverse the portable profile root, whose membership lives in records."""
+
+    def references(
+        self,
+        reference: ArtifactRef,
+        state: Mapping[str, Any],
+    ) -> Iterator[BlobRef]:
+        del reference
+        if set(state) != {"profileId", "profileVersion", "storageRoot"}:
+            raise IntegrityError("blob profile state has an invalid closed shape")
+        for field in ("profileId", "profileVersion", "storageRoot"):
+            require_text(state[field], f"blob profile state {field}")
+        yield from ()
 
 
 def _release_layer(release: DocumentRelease, layer_kind: str) -> LayerRef:
@@ -1809,4 +1831,5 @@ __all__ = [
     "LocalJsonControlRepository",
     "LocalJsonlRecordStorage",
     "LocalManifestDocumentCatalog",
+    "RootOnlyBlobProfileStateReachability",
 ]

@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from docspec.domain.identity import identity_digest, parse_closed_json, thaw_json
-from docspec.domain.profiles import ProfileDescription, ProfileRole, ProfileSet
+from docspec.domain.profiles import ProfileDescription, ProfileGovernance, ProfileRole, ProfileSet
 from docspec.errors import ProfileError
+from docspec.domain.security import require_secret_free
 
 _FIELDS = {
     "format",
@@ -25,9 +26,20 @@ _FIELDS = {
     "physicalMediaTypes",
     "capabilities",
     "limits",
+    "governancePolicies",
     "compatibility",
     "verifier",
 }
+
+DEFAULT_GOVERNANCE_POLICY_IDS = frozenset(
+    {
+        "urn:docspec:policy:access:deployment-supplied:1",
+        "urn:docspec:policy:encryption:deployment-supplied:1",
+        "urn:docspec:policy:region:deployment-supplied:1",
+        "urn:docspec:policy:retention:plan-pinned:1",
+        "urn:docspec:policy:redistribution:source-catalog-pinned:1",
+    }
+)
 
 
 def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
@@ -49,6 +61,7 @@ def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
             "physicalMediaTypes",
             "capabilities",
             "limits",
+            "governancePolicies",
             "compatibility",
         )
     } | {"verifierTestId": value["verifier"]["testId"]}
@@ -74,17 +87,31 @@ class ProfileRegistry:
         self._by_id = by_id
 
     @classmethod
-    def from_directory(cls, root: Path) -> ProfileRegistry:
+    def from_directory(
+        cls,
+        root: Path,
+        *,
+        governance_policy_ids: frozenset[str] = DEFAULT_GOVERNANCE_POLICY_IDS,
+    ) -> ProfileRegistry:
         root = Path(root)
         if not root.is_dir() or root.is_symlink():
             raise ProfileError(f"profile directory is missing or unsafe: {root}")
         files = sorted(root.glob("*.json"))
         if not files:
             raise ProfileError("profile directory contains no JSON descriptions")
-        return cls(tuple(cls.from_file(path) for path in files))
+        return cls(
+            tuple(
+                cls.from_file(path, governance_policy_ids=governance_policy_ids)
+                for path in files
+            )
+        )
 
     @staticmethod
-    def from_file(path: Path) -> RegisteredProfile:
+    def from_file(
+        path: Path,
+        *,
+        governance_policy_ids: frozenset[str] = DEFAULT_GOVERNANCE_POLICY_IDS,
+    ) -> RegisteredProfile:
         """Load and verify one closed machine-readable profile description."""
 
         path = Path(path)
@@ -93,6 +120,7 @@ class ProfileRegistry:
         value = thaw_json(parse_closed_json(path.read_bytes(), label=path.name))
         if not isinstance(value, dict) or set(value) != _FIELDS:
             raise ProfileError(f"{path.name} has an invalid closed profile shape")
+        require_secret_free(value, label=f"profile {path.name}")
         if value["format"] != "docspec-storage-profile" or value["formatVersion"] != "1.0":
             raise ProfileError(f"{path.name} has an unknown profile format")
         if value["implementationStatus"] not in {"specified", "implemented"}:
@@ -110,23 +138,45 @@ class ProfileRegistry:
             or any(not isinstance(name, str) or not isinstance(enabled, bool) for name, enabled in capabilities.items())
         ):
             raise ProfileError(f"{path.name} has invalid capabilities")
+        schemas = value["logicalSchemas"]
+        media_types = value["physicalMediaTypes"]
+        limits = value["limits"]
+        if (
+            not isinstance(schemas, list)
+            or not schemas
+            or any(not isinstance(item, str) or not item for item in schemas)
+            or not isinstance(media_types, list)
+            or not media_types
+            or any(not isinstance(item, str) or not item for item in media_types)
+            or not isinstance(limits, dict)
+        ):
+            raise ProfileError(f"{path.name} has invalid schemas, media types, or limits")
         compatibility = value["compatibility"]
         if not isinstance(compatibility, dict) or set(compatibility) != {"profileSetId", "requires"}:
             raise ProfileError(f"{path.name} has invalid compatibility")
+        requires = compatibility["requires"]
+        if not isinstance(requires, list) or any(not isinstance(item, str) or not item for item in requires):
+            raise ProfileError(f"{path.name} has invalid compatibility requirements")
         verifier = value["verifier"]
         if not isinstance(verifier, dict) or set(verifier) != {"status", "testId"}:
             raise ProfileError(f"{path.name} has an invalid verifier")
+        governance = ProfileGovernance.from_dict(value["governancePolicies"])
+        selected_policy_ids = frozenset(governance.to_dict().values())
+        unknown_policies = selected_policy_ids - governance_policy_ids
+        if unknown_policies:
+            raise ProfileError(f"{path.name} names unknown governance policies: {sorted(unknown_policies)}")
         description = ProfileDescription(
             role=ProfileRole(value["role"]),
             profile_id=value["profileId"],
             version=value["version"],
             implementation_id=value["implementationId"],
             configuration=configuration,
-            schemas=tuple(value["logicalSchemas"]),
-            media_types=tuple(value["physicalMediaTypes"]),
+            schemas=tuple(schemas),
+            media_types=tuple(media_types),
             capabilities=tuple(sorted(name for name, enabled in capabilities.items() if enabled)),
-            limits=value["limits"],
-            requires=tuple(value["compatibility"]["requires"]),
+            limits=limits,
+            governance=governance,
+            requires=tuple(requires),
         )
         if description.configuration_digest != value["configurationDigest"]:
             raise ProfileError(f"{path.name} configuration pin differs")

@@ -15,7 +15,7 @@ from docspec.adapters.storage import (
 )
 from docspec.domain.content import SourceItem
 from docspec.domain.plans import ProcessingPlan
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import AcceptedFailurePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorRecordRef
 from docspec.domain.references import ArtifactRef
 from docspec.domain.storage import PartitionPolicy
@@ -75,7 +75,7 @@ def _changed_retention_plan(base: ProcessingPlan, release, *, revision: str = "2
         processors=base.processors,
         partition_count=base.partition_count,
         selection=base.selection,
-        retention_policy={"policyRevision": revision, "sourceBytes": "retained"},
+        retention_policy=RetentionPolicy.create(minimum_age_seconds=int(revision)),
         data_use_policy=base.data_use_policy,
         retry_policy_digest=base.retry_policy_digest,
         accepted_failure_policy_digest=base.accepted_failure_policy_digest,

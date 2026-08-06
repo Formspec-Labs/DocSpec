@@ -19,13 +19,20 @@ from docspec.domain.content import DerivedRecord, ProcessorDisposition, SourceIt
 from docspec.domain.identity import canonical_json_bytes, identity_digest
 from docspec.domain.jobs import ChangeKind, EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import (
+    AcceptedFailurePolicy,
+    DataUsePolicy,
+    ProcessorExecutionScope,
+    RetentionPolicy,
+    RetryPolicy,
+)
 from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorCachePolicy,
     ProcessorDescription,
     ProcessorInput,
     ProcessorItemLimits,
+    ProcessorPayload,
     ProcessorRequest,
     ProcessorResourceIdentity,
     ProcessorResourceKind,
@@ -35,10 +42,9 @@ from docspec.domain.processors import (
 )
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
-from docspec.processing.artifacts import SegmentPayload
 from docspec.processing.extraction import DefaultExtractorRegistry, TextExtractor
 from docspec.processing.segmentation import DefaultSegmenterRegistry, ParagraphSegmenter
-from tests.helpers import local_profile_set, segment_processor_request
+from tests.helpers import local_profile_set, processor_payload, segment_processor_request
 from tests.test_application_pipeline import _run, _write_source
 from tests.test_processing_pipeline import _captured
 
@@ -91,36 +97,48 @@ class _CountingProcessor:
     def process(
         self,
         request: ProcessorRequest,
-        segment: SegmentPayload,
+        payload: ProcessorPayload,
         prerequisite_results: tuple[ProcessorResult, ...],
     ) -> ProcessorResult:
-        self.calls.append(segment.segment.segment_id)
-        self.representation_ranges.append((segment.representation_start, segment.representation_end))
+        payload.require("content")
+        payload.require("representationCoordinates")
+        content = payload.content
+        representation_coordinates = payload.representation_coordinates
+        if content is None or representation_coordinates is None:
+            raise IntegrityError("test processor received an incomplete projected payload")
+        input_record = payload.input_record
+        self.calls.append(input_record.record_id)
+        self.representation_ranges.append(representation_coordinates)
         value: dict[str, Any] = {
             "processorName": self.description.name,
             "processorVersion": self.description.version,
-            "segmentId": segment.segment.segment_id,
-            "contentDigest": segment.segment.content.digest,
-        }
-        receipt: dict[str, Any] = {
-            "executionKind": "test-deterministic",
-            "requestId": request.request_id,
-            "reuseKey": request.reuse_key,
-            "processorId": self.description.processor_id,
-            "inputIds": [segment.segment.segment_id],
-            "outputDigest": identity_digest(value),
-            "configurationDigest": self.description.configuration_digest,
+            "segmentId": input_record.record_id,
+            "contentDigest": input_record.record_digest,
         }
         input_ids = (
-            segment.segment.segment_id,
+            input_record.record_id,
             *(
                 record.derived_id
                 for prerequisite in prerequisite_results
                 for record in prerequisite.derived_records
             ),
         )
+        receipt: dict[str, Any] = {
+            "executionKind": "test-deterministic",
+            "requestId": request.request_id,
+            "reuseKey": request.reuse_key,
+            "processorId": self.description.processor_id,
+            "processorDescriptionDigest": identity_digest(self.description.to_dict()),
+            "inputIds": list(input_ids),
+            "outputDigest": identity_digest(value),
+            "outputSchemaId": self.description.output_schema_id,
+            "outputMediaType": self.description.output_media_types[0],
+            "configurationDigest": self.description.configuration_digest,
+            "dataUsePolicyDigest": self.description.data_use_policy_digest,
+            "retryPolicyDigest": self.description.retry_policy_digest,
+        }
         record = DerivedRecord.create(
-            source_item_id=segment.segment.source_item_id,
+            source_item_id=request.source_item_id,
             processor_id=self.description.processor_id,
             input_ids=input_ids,
             schema_id=self.description.output_schema_id,
@@ -136,7 +154,7 @@ class _CountingProcessor:
             self.description.external_resources,
             (record,),
             ProcessorResourceUse(
-                len(segment.content)
+                len(content)
                 + sum(len(canonical_json_bytes(result.to_dict())) for result in prerequisite_results),
                 len(canonical_json_bytes(value)),
                 0,
@@ -162,12 +180,13 @@ def _description(
         accepted_inputs=(ProcessorInput("segment", ("docspec-segment/1",), ("*/*",)),),
         output_schema_id=f"tests-{name}-output/1",
         output_media_types=output_media_types,
+        execution_scope=ProcessorExecutionScope.LOCAL_ONLY,
         external_resources=external_resources,
         dependencies=dependencies,
         deterministic=True,
         cache_policy=ProcessorCachePolicy(ProcessorCacheMode.EXACT_INPUTS, "tests-exact-inputs/1"),
         configuration_digest=identity_digest({"name": name, "version": version}),
-        data_use_policy_digest=identity_digest({"dataUse": "local-bytes-only"}),
+        data_use_policy_digest=DataUsePolicy.local_content().digest,
         item_limits=ProcessorItemLimits(10, 1024 * 1024, 1, 1024 * 1024, 60),
         retry_policy_digest=retry.digest,
         capabilities=("test-output",),
@@ -195,7 +214,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
     extraction = TextExtractor().extract(_captured(source, "text/plain"), source)
     segment = ParagraphSegmenter().segment(extraction.payload)[0]
     request = segment_processor_request(processor, segment)
-    result = processor.process(request, segment, ())
+    result = processor.process(request, processor_payload(segment), ())
 
     StoreExecutionService._validate_processor_result(
         result,
@@ -204,6 +223,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
         segment.segment,
         len(segment.content),
         (),
+        data_use_policy=DataUsePolicy.local_content(),
         require_current_request=True,
     )
     with pytest.raises(IntegrityError, match="media type"):
@@ -214,6 +234,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
             segment.segment,
             len(segment.content),
             (),
+            data_use_policy=DataUsePolicy.local_content(),
             require_current_request=True,
         )
     with pytest.raises(IntegrityError, match="resources"):
@@ -224,6 +245,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
             segment.segment,
             len(segment.content),
             (),
+            data_use_policy=DataUsePolicy.local_content(),
             require_current_request=True,
         )
 
@@ -251,8 +273,8 @@ def _plan(
         processors=processor_set,
         partition_count=8,
         selection={},
-        retention_policy={"sourceBytes": "retained"},
-        data_use_policy={"dataUse": "local-bytes-only"},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=retry.digest,
         accepted_failure_policy_digest=accepted.digest,
     )

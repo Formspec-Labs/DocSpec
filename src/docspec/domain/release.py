@@ -16,6 +16,7 @@ from docspec.domain.identity import (
     thaw_json,
 )
 from docspec.domain.profiles import ProfileSet
+from docspec.domain.policies import RetentionPolicy
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef
 
 
@@ -30,7 +31,7 @@ class DocumentRelease:
     profiles: ProfileSet
     active_layers: tuple[LayerRef, ...]
     blob_roots: tuple[ArtifactRef, ...]
-    retention_dispositions: dict[str, Any]
+    retention_dispositions: RetentionPolicy
     store_receipt_set_digest: str
     run_receipt: ArtifactRef
     catalog_commit_receipt: ArtifactRef
@@ -51,11 +52,8 @@ class DocumentRelease:
         if any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in self.counts.values()):
             raise ValueError("release counts must be non-negative integers")
         object.__setattr__(self, "counts", thaw_json(freeze_json(self.counts, label="release counts")))
-        object.__setattr__(
-            self,
-            "retention_dispositions",
-            thaw_json(freeze_json(self.retention_dispositions, label="retention dispositions")),
-        )
+        if not isinstance(self.retention_dispositions, RetentionPolicy):
+            raise TypeError("document release retention dispositions must use RetentionPolicy")
         object.__setattr__(self, "coverage", thaw_json(freeze_json(self.coverage, label="release coverage")))
         object.__setattr__(self, "failures", thaw_json(freeze_json(self.failures, label="release failures")))
         object.__setattr__(
@@ -76,7 +74,7 @@ class DocumentRelease:
         profiles: ProfileSet,
         active_layers: tuple[LayerRef, ...],
         blob_roots: tuple[ArtifactRef, ...],
-        retention_dispositions: dict[str, Any],
+        retention_dispositions: RetentionPolicy,
         store_receipt_set_digest: str,
         run_receipt: ArtifactRef,
         catalog_commit_receipt: ArtifactRef,
@@ -129,7 +127,7 @@ class DocumentRelease:
         profiles: ProfileSet,
         active_layers: tuple[LayerRef, ...],
         blob_roots: tuple[ArtifactRef, ...],
-        retention_dispositions: dict[str, Any],
+        retention_dispositions: RetentionPolicy,
         store_receipt_set_digest: str,
         run_receipt: ArtifactRef,
         catalog_commit_receipt: ArtifactRef,
@@ -145,7 +143,7 @@ class DocumentRelease:
             "profiles": profiles.to_dict(),
             "activeLayers": [item.to_dict() for item in active_layers],
             "blobRoots": [item.to_dict() for item in blob_roots],
-            "retentionDispositions": retention_dispositions,
+            "retentionDispositions": retention_dispositions.to_dict(),
             "storeReceiptSetDigest": store_receipt_set_digest,
             "runReceipt": run_receipt.to_dict(),
             "catalogCommitReceipt": catalog_commit_receipt.to_dict(),
@@ -179,7 +177,7 @@ class DocumentRelease:
             {
                 "activeLayers": [item.to_dict() for item in self.active_layers],
                 "blobRoots": [item.to_dict() for item in self.blob_roots],
-                "retentionDispositions": self.retention_dispositions,
+                "retentionDispositions": self.retention_dispositions.to_dict(),
                 "counts": self.counts,
                 "coverage": self.coverage,
             }
@@ -188,7 +186,7 @@ class DocumentRelease:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": "docspec-document-release",
-            "formatVersion": "1.0",
+            "formatVersion": "1.1",
             "releaseId": self.release_id,
             **self.identity_content(),
         }
@@ -214,7 +212,7 @@ class DocumentRelease:
             "coverage",
             "partitionPolicy",
         }
-        if set(value) != expected or value["format"] != "docspec-document-release" or value["formatVersion"] != "1.0":
+        if set(value) != expected or value["format"] != "docspec-document-release" or value["formatVersion"] != "1.1":
             raise ValueError("document release has an unknown format or invalid closed shape")
         return cls(
             release_id=value["releaseId"],
@@ -226,7 +224,7 @@ class DocumentRelease:
             profiles=ProfileSet.from_dict(value["profiles"]),
             active_layers=tuple(LayerRef.from_dict(item) for item in value["activeLayers"]),
             blob_roots=tuple(ArtifactRef.from_dict(item) for item in value["blobRoots"]),
-            retention_dispositions=value["retentionDispositions"],
+            retention_dispositions=RetentionPolicy.from_dict(value["retentionDispositions"]),
             store_receipt_set_digest=value["storeReceiptSetDigest"],
             run_receipt=ArtifactRef.from_dict(value["runReceipt"]),
             catalog_commit_receipt=ArtifactRef.from_dict(value["catalogCommitReceipt"]),

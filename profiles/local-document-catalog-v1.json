@@ -25,6 +25,13 @@
     "maxManifestBytes": 1048576,
     "maxOpenStagingCommits": 1024
   },
+  "governancePolicies": {
+    "accessPolicyId": "urn:docspec:policy:access:deployment-supplied:1",
+    "encryptionPolicyId": "urn:docspec:policy:encryption:deployment-supplied:1",
+    "regionPolicyId": "urn:docspec:policy:region:deployment-supplied:1",
+    "retentionPolicyId": "urn:docspec:policy:retention:plan-pinned:1",
+    "redistributionPolicyId": "urn:docspec:policy:redistribution:source-catalog-pinned:1"
+  },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": ["urn:docspec:profile:release-manifest:canonical-json:1"]

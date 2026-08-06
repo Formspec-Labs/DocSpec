@@ -8,14 +8,16 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.application.planner import RunPlanner
+from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentStore
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
+from docspec.errors import IntegrityError
 from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
 from tests.helpers import EMPTY_DIGEST, artifact, profile_set
 
@@ -45,6 +47,7 @@ class MemorySourceCatalog:
     items: tuple[SourceItem, ...]
     kind: str = "snapshot"
     base_catalog: SourceCatalogRef | None = None
+    partitions: tuple[str, ...] = ()
     open_calls: int = 0
     verify_calls: int = 0
     stream_calls: int = 0
@@ -61,7 +64,7 @@ class MemorySourceCatalog:
             reference.catalog_id,
             self.kind,
             len(self.items),
-            (),
+            self.partitions,
             state_counts,
             {},
             self.base_catalog,
@@ -225,6 +228,7 @@ def _plan(
     base: DocumentReleaseRef | None,
     *,
     selection: dict | None = None,
+    partition_count: int = 4,
 ) -> ProcessingPlan:
     return ProcessingPlan.create(
         source_catalog=source,
@@ -233,10 +237,10 @@ def _plan(
         limits=WorkLimits(10, 1000, 100, 100, 1000, 1000, 60),
         stages=StagePolicy(("text-v1",), "paragraph-v1"),
         processors=ProcessorSet(()),
-        partition_count=4,
+        partition_count=partition_count,
         selection={} if selection is None else selection,
-        retention_policy={"sourceBytes": "retain"},
-        data_use_policy={"externalProcessing": False},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=EMPTY_DIGEST,
         accepted_failure_policy_digest=EMPTY_DIGEST,
     )
@@ -247,13 +251,19 @@ def _planned_update(
     current_items: tuple[SourceItem, ...],
     *,
     selection: dict | None = None,
+    previous_selection: dict | None = None,
     kind: str = "snapshot",
     fail_on_scan: bool = False,
+    partitions: tuple[str, ...] = (),
 ) -> tuple[tuple, MemoryDocumentCatalog]:
     controls = MemoryControls()
     stores = MemoryStores()
     previous_source = _source_reference("previous")
-    previous_plan = _plan(previous_source, None, selection=selection)
+    previous_plan = _plan(
+        previous_source,
+        None,
+        selection=selection if previous_selection is None else previous_selection,
+    )
     previous_plan_ref = controls.put(kind="plans", artifact_id=previous_plan.plan_id, value=previous_plan.to_dict())
     release = DocumentRelease.create(
         previous_release=None,
@@ -262,7 +272,7 @@ def _planned_update(
         profiles=previous_plan.profiles,
         active_layers=(),
         blob_roots=(),
-        retention_dispositions={},
+        retention_dispositions=RetentionPolicy.retain_all(),
         store_receipt_set_digest=EMPTY_DIGEST,
         run_receipt=artifact("run"),
         catalog_commit_receipt=artifact("commit"),
@@ -286,6 +296,7 @@ def _planned_update(
         current_items,
         kind,
         previous_source if kind == "change-set" else None,
+        partitions,
     )
     with tempfile.TemporaryDirectory(prefix="docspec-planner-test-") as directory:
         planner = RunPlanner(
@@ -301,6 +312,36 @@ def _planned_update(
         references = tuple(planner.plan_run(current_source, release_ref, plan_ref))
     entries = tuple(entry for reference in references for entry in stores.load(reference).entries)
     return entries, catalog
+
+
+def _planned_initial(
+    tmp_path: Path,
+    items: tuple[SourceItem, ...],
+    *,
+    selection: dict,
+    partitions: tuple[str, ...] = (),
+    partition_count: int = 4,
+) -> tuple[tuple, MemorySourceCatalog]:
+    controls = MemoryControls()
+    stores = MemoryStores()
+    source_ref = _source_reference("initial")
+    plan = _plan(source_ref, None, selection=selection, partition_count=partition_count)
+    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
+    source_catalog = MemorySourceCatalog(source_ref, items, partitions=partitions)
+    planner = RunPlanner(
+        source_catalog=source_catalog,
+        document_catalog=EmptyDocumentCatalog(),
+        stores=stores,
+        controls=controls,
+        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+            tmp_path / plan.plan_id.rsplit(":", maxsplit=1)[-1],
+            read_batch_size=1,
+        ),
+    )
+
+    references = tuple(planner.plan_run(source_ref, None, plan_ref))
+    entries = tuple(entry for reference in references for entry in stores.load(reference).entries)
+    return entries, source_catalog
 
 
 def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_path: Path) -> None:
@@ -325,8 +366,8 @@ def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_pat
         processors=ProcessorSet(()),
         partition_count=1,
         selection={"excludeItemIds": ["item-4"]},
-        retention_policy={"sourceBytes": "retain"},
-        data_use_policy={"externalProcessing": False},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=EMPTY_DIGEST,
         accepted_failure_policy_digest=EMPTY_DIGEST,
     )
@@ -361,6 +402,123 @@ def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_pat
     assert source_catalog.open_calls == 1
     assert source_catalog.verify_calls == 0
     assert source_catalog.stream_calls == 0
+
+
+def test_targeted_selection_uses_source_partitions_and_stable_logical_buckets(tmp_path: Path) -> None:
+    partition_count = 8
+    items = tuple(
+        _source_item(
+            f"item-{index:03d}",
+            metadata={
+                "expectedSegments": 1,
+                "sourcePartition": "alpha" if index % 2 == 0 else "beta",
+            },
+        )
+        for index in range(32)
+    )
+    selected_bucket = logical_partition("item-001", partition_count)
+
+    entries, _ = _planned_initial(
+        tmp_path,
+        items,
+        selection={"sourcePartitions": ["beta"], "logicalBuckets": [selected_bucket]},
+        partitions=("alpha", "beta"),
+        partition_count=partition_count,
+    )
+
+    expected = {
+        item.item_id
+        for item in items
+        if item.metadata["sourcePartition"] == "beta"
+        and logical_partition(item.item_id, partition_count) == selected_bucket
+    }
+    assert expected
+    assert {entry.source_item.item_id for entry in entries} == expected
+    assert all(entry.change == ChangeKind.ADDED for entry in entries)
+
+
+def test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucket() -> None:
+    partition_count = 4
+    items = tuple(
+        _source_item(
+            f"item-{index:03d}",
+            metadata={
+                "expectedSegments": 1,
+                "sourcePartition": "alpha" if index % 2 == 0 else "beta",
+            },
+        )
+        for index in range(16)
+    )
+    selected_bucket = logical_partition("item-001", partition_count)
+    selection = {"sourcePartitions": ["beta"], "logicalBuckets": [selected_bucket]}
+
+    entries, _ = _planned_update(
+        items,
+        items,
+        selection=selection,
+        previous_selection={},
+        partitions=("alpha", "beta"),
+    )
+
+    expected = {
+        item.item_id
+        for item in items
+        if item.metadata["sourcePartition"] == "beta"
+        and logical_partition(item.item_id, partition_count) == selected_bucket
+    }
+    assert expected
+    assert {entry.source_item.item_id for entry in entries} == expected
+    assert all(entry.change == ChangeKind.REPAIR for entry in entries)
+
+
+def test_source_partition_selection_rejects_undeclared_partition_before_item_stream(tmp_path: Path) -> None:
+    with pytest.raises(IntegrityError, match="not declared by the catalog"):
+        _planned_initial(
+            tmp_path,
+            (),
+            selection={"sourcePartitions": ["missing"]},
+            partitions=("alpha",),
+        )
+
+
+def test_source_partition_selection_rejects_malformed_item_partition(tmp_path: Path) -> None:
+    malformed = _source_item(
+        "item",
+        metadata={"expectedSegments": 1, "sourcePartition": 7},
+    )
+
+    with pytest.raises(IntegrityError, match="invalid sourcePartition"):
+        _planned_initial(
+            tmp_path,
+            (malformed,),
+            selection={"sourcePartitions": ["alpha"]},
+            partitions=("alpha",),
+        )
+
+
+@pytest.mark.parametrize(
+    ("selection", "message"),
+    (
+        ({"unknown": []}, "unknown selection fields"),
+        ({"includeItemIds": "item"}, "includeItemIds must be an array"),
+        ({"excludeItemIds": [1]}, "excludeItemIds\\[0\\] must be a non-empty string"),
+        ({"itemIdPrefixes": [""]}, "itemIdPrefixes\\[0\\] must be a non-empty string"),
+        ({"mediaTypes": None}, "mediaTypes must be an array"),
+        ({"sourcePartitions": [False]}, "sourcePartitions\\[0\\] must be a non-empty string"),
+        ({"states": ["retired"]}, "unknown source-item state"),
+        ({"logicalBuckets": "0"}, "logicalBuckets must be an array"),
+        ({"logicalBuckets": [True]}, "logicalBuckets\\[0\\] must be an integer"),
+        ({"logicalBuckets": [-1]}, "logicalBuckets\\[0\\] must be an integer"),
+        ({"logicalBuckets": [4]}, "logicalBuckets\\[0\\] must be an integer"),
+    ),
+)
+def test_selection_is_precompiled_and_rejects_malformed_selectors_without_items(
+    tmp_path: Path,
+    selection: dict,
+    message: str,
+) -> None:
+    with pytest.raises(IntegrityError, match=message):
+        _planned_initial(tmp_path, (), selection=selection)
 
 
 @pytest.mark.parametrize(

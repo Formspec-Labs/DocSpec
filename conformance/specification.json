@@ -6,7 +6,7 @@
   "normativeSource": "docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md",
   "implementationStatus": "standalone-reference-implementation",
   "conformanceVerdict": "not-yet-conformant",
-  "verdictReason": "The standalone kernel, retained-object verification, complete delivery and execution receipts, sealed task handoff, local runner, serialized external-process worker path, exact-result processor cache, and coarse full-pipeline and processor-only restart checkpoints are executable. Full conformance still requires shared conformance fixtures, compaction equivalence, a maintained scheduler integration campaign, ordered scale campaigns, and published-package evidence.",
+  "verdictReason": "The standalone kernel, retained-object verification, complete delivery and execution receipts, sealed task handoff, local runner, serialized external-process worker path, exact-result processor cache, shared conformance fixtures, targeted selection, release compaction, active-state equivalence, and restart checkpoints are executable. Full conformance still requires the remaining dedicated contract fixtures, a maintained external-scheduler qualification campaign, ordered scale campaigns, and published-package evidence.",
   "requiredTestIds": [
     "CORE-INSTALL",
     "BOUNDARY-IMPORT",

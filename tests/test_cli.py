@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+import docspec.cli as cli_module
+from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
@@ -14,13 +16,16 @@ from docspec.adapters.storage import (
     LocalJsonControlRepository,
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
+    RootOnlyBlobProfileStateReachability,
 )
+from docspec.application.maintenance import BlobRetentionSetService
 from docspec.cli import main
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.execution import ExecutionHandoff, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
+from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
@@ -29,6 +34,7 @@ from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
+from tests.test_maintenance import _platform
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -40,6 +46,7 @@ ZERO_DIGEST = "sha256:" + "0" * 64
     [
         ("source-catalog", ("verify",)),
         ("profile", ("list", "verify")),
+        ("scale-profile", ("seal", "verify")),
         ("document-catalog", ("open", "compare")),
         ("plan", ("create",)),
         ("document-store", ("create", "verify")),
@@ -118,8 +125,8 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
         "processors": ProcessorSet(()).to_dict(),
         "partitionCount": 8,
         "selection": {"kind": "all"},
-        "retentionPolicy": {"kind": "test"},
-        "dataUsePolicy": {"external": False},
+        "retentionPolicy": RetentionPolicy.retain_all().to_dict(),
+        "dataUsePolicy": DataUsePolicy.local_content().to_dict(),
         "retryPolicyDigest": ZERO_DIGEST,
         "acceptedFailurePolicyDigest": ZERO_DIGEST,
     }
@@ -148,6 +155,42 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
     assert main(arguments) == 2
     error = json.loads(capfd.readouterr().err)
     assert "refusing to replace" in error["message"]
+
+
+def test_scale_profile_seal_and_verify_use_one_canonical_artifact(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    from docspec.domain.scale import ScaleProfile
+    from tests.test_scale_profile import scale_profile_content
+
+    request = tmp_path / "scale-content.json"
+    destination = tmp_path / "scale-profile.json"
+    receipt = tmp_path / "scale-operation.json"
+    request.write_bytes(canonical_json_file_bytes(scale_profile_content()))
+
+    assert main(
+        [
+            "scale-profile",
+            "seal",
+            "--request",
+            str(request),
+            "--destination",
+            str(destination),
+            "--receipt",
+            str(receipt),
+        ]
+    ) == 0
+    operation = json.loads(capfd.readouterr().out)
+    profile = ScaleProfile.from_bytes(destination.read_bytes())
+    assert operation["artifact"]["artifactId"] == profile.profile_id
+
+    assert main(["scale-profile", "verify", str(destination)]) == 0
+    verification = json.loads(capfd.readouterr().out)
+    assert verification["profileId"] == profile.profile_id
+    assert verification["profileDigest"] == profile.digest
+    assert verification["unitCount"] == 100_000
+    assert verification["verdict"] == "pass"
 
 
 def test_mutating_command_failure_writes_a_new_machine_receipt(
@@ -239,8 +282,8 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         processors=ProcessorSet((processor.description,)),
         partition_count=4,
         selection={},
-        retention_policy={"sourceBytes": "retained"},
-        data_use_policy={"dataUse": "local-bytes-only"},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=retry.digest,
         accepted_failure_policy_digest=accepted.digest,
     )
@@ -508,3 +551,211 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     assert main(start_arguments) == 2
     error = json.loads(capfd.readouterr().err)
     assert "refusing to replace" in error["message"]
+
+
+def _maintenance_run_request(
+    tmp_path: Path,
+    platform,
+    *,
+    completed_at: str,
+) -> tuple[Path, ProcessingPlan]:
+    release = platform.catalog.open(platform.release)
+    plan = ProcessingPlan.from_dict(platform.controls.load(release.processing_plan))
+    plan_path = tmp_path / "maintenance-plan.json"
+    plan_path.write_bytes(canonical_json_file_bytes(plan.to_dict()))
+    retry = RetryPolicy(base_delay_milliseconds=0)
+    accepted = AcceptedFailurePolicy()
+    request = tmp_path / "maintenance-run-request.json"
+    request.write_bytes(
+        canonical_json_file_bytes(
+            {
+                "format": "docspec-local-run-request",
+                "formatVersion": "1.0",
+                "plan": plan_path.as_posix(),
+                "profileDirectory": (REPO_ROOT / "profiles").as_posix(),
+                "roots": {
+                    "blobStorage": platform.blobs.root.as_posix(),
+                    "controlRepository": platform.controls.root.as_posix(),
+                    "documentCatalog": platform.catalog.root.as_posix(),
+                    "documentStores": platform.stores.root.as_posix(),
+                    "reconciliation": (tmp_path / "maintenance-workspace").as_posix(),
+                    "recordStorage": platform.records.root.as_posix(),
+                    "sourceCatalog": (tmp_path / "unused-source-catalog").as_posix(),
+                    "sourceContent": (tmp_path / "unused-source-content").as_posix(),
+                },
+                "resultSinkId": "urn:docspec:test:sink:maintenance",
+                "partitionPolicyId": platform.partition_policy.policy_id,
+                "retryPolicy": retry.to_dict(),
+                "acceptedFailurePolicy": accepted.to_dict(),
+                "execution": {
+                    "maxWorkers": 1,
+                    "maxInFlight": 1,
+                    "deadlineEpochSeconds": 2_000_000_000,
+                },
+                "completedAt": completed_at,
+            }
+        )
+    )
+    return request, plan
+
+
+def test_document_release_compact_runs_the_local_maintenance_service(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform_root = tmp_path / "platform"
+    platform_root.mkdir()
+    platform = _platform(platform_root, document_count=12, member_bytes=4 * 1024)
+    run_request, plan = _maintenance_run_request(
+        tmp_path,
+        platform,
+        completed_at="2026-08-05T16:00:00Z",
+    )
+    compacted_records = LocalJsonlRecordStorage(
+        platform.records.root,
+        max_member_bytes=1024 * 1024,
+    )
+    compacting_catalog = LocalManifestDocumentCatalog(
+        platform.catalog.root,
+        records=compacted_records,
+        stores=platform.stores,
+        controls=platform.controls,
+        blobs=platform.blobs,
+    )
+    monkeypatch.setattr(cli_module, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(
+        cli_module,
+        "_local_storage",
+        lambda _roots, _profiles: (
+            platform.controls,
+            platform.stores,
+            compacted_records,
+            platform.blobs,
+            compacting_catalog,
+        ),
+    )
+    request = tmp_path / "compaction-request.json"
+    request.write_bytes(
+        canonical_json_file_bytes(
+            {
+                "format": "docspec-local-release-compaction-request",
+                "formatVersion": "1.0",
+                "runRequest": run_request.as_posix(),
+                "sourceRelease": platform.release.to_dict(),
+            }
+        )
+    )
+    destination = tmp_path / "compaction-reference.json"
+    operation_path = tmp_path / "compaction-operation.json"
+
+    assert (
+        main(
+            [
+                "document-release",
+                "compact",
+                "--request",
+                str(request),
+                "--destination",
+                str(destination),
+                "--receipt",
+                str(operation_path),
+            ]
+        )
+        == 0
+    )
+    operation = json.loads(capfd.readouterr().out)
+    reference = ArtifactRef.from_dict(json.loads(destination.read_text(encoding="utf-8")))
+    compaction = ReleaseCompactionReceipt.from_dict(platform.controls.load(reference))
+
+    assert operation["operation"] == "document-release.compact"
+    assert operation["artifact"]["artifactId"] == compaction.receipt_id
+    assert compaction.source_release == platform.release
+    assert compaction.successor_release == compacting_catalog.current()
+    assert compaction.source_logical_state_digest == compaction.successor_logical_state_digest
+    assert compaction.rewritten_layer_kinds
+
+
+def test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    platform_root = tmp_path / "platform"
+    platform_root.mkdir()
+    platform = _platform(platform_root, document_count=2, member_bytes=64 * 1024)
+    release = platform.catalog.open(platform.release)
+    orphan_locators = {
+        platform.blobs.put_if_absent((payload,), media_type="application/octet-stream").locator
+        for payload in (b"orphan-a", b"orphan-b")
+    }
+    retention_reference = BlobRetentionSetService(
+        controls=platform.controls,
+        records=platform.records,
+        stores=platform.stores,
+        blobs=platform.blobs,
+        document_catalog=platform.catalog,
+        profile_state_reachability=RootOnlyBlobProfileStateReachability(),
+        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+            tmp_path / "retention-workspace"
+        ),
+        partition_policy=platform.partition_policy,
+    ).build(
+        blob_profile_state=release.blob_roots[0],
+        retained_releases=(platform.release,),
+    )
+    retention = BlobRetentionSet.from_dict(platform.controls.load(retention_reference))
+    retention_path = tmp_path / "retention-reference.json"
+    retention_path.write_bytes(canonical_json_file_bytes(retention_reference.to_dict()))
+    run_request, plan = _maintenance_run_request(
+        tmp_path,
+        platform,
+        completed_at="2026-08-05T16:00:00Z",
+    )
+    monkeypatch.setattr(cli_module, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(
+        cli_module,
+        "_local_storage",
+        lambda _roots, _profiles: (
+            platform.controls,
+            platform.stores,
+            platform.records,
+            platform.blobs,
+            platform.catalog,
+        ),
+    )
+
+    assert (
+        main(
+            [
+                "blob-store",
+                "gc",
+                "--run-request",
+                str(run_request),
+                "--retention-set",
+                str(retention_path),
+                "--minimum-age-seconds",
+                "0",
+                "--sample-limit",
+                "1",
+                "--dry-run",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capfd.readouterr().out)
+
+    assert result["verdict"] == "pass"
+    assert result["retentionSet"] == retention_reference.to_dict()
+    assert result["retentionReferenceLayer"] == retention.references.to_dict()
+    assert result["retainedReferenceCount"] == retention.references.record_count
+    assert result["retainedObjectCount"] == retention.references.record_count
+    assert result["candidateCount"] == 2
+    assert result["candidateSampleLimit"] == 1
+    assert result["candidateSampleTruncated"] is True
+    assert len(result["candidateSample"]) == 1
+    assert result["candidateSample"][0]["locator"] in orphan_locators
+    assert result["boundedMembershipIndex"]["adapterId"] == (
+        "docspec.local-sqlite-record-workspace"
+    )
+    assert not tuple((tmp_path / "maintenance-workspace" / "blob-gc").glob("*.sqlite3"))

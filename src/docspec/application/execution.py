@@ -26,10 +26,16 @@ from docspec.domain.jobs import (
     StoreState,
 )
 from docspec.domain.plans import ProcessingPlan
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import (
+    AcceptedFailurePolicy,
+    DataUsePolicy,
+    ProcessorExecutionScope,
+    RetryPolicy,
+)
 from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorDescription,
+    ProcessorPayload,
     ProcessorRecordRef,
     ProcessorRequest,
     ProcessorResult,
@@ -79,7 +85,7 @@ class StoreExecutionService:
         fetcher: ContentFetcher,
         extractor: Extractor[ExtractionResult],
         segmenter: Segmenter[RepresentationPayload, SegmentPayload],
-        processors: Mapping[str, Processor[SegmentPayload, ProcessorResult]],
+        processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]],
         retry_policy: RetryPolicy,
         accepted_failure_policy: AcceptedFailurePolicy,
         clock: Callable[[], str],
@@ -612,8 +618,9 @@ class StoreExecutionService:
                 request,
                 description,
                 segment,
-                segment.content.byte_size,
+                self._projected_segment_byte_size(segment, request.allowed_fields),
                 tuple(value for _, value in prerequisite_pairs),
+                data_use_policy=plan.data_use_policy,
                 require_current_request=False,
             )
             processor_results[key] = (result_ref, result)
@@ -670,15 +677,22 @@ class StoreExecutionService:
         processor_set = ProcessorSet(descriptions)
         if processor_set != plan.processors:
             raise IntegrityError("injected processor descriptions differ from the processing plan")
-        expected_data_use = identity_digest(plan.data_use_policy)
+        expected_data_use = plan.data_use_policy.digest
         for description in descriptions:
             if description.data_use_policy_digest != expected_data_use:
                 raise IntegrityError(f"processor {description.processor_id} differs from the plan data-use policy")
+            if (
+                description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
+                and not plan.data_use_policy.allows_external_processing
+            ):
+                raise IntegrityError(
+                    f"processor {description.processor_id} declares external execution under a local-only data-use policy"
+                )
             if description.retry_policy_digest != self._retry_policy.digest:
                 raise IntegrityError(f"processor {description.processor_id} differs from the plan retry policy")
         return plan
 
-    def _processor(self, identifier: str) -> Processor[SegmentPayload, ProcessorResult]:
+    def _processor(self, identifier: str) -> Processor[ProcessorPayload, ProcessorResult]:
         try:
             processor = self._processors[identifier]
         except KeyError as error:
@@ -897,20 +911,24 @@ class StoreExecutionService:
         return tuple(
             record
             for description in plan.processors.execution_order
-            for record in records.get(description.processor_id, ())
+            for record in sorted(
+                records.get(description.processor_id, ()),
+                key=lambda item: item.derived_id,
+            )
         )
 
     @staticmethod
     def _allowed_processor_fields(plan: ProcessingPlan) -> tuple[str, ...]:
-        raw = plan.data_use_policy.get("allowedFields")
-        if raw is None:
-            return ("*",)
-        if not isinstance(raw, list) or not raw or not all(isinstance(item, str) and item for item in raw):
-            raise IntegrityError("processing plan data-use policy has invalid allowed fields")
-        normalized = tuple(sorted(set(raw)))
-        if len(normalized) != len(raw):
-            raise IntegrityError("processing plan data-use allowed fields must be distinct")
-        return normalized
+        return plan.data_use_policy.allowed_fields
+
+    @staticmethod
+    def _projected_segment_byte_size(
+        segment: Segment,
+        allowed_fields: tuple[str, ...],
+    ) -> int:
+        """Account for the same projected content bytes during execution and replay."""
+
+        return segment.content.byte_size if "content" in allowed_fields else 0
 
     def _run_processor_graph(
         self,
@@ -950,9 +968,20 @@ class StoreExecutionService:
                     tuple(reference for reference, _ in prerequisite_pairs),
                     invocation_id,
                 )
+                payload = ProcessorPayload.for_segment(
+                    segment.segment,
+                    segment.content,
+                    request.allowed_fields,
+                )
+                if prerequisite_pairs and "prerequisiteResults" not in request.allowed_fields:
+                    raise IntegrityError(
+                        f"processor {identifier} requires prerequisite results excluded by the data-use policy"
+                    )
                 result, result_ref, cache_disposition = self._invoke_processor(
                     processor,
                     request,
+                    payload,
+                    plan.data_use_policy,
                     segment,
                     tuple(result for _, result in prerequisite_pairs),
                     budget,
@@ -1025,8 +1054,10 @@ class StoreExecutionService:
 
     def _invoke_processor(
         self,
-        processor: Processor[SegmentPayload, ProcessorResult],
+        processor: Processor[ProcessorPayload, ProcessorResult],
         request: ProcessorRequest,
+        payload: ProcessorPayload,
+        data_use_policy: DataUsePolicy,
         segment: SegmentPayload,
         prerequisites: tuple[ProcessorResult, ...],
         budget: WorkBudget,
@@ -1057,6 +1088,7 @@ class StoreExecutionService:
                             description,
                             segment,
                             prerequisites,
+                            data_use_policy,
                         )
                     except Exception:
                         cache_disposition = "invalid"
@@ -1072,7 +1104,7 @@ class StoreExecutionService:
         for attempt in range(1, self._retry_policy.max_attempts + 1):
             attempt_started = self._monotonic()
             try:
-                candidate = processor.process(request, segment, prerequisites)
+                candidate = processor.process(request, payload, prerequisites)
                 elapsed_seconds = self._monotonic() - attempt_started
                 if elapsed_seconds < 0:
                     raise IntegrityError("processor monotonic clock moved backwards")
@@ -1083,8 +1115,9 @@ class StoreExecutionService:
                     request,
                     description,
                     segment.segment,
-                    len(segment.content),
+                    payload.input_byte_size,
                     prerequisites,
+                    data_use_policy=data_use_policy,
                     require_current_request=True,
                 )
             except Exception as error:
@@ -1158,6 +1191,7 @@ class StoreExecutionService:
                             description,
                             segment,
                             prerequisites,
+                            data_use_policy,
                         )
                     except Exception:
                         try:
@@ -1177,6 +1211,7 @@ class StoreExecutionService:
                                         description,
                                         segment,
                                         prerequisites,
+                                        data_use_policy,
                                     )
                                 except Exception:
                                     cache_disposition = "unavailable"
@@ -1193,6 +1228,7 @@ class StoreExecutionService:
         description: ProcessorDescription,
         segment: SegmentPayload,
         prerequisites: tuple[ProcessorResult, ...],
+        data_use_policy: DataUsePolicy,
     ) -> ProcessorResult:
         cached = ProcessorResult.from_dict(self._controls.load(reference))
         self._validate_processor_result(
@@ -1200,8 +1236,13 @@ class StoreExecutionService:
             request,
             description,
             segment.segment,
-            len(segment.content),
+            ProcessorPayload.for_segment(
+                segment.segment,
+                segment.content,
+                request.allowed_fields,
+            ).input_byte_size,
             prerequisites,
+            data_use_policy=data_use_policy,
             require_current_request=False,
         )
         if cached.result_id != reference.artifact_id:
@@ -1217,6 +1258,7 @@ class StoreExecutionService:
         segment_byte_size: int,
         prerequisites: tuple[ProcessorResult, ...],
         *,
+        data_use_policy: DataUsePolicy,
         require_current_request: bool,
     ) -> None:
         if not isinstance(result, ProcessorResult):
@@ -1229,10 +1271,36 @@ class StoreExecutionService:
             raise IntegrityError("processor result media type is not declared by its description")
         if result.resource_identities != description.external_resources:
             raise IntegrityError("processor result resources differ from its description")
+        try:
+            external_processing = (
+                description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
+            )
+            data_use_policy.require_provider_evidence(
+                result.provider_evidence,
+                external=external_processing,
+            )
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"processor provider evidence differs from its data-use policy: {error}") from error
+        if external_processing != (result.resource_use.external_request_count > 0):
+            raise IntegrityError("processor external-request count differs from its declared execution scope")
         expected_inputs = (
             segment.segment_id,
             *(record.derived_id for prerequisite in prerequisites for record in prerequisite.derived_records),
         )
+        receipt = result.provider_receipt
+        if (
+            receipt["requestId"] != result.request_id
+            or receipt["reuseKey"] != result.reuse_key
+            or receipt["processorId"] != description.processor_id
+            or receipt["processorDescriptionDigest"] != identity_digest(description.to_dict())
+            or tuple(receipt["inputIds"]) != expected_inputs
+            or receipt["outputSchemaId"] != description.output_schema_id
+            or receipt["outputMediaType"] != result.output_media_type
+            or receipt["configurationDigest"] != description.configuration_digest
+            or receipt["dataUsePolicyDigest"] != description.data_use_policy_digest
+            or receipt["retryPolicyDigest"] != description.retry_policy_digest
+        ):
+            raise IntegrityError("processor provider receipt differs from its request or description")
         if len(result.derived_records) > request.item_limits.max_output_records:
             raise LimitExceededError("processor result exceeds its output-record limit")
         output_bytes = sum(len(canonical_json_bytes(record.value)) for record in result.derived_records)
@@ -1435,8 +1503,9 @@ class StoreExecutionService:
                         request,
                         description,
                         segment,
-                        segment.content.byte_size,
+                        self._projected_segment_byte_size(segment, request.allowed_fields),
                         tuple(value for _, value in prerequisite_pairs),
+                        data_use_policy=plan.data_use_policy,
                         require_current_request=False,
                     )
                     for record in result.derived_records:
@@ -1501,7 +1570,8 @@ class StoreExecutionService:
                             records.extend(pair[1].derived_records)
                     if records or description.processor_id in checkpoint.completed_processors:
                         derived_by_processor[description.processor_id] = records
-                if self._flatten_processor_records(plan, derived_by_processor) != entry.derived_records:
+                checkpoint_records = self._flatten_processor_records(plan, derived_by_processor)
+                if checkpoint_records != entry.derived_records:
                     raise IntegrityError("processor-only checkpoint records differ from its exact results")
         except (TypeError, ValueError) as error:
             raise IntegrityError(f"processor-only base content is invalid: {error}") from error

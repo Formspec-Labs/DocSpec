@@ -16,6 +16,7 @@ from docspec.domain.jobs import (
     StoreVerdict,
 )
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.policies import DataUsePolicy, ProcessorExecutionScope, RetentionPolicy
 from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorCachePolicy,
@@ -51,8 +52,8 @@ def _plan() -> ProcessingPlan:
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},
-        retention_policy={"sourceBytes": "retain"},
-        data_use_policy={"externalProcessing": False},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=EMPTY_DIGEST,
         accepted_failure_policy_digest=EMPTY_DIGEST,
     )
@@ -72,6 +73,32 @@ def test_processing_plan_round_trips_all_work_limit_fields() -> None:
     assert ProcessingPlan.from_dict(plan.to_dict()).limits == _limits()
 
 
+def test_processing_plan_rejects_ambiguous_json_types() -> None:
+    limits = _limits().to_dict()
+    limits["maxEntries"] = True
+    with pytest.raises(ValueError, match="positive integers"):
+        WorkLimits.from_dict(limits)
+
+    with pytest.raises(ValueError, match="identities must be arrays"):
+        StagePolicy.from_dict(
+            {
+                "extractorIds": "text-v1",
+                "segmenterId": "paragraph-v1",
+                "processorIds": [],
+            }
+        )
+
+    value = _plan().to_dict()
+    value["partitionCount"] = True
+    with pytest.raises(ValueError, match="partition_count"):
+        ProcessingPlan.from_dict(value)
+
+    value = _plan().to_dict()
+    value["selection"] = []
+    with pytest.raises(ValueError, match="selection must be a JSON object"):
+        ProcessingPlan.from_dict(value)
+
+
 def test_processing_plan_pins_the_complete_processor_graph() -> None:
     source = SourceCatalogRef("catalog-1", "memory://catalog", sha256_digest(b"catalog"))
     description = _processor("stats-v1")
@@ -86,8 +113,8 @@ def test_processing_plan_pins_the_complete_processor_graph() -> None:
             processors=ProcessorSet((processor,)),
             partition_count=4,
             selection={},
-            retention_policy={"sourceBytes": "retain"},
-            data_use_policy={"externalProcessing": False},
+            retention_policy=RetentionPolicy.retain_all(),
+            data_use_policy=DataUsePolicy.local_content(),
             retry_policy_digest=EMPTY_DIGEST,
             accepted_failure_policy_digest=EMPTY_DIGEST,
         )
@@ -134,6 +161,7 @@ def _processor(identifier: str, dependencies: tuple[str, ...] = ()) -> Processor
         accepted_inputs=(ProcessorInput("segment", ("docspec-segment/1",), ("text/plain",)),),
         output_schema_id=f"schema:{identifier}",
         output_media_types=("application/json",),
+        execution_scope=ProcessorExecutionScope.LOCAL_ONLY,
         external_resources=(),
         dependencies=dependencies,
         deterministic=True,
@@ -156,6 +184,7 @@ def _reidentified(description: ProcessorDescription, **changes: object) -> Proce
         "accepted_inputs": description.accepted_inputs,
         "output_schema_id": description.output_schema_id,
         "output_media_types": description.output_media_types,
+        "execution_scope": description.execution_scope,
         "external_resources": description.external_resources,
         "dependencies": description.dependencies,
         "deterministic": description.deterministic,
@@ -210,6 +239,7 @@ def test_processor_description_is_closed_provider_neutral_and_identity_bearing()
             accepted_inputs=(ProcessorInput("segment", ("docspec-segment/2",), ("text/plain",)),),
         ),
         _reidentified(baseline, output_media_types=("application/vnd.example+json",)),
+        _reidentified(baseline, execution_scope=ProcessorExecutionScope.DECLARED_EXTERNAL),
         _reidentified(baseline, external_resources=(model,)),
         _reidentified(baseline, cache_policy=ProcessorCachePolicy(ProcessorCacheMode.DISABLED, None)),
         _reidentified(baseline, item_limits=replace(baseline.item_limits, max_output_bytes=2048)),
@@ -219,6 +249,12 @@ def test_processor_description_is_closed_provider_neutral_and_identity_bearing()
     assert len(identities) == 1 + len(variants)
     assert ProcessorDescription.from_dict(baseline.to_dict()) == baseline
     assert baseline.input_kinds == ("segment",)
+    assert baseline.execution_scope is ProcessorExecutionScope.LOCAL_ONLY
+    assert _reidentified(baseline, external_resources=(model,)).execution_scope is ProcessorExecutionScope.LOCAL_ONLY
+    assert not _reidentified(
+        baseline,
+        execution_scope=ProcessorExecutionScope.DECLARED_EXTERNAL,
+    ).external_resources
 
     extra = baseline.to_dict()
     extra["providerClient"] = "vendor-specific"
@@ -249,7 +285,7 @@ def test_document_release_is_complete_versioned_and_tamper_evident() -> None:
         profiles=plan.profiles,
         active_layers=(),
         blob_roots=(),
-        retention_dispositions={"sourceBytes": "retained"},
+        retention_dispositions=RetentionPolicy.retain_all(),
         store_receipt_set_digest=sha256_digest(b"stores"),
         run_receipt=artifact("run-1"),
         catalog_commit_receipt=artifact("commit-1"),

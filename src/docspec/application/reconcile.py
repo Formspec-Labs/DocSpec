@@ -52,6 +52,12 @@ _SELECTION_LEDGER_COLLECTION = "ledger:run-selection"
 _TERMINAL_STORE_RESULTS_COLLECTION = "ledger:terminal-store-results"
 
 
+def run_ledger_schemas() -> tuple[RecordSchema, RecordSchema, RecordSchema]:
+    """Return the shared store, selection, and task-result ledger schemas."""
+
+    return _STORE_LEDGER_SCHEMA, _SELECTION_LEDGER_SCHEMA, _TASK_RESULT_LEDGER_SCHEMA
+
+
 def _layer_collection(layer_kind: str) -> str:
     return f"layer:{layer_kind}"
 

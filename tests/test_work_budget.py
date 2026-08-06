@@ -21,7 +21,7 @@ from docspec.domain.content import AcquisitionDisposition, CandidateFile, Source
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, FailureClass
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import (
     ProcessorDescription,
     ProcessorInput,
@@ -218,8 +218,8 @@ def _execute(
         processors=ProcessorSet(tuple(item.description for item in processors.values())),
         partition_count=8,
         selection={},
-        retention_policy={"sourceBytes": "retained"},
-        data_use_policy={"dataUse": "local-bytes-only"},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=retry.digest,
         accepted_failure_policy_digest=accepted.digest,
     )
@@ -382,6 +382,7 @@ def test_processor_input_declaration_is_enforced_before_invocation(tmp_path: Pat
             accepted_inputs=(ProcessorInput("segment", ("docspec-segment/1",), ("image/png",)),),
             output_schema_id=original.output_schema_id,
             output_media_types=original.output_media_types,
+            execution_scope=original.execution_scope,
             external_resources=original.external_resources,
             dependencies=original.dependencies,
             deterministic=original.deterministic,

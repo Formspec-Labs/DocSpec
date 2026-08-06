@@ -6,22 +6,22 @@ from time import monotonic
 from typing import Any
 
 from docspec.domain.content import DerivedRecord, ProcessorDisposition
-from docspec.domain.identity import canonical_json_bytes, identity_digest
-from docspec.domain.policies import RetryPolicy
+from docspec.domain.identity import canonical_json_bytes, identity_digest, sha256_digest
+from docspec.domain.policies import DataUsePolicy, ProcessorExecutionScope, RetryPolicy
 from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorCachePolicy,
     ProcessorDescription,
     ProcessorInput,
     ProcessorItemLimits,
-    ProcessorRecordRef,
+    ProcessorPayload,
     ProcessorRequest,
     ProcessorResourceUse,
     ProcessorResult,
     processor_receipt_digest,
 )
 from docspec.errors import IntegrityError
-from docspec.processing.artifacts import SegmentPayload
+
 
 class ContentStatisticsProcessor:
     """Produce local content statistics without assigning document meaning."""
@@ -33,7 +33,7 @@ class ContentStatisticsProcessor:
         retry_policy: RetryPolicy | None = None,
     ) -> None:
         configuration_digest = identity_digest({"wordRule": "unicode-whitespace-separated"})
-        data_use_policy_digest = identity_digest({"dataUse": "local-bytes-only"})
+        data_use_policy_digest = DataUsePolicy.local_content().digest
         retry_policy_digest = (retry_policy or RetryPolicy()).digest
         limits = item_limits or ProcessorItemLimits(
             max_input_records=1,
@@ -49,6 +49,7 @@ class ContentStatisticsProcessor:
             accepted_inputs=(ProcessorInput("segment", ("docspec-segment/1",), ("*/*",)),),
             output_schema_id="docspec-content-statistics/1",
             output_media_types=("application/vnd.docspec.content-statistics+json",),
+            execution_scope=ProcessorExecutionScope.LOCAL_ONLY,
             external_resources=(),
             dependencies=(),
             deterministic=True,
@@ -66,28 +67,31 @@ class ContentStatisticsProcessor:
     def process(
         self,
         request: ProcessorRequest,
-        segment: SegmentPayload,
+        payload: ProcessorPayload,
         prerequisite_results: tuple[ProcessorResult, ...],
     ) -> ProcessorResult:
         started_at = monotonic()
-        # Re-run the immutable payload checks at the injection boundary so a
-        # custom caller cannot bypass digest or identity validation.
-        SegmentPayload(segment.segment, segment.content)
-        expected_input = ProcessorRecordRef.for_segment(segment.segment)
+        payload.require("content")
+        payload.require("evidence")
+        content = payload.content
+        evidence = payload.evidence
+        if content is None or evidence is None:
+            raise IntegrityError("content-statistics received an incomplete projected payload")
+        expected_input = payload.input_record
         if (
             request.processor_id != self.description.processor_id
             or request.processor_description_digest != identity_digest(self.description.to_dict())
-            or request.source_item_id != segment.segment.source_item_id
             or request.input_records != (expected_input,)
+            or request.allowed_fields != payload.allowed_fields
             or request.prerequisite_results
             or prerequisite_results
             or request.item_limits != self.description.item_limits
         ):
             raise IntegrityError("processor request differs from the pinned content-statistics invocation")
-        if len(segment.content) > self.description.item_limits.max_input_bytes:
+        if len(content) > self.description.item_limits.max_input_bytes:
             raise IntegrityError("processor input exceeds its declared item byte limit")
         try:
-            text = segment.content.decode("utf-8")
+            text = content.decode("utf-8")
         except UnicodeDecodeError:
             text = None
         if text is None:
@@ -95,13 +99,13 @@ class ContentStatisticsProcessor:
         else:
             line_count = len(text.splitlines()) if text else 0
         value: dict[str, Any] = {
-            "segmentId": segment.segment.segment_id,
-            "contentDigest": segment.segment.content.digest,
-            "byteCount": len(segment.content),
+            "segmentId": expected_input.record_id,
+            "contentDigest": sha256_digest(content),
+            "byteCount": len(content),
             "utf8CodepointCount": len(text) if text is not None else None,
             "lineCount": line_count,
             "wordCount": len(text.split()) if text is not None else None,
-            "evidence": segment.segment.evidence.to_dict(),
+            "evidence": evidence.to_dict(),
         }
         if len(canonical_json_bytes(value)) > self.description.item_limits.max_output_bytes:
             raise IntegrityError("processor output exceeds its declared item byte limit")
@@ -114,7 +118,7 @@ class ContentStatisticsProcessor:
             "reuseKey": request.reuse_key,
             "processorId": self.description.processor_id,
             "processorDescriptionDigest": identity_digest(self.description.to_dict()),
-            "inputIds": [segment.segment.segment_id],
+            "inputIds": [expected_input.record_id],
             "outputDigest": output_digest,
             "outputSchemaId": self.description.output_schema_id,
             "outputMediaType": self.description.output_media_types[0],
@@ -124,9 +128,9 @@ class ContentStatisticsProcessor:
         }
         receipt_digest = processor_receipt_digest(receipt)
         record = DerivedRecord.create(
-            source_item_id=segment.segment.source_item_id,
+            source_item_id=request.source_item_id,
             processor_id=self.description.processor_id,
-            input_ids=(segment.segment.segment_id,),
+            input_ids=(expected_input.record_id,),
             schema_id=self.description.output_schema_id,
             value=value,
             provider_receipt_digest=receipt_digest,
@@ -141,7 +145,7 @@ class ContentStatisticsProcessor:
             self.description.external_resources,
             (record,),
             ProcessorResourceUse(
-                len(segment.content),
+                payload.input_byte_size,
                 len(canonical_json_bytes(value)),
                 elapsed_milliseconds,
             ),

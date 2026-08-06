@@ -29,7 +29,7 @@ from docspec.domain.delivery import (
 from docspec.domain.identity import ordered_json_sequence_digest, sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, StoreState
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.receipts import DeliveryReceipt, RunReceipt
 from docspec.domain.references import ArtifactRef, LayerRef, SourceCatalogRef, StoreRef
@@ -369,8 +369,8 @@ def _plan(source: SourceCatalogRef, retry: RetryPolicy, accepted: AcceptedFailur
         processors=ProcessorSet(()),
         partition_count=PARTITIONS.bucket_count,
         selection={},
-        retention_policy={"sourceBytes": "retained"},
-        data_use_policy={"dataUse": "local-bytes-only"},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=retry.digest,
         accepted_failure_policy_digest=accepted.digest,
     )

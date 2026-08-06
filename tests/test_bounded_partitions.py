@@ -11,6 +11,7 @@ from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest, stable_urn
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import LayerRef, SourceCatalogRef
 from docspec.errors import IntegrityError, LimitExceededError
@@ -56,8 +57,8 @@ def _planning_plan(
         processors=ProcessorSet(()),
         partition_count=bucket_count,
         selection={},
-        retention_policy={"sourceBytes": "retain"},
-        data_use_policy={"externalProcessing": False},
+        retention_policy=RetentionPolicy.retain_all(),
+        data_use_policy=DataUsePolicy.local_content(),
         retry_policy_digest=EMPTY_DIGEST,
         accepted_failure_policy_digest=EMPTY_DIGEST,
     )

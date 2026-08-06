@@ -21,6 +21,13 @@
       "conformanceTests": ["BOUNDARY-IMPORT"]
     },
     {
+      "path": "src/docspec/adapters/dagster.py",
+      "capability": "Lazy optional Dagster dynamic-task mapping with one coordinator membership proof, indexed per-task checks, and subprocess workers",
+      "owner": "DocSpec",
+      "status": "partial",
+      "conformanceTests": ["SCALE", "SCHEDULER-PORTABILITY"]
+    },
+    {
       "path": "src/docspec/adapters/execution.py",
       "capability": "Bounded local execution and scheduler-neutral serialized external dispatch",
       "owner": "DocSpec",
@@ -114,8 +121,15 @@
       ]
     },
     {
+      "path": "src/docspec/application/maintenance.py",
+      "capability": "Format-neutral release compaction and verified reachability-based blob retention",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["DOCUMENT-RELEASE-INTEGRITY", "INCREMENTAL-EQUIVALENCE"]
+    },
+    {
       "path": "src/docspec/application/planner.py",
-      "capability": "Streaming source selection and deterministic bounded-job planning",
+      "capability": "Streaming precompiled source, partition, and logical-bucket selection with deterministic bounded-job planning",
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": ["ACQUISITION", "DOCUMENT-STORE", "INCREMENTAL-EQUIVALENCE", "SOURCE-CATALOG-CONTRACT"]
@@ -150,17 +164,24 @@
     },
     {
       "path": "src/docspec/cli.py",
-      "capability": "Single operator command for the standalone lifecycle",
+      "capability": "Single operator command for the standalone lifecycle, release compaction, and bounded retention inspection",
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": ["CORE-INSTALL", "PACKAGE-RELEASE"]
     },
     {
       "path": "src/docspec/conformance/__init__.py",
-      "capability": "Public executable conformance evidence surface",
+      "capability": "Public executable conformance evidence and shared-fixture surface",
       "owner": "DocSpec",
       "status": "implemented",
-      "conformanceTests": ["PACKAGE-RELEASE"]
+      "conformanceTests": ["PACKAGE-RELEASE", "SOURCE-CATALOG-CONTRACT"]
+    },
+    {
+      "path": "src/docspec/conformance/fixtures.py",
+      "capability": "Closed byte-exact conformance fixture verification and materialization",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["PACKAGE-RELEASE", "SOURCE-CATALOG-CONTRACT"]
     },
     {
       "path": "src/docspec/conformance/runner.py",
@@ -212,6 +233,13 @@
       "conformanceTests": ["DOCUMENT-STORE", "RECOVERY"]
     },
     {
+      "path": "src/docspec/domain/maintenance.py",
+      "capability": "Closed blob-retention roots and logical-equivalence compaction receipts",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["DOCUMENT-RELEASE-INTEGRITY", "INCREMENTAL-EQUIVALENCE"]
+    },
+    {
       "path": "src/docspec/domain/plans.py",
       "capability": "Pinned processing plans, stage policies, and bounded work limits",
       "owner": "DocSpec",
@@ -220,7 +248,7 @@
     },
     {
       "path": "src/docspec/domain/policies.py",
-      "capability": "Deterministic retry and accepted-failure policies",
+      "capability": "Closed retention, data-use, provider-evidence, retry, and accepted-failure policies",
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": ["PROCESSOR-CONTRACT", "RECOVERY"]
@@ -259,6 +287,20 @@
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": ["DOCUMENT-RELEASE-INTEGRITY", "INCREMENTAL-EQUIVALENCE", "RELEASE-MANIFEST"]
+    },
+    {
+      "path": "src/docspec/domain/scale.py",
+      "capability": "Closed content-addressed scale campaign inputs, resources, policies, targets, and acceptance authority",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["SCALE"]
+    },
+    {
+      "path": "src/docspec/domain/security.py",
+      "capability": "Credential detection, receipt rejection, and diagnostic redaction",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["PROCESSOR-CONTRACT"]
     },
     {
       "path": "src/docspec/domain/storage.py",
@@ -343,6 +385,13 @@
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": ["PROCESSOR-CONTRACT", "RECOVERY"]
+    },
+    {
+      "path": "src/docspec/ports/profile_state_reachability.py",
+      "capability": "Injected traversal from physical profile-state roots to retained immutable blobs",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["DOCUMENT-RELEASE-INTEGRITY", "INCREMENTAL-EQUIVALENCE"]
     },
     {
       "path": "src/docspec/ports/reconciliation_workspace.py",

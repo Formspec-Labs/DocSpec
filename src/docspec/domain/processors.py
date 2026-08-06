@@ -7,16 +7,22 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Iterable
 
-from docspec.domain.content import DerivedRecord, ProcessorDisposition, Segment
+from docspec.domain.content import DerivedRecord, EvidenceCoordinate, ProcessorDisposition, Segment
 from docspec.domain.identity import (
     freeze_json,
     identity_digest,
     require_sha256,
     require_text,
+    sha256_digest,
     stable_urn,
     thaw_json,
 )
 from docspec.domain.references import ArtifactRef
+from docspec.domain.policies import (
+    PROCESSOR_DATA_FIELDS,
+    ProcessorExecutionScope,
+    ProviderInteractionEvidence,
+)
 from docspec.errors import IntegrityError
 
 
@@ -255,6 +261,78 @@ class ProcessorRecordRef:
 
 
 @dataclass(frozen=True, slots=True)
+class ProcessorPayload:
+    """Worker-local segment data projected through one sealed data-use policy."""
+
+    input_record: ProcessorRecordRef
+    allowed_fields: tuple[str, ...]
+    content: bytes | None
+    content_media_type: str | None
+    evidence: EvidenceCoordinate | None
+    representation_coordinates: tuple[int, int] | None
+    segment_kind: str | None
+    segment_ordinal: int | None
+
+    def __post_init__(self) -> None:
+        if tuple(sorted(set(self.allowed_fields))) != self.allowed_fields or not self.allowed_fields:
+            raise ValueError("processor payload allowed fields must be non-empty, sorted, and distinct")
+        unknown = set(self.allowed_fields) - set(PROCESSOR_DATA_FIELDS)
+        if unknown:
+            raise ValueError(f"processor payload contains unknown allowed fields: {sorted(unknown)}")
+        expected_presence = {
+            "content": self.content,
+            "contentMediaType": self.content_media_type,
+            "evidence": self.evidence,
+            "representationCoordinates": self.representation_coordinates,
+            "segmentKind": self.segment_kind,
+            "segmentOrdinal": self.segment_ordinal,
+        }
+        for field_name, field_value in expected_presence.items():
+            if (field_name in self.allowed_fields) != (field_value is not None):
+                raise ValueError(f"processor payload field {field_name} differs from its data-use policy")
+        if self.content is not None and not isinstance(self.content, bytes):
+            raise TypeError("processor payload content must be immutable bytes")
+        if self.content_media_type is not None:
+            require_text(self.content_media_type, "processor payload content media type")
+        if self.representation_coordinates is not None:
+            start, end = self.representation_coordinates
+            if type(start) is not int or type(end) is not int or start < 0 or end < start:
+                raise ValueError("processor payload representation coordinates are invalid")
+        if self.segment_kind is not None:
+            require_text(self.segment_kind, "processor payload segment kind")
+        if self.segment_ordinal is not None and (type(self.segment_ordinal) is not int or self.segment_ordinal < 0):
+            raise ValueError("processor payload segment ordinal must be a non-negative integer")
+
+    @classmethod
+    def for_segment(cls, segment: Segment, content: bytes, allowed_fields: tuple[str, ...]) -> ProcessorPayload:
+        if not isinstance(content, bytes):
+            raise TypeError("processor source content must be immutable bytes")
+        if len(content) != segment.content.byte_size or sha256_digest(content) != segment.content.digest:
+            raise IntegrityError("processor source content differs from its immutable segment reference")
+        fields = frozenset(allowed_fields)
+        return cls(
+            input_record=ProcessorRecordRef.for_segment(segment),
+            allowed_fields=allowed_fields,
+            content=content if "content" in fields else None,
+            content_media_type=segment.content.media_type if "contentMediaType" in fields else None,
+            evidence=segment.evidence if "evidence" in fields else None,
+            representation_coordinates=(segment.representation_start, segment.representation_end)
+            if "representationCoordinates" in fields
+            else None,
+            segment_kind=segment.kind if "segmentKind" in fields else None,
+            segment_ordinal=segment.ordinal if "segmentOrdinal" in fields else None,
+        )
+
+    def require(self, field_name: str) -> None:
+        if field_name not in self.allowed_fields:
+            raise IntegrityError(f"processor requires data-use field {field_name!r}, but the policy excludes it")
+
+    @property
+    def input_byte_size(self) -> int:
+        return len(self.content) if self.content is not None else 0
+
+
+@dataclass(frozen=True, slots=True)
 class ProcessorResourceUse:
     """Bounded provider-neutral observations for one processor invocation."""
 
@@ -399,6 +477,48 @@ class ProcessorRequest:
         return result
 
 
+_PROVIDER_RECEIPT_FIELDS = {
+    "executionKind",
+    "requestId",
+    "reuseKey",
+    "processorId",
+    "processorDescriptionDigest",
+    "inputIds",
+    "outputDigest",
+    "outputSchemaId",
+    "outputMediaType",
+    "configurationDigest",
+    "dataUsePolicyDigest",
+    "retryPolicyDigest",
+}
+
+
+def _validate_provider_receipt(receipt: Mapping[str, Any]) -> None:
+    raw = _closed_shape(receipt, _PROVIDER_RECEIPT_FIELDS, "processor provider receipt")
+    for name in (
+        "executionKind",
+        "requestId",
+        "reuseKey",
+        "processorId",
+        "outputSchemaId",
+        "outputMediaType",
+    ):
+        require_text(raw[name], f"processor provider receipt {name}")
+    for name in (
+        "processorDescriptionDigest",
+        "outputDigest",
+        "configurationDigest",
+        "dataUsePolicyDigest",
+        "retryPolicyDigest",
+    ):
+        require_sha256(raw[name], f"processor provider receipt {name}")
+    input_ids = _sequence(raw["inputIds"], "processor provider receipt inputIds")
+    for input_id in input_ids:
+        require_text(input_id, "processor provider receipt input identity")
+    if len(set(input_ids)) != len(input_ids):
+        raise ValueError("processor provider receipt repeats an input identity")
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessorResult:
     """Closed result returned by a processor and stored for exact reuse."""
@@ -412,6 +532,7 @@ class ProcessorResult:
     resource_use: ProcessorResourceUse
     warnings: tuple[str, ...]
     provider_receipt: dict[str, Any]
+    provider_evidence: ProviderInteractionEvidence | None = None
 
     def __post_init__(self) -> None:
         require_text(self.request_id, "processor result request identity")
@@ -438,6 +559,16 @@ class ProcessorResult:
         receipt = thaw_json(freeze_json(self.provider_receipt, label="processor provider receipt"))
         if not isinstance(receipt, dict):
             raise ValueError("processor provider receipt must be a JSON object")
+        from docspec.domain.security import require_secret_free
+
+        require_secret_free(receipt, label="processor provider receipt")
+        require_secret_free(self.warnings, label="processor warnings")
+        _validate_provider_receipt(receipt)
+        if self.provider_evidence is not None and not isinstance(
+            self.provider_evidence,
+            ProviderInteractionEvidence,
+        ):
+            raise TypeError("processor provider evidence must use ProviderInteractionEvidence")
         object.__setattr__(self, "provider_receipt", receipt)
         receipt_digest = processor_receipt_digest(receipt)
         if any(item.provider_receipt_digest != receipt_digest for item in self.derived_records):
@@ -455,6 +586,7 @@ class ProcessorResult:
             "resourceUse": self.resource_use.to_dict(),
             "warnings": list(self.warnings),
             "providerReceipt": self.provider_receipt,
+            "providerEvidence": None if self.provider_evidence is None else self.provider_evidence.to_dict(),
         }
 
     @property
@@ -464,7 +596,7 @@ class ProcessorResult:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": "docspec-processor-result",
-            "formatVersion": "1.1",
+            "formatVersion": "1.2",
             "resultId": self.result_id,
             **self.identity_content(),
         }
@@ -484,9 +616,10 @@ class ProcessorResult:
             "resourceUse",
             "warnings",
             "providerReceipt",
+            "providerEvidence",
         }
         raw = _closed_shape(value, expected, "processor result")
-        if raw["format"] != "docspec-processor-result" or raw["formatVersion"] != "1.1":
+        if raw["format"] != "docspec-processor-result" or raw["formatVersion"] != "1.2":
             raise ValueError("processor result has an unknown format")
         result = cls(
             raw["requestId"],
@@ -501,6 +634,9 @@ class ProcessorResult:
             ProcessorResourceUse.from_dict(raw["resourceUse"]),
             _sequence(raw["warnings"], "warnings"),
             raw["providerReceipt"],
+            None
+            if raw["providerEvidence"] is None
+            else ProviderInteractionEvidence.from_dict(raw["providerEvidence"]),
         )
         if raw["resultId"] != result.result_id:
             raise ValueError("processor result identity differs")
@@ -515,6 +651,7 @@ def _description_content(
     accepted_inputs: tuple[ProcessorInput, ...],
     output_schema_id: str,
     output_media_types: tuple[str, ...],
+    execution_scope: ProcessorExecutionScope,
     external_resources: tuple[ProcessorResourceIdentity, ...],
     dependencies: tuple[str, ...],
     deterministic: bool,
@@ -532,6 +669,7 @@ def _description_content(
         "acceptedInputs": [item.to_dict() for item in accepted_inputs],
         "outputSchemaId": output_schema_id,
         "outputMediaTypes": list(output_media_types),
+        "executionScope": ProcessorExecutionScope(execution_scope).value,
         "externalResources": [item.to_dict() for item in external_resources],
         "dependencies": list(dependencies),
         "deterministic": deterministic,
@@ -555,6 +693,7 @@ class ProcessorDescription:
     accepted_inputs: tuple[ProcessorInput, ...]
     output_schema_id: str
     output_media_types: tuple[str, ...]
+    execution_scope: ProcessorExecutionScope
     external_resources: tuple[ProcessorResourceIdentity, ...]
     dependencies: tuple[str, ...]
     deterministic: bool
@@ -582,6 +721,11 @@ class ProcessorDescription:
             require_sha256(value, label)
         if type(self.deterministic) is not bool:
             raise ValueError("processor deterministic must be a boolean")
+        try:
+            execution_scope = ProcessorExecutionScope(self.execution_scope)
+        except (TypeError, ValueError) as error:
+            raise ValueError("processor execution scope is not registered") from error
+        object.__setattr__(self, "execution_scope", execution_scope)
         if not isinstance(self.accepted_inputs, tuple) or not self.accepted_inputs:
             raise ValueError("a processor must declare at least one accepted input")
         if not all(isinstance(item, ProcessorInput) for item in self.accepted_inputs):
@@ -633,6 +777,7 @@ class ProcessorDescription:
             accepted_inputs=self.accepted_inputs,
             output_schema_id=self.output_schema_id,
             output_media_types=self.output_media_types,
+            execution_scope=self.execution_scope,
             external_resources=self.external_resources,
             dependencies=self.dependencies,
             deterministic=self.deterministic,
@@ -654,6 +799,7 @@ class ProcessorDescription:
         accepted_inputs: tuple[ProcessorInput, ...],
         output_schema_id: str,
         output_media_types: tuple[str, ...],
+        execution_scope: ProcessorExecutionScope,
         external_resources: tuple[ProcessorResourceIdentity, ...],
         dependencies: tuple[str, ...],
         deterministic: bool,
@@ -671,6 +817,7 @@ class ProcessorDescription:
             accepted_inputs=accepted_inputs,
             output_schema_id=output_schema_id,
             output_media_types=output_media_types,
+            execution_scope=execution_scope,
             external_resources=external_resources,
             dependencies=dependencies,
             deterministic=deterministic,
@@ -689,6 +836,7 @@ class ProcessorDescription:
             accepted_inputs=accepted_inputs,
             output_schema_id=output_schema_id,
             output_media_types=output_media_types,
+            execution_scope=ProcessorExecutionScope(execution_scope),
             external_resources=external_resources,
             dependencies=dependencies,
             deterministic=deterministic,
@@ -713,6 +861,7 @@ class ProcessorDescription:
             "acceptedInputs",
             "outputSchemaId",
             "outputMediaTypes",
+            "executionScope",
             "externalResources",
             "dependencies",
             "deterministic",
@@ -734,6 +883,7 @@ class ProcessorDescription:
             accepted_inputs=tuple(ProcessorInput.from_dict(item) for item in inputs),
             output_schema_id=raw["outputSchemaId"],
             output_media_types=_sequence(raw["outputMediaTypes"], "processor outputMediaTypes"),
+            execution_scope=raw["executionScope"],
             external_resources=tuple(ProcessorResourceIdentity.from_dict(item) for item in resources),
             dependencies=_sequence(raw["dependencies"], "processor dependencies"),
             deterministic=raw["deterministic"],

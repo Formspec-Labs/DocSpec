@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from docspec.domain.identity import freeze_json, require_sha256, require_text, stable_urn, thaw_json
+from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
@@ -23,7 +24,7 @@ class WorkLimits:
     max_attempts: int = 3
 
     def __post_init__(self) -> None:
-        if any(value <= 0 for value in self.to_dict().values()):
+        if any(type(value) is not int or value <= 0 for value in self.to_dict().values()):
             raise ValueError("all work limits must be positive integers")
 
     def to_dict(self) -> dict[str, int]:
@@ -50,7 +51,7 @@ class WorkLimits:
             "maxDurationSeconds",
             "maxAttempts",
         }
-        if set(value) != expected:
+        if not isinstance(value, dict) or set(value) != expected:
             raise ValueError("work limits have an invalid closed shape")
         return cls(
             max_entries=value["maxEntries"],
@@ -71,6 +72,8 @@ class StagePolicy:
     processor_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.extractor_ids, tuple) or not isinstance(self.processor_ids, tuple):
+            raise ValueError("stage identities must be immutable tuples")
         if not self.extractor_ids:
             raise ValueError("stage policy requires at least one extractor")
         for value in (*self.extractor_ids, self.segmenter_id, *self.processor_ids):
@@ -89,8 +92,10 @@ class StagePolicy:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> StagePolicy:
-        if set(value) != {"extractorIds", "segmenterId", "processorIds"}:
+        if not isinstance(value, dict) or set(value) != {"extractorIds", "segmenterId", "processorIds"}:
             raise ValueError("stage policy has an invalid closed shape")
+        if not isinstance(value["extractorIds"], list) or not isinstance(value["processorIds"], list):
+            raise ValueError("stage policy identities must be arrays")
         return cls(tuple(value["extractorIds"]), value["segmenterId"], tuple(value["processorIds"]))
 
 
@@ -105,23 +110,28 @@ class ProcessingPlan:
     processors: ProcessorSet
     partition_count: int
     selection: dict[str, Any]
-    retention_policy: dict[str, Any]
-    data_use_policy: dict[str, Any]
+    retention_policy: RetentionPolicy
+    data_use_policy: DataUsePolicy
     retry_policy_digest: str
     accepted_failure_policy_digest: str
 
     def __post_init__(self) -> None:
         require_text(self.plan_id, "plan_id")
-        if self.partition_count <= 0 or self.partition_count > 65_536:
+        if type(self.partition_count) is not int or self.partition_count <= 0 or self.partition_count > 65_536:
             raise ValueError("partition_count must be between 1 and 65536")
         require_sha256(self.retry_policy_digest, "retry policy digest")
         require_sha256(self.accepted_failure_policy_digest, "accepted-failure policy digest")
         processor_order = tuple(item.processor_id for item in self.processors.execution_order)
         if processor_order != self.stages.processor_ids:
             raise ValueError("stage processor identities differ from the pinned processor graph")
-        for name in ("selection", "retention_policy", "data_use_policy"):
-            value = getattr(self, name)
-            object.__setattr__(self, name, thaw_json(freeze_json(value, label=name)))
+        selection = thaw_json(freeze_json(self.selection, label="selection"))
+        if not isinstance(selection, dict):
+            raise ValueError("processing plan selection must be a JSON object")
+        object.__setattr__(self, "selection", selection)
+        if not isinstance(self.retention_policy, RetentionPolicy):
+            raise TypeError("processing plan retention policy must be a RetentionPolicy")
+        if not isinstance(self.data_use_policy, DataUsePolicy):
+            raise TypeError("processing plan data-use policy must be a DataUsePolicy")
         if self.plan_id != stable_urn("processing-plan", self.identity_content()):
             raise ValueError("processing plan identity differs")
 
@@ -137,8 +147,8 @@ class ProcessingPlan:
         processors: ProcessorSet,
         partition_count: int,
         selection: dict[str, Any],
-        retention_policy: dict[str, Any],
-        data_use_policy: dict[str, Any],
+        retention_policy: RetentionPolicy,
+        data_use_policy: DataUsePolicy,
         retry_policy_digest: str,
         accepted_failure_policy_digest: str,
     ) -> ProcessingPlan:
@@ -151,8 +161,8 @@ class ProcessingPlan:
             "processors": processors.to_dict(),
             "partitionCount": partition_count,
             "selection": selection,
-            "retentionPolicy": retention_policy,
-            "dataUsePolicy": data_use_policy,
+            "retentionPolicy": retention_policy.to_dict(),
+            "dataUsePolicy": data_use_policy.to_dict(),
             "retryPolicyDigest": retry_policy_digest,
             "acceptedFailurePolicyDigest": accepted_failure_policy_digest,
         }
@@ -182,8 +192,8 @@ class ProcessingPlan:
             "processors": self.processors.to_dict(),
             "partitionCount": self.partition_count,
             "selection": self.selection,
-            "retentionPolicy": self.retention_policy,
-            "dataUsePolicy": self.data_use_policy,
+            "retentionPolicy": self.retention_policy.to_dict(),
+            "dataUsePolicy": self.data_use_policy.to_dict(),
             "retryPolicyDigest": self.retry_policy_digest,
             "acceptedFailurePolicyDigest": self.accepted_failure_policy_digest,
         }
@@ -198,14 +208,14 @@ class ProcessingPlan:
             "processors": self.processors.to_dict(),
             "partitionCount": self.partition_count,
             "selection": self.selection,
-            "retentionPolicy": self.retention_policy,
-            "dataUsePolicy": self.data_use_policy,
+            "retentionPolicy": self.retention_policy.to_dict(),
+            "dataUsePolicy": self.data_use_policy.to_dict(),
             "retryPolicyDigest": self.retry_policy_digest,
             "acceptedFailurePolicyDigest": self.accepted_failure_policy_digest,
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return {"format": "docspec-processing-plan", "formatVersion": "1.1", "planId": self.plan_id, **self.identity_content()}
+        return {"format": "docspec-processing-plan", "formatVersion": "1.2", "planId": self.plan_id, **self.identity_content()}
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ProcessingPlan:
@@ -226,7 +236,12 @@ class ProcessingPlan:
             "retryPolicyDigest",
             "acceptedFailurePolicyDigest",
         }
-        if set(value) != expected or value["format"] != "docspec-processing-plan" or value["formatVersion"] != "1.1":
+        if (
+            not isinstance(value, dict)
+            or set(value) != expected
+            or value["format"] != "docspec-processing-plan"
+            or value["formatVersion"] != "1.2"
+        ):
             raise ValueError("processing plan has an unknown format or invalid closed shape")
         return cls(
             plan_id=value["planId"],
@@ -238,8 +253,8 @@ class ProcessingPlan:
             processors=ProcessorSet.from_dict(value["processors"]),
             partition_count=value["partitionCount"],
             selection=value["selection"],
-            retention_policy=value["retentionPolicy"],
-            data_use_policy=value["dataUsePolicy"],
+            retention_policy=RetentionPolicy.from_dict(value["retentionPolicy"]),
+            data_use_policy=DataUsePolicy.from_dict(value["dataUsePolicy"]),
             retry_policy_digest=value["retryPolicyDigest"],
             accepted_failure_policy_digest=value["acceptedFailurePolicyDigest"],
         )

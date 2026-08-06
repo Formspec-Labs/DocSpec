@@ -7,6 +7,7 @@ from docspec.ports.document_catalog import DocumentCatalog, DocumentCatalogReade
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.execution_backend import ExecutionBackend, SerializedTaskDispatcher, StoreTaskHandler
 from docspec.ports.processor_cache import ProcessorResultCache
+from docspec.ports.profile_state_reachability import ProfileStateBlobReachability
 from docspec.ports.extractor import Extractor
 from docspec.ports.processor import Processor
 from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFactory
@@ -26,6 +27,7 @@ __all__ = [
     "DocumentStoreRepository",
     "ExecutionBackend",
     "ProcessorResultCache",
+    "ProfileStateBlobReachability",
     "Extractor",
     "FetchMetadata",
     "FetchStream",

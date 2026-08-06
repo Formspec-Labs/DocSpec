@@ -34,32 +34,48 @@ from docspec.domain.execution import (
     summarize_store_tasks,
 )
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
+from docspec.domain.policies import (
+    AcceptedFailurePolicy,
+    DataUsePolicy,
+    ProcessorExecutionScope,
+    ProviderEvidence,
+    ProviderEvidenceMode,
+    ProviderInteractionEvidence,
+    RetentionPolicy,
+    RetryPolicy,
+)
 from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorCachePolicy,
     ProcessorDescription,
     ProcessorInput,
     ProcessorItemLimits,
+    ProcessorPayload,
+    ProcessorRequest,
+    ProcessorResult,
     ProcessorResourceIdentity,
     ProcessorResourceKind,
     ProcessorSet,
 )
-from docspec.domain.profiles import ProfileDescription, ProfilePin, ProfileRole, ProfileSet
+from docspec.domain.profiles import ProfileDescription, ProfileGovernance, ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import CatalogCommitReceipt, DeliveryReceipt, RunReceipt
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
+from docspec.domain.scale import ScaleProfile
 
 __all__ = [
     "AcquisitionDisposition",
     "AcceptedFailurePolicy",
     "ArtifactRef",
     "BlobRef",
+    "BlobRetentionSet",
     "CandidateFile",
     "CapturedFile",
     "CatalogCommitReceipt",
     "ChangeKind",
     "DeliveryReceipt",
+    "DataUsePolicy",
     "DerivedRecord",
     "DocumentEntry",
     "DocumentRelease",
@@ -79,18 +95,29 @@ __all__ = [
     "ProcessorCachePolicy",
     "ProcessorDescription",
     "ProcessorDisposition",
+    "ProcessorExecutionScope",
     "ProcessorInput",
     "ProcessorItemLimits",
+    "ProcessorPayload",
+    "ProcessorRequest",
+    "ProcessorResult",
     "ProcessorResourceIdentity",
     "ProcessorResourceKind",
     "ProcessorSet",
     "ProfileDescription",
+    "ProfileGovernance",
     "ProfilePin",
     "ProfileRole",
     "ProfileSet",
+    "ProviderEvidence",
+    "ProviderEvidenceMode",
+    "ProviderInteractionEvidence",
     "Representation",
+    "ReleaseCompactionReceipt",
+    "RetentionPolicy",
     "RetryPolicy",
     "RunReceipt",
+    "ScaleProfile",
     "Segment",
     "SourceCatalogRef",
     "SourceItem",

@@ -29,6 +29,7 @@ from docspec.adapters.storage import (
 from docspec.application.commit import DocumentReleaseVerifier, ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
+from docspec.application.maintenance import ReleaseCompactionService
 from docspec.application.planner import RunPlanner
 from docspec.application.reconcile import RunReconciler
 from docspec.conformance import run_conformance, summarize_report
@@ -53,13 +54,16 @@ from docspec.domain.execution import (
     summarize_store_tasks,
 )
 from docspec.domain.jobs import DocumentEntry, DocumentStore, FailureClass
+from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfileRole, ProfileSet
 from docspec.domain.receipts import DeliveryReceipt, RunReceipt
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.domain.release import DocumentRelease
+from docspec.domain.scale import ScaleProfile
+from docspec.domain.security import redact, redact_text, require_secret_free
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import DocSpecError
 from docspec.processing.extraction import DefaultExtractorRegistry
@@ -68,7 +72,9 @@ from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
+_MAX_GC_SAMPLE_COUNT = 1_000
 _SHA256_OBJECT = re.compile(r"^[0-9a-f]{64}$")
+_SHA256_PREFIX = re.compile(r"^[0-9a-f]{2}$")
 
 
 class CliError(DocSpecError):
@@ -108,6 +114,10 @@ def _existing_root(path: Path, *, label: str) -> Path:
 
 
 def _emit(value: object, *, error: bool = False) -> None:
+    if error:
+        value = redact(value)
+    else:
+        require_secret_free(value, label="CLI output")
     stream = sys.stderr.buffer if error else sys.stdout.buffer
     stream.write(canonical_json_file_bytes(value))
     stream.flush()
@@ -295,6 +305,38 @@ def _cmd_profile_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_scale_profile_seal(args: argparse.Namespace) -> int:
+    profile = ScaleProfile.from_content_dict(
+        _read_json_object(args.request, label="scale profile content")
+    )
+    receipt = _write_artifact_and_receipt(
+        operation="scale-profile.seal",
+        request_path=args.request,
+        destination=args.destination,
+        receipt_path=args.receipt,
+        artifact_id=profile.profile_id,
+        payload=profile.to_bytes(),
+    )
+    _emit(receipt)
+    return 0
+
+
+def _cmd_scale_profile_verify(args: argparse.Namespace) -> int:
+    profile = ScaleProfile.from_bytes(_read_bytes(args.profile, label="scale profile"))
+    _emit(
+        {
+            "format": "docspec-scale-profile-verification",
+            "formatVersion": "1.0",
+            "profileId": profile.profile_id,
+            "profileDigest": profile.digest,
+            "unitCount": profile.targets.unit_count,
+            "processorTargetCount": len(profile.targets.processor_targets),
+            "verdict": "pass",
+        }
+    )
+    return 0
+
+
 def _source_catalog_reader(root: Path) -> LocalJsonlSourceCatalog:
     reader = object.__new__(LocalJsonlSourceCatalog)
     reader.root = _existing_root(root, label="source catalog root")
@@ -442,8 +484,8 @@ def _cmd_plan_create(args: argparse.Namespace) -> int:
         processors=ProcessorSet.from_dict(request["processors"]),
         partition_count=request["partitionCount"],
         selection=request["selection"],
-        retention_policy=request["retentionPolicy"],
-        data_use_policy=request["dataUsePolicy"],
+        retention_policy=RetentionPolicy.from_dict(request["retentionPolicy"]),
+        data_use_policy=DataUsePolicy.from_dict(request["dataUsePolicy"]),
         retry_policy_digest=request["retryPolicyDigest"],
         accepted_failure_policy_digest=request["acceptedFailurePolicyDigest"],
     )
@@ -783,6 +825,25 @@ def _local_storage(
         max_release_bytes=min(release_limit, catalog_limit),
     )
     return controls, stores, records, blobs, catalog
+
+
+def _local_storage_for_run_request(
+    path: Path,
+) -> tuple[
+    dict[str, Any],
+    ProcessingPlan,
+    LocalJsonControlRepository,
+    LocalDocumentStoreRepository,
+    LocalJsonlRecordStorage,
+    LocalContentAddressedBlobStore,
+    LocalManifestDocumentCatalog,
+]:
+    """Resolve one verified local profile composition without starting a run."""
+
+    request = _local_run_request(path)
+    plan, _, profiles = _verified_local_plan(request)
+    controls, stores, records, blobs, catalog = _local_storage(request["roots"], profiles)
+    return request, plan, controls, stores, records, blobs, catalog
 
 
 @dataclass(slots=True)
@@ -1245,12 +1306,10 @@ def _cmd_document_release_commit(args: argparse.Namespace) -> int:
         raise CliError("document release commit request has an unknown format")
     run_request_path = _absolute_request_path(value["runRequest"], label="local run request")
     run_receipt_path = _absolute_request_path(value["runReceipt"], label="run receipt reference")
-    run_request = _local_run_request(run_request_path)
-    plan, _, profiles = _verified_local_plan(run_request)
+    _, plan, controls, _, records, _, catalog = _local_storage_for_run_request(run_request_path)
     base_release = None if value["baseRelease"] is None else DocumentReleaseRef.from_dict(value["baseRelease"])
     if base_release != plan.base_release:
         raise CliError("commit base release differs from the processing plan")
-    controls, stores, records, _blobs, catalog = _local_storage(run_request["roots"], profiles)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     run_receipt = ArtifactRef.from_dict(_read_canonical_object(run_receipt_path, label="run receipt reference"))
     reference = ReleaseCommitService(
@@ -1271,38 +1330,53 @@ def _cmd_document_release_commit(args: argparse.Namespace) -> int:
     return 0
 
 
-_COMPOSITION_REQUIREMENTS = {
-    "document-release.compact": ["source DocumentRelease", "RecordStorage profile", "DocumentCatalog profile"],
-}
+def _local_release_compaction_request(path: Path) -> tuple[Path, DocumentReleaseRef]:
+    value = _read_json_object(path, label="local release compaction request")
+    fields = {"format", "formatVersion", "runRequest", "sourceRelease"}
+    if set(value) != fields:
+        raise CliError("local release compaction request has an invalid closed shape")
+    if value["format"] != "docspec-local-release-compaction-request" or value["formatVersion"] != "1.0":
+        raise CliError("local release compaction request has an unknown format")
+    return (
+        _absolute_request_path(value["runRequest"], label="local run request"),
+        DocumentReleaseRef.from_dict(value["sourceRelease"]),
+    )
 
 
-def _cmd_composition_required(args: argparse.Namespace) -> int:
-    request = _read_json_object(args.request, label=f"{args.operation} request")
-    destination = Path(args.destination)
-    receipt_path = Path(args.receipt)
-    if destination.resolve(strict=False) == receipt_path.resolve(strict=False):
-        raise CliError("operation destination and receipt path must differ")
-    if destination.exists() or destination.is_symlink():
-        raise CliError(f"refusing to replace existing operation destination: {destination}")
-    if receipt_path.exists() or receipt_path.is_symlink():
-        raise CliError(f"refusing to replace existing operation receipt: {receipt_path}")
-    content = {
-        "operation": args.operation,
-        "requestDigest": identity_digest(request),
-        "destination": destination.resolve(strict=False).as_posix(),
-        "verdict": "not-executed",
-        "diagnosticCode": "DOCSPEC-COMPOSITION-REQUIRED",
-        "requiredConfiguration": _COMPOSITION_REQUIREMENTS[args.operation],
-    }
-    receipt = {
-        "format": "docspec-operation-preflight-receipt",
-        "formatVersion": "1.0",
-        "receiptId": stable_urn("operation-preflight-receipt", content),
-        **content,
-    }
-    _write_new(receipt_path, canonical_json_file_bytes(receipt), label="operation preflight receipt")
+def _cmd_document_release_compact(args: argparse.Namespace) -> int:
+    _require_new_output_paths(args.destination, args.receipt)
+    run_request_path, source_reference = _local_release_compaction_request(args.request)
+    request, plan, controls, stores, records, _, catalog = _local_storage_for_run_request(
+        run_request_path
+    )
+    source = catalog.open(source_reference)
+    try:
+        source_plan = ProcessingPlan.from_dict(controls.load(source.processing_plan))
+    except (TypeError, ValueError) as error:
+        raise CliError(f"source release processing plan is invalid: {error}") from error
+    if source_plan != plan or source.profiles != plan.profiles:
+        raise CliError("compaction run composition differs from the source release")
+
+    reference = ReleaseCompactionService(
+        controls=controls,
+        records=records,
+        stores=stores,
+        document_catalog=catalog,
+        clock=lambda: request["completedAt"],
+    ).compact(source_reference)
+    compaction = ReleaseCompactionReceipt.from_dict(controls.load(reference))
+    if compaction.receipt_id != reference.artifact_id or compaction.source_release != source_reference:
+        raise CliError("saved compaction receipt differs from its immutable reference")
+    receipt = _write_artifact_and_receipt(
+        operation="document-release.compact",
+        request_path=args.request,
+        destination=args.destination,
+        receipt_path=args.receipt,
+        artifact_id=reference.artifact_id,
+        payload=canonical_json_file_bytes(reference.to_dict()),
+    )
     _emit(receipt)
-    return 2
+    return 0
 
 
 def _cmd_run_status(args: argparse.Namespace) -> int:
@@ -1501,58 +1575,167 @@ def _cmd_blob_store_gc(args: argparse.Namespace) -> int:
         raise CliError("blob-store gc currently requires --dry-run")
     if args.minimum_age_seconds < 0:
         raise CliError("minimum blob retention age must be non-negative")
-    root = _existing_root(args.root, label="blob store root")
-    value = _read_json_object(args.retained_references, label="blob retention set")
-    if set(value) != {"format", "formatVersion", "references"}:
-        raise CliError("blob retention set has an invalid closed shape")
-    if value["format"] != "docspec-blob-retention-set" or value["formatVersion"] != "1.0":
-        raise CliError("blob retention set has an unknown format")
-    if not isinstance(value["references"], list):
-        raise CliError("blob retention references must be a list")
-    references = tuple(BlobRef.from_dict(item) for item in value["references"])
-    retained = {item.locator for item in references}
-    if len(retained) != len(references):
-        raise CliError("blob retention set repeats a locator")
-    reader = _blob_reader(root, args.max_blob_bytes, args.stream_chunk_bytes)
-    for reference in references:
-        reader.verify(reference)
-    object_root = root / "objects" / "sha256"
-    now = time.time()
-    candidates: list[dict[str, Any]] = []
-    retained_bytes = 0
+    if args.sample_limit < 0 or args.sample_limit > _MAX_GC_SAMPLE_COUNT:
+        raise CliError(f"blob GC sample limit must be between 0 and {_MAX_GC_SAMPLE_COUNT}")
+
+    run_request_path = _absolute_request_path(args.run_request.as_posix(), label="local run request")
+    request, plan, controls, _, records, blobs, _ = _local_storage_for_run_request(
+        run_request_path
+    )
+    retention_reference = ArtifactRef.from_dict(
+        _read_canonical_object(args.retention_set, label="blob retention-set reference")
+    )
+    retention = BlobRetentionSet.from_dict(controls.load(retention_reference))
+    if retention.retention_set_id != retention_reference.artifact_id:
+        raise CliError("blob retention-set identity differs from its immutable reference")
+
+    record_profile = plan.profiles.for_role(ProfileRole.RECORD_STORAGE)
+    if retention.references.profile_id != record_profile.profile_id:
+        raise CliError("blob retention layer differs from the local record-storage profile")
+    records.verify(retention.references)
+
+    blob_profile = plan.profiles.for_role(ProfileRole.BLOB_STORAGE)
+    profile_state = controls.load(retention.blob_profile_state)
+    expected_state_fields = {"profileId", "profileVersion", "storageRoot"}
+    if set(profile_state) != expected_state_fields:
+        raise CliError("blob profile state has an invalid closed shape")
+    if (
+        profile_state["profileId"] != blob_profile.profile_id
+        or profile_state["profileVersion"] != blob_profile.version
+    ):
+        raise CliError("blob retention set differs from the local blob-storage profile")
+    state_root = _absolute_request_path(profile_state["storageRoot"], label="blob profile storage root")
+    if _existing_root(state_root, label="blob profile storage root") != blobs.root:
+        raise CliError("blob retention set belongs to a different blob-storage root")
+
+    reference_fields = {
+        "recordId",
+        "blobProfileStateId",
+        "blobProfileStateDigest",
+        "locator",
+        "digest",
+        "byteSize",
+        "mediaType",
+    }
+    collection = "blob-gc:retained-locators"
+    retained_reference_count = 0
+    retained_byte_count = 0
     object_count = 0
-    if object_root.exists():
-        if object_root.is_symlink() or not object_root.is_dir():
-            raise CliError("blob object root must be a regular directory")
-        for path in sorted(object_root.rglob("*")):
-            if path.is_symlink():
-                raise CliError(f"blob object tree contains a symlink: {path}")
-            if not path.is_file():
-                continue
-            relative = path.relative_to(root).as_posix()
-            parts = path.relative_to(object_root).parts
-            if len(parts) != 2 or len(parts[0]) != 2 or _SHA256_OBJECT.fullmatch(parts[1]) is None or parts[0] != parts[1][:2]:
-                raise CliError(f"blob object has an invalid content-addressed locator: {relative}")
-            object_count += 1
-            size = path.stat().st_size
-            if relative in retained:
-                retained_bytes += size
-                continue
-            age_seconds = max(0, int(now - path.stat().st_mtime))
-            if age_seconds >= args.minimum_age_seconds:
-                candidates.append({"locator": relative, "byteSize": size, "ageSeconds": age_seconds})
+    retained_object_count = 0
+    candidate_count = 0
+    candidate_byte_count = 0
+    candidate_sample: list[dict[str, Any]] = []
+    now = time.time()
+    workspace_factory = LocalSqliteReconciliationWorkspaceFactory(
+        request["roots"]["reconciliation"] / "blob-gc",
+        max_spooled_bytes=args.max_index_bytes,
+        max_record_bytes=4 * 1024,
+        cache_kib=args.index_cache_kib,
+        read_batch_size=1_024,
+    )
+    with workspace_factory.create() as retained_index:
+        for row in records.stream(retention.references):
+            if set(row) != reference_fields:
+                raise CliError("blob retention reference has an invalid closed shape")
+            if (
+                row["blobProfileStateId"] != retention.blob_profile_state.artifact_id
+                or row["blobProfileStateDigest"] != retention.blob_profile_state.digest
+            ):
+                raise CliError("blob retention reference names a different profile state")
+            reference = BlobRef(
+                row["locator"],
+                row["digest"],
+                row["byteSize"],
+                row["mediaType"],
+            )
+            expected_record_id = stable_urn(
+                "blob-retention-reference",
+                {
+                    "blobProfileState": retention.blob_profile_state.to_dict(),
+                    "locator": reference.locator,
+                },
+            )
+            if row["recordId"] != expected_record_id:
+                raise CliError("blob retention reference identity differs")
+            blobs.verify(reference)
+            retained_index.add_record(
+                collection,
+                identity=reference.locator,
+                source_item_id=reference.locator,
+                record=reference.to_dict(),
+            )
+            retained_reference_count += 1
+            retained_byte_count += reference.byte_size
+        if retained_reference_count != retention.references.record_count:
+            raise CliError("blob retention layer stream count differs from its immutable reference")
+
+        object_root = blobs.root / "objects" / "sha256"
+        if object_root.exists():
+            if object_root.is_symlink() or not object_root.is_dir():
+                raise CliError("blob object root must be a regular directory")
+            with os.scandir(object_root) as prefixes:
+                for prefix_entry in prefixes:
+                    if prefix_entry.is_symlink() or not prefix_entry.is_dir(follow_symlinks=False):
+                        raise CliError(f"blob object tree has an invalid prefix entry: {prefix_entry.name}")
+                    prefix = prefix_entry.name
+                    if _SHA256_PREFIX.fullmatch(prefix) is None:
+                        raise CliError(f"blob object tree has an invalid digest prefix: {prefix}")
+                    with os.scandir(prefix_entry.path) as objects:
+                        for object_entry in objects:
+                            if object_entry.is_symlink() or not object_entry.is_file(follow_symlinks=False):
+                                raise CliError(
+                                    f"blob object tree has an invalid object entry: {prefix}/{object_entry.name}"
+                                )
+                            hexadecimal = object_entry.name
+                            locator = f"objects/sha256/{prefix}/{hexadecimal}"
+                            if (
+                                _SHA256_OBJECT.fullmatch(hexadecimal) is None
+                                or prefix != hexadecimal[:2]
+                            ):
+                                raise CliError(
+                                    f"blob object has an invalid content-addressed locator: {locator}"
+                                )
+                            object_count += 1
+                            metadata = object_entry.stat(follow_symlinks=False)
+                            if retained_index.lookup_record(collection, locator) is not None:
+                                retained_object_count += 1
+                                continue
+                            age_seconds = max(0, int(now - metadata.st_mtime))
+                            if age_seconds < args.minimum_age_seconds:
+                                continue
+                            candidate_count += 1
+                            candidate_byte_count += metadata.st_size
+                            if len(candidate_sample) < args.sample_limit:
+                                candidate_sample.append(
+                                    {
+                                        "locator": locator,
+                                        "byteSize": metadata.st_size,
+                                        "ageSeconds": age_seconds,
+                                    }
+                                )
+    if retained_object_count != retained_reference_count:
+        raise CliError("blob object inventory differs from the verified retention set")
     _emit(
         {
             "format": "docspec-blob-gc-dry-run",
             "formatVersion": "1.0",
-            "retentionSetDigest": sha256_digest(_read_bytes(args.retained_references, label="blob retention set")),
+            "retentionSet": retention_reference.to_dict(),
+            "retentionReferenceLayer": retention.references.to_dict(),
             "minimumAgeSeconds": args.minimum_age_seconds,
             "objectCount": object_count,
-            "retainedObjectCount": len(retained),
-            "retainedByteCount": retained_bytes,
-            "candidateCount": len(candidates),
-            "candidateByteCount": sum(item["byteSize"] for item in candidates),
-            "candidates": candidates,
+            "retainedReferenceCount": retained_reference_count,
+            "retainedObjectCount": retained_object_count,
+            "retainedByteCount": retained_byte_count,
+            "candidateCount": candidate_count,
+            "candidateByteCount": candidate_byte_count,
+            "candidateSampleLimit": args.sample_limit,
+            "candidateSampleTruncated": candidate_count > len(candidate_sample),
+            "candidateSample": candidate_sample,
+            "boundedMembershipIndex": {
+                "adapterId": "docspec.local-sqlite-record-workspace",
+                "maxSpooledBytes": args.max_index_bytes,
+                "cacheKiB": args.index_cache_kib,
+            },
             "dryRun": True,
             "verdict": "pass",
         }
@@ -1591,7 +1774,7 @@ def _add_mutating_paths(
     parser: argparse.ArgumentParser,
     *,
     operation: str,
-    func: Any = _cmd_composition_required,
+    func: Any,
 ) -> None:
     parser.add_argument("--request", type=Path, required=True, help="Closed JSON operation request")
     parser.add_argument("--destination", type=Path, required=True, help="New destination; replacement is refused")
@@ -1622,6 +1805,20 @@ def build_parser() -> argparse.ArgumentParser:
     profile_verify = profile_commands.add_parser("verify", help="Verify one closed profile description")
     profile_verify.add_argument("profile", type=Path)
     profile_verify.set_defaults(func=_cmd_profile_verify)
+
+    scale_profile = commands.add_parser("scale-profile", help="Seal and verify exact scale campaign inputs")
+    scale_profile_commands = _subcommands(scale_profile, dest="scale_profile_command")
+    _add_mutating_paths(
+        scale_profile_commands.add_parser("seal", help="Seal closed scale-profile content"),
+        operation="scale-profile.seal",
+        func=_cmd_scale_profile_seal,
+    )
+    scale_profile_verify = scale_profile_commands.add_parser(
+        "verify",
+        help="Verify one canonical identity-bearing scale profile",
+    )
+    scale_profile_verify.add_argument("profile", type=Path)
+    scale_profile_verify.set_defaults(func=_cmd_scale_profile_verify)
 
     document_catalog = commands.add_parser("document-catalog", help="Open and compare complete catalog releases")
     catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")
@@ -1716,8 +1913,9 @@ def build_parser() -> argparse.ArgumentParser:
     release_diff.add_argument("--newer", type=Path, required=True)
     release_diff.set_defaults(func=_cmd_document_release_diff)
     _add_mutating_paths(
-        release_commands.add_parser("compact", help="Preflight an explicit format-neutral compaction"),
+        release_commands.add_parser("compact", help="Publish an equivalent compacted successor release"),
         operation="document-release.compact",
+        func=_cmd_document_release_compact,
     )
 
     blob_store = commands.add_parser("blob-store", help="Verify immutable blobs and inventory safe collection")
@@ -1729,11 +1927,12 @@ def build_parser() -> argparse.ArgumentParser:
     blob_verify.add_argument("--stream-chunk-bytes", type=int, default=1024**2)
     blob_verify.set_defaults(func=_cmd_blob_store_verify)
     blob_gc = blob_commands.add_parser("gc", help="Inventory unreferenced content-addressed objects")
-    blob_gc.add_argument("--root", type=Path, required=True)
-    blob_gc.add_argument("--retained-references", type=Path, required=True)
+    blob_gc.add_argument("--run-request", type=Path, required=True)
+    blob_gc.add_argument("--retention-set", type=Path, required=True, help="JSON ArtifactRef")
     blob_gc.add_argument("--minimum-age-seconds", type=int, required=True)
-    blob_gc.add_argument("--max-blob-bytes", type=int, default=8 * 1024**3)
-    blob_gc.add_argument("--stream-chunk-bytes", type=int, default=1024**2)
+    blob_gc.add_argument("--sample-limit", type=int, default=20)
+    blob_gc.add_argument("--max-index-bytes", type=int, default=64 * 1024**3)
+    blob_gc.add_argument("--index-cache-kib", type=int, default=8 * 1024)
     blob_gc.add_argument("--dry-run", action="store_true", required=True)
     blob_gc.set_defaults(func=_cmd_blob_store_gc)
 
@@ -1767,7 +1966,7 @@ def main(argv: list[str] | None = None) -> int:
                 "format": "docspec-cli-error",
                 "formatVersion": "1.0",
                 "errorType": type(error).__name__,
-                "message": str(error),
+                "message": redact_text(str(error)),
                 "verdict": "fail",
             },
             error=True,

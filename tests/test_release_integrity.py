@@ -22,7 +22,7 @@ from docspec.domain.plans import StagePolicy, WorkLimits
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError
 from docspec.processing import ContentStatisticsProcessor, ParagraphSegmenter, TextExtractor
-from tests.helpers import segment_processor_request
+from tests.helpers import processor_payload, segment_processor_request
 
 
 def _release_layers() -> dict[str, list[dict]]:
@@ -57,7 +57,7 @@ def _release_layers() -> dict[str, list[dict]]:
     processor = ContentStatisticsProcessor()
     derived = processor.process(
         segment_processor_request(processor, segment),
-        segment,
+        processor_payload(segment),
         (),
     ).derived_records[0]
     entry = replace(

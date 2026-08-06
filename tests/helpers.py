@@ -14,13 +14,16 @@ from docspec.domain.execution import (
     summarize_store_tasks,
 )
 from docspec.domain.identity import canonical_json_file_bytes, identity_digest, sha256_digest, stable_urn
-from docspec.domain.processors import ProcessorRecordRef, ProcessorRequest
+from docspec.domain.policies import DataUsePolicy, RetentionPolicy
+from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, StoreRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 
 
 EMPTY_DIGEST = sha256_digest(b"")
+DATA_USE_POLICY = DataUsePolicy.local_content()
+RETENTION_POLICY = RetentionPolicy.retain_all()
 TASK_RESULT_SCHEMA = RecordSchema(
     "docspec-store-task-result-record/1.0",
     ("recordId", "sourceItemId", "result"),
@@ -201,11 +204,21 @@ def segment_processor_request(processor, segment, *, prerequisites=()) -> Proces
         segment.segment.source_item_id,
         (input_reference,),
         tuple(prerequisites),
-        ("*",),
+        DATA_USE_POLICY.allowed_fields,
         description.item_limits,
         description.cache_policy.key_schema_id or "docspec-cache-disabled/1",
         stable_urn(
             "processor-invocation",
             {"processorId": description.processor_id, "segmentId": segment.segment.segment_id},
         ),
+    )
+
+
+def processor_payload(segment) -> ProcessorPayload:
+    """Project one segment through the shared local-only test policy."""
+
+    return ProcessorPayload.for_segment(
+        segment.segment,
+        segment.content,
+        DATA_USE_POLICY.allowed_fields,
     )

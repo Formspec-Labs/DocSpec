@@ -31,7 +31,7 @@ from docspec.processing import (
     verify_segment_evidence,
 )
 from docspec.processing.extraction import ExtractionError
-from tests.helpers import segment_processor_request
+from tests.helpers import processor_payload, segment_processor_request
 
 
 def _captured(content: bytes, media_type: str) -> CapturedFile:
@@ -315,7 +315,7 @@ def test_content_records_recompute_identity_and_output_digests_when_read() -> No
     processor = ContentStatisticsProcessor()
     derived = processor.process(
         segment_processor_request(processor, segment),
-        segment,
+        processor_payload(segment),
         (),
     ).derived_records[0]
 
@@ -351,8 +351,8 @@ def test_injected_statistics_processor_is_deterministic_and_evidence_linked() ->
     processor = ContentStatisticsProcessor()
 
     request = segment_processor_request(processor, segment)
-    first = processor.process(request, segment, ())
-    retry = processor.process(request, segment, ())
+    first = processor.process(request, processor_payload(segment), ())
+    retry = processor.process(request, processor_payload(segment), ())
 
     first_record = first.derived_records[0]
     assert first_record == retry.derived_records[0]
@@ -382,7 +382,11 @@ def test_injected_statistics_processor_is_deterministic_and_evidence_linked() ->
     )
     assert limited.description.processor_id != processor.description.processor_id
     with pytest.raises(IntegrityError, match="input exceeds"):
-        limited.process(segment_processor_request(limited, segment), segment, ())
+        limited.process(
+            segment_processor_request(limited, segment),
+            processor_payload(segment),
+            (),
+        )
 
     class ProviderSdkResponse:
         pass

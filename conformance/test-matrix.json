@@ -35,13 +35,18 @@
     },
     {
       "testId": "SOURCE-CATALOG-CONTRACT",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
         "tests/test_source_catalog.py::test_source_catalog_round_trips_complete_stable_distribution",
         "tests/test_source_catalog.py::test_source_catalog_change_set_pins_its_verified_base",
-        "tests/test_source_catalog.py::test_source_catalog_rejects_unstable_or_ambiguous_input"
+        "tests/test_source_catalog.py::test_source_catalog_rejects_unstable_or_ambiguous_input",
+        "tests/conformance/test_shared_fixtures.py::test_shared_fixture_distribution_is_closed_complete_and_sealed",
+        "tests/conformance/test_shared_fixtures.py::test_independent_fixture_verifier_rejects_changed_extra_and_symlinked_bytes",
+        "tests/conformance/test_shared_fixtures.py::test_source_catalog_producer_matches_shared_valid_fixture_bytes",
+        "tests/conformance/test_shared_fixtures.py::test_source_catalog_independent_reader_uses_every_shared_exact_fixture",
+        "tests/conformance/test_shared_fixtures.py::test_source_catalog_producer_preserves_conflicting_immutable_fixture_bytes"
       ],
-      "plannedTestModule": "tests/conformance/test_source_catalog_contract.py"
+      "plannedTestModule": null
     },
     {
       "testId": "PROFILE-DESCRIPTION",
@@ -50,6 +55,7 @@
         "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
         "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
         "tests/test_profile_registry.py::test_profile_pin_identifies_the_complete_machine_description",
+        "tests/test_profile_registry.py::test_profile_governance_is_closed_declared_and_identity_bearing",
         "tests/test_cli.py::test_profile_verification_uses_the_machine_description"
       ],
       "plannedTestModule": "tests/conformance/test_profile_descriptions.py"
@@ -174,6 +180,10 @@
       "selectors": [
         "tests/test_source_catalog.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
         "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
+        "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
+        "tests/test_planner.py::test_source_partition_selection_rejects_undeclared_partition_before_item_stream",
+        "tests/test_planner.py::test_source_partition_selection_rejects_malformed_item_partition",
+        "tests/test_planner.py::test_selection_is_precompiled_and_rejects_malformed_selectors_without_items",
         "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
         "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
         "tests/test_work_budget.py::test_source_and_memory_limits_apply_to_aggregate_store_work",
@@ -242,6 +252,11 @@
         "tests/test_work_budget.py::test_processor_retry_exhaustion_preserves_every_attempt",
         "tests/test_work_budget.py::test_processor_item_duration_uses_worker_observation",
         "tests/test_work_budget.py::test_elapsed_duration_is_checked_after_injected_stage_work",
+        "tests/test_policy_security.py::test_retention_and_data_use_policies_are_closed_versioned_and_identity_bearing",
+        "tests/test_policy_security.py::test_processor_payload_contains_only_policy_selected_fields",
+        "tests/test_policy_security.py::test_external_provider_evidence_matches_the_sealed_data_use_modes",
+        "tests/test_policy_security.py::test_external_request_accounting_matches_the_declared_execution_scope",
+        "tests/test_policy_security.py::test_processor_receipts_reject_secrets_and_diagnostics_redact_them",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
       "plannedTestModule": "tests/conformance/test_processor_contract.py"
@@ -270,6 +285,10 @@
         "tests/test_execution_backends.py::test_backend_verifies_the_complete_profile_reference_before_work",
         "tests/test_execution_backends.py::test_local_backend_rejects_a_completion_after_its_deadline",
         "tests/test_execution_backends.py::test_external_backend_bounds_replayed_results_by_the_sealed_attempt_limit",
+        "tests/test_dagster_adapter.py::test_dagster_adapter_profile_is_closed_and_keeps_external_qualification_unrun",
+        "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
+        "tests/test_dagster_adapter.py::test_dagster_worker_crosses_a_process_boundary_and_persists_idempotent_results",
+        "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
@@ -285,6 +304,8 @@
         "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
         "tests/test_release_integrity.py::test_logical_release_verifier_rejects_segment_without_persisted_mapping",
+        "tests/test_maintenance.py::test_retention_set_is_derived_from_verified_release_store_and_profile_roots",
+        "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
       "plannedTestModule": "tests/conformance/test_document_release_integrity.py"
@@ -294,13 +315,17 @@
       "status": "partial",
       "selectors": [
         "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
+        "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
+        "tests/test_planner.py::test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucket",
         "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
         "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
         "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
         "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
+        "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
+        "tests/conformance/test_incremental_equivalence.py::test_clean_incremental_targeted_and_compacted_paths_converge_on_active_document_state",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_incremental_equivalence.py"
+      "plannedTestModule": "tests/conformance/test_targeted_reprocessing.py"
     },
     {
       "testId": "RECOVERY",
@@ -325,8 +350,16 @@
     },
     {
       "testId": "SCALE",
-      "status": "planned",
-      "selectors": [],
+      "status": "partial",
+      "selectors": [
+        "tests/test_scale_profile.py::test_scale_profile_is_closed_canonical_typed_and_content_addressed",
+        "tests/test_scale_profile.py::test_scale_profile_identity_changes_with_claim_inputs_or_targets",
+        "tests/test_scale_profile.py::test_scale_profile_fails_closed_for_tampering_unknown_fields_and_missing_processor_targets",
+        "tests/test_scale_profile.py::test_scale_profile_rejects_ambiguous_or_impossible_bounds",
+        "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact",
+        "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
+        "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof"
+      ],
       "plannedTestModule": "tests/conformance/test_scale.py"
     },
     {
@@ -336,6 +369,9 @@
         "tests/test_package_boundary.py::test_built_wheel_contains_only_the_standalone_package",
         "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
+        "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",
+        "tests/test_cli.py::test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index",
+        "tests/conformance/test_shared_fixtures.py::test_shared_fixture_distribution_is_closed_complete_and_sealed",
         "tests/test_conformance.py::test_conformance_runner_executes_exact_selectors_and_seals_a_report"
       ],
       "plannedTestModule": "tests/conformance/test_published_package.py"

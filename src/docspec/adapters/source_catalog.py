@@ -183,7 +183,10 @@ class LocalJsonlSourceCatalog:
     def _validated_items(self, reference: SourceCatalogRef) -> tuple[dict[str, Any], Iterator[SourceItem]]:
         root, distribution = self._open_root(reference)
         member = root["itemsMember"]
-        path = _verified_member_path(distribution, member, media_type="application/x-ndjson")
+        try:
+            path = _verified_member_path(distribution, member, media_type="application/x-ndjson")
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"source catalog member description is invalid: {error}") from error
 
         def generate() -> Iterator[SourceItem]:
             previous: tuple[str, str] | None = None
