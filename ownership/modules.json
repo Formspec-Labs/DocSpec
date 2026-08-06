@@ -21,6 +21,13 @@
       "conformanceTests": ["BOUNDARY-IMPORT"]
     },
     {
+      "path": "src/docspec/adapters/content_fetchers.py",
+      "capability": "Closeable contained local and anonymous-S3 source acquisition behind a sealed routing identity",
+      "owner": "DocSpec",
+      "status": "implemented",
+      "conformanceTests": ["ACQUISITION", "RECOVERY"]
+    },
+    {
       "path": "src/docspec/adapters/dagster.py",
       "capability": "Lazy optional Dagster dynamic-task mapping with one coordinator membership proof, indexed per-task checks, and subprocess workers",
       "owner": "DocSpec",
@@ -107,7 +114,7 @@
     },
     {
       "path": "src/docspec/application/execution.py",
-      "capability": "Receipt-derived coarse-stage resume for acquisition, extraction, segmentation, and injected processor layers in bounded jobs",
+      "capability": "Receipt-derived candidate-level and stage-level resume for acquisition, extraction, segmentation, and injected processor layers in bounded jobs",
       "owner": "DocSpec",
       "status": "implemented",
       "conformanceTests": [

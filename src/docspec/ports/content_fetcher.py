@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Protocol
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from typing import Protocol, Self
 
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import require_sha256, require_text
@@ -32,10 +32,46 @@ class FetchMetadata:
             require_text(self.transport_version, "transport_version")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class FetchStream:
     metadata: FetchMetadata
     chunks: Iterator[bytes]
+    close_callback: Callable[[], None] | None = field(default=None, repr=False, compare=False)
+    _closed: bool = field(default=False, init=False, repr=False, compare=False)
+
+    def close(self) -> None:
+        """Release the iterator and its source exactly once, even before iteration."""
+
+        if self._closed:
+            return
+        self._closed = True
+        first_error: BaseException | None = None
+        close_iterator = getattr(self.chunks, "close", None)
+        if callable(close_iterator):
+            try:
+                close_iterator()
+            except BaseException as error:
+                first_error = error
+        if self.close_callback is not None:
+            try:
+                self.close_callback()
+            except BaseException as error:
+                if first_error is None:
+                    first_error = error
+        if first_error is not None:
+            raise first_error
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: object | None,
+    ) -> bool:
+        self.close()
+        return False
 
 
 class ContentFetcher(Protocol):

@@ -20,6 +20,14 @@ class DocumentStoreRepository(Protocol):
 
     def revisions(self, store_id: str) -> tuple[StoreRef, ...]: ...
 
+    def has_planned_store_ledger(self, plan_id: str) -> bool:
+        """Return whether durable planning state exists for the plan.
+
+        An existing but invalid path must fail closed rather than look absent.
+        """
+
+        ...
+
     def seal_planned_stores(self, plan_id: str, references: Iterable[StoreRef]) -> LayerRef:
         """Stream, verify, and immutably seal the complete planned population."""
 

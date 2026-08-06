@@ -307,7 +307,7 @@ class LocalFileContentFetcher:
 
         def chunks() -> Iterator[bytes]:
             seen = 0
-            opened = os.open(path, flags)
+            opened: int | None = os.open(path, flags)
             try:
                 current = os.fstat(opened)
                 if (
@@ -317,7 +317,9 @@ class LocalFileContentFetcher:
                     or current.st_mtime_ns != initial.st_mtime_ns
                 ):
                     raise IntegrityError("local acquisition candidate changed before it was read")
-                with os.fdopen(opened, "rb") as handle:
+                handle = os.fdopen(opened, "rb")
+                opened = None  # ownership transferred to the file object
+                with handle:
                     for chunk in iter(lambda: handle.read(self.chunk_size), b""):
                         seen += len(chunk)
                         if seen > max_bytes:
@@ -332,10 +334,11 @@ class LocalFileContentFetcher:
                 ):
                     raise IntegrityError("local acquisition candidate changed while it was read")
             finally:
-                try:
-                    os.close(opened)
-                except OSError:
-                    pass
+                if opened is not None:
+                    try:
+                        os.close(opened)
+                    except OSError:
+                        pass
 
         return FetchStream(
             FetchMetadata(

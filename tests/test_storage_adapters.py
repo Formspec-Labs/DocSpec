@@ -123,6 +123,53 @@ def test_document_store_repository_saves_immutable_revisions(tmp_path: Path) -> 
         repository.save(conflicting)
 
 
+def test_document_store_latest_reads_only_the_newest_revision_while_revisions_validate_history(
+    tmp_path: Path,
+) -> None:
+    repository = LocalDocumentStoreRepository(tmp_path / "jobs")
+    planned = _planned_store()
+    planned_ref = repository.save(planned)
+    running_ref = repository.save(planned.start("attempt-1"))
+
+    (repository.root / planned_ref.locator).write_bytes(b"tampered historical revision\n")
+
+    assert repository.latest(planned.store_id) == running_ref
+    with pytest.raises(IntegrityError):
+        repository.revisions(planned.store_id)
+
+
+def test_revision_writes_stage_crash_debris_outside_the_declared_revision_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = LocalDocumentStoreRepository(tmp_path / "jobs")
+    staging_directories: list[Path] = []
+    real_mkstemp = __import__("tempfile").mkstemp
+
+    def recording_mkstemp(*args: object, **kwargs: object) -> tuple[int, str]:
+        staging_directories.append(Path(str(kwargs["dir"])))
+        return real_mkstemp(*args, **kwargs)
+
+    monkeypatch.setattr("docspec.adapters.storage.tempfile.mkstemp", recording_mkstemp)
+    planned = _planned_store()
+    planned_ref = repository.save(planned)
+    running_ref = repository.save(planned.start("attempt-1"))
+
+    expected_staging = repository.root / ".staging/writes"
+    assert staging_directories == [expected_staging, expected_staging]
+    (expected_staging / ".interrupted-write.tmp").write_bytes(b"partial")
+    revision_directory = (repository.root / planned_ref.locator).parent
+    assert {path.name for path in revision_directory.iterdir()} == {
+        Path(planned_ref.locator).name,
+        Path(running_ref.locator).name,
+    }
+    assert repository.latest(planned.store_id) == running_ref
+
+    (revision_directory / ".unexpected-member").write_bytes(b"not declared")
+    with pytest.raises(IntegrityError, match="undeclared member"):
+        repository.latest(planned.store_id)
+
+
 def test_document_store_repository_seals_exact_ordered_planned_population(tmp_path: Path) -> None:
     repository = LocalDocumentStoreRepository(tmp_path / "jobs")
     first = repository.save(_planned_store("source-1", logical_partition="000"))
@@ -152,6 +199,20 @@ def test_document_store_repository_seals_exact_ordered_planned_population(tmp_pa
     member.write_bytes(member.read_bytes().replace(b'"ordinal":0', b'"ordinal":9', 1))
     with pytest.raises(IntegrityError, match="member bytes"):
         repository.verify_planned_store_ledger(ledger)
+
+
+def test_planned_store_ledger_presence_distinguishes_absence_from_invalid_state(tmp_path: Path) -> None:
+    repository = LocalDocumentStoreRepository(tmp_path / "jobs")
+    assert not repository.has_planned_store_ledger("plan-1")
+
+    planned = repository.save(_planned_store())
+    ledger = repository.seal_planned_stores("plan-1", (planned,))
+    assert repository.has_planned_store_ledger("plan-1")
+
+    (repository.root / ledger.state_ref).write_bytes(b"tampered ledger\n")
+    assert repository.has_planned_store_ledger("plan-1")
+    with pytest.raises(IntegrityError):
+        repository.planned_store_ledger("plan-1")
 
 
 def test_planned_store_ledger_enforces_declared_count_and_byte_bounds(tmp_path: Path) -> None:

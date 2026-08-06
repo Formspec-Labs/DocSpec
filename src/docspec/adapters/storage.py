@@ -85,12 +85,23 @@ def _read_exact(root: Path, locator: str) -> bytes:
     return path.read_bytes()
 
 
-def _write_once(root: Path, locator: str, payload: bytes) -> Path:
+def _write_once(
+    root: Path,
+    locator: str,
+    payload: bytes,
+    *,
+    staging_locator: str | None = None,
+) -> Path:
     path = _contained(root, locator, create_parents=True)
+    staging = (
+        path.parent
+        if staging_locator is None
+        else _contained(root, f"{staging_locator}/placeholder", create_parents=True).parent
+    )
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
         suffix=".tmp",
-        dir=path.parent,
+        dir=staging,
     )
     temporary = Path(temporary_name)
     try:
@@ -621,7 +632,7 @@ class LocalDocumentStoreRepository:
         digest = sha256_digest(payload)
         locator = f"document-stores/{self._store_key(store.store_id)}/revisions/{store.revision:020d}.json"
         try:
-            _write_once(self.root, locator, payload)
+            _write_once(self.root, locator, payload, staging_locator=".staging/writes")
         except IntegrityError as error:
             raise StateTransitionError(
                 f"store {store.store_id} revision {store.revision} already has different immutable content"
@@ -729,8 +740,42 @@ class LocalDocumentStoreRepository:
         return tuple(references)
 
     def latest(self, store_id: str) -> StoreRef | None:
-        revisions = self.revisions(store_id)
-        return revisions[-1] if revisions else None
+        key = self._store_key(store_id)
+        directory = _contained(self.root, f"document-stores/{key}/revisions/placeholder").parent
+        if not directory.exists():
+            return None
+        if directory.is_symlink() or not directory.is_dir():
+            raise IntegrityError("document store revision path is not a regular directory")
+        latest_path: Path | None = None
+        for path in directory.iterdir():
+            if path.is_symlink() or not path.is_file() or not re.fullmatch(r"[0-9]{20}\.json", path.name):
+                raise IntegrityError("document store revision directory contains an undeclared member")
+            if latest_path is None or path.name > latest_path.name:
+                latest_path = path
+        if latest_path is None:
+            return None
+        payload = latest_path.read_bytes()
+        reference = StoreRef(
+            store_id,
+            int(latest_path.stem),
+            latest_path.relative_to(self.root).as_posix(),
+            sha256_digest(payload),
+        )
+        self.load(reference)
+        return reference
+
+    def has_planned_store_ledger(self, plan_id: str) -> bool:
+        """Detect durable planning state without treating corruption as absence."""
+
+        locator = self._planned_ledger_locator(plan_id)
+        path = _contained(self.root, locator)
+        if path.is_symlink():
+            raise IntegrityError("planned-store ledger root must not be a symlink")
+        if not path.exists():
+            return False
+        if not path.is_file():
+            raise IntegrityError("planned-store ledger root is not a regular file")
+        return True
 
     def _iter_planned_member(
         self,

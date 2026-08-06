@@ -250,6 +250,8 @@ class StoreExecutionService:
             raise IntegrityError("checkpoint repeats a representation identity")
         if tuple(item.file_id for item in entry.representations) != tuple(files)[: len(entry.representations)]:
             raise IntegrityError("checkpoint representations are not an ordered captured-file prefix")
+        if len(entry.captured_files) - len(entry.representations) not in {0, 1}:
+            raise IntegrityError("checkpoint must stop at a candidate capture or extraction frontier")
         for representation in entry.representations:
             captured = files.get(representation.file_id)
             extractor_registry_id = getattr(self._extractor, "extractor_id", None)
@@ -374,7 +376,6 @@ class StoreExecutionService:
                 elif entry.execution_mode is EntryExecutionMode.FULL:
                     break
 
-        has_extraction_progress = bool(entry.captured_files or entry.representations or extraction_receipts)
         has_segmentation_progress = bool(entry.segments or segmentation_receipts)
         has_processor_progress = any(
             raw["format"].startswith("docspec-processor-") for _, raw in loaded_receipts
@@ -382,8 +383,6 @@ class StoreExecutionService:
         if has_processor_progress and not segmentation_complete:
             raise IntegrityError("checkpoint has processor work before segmentation completes")
         if not entry.terminal:
-            if has_extraction_progress and not extraction_complete:
-                raise IntegrityError("nonterminal checkpoint stops inside acquisition or extraction")
             if has_segmentation_progress and not segmentation_complete:
                 raise IntegrityError("nonterminal checkpoint stops inside segmentation")
             if entry.execution_mode is EntryExecutionMode.FULL:
@@ -762,10 +761,20 @@ class StoreExecutionService:
         with budget.materialization_scope() as memory:
             if not checkpoint.extraction_complete:
                 try:
-                    if captured or representations or receipt_refs:
-                        raise IntegrityError("new extraction stage did not start from an empty checkpoint")
-                    for candidate in entry.source_item.candidates:
-                        budget.check_duration()
+                    if representations:
+                        representation_payloads = self._load_representation_payloads(
+                            entry,
+                            plan,
+                            memory,
+                        )
+                except Exception as error:
+                    return failed("processing", error)
+                for index in range(len(representations), len(entry.source_item.candidates)):
+                    candidate = entry.source_item.candidates[index]
+                    budget.check_duration()
+                    if index < len(captured):
+                        captured_file = captured[index]
+                    else:
                         captured_file, attempt_failures = self._capture_candidate(
                             entry,
                             store,
@@ -778,6 +787,8 @@ class StoreExecutionService:
                         if captured_file is None:
                             return self._failed_entry(current_entry(), failures)
                         captured.append(captured_file)
+                        checkpoint_entry(current_entry())
+                    try:
                         source_unit = budget.stage_unit_id(entry.entry_id, "source", captured_file.file_id)
                         source_memory = f"source:{source_unit}"
                         source_bytes = self._read_worker_bytes(
@@ -825,9 +836,9 @@ class StoreExecutionService:
                             )
                         )
                         del extraction, source_bytes
-                except Exception as error:
-                    return failed("processing", error)
-                checkpoint_entry(current_entry())
+                    except Exception as error:
+                        return failed("processing", error)
+                    checkpoint_entry(current_entry())
             elif not checkpoint.segmentation_complete:
                 representation_payloads = self._load_representation_payloads(
                     entry,
@@ -1663,33 +1674,33 @@ class StoreExecutionService:
                 remaining_source_bytes = budget.remaining_source_bytes
                 if remaining_source_bytes <= 0:
                     raise LimitExceededError("document store source-byte budget is exhausted")
-                fetched = self._fetcher.fetch(
+                with self._fetcher.fetch(
                     candidate,
                     max_bytes=remaining_source_bytes,
                     task_id=task_id,
                     attempt_id=attempt_id,
-                )
-                blob = self._blobs.put_if_absent(
-                    fetched.chunks,
-                    media_type=candidate.media_type,
-                    expected_digest=candidate.expected_digest,
-                    expected_size=candidate.expected_size,
-                    max_bytes=remaining_source_bytes,
-                )
-                captured = CapturedFile.create(
-                    source_item_id=entry.source_item.item_id,
-                    source_version=entry.source_item.version,
-                    candidate_id=candidate.candidate_id,
-                    blob=blob,
-                    media_type=candidate.media_type,
-                    acquisition_started_at=fetched.metadata.acquisition_started_at,
-                    acquired_at=self._clock(),
-                    downloader_id=fetched.metadata.downloader_id,
-                    downloader_configuration_digest=fetched.metadata.downloader_configuration_digest,
-                    transport_version=fetched.metadata.transport_version,
-                    task_id=fetched.metadata.task_id,
-                    attempt_id=fetched.metadata.attempt_id,
-                )
+                ) as fetched:
+                    blob = self._blobs.put_if_absent(
+                        fetched.chunks,
+                        media_type=candidate.media_type,
+                        expected_digest=candidate.expected_digest,
+                        expected_size=candidate.expected_size,
+                        max_bytes=remaining_source_bytes,
+                    )
+                    captured = CapturedFile.create(
+                        source_item_id=entry.source_item.item_id,
+                        source_version=entry.source_item.version,
+                        candidate_id=candidate.candidate_id,
+                        blob=blob,
+                        media_type=candidate.media_type,
+                        acquisition_started_at=fetched.metadata.acquisition_started_at,
+                        acquired_at=self._clock(),
+                        downloader_id=fetched.metadata.downloader_id,
+                        downloader_configuration_digest=fetched.metadata.downloader_configuration_digest,
+                        transport_version=fetched.metadata.transport_version,
+                        task_id=fetched.metadata.task_id,
+                        attempt_id=fetched.metadata.attempt_id,
+                    )
                 budget.charge_source_bytes(
                     budget.stage_unit_id(entry.entry_id, "source", captured.file_id),
                     captured.blob.byte_size,

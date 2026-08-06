@@ -4,6 +4,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -21,7 +22,7 @@ from docspec.adapters.storage import (
 from docspec.application.maintenance import BlobRetentionSetService
 from docspec.cli import main
 from docspec.domain.content import CandidateFile, SourceItem
-from docspec.domain.execution import ExecutionHandoff, iter_store_tasks
+from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
@@ -29,7 +30,8 @@ from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, Retent
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
-from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
+from docspec.domain.jobs import StoreState
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
@@ -237,9 +239,71 @@ def _portable_local_profiles() -> ProfileSet:
     )
 
 
+@pytest.mark.parametrize("state", (StoreState.RUNNING, StoreState.SEALED))
+def test_local_task_recovery_executes_only_an_unfinished_store(state: StoreState) -> None:
+    plan_ref = ArtifactRef("plan-1", "plan.json", ZERO_DIGEST, "application/json", 1)
+    sink_ref = ArtifactRef("sink-1", "sink.json", ZERO_DIGEST, "application/json", 1)
+    planned_ref = StoreRef("store-1", 0, "planned.json", ZERO_DIGEST)
+    current_ref = StoreRef("store-1", 2, "current.json", ZERO_DIGEST)
+    processed_ref = StoreRef("store-1", 3, "processed.json", ZERO_DIGEST)
+    sealed_ref = StoreRef("store-1", 4, "sealed.json", ZERO_DIGEST)
+    task = StoreTask("plan-1", "execute-and-deliver", planned_ref)
+    current_store = SimpleNamespace(plan_id="plan-1", state=state)
+    executor_calls: list[StoreRef] = []
+    delivery_calls: list[StoreRef] = []
+
+    class _Stores:
+        def load(self, reference: StoreRef) -> object:
+            assert reference in (planned_ref, current_ref)
+            return current_store
+
+        def latest(self, store_id: str) -> StoreRef:
+            assert store_id == "store-1"
+            return current_ref
+
+    class _Executor:
+        def execute_store(self, reference: StoreRef) -> StoreRef:
+            executor_calls.append(reference)
+            return processed_ref
+
+    class _Delivery:
+        def deliver_store(self, reference: StoreRef, requested_sink: ArtifactRef) -> StoreRef:
+            assert requested_sink == sink_ref
+            delivery_calls.append(reference)
+            return current_ref if state is StoreState.SEALED else sealed_ref
+
+    composition = SimpleNamespace(
+        plan=SimpleNamespace(plan_id="plan-1"),
+        plan_ref=plan_ref,
+        stores=_Stores(),
+        executor=_Executor(),
+        delivery=_Delivery(),
+    )
+    prepared = SimpleNamespace(
+        handoff=SimpleNamespace(
+            operation_id="execute-and-deliver",
+            processing_plan=plan_ref,
+            result_sink=sink_ref,
+            handoff_id="handoff-1",
+        )
+    )
+
+    result = cli_module._execute_local_task(composition, prepared, task)
+
+    if state is StoreState.SEALED:
+        assert executor_calls == []
+        assert delivery_calls == [current_ref]
+        assert result.output_store == current_ref
+    else:
+        assert executor_calls == [current_ref]
+        assert delivery_calls == [processed_ref]
+        assert result.output_store == sealed_ref
+
+
 def test_local_run_start_resume_and_release_commit_use_real_application_services(
     tmp_path: Path,
     capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source_content = tmp_path / "source-content"
     source_content.mkdir()
@@ -361,6 +425,21 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     assert run_status["failureCount"] == 0
     assert run_status["verificationScope"] == "run-receipt-structure"
     assert run_status["verdict"] == "structurally-valid"
+
+    def unexpected_replanning(*_args: object, **_kwargs: object) -> object:
+        pytest.fail("automatic recovery must not rerun planning when a durable planned-store ledger exists")
+
+    def unexpected_execution(*_args: object, **_kwargs: object) -> object:
+        pytest.fail("automatic recovery must not deeply re-execute an already sealed store")
+
+    with monkeypatch.context() as recovery_patch:
+        recovery_patch.setattr(cli_module.RunPlanner, "plan_run", unexpected_replanning)
+        recovery_patch.setattr(cli_module.StoreExecutionService, "execute_store", unexpected_execution)
+        automatic_resume = cli_module._execute_local_run(
+            cli_module._local_run_request(run_request),
+            resume=None,
+        )
+    assert automatic_resume == run_reference
 
     resume_reference_path = tmp_path / "resume-reference.json"
     resume_operation_path = tmp_path / "resume-operation.json"

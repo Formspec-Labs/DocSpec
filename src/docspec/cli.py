@@ -32,6 +32,7 @@ from docspec.application.execution import StoreExecutionService
 from docspec.application.maintenance import ReleaseCompactionService
 from docspec.application.planner import RunPlanner
 from docspec.application.reconcile import RunReconciler
+from docspec.application.store_state import load_latest_store
 from docspec.conformance import run_conformance, summarize_report
 from docspec.domain.identity import (
     canonical_json_file_bytes,
@@ -53,7 +54,7 @@ from docspec.domain.execution import (
     iter_store_tasks,
     summarize_store_tasks,
 )
-from docspec.domain.jobs import DocumentEntry, DocumentStore, FailureClass
+from docspec.domain.jobs import DocumentEntry, DocumentStore, FailureClass, StoreState
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
@@ -69,6 +70,7 @@ from docspec.errors import DocSpecError
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
+from docspec.ports.content_fetcher import ContentFetcher
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
@@ -861,6 +863,7 @@ class _LocalRunComposition:
     executor: StoreExecutionService
     delivery: StoreDeliveryService
     clock: Any
+    content_fetcher_composition: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -875,13 +878,31 @@ def _local_processor_cache_path(roots: dict[str, Path]) -> Path:
     return roots["reconciliation"] / "processor-results.sqlite3"
 
 
-def _compose_local_run(request: dict[str, Any]) -> _LocalRunComposition:
+def _compose_local_run(
+    request: dict[str, Any],
+    *,
+    content_fetcher: ContentFetcher | None = None,
+    content_fetcher_composition: dict[str, Any] | None = None,
+) -> _LocalRunComposition:
     plan, processors, profiles = _verified_local_plan(request)
     roots = request["roots"]
     controls, stores, records, blobs, catalog = _local_storage(roots, profiles)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     source_catalog = LocalJsonlSourceCatalog(roots["sourceCatalog"])
-    fetcher = LocalFileContentFetcher(roots["sourceContent"])
+    fetcher = content_fetcher or LocalFileContentFetcher(roots["sourceContent"])
+    actual_fetcher_composition = {
+        "implementationId": getattr(fetcher, "downloader_id", None),
+        "configurationDigest": getattr(fetcher, "configuration_digest", None),
+    }
+    if content_fetcher_composition is None:
+        content_fetcher_composition = actual_fetcher_composition
+    elif (
+        not isinstance(content_fetcher_composition, dict)
+        or content_fetcher_composition.get("implementationId") != actual_fetcher_composition["implementationId"]
+        or content_fetcher_composition.get("configurationDigest")
+        != actual_fetcher_composition["configurationDigest"]
+    ):
+        raise CliError("content fetcher differs from its sealed worker composition")
     partition_policy = PartitionPolicy(request["partitionPolicyId"], plan.partition_count)
     completed_at = request["completedAt"]
 
@@ -943,6 +964,7 @@ def _compose_local_run(request: dict[str, Any]) -> _LocalRunComposition:
         executor,
         delivery,
         clock,
+        content_fetcher_composition,
     )
 
 
@@ -960,13 +982,15 @@ def _prepared_tasks(
 def _prepare_local_run(
     composition: _LocalRunComposition,
     *,
-    resume: bool,
+    resume: bool | None,
 ) -> _PreparedLocalRun:
     request = composition.request
     plan = composition.plan
     roots = request["roots"]
     controls = composition.controls
     stores = composition.stores
+    if resume is None:
+        resume = stores.has_planned_store_ledger(plan.plan_id)
     if not resume:
         planned = RunPlanner(
             source_catalog=composition.source_catalog,
@@ -992,13 +1016,14 @@ def _prepare_local_run(
     task_count, task_set_digest = summarize_store_tasks(tasks())
     worker_composition_value = {
         "format": "docspec-local-worker-composition",
-        "formatVersion": "1.0",
-        "implementationId": "docspec.cli.local-worker/v1",
+        "formatVersion": "1.1",
+        "implementationId": "docspec.cli.local-worker/v2",
         "processingPlan": composition.plan_ref.to_dict(),
         "profileSet": plan.profiles.to_dict(),
         "roots": {name: path.as_posix() for name, path in sorted(roots.items())},
         "retryPolicy": request["retryPolicy"].to_dict(),
         "acceptedFailurePolicy": request["acceptedFailurePolicy"].to_dict(),
+        "contentFetcher": composition.content_fetcher_composition,
     }
     worker_composition = controls.put(
         kind="worker-compositions",
@@ -1130,8 +1155,14 @@ def _execute_local_task(
         or handoff.processing_plan != composition.plan_ref
     ):
         raise CliError("local worker received a task outside its sealed execution handoff")
-    processed = composition.executor.execute_store(task.input_store)
-    sealed = composition.delivery.deliver_store(processed, handoff.result_sink)
+    current_ref, current_store = load_latest_store(composition.stores, task.input_store)
+    if current_store.plan_id != composition.plan.plan_id:
+        raise CliError("local worker recovered a document store from another processing plan")
+    if current_store.state is StoreState.SEALED:
+        sealed = composition.delivery.deliver_store(current_ref, handoff.result_sink)
+    else:
+        processed = composition.executor.execute_store(current_ref)
+        sealed = composition.delivery.deliver_store(processed, handoff.result_sink)
     return StoreTaskResult.succeeded(
         handoff_id=handoff.handoff_id,
         task=task,
@@ -1163,8 +1194,18 @@ def _reconcile_local_run(
     ).reconcile_run(results)
 
 
-def _execute_local_run(request: dict[str, Any], *, resume: bool) -> ArtifactRef:
-    composition = _compose_local_run(request)
+def _execute_local_run(
+    request: dict[str, Any],
+    *,
+    resume: bool | None,
+    content_fetcher: ContentFetcher | None = None,
+    content_fetcher_composition: dict[str, Any] | None = None,
+) -> ArtifactRef:
+    composition = _compose_local_run(
+        request,
+        content_fetcher=content_fetcher,
+        content_fetcher_composition=content_fetcher_composition,
+    )
     prepared = _prepare_local_run(composition, resume=resume)
 
     def execute_and_deliver(_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:

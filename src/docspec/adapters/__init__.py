@@ -1,6 +1,12 @@
 """Concrete adapters selected only by an application composition root."""
 
 from docspec.adapters.dagster import DagsterAdapterProfile, DagsterDeploymentConfig, build_dagster_definitions
+from docspec.adapters.content_fetchers import (
+    AnonymousS3ContentFetcher,
+    AnonymousS3ContentFetcherConfig,
+    RoutingContentFetcher,
+    S3ContentFetcherError,
+)
 from docspec.adapters.execution import ExternalExecutionBackend, LocalExecutionBackend
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache, NullProcessorResultCache
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
@@ -16,6 +22,8 @@ from docspec.adapters.storage import (
 
 __all__ = [
     "ExternalExecutionBackend",
+    "AnonymousS3ContentFetcher",
+    "AnonymousS3ContentFetcherConfig",
     "DagsterAdapterProfile",
     "DagsterDeploymentConfig",
     "LocalContentAddressedBlobStore",
@@ -30,5 +38,7 @@ __all__ = [
     "LocalSqliteReconciliationWorkspaceFactory",
     "NullProcessorResultCache",
     "RootOnlyBlobProfileStateReachability",
+    "RoutingContentFetcher",
+    "S3ContentFetcherError",
     "build_dagster_definitions",
 ]
