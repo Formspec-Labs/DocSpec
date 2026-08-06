@@ -1,0 +1,46 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:document-store-persistence:local-json:1",
+  "role": "DocumentStorePersistenceProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.document-store-persistence.local-json.v1",
+  "implementationModule": "docspec.adapters.storage:LocalDocumentStoreRepository",
+  "configuration": {},
+  "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "logicalSchemas": [
+    "docspec-document-store/1.0",
+    "docspec-document-store-entry/1.0",
+    "docspec-document-store-receipt/1.0",
+    "docspec-planned-store-ledger/1.0",
+    "docspec-planned-store-reference/1.0"
+  ],
+  "physicalMediaTypes": ["application/json", "application/x-ndjson"],
+  "capabilities": {
+    "boundedLedgers": true,
+    "checkpoints": true,
+    "exactPlannedStorePopulation": true,
+    "immutableRevisions": true,
+    "independentVerification": true,
+    "sealedReceipts": true
+  },
+  "limits": {
+    "maxInlineBytes": 1048576,
+    "maxLedgerMemberBytes": 67108864,
+    "maxPlannedStoreCount": 10000000,
+    "maxPlannedStoreLedgerBytes": 4294967296,
+    "maxPlannedStoreRecordBytes": 65536
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:portable-local:1",
+    "requires": [
+      "urn:docspec:profile:blob-storage:local-content-addressed:1",
+      "urn:docspec:profile:record-storage:local-jsonl:1"
+    ]
+  },
+  "verifier": {
+    "status": "partial",
+    "testId": "DOCUMENT-STORE"
+  }
+}

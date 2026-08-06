@@ -1,0 +1,31 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:release-manifest:canonical-json:1",
+  "role": "ReleaseManifestProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.release-manifest.canonical-json.v1",
+  "implementationModule": "docspec.domain.release:DocumentRelease",
+  "configuration": {},
+  "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "logicalSchemas": ["docspec-document-release/1.0"],
+  "physicalMediaTypes": ["application/json"],
+  "capabilities": {
+    "canonicalUtf8Json": true,
+    "completeCurrentState": true,
+    "conditionalCreate": true,
+    "independentVerification": true
+  },
+  "limits": {
+    "maxRootBytes": 1048576
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:portable-local:1",
+    "requires": []
+  },
+  "verifier": {
+    "status": "partial",
+    "testId": "RELEASE-MANIFEST"
+  }
+}

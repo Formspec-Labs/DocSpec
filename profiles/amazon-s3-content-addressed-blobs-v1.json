@@ -1,0 +1,44 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:blob-storage:amazon-s3-content-addressed:1",
+  "role": "BlobStorageProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.blob-storage.amazon-s3-content-addressed.v1",
+  "implementationModule": "docspec.adapters.s3_blob:S3ContentAddressedBlobStore",
+  "configuration": {
+    "backend": "amazon-s3",
+    "conditionalCreate": "If-None-Match:*",
+    "digestMetadataKey": "docspec-sha256",
+    "keyLayout": "objects/sha256/{first-two-hex}/{sha256-hex}",
+    "sizeMetadataKey": "docspec-byte-size"
+  },
+  "configurationDigest": "sha256:83ed20663e5e59d477c66b5e8fc16c5e942e62f0ce5e26713f60c2830692f2fb",
+  "logicalSchemas": ["docspec-blob-reference/1.0"],
+  "physicalMediaTypes": ["application/octet-stream"],
+  "capabilities": {
+    "amazonS3": true,
+    "conditionalCreate": true,
+    "contentAddressedKeys": true,
+    "digestMetadata": true,
+    "exactStreamingReads": true,
+    "lazyClientImport": true,
+    "providerErrorsContained": true,
+    "rangeReads": true,
+    "sha256Verification": true
+  },
+  "limits": {
+    "maxBlobBytes": 5368709120,
+    "transferChunkBytes": 1048576,
+    "uploadMode": "single-conditional-put"
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:amazon-s3:1",
+    "requires": []
+  },
+  "verifier": {
+    "status": "implemented",
+    "testId": "AMAZON-S3-BLOB-STORE"
+  }
+}

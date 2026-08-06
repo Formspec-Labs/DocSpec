@@ -1,0 +1,45 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:result-delivery:hybrid:1",
+  "role": "ResultDeliveryProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.result-delivery.hybrid.v1",
+  "implementationModule": "docspec.adapters.sinks:HybridResultSink",
+  "configuration": {},
+  "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "logicalSchemas": [
+    "docspec-delivery-receipt/1.1",
+    "docspec-delivery-record/1.0"
+  ],
+  "physicalMediaTypes": [
+    "application/vnd.docspec.layer-reference+json",
+    "application/x-ndjson"
+  ],
+  "capabilities": {
+    "acknowledgements": true,
+    "backpressure": true,
+    "boundedMemory": true,
+    "durableLayers": true,
+    "idempotencyKeys": true,
+    "replaySafe": true,
+    "returnedResults": true
+  },
+  "limits": {
+    "deliveryUnit": "one-bounded-document-store",
+    "maxInFlightReturnedRecords": 1,
+    "recordLimitsSource": "active-document-store-work-limits"
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:portable-local:1",
+    "requires": [
+      "urn:docspec:profile:document-store-persistence:local-json:1",
+      "urn:docspec:profile:record-storage:local-jsonl:1"
+    ]
+  },
+  "verifier": {
+    "status": "partial",
+    "testId": "RESULT-SINK"
+  }
+}

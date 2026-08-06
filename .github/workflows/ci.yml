@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Core package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          version: "0.11.x"
+
+      - name: Install Python
+        run: uv python install 3.12
+
+      - name: Verify dependency lock
+        run: uv lock --check
+
+      - name: Install core and development dependencies
+        run: uv sync --frozen
+
+      - name: Check source and machine files
+        run: uv run ruff check .
+
+      - name: Run the default suite
+        run: uv run pytest
+
+      - name: Build distributions
+        run: uv build --out-dir dist
+
+      - name: Verify the wheel in an empty environment
+        shell: bash
+        run: |
+          uv venv --python 3.12 "$RUNNER_TEMP/docspec-wheel"
+          uv pip install --python "$RUNNER_TEMP/docspec-wheel/bin/python" dist/docspec-*.whl
+          "$RUNNER_TEMP/docspec-wheel/bin/python" -c "import docspec"
+          "$RUNNER_TEMP/docspec-wheel/bin/docspec" --help

@@ -1,0 +1,49 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:record-storage:local-jsonl:1",
+  "role": "RecordStorageProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.record-storage.local-jsonl.v1",
+  "implementationModule": "docspec.adapters.storage:LocalJsonlRecordStorage",
+  "configuration": {},
+  "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "logicalSchemas": [
+    "docspec-file-record/1.0",
+    "docspec-representation-record/1.0",
+    "docspec-segment-record/1.0",
+    "docspec-derived-record/1.0",
+    "docspec-disposition-record/1.0",
+    "docspec-receipt-record/1.0"
+  ],
+  "physicalMediaTypes": ["application/x-ndjson"],
+  "capabilities": {
+    "boundedExternalMerge": true,
+    "boundedReadFanIn": true,
+    "boundedStreaming": true,
+    "closedSchemas": true,
+    "incrementalPartitionReuse": true,
+    "independentVerification": true,
+    "orderedPartitionSharding": true,
+    "partitionDirectedLookup": true,
+    "partitionPruning": true,
+    "stableLogicalPartitioning": true
+  },
+  "limits": {
+    "maxOpenMembers": 64,
+    "maxMemberBytes": 268435456,
+    "maxRecordBytes": 8388608,
+    "maxRootBytes": 33554432,
+    "maxMergeScratchBytes": 137438953472,
+    "recommendedMemberBytes": 67108864
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:portable-local:1",
+    "requires": ["urn:docspec:profile:document-catalog:local-manifest:1"]
+  },
+  "verifier": {
+    "status": "partial",
+    "testId": "RECORD-STORAGE-CONTRACT"
+  }
+}

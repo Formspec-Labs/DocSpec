@@ -1,0 +1,475 @@
+from __future__ import annotations
+
+import tempfile
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import pytest
+
+from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
+from docspec.application.planner import RunPlanner
+from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
+from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
+from docspec.domain.jobs import ChangeKind, DocumentStore
+from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.processors import ProcessorSet
+from docspec.domain.release import DocumentRelease
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
+from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
+from tests.helpers import EMPTY_DIGEST, artifact, profile_set
+
+
+@dataclass
+class MemoryControls:
+    values: dict[str, dict] = field(default_factory=dict)
+
+    def put(self, *, kind: str, artifact_id: str, value: dict) -> ArtifactRef:
+        payload = canonical_json_file_bytes(value)
+        reference = ArtifactRef(
+            artifact_id, f"memory://{kind}/{artifact_id}", sha256_digest(payload), "application/json", len(payload)
+        )
+        self.values[reference.locator] = value
+        return reference
+
+    def load(self, reference: ArtifactRef) -> dict:
+        return self.values[reference.locator]
+
+    def verify(self, reference: ArtifactRef) -> None:
+        assert sha256_digest(canonical_json_file_bytes(self.load(reference))) == reference.digest
+
+
+@dataclass
+class MemorySourceCatalog:
+    reference: SourceCatalogRef
+    items: tuple[SourceItem, ...]
+    kind: str = "snapshot"
+    base_catalog: SourceCatalogRef | None = None
+    open_calls: int = 0
+    verify_calls: int = 0
+    stream_calls: int = 0
+
+    def verify(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
+        self.verify_calls += 1
+        assert reference == self.reference
+        return self.describe(reference)
+
+    def describe(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
+        assert reference == self.reference
+        state_counts = {state.value: sum(item.state == state for item in self.items) for state in SourceItemState}
+        return SourceCatalogSummary(
+            reference.catalog_id,
+            self.kind,
+            len(self.items),
+            (),
+            state_counts,
+            {},
+            self.base_catalog,
+        )
+
+    def open(self, reference: SourceCatalogRef) -> SourceCatalogRead:
+        self.open_calls += 1
+        assert reference == self.reference
+        return SourceCatalogRead(self.describe(reference), iter(self.items))
+
+    def stream(self, reference: SourceCatalogRef) -> Iterator[SourceItem]:
+        self.stream_calls += 1
+        assert reference == self.reference
+        yield from self.items
+
+
+@dataclass
+class MemoryStores:
+    values: dict[tuple[str, int], DocumentStore] = field(default_factory=dict)
+    ledgers: dict[str, tuple[LayerRef, tuple[StoreRef, ...]]] = field(default_factory=dict)
+
+    def save(self, store: DocumentStore) -> StoreRef:
+        payload = canonical_json_file_bytes(store.to_dict())
+        reference = StoreRef(
+            store.store_id, store.revision, f"memory://stores/{store.store_id}/{store.revision}", sha256_digest(payload)
+        )
+        self.values[(store.store_id, store.revision)] = store
+        return reference
+
+    def load(self, reference: StoreRef) -> DocumentStore:
+        return self.values[(reference.store_id, reference.revision)]
+
+    def latest(self, store_id: str) -> StoreRef | None:
+        matches = [store for (identifier, _), store in self.values.items() if identifier == store_id]
+        return None if not matches else self.save(max(matches, key=lambda item: item.revision))
+
+    def revisions(self, store_id: str) -> tuple[StoreRef, ...]:
+        return tuple(self.save(store) for (identifier, _), store in self.values.items() if identifier == store_id)
+
+    def seal_planned_stores(self, plan_id: str, references: Iterable[StoreRef]) -> LayerRef:
+        planned = tuple(references)
+        payload = canonical_json_file_bytes([reference.to_dict() for reference in planned])
+        ledger = LayerRef(
+            f"memory-planned:{plan_id}",
+            "planned-document-stores",
+            "docspec-planned-store-reference/1.0",
+            "memory-document-store",
+            f"memory://planned/{plan_id}",
+            sha256_digest(payload),
+            len(planned),
+        )
+        self.ledgers[plan_id] = (ledger, planned)
+        return ledger
+
+    def planned_store_ledger(self, plan_id: str) -> LayerRef:
+        return self.ledgers[plan_id][0]
+
+    def verify_planned_store_ledger(self, reference: LayerRef) -> None:
+        assert any(reference == ledger for ledger, _ in self.ledgers.values())
+
+    def stream_planned_stores(self, reference: LayerRef) -> Iterator[StoreRef]:
+        yield from next(planned for ledger, planned in self.ledgers.values() if ledger == reference)
+
+
+class EmptyDocumentCatalog:
+    def open_reader(self, reference: DocumentReleaseRef):
+        raise AssertionError("initial planning must not open a base release reader")
+
+
+@dataclass
+class MemoryCatalogReader:
+    owner: MemoryDocumentCatalog
+
+    @property
+    def release(self) -> DocumentRelease:
+        return self.owner.release
+
+    def lookup(self, *, layer_kind: str, record_id: str):
+        self.owner.lookup_calls += 1
+        self.owner.lookup_ids.append(record_id)
+        assert layer_kind == "source-items"
+        return next((row for row in self.owner.rows() if row["recordId"] == record_id), None)
+
+    def scan(self, *, layer_kind: str) -> Iterator[dict]:
+        self.owner.scan_calls += 1
+        if self.owner.fail_on_scan:
+            raise AssertionError("sparse change-set planning must not scan the base source-items layer")
+        assert layer_kind == "source-items"
+        yield from self.owner.rows()
+
+
+@dataclass
+class MemoryDocumentCatalog:
+    reference: DocumentReleaseRef
+    release: DocumentRelease
+    items: tuple[SourceItem, ...]
+    reader_calls: int = 0
+    scan_calls: int = 0
+    lookup_calls: int = 0
+    lookup_ids: list[str] = field(default_factory=list)
+    fail_on_scan: bool = False
+
+    def open_reader(self, reference: DocumentReleaseRef) -> MemoryCatalogReader:
+        assert reference == self.reference
+        self.reader_calls += 1
+        return MemoryCatalogReader(self)
+
+    def rows(self) -> Iterator[dict]:
+        for item in self.items:
+            yield {
+                "recordId": item.item_id,
+                "sourceItemId": item.item_id,
+                "idempotencyKey": f"memory:{item.item_id}",
+                "deleted": item.state == SourceItemState.DELETED,
+                "payload": item.to_dict(),
+            }
+
+
+def _source_reference(name: str) -> SourceCatalogRef:
+    return SourceCatalogRef(name, f"memory://catalogs/{name}", sha256_digest(name.encode()))
+
+
+def _candidate(
+    *,
+    candidate_id: str = "primary",
+    locator: str = "memory://source.txt",
+    digest: str = EMPTY_DIGEST,
+    size: int = 12,
+    transport: str = "fixture:v1",
+    metadata: dict | None = None,
+) -> CandidateFile:
+    return CandidateFile(
+        candidate_id,
+        locator,
+        "text/plain",
+        expected_digest=digest,
+        expected_size=size,
+        transport_version=transport,
+        metadata=metadata,
+    )
+
+
+def _source_item(
+    item_id: str,
+    *,
+    candidates: tuple[CandidateFile, ...] | None = None,
+    state: SourceItemState = SourceItemState.ACTIVE,
+    metadata: dict | None = None,
+) -> SourceItem:
+    return SourceItem(
+        item_id,
+        "v1",
+        (_candidate(),) if candidates is None else candidates,
+        state=state,
+        metadata={"expectedSegments": 1} if metadata is None else metadata,
+    )
+
+
+def _plan(
+    source: SourceCatalogRef,
+    base: DocumentReleaseRef | None,
+    *,
+    selection: dict | None = None,
+) -> ProcessingPlan:
+    return ProcessingPlan.create(
+        source_catalog=source,
+        base_release=base,
+        profiles=profile_set(),
+        limits=WorkLimits(10, 1000, 100, 100, 1000, 1000, 60),
+        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        processors=ProcessorSet(()),
+        partition_count=4,
+        selection={} if selection is None else selection,
+        retention_policy={"sourceBytes": "retain"},
+        data_use_policy={"externalProcessing": False},
+        retry_policy_digest=EMPTY_DIGEST,
+        accepted_failure_policy_digest=EMPTY_DIGEST,
+    )
+
+
+def _planned_update(
+    previous_items: tuple[SourceItem, ...],
+    current_items: tuple[SourceItem, ...],
+    *,
+    selection: dict | None = None,
+    kind: str = "snapshot",
+    fail_on_scan: bool = False,
+) -> tuple[tuple, MemoryDocumentCatalog]:
+    controls = MemoryControls()
+    stores = MemoryStores()
+    previous_source = _source_reference("previous")
+    previous_plan = _plan(previous_source, None, selection=selection)
+    previous_plan_ref = controls.put(kind="plans", artifact_id=previous_plan.plan_id, value=previous_plan.to_dict())
+    release = DocumentRelease.create(
+        previous_release=None,
+        source_catalog=previous_source,
+        processing_plan=previous_plan_ref,
+        profiles=previous_plan.profiles,
+        active_layers=(),
+        blob_roots=(),
+        retention_dispositions={},
+        store_receipt_set_digest=EMPTY_DIGEST,
+        run_receipt=artifact("run"),
+        catalog_commit_receipt=artifact("commit"),
+        counts={"sourceItems": len(previous_items)},
+        failures={},
+        coverage={},
+        partition_policy={"policyId": "test", "bucketCount": 4},
+    )
+    release_ref = release.reference("memory://releases/base")
+    current_source = _source_reference("current")
+    plan = _plan(current_source, release_ref, selection=selection)
+    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
+    catalog = MemoryDocumentCatalog(
+        release_ref,
+        release,
+        previous_items,
+        fail_on_scan=fail_on_scan,
+    )
+    source_catalog = MemorySourceCatalog(
+        current_source,
+        current_items,
+        kind,
+        previous_source if kind == "change-set" else None,
+    )
+    with tempfile.TemporaryDirectory(prefix="docspec-planner-test-") as directory:
+        planner = RunPlanner(
+            source_catalog=source_catalog,
+            document_catalog=catalog,
+            stores=stores,
+            controls=controls,
+            workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+                Path(directory),
+                read_batch_size=1,
+            ),
+        )
+        references = tuple(planner.plan_run(current_source, release_ref, plan_ref))
+    entries = tuple(entry for reference in references for entry in stores.load(reference).entries)
+    return entries, catalog
+
+
+def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_path: Path) -> None:
+    source_ref = SourceCatalogRef("catalog", "memory://catalog", sha256_digest(b"catalog"))
+    items = tuple(
+        SourceItem(
+            f"item-{index}",
+            "v1",
+            (CandidateFile("primary", f"memory://item-{index}", "text/plain", expected_size=10),),
+            metadata={"expectedSegments": 2},
+        )
+        for index in range(5)
+    )
+    controls = MemoryControls()
+    stores = MemoryStores()
+    plan = ProcessingPlan.create(
+        source_catalog=source_ref,
+        base_release=None,
+        profiles=profile_set(),
+        limits=WorkLimits(2, 100, 10, 10, 20, 100, 20),
+        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        processors=ProcessorSet(()),
+        partition_count=1,
+        selection={"excludeItemIds": ["item-4"]},
+        retention_policy={"sourceBytes": "retain"},
+        data_use_policy={"externalProcessing": False},
+        retry_policy_digest=EMPTY_DIGEST,
+        accepted_failure_policy_digest=EMPTY_DIGEST,
+    )
+    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
+    source_catalog = MemorySourceCatalog(source_ref, items)
+    planner = RunPlanner(
+        source_catalog=source_catalog,
+        document_catalog=EmptyDocumentCatalog(),
+        stores=stores,
+        controls=controls,
+        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+            tmp_path / "planning",
+            read_batch_size=1,
+        ),
+    )
+
+    references = tuple(planner.plan_run(source_ref, None, plan_ref))
+    planned = tuple(stores.load(reference) for reference in references)
+    ledger = stores.planned_store_ledger(plan.plan_id)
+
+    assert [len(store.entries) for store in planned] == [2, 2]
+    assert ledger.record_count == len(planned)
+    assert tuple(stores.stream_planned_stores(ledger)) == references
+    assert all(store.limits.max_entries == 2 for store in planned)
+    assert {entry.change for store in planned for entry in store.entries} == {ChangeKind.ADDED}
+    assert {entry.source_item.item_id for store in planned for entry in store.entries} == {
+        "item-0",
+        "item-1",
+        "item-2",
+        "item-3",
+    }
+    assert source_catalog.open_calls == 1
+    assert source_catalog.verify_calls == 0
+    assert source_catalog.stream_calls == 0
+
+
+@pytest.mark.parametrize(
+    ("current", "expected_change"),
+    (
+        (
+            _source_item("item", candidates=(_candidate(), _candidate(candidate_id="alternate"))),
+            ChangeKind.CHANGED,
+        ),
+        (_source_item("item", candidates=(_candidate(locator="memory://moved.txt"),)), ChangeKind.CHANGED),
+        (
+            _source_item("item", candidates=(_candidate(digest=sha256_digest(b"changed")),)),
+            ChangeKind.CHANGED,
+        ),
+        (_source_item("item", candidates=(_candidate(size=13),)), ChangeKind.CHANGED),
+        (_source_item("item", candidates=(_candidate(transport="fixture:v2"),)), ChangeKind.CHANGED),
+        (_source_item("item", candidates=(_candidate(metadata={"rendition": "changed"}),)), ChangeKind.CHANGED),
+        (_source_item("item", metadata={"expectedSegments": 2}), ChangeKind.CHANGED),
+        (_source_item("item", state=SourceItemState.EXCLUDED), ChangeKind.EXCLUDED),
+        (_source_item("item", state=SourceItemState.DELETED), ChangeKind.DELETED),
+    ),
+    ids=(
+        "candidate-population",
+        "locator",
+        "digest",
+        "size",
+        "transport",
+        "candidate-metadata",
+        "source-metadata",
+        "excluded-state",
+        "deleted-state",
+    ),
+)
+def test_same_version_complete_source_item_changes_are_scheduled(
+    current: SourceItem,
+    expected_change: ChangeKind,
+) -> None:
+    entries, catalog = _planned_update((_source_item("item"),), (current,))
+
+    assert [(entry.source_item, entry.change) for entry in entries] == [(current, expected_change)]
+    assert catalog.reader_calls == 1
+    assert catalog.scan_calls == 1
+    assert catalog.lookup_calls == 0
+
+
+def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> None:
+    kept = _source_item("kept")
+    missing = _source_item("missing")
+    out_of_scope = _source_item("out-of-scope")
+    prior_tombstone = _source_item("prior-tombstone", state=SourceItemState.DELETED)
+
+    entries, catalog = _planned_update(
+        tuple(sorted((kept, missing, out_of_scope, prior_tombstone), key=lambda item: item.item_id)),
+        (kept,),
+        selection={"excludeItemIds": [out_of_scope.item_id]},
+    )
+
+    assert len(entries) == 1
+    deletion = entries[0]
+    assert deletion.source_item.item_id == missing.item_id
+    assert deletion.source_item.version == missing.version
+    assert deletion.source_item.candidates == missing.candidates
+    assert deletion.source_item.state == SourceItemState.DELETED
+    assert deletion.change == ChangeKind.DELETED
+    assert deletion.terminal
+    assert catalog.reader_calls == 1
+    assert catalog.scan_calls == 1
+
+
+def test_change_set_compares_declared_items_without_inferring_omissions() -> None:
+    unchanged = _source_item("unchanged")
+    omitted = _source_item("omitted")
+    changed = _source_item("unchanged", candidates=(_candidate(locator="memory://changed.txt"),))
+
+    entries, catalog = _planned_update(
+        (omitted, unchanged),
+        (changed,),
+        kind="change-set",
+    )
+
+    assert [(entry.source_item.item_id, entry.change) for entry in entries] == [(changed.item_id, ChangeKind.CHANGED)]
+    assert catalog.reader_calls == 1
+    assert catalog.scan_calls == 0
+    assert catalog.lookup_calls == 1
+    assert catalog.lookup_ids == [changed.item_id]
+
+
+def test_sparse_change_set_looks_up_and_schedules_only_declared_changes() -> None:
+    changed_before = _source_item("changed")
+    deleted_before = _source_item("deleted")
+    omitted = _source_item("omitted")
+    changed = _source_item("changed", candidates=(_candidate(locator="memory://changed.txt"),))
+    deleted = _source_item("deleted", state=SourceItemState.DELETED)
+    added = _source_item("new")
+
+    entries, catalog = _planned_update(
+        (changed_before, deleted_before, omitted),
+        (changed, deleted, added),
+        kind="change-set",
+        fail_on_scan=True,
+    )
+
+    entries_by_id = {entry.source_item.item_id: entry for entry in entries}
+    assert {item_id: entry.change for item_id, entry in entries_by_id.items()} == {
+        changed.item_id: ChangeKind.CHANGED,
+        deleted.item_id: ChangeKind.DELETED,
+        added.item_id: ChangeKind.ADDED,
+    }
+    assert entries_by_id[deleted.item_id].source_item == deleted
+    assert entries_by_id[deleted.item_id].terminal
+    assert catalog.scan_calls == 0
+    assert catalog.lookup_ids == [changed.item_id, deleted.item_id, added.item_id]

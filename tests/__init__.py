@@ -1,1 +1,1 @@
-"""DocSpec test support package."""
+"""DocSpec executable verification suite."""

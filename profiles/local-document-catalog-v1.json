@@ -1,0 +1,36 @@
+{
+  "format": "docspec-storage-profile",
+  "formatVersion": "1.0",
+  "profileId": "urn:docspec:profile:document-catalog:local-manifest:1",
+  "role": "DocumentCatalogProfile",
+  "version": "1.0.0",
+  "implementationStatus": "implemented",
+  "implementationId": "docspec.document-catalog.local-manifest.v1",
+  "implementationModule": "docspec.adapters.storage:LocalManifestDocumentCatalog",
+  "configuration": {},
+  "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+  "logicalSchemas": ["docspec-document-release/1.0"],
+  "physicalMediaTypes": ["application/json"],
+  "capabilities": {
+    "conditionalCommit": true,
+    "explicitReleaseOpen": true,
+    "immutableSnapshots": true,
+    "logicalComparison": true,
+    "partitionDirectedLookup": true,
+    "reusableVerifiedReader": true,
+    "stableStreamingScan": true,
+    "stagedWrites": true
+  },
+  "limits": {
+    "maxManifestBytes": 1048576,
+    "maxOpenStagingCommits": 1024
+  },
+  "compatibility": {
+    "profileSetId": "urn:docspec:profile-set:portable-local:1",
+    "requires": ["urn:docspec:profile:release-manifest:canonical-json:1"]
+  },
+  "verifier": {
+    "status": "partial",
+    "testId": "DOCUMENT-CATALOG-CONTRACT"
+  }
+}

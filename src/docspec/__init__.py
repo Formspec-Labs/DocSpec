@@ -1,3 +1,6 @@
-"""DocSpec document-processing and release toolkit."""
+"""DocSpec's format-neutral bulk document processing platform."""
 
-__version__ = "0.1.0"
+from docspec.errors import DocSpecError
+
+__all__ = ["DocSpecError", "__version__"]
+__version__ = "0.2.0"
