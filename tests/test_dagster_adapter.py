@@ -506,8 +506,6 @@ def test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_pro
     assert ledger_passes == 1
 
 
-@pytest.mark.profile
-@pytest.mark.integration
 def test_optional_dagster_package_executes_the_native_dynamic_job_locally(tmp_path: Path) -> None:
     dagster = pytest.importorskip("dagster", reason="install the 'dagster' extra to verify native Dagster composition")
     deployment, _handoff, tasks = _deployment(tmp_path, worker_command=_worker_command(tmp_path))

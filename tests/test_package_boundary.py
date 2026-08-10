@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import ast
 import configparser
-import hashlib
-import json
 import re
 import shutil
 import subprocess
@@ -13,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 from docspec import __version__
+from tools.generate_archive_manifest import manifest_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,48 +130,20 @@ def test_archived_product_areas_are_absent_from_production() -> None:
     assert violations == []
 
 
-def test_archive_manifest_matches_every_exact_legacy_file() -> None:
+def test_archive_manifest_is_generated_from_the_archive_and_up_to_date() -> None:
+    # archive.json used to enumerate all 587 archived files individually (byteSize,
+    # sha256, category, reason, originalPath -- ~268 KB) with no generator: touching
+    # anything under the frozen archive/ tree meant hand-editing 588 entries by hand,
+    # for content nothing outside this one test ever read.
+    #
+    # tools/generate_archive_manifest.py replaces the enumeration with a single
+    # content-addressed tree digest over every archived file's path and bytes, so
+    # this test only has to confirm the checked-in manifest is exactly what the
+    # generator currently produces from the files actually on disk -- any archived
+    # file added, removed, or changed fails here instead of the manifest quietly
+    # going stale.
     manifest_path = ARCHIVE_ROOT / "archive.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["format"] == "docspec-legacy-archive"
-    assert manifest["formatVersion"] == "1.0"
-    assert manifest["inventoryPolicy"] == {
-        "reason": "The inventory excludes itself because a file cannot contain its own stable SHA-256 digest.",
-        "selfIncluded": False,
-        "selfPath": "archive/legacy-2026-08-05/archive.json",
-    }
-
-    declared_paths: set[Path] = set()
-    declared_bytes = 0
-    for member in manifest["files"]:
-        assert set(member) == {
-            "archivedPath",
-            "byteSize",
-            "category",
-            "originalPath",
-            "reason",
-            "sha256",
-            "sourceCommit",
-        }
-        path = ROOT / member["archivedPath"]
-        assert path.resolve(strict=True).is_relative_to(ARCHIVE_ROOT.resolve(strict=True))
-        assert path.is_file() and not path.is_symlink()
-        payload = path.read_bytes()
-        assert len(payload) == member["byteSize"]
-        assert f"sha256:{hashlib.sha256(payload).hexdigest()}" == member["sha256"]
-        assert member["sourceCommit"] == manifest["sourceCommit"]
-        assert path not in declared_paths
-        declared_paths.add(path)
-        declared_bytes += len(payload)
-
-    actual_paths = {
-        path
-        for path in ARCHIVE_ROOT.rglob("*")
-        if path.is_file() and path != manifest_path
-    }
-    assert declared_paths == actual_paths
-    assert len(declared_paths) == manifest["fileCount"]
-    assert declared_bytes == manifest["totalByteSize"]
+    assert manifest_path.read_bytes() == manifest_bytes()
 
 
 def test_core_import_and_cli_help_need_no_optional_dependency() -> None:

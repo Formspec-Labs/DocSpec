@@ -234,23 +234,3 @@ class HybridResultSink:
             returned_result=returned,
             completed_at=self._clock(),
         )
-
-
-class CallbackReceiver:
-    """Adapt two callables to the returned-result acknowledgement boundary."""
-
-    def __init__(
-        self,
-        accept: Callable[[str, Mapping[str, Any]], None],
-        finish: Callable[[int, int, str], ArtifactRef | None] | None = None,
-    ) -> None:
-        self._accept = accept
-        self._finish = finish
-
-    def accept(self, idempotency_key: str, record: Mapping[str, Any]) -> None:
-        self._accept(idempotency_key, record)
-
-    def finish(self, *, record_count: int, byte_count: int, digest: str) -> ArtifactRef | None:
-        if self._finish is None:
-            return None
-        return self._finish(record_count, byte_count, digest)

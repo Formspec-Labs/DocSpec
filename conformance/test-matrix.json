@@ -19,17 +19,17 @@
       "selectors": [
         "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary"
       ],
-      "plannedTestModule": "tests/conformance/test_import_directions.py"
+      "plannedTestModule": null
     },
     {
       "testId": "BOUNDARY-CODE",
       "status": "implemented",
       "selectors": [
         "tests/test_boundary_code.py::test_predecessor_fingerprint_artifact_is_closed_complete_and_sealed",
-        "tests/test_boundary_code.py::test_active_production_contains_no_predecessor_blob_or_substantial_syntax_window",
+        "tests/test_boundary_code.py::test_active_production_contains_no_predecessor_blob_verbatim",
         "tests/test_boundary_code.py::test_normalization_detects_reformatted_and_renamed_implementation",
         "tests/test_boundary_code.py::test_short_boilerplate_does_not_create_a_syntax_fingerprint",
-        "tests/test_package_boundary.py::test_archive_manifest_matches_every_exact_legacy_file"
+        "tests/test_package_boundary.py::test_archive_manifest_is_generated_from_the_archive_and_up_to_date"
       ],
       "plannedTestModule": null
     },
@@ -58,7 +58,7 @@
         "tests/test_profile_registry.py::test_profile_governance_is_closed_declared_and_identity_bearing",
         "tests/test_cli.py::test_profile_verification_uses_the_machine_description"
       ],
-      "plannedTestModule": "tests/conformance/test_profile_descriptions.py"
+      "plannedTestModule": null
     },
     {
       "testId": "RELEASE-MANIFEST",
@@ -71,7 +71,7 @@
         "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_release_manifest.py"
+      "plannedTestModule": null
     },
     {
       "testId": "DOCUMENT-CATALOG-CONTRACT",
@@ -82,7 +82,7 @@
         "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_document_catalog_contract.py"
+      "plannedTestModule": null
     },
     {
       "testId": "RECORD-STORAGE-CONTRACT",
@@ -96,7 +96,7 @@
         "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_record_storage_contract.py"
+      "plannedTestModule": null
     },
     {
       "testId": "PROFILE-COMPATIBILITY",
@@ -106,7 +106,7 @@
         "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
         "tests/test_profile_registry.py::test_profile_selection_fails_before_work_when_a_requirement_is_missing"
       ],
-      "plannedTestModule": "tests/conformance/test_profile_compatibility.py"
+      "plannedTestModule": null
     },
     {
       "testId": "DOCUMENT-STORE",
@@ -121,7 +121,7 @@
         "tests/test_application_pipeline.py::test_reconciler_matches_the_exact_planned_terminal_store_set",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_document_store.py"
+      "plannedTestModule": null
     },
     {
       "testId": "BLOB-STORE-CONTRACT",
@@ -199,7 +199,7 @@
         "tests/test_work_budget.py::test_source_and_memory_limits_apply_to_aggregate_store_work",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_acquisition.py"
+      "plannedTestModule": null
     },
     {
       "testId": "REPRESENTATION",
@@ -210,7 +210,7 @@
         "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_representation.py"
+      "plannedTestModule": null
     },
     {
       "testId": "SEGMENTATION",
@@ -221,7 +221,7 @@
         "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_segmentation.py"
+      "plannedTestModule": null
     },
     {
       "testId": "EVIDENCE-ROUNDTRIP",
@@ -237,7 +237,7 @@
         "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_evidence_roundtrip.py"
+      "plannedTestModule": null
     },
     {
       "testId": "PROCESSOR-CONTRACT",
@@ -269,7 +269,7 @@
         "tests/test_policy_security.py::test_processor_receipts_reject_secrets_and_diagnostics_redact_them",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_processor_contract.py"
+      "plannedTestModule": null
     },
     {
       "testId": "RESULT-SINK",
@@ -281,7 +281,7 @@
         "tests/test_result_sinks_and_recovery.py::test_delivery_receipt_outcomes_are_complete_and_bounded",
         "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits"
       ],
-      "plannedTestModule": "tests/conformance/test_result_sink.py"
+      "plannedTestModule": null
     },
     {
       "testId": "SCHEDULER-PORTABILITY",
@@ -302,7 +302,7 @@
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_scheduler_portability.py"
+      "plannedTestModule": null
     },
     {
       "testId": "DOCUMENT-RELEASE-INTEGRITY",
@@ -318,7 +318,7 @@
         "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_document_release_integrity.py"
+      "plannedTestModule": null
     },
     {
       "testId": "INCREMENTAL-EQUIVALENCE",
@@ -336,7 +336,7 @@
         "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
-      "plannedTestModule": "tests/conformance/test_targeted_reprocessing.py"
+      "plannedTestModule": null
     },
     {
       "testId": "RECOVERY",
@@ -364,7 +364,7 @@
         "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
         "tests/test_work_budget.py::test_resume_accounting_includes_zero_output_processor_invocations"
       ],
-      "plannedTestModule": "tests/conformance/test_recovery.py"
+      "plannedTestModule": null
     },
     {
       "testId": "SCALE",
@@ -378,7 +378,7 @@
         "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
         "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof"
       ],
-      "plannedTestModule": "tests/conformance/test_scale.py"
+      "plannedTestModule": null
     },
     {
       "testId": "PACKAGE-RELEASE",
@@ -392,7 +392,7 @@
         "tests/conformance/test_shared_fixtures.py::test_shared_fixture_distribution_is_closed_complete_and_sealed",
         "tests/test_conformance.py::test_conformance_runner_executes_exact_selectors_and_seals_a_report"
       ],
-      "plannedTestModule": "tests/conformance/test_published_package.py"
+      "plannedTestModule": null
     }
   ]
 }

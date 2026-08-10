@@ -31,13 +31,33 @@ jobs:
         run: uv lock --check
 
       - name: Install core and development dependencies
-        run: uv sync --frozen
+        # --extra dagster is required so tests/test_dagster_adapter.py's one real
+        # native-execution test (gated only by `pytest.importorskip("dagster")`) runs
+        # here instead of silently skipping; core install itself stays
+        # dependency-free, as verified below in the empty-environment wheel check.
+        run: uv sync --frozen --extra dagster
 
       - name: Check source and machine files
         run: uv run ruff check .
 
       - name: Run the default suite
         run: uv run pytest
+
+      - name: Record required-selector conformance evidence
+        # conformance/specification.json honestly declares "not-yet-conformant": 6 of 25
+        # required tests are implemented today, 19 remain partial. `conformance run`
+        # exits non-zero on anything but a full "pass" verdict, so this step does not
+        # gate merges (continue-on-error) — its job is to make the verdict a fact that
+        # is recomputed and visible on every push, instead of a stale local claim
+        # nobody runs. Drop continue-on-error once the matrix reaches "pass".
+        run: >
+          uv run docspec conformance run
+          --root .
+          --specification conformance/specification.json
+          --matrix conformance/test-matrix.json
+          --output "$RUNNER_TEMP/conformance-report.json"
+          --class core
+        continue-on-error: true
 
       - name: Build distributions
         run: uv build --out-dir dist

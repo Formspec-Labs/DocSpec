@@ -35,7 +35,6 @@ addopts = "--strict-config --strict-markers -m 'not integration'"
 testpaths = ["tests"]
 markers = [
     "integration: live external-service verification",
-    "profile: optional storage, extraction, or scheduler profile verification",
 ]
 
 [tool.ruff]
