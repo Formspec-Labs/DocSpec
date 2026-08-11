@@ -4,9 +4,15 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.source_catalog import (
+    LocalFileContentFetcher,
+    LocalJsonlSourceCatalog,
+    LocalSourceReleaseReader,
+)
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
+from docspec.domain.identity import sha256_digest
 from docspec.errors import IntegrityError, LimitExceededError
+from docspec.ports.source_release import SourceReleasePin
 
 
 def _items() -> list[SourceItem]:
@@ -76,6 +82,63 @@ def test_source_catalog_change_set_pins_its_verified_base(tmp_path: Path) -> Non
 
     with pytest.raises(ValueError, match="identify its base"):
         catalogs.write((changed_item,), kind="change-set")
+
+
+def test_sealed_source_release_admits_by_digest_and_streams_its_items(tmp_path: Path) -> None:
+    catalogs = LocalJsonlSourceCatalog(tmp_path / "catalogs")
+    reference = catalogs.write(_items())
+    releases = LocalSourceReleaseReader(catalogs)
+    pin = SourceReleasePin(reference.locator, reference.digest)
+
+    admission = releases.admit(pin)
+    assert admission.pin == pin
+    assert admission.reference == reference
+    assert admission.summary == catalogs.describe(reference)
+    assert admission.summary.item_count == 2
+
+    read = releases.open(pin)
+    assert read.admission == admission
+    items = list(read.items)
+    assert items == _items()
+    assert list(releases.open(pin).items) == items
+    # The emitted stream is the stream the catalog writer already accepts, so the same
+    # items republish to the same content-derived identity.
+    assert catalogs.write(releases.open(pin).items) == reference
+
+
+def test_sealed_source_release_refuses_a_pin_whose_bytes_differ(tmp_path: Path) -> None:
+    catalogs = LocalJsonlSourceCatalog(tmp_path / "catalogs")
+    reference = catalogs.write(_items())
+    releases = LocalSourceReleaseReader(catalogs)
+
+    with pytest.raises(ValueError, match="contained relative path"):
+        SourceReleasePin("../outside/catalog.json", reference.digest)
+
+    wrong = SourceReleasePin(reference.locator, sha256_digest(b"another release"))
+    with pytest.raises(IntegrityError, match="pinned digest"):
+        releases.admit(wrong)
+    with pytest.raises(IntegrityError, match="pinned digest"):
+        releases.open(wrong)
+
+    root_path = catalogs.root / reference.locator
+    root_path.write_bytes(b'{"format":"docspec-source-catalog"}\n')
+    with pytest.raises(IntegrityError, match="pinned digest"):
+        releases.admit(SourceReleasePin(reference.locator, reference.digest))
+
+
+def test_sealed_source_release_refuses_a_tampered_member(tmp_path: Path) -> None:
+    catalogs = LocalJsonlSourceCatalog(tmp_path / "catalogs")
+    reference = catalogs.write(_items())
+    releases = LocalSourceReleaseReader(catalogs)
+    pin = SourceReleasePin(reference.locator, reference.digest)
+    assert releases.admit(pin).reference == reference
+
+    member = (catalogs.root / reference.locator).parent / "items.jsonl"
+    member.write_bytes(member.read_bytes().replace(b'"a.txt"', b'"z.txt"'))
+    with pytest.raises(IntegrityError, match="member bytes differ"):
+        releases.admit(pin)
+    with pytest.raises(IntegrityError, match="member bytes differ"):
+        releases.open(pin)
 
 
 def test_local_file_fetcher_is_contained_streamed_and_receipted(tmp_path: Path) -> None:
