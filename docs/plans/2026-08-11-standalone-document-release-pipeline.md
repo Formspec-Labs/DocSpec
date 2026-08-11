@@ -76,6 +76,33 @@ Add one Protocol to `src/docspec/ports/` and one adapter method. Nothing more.
 - Composition is explicit constructor injection, matching the existing ports. No registry, no plugin discovery, no service locator, no runtime lookup.
 - The port is an internal interface behind the `SourceCatalogRelease -> DocumentRelease` seam. Verification of the release itself stays where it is: one complete verification operation per boundary crossing, at admission and at open, covering the root digest, every declared member, closed membership, relative paths, containment, symlinks, schemas, and member digests.
 
+### What the port is, in code
+
+`src/docspec/ports/source_release.py` holds the Protocol and the three records it needs:
+
+| Name | Site | Shape |
+| --- | --- | --- |
+| `SourceReleasePin` | `:16` | `(root, digest)` — one release root locator, checked by `require_relative_path`, and the `sha256:` digest those bytes must have |
+| `SourceReleaseAdmission` | `:28` | `(pin, reference, summary)` — refuses construction unless `reference.locator` and `reference.digest` equal the pin's and `summary.catalog_id` equals `reference.catalog_id` |
+| `SourceReleaseRead` | `:43` | `(admission, items)` — one admission and one `Iterator[SourceItem]`, mirroring `SourceCatalogRead` at `ports/source_catalog.py:34` |
+| `SourceReleaseReader` | `:50` | `admit(pin) -> SourceReleaseAdmission` at `:53`, `open(pin) -> SourceReleaseRead` at `:55` |
+
+The pin carries no `catalog_id`. Identity is read back out of the digest-verified bytes and returned in `admission.reference` as a `SourceCatalogRef`, so a caller addresses the release by where it sits and which bytes it is, and learns what it is from the release itself. `SourceCatalogSummary` from `ports/source_catalog.py:15` is reused for counts, partitions, coverage, and the parent `base_catalog` pin; no second summary record exists.
+
+`LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268` implements it against the `docspec-source-catalog` 1.0 distribution the repository already reads. Its constructor takes one `LocalJsonlSourceCatalog` and nothing else — no default root, no discovery. `_reference` at `:274` bounds the read by that catalog's `max_root_bytes`, recomputes `sha256_digest` over the root bytes and refuses a mismatch before parsing, then builds `SourceCatalogRef(catalogId, pin.root, pin.digest)`. `admit` at `:290` returns `LocalJsonlSourceCatalog.verify`'s summary; `open` at `:294` returns `LocalJsonlSourceCatalog.open`'s stream. Every other check — closed root shape, identity-to-content binding, identity-to-locator binding, closed membership, symlinks, containment, member size and digest, item order, item validity, and counts — stays in `_open_root` at `:145` and `_validated_items` at `:183`, unduplicated.
+
+Exports: `ports/__init__.py:19-23,55-58` (33 names, from 29); `adapters/__init__.py:16,41`. `src/docspec/ports/` now holds 17 port modules. `ownership/modules.json` is regenerated from `tools/generate_ownership_manifest.py`, which names the new module under `SOURCE-CATALOG-CONTRACT` and `DOCUMENT-RELEASE-INTEGRITY`.
+
+Tests are in `tests/test_source_catalog.py`, over a fixture release written by `LocalJsonlSourceCatalog.write`:
+
+- `:87` admits a pin, matches the recovered reference and summary against the written ones, opens twice for the same items, and republishes the emitted stream through `LocalJsonlSourceCatalog.write` to the same content-derived reference.
+- `:109` refuses a root that is not a contained relative path, a pin whose digest is not the root's, and the original pin after the root bytes are rewritten.
+- `:129` refuses a tampered `items.jsonl` at both `admit` and `open`.
+
+`uv run pytest -q`: 268 passed, 1 deselected. Recorded in DocSpec `5cdcf35` (port and adapter) and `ff604e4` (tests) on 2026-08-11.
+
+The release this reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. No validation against the Rulespec Core schema bundle or its valid and invalid fixtures runs; that bundle does not exist at Rulespec `b64ca67`.
+
 ## Removing the four crossings
 
 The four faces are one boundary. Remove them in one change set.
@@ -96,11 +123,11 @@ This deletes repeated hashing, not the verification. The boundary check itself s
 
 ### Phase 1: Consume the sealed input release
 
-- Add the source-access Protocol to `src/docspec/ports/` under a name not already bound.
-- Add the adapter method translating verified release records into `SourceItem` values for `LocalJsonlSourceCatalog.write`.
-- Verify the release at admission and at open: root digest, every declared member, closed membership, relative paths, containment, symlinks, schemas, and member digests.
-- Reject a reference whose digest does not match the bytes read.
-- Validate against the Rulespec Core schema bundle and its valid and invalid fixtures.
+- The source-access Protocol is `SourceReleaseReader` in `src/docspec/ports/source_release.py:50`. The name is bound nowhere else in `src/docspec/`.
+- The adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268`. `open` at `:294` yields the `SourceItem` values `LocalJsonlSourceCatalog.write` accepts at `:64`; `tests/test_source_catalog.py:87` republishes that stream through `write` to the same reference.
+- Verification runs at admission and at open through `LocalJsonlSourceCatalog._open_root` and `_validated_items`: root digest, the declared member, closed membership, relative paths, containment, symlinks, member size and digest, closed root shape, identity-to-content and identity-to-locator binding, item order, item validity, and counts. Schema validation is the Rulespec bundle item below.
+- `_reference` at `src/docspec/adapters/source_catalog.py:274` recomputes the root digest and refuses a pin whose digest is not the bytes read, before parsing them. `tests/test_source_catalog.py:109` covers a wrong digest and rewritten root bytes; `:129` covers a tampered member.
+- Validate against the Rulespec Core schema bundle and its valid and invalid fixtures. Neither schema root exists at Rulespec `b64ca67`.
 
 **Exit gate:** A sealed `SourceCatalogRelease` identified only by digest produces a byte-identical `SourceItem` stream on repeated reads, and every invalid fixture is rejected with a diagnostic rather than an exception from a lower layer.
 
@@ -148,7 +175,7 @@ This deletes repeated hashing, not the verification. The boundary check itself s
 
 ## Definition of done
 
-1. DocSpec consumes a sealed `SourceCatalogRelease` referenced by digest through one internal port, and rejects a reference whose bytes do not match.
+1. DocSpec consumes a sealed `SourceCatalogRelease` referenced by digest through one internal port, and rejects a reference whose bytes do not match. The port is `SourceReleaseReader` at `src/docspec/ports/source_release.py:50`, addressed by a `SourceReleasePin` of root locator plus digest; the adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268`, and the refusal is at `:274`, covered by `tests/test_source_catalog.py:109` and `:129`. What it reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`.
 2. The pipeline captures the selected source files and produces normalized representations, document nodes, structural segments, evidence coordinates, and coverage information.
 3. DocSpec publishes a portable, immutable `DocumentRelease` that names its parent source release by identity and digest.
 4. The published release verifies and opens with no checkout of any product on disk.
