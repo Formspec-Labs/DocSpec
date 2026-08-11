@@ -1,4 +1,4 @@
-"""Strict local source-catalog distributions and contained file acquisition."""
+"""Strict local source-catalog distributions, sealed-release admission, and contained file acquisition."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from docspec.domain.references import SourceCatalogRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchMetadata, FetchStream
 from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
+from docspec.ports.source_release import SourceReleaseAdmission, SourceReleasePin, SourceReleaseRead
 
 
 class LocalJsonlSourceCatalog:
@@ -264,6 +265,38 @@ class LocalJsonlSourceCatalog:
         yield from self.open(reference).items
 
 
+class LocalSourceReleaseReader:
+    """Admit sealed local source releases by digest through one injected catalog."""
+
+    def __init__(self, catalog: LocalJsonlSourceCatalog) -> None:
+        self._catalog = catalog
+
+    def _reference(self, pin: SourceReleasePin) -> SourceCatalogRef:
+        """Recompute the pinned root digest and read the identity those bytes carry."""
+
+        limit = self._catalog.max_root_bytes
+        path = _contained(self._catalog.root, pin.root)
+        if path.is_file() and path.stat().st_size > limit:
+            raise LimitExceededError(f"sealed source release root exceeds the {limit}-byte limit")
+        payload = _read_exact(self._catalog.root, pin.root)
+        if sha256_digest(payload) != pin.digest:
+            raise IntegrityError("sealed source release root differs from its pinned digest")
+        value = thaw_json(parse_canonical_json(payload, label="sealed source release root"))
+        identity = value.get("catalogId") if isinstance(value, dict) else None
+        if not isinstance(identity, str) or not identity:
+            raise IntegrityError("sealed source release root does not name one release identity")
+        return SourceCatalogRef(identity, pin.root, pin.digest)
+
+    def admit(self, pin: SourceReleasePin) -> SourceReleaseAdmission:
+        reference = self._reference(pin)
+        return SourceReleaseAdmission(pin, reference, self._catalog.verify(reference))
+
+    def open(self, pin: SourceReleasePin) -> SourceReleaseRead:
+        reference = self._reference(pin)
+        read = self._catalog.open(reference)
+        return SourceReleaseRead(SourceReleaseAdmission(pin, reference, read.summary), read.items)
+
+
 class LocalFileContentFetcher:
     """Stream only regular files contained below one configured local root."""
 
@@ -353,4 +386,4 @@ class LocalFileContentFetcher:
         )
 
 
-__all__ = ["LocalFileContentFetcher", "LocalJsonlSourceCatalog"]
+__all__ = ["LocalFileContentFetcher", "LocalJsonlSourceCatalog", "LocalSourceReleaseReader"]

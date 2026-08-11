@@ -10,7 +10,11 @@ from docspec.adapters.content_fetchers import (
 from docspec.adapters.execution import ExternalExecutionBackend, LocalExecutionBackend
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache, NullProcessorResultCache
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.source_catalog import (
+    LocalFileContentFetcher,
+    LocalJsonlSourceCatalog,
+    LocalSourceReleaseReader,
+)
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -34,6 +38,7 @@ __all__ = [
     "LocalJsonlRecordStorage",
     "LocalExecutionBackend",
     "LocalManifestDocumentCatalog",
+    "LocalSourceReleaseReader",
     "LocalSqliteProcessorResultCache",
     "LocalSqliteReconciliationWorkspaceFactory",
     "NullProcessorResultCache",

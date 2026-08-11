@@ -90,7 +90,7 @@
     },
     {
       "path": "src/docspec/adapters/source_catalog.py",
-      "capability": "Local immutable JSON Lines source catalogs and contained file fetching",
+      "capability": "Local immutable JSON Lines source catalogs, digest-pinned sealed release admission, and contained file fetching",
       "status": "implemented",
       "conformanceTests": [
         "SOURCE-CATALOG-CONTRACT",
@@ -561,6 +561,15 @@
       "status": "implemented",
       "conformanceTests": [
         "SOURCE-CATALOG-CONTRACT"
+      ]
+    },
+    {
+      "path": "src/docspec/ports/source_release.py",
+      "capability": "Digest-pinned sealed source-release admission and source-item stream boundary",
+      "status": "implemented",
+      "conformanceTests": [
+        "SOURCE-CATALOG-CONTRACT",
+        "DOCUMENT-RELEASE-INTEGRITY"
       ]
     },
     {

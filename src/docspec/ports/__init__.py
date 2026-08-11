@@ -16,6 +16,12 @@ from docspec.ports.reconciliation_workspace import ReconciliationWorkspace, Reco
 from docspec.ports.result_sink import ResultSink
 from docspec.ports.segmenter import Segmenter
 from docspec.ports.source_catalog import SourceCatalog, SourceCatalogRead, SourceCatalogReader, SourceCatalogSummary
+from docspec.ports.source_release import (
+    SourceReleaseAdmission,
+    SourceReleasePin,
+    SourceReleaseRead,
+    SourceReleaseReader,
+)
 
 __all__ = [
     "BlobStore",
@@ -46,5 +52,9 @@ __all__ = [
     "SourceCatalogRead",
     "SourceCatalogReader",
     "SourceCatalogSummary",
+    "SourceReleaseAdmission",
+    "SourceReleasePin",
+    "SourceReleaseRead",
+    "SourceReleaseReader",
     "StoreTaskHandler",
 ]
