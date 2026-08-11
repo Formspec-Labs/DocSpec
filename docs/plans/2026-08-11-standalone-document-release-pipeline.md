@@ -61,7 +61,7 @@ Supporting sites that follow from the four faces:
 ### Rulespec dependency
 
 - The `SourceCatalogRelease` and `DocumentRelease` schema sets arrive as one digest-addressed bundle inside the Rulespec Core wheel, alongside generated types, identity and digest helpers, validators, diagnostics, and valid and invalid conformance fixtures.
-- Neither schema root exists in Rulespec at `b64ca67`. `SourceCatalogRelease` appears in `rulespec/TODO.md` only, and nowhere in code, schemas, or fixtures. The installed wheel currently carries 40 compiled rkaf kernel schemas under `rulespec_conformance/_data/compiled/json-schema/core/`.
+- Neither schema root exists in Rulespec at `b64ca67`. `SourceCatalogRelease` appears in `rulespec/TODO.md` only, and nowhere in code, schemas, or fixtures. The installed wheel currently carries 40 compiled rkaf kernel schemas under `rulespec_conformance/_data/compiled/json-schema/core/`. As of rulespec `20de071` (2026-08-11) both roots exist as sealed candidates — `SourceCatalogRelease` v1 (`urn:rulespec:core:2de89ad8…`) and `DocumentRelease` v2 (`urn:rulespec:core:ff444f84…`) — carried in the wheel as digest-addressed bundles beside the kernel schemas; the v2 spec's §6 deviation table is this repository's migration delta from its live 1.1 format.
 - `SourceCatalogRelease` appears nowhere in DocSpec at `7e3d0f2`.
 
 This is a fact about the input, recorded so the pipeline is written against the bundle rather than against a locally invented shape. Authoring and packaging the two schema sets is Rulespec work.
@@ -101,7 +101,7 @@ Tests are in `tests/test_source_catalog.py`, over a fixture release written by `
 
 `uv run pytest -q`: 268 passed, 1 deselected. Recorded in DocSpec `5cdcf35` (port and adapter) and `ff604e4` (tests) on 2026-08-11.
 
-The release this reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. No validation against the Rulespec Core schema bundle or its valid and invalid fixtures runs; that bundle does not exist at Rulespec `b64ca67`.
+The release this reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. No validation against the Rulespec Core schema bundle or its valid and invalid fixtures runs yet; the candidate bundles exist as of rulespec `20de071`, and wiring their validation in is the open bullet under Phase 1.
 
 ## Removing the four crossings
 
@@ -127,7 +127,7 @@ This deletes repeated hashing, not the verification. The boundary check itself s
 - The adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268`. `open` at `:294` yields the `SourceItem` values `LocalJsonlSourceCatalog.write` accepts at `:64`; `tests/test_source_catalog.py:87` republishes that stream through `write` to the same reference.
 - Verification runs at admission and at open through `LocalJsonlSourceCatalog._open_root` and `_validated_items`: root digest, the declared member, closed membership, relative paths, containment, symlinks, member size and digest, closed root shape, identity-to-content and identity-to-locator binding, item order, item validity, and counts. Schema validation is the Rulespec bundle item below.
 - `_reference` at `src/docspec/adapters/source_catalog.py:274` recomputes the root digest and refuses a pin whose digest is not the bytes read, before parsing them. `tests/test_source_catalog.py:109` covers a wrong digest and rewritten root bytes; `:129` covers a tampered member.
-- Validate against the Rulespec Core schema bundle and its valid and invalid fixtures. Neither schema root exists at Rulespec `b64ca67`.
+- Validate against the Rulespec Core schema bundle and its valid and invalid fixtures. Both candidates exist as of rulespec `20de071`: `SourceCatalogRelease` v1 (`urn:rulespec:core:2de89ad8…`) and `DocumentRelease` v2 (`urn:rulespec:core:ff444f84…`), each with sealed valid and invalid fixture corpora and a console validator in the `rulespec-conformance` wheel.
 
 **Exit gate:** A sealed `SourceCatalogRelease` identified only by digest produces a byte-identical `SourceItem` stream on repeated reads, and every invalid fixture is rejected with a diagnostic rather than an exception from a lower layer.
 
