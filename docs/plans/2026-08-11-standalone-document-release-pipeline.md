@@ -41,22 +41,37 @@ Checked against DocSpec `7e3d0f2` and Rulespec `b64ca67` on 2026-08-11.
 - None of the 21 is discovery-shaped. `SourceCatalog` reads a fixed distribution; `ContentFetcher` acquires one candidate.
 - `ports/content_fetcher.py:88` binds `AcquisitionSource = ContentFetcher`. The new port needs a different name. Verified at `:88` both in the working tree and at `7e3d0f2`.
 
-### Where the sibling-checkout crossings are
+### Where the sibling-checkout crossings were
 
-All in `tools/fr_mirrulations_qualification.py`, with one supporting site in `tools/fr_mirrulations_support.py`.
+Removed on 2026-08-11 in DocSpec `2df6e4f` (pinned input), `8af75cc` (deletions), and `bdca9d1` (gate). Every site the recording named is gone.
 
-| Face | Site | What it does |
+| Face | Former site | What replaced it |
 | --- | --- | --- |
-| Absolute sibling path | `:55` | `DEFAULT_SPICYREGS = Path("/Users/mikewolfd/Work/spicy-regs")` |
-| Gitignored sibling output | `:56` | `DEFAULT_FR_ROOT = DEFAULT_SPICYREGS / "output/scale-dr-10k-2026-08-05"` |
-| Subprocess into the sibling checkout | `:142-160` | `_run_checked([...], cwd=spicyregs)`; the module argument is at `:148`, `cwd=spicyregs` at `:159` |
-| Private-symbol import through `python -c` | `:161-168` | `:164` imports `_draw_documents` from `spicy_regs.corpora.mirrulations_document_corpus`; `:168` executes that script with `cwd=spicyregs` |
+| Absolute sibling path | `:55` `DEFAULT_SPICYREGS` | `DEFAULT_INPUT_MANIFEST = REPO_ROOT / "fixtures/qualification/fr-mirrulations-10k-v1/input-manifest.json"` |
+| Gitignored sibling output | `:56` `DEFAULT_FR_ROOT` | `--federal-register-root` has no default; `_inputs` refuses without it |
+| Subprocess into the sibling checkout | `:142-160` | Nothing. The draw arrives pinned; no draw is built here |
+| Private-symbol import through `python -c` | `:161-168` | `validate_mirrulations_draw` in `tools/fr_mirrulations_support.py:641`, which already recomputed the draw identity, schema, source boundary, selection, and every document's closed shape from the bytes |
 
-Supporting sites that follow from the four faces:
+Supporting sites, all deleted in the same change set:
 
-- `:58` `BUILDER_RELATIVE = Path("src/spicy_regs/corpora/mirrulations_document_corpus.py")` names a file inside the sibling source tree.
-- `:69-74` `_run_checked(arguments, *, cwd)` exists to run commands in that checkout. Three call sites pass `cwd=spicyregs`: `:95` (`git rev-parse HEAD` for the producer commit), `:142`, and `:168`. Deleting the helper covers all three; `:95`'s commit capture is replaced by a value carried in the input artifact.
-- `tools/fr_mirrulations_support.py:1019` re-hashes each draw file on every execution-manifest validation; `:1024-1027` re-hashes the SpicyRegs builder source file named by `producer_spec["builderPath"]`.
+- `:58` `BUILDER_RELATIVE`, `:630` `--spicyregs`, and `:241`, `:313-315` passing that root into the execution manifest.
+- `:69-74` `_run_checked` and its three `cwd=spicyregs` call sites — `:95` `git rev-parse HEAD`, `:142`, `:168`.
+- `:87-185` `freeze_producer_inputs`, including `:90`, `:96`, `:128`, `:174`, and the `producer/spicyregs-validation.json` receipt it wrote into gitignored output. `admit_producer_inputs` at `tools/fr_mirrulations_qualification.py:91` replaces it.
+- `tools/fr_mirrulations_support.py:1019` and `:1024-1027`, the per-validation re-hash of each draw file and of the producer's builder source. `build_source_items` rereads the same draws immediately below and its recomputed digests are already compared against the manifest, so the repeat added work and no guarantee. The producer facts stay sealed by the manifest identity.
+- `tools/fr_mirrulations_support.py:853-855`, `:908`, `:910`: `build_execution_manifest` took `spicyregs_repository`, `spicyregs_commit`, and `spicyregs_builder` and called `resolve(strict=True)` against the sibling checkout at manifest-write time. It takes one `mirrulations_producer` mapping now, validated by `require_producer_identity`, which resolves nothing.
+
+### Where the draw pin lives
+
+`fixtures/qualification/fr-mirrulations-10k-v1/` holds two tracked files:
+
+- `mirrulations-draw.json`, a byte-identical copy of the draw the campaign produced: 1,979,300 bytes, `sha256:48b2eb86bcd363401fa3f4615dcb1be16f7c7c1a0b6f9a5d91ca1162dbd2350c`, identity `urn:spicyregs:mirrulations-document-draw:d82165252eb1a6d050ab80bd`, 3,592 documents.
+- `input-manifest.json`, identity `urn:docspec:qualification-input-manifest:v1:c15a4c01d209edd348b17f4c8069f87095b69441348f3600fae16b988ab6def7`. It pins the draw by relative path, digest, and byte length, and carries the producer facts the deleted receipt used to read out of the checkout: name `SpicyRegs`, commit `adbd5a2b58391c5f0f623fad20674c7851251660`, builder path `src/spicy_regs/corpora/mirrulations_document_corpus.py` inside the producer's own repository, and builder digest `sha256:78e9c8bd8dad38c1afc6fb48a7c557a12015755a22e814fa92c0d8832d2f1e43`.
+
+This follows the RefSpec ICPSR precedent: the campaign's own copy stays where it is under gitignored `output/`, and a byte-identical tracked copy with a recorded digest is what the harness reads.
+
+`admit_producer_inputs` consumes it by (path, expected digest). It reads the manifest as canonical JSON, checks its closed shape and content-derived identity, resolves the draw through `require_relative_path` against the manifest's own directory, bounds the read at 64 MiB, compares the file size, recomputes `sha256_digest` over the bytes, and refuses a mismatch before any parser sees them — the shape `LocalSourceReleaseReader._reference` uses at `src/docspec/adapters/source_catalog.py:274`.
+
+The captured Federal Register root is not pinned. It is 192 MB of cached source bytes plus a 3.5 MB draw manifest, so the operator names it with `--federal-register-root` and preparation refuses without it. No file names where it sits.
 
 ### Rulespec dependency
 
@@ -105,19 +120,9 @@ The release this reads is the local `docspec-source-catalog` 1.0 distribution, n
 
 ## Removing the four crossings
 
-The four faces are one boundary. Remove them in one change set.
+The four faces were one boundary and were removed in one change set. The repeated hashing went with them; the verification did not.
 
-- Delete `:55` and `:56`. The pipeline takes a sealed `SourceCatalogRelease` reference, not a checkout root and not a path under another repository's gitignored `output/`.
-- Delete the subprocess at `:142-160`. A draw is no longer produced by shelling into a sibling checkout; it arrives already published.
-- Delete the `python -c` script at `:161-168`, including the private-symbol import at `:164`. Validation of the input is the release verification, performed against the release's own schemas and digests.
-- Delete `:58` and the sibling-checkout use of `_run_checked` at `:69-74` with the faces they serve.
-
-Closing all four together makes the re-hash at `tools/fr_mirrulations_support.py:1019-1027` deletable:
-
-- `:1024-1027` re-hashes a file inside the sibling source tree. With the crossings gone that file has no path and the check has no subject.
-- `:1019` re-hashes each draw file on every validation of the execution manifest. The draw arrives as an input artifact identified by digest and verified once at admission and once at open, so the per-validation repeat adds no guarantee that the boundary verification does not already give.
-
-This deletes repeated hashing, not the verification. The boundary check itself stays.
+`validate_execution_manifest` still recomputes both draw digests and compares them against the manifest, through `build_source_items` at `tools/fr_mirrulations_support.py:1065`. What it no longer does is hash the same two files a second time in the same call, or hash a file in the producer's checkout at all. `admit_producer_inputs` verifies the pinned draw once at admission, before parsing.
 
 ## Implementation phases
 
@@ -149,11 +154,13 @@ This deletes repeated hashing, not the verification. The boundary check itself s
 
 ### Phase 4: Remove the crossings and the repeated hash
 
-- Delete `tools/fr_mirrulations_qualification.py:55`, `:56`, `:58`, the subprocess at `:142-160`, and the `python -c` script at `:161-168`, together with the sibling-checkout use of `_run_checked` at `:69-74`.
-- Delete `tools/fr_mirrulations_support.py:1019-1027`.
-- Move the campaign's inputs to sealed input artifacts referenced by digest.
+- The listed sites in `tools/fr_mirrulations_qualification.py` and `tools/fr_mirrulations_support.py` are deleted; see "Where the sibling-checkout crossings were".
+- The Mirrulations draw is a tracked input pinned by digest; see "Where the draw pin lives".
+- The captured Federal Register root is named by the operator through `--federal-register-root`, which has no default. Its 192 MB of cached source bytes are not pinned in tree.
 
-**Exit gate:** No file under `tools/`, `src/`, or `tests/` names a SpicyRegs path, imports a `spicy_regs` symbol, or sets a subprocess `cwd` outside this repository; a test proves it; and the campaign runs from released input artifacts alone.
+**Exit gate:** Met for the crossings. No file under `tools/`, `src/`, or `tests/` names a SpicyRegs path, imports a `spicy_regs` symbol, or sets a subprocess `cwd` outside this repository. `tests/test_package_boundary.py:111` `test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_directory` proves it, and fails when any of the four forms returns. `uv run pytest -q`: 271 passed, 1 deselected; `uv run ruff check src tests tools` passes. Recorded in DocSpec `2df6e4f`, `8af75cc`, and `bdca9d1` on 2026-08-11.
+
+Open under this phase: the Mirrulations draw is pinned, the Federal Register content root is not. Pinning it means publishing 192 MB of captured bytes as a sealed artifact, which is Phase 2 and Phase 3 work — the release the pipeline consumes — not a path deletion.
 
 ### Phase 5: Confirm standalone consumption
 
@@ -179,7 +186,7 @@ This deletes repeated hashing, not the verification. The boundary check itself s
 2. The pipeline captures the selected source files and produces normalized representations, document nodes, structural segments, evidence coordinates, and coverage information.
 3. DocSpec publishes a portable, immutable `DocumentRelease` that names its parent source release by identity and digest.
 4. The published release verifies and opens with no checkout of any product on disk.
-5. No file under `tools/`, `src/`, or `tests/` names a SpicyRegs path or sets a subprocess `cwd` outside this repository — the Phase 4 gate is the criterion, not a line list. Known sites at recording time: `tools/fr_mirrulations_qualification.py:55`, `:56`, `:58`, `:69-74`, `:90`, `:95`, `:96`, `:128`, `:142-160`, `:161-168`, `:174`, `:241`, `:313-315`, `:630`, and `tools/fr_mirrulations_support.py:853-855`, `:908`, `:910` — the last two `resolve(strict=True)` against the sibling checkout at manifest-write time.
+5. Met. No file under `tools/`, `src/`, or `tests/` names a SpicyRegs path or sets a subprocess `cwd` outside this repository. Every site listed at recording time is deleted: `tools/fr_mirrulations_qualification.py:55`, `:56`, `:58`, `:69-74`, `:90`, `:95`, `:96`, `:128`, `:142-160`, `:161-168`, `:174`, `:241`, `:313-315`, `:630`, and `tools/fr_mirrulations_support.py:853-855`, `:908`, `:910`. The three remaining mentions of the producer are not paths: the draw-identity URN namespace `urn:spicyregs:mirrulations-document-draw:` recomputed at `tools/fr_mirrulations_support.py:638`, the sibling-package deny-list at `tests/test_package_boundary.py:25-27`, and the pinned predecessor remote URL at `tests/test_boundary_code.py:27`.
 6. `tools/fr_mirrulations_support.py:1019-1027` is gone, and one complete verification per boundary crossing remains at admission and at open.
-7. A test fails if any DocSpec file names a SpicyRegs path, imports a `spicy_regs` symbol, or sets a subprocess `cwd` outside this repository.
+7. Met. `tests/test_package_boundary.py:111` `test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_directory` walks `src/`, `tests/`, and `tools/` and fails on a home-directory path constant, a `spicy-regs` path segment, a dotted `spicy_regs` module in a string or an import, or a subprocess working directory outside the closed set of five repository-rooted expressions. It also fails when one of those five stops being used.
 8. SpicySearch, and any other consumer, integrates with DocSpec through the published `DocumentRelease` and the installed package alone.
