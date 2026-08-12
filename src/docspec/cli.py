@@ -71,6 +71,7 @@ from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.ports.content_fetcher import ContentFetcher
+from docspec.ports.source_catalog import SourceCatalog
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
@@ -856,7 +857,7 @@ class _LocalRunComposition:
     stores: LocalDocumentStoreRepository
     records: LocalJsonlRecordStorage
     catalog: LocalManifestDocumentCatalog
-    source_catalog: LocalJsonlSourceCatalog
+    source_catalog: SourceCatalog
     partition_policy: PartitionPolicy
     plan_ref: ArtifactRef
     sink_ref: ArtifactRef
@@ -881,6 +882,7 @@ def _local_processor_cache_path(roots: dict[str, Path]) -> Path:
 def _compose_local_run(
     request: dict[str, Any],
     *,
+    source_catalog: SourceCatalog | None = None,
     content_fetcher: ContentFetcher | None = None,
     content_fetcher_composition: dict[str, Any] | None = None,
 ) -> _LocalRunComposition:
@@ -888,7 +890,7 @@ def _compose_local_run(
     roots = request["roots"]
     controls, stores, records, blobs, catalog = _local_storage(roots, profiles)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    source_catalog = LocalJsonlSourceCatalog(roots["sourceCatalog"])
+    source_catalog = source_catalog or LocalJsonlSourceCatalog(roots["sourceCatalog"])
     fetcher = content_fetcher or LocalFileContentFetcher(roots["sourceContent"])
     actual_fetcher_composition = {
         "implementationId": getattr(fetcher, "downloader_id", None),
@@ -1198,11 +1200,13 @@ def _execute_local_run(
     request: dict[str, Any],
     *,
     resume: bool | None,
+    source_catalog: SourceCatalog | None = None,
     content_fetcher: ContentFetcher | None = None,
     content_fetcher_composition: dict[str, Any] | None = None,
 ) -> ArtifactRef:
     composition = _compose_local_run(
         request,
+        source_catalog=source_catalog,
         content_fetcher=content_fetcher,
         content_fetcher_composition=content_fetcher_composition,
     )

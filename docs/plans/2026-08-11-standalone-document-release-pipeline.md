@@ -280,12 +280,23 @@ complete selected-candidate allowlist: 87,555 renditions at
 configuration discovery, not a second semantic or member-digest validation.
 The focused acquisition and package-boundary suite passes 23 tests, including
 the real `httpx` streaming interface with an in-memory transport. The full
-suite passes 290 tests with 1 deselected, Ruff passes, and the source and wheel
+suite passes 291 tests with 1 deselected, Ruff passes, and the source and wheel
 distributions build successfully.
 
-Open under this phase: inject the two-host configuration and release-backed
-catalog view into a bounded run, then expand by the existing work budget. No
-production rendition capture has started.
+The bounded composition path is also implemented without a second runner.
+`_compose_local_run` and `_execute_local_run` accept an optional existing
+`SourceCatalog`; their default remains `LocalJsonlSourceCatalog`. This is the
+same injection pattern they already use for `ContentFetcher`, and both the
+planner and reconciler already depend on the general `SourceCatalog` port. The
+tracked wire-release composition test selects one item, streams its HTTPS bytes
+through an in-memory `httpx` transport, completes planning, capture,
+extraction, segmentation, reconciliation, and release commit, then reopens the
+release and confirms it retains the wire release's original source reference.
+It does not republish the source catalog or introduce another execution path.
+
+Open under this phase: seal the real two-host fetcher configuration into a
+bounded production plan and run request, then expand through the existing work
+budget. No production rendition capture has started.
 
 **Exit gate:** Every source item in the input release reaches one terminal disposition, and coverage information accounts for every declared candidate.
 
