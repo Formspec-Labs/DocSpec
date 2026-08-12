@@ -25,7 +25,7 @@
     },
     {
       "path": "src/docspec/adapters/content_fetchers.py",
-      "capability": "Closeable contained local and anonymous-S3 source acquisition behind a sealed routing identity",
+      "capability": "Closeable contained local, allowlisted HTTPS, and anonymous-S3 source acquisition behind a sealed routing identity",
       "status": "implemented",
       "conformanceTests": [
         "ACQUISITION",

@@ -4,6 +4,9 @@ from docspec.adapters.dagster import DagsterAdapterProfile, DagsterDeploymentCon
 from docspec.adapters.content_fetchers import (
     AnonymousS3ContentFetcher,
     AnonymousS3ContentFetcherConfig,
+    HttpsContentFetcher,
+    HttpsContentFetcherConfig,
+    HttpsContentFetcherError,
     RoutingContentFetcher,
     S3ContentFetcherError,
 )
@@ -42,6 +45,9 @@ __all__ = [
     "DagsterAdapterProfile",
     "DagsterDeploymentConfig",
     "JsonSchemaWireSourceReleaseGate",
+    "HttpsContentFetcher",
+    "HttpsContentFetcherConfig",
+    "HttpsContentFetcherError",
     "LocalContentAddressedBlobStore",
     "LocalDocumentStoreRepository",
     "LocalFileContentFetcher",

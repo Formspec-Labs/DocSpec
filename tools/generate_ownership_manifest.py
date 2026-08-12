@@ -43,7 +43,11 @@ ARCHIVE_ROOT = "archive/legacy-2026-08-05"
 _MODULE_METADATA: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "src/docspec/__init__.py": ("Public package identity, version, and stable base error", "implemented", ("CORE-INSTALL",)),
     "src/docspec/adapters/__init__.py": ("Public local-adapter selection surface", "implemented", ("BOUNDARY-IMPORT",)),
-    "src/docspec/adapters/content_fetchers.py": ("Closeable contained local and anonymous-S3 source acquisition behind a sealed routing identity", "implemented", ("ACQUISITION", "RECOVERY")),
+    "src/docspec/adapters/content_fetchers.py": (
+        "Closeable contained local, allowlisted HTTPS, and anonymous-S3 source acquisition behind a sealed routing identity",
+        "implemented",
+        ("ACQUISITION", "RECOVERY"),
+    ),
     "src/docspec/adapters/dagster.py": ("Lazy optional Dagster dynamic-task mapping with one coordinator membership proof, indexed per-task checks, and subprocess workers", "partial", ("SCALE", "SCHEDULER-PORTABILITY")),
     "src/docspec/adapters/execution.py": ("Bounded local execution and scheduler-neutral serialized external dispatch", "partial", ("SCHEDULER-PORTABILITY", "RECOVERY")),
     "src/docspec/adapters/processor_cache.py": ("Disposable local SQLite lookup from exact reuse keys to immutable processor results", "implemented", ("PROCESSOR-CONTRACT", "RECOVERY")),

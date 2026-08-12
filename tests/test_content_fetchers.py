@@ -5,11 +5,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from docspec.adapters.content_fetchers import (
     AnonymousS3ContentFetcher,
     AnonymousS3ContentFetcherConfig,
+    HttpsContentFetcher,
+    HttpsContentFetcherConfig,
+    HttpsContentFetcherError,
     RoutingContentFetcher,
     S3ContentFetcherError,
     public_s3_url,
@@ -88,6 +92,52 @@ class _Client:
         }
 
 
+class _HttpResponse:
+    def __init__(
+        self,
+        payload: bytes = b"exact bytes",
+        *,
+        status_code: int = 200,
+        headers: dict[str, str] | None = None,
+        fail_after_chunks: int | None = None,
+    ) -> None:
+        self.payload = payload
+        self.status_code = status_code
+        self.headers = headers or {"content-length": str(len(payload))}
+        self.fail_after_chunks = fail_after_chunks
+        self.close_count = 0
+
+    def iter_raw(self, *, chunk_size: int) -> Any:
+        for index, start in enumerate(range(0, len(self.payload), chunk_size), start=1):
+            if self.fail_after_chunks is not None and index > self.fail_after_chunks:
+                raise OSError("HTTP stream failed")
+            yield self.payload[start : start + chunk_size]
+
+
+class _HttpContext:
+    def __init__(self, result: _HttpResponse | Exception) -> None:
+        self.result = result
+
+    def __enter__(self) -> _HttpResponse:
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+    def __exit__(self, *_: object) -> None:
+        if isinstance(self.result, _HttpResponse):
+            self.result.close_count += 1
+
+
+class _HttpClient:
+    def __init__(self, responses: dict[str, _HttpResponse | Exception]) -> None:
+        self.responses = responses
+        self.requests: list[dict[str, Any]] = []
+
+    def stream(self, method: str, url: str, **request: Any) -> _HttpContext:
+        self.requests.append({"method": method, "url": url, **request})
+        return _HttpContext(self.responses[url])
+
+
 def _config(*, chunk_size: int = 3) -> AnonymousS3ContentFetcherConfig:
     return AnonymousS3ContentFetcherConfig(
         bucket="mirrulations",
@@ -121,6 +171,23 @@ def _candidate(payload: bytes = b"exact bytes") -> CandidateFile:
             },
             "publicSourceUrl": public_s3_url(bucket=bucket, key=key, region_name="us-east-1"),
         },
+    )
+
+
+def _https_config(*, allowed_hosts: tuple[str, ...] = ("sources.example",), chunk_size: int = 3) -> HttpsContentFetcherConfig:
+    return HttpsContentFetcherConfig(
+        allowed_hosts=allowed_hosts,
+        user_agent="docspec-test/1.0 (+https://example.test/contact)",
+        chunk_size=chunk_size,
+    )
+
+
+def _https_candidate(payload: bytes = b"exact bytes", *, locator: str = "https://sources.example/document") -> CandidateFile:
+    return CandidateFile(
+        "source-html",
+        locator,
+        "text/html",
+        expected_size=len(payload),
     )
 
 
@@ -166,6 +233,143 @@ def test_local_fetcher_does_not_double_close_descriptors_under_concurrency(tmp_p
 
     with ThreadPoolExecutor(max_workers=16) as executor:
         assert list(executor.map(read, range(500))) == [source] * 500
+
+
+def test_https_fetcher_streams_allowed_candidate_with_sealed_configuration() -> None:
+    response = _HttpResponse()
+    client = _HttpClient({"https://sources.example/document": response})
+    config = _https_config(allowed_hosts=("SOURCES.EXAMPLE", "sources.example"))
+    fetcher = HttpsContentFetcher(client, config)
+
+    with fetcher.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt") as stream:
+        assert b"".join(stream.chunks) == b"exact bytes"
+        assert stream.metadata.downloader_id == fetcher.downloader_id
+        assert stream.metadata.downloader_configuration_digest == config.digest
+        assert stream.metadata.transport_version is None
+
+    assert config.allowed_hosts == ("sources.example",)
+    assert response.close_count == 1
+    assert client.requests == [
+        {
+            "method": "GET",
+            "url": "https://sources.example/document",
+            "headers": {
+                "User-Agent": "docspec-test/1.0 (+https://example.test/contact)",
+                "Accept": "*/*",
+                "Accept-Encoding": "identity",
+            },
+            "follow_redirects": False,
+        }
+    ]
+
+
+def test_https_fetcher_uses_the_real_httpx_stream_interface_without_network_io() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        assert request.headers["accept-encoding"] == "identity"
+        return httpx.Response(200, stream=httpx.ByteStream(b"exact bytes"), request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        fetcher = HttpsContentFetcher(client, _https_config())
+        with fetcher.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt") as stream:
+            assert b"".join(stream.chunks) == b"exact bytes"
+
+
+def test_https_fetcher_follows_only_allowed_redirects_and_closes_each_response() -> None:
+    redirect = _HttpResponse(status_code=302, headers={"location": "https://cdn.example/document"})
+    content = _HttpResponse()
+    client = _HttpClient(
+        {
+            "https://sources.example/document": redirect,
+            "https://cdn.example/document": content,
+        }
+    )
+    fetcher = HttpsContentFetcher(client, _https_config(allowed_hosts=("sources.example", "cdn.example")))
+
+    with fetcher.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt") as stream:
+        assert b"".join(stream.chunks) == b"exact bytes"
+
+    assert [request["url"] for request in client.requests] == [
+        "https://sources.example/document",
+        "https://cdn.example/document",
+    ]
+    assert redirect.close_count == content.close_count == 1
+
+    escaped = _HttpResponse(status_code=302, headers={"location": "https://untrusted.example/document"})
+    rejected = _HttpClient({"https://sources.example/document": escaped})
+    with pytest.raises(IntegrityError, match="configured HTTPS boundary"):
+        HttpsContentFetcher(rejected, _https_config()).fetch(
+            _https_candidate(),
+            max_bytes=20,
+            task_id="task",
+            attempt_id="attempt",
+        )
+    assert [request["url"] for request in rejected.requests] == ["https://sources.example/document"]
+    assert escaped.close_count == 1
+
+
+def test_https_fetcher_enforces_declared_and_streamed_bounds_and_closes() -> None:
+    too_large = _HttpResponse(headers={"content-length": "21"})
+    client = _HttpClient({"https://sources.example/document": too_large})
+    with pytest.raises(LimitExceededError, match="20-byte"):
+        HttpsContentFetcher(client, _https_config()).fetch(
+            CandidateFile("source-html", "https://sources.example/document", "text/html"),
+            max_bytes=20,
+            task_id="task",
+            attempt_id="attempt",
+        )
+    assert too_large.close_count == 1
+
+    truncated = _HttpResponse(b"short", headers={"content-length": "11"})
+    with HttpsContentFetcher(
+        _HttpClient({"https://sources.example/document": truncated}),
+        _https_config(),
+    ).fetch(
+        CandidateFile("source-html", "https://sources.example/document", "text/html"),
+        max_bytes=20,
+        task_id="task",
+        attempt_id="attempt",
+    ) as stream:
+        with pytest.raises(IntegrityError, match="truncated"):
+            b"".join(stream.chunks)
+    assert truncated.close_count == 1
+
+    failed = _HttpResponse(fail_after_chunks=1)
+    with HttpsContentFetcher(
+        _HttpClient({"https://sources.example/document": failed}),
+        _https_config(),
+    ).fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt") as stream:
+        with pytest.raises(HttpsContentFetcherError, match="streaming read"):
+            b"".join(stream.chunks)
+    assert failed.close_count == 1
+
+
+def test_https_fetcher_rejects_unsealed_urls_and_classifies_retryable_status() -> None:
+    client = _HttpClient({})
+    fetcher = HttpsContentFetcher(client, _https_config())
+    for locator in (
+        "http://sources.example/document",
+        "https://user@sources.example/document",
+        "https://sources.example:443/document",
+        "https://sources.example/document#fragment",
+        "https://untrusted.example/document",
+    ):
+        with pytest.raises(IntegrityError):
+            fetcher.fetch(
+                _https_candidate(locator=locator),
+                max_bytes=20,
+                task_id="task",
+                attempt_id="attempt",
+            )
+    assert client.requests == []
+
+    unavailable = _HttpResponse(status_code=503)
+    retryable = HttpsContentFetcher(
+        _HttpClient({"https://sources.example/document": unavailable}),
+        _https_config(),
+    )
+    with pytest.raises(HttpsContentFetcherError, match="retryable"):
+        retryable.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt")
+    assert unavailable.close_count == 1
 
 
 def test_anonymous_s3_fetcher_streams_pinned_object_and_closes() -> None:
@@ -362,3 +566,21 @@ def test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme(
     with pytest.raises(LimitExceededError, match="10-byte"):
         bounded.fetch(_candidate(), max_bytes=20, task_id="task", attempt_id="attempt")
     assert client.requests == []
+
+    http_response = _HttpResponse()
+    https = HttpsContentFetcher(
+        _HttpClient({"https://sources.example/document": http_response}),
+        _https_config(),
+    )
+    routed_https = RoutingContentFetcher(local=local, s3=s3, https=https)
+    with routed_https.fetch(
+        _https_candidate(),
+        max_bytes=20,
+        task_id="task",
+        attempt_id="attempt",
+    ) as stream:
+        assert b"".join(stream.chunks) == b"exact bytes"
+        assert stream.metadata.downloader_id == routed_https.downloader_id
+        assert stream.metadata.downloader_configuration_digest == routed_https.configuration_digest
+    assert routed_https.configuration_digest != routing.configuration_digest
+    assert http_response.close_count == 1

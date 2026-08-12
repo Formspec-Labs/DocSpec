@@ -252,11 +252,40 @@ through this view and confirms the resulting `DocumentRelease` retains the
 original source reference. The wire fixture test exercises the same view over
 `LocalWireSourceReleaseReader`.
 
-Open under this phase: the real release's selected candidates use HTTPS
-locators. DocSpec currently provides contained local-file and anonymous-S3
-fetchers; `RoutingContentFetcher` refuses every other scheme. The next slice is
-a bounded, sealed HTTPS fetcher and explicit composition for the wire release.
-No production rendition capture has started.
+The HTTPS acquisition slice is implemented. The DRY trace found no current or
+historical `ContentFetcher` implementation for HTTPS. It retained the current
+`ContentFetcher`/`FetchStream` boundary, execution-owned digest and size checks,
+retry classification, and `RoutingContentFetcher`. It reused the archived
+choice of `httpx`, streaming reads, redirects, timeouts, and a descriptive user
+agent; the archived whole-response corpus helpers were not restored because
+they do not implement the current stream boundary or restrict redirects.
+
+`HttpsContentFetcherConfig` and `HttpsContentFetcher` at
+`src/docspec/adapters/content_fetchers.py:48` and `:264` bind the exact allowed
+hosts, user agent, chunk size, timeouts, redirect limit, connection limit, and
+identity content encoding into one configuration digest. The fetcher rejects
+credentials, fragments, explicit ports, non-HTTPS URLs, and any initial or
+redirect host outside the allowlist before requesting that destination. It
+streams raw bytes, enforces the caller's byte bound and any declared size,
+detects truncation, and closes responses on success and failure.
+`RoutingContentFetcher` at `:637` adds HTTPS only when the caller injects that
+delegate; its existing local-and-S3 composition remains unchanged. `httpx` is
+available through the optional `docspec[http]` extra, so the core package still
+has no required dependency.
+
+A locator-only inventory of the already digest-pinned real release found the
+complete selected-candidate allowlist: 87,555 renditions at
+`mirrulations.s3.amazonaws.com` and 1,954 at
+`downloads.regulations.gov`, matching all 89,509 selected renditions. This was
+configuration discovery, not a second semantic or member-digest validation.
+The focused acquisition and package-boundary suite passes 23 tests, including
+the real `httpx` streaming interface with an in-memory transport. The full
+suite passes 290 tests with 1 deselected, Ruff passes, and the source and wheel
+distributions build successfully.
+
+Open under this phase: inject the two-host configuration and release-backed
+catalog view into a bounded run, then expand by the existing work budget. No
+production rendition capture has started.
 
 **Exit gate:** Every source item in the input release reaches one terminal disposition, and coverage information accounts for every declared candidate.
 
