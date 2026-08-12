@@ -175,7 +175,40 @@ The four faces were one boundary and were removed in one change set. The repeate
 - Verification runs at admission and at open through `LocalJsonlSourceCatalog._open_root` and `_validated_items`: root digest, the declared member, closed membership, relative paths, containment, symlinks, member size and digest, closed root shape, identity-to-content and identity-to-locator binding, item order, item validity, and counts.
 - `_reference` at `src/docspec/adapters/source_catalog.py:309` recomputes the root digest and refuses a pin whose digest is not the bytes read, before parsing them. `tests/test_source_catalog.py:109` covers a wrong digest and rewritten root bytes; `:129` covers a tampered member.
 - The Rulespec Core `SourceCatalogRelease` v1 candidate is validated against, from pinned bytes. `urn:rulespec:core:2de89ad867a3794cc1006ef4cd0301248d48a719b5cbab1946f62c2c30ac0ec5` names three schema files; all three are tracked here under `fixtures/wire/source-catalog-release-v1/schemas/`, verified against the digests the candidate names. The sealed valid bundle and three published invalid bundles are tracked beside them. `SourceReleaseSchemaGate` in `src/docspec/ports/source_release.py:84` is the boundary; `JsonSchemaWireSourceReleaseGate` at `src/docspec/adapters/wire_source_release.py:245` is the Draft 2020-12 implementation; `LocalSourceReleaseReader._screen` at `src/docspec/adapters/source_catalog.py:291` puts it on the reader's admission path as an optional injected keyword. `tests/test_wire_source_release.py` holds nine tests over the pinned bytes. See "Where the wire schema pin lives" and "What the schema gate is, in code".
-- Open under this phase: the local `docspec-source-catalog` 1.0 distribution this reader reads is not the wire format, so no release is yet both read as a `SourceItem` stream and decided by the gate. Migrating the local format to the wire format is separately tracked. The `DocumentRelease` v2 candidate (`urn:rulespec:core:ff444f84…`) is Phase 3.
+- Open under this phase: the local `docspec-source-catalog` 1.0 distribution this reader reads is not the wire format, so no release is yet both read as a `SourceItem` stream and decided by the gate. The `DocumentRelease` v2 candidate (`urn:rulespec:core:ff444f84…`) is Phase 3.
+
+#### Current handoff: read the real wire release
+
+SpicyRegs has fixed the Phase 1 input at
+`urn:spicy-regs:source-catalog-release:v1:3414d0a5812ddc6f0c50af0aa377d891a5a822246876681762bba27b5b2bda27`.
+Its `data/source-items.json` member is a 2,556,982,433-byte JSON array over
+1,992,343 records. The current `read_wire_release_bundle` reads that member as
+one value under a 64 MiB limit, so it can decide the six-record fixture but
+cannot read the real candidate. No DocSpec code consumes that candidate yet.
+
+The next change replaces that size-bound fixture path with bounded-memory wire
+reading behind the existing `SourceReleaseReader`; it does not add another
+port or another release format. Translation uses the current domain records:
+
+- `selected` becomes `SourceItemState.ACTIVE`;
+- `deleted` becomes `SourceItemState.DELETED`;
+- `excluded`, `unavailable`, and `failed` become
+  `SourceItemState.EXCLUDED`, with the original disposition, reason code, and
+  reason retained in metadata; and
+- each `candidateRenditions` entry becomes a `CandidateFile`, preserving its
+  rendition ID, locator, media type, expected SHA-256, and expected byte size.
+
+The reader retains the wire record's document identifier, normalized metadata,
+source-native metadata, observations, and observed topics. It verifies the
+declared member bytes and translates them with bounded memory; it does not run
+a second whole-corpus semantic build gate.
+
+Acceptance has two levels. The tracked six-record release must produce the
+same ordered `SourceItem` stream on repeated reads, and the pinned invalid
+fixtures must keep their located refusals. A read-only pass over the real
+candidate must reconcile 83,928 active, 120 deleted, and 1,908,295 excluded
+items against the release counts without fetching a rendition or publishing a
+`DocumentRelease`. Capture begins only after this Phase 1 gate passes.
 
 **Exit gate:** A sealed `SourceCatalogRelease` identified only by digest produces a byte-identical `SourceItem` stream on repeated reads, and every invalid fixture is rejected with a diagnostic rather than an exception from a lower layer. The second half is met for the four pinned bundles: each of the three invalid ones is refused with a located `SourceReleaseViolation`, and the valid one conforms. The first half is met for the local distribution only.
 
