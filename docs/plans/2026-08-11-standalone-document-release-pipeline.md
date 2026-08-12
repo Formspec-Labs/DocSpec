@@ -106,7 +106,7 @@ The pin carries no `catalog_id`. Identity is read back out of the digest-verifie
 
 `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268` implements it against the `docspec-source-catalog` 1.0 distribution the repository already reads. Its constructor takes one `LocalJsonlSourceCatalog` and nothing else — no default root, no discovery. `_reference` at `:274` bounds the read by that catalog's `max_root_bytes`, recomputes `sha256_digest` over the root bytes and refuses a mismatch before parsing, then builds `SourceCatalogRef(catalogId, pin.root, pin.digest)`. `admit` at `:290` returns `LocalJsonlSourceCatalog.verify`'s summary; `open` at `:294` returns `LocalJsonlSourceCatalog.open`'s stream. Every other check — closed root shape, identity-to-content binding, identity-to-locator binding, closed membership, symlinks, containment, member size and digest, item order, item validity, and counts — stays in `_open_root` at `:145` and `_validated_items` at `:183`, unduplicated.
 
-Exports: `ports/__init__.py:19-23,55-58` (33 names, from 29); `adapters/__init__.py:16,41`. `src/docspec/ports/` now holds 17 port modules. `ownership/modules.json` is regenerated from `tools/generate_ownership_manifest.py`, which names the new module under `SOURCE-CATALOG-CONTRACT` and `DOCUMENT-RELEASE-INTEGRITY`.
+Exports: `ports/__init__.py` (33 names, from 29; 36 once the schema gate lands below); `adapters/__init__.py:16,41`. `src/docspec/ports/` now holds 17 port modules. `ownership/modules.json` is regenerated from `tools/generate_ownership_manifest.py`, which names the new module under `SOURCE-CATALOG-CONTRACT` and `DOCUMENT-RELEASE-INTEGRITY`.
 
 Tests are in `tests/test_source_catalog.py`, over a fixture release written by `LocalJsonlSourceCatalog.write`:
 
@@ -116,7 +116,49 @@ Tests are in `tests/test_source_catalog.py`, over a fixture release written by `
 
 `uv run pytest -q`: 268 passed, 1 deselected. Recorded in DocSpec `5cdcf35` (port and adapter) and `ff604e4` (tests) on 2026-08-11.
 
-The release this reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. No validation against the Rulespec Core schema bundle or its valid and invalid fixtures runs yet; the candidate bundles exist as of rulespec `20de071`, and wiring their validation in is the open bullet under Phase 1.
+The release this reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. Validation against the Rulespec Core schema set is a separate gate, recorded below; migrating this reader's own format to the wire format is not part of it.
+
+### Where the wire schema pin lives
+
+`fixtures/wire/source-catalog-release-v1/` holds 28 tracked files: `pins.json`, three schema files, and four sealed conformance bundles. Each is a byte-identical copy of what Rulespec Core publishes, verified against the digests the `urn:rulespec:core:2de89ad867a3794cc1006ef4cd0301248d48a719b5cbab1946f62c2c30ac0ec5` candidate names, and copied under the same ICPSR precedent the Mirrulations draw follows. They are pinned rather than read out of the `rulespec-conformance` wheel because `tests/test_package_boundary.py:111` forbids resolving a path outside this repository and the wheel is not a DocSpec dependency; a pin is what makes the crossing a data crossing.
+
+- `schemas/source-catalog-release-v1.schema.json`, `sha256:1b7f0ccdefe52973db97fb145e3893a43bf4b12dcf00630a13af87a3486f4bbf`, 8,764 bytes, role `release-root`.
+- `schemas/member-manifest-v1.schema.json`, `sha256:c22acd4d8d397d2bd790ee42fc7a44f93fccce3b8ae39e5e378967035b075d4c`, 3,038 bytes, role `member-manifest`.
+- `schemas/source-items-v1.schema.json`, `sha256:94c3953f0a615a94d3a6f6489d9095ab8882f82d677c1661a9b79d3642e90702`, 8,818 bytes, role `source-items`.
+- `bundles/valid/`, the sealed valid bundle, `releaseId` `urn:spicy-regs:source-catalog-release:v1:2bce80ff4f54251a54930ee86a1697d5e946f6f07f6b6b269ecefd0a8bafc8bc`: 6 source items, 4 declared members, complete with the three schema members its own manifest declares, which are the same bytes as `schemas/`.
+- `bundles/invalid/unknown-version/`, `bundles/invalid/missing-disposition/`, and `bundles/invalid/unknown-disposition/`, the three published invalid bundles a JSON Schema decides on its own. Their first diagnostic codes in the publisher's validator are `invalid.format` at `release.json`, `invalid.schema` at `data/source-items.json/2/selection`, and `invalid.schema` at `data/source-items.json/2/selection/disposition`.
+- `pins.json`, identity `urn:docspec:wire-release-pins:v1:43132bbb767f5de626c204d7462d674288d91ff4bec411a662d207e51a508779`, which records the candidate id and status, the schema roles, ids, and origin paths, each bundle's release id, expected structural verdict, and upstream code and path, and all 27 pinned files by relative path, byte size, media type, and digest.
+
+The other thirteen published invalid bundles turn on identity, membership, digest, count, coverage, path, and duplicate rules that no JSON Schema decides. They are not pinned, because this gate would report them as conforming.
+
+### What the schema gate is, in code
+
+`src/docspec/ports/source_release.py` holds three more names:
+
+| Name | Site | Shape |
+| --- | --- | --- |
+| `SourceReleaseViolation` | `:59` | `(member, pointer, message)` — one refusal located by release member and JSON pointer |
+| `SourceReleaseConformance` | `:74` | `(violations,)`; `conforms` at `:80` is derived, so a verdict cannot disagree with its own evidence |
+| `SourceReleaseSchemaGate` | `:84` | `check(root, manifest, items) -> SourceReleaseConformance` at `:91` |
+
+`src/docspec/adapters/wire_source_release.py` implements it against Draft 2020-12, in `adapters/` because `jsonschema` is not the standard library. `load_wire_release_pins` at `:138` names one pins file and resolves everything else below it as a contained relative path, checks each declared size, recomputes each digest before a parser sees the bytes, and refuses a tree with a missing or extra file or a symlink. `read_wire_release_bundle` at `:217` reads `release.json`, `manifests/global.json`, and `data/source-items.json` bounded at 64 MiB and duplicate-safe. `JsonSchemaWireSourceReleaseGate` at `:245` reports every root and member-manifest violation and the first violation of each source item, in a stable order.
+
+The docstring at `:246` records what the gate is: the consumer-side structural gate. Contract authority is Rulespec's own validator at the cross-product verdict-agreement step, SpicySearch PLAN step 7. This gate claims none of its diagnostic codes and decides none of the identity, membership, digest, count, coverage, path, duplicate, or canonical-encoding rules that validator also decides. A bundle it reports as conforming has passed structure and nothing else.
+
+`jsonschema>=4.23,<5` is the `docspec[wire]` extra, imported inside the gate's constructor, so the core install stays dependency-free and `import docspec` still needs nothing. `tests/test_package_boundary.py:172` names the extra.
+
+`LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:277` takes the gate as an optional `wire_gate` keyword. `_screen` at `:291` runs on any digest-verified root that its own `docspec-source-catalog` 1.0 distribution does not describe. That format is not the wire format, so a local release never reaches the gate and keeps exactly the verification it had; a release published in the wire format refuses with the violation that decided it, or, when it is structurally clean, with the fact that this reader does not admit that format. Without the keyword the reader behaves as before. Migrating the local format to the wire format is separate work and is not started here.
+
+Tests are in `tests/test_wire_source_release.py`, nine of them, none resolving a path outside this repository:
+
+- `:76` recomputes the three candidate digests from the tracked bytes and confirms every bundle's own schema members are the same bytes.
+- `:91` reads the sealed valid bundle back and confirms it conforms with no violations.
+- `:113` refuses each pinned invalid bundle and locates the refusal. The publisher's first diagnostic code sits beside each row as a comment and is not asserted.
+- `:133` holds each bundle's recorded verdict to what the gate returns.
+- `:147` and `:170` refuse a changed byte, a changed size, a missing file, an undeclared extra file, and a pins file whose identity no longer derives from its content.
+- `:185` proves the gate is on the reader's path: a local distribution admits identically with and without it, and a wire root refuses differently with it than without it, after the pinned digest is checked first.
+
+`uv run pytest -q`: 280 passed, 1 deselected. `uv run ruff check src tests tools` passes. Recorded in DocSpec `761cc8c` (pins), `07ff6e0` (gate), and `7705b51` (tests) on 2026-08-12.
 
 ## Removing the four crossings
 
@@ -129,12 +171,13 @@ The four faces were one boundary and were removed in one change set. The repeate
 ### Phase 1: Consume the sealed input release
 
 - The source-access Protocol is `SourceReleaseReader` in `src/docspec/ports/source_release.py:50`. The name is bound nowhere else in `src/docspec/`.
-- The adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268`. `open` at `:294` yields the `SourceItem` values `LocalJsonlSourceCatalog.write` accepts at `:64`; `tests/test_source_catalog.py:87` republishes that stream through `write` to the same reference.
-- Verification runs at admission and at open through `LocalJsonlSourceCatalog._open_root` and `_validated_items`: root digest, the declared member, closed membership, relative paths, containment, symlinks, member size and digest, closed root shape, identity-to-content and identity-to-locator binding, item order, item validity, and counts. Schema validation is the Rulespec bundle item below.
-- `_reference` at `src/docspec/adapters/source_catalog.py:274` recomputes the root digest and refuses a pin whose digest is not the bytes read, before parsing them. `tests/test_source_catalog.py:109` covers a wrong digest and rewritten root bytes; `:129` covers a tampered member.
-- Validate against the Rulespec Core schema bundle and its valid and invalid fixtures. Both candidates exist as of rulespec `20de071`: `SourceCatalogRelease` v1 (`urn:rulespec:core:2de89ad8…`) and `DocumentRelease` v2 (`urn:rulespec:core:ff444f84…`), each with sealed valid and invalid fixture corpora and a console validator in the `rulespec-conformance` wheel.
+- The adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:277`. `open` at `:331` yields the `SourceItem` values `LocalJsonlSourceCatalog.write` accepts at `:64`; `tests/test_source_catalog.py:87` republishes that stream through `write` to the same reference.
+- Verification runs at admission and at open through `LocalJsonlSourceCatalog._open_root` and `_validated_items`: root digest, the declared member, closed membership, relative paths, containment, symlinks, member size and digest, closed root shape, identity-to-content and identity-to-locator binding, item order, item validity, and counts.
+- `_reference` at `src/docspec/adapters/source_catalog.py:309` recomputes the root digest and refuses a pin whose digest is not the bytes read, before parsing them. `tests/test_source_catalog.py:109` covers a wrong digest and rewritten root bytes; `:129` covers a tampered member.
+- The Rulespec Core `SourceCatalogRelease` v1 candidate is validated against, from pinned bytes. `urn:rulespec:core:2de89ad867a3794cc1006ef4cd0301248d48a719b5cbab1946f62c2c30ac0ec5` names three schema files; all three are tracked here under `fixtures/wire/source-catalog-release-v1/schemas/`, verified against the digests the candidate names. The sealed valid bundle and three published invalid bundles are tracked beside them. `SourceReleaseSchemaGate` in `src/docspec/ports/source_release.py:84` is the boundary; `JsonSchemaWireSourceReleaseGate` at `src/docspec/adapters/wire_source_release.py:245` is the Draft 2020-12 implementation; `LocalSourceReleaseReader._screen` at `src/docspec/adapters/source_catalog.py:291` puts it on the reader's admission path as an optional injected keyword. `tests/test_wire_source_release.py` holds nine tests over the pinned bytes. See "Where the wire schema pin lives" and "What the schema gate is, in code".
+- Open under this phase: the local `docspec-source-catalog` 1.0 distribution this reader reads is not the wire format, so no release is yet both read as a `SourceItem` stream and decided by the gate. Migrating the local format to the wire format is separately tracked. The `DocumentRelease` v2 candidate (`urn:rulespec:core:ff444f84…`) is Phase 3.
 
-**Exit gate:** A sealed `SourceCatalogRelease` identified only by digest produces a byte-identical `SourceItem` stream on repeated reads, and every invalid fixture is rejected with a diagnostic rather than an exception from a lower layer.
+**Exit gate:** A sealed `SourceCatalogRelease` identified only by digest produces a byte-identical `SourceItem` stream on repeated reads, and every invalid fixture is rejected with a diagnostic rather than an exception from a lower layer. The second half is met for the four pinned bundles: each of the three invalid ones is refused with a located `SourceReleaseViolation`, and the valid one conforms. The first half is met for the local distribution only.
 
 ### Phase 2: Capture, extract, segment
 
@@ -175,14 +218,14 @@ Open under this phase: the Mirrulations draw is pinned, the Federal Register con
 - Adding a second port when one Protocol plus one adapter method covers the boundary.
 - Reusing the name `AcquisitionSource` (`ports/content_fetcher.py:88`), `SourceCatalog`, or `SourceCatalogReader` (`ports/source_catalog.py:41,53`).
 - Authoring the `SourceCatalogRelease` or `DocumentRelease` schema sets inside DocSpec. They arrive in the Rulespec Core wheel as one digest-addressed bundle.
-- Publishing a second schema distribution or a DocSpec-local copy of the bundle.
+- Publishing a second schema distribution. The three schema files under `fixtures/wire/source-catalog-release-v1/schemas/` are a tracked test pin, byte-identical to what Rulespec Core publishes and verified against the digests its candidate names. They are read by tests and by an injected gate. They are not published, not installed, and not in the built wheel; `tests/test_package_boundary.py:272` asserts every wheel member starts with `docspec/`.
 - Adding a dependency-injection framework, plugin registry, service locator, or runtime discovery system.
 - Keeping a compatibility path for the sibling-checkout harness after its replacement lands.
 - Removing membership, path, containment, symlink, or digest verification at admission and open.
 
 ## Definition of done
 
-1. DocSpec consumes a sealed `SourceCatalogRelease` referenced by digest through one internal port, and rejects a reference whose bytes do not match. The port is `SourceReleaseReader` at `src/docspec/ports/source_release.py:50`, addressed by a `SourceReleasePin` of root locator plus digest; the adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:268`, and the refusal is at `:274`, covered by `tests/test_source_catalog.py:109` and `:129`. What it reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`.
+1. DocSpec consumes a sealed `SourceCatalogRelease` referenced by digest through one internal port, and rejects a reference whose bytes do not match. The port is `SourceReleaseReader` at `src/docspec/ports/source_release.py:50`, addressed by a `SourceReleasePin` of root locator plus digest; the adapter is `LocalSourceReleaseReader` at `src/docspec/adapters/source_catalog.py:277`, and the refusal is at `:309`, covered by `tests/test_source_catalog.py:109` and `:129`. What it reads is the local `docspec-source-catalog` 1.0 distribution, not a Rulespec-published `SourceCatalogRelease`. A release published in the wire format is decided by `SourceReleaseSchemaGate` at `src/docspec/ports/source_release.py:84`, injected into that same reader.
 2. The pipeline captures the selected source files and produces normalized representations, document nodes, structural segments, evidence coordinates, and coverage information.
 3. DocSpec publishes a portable, immutable `DocumentRelease` that names its parent source release by identity and digest.
 4. The published release verifies and opens with no checkout of any product on disk.
