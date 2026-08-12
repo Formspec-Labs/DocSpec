@@ -17,6 +17,26 @@ from tools.generate_archive_manifest import manifest_bytes
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
 ARCHIVE_ROOT = ROOT / "archive" / "legacy-2026-08-05"
+REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
+
+# A path naming the sibling checkout: the name flanked by separators, or ending
+# the string after one. `spicy_regs` on its own is a package name, not a path --
+# ADAPTER_ONLY_SIBLING_PACKAGES above is exactly that -- and a remote URL such as
+# `git@github.com:civictechdc/spicy-regs.git` names a repository to clone, not a
+# directory on this machine, so neither form matches.
+SIBLING_CHECKOUT_PATH = re.compile(r"(?:^|/)spicy[-_]regs(?:/|\Z)")
+SIBLING_MODULE_PATH = re.compile(r"\bspicy_regs\.")
+SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
+# An absolute path whose first segment is a home-directory root belongs to one
+# developer's machine, so it can only reach code this repository does not own.
+HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
+
+# Every expression this repository passes as a subprocess working directory.
+# `ROOT` and `REPO_ROOT` are this checkout; `repository` and `root` are
+# parameters their callers bind to this checkout or to a temporary copy of it;
+# `tmp_path` is the pytest temporary directory. A crossing returns as a new
+# name here, which fails until someone adds it deliberately.
+REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "repository", "root", "tmp_path"})
 
 ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
     {
@@ -70,6 +90,70 @@ def _absolute_imports(path: Path) -> set[str]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             imports.add(node.module)
     return imports
+
+
+def _repository_code_files() -> list[Path]:
+    return sorted(path for name in REPOSITORY_CODE_ROOTS for path in (ROOT / name).rglob("*.py"))
+
+
+def _working_directory_expression(node: ast.expr) -> str:
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    while isinstance(node, ast.BinOp):
+        node = node.left
+    if isinstance(node, ast.Call):
+        node = node.func
+        while isinstance(node, ast.Attribute):
+            node = node.value
+    return node.id if isinstance(node, ast.Name) else ast.unparse(node)
+
+
+def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_directory() -> None:
+    """The campaign harness once shelled into a SpicyRegs checkout; nothing may again.
+
+    Four crossings used to live in `tools/fr_mirrulations_qualification.py`: an
+    absolute path to the sibling checkout, a path into its gitignored output, a
+    subprocess run with `cwd` set to it, and a `python -c` script importing a
+    private symbol from `spicy_regs`. Their inputs arrive pinned by digest now.
+    This is the gate that keeps them gone.
+    """
+
+    files = _repository_code_files()
+    assert files, "the repository must contain code under src/, tests/, and tools/"
+
+    violations: list[str] = []
+    working_directories: set[str] = set()
+    for path in files:
+        relative = path.relative_to(ROOT).as_posix()
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value
+                segments = value.split("/")
+                if len(segments) > 1 and not segments[0] and segments[1] in HOME_DIRECTORY_ROOTS:
+                    violations.append(f"{relative}:{node.lineno} names a home directory: {value!r}")
+                if "/" in value and SIBLING_CHECKOUT_PATH.search(value):
+                    violations.append(f"{relative}:{node.lineno} names a SpicyRegs path: {value!r}")
+                if SIBLING_MODULE_PATH.search(value):
+                    violations.append(f"{relative}:{node.lineno} names a spicy_regs module: {value!r}")
+            elif isinstance(node, ast.Call):
+                for keyword in node.keywords:
+                    if keyword.arg == "cwd":
+                        expression = _working_directory_expression(keyword.value)
+                        working_directories.add(expression)
+                        if expression not in REPOSITORY_ROOTED_WORKING_DIRECTORIES:
+                            violations.append(
+                                f"{relative}:{node.lineno} runs a subprocess in {expression}"
+                            )
+
+    for imported in (name for path in files for name in _absolute_imports(path)):
+        if imported.partition(".")[0] in SIBLING_PACKAGE_ROOTS:
+            violations.append(f"a repository module imports {imported}")
+
+    assert violations == []
+    # Any allowance that stops being used is removed rather than left standing.
+    assert working_directories == REPOSITORY_ROOTED_WORKING_DIRECTORIES
 
 
 def test_project_declares_a_stdlib_core_and_one_command() -> None:
