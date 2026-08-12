@@ -238,6 +238,26 @@ Phase 2 capture may begin. The `DocumentRelease` v2 candidate
 - Produce normalized representations, document nodes, structural segments, evidence coordinates, and coverage information.
 - Keep the existing `Extractor`, `Segmenter`, `Processor`, `BlobStore`, and `ContentFetcher` ports and their explicit injection.
 
+The first composition slice is implemented. `SourceReleaseCatalogView` at
+`src/docspec/adapters/source_catalog.py:338` maps the existing
+`SourceCatalogRef` to `SourceReleasePin`, delegates every operation to the
+injected `SourceReleaseReader`, and refuses an identity mismatch. It performs
+no parsing, validation, persistence, or identity construction. This lets the
+unchanged planner and reconciler consume either local or wire release readers
+without republishing the source items under a second catalog identity.
+
+The bounded application test at `tests/test_application_pipeline.py:268` now
+runs planning, capture, extraction, segmentation, reconciliation, and commit
+through this view and confirms the resulting `DocumentRelease` retains the
+original source reference. The wire fixture test exercises the same view over
+`LocalWireSourceReleaseReader`.
+
+Open under this phase: the real release's selected candidates use HTTPS
+locators. DocSpec currently provides contained local-file and anonymous-S3
+fetchers; `RoutingContentFetcher` refuses every other scheme. The next slice is
+a bounded, sealed HTTPS fetcher and explicit composition for the wire release.
+No production rendition capture has started.
+
 **Exit gate:** Every source item in the input release reaches one terminal disposition, and coverage information accounts for every declared candidate.
 
 ### Phase 3: Publish the document release

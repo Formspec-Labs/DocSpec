@@ -8,10 +8,12 @@ from docspec.adapters.source_catalog import (
     LocalFileContentFetcher,
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
+    SourceReleaseCatalogView,
 )
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import sha256_digest
 from docspec.errors import IntegrityError, LimitExceededError
+from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_release import SourceReleasePin
 
 
@@ -104,6 +106,18 @@ def test_sealed_source_release_admits_by_digest_and_streams_its_items(tmp_path: 
     # The emitted stream is the stream the catalog writer already accepts, so the same
     # items republish to the same content-derived identity.
     assert catalogs.write(releases.open(pin).items) == reference
+
+    # The planner's existing SourceCatalog dependency can consume the same
+    # admitted release directly, without republishing it under another identity.
+    release_catalog = SourceReleaseCatalogView(releases)
+    assert release_catalog.verify(reference) == admission.summary
+    assert release_catalog.describe(reference) == admission.summary
+    assert list(release_catalog.open(reference).items) == items
+    assert list(release_catalog.stream(reference)) == items
+
+    wrong_identity = SourceCatalogRef("different-catalog", reference.locator, reference.digest)
+    with pytest.raises(IntegrityError, match="differs from the admitted source release"):
+        release_catalog.open(wrong_identity)
 
 
 def test_sealed_source_release_refuses_a_pin_whose_bytes_differ(tmp_path: Path) -> None:

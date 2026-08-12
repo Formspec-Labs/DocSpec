@@ -9,7 +9,12 @@ import pytest
 from docspec.adapters.execution import LocalExecutionBackend
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.source_catalog import (
+    LocalFileContentFetcher,
+    LocalJsonlSourceCatalog,
+    LocalSourceReleaseReader,
+    SourceReleaseCatalogView,
+)
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -270,6 +275,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     second_candidate = _write_source(sources / "second.txt", "Unchanged document.")
 
     source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
+    pipeline_source_catalog = SourceReleaseCatalogView(LocalSourceReleaseReader(source_catalog))
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -301,7 +307,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     first_plan = _plan(source_v1, None, processor, retry, accepted, buckets=16)
     planned, processed, sealed, run_v1_ref, release_v1_ref = _run(
         plan=first_plan,
-        source_catalog=source_catalog,
+        source_catalog=pipeline_source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,
@@ -319,6 +325,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     assert run_v1.store_count == len(sealed)
     assert run_v1.selected_item_count == 2
     release_v1 = catalog.open(release_v1_ref)
+    assert release_v1.source_catalog == source_v1
     assert release_v1.previous_release is None
     assert catalog.current() == release_v1_ref
     assert len(list(catalog.scan(release_v1_ref, layer_kind="segments"))) == 3
@@ -340,7 +347,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     second_plan = _plan(source_v2, release_v1_ref, processor, retry, accepted, buckets=16)
     planned_v2, _, sealed_v2, _, release_v2_ref = _run(
         plan=second_plan,
-        source_catalog=source_catalog,
+        source_catalog=pipeline_source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,
@@ -372,7 +379,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     third_plan = _plan(source_v3, release_v2_ref, processor, retry, accepted, buckets=16)
     planned_v3, _, _, _, release_v3_ref = _run(
         plan=third_plan,
-        source_catalog=source_catalog,
+        source_catalog=pipeline_source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,

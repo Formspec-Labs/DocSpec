@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog, LocalSourceReleaseReader
+from docspec.adapters.source_catalog import (
+    LocalJsonlSourceCatalog,
+    LocalSourceReleaseReader,
+    SourceReleaseCatalogView,
+)
 from docspec.adapters.wire_source_release import (
     WIRE_FORMAT,
     WIRE_FORMAT_VERSION,
@@ -126,7 +130,9 @@ def test_wire_release_reader_streams_the_valid_release_as_docspec_source_items(
     assert admission.summary.item_count == 6
     assert admission.summary.state_counts == {"active": 2, "deleted": 1, "excluded": 3}
 
-    first = list(reader.open(pin).items)
+    release_catalog = SourceReleaseCatalogView(reader)
+    assert release_catalog.verify(admission.reference) == admission.summary
+    first = list(release_catalog.open(admission.reference).items)
     second = list(reader.open(pin).items)
     assert first == second
     assert [item.item_id for item in first] == [

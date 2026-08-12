@@ -43,6 +43,7 @@ from docspec.ports.source_release import (
     SourceReleaseAdmission,
     SourceReleasePin,
     SourceReleaseRead,
+    SourceReleaseReader,
     SourceReleaseSchemaGate,
 )
 
@@ -334,6 +335,45 @@ class LocalSourceReleaseReader:
         return SourceReleaseRead(SourceReleaseAdmission(pin, reference, read.summary), read.items)
 
 
+class SourceReleaseCatalogView:
+    """Expose a release reader through SourceCatalog without copying its data.
+
+    This view only maps the existing reference types and delegates. It performs
+    no parsing, validation, persistence, or identity construction of its own.
+    """
+
+    def __init__(self, release_reader: SourceReleaseReader) -> None:
+        self._release_reader = release_reader
+
+    @staticmethod
+    def _pin(reference: SourceCatalogRef) -> SourceReleasePin:
+        try:
+            return SourceReleasePin(reference.locator, reference.digest)
+        except ValueError as error:
+            raise IntegrityError(f"source catalog reference cannot address a sealed release: {error}") from error
+
+    @staticmethod
+    def _require_reference(expected: SourceCatalogRef, actual: SourceReleaseAdmission) -> None:
+        if actual.reference != expected:
+            raise IntegrityError("source catalog reference differs from the admitted source release")
+
+    def verify(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
+        admission = self._release_reader.admit(self._pin(reference))
+        self._require_reference(reference, admission)
+        return admission.summary
+
+    def describe(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
+        return self.verify(reference)
+
+    def open(self, reference: SourceCatalogRef) -> SourceCatalogRead:
+        read = self._release_reader.open(self._pin(reference))
+        self._require_reference(reference, read.admission)
+        return SourceCatalogRead(read.admission.summary, read.items)
+
+    def stream(self, reference: SourceCatalogRef) -> Iterator[SourceItem]:
+        yield from self.open(reference).items
+
+
 class LocalFileContentFetcher:
     """Stream only regular files contained below one configured local root."""
 
@@ -423,4 +463,9 @@ class LocalFileContentFetcher:
         )
 
 
-__all__ = ["LocalFileContentFetcher", "LocalJsonlSourceCatalog", "LocalSourceReleaseReader"]
+__all__ = [
+    "LocalFileContentFetcher",
+    "LocalJsonlSourceCatalog",
+    "LocalSourceReleaseReader",
+    "SourceReleaseCatalogView",
+]

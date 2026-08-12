@@ -14,6 +14,7 @@ from docspec.adapters.source_catalog import (
     LocalFileContentFetcher,
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
+    SourceReleaseCatalogView,
 )
 from docspec.adapters.wire_source_release import (
     JsonSchemaWireSourceReleaseGate,
@@ -55,6 +56,7 @@ __all__ = [
     "LocalSqliteReconciliationWorkspaceFactory",
     "NullProcessorResultCache",
     "RootOnlyBlobProfileStateReachability",
+    "SourceReleaseCatalogView",
     "RoutingContentFetcher",
     "S3ContentFetcherError",
     "WireReleaseBundlePin",
