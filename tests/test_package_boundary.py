@@ -162,13 +162,14 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == []
     assert project["project"]["scripts"] == {"docspec": "docspec.cli:main"}
-    assert set(project["project"]["optional-dependencies"]) == {"dagster", "pdf", "s3"}
+    assert set(project["project"]["optional-dependencies"]) == {"dagster", "pdf", "s3", "wire"}
 
     extras = project["project"]["optional-dependencies"]
     assert any(requirement.startswith("pymupdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
+    assert any(requirement.startswith("jsonschema") for requirement in extras["wire"])
     assert "archive" in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 

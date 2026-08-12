@@ -18,9 +18,12 @@ from docspec.ports.segmenter import Segmenter
 from docspec.ports.source_catalog import SourceCatalog, SourceCatalogRead, SourceCatalogReader, SourceCatalogSummary
 from docspec.ports.source_release import (
     SourceReleaseAdmission,
+    SourceReleaseConformance,
     SourceReleasePin,
     SourceReleaseRead,
     SourceReleaseReader,
+    SourceReleaseSchemaGate,
+    SourceReleaseViolation,
 )
 
 __all__ = [
@@ -53,8 +56,11 @@ __all__ = [
     "SourceCatalogReader",
     "SourceCatalogSummary",
     "SourceReleaseAdmission",
+    "SourceReleaseConformance",
     "SourceReleasePin",
     "SourceReleaseRead",
     "SourceReleaseReader",
+    "SourceReleaseSchemaGate",
+    "SourceReleaseViolation",
     "StoreTaskHandler",
 ]

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from docspec.domain.content import SourceItem
-from docspec.domain.identity import require_relative_path, require_sha256
+from docspec.domain.identity import require_relative_path, require_sha256, require_text
 from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceCatalogSummary
 
@@ -53,3 +53,45 @@ class SourceReleaseReader(Protocol):
     def admit(self, pin: SourceReleasePin) -> SourceReleaseAdmission: ...
 
     def open(self, pin: SourceReleasePin) -> SourceReleaseRead: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SourceReleaseViolation:
+    """One structural refusal, located in the release member that carries it."""
+
+    member: str
+    pointer: str
+    message: str
+
+    def __post_init__(self) -> None:
+        require_relative_path(self.member, "violation member")
+        require_text(self.message, "violation message")
+        if self.pointer and not self.pointer.startswith("/"):
+            raise ValueError("violation pointer must be empty or a JSON pointer")
+
+
+@dataclass(frozen=True, slots=True)
+class SourceReleaseConformance:
+    """One structural verdict: the violations found, in a stable order."""
+
+    violations: tuple[SourceReleaseViolation, ...] = ()
+
+    @property
+    def conforms(self) -> bool:
+        return not self.violations
+
+
+class SourceReleaseSchemaGate(Protocol):
+    """Decide the published structural shape of one release in the exchanged wire format.
+
+    This decides shape only. Identity, membership, digests, counts, coverage,
+    paths, and duplicates are decided by the party that publishes the format.
+    """
+
+    def check(
+        self,
+        *,
+        root: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+        items: Sequence[Any],
+    ) -> SourceReleaseConformance: ...

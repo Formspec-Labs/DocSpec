@@ -21,12 +21,14 @@ from docspec.adapters.storage import (
     _verified_member_path,
     _write_once,
 )
+from docspec.adapters.wire_source_release import read_wire_release_bundle
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import (
     canonical_json_bytes,
     canonical_json_file_bytes,
     identity_digest,
     parse_canonical_json,
+    parse_closed_json,
     require_relative_path,
     require_text,
     sha256_digest,
@@ -37,7 +39,14 @@ from docspec.domain.references import SourceCatalogRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchMetadata, FetchStream
 from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
-from docspec.ports.source_release import SourceReleaseAdmission, SourceReleasePin, SourceReleaseRead
+from docspec.ports.source_release import (
+    SourceReleaseAdmission,
+    SourceReleasePin,
+    SourceReleaseRead,
+    SourceReleaseSchemaGate,
+)
+
+LOCAL_CATALOG_FORMAT = "docspec-source-catalog"
 
 
 class LocalJsonlSourceCatalog:
@@ -120,7 +129,7 @@ class LocalJsonlSourceCatalog:
             }
             catalog_id = stable_urn("source-catalog", content)
             root = {
-                "format": "docspec-source-catalog",
+                "format": LOCAL_CATALOG_FORMAT,
                 "formatVersion": "1.0",
                 "catalogId": catalog_id,
                 **content,
@@ -164,7 +173,7 @@ class LocalJsonlSourceCatalog:
             "partitions",
             "coverage",
         }
-        if set(value) != expected or value["format"] != "docspec-source-catalog" or value["formatVersion"] != "1.0":
+        if set(value) != expected or value["format"] != LOCAL_CATALOG_FORMAT or value["formatVersion"] != "1.0":
             raise IntegrityError("source catalog root has an unknown format or invalid closed shape")
         content = {name: value[name] for name in expected - {"format", "formatVersion", "catalogId"}}
         if value["catalogId"] != stable_urn("source-catalog", content) or value["catalogId"] != reference.catalog_id:
@@ -266,10 +275,36 @@ class LocalJsonlSourceCatalog:
 
 
 class LocalSourceReleaseReader:
-    """Admit sealed local source releases by digest through one injected catalog."""
+    """Admit sealed local source releases by digest through one injected catalog.
 
-    def __init__(self, catalog: LocalJsonlSourceCatalog) -> None:
+    An optional `wire_gate` screens any pinned root that is not this reader's
+    own `docspec-source-catalog` distribution. That format is not the exchanged
+    wire format, so the gate never runs for a local release; it runs when a
+    release published in the exchanged format arrives at this pin, and turns a
+    confusing lower-layer refusal into a located structural one.
+    """
+
+    def __init__(self, catalog: LocalJsonlSourceCatalog, *, wire_gate: SourceReleaseSchemaGate | None = None) -> None:
         self._catalog = catalog
+        self._wire_gate = wire_gate
+
+    def _screen(self, pin: SourceReleasePin, payload: bytes) -> None:
+        """Refuse a digest-verified root that this reader's own distribution does not describe."""
+
+        value = parse_closed_json(payload, label="sealed source release root")
+        if isinstance(value, Mapping) and value.get("format") == LOCAL_CATALOG_FORMAT:
+            return
+        bundle = read_wire_release_bundle(_contained(self._catalog.root, pin.root).parent)
+        if bundle.root != thaw_json(value):
+            raise IntegrityError("sealed source release root changed while its bundle was read")
+        conformance = self._wire_gate.check(root=bundle.root, manifest=bundle.manifest, items=bundle.items)
+        if conformance.conforms:
+            raise IntegrityError("sealed source release is published in a format this reader does not admit")
+        first = conformance.violations[0]
+        raise IntegrityError(
+            f"sealed source release violates its published schema, first of {len(conformance.violations)} "
+            f"at {first.member}{first.pointer}: {first.message}"
+        )
 
     def _reference(self, pin: SourceReleasePin) -> SourceCatalogRef:
         """Recompute the pinned root digest and read the identity those bytes carry."""
@@ -281,6 +316,8 @@ class LocalSourceReleaseReader:
         payload = _read_exact(self._catalog.root, pin.root)
         if sha256_digest(payload) != pin.digest:
             raise IntegrityError("sealed source release root differs from its pinned digest")
+        if self._wire_gate is not None:
+            self._screen(pin, payload)
         value = thaw_json(parse_canonical_json(payload, label="sealed source release root"))
         identity = value.get("catalogId") if isinstance(value, dict) else None
         if not isinstance(identity, str) or not identity:

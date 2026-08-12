@@ -15,6 +15,15 @@ from docspec.adapters.source_catalog import (
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
 )
+from docspec.adapters.wire_source_release import (
+    JsonSchemaWireSourceReleaseGate,
+    WireReleaseBundlePin,
+    WireReleasePins,
+    WireSourceReleaseBundle,
+    WireSourceReleaseError,
+    load_wire_release_pins,
+    read_wire_release_bundle,
+)
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -30,6 +39,7 @@ __all__ = [
     "AnonymousS3ContentFetcherConfig",
     "DagsterAdapterProfile",
     "DagsterDeploymentConfig",
+    "JsonSchemaWireSourceReleaseGate",
     "LocalContentAddressedBlobStore",
     "LocalDocumentStoreRepository",
     "LocalFileContentFetcher",
@@ -45,5 +55,11 @@ __all__ = [
     "RootOnlyBlobProfileStateReachability",
     "RoutingContentFetcher",
     "S3ContentFetcherError",
+    "WireReleaseBundlePin",
+    "WireReleasePins",
+    "WireSourceReleaseBundle",
+    "WireSourceReleaseError",
     "build_dagster_definitions",
+    "load_wire_release_pins",
+    "read_wire_release_bundle",
 ]

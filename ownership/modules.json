@@ -112,6 +112,15 @@
       ]
     },
     {
+      "path": "src/docspec/adapters/wire_source_release.py",
+      "capability": "Digest-verified pinned wire schema set and Draft 2020-12 structural gate for an exchanged source release",
+      "status": "implemented",
+      "conformanceTests": [
+        "SOURCE-CATALOG-CONTRACT",
+        "DOCUMENT-RELEASE-INTEGRITY"
+      ]
+    },
+    {
       "path": "src/docspec/application/__init__.py",
       "capability": "Public scheduler-neutral application-service and release-verifier surface",
       "status": "implemented",
@@ -565,7 +574,7 @@
     },
     {
       "path": "src/docspec/ports/source_release.py",
-      "capability": "Digest-pinned sealed source-release admission and source-item stream boundary",
+      "capability": "Digest-pinned sealed source-release admission, source-item stream, and structural schema-gate boundary",
       "status": "implemented",
       "conformanceTests": [
         "SOURCE-CATALOG-CONTRACT",
