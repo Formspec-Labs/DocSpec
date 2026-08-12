@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import resource
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -17,6 +16,8 @@ from docspec.cli import _execute_local_run, _local_run_request, _local_storage_f
 from docspec.domain.identity import (
     canonical_json_file_bytes,
     parse_canonical_json,
+    require_relative_path,
+    require_sha256,
     sha256_digest,
     stable_urn,
     thaw_json,
@@ -34,9 +35,8 @@ from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
 from tools.fr_mirrulations_support import (
     CAMPAIGN_ID,
-    MIRRULATIONS_BUCKET,
     MIRRULATIONS_COUNT,
-    MIRRULATIONS_PREFIX,
+    MIRRULATIONS_SCHEMA,
     CorpusInputs,
     TIERS,
     QualificationTier,
@@ -45,6 +45,7 @@ from tools.fr_mirrulations_support import (
     build_execution_manifest,
     build_source_items,
     reconstruct_fetcher,
+    require_producer_identity,
     run_qualification_gates,
     validate_gate_receipt,
     validate_execution_manifest,
@@ -52,10 +53,9 @@ from tools.fr_mirrulations_support import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SPICYREGS = Path("/Users/mikewolfd/Work/spicy-regs")
-DEFAULT_FR_ROOT = DEFAULT_SPICYREGS / "output/scale-dr-10k-2026-08-05"
+DEFAULT_INPUT_MANIFEST = REPO_ROOT / f"fixtures/qualification/{CAMPAIGN_ID}/input-manifest.json"
 DEFAULT_OUTPUT = REPO_ROOT / f"output/qualification/{CAMPAIGN_ID}"
-BUILDER_RELATIVE = Path("src/spicy_regs/corpora/mirrulations_document_corpus.py")
+MAXIMUM_DRAW_BYTES = 64 * 1024**2
 _PROFILE_IDS = (
     "urn:docspec:profile:release-manifest:canonical-json:1",
     "urn:docspec:profile:document-catalog:local-manifest:1",
@@ -66,123 +66,76 @@ _PROFILE_IDS = (
 )
 
 
-def _run_checked(arguments: list[str], *, cwd: Path) -> str:
-    result = subprocess.run(arguments, cwd=cwd, capture_output=True, check=False, text=True)
-    if result.returncode != 0:
-        detail = result.stderr.strip() or result.stdout.strip() or f"exit status {result.returncode}"
-        raise IntegrityError(f"producer command failed: {detail}")
-    return result.stdout.strip()
+def _canonical_object(path: Path, *, label: str) -> dict[str, Any]:
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise IntegrityError(f"{label} must be a regular, non-symlink file: {path}")
+    value = thaw_json(parse_canonical_json(path.read_bytes(), label=label))
+    if not isinstance(value, dict):
+        raise IntegrityError(f"{label} must contain an object")
+    return value
 
 
-def _inputs(args: argparse.Namespace) -> CorpusInputs:
+def _inputs(args: argparse.Namespace, draw_path: Path) -> CorpusInputs:
+    if args.federal_register_root is None:
+        raise IntegrityError("--federal-register-root must name the captured Federal Register root")
     fr_root = args.federal_register_root.resolve(strict=True)
     return CorpusInputs(
         fr_root / "draw-manifest-final.json",
         fr_root / "cache-xml/receipts",
         fr_root / "cache-xml/documents",
-        args.output.resolve() / "producer/mirrulations-draw.json",
+        draw_path,
     )
 
 
-def freeze_producer_inputs(args: argparse.Namespace) -> dict[str, Any]:
-    """Run the SpicyRegs owner implementation and record its validation result."""
+def admit_producer_inputs(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
+    """Admit the pinned Mirrulations draw by digest and return its producer facts.
 
-    spicyregs = args.spicyregs.resolve(strict=True)
-    output = args.output.resolve()
-    draw_path = output / "producer/mirrulations-draw.json"
-    receipt_path = output / "producer/spicyregs-validation.json"
-    draw_path.parent.mkdir(parents=True, exist_ok=True)
-    commit = _run_checked(["git", "rev-parse", "HEAD"], cwd=spicyregs)
-    builder_path = (spicyregs / BUILDER_RELATIVE).resolve(strict=True)
-    builder_digest = sha256_digest(builder_path.read_bytes())
-    if draw_path.exists():
-        if not receipt_path.is_file():
-            raise IntegrityError("preexisting Mirrulations draw has no producer provenance receipt")
-        prior = thaw_json(parse_canonical_json(receipt_path.read_bytes(), label="SpicyRegs producer receipt"))
-        if not isinstance(prior, dict):
-            raise IntegrityError("SpicyRegs producer receipt must be an object")
-        expected_fields = {
-            "format",
-            "formatVersion",
-            "campaignId",
-            "producer",
-            "repository",
-            "commit",
-            "builder",
-            "builderDigest",
-            "draw",
-            "drawDigest",
-            "validationOutput",
-            "verdict",
-            "producerReceiptId",
-        }
-        if set(prior) != expected_fields:
-            raise IntegrityError("SpicyRegs producer receipt has an invalid closed shape")
-        prior_content = dict(prior)
-        prior_id = prior_content.pop("producerReceiptId")
-        if (
-            prior.get("format") != "docspec-qualification-producer-validation"
-            or prior.get("formatVersion") != "1.0"
-            or prior.get("campaignId") != CAMPAIGN_ID
-            or prior.get("producer") != "SpicyRegs"
-            or prior.get("repository") != spicyregs.as_posix()
-            or prior.get("verdict") != "passed"
-            or prior_id != stable_urn("qualification-producer-validation", prior_content)
-        ):
-            raise IntegrityError("SpicyRegs producer receipt identity or provenance is invalid")
-        if (
-            prior.get("commit") != commit
-            or prior.get("builder") != builder_path.as_posix()
-            or prior.get("builderDigest") != builder_digest
-            or prior.get("draw") != draw_path.resolve(strict=True).as_posix()
-            or prior.get("drawDigest") != sha256_digest(draw_path.read_bytes())
-        ):
-            raise IntegrityError("preexisting Mirrulations draw provenance differs from the current producer")
-    if not draw_path.exists():
-        _run_checked(
-            [
-                "uv",
-                "run",
-                "python",
-                "-m",
-                "spicy_regs.corpora.mirrulations_document_corpus",
-                "draw",
-                "--output",
-                draw_path.as_posix(),
-                "--bucket",
-                MIRRULATIONS_BUCKET,
-                "--prefix",
-                MIRRULATIONS_PREFIX,
-                "--max-documents",
-                str(MIRRULATIONS_COUNT),
-            ],
-            cwd=spicyregs,
-        )
-    validation_script = (
-        "import json,sys; "
-        "from pathlib import Path; "
-        "from spicy_regs.corpora.mirrulations_document_corpus import _draw_documents; "
-        "p=Path(sys.argv[1]); v=json.loads(p.read_text()); docs=_draw_documents(v); "
-        "print(json.dumps({'schema':v['schema_version'],'drawId':v['draw_id'],'documents':len(docs)},sort_keys=True))"
-    )
-    validation = _run_checked(["uv", "run", "python", "-c", validation_script, draw_path.as_posix()], cwd=spicyregs)
-    content = {
-        "format": "docspec-qualification-producer-validation",
-        "formatVersion": "1.0",
-        "campaignId": CAMPAIGN_ID,
-        "producer": "SpicyRegs",
-        "repository": spicyregs.as_posix(),
-        "commit": commit,
-        "builder": builder_path.as_posix(),
-        "builderDigest": builder_digest,
-        "draw": draw_path.resolve(strict=True).as_posix(),
-        "drawDigest": sha256_digest(draw_path.read_bytes()),
-        "validationOutput": validation,
-        "verdict": "passed",
-    }
-    receipt = {**content, "producerReceiptId": stable_urn("qualification-producer-validation", content)}
-    write_canonical_json(receipt_path, receipt)
-    return receipt
+    The draw arrives already published. This reads one tracked input manifest,
+    resolves the draw it pins as a contained relative path, bounds the read,
+    recomputes the digest over the bytes, and refuses a mismatch before any
+    parser sees them -- the shape `LocalSourceReleaseReader._reference` uses.
+    """
+
+    manifest_path = args.input_manifest.resolve(strict=True)
+    manifest = _canonical_object(manifest_path, label="qualification input manifest")
+    expected_fields = {"format", "formatVersion", "campaignId", "draw", "producer", "inputManifestId"}
+    if set(manifest) != expected_fields:
+        raise IntegrityError("qualification input manifest has an invalid closed shape")
+    identity_content = dict(manifest)
+    manifest_id = identity_content.pop("inputManifestId")
+    if (
+        manifest["format"] != "docspec-qualification-input-manifest"
+        or manifest["formatVersion"] != "1.0"
+        or manifest["campaignId"] != CAMPAIGN_ID
+        or manifest_id != stable_urn("qualification-input-manifest", identity_content)
+    ):
+        raise IntegrityError("qualification input manifest identity or format is invalid")
+    draw = manifest["draw"]
+    if not isinstance(draw, dict) or set(draw) != {
+        "path",
+        "digest",
+        "byteLength",
+        "drawId",
+        "schema",
+        "documentCount",
+    }:
+        raise IntegrityError("pinned Mirrulations draw has an invalid closed shape")
+    if draw["schema"] != MIRRULATIONS_SCHEMA or draw["documentCount"] != MIRRULATIONS_COUNT:
+        raise IntegrityError("pinned Mirrulations draw does not describe this campaign's population")
+    digest = require_sha256(draw["digest"], "pinned Mirrulations draw digest")
+    byte_length = draw["byteLength"]
+    if isinstance(byte_length, bool) or not isinstance(byte_length, int) or not 0 < byte_length <= MAXIMUM_DRAW_BYTES:
+        raise IntegrityError(f"pinned Mirrulations draw must declare at most {MAXIMUM_DRAW_BYTES} bytes")
+    draw_path = manifest_path.parent / require_relative_path(draw["path"], "pinned Mirrulations draw path")
+    if draw_path.is_symlink() or not draw_path.is_file():
+        raise IntegrityError(f"pinned Mirrulations draw must be a regular, non-symlink file: {draw_path}")
+    if draw_path.stat().st_size != byte_length:
+        raise IntegrityError("pinned Mirrulations draw differs in size from its input manifest")
+    if sha256_digest(draw_path.read_bytes()) != digest:
+        raise IntegrityError("pinned Mirrulations draw differs from its input manifest digest")
+    require_producer_identity(manifest["producer"])
+    return draw_path.resolve(strict=True), manifest
 
 
 def verify_gates(args: argparse.Namespace) -> dict[str, Any]:
@@ -226,8 +179,8 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     """Validate producer artifacts, build catalogs, plans, requests, and manifests."""
 
     gates = verify_gates(args)
-    producer = freeze_producer_inputs(args)
-    inputs = _inputs(args)
+    draw_path, input_manifest = admit_producer_inputs(args)
+    inputs = _inputs(args, draw_path)
     output = args.output.resolve()
     catalog_root = output / "source-catalogs"
     references, catalog_set = build_catalogs(inputs, catalog_root=catalog_root)
@@ -238,7 +191,6 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     accepted = AcceptedFailurePolicy()
     processor = ContentStatisticsProcessor(retry_policy=retry)
     manifests: dict[str, dict[str, Any]] = {}
-    spicyregs = args.spicyregs.resolve(strict=True)
     runner_path = Path(__file__).resolve(strict=True)
     runner_support_path = runner_path.with_name("fr_mirrulations_support.py").resolve(strict=True)
     for tier in TIERS:
@@ -310,9 +262,7 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
             processing_plan_id=plan.plan_id,
             run_request_path=request_path,
             output_roots=roots,
-            spicyregs_repository=spicyregs,
-            spicyregs_commit=producer["commit"],
-            spicyregs_builder=spicyregs / BUILDER_RELATIVE,
+            mirrulations_producer=input_manifest["producer"],
             runner_path=runner_path,
             runner_support_path=runner_support_path,
             gate_receipt_path=output / "verification/gate-receipt.json",
@@ -328,6 +278,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "format": "docspec-qualification-preparation",
         "formatVersion": "1.0",
         "campaignId": CAMPAIGN_ID,
+        "inputManifest": {
+            "path": args.input_manifest.resolve(strict=True).as_posix(),
+            "inputManifestId": input_manifest["inputManifestId"],
+        },
         "catalogs": {name: ref.to_dict() for name, ref in sorted(references.items())},
         "qualificationGates": {
             "path": (output / "verification/gate-receipt.json").as_posix(),
@@ -350,16 +304,6 @@ def _content_fetcher_composition(manifest_path: Path, manifest: dict[str, Any], 
             "digest": sha256_digest(manifest_path.read_bytes()),
         },
     }
-
-
-def _canonical_object(path: Path, *, label: str) -> dict[str, Any]:
-    path = Path(path)
-    if path.is_symlink() or not path.is_file():
-        raise IntegrityError(f"{label} must be a regular, non-symlink file: {path}")
-    value = thaw_json(parse_canonical_json(path.read_bytes(), label=label))
-    if not isinstance(value, dict):
-        raise IntegrityError(f"{label} must contain an object")
-    return value
 
 
 def _verified_census(args: argparse.Namespace, tier: str) -> dict[str, Any]:
@@ -627,8 +571,10 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--spicyregs", type=Path, default=DEFAULT_SPICYREGS)
-    parser.add_argument("--federal-register-root", type=Path, default=DEFAULT_FR_ROOT)
+    parser.add_argument("--input-manifest", type=Path, default=DEFAULT_INPUT_MANIFEST)
+    # The captured Federal Register root holds hundreds of megabytes of cached
+    # source bytes, so it is named by the operator rather than pinned in tree.
+    parser.add_argument("--federal-register-root", type=Path, default=None)
     parser.add_argument("--workers", type=int, default=8)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("prepare")

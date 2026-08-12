@@ -232,70 +232,111 @@ def test_gate_runner_rejects_source_change_during_execution(
         qualification.run_qualification_gates(repository=tmp_path)
 
 
-def _producer_fixture(tmp_path: Path) -> tuple[SimpleNamespace, Path, Path, Path]:
-    spicyregs = tmp_path / "spicy-regs"
-    builder = spicyregs / runner.BUILDER_RELATIVE
-    builder.parent.mkdir(parents=True)
-    builder.write_bytes(b"builder")
-    output = tmp_path / "output"
-    draw = output / "producer/mirrulations-draw.json"
-    draw.parent.mkdir(parents=True)
-    draw.write_bytes(b"draw")
-    args = SimpleNamespace(spicyregs=spicyregs, output=output)
-    return args, builder, draw, output / "producer/spicyregs-validation.json"
+def _producer_identity() -> dict[str, object]:
+    return {
+        "name": "SpicyRegs",
+        "commit": "adbd5a2b58391c5f0f623fad20674c7851251660",
+        "builderPath": "src/producer/mirrulations_document_corpus.py",
+        "builderDigest": "sha256:" + "3" * 64,
+        "schema": qualification.MIRRULATIONS_SCHEMA,
+    }
 
 
-def _producer_receipt(spicyregs: Path, builder: Path, draw: Path, **overrides: object) -> dict[str, object]:
-    content: dict[str, object] = {
-        "format": "docspec-qualification-producer-validation",
+def _pinned_draw_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[SimpleNamespace, Path, Path]:
+    """Write one tracked-shaped input manifest beside the draw bytes it pins."""
+
+    inputs = _fixture_inputs(tmp_path, monkeypatch)
+    monkeypatch.setattr(runner, "MIRRULATIONS_COUNT", qualification.MIRRULATIONS_COUNT)
+    root = tmp_path / "pinned"
+    root.mkdir()
+    draw_path = root / "mirrulations-draw.json"
+    draw_path.write_bytes(inputs.mirrulations_draw.read_bytes())
+    payload = draw_path.read_bytes()
+    content = {
+        "format": "docspec-qualification-input-manifest",
         "formatVersion": "1.0",
         "campaignId": qualification.CAMPAIGN_ID,
-        "producer": "SpicyRegs",
-        "repository": spicyregs.resolve().as_posix(),
-        "commit": "current-commit",
-        "builder": builder.resolve().as_posix(),
-        "builderDigest": sha256_digest(builder.read_bytes()),
-        "draw": draw.resolve().as_posix(),
-        "drawDigest": sha256_digest(draw.read_bytes()),
-        "validationOutput": "{}",
-        "verdict": "passed",
+        "draw": {
+            "path": "mirrulations-draw.json",
+            "digest": sha256_digest(payload),
+            "byteLength": len(payload),
+            "drawId": json.loads(payload.decode("utf-8"))["draw_id"],
+            "schema": qualification.MIRRULATIONS_SCHEMA,
+            "documentCount": qualification.MIRRULATIONS_COUNT,
+        },
+        "producer": _producer_identity(),
     }
-    content.update(overrides)
-    return {**content, "producerReceiptId": stable_urn("qualification-producer-validation", content)}
+    manifest = {**content, "inputManifestId": stable_urn("qualification-input-manifest", content)}
+    manifest_path = root / "input-manifest.json"
+    manifest_path.write_bytes(canonical_json_file_bytes(manifest))
+    return SimpleNamespace(input_manifest=manifest_path), manifest_path, draw_path
 
 
-def test_preexisting_mirrulations_draw_requires_a_producer_receipt(
+def test_pinned_draw_admission_returns_the_verified_draw_and_producer_facts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    args, _builder, _draw, _receipt = _producer_fixture(tmp_path)
-    monkeypatch.setattr(runner, "_run_checked", lambda *_args, **_kwargs: "current-commit")
+    args, manifest_path, draw_path = _pinned_draw_fixture(tmp_path, monkeypatch)
 
-    with pytest.raises(IntegrityError, match="no producer provenance receipt"):
-        runner.freeze_producer_inputs(args)
+    admitted_path, manifest = runner.admit_producer_inputs(args)
+
+    assert admitted_path == draw_path.resolve()
+    assert manifest["producer"] == _producer_identity()
+    assert manifest["draw"]["digest"] == sha256_digest(draw_path.read_bytes())
+    assert manifest_path.is_file()
+
+
+def test_pinned_draw_admission_rejects_changed_draw_bytes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args, _manifest_path, draw_path = _pinned_draw_fixture(tmp_path, monkeypatch)
+    original = draw_path.read_bytes()
+    draw_path.write_bytes(original.replace(b"DOC-1", b"DOC-2", 1))
+    assert len(draw_path.read_bytes()) == len(original)
+
+    with pytest.raises(IntegrityError, match="differs from its input manifest digest"):
+        runner.admit_producer_inputs(args)
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    ("section", "field", "value"),
     [
-        ("commit", "different-commit"),
-        ("builderDigest", "sha256:" + "1" * 64),
-        ("drawDigest", "sha256:" + "2" * 64),
+        ("draw", "digest", "sha256:" + "4" * 64),
+        ("draw", "byteLength", 11),
+        ("producer", "commit", "a-different-producer-commit"),
     ],
 )
-def test_preexisting_mirrulations_draw_rejects_mismatched_provenance(
+def test_pinned_draw_admission_rejects_an_altered_input_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    section: str,
     field: str,
-    value: str,
+    value: object,
 ) -> None:
-    args, builder, draw, receipt_path = _producer_fixture(tmp_path)
-    receipt = _producer_receipt(args.spicyregs, builder, draw, **{field: value})
-    receipt_path.write_bytes(canonical_json_file_bytes(receipt))
-    monkeypatch.setattr(runner, "_run_checked", lambda *_args, **_kwargs: "current-commit")
+    args, manifest_path, _draw_path = _pinned_draw_fixture(tmp_path, monkeypatch)
+    manifest = json.loads(manifest_path.read_bytes().decode("utf-8"))
+    manifest[section][field] = value
+    manifest_path.write_bytes(canonical_json_file_bytes(manifest))
 
-    with pytest.raises(IntegrityError, match="provenance differs"):
-        runner.freeze_producer_inputs(args)
+    with pytest.raises(IntegrityError, match="identity or format is invalid"):
+        runner.admit_producer_inputs(args)
+
+
+def test_pinned_draw_admission_refuses_a_draw_path_outside_the_manifest_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    args, manifest_path, _draw_path = _pinned_draw_fixture(tmp_path, monkeypatch)
+    manifest = json.loads(manifest_path.read_bytes().decode("utf-8"))
+    content = {name: value for name, value in manifest.items() if name != "inputManifestId"}
+    content["draw"]["path"] = "../escaped-draw.json"
+    manifest_path.write_bytes(
+        canonical_json_file_bytes({**content, "inputManifestId": stable_urn("qualification-input-manifest", content)})
+    )
+
+    with pytest.raises(ValueError, match="contained relative path"):
+        runner.admit_producer_inputs(args)
 
 
 def _gate_summary() -> dict[str, object]:
@@ -332,7 +373,7 @@ def test_execution_manifest_reconstructs_and_rejects_drift(
     repository = tmp_path / "repository"
     files = repository / "files"
     files.mkdir(parents=True)
-    for name in ("plan.json", "request.json", "builder.py"):
+    for name in ("plan.json", "request.json"):
         (files / name).write_text(name, encoding="utf-8")
     tools = repository / "tools"
     tools.mkdir()
@@ -357,9 +398,7 @@ def test_execution_manifest_reconstructs_and_rejects_drift(
         processing_plan_id="plan-id",
         run_request_path=files / "request.json",
         output_roots=outputs,
-        spicyregs_repository=repository,
-        spicyregs_commit="abc123",
-        spicyregs_builder=files / "builder.py",
+        mirrulations_producer=_producer_identity(),
         runner_path=tools / "runner.py",
         runner_support_path=tools / "support.py",
         gate_receipt_path=gate_path,
@@ -382,8 +421,12 @@ def test_execution_manifest_reconstructs_and_rejects_drift(
         qualification.validate_execution_manifest(path)
     federal_register_path.write_bytes(federal_register_bytes)
 
-    (files / "builder.py").write_text("changed", encoding="utf-8")
-    with pytest.raises(IntegrityError, match="builder differs"):
+    # The producer facts are sealed by the manifest identity, not by re-reading
+    # a file in the producer's checkout: editing them fails before any I/O.
+    edited = json.loads(path.read_bytes().decode("utf-8"))
+    edited["producerInputs"]["mirrulations"]["producer"]["commit"] = "an-unrecorded-producer-commit"
+    path.write_bytes(canonical_json_file_bytes(edited))
+    with pytest.raises(IntegrityError, match="manifest identity differs"):
         qualification.validate_execution_manifest(path)
 
 

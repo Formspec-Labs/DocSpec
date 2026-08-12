@@ -71,8 +71,8 @@ QUALIFICATION_GATE_SELECTORS = {
         "tests/test_fr_mirrulations_qualification.py::test_translation_rejects_changed_federal_register_bytes",
         "tests/test_fr_mirrulations_qualification.py::test_translation_rejects_missing_mirrulations_pair",
         "tests/test_fr_mirrulations_qualification.py::test_execution_manifest_reconstructs_and_rejects_drift",
-        "tests/test_fr_mirrulations_qualification.py::test_preexisting_mirrulations_draw_requires_a_producer_receipt",
-        "tests/test_fr_mirrulations_qualification.py::test_preexisting_mirrulations_draw_rejects_mismatched_provenance",
+        "tests/test_fr_mirrulations_qualification.py::test_pinned_draw_admission_rejects_changed_draw_bytes",
+        "tests/test_fr_mirrulations_qualification.py::test_pinned_draw_admission_rejects_an_altered_input_manifest",
         "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_rejects_changed_response_and_closes",
         "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_fails_before_io_for_bounds_and_source_escape",
         "tests/test_content_fetchers.py::test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme",
@@ -839,6 +839,34 @@ def build_catalogs(
     }
 
 
+def require_producer_identity(value: Any) -> dict[str, Any]:
+    """Return the producer facts the pinned draw carries, without touching a checkout.
+
+    Every field arrives from the tracked input manifest that pins the draw
+    bytes. `builderPath` names a file inside the producer's own repository and
+    is deliberately never resolved here: the draw's provenance is a recorded
+    fact about bytes already published, not a path this repository can visit.
+    """
+
+    if not isinstance(value, Mapping) or set(value) != {
+        "name",
+        "commit",
+        "builderPath",
+        "builderDigest",
+        "schema",
+    }:
+        raise IntegrityError("Mirrulations producer identity has an invalid closed shape")
+    if value["schema"] != MIRRULATIONS_SCHEMA:
+        raise IntegrityError("Mirrulations producer identity names an unknown draw schema")
+    return {
+        "name": require_text(value["name"], "Mirrulations producer name"),
+        "commit": require_text(value["commit"], "Mirrulations producer commit"),
+        "builderPath": require_relative_path(value["builderPath"], "Mirrulations builder path"),
+        "builderDigest": require_sha256(value["builderDigest"], "Mirrulations builder digest"),
+        "schema": MIRRULATIONS_SCHEMA,
+    }
+
+
 def build_execution_manifest(
     *,
     tier: QualificationTier,
@@ -850,9 +878,7 @@ def build_execution_manifest(
     processing_plan_id: str,
     run_request_path: Path,
     output_roots: Mapping[str, Path],
-    spicyregs_repository: Path,
-    spicyregs_commit: str,
-    spicyregs_builder: Path,
+    mirrulations_producer: Mapping[str, Any],
     runner_path: Path,
     runner_support_path: Path,
     gate_receipt_path: Path,
@@ -904,13 +930,7 @@ def build_execution_manifest(
                     "digest": mirrulations.draw_digest,
                     "drawId": mirrulations.draw_id,
                 },
-                "producer": {
-                    "repository": Path(spicyregs_repository).resolve(strict=True).as_posix(),
-                    "commit": require_text(spicyregs_commit, "SpicyRegs commit"),
-                    "builderPath": Path(spicyregs_builder).resolve(strict=True).as_posix(),
-                    "builderDigest": _sha256_file(spicyregs_builder),
-                    "schema": MIRRULATIONS_SCHEMA,
-                },
+                "producer": require_producer_identity(mirrulations_producer),
                 "documentCount": MIRRULATIONS_COUNT,
                 "candidateCount": 2 * MIRRULATIONS_COUNT,
                 "totalBytes": mirrulations.total_bytes,
@@ -1012,19 +1032,14 @@ def validate_execution_manifest(path: Path) -> dict[str, Any]:
         raise IntegrityError("qualification producer inputs have an invalid closed shape")
     federal_register = producer["federalRegister"]
     mirrulations = producer["mirrulations"]
+    # Each draw's bytes are hashed once below, where `build_source_items`
+    # rereads them and the recomputed digest is compared against this manifest.
+    # Hashing them again here repeated the work without adding a guarantee.
     for label, value in (("Federal Register", federal_register), ("Mirrulations", mirrulations)):
         if not isinstance(value, dict) or not isinstance(value.get("draw"), dict):
             raise IntegrityError(f"{label} manifest input is invalid")
-        draw = value["draw"]
-        if _sha256_file(Path(draw["path"])) != require_sha256(draw["digest"], f"{label} draw digest"):
-            raise IntegrityError(f"{label} draw differs from the execution manifest")
-    producer_spec = mirrulations.get("producer")
-    if not isinstance(producer_spec, dict):
-        raise IntegrityError("Mirrulations producer identity is invalid")
-    if _sha256_file(Path(producer_spec["builderPath"])) != require_sha256(
-        producer_spec["builderDigest"], "Mirrulations builder digest"
-    ):
-        raise IntegrityError("SpicyRegs Mirrulations builder differs from the execution manifest")
+        require_sha256(value["draw"]["digest"], f"{label} draw digest")
+    require_producer_identity(mirrulations.get("producer"))
     for name in ("processingPlan", "runRequest", "runner"):
         artifact = manifest[name]
         if not isinstance(artifact, dict) or _sha256_file(Path(artifact["path"])) != require_sha256(
