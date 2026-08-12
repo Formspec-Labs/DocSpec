@@ -14,12 +14,13 @@ from docspec.adapters.wire_source_release import (
     WIRE_FORMAT_VERSION,
     WIRE_SCHEMA_ROLES,
     JsonSchemaWireSourceReleaseGate,
+    LocalWireSourceReleaseReader,
     WireReleaseBundlePin,
     WireReleasePins,
     load_wire_release_pins,
     read_wire_release_bundle,
 )
-from docspec.domain.content import CandidateFile, SourceItem
+from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.errors import IntegrityError
 from docspec.ports.source_release import SourceReleasePin
@@ -107,6 +108,108 @@ def test_pinned_valid_wire_release_conforms_to_its_published_schemas(
     assert conformance.violations == ()
     assert conformance.conforms
     assert gate.check_bundle(valid.directory).conforms
+
+
+def test_wire_release_reader_streams_the_valid_release_as_docspec_source_items(
+    tmp_path: Path,
+    pins: WireReleasePins,
+    gate: JsonSchemaWireSourceReleaseGate,
+) -> None:
+    valid = _bundle(pins, "valid")
+    root = valid.directory / "release.json"
+    pin = SourceReleasePin("release.json", sha256_digest(root.read_bytes()))
+    reader = LocalWireSourceReleaseReader(valid.directory, wire_gate=gate, stream_buffer_bytes=73)
+
+    admission = reader.admit(pin)
+    assert admission.reference.catalog_id == VALID_RELEASE_ID
+    assert admission.reference.locator == "release.json"
+    assert admission.summary.item_count == 6
+    assert admission.summary.state_counts == {"active": 2, "deleted": 1, "excluded": 3}
+
+    first = list(reader.open(pin).items)
+    second = list(reader.open(pin).items)
+    assert first == second
+    assert [item.item_id for item in first] == [
+        "federalregister.gov/2026-03227",
+        "federalregister.gov/2026-04188",
+        "federalregister.gov/2026-04401",
+        "federalregister.gov/2026-04555",
+        "federalregister.gov/2026-05010",
+        "federalregister.gov/2026-05233",
+    ]
+    assert [item.state for item in first] == [
+        SourceItemState.ACTIVE,
+        SourceItemState.ACTIVE,
+        SourceItemState.EXCLUDED,
+        SourceItemState.DELETED,
+        SourceItemState.EXCLUDED,
+        SourceItemState.EXCLUDED,
+    ]
+    assert first[0].candidates == (
+        CandidateFile(
+            "2026-03227.html",
+            "https://www.govinfo.gov/content/pkg/FR-2026-02-13/html/2026-03227.htm",
+            "text/html",
+            expected_digest="sha256:3f1c2b8d4e5a6f70819293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8",
+            expected_size=184320,
+        ),
+        CandidateFile(
+            "2026-03227.pdf",
+            "https://www.govinfo.gov/content/pkg/FR-2026-02-13/pdf/2026-03227.pdf",
+            "application/pdf",
+        ),
+    )
+    assert first[2].metadata["selection"] == {
+        "disposition": "excluded",
+        "reason": "The selection policy admits Rule and Proposed Rule only; this is a Notice.",
+        "reasonCode": "policy.document-type-out-of-scope",
+    }
+    assert first[2].metadata["documentId"] == "FR-2026-04401"
+    assert first[2].metadata["normalizedMetadata"]["documentType"] == "Notice"
+
+    # The translated stream is the one the existing local catalog accepts.
+    catalogs = LocalJsonlSourceCatalog(tmp_path / "catalogs")
+    translated = catalogs.write(reader.open(pin).items)
+    assert catalogs.verify(translated).state_counts == admission.summary.state_counts
+
+
+@pytest.mark.parametrize("name", ["unknown-version", "missing-disposition", "unknown-disposition"])
+def test_wire_release_reader_refuses_each_pinned_invalid_bundle(
+    pins: WireReleasePins,
+    gate: JsonSchemaWireSourceReleaseGate,
+    name: str,
+) -> None:
+    bundle = _bundle(pins, name)
+    pin = SourceReleasePin("release.json", sha256_digest((bundle.directory / "release.json").read_bytes()))
+    reader = LocalWireSourceReleaseReader(bundle.directory, wire_gate=gate)
+
+    with pytest.raises(IntegrityError, match="violates its published schema"):
+        reader.admit(pin)
+    with pytest.raises(IntegrityError, match="violates its published schema"):
+        list(reader.open(pin).items)
+
+
+def test_wire_release_reader_refuses_a_tampered_streamed_member(
+    tmp_path: Path,
+    pins: WireReleasePins,
+    gate: JsonSchemaWireSourceReleaseGate,
+) -> None:
+    valid = _bundle(pins, "valid")
+    directory = tmp_path / "release"
+    shutil.copytree(valid.directory, directory)
+    root = directory / "release.json"
+    pin = SourceReleasePin("release.json", sha256_digest(root.read_bytes()))
+    member = directory / "data/source-items.json"
+    payload = member.read_bytes()
+    member.write_bytes(payload.replace(b"federalregister.gov/2026-03227", b"federalregister.gov/2026-03228", 1))
+    assert len(member.read_bytes()) == len(payload)
+    assert member.read_bytes() != payload
+    reader = LocalWireSourceReleaseReader(directory, wire_gate=gate, stream_buffer_bytes=79)
+
+    with pytest.raises(IntegrityError, match="manifest digest"):
+        reader.admit(pin)
+    with pytest.raises(IntegrityError, match="manifest digest"):
+        list(reader.open(pin).items)
 
 
 @pytest.mark.parametrize(("name", "member", "pointer", "message"), INVALID_BUNDLES)

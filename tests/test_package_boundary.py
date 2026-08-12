@@ -170,6 +170,7 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert any(requirement.startswith("jsonschema") for requirement in extras["wire"])
+    assert any(requirement.startswith("ijson") for requirement in extras["wire"])
     assert "archive" in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 

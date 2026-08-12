@@ -17,6 +17,7 @@ from docspec.adapters.source_catalog import (
 )
 from docspec.adapters.wire_source_release import (
     JsonSchemaWireSourceReleaseGate,
+    LocalWireSourceReleaseReader,
     WireReleaseBundlePin,
     WireReleasePins,
     WireSourceReleaseBundle,
@@ -49,6 +50,7 @@ __all__ = [
     "LocalExecutionBackend",
     "LocalManifestDocumentCatalog",
     "LocalSourceReleaseReader",
+    "LocalWireSourceReleaseReader",
     "LocalSqliteProcessorResultCache",
     "LocalSqliteReconciliationWorkspaceFactory",
     "NullProcessorResultCache",

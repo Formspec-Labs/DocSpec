@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+import hashlib
+import os
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import (
     parse_canonical_json,
     parse_closed_json,
@@ -17,8 +20,17 @@ from docspec.domain.identity import (
     stable_urn,
     thaw_json,
 )
+from docspec.domain.references import SourceCatalogRef
 from docspec.errors import DocSpecError, IntegrityError, LimitExceededError
-from docspec.ports.source_release import SourceReleaseConformance, SourceReleaseViolation
+from docspec.ports.source_catalog import SourceCatalogSummary
+from docspec.ports.source_release import (
+    SourceReleaseAdmission,
+    SourceReleaseConformance,
+    SourceReleasePin,
+    SourceReleaseRead,
+    SourceReleaseSchemaGate,
+    SourceReleaseViolation,
+)
 
 WIRE_FORMAT = "spicy-regs-source-catalog-release"
 WIRE_FORMAT_VERSION = "1.0"
@@ -47,6 +59,41 @@ class WireSourceReleaseError(DocSpecError):
     """The wire source-release gate could not be built or applied."""
 
 
+class _DuplicateSafeDict(dict[str, Any]):
+    """Mapping factory that makes ijson refuse duplicate object keys."""
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        if key in self:
+            raise IntegrityError(f"wire source release JSON contains duplicate key {key!r}")
+        super().__setitem__(key, value)
+
+
+class _DigestingReader:
+    """Count and digest the exact bytes ijson consumes."""
+
+    def __init__(self, stream: Any) -> None:
+        self._stream = stream
+        self._digest = hashlib.sha256()
+        self.byte_count = 0
+
+    def read(self, size: int = -1) -> bytes:
+        payload = self._stream.read(size)
+        self._digest.update(payload)
+        self.byte_count += len(payload)
+        return payload
+
+    def readinto(self, buffer: Any) -> int:
+        count = self._stream.readinto(buffer)
+        if count:
+            self._digest.update(memoryview(buffer)[:count])
+            self.byte_count += count
+        return count
+
+    @property
+    def digest(self) -> str:
+        return f"sha256:{self._digest.hexdigest()}"
+
+
 @dataclass(frozen=True, slots=True)
 class WireSourceReleaseBundle:
     """The three members of one exchanged release that carry structural shape."""
@@ -54,6 +101,19 @@ class WireSourceReleaseBundle:
     root: Mapping[str, Any]
     manifest: Mapping[str, Any]
     items: Sequence[Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedWireRelease:
+    pin: SourceReleasePin
+    reference: SourceCatalogRef
+    summary: SourceCatalogSummary
+    root: Mapping[str, Any]
+    manifest: Mapping[str, Any]
+    items_path: Path
+    items_size: int
+    items_digest: str
+    items_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +163,112 @@ def _read_bounded(path: Path, *, label: str, max_bytes: int) -> bytes:
     if path.stat().st_size > max_bytes:
         raise LimitExceededError(f"{label} exceeds the {max_bytes}-byte limit")
     return path.read_bytes()
+
+
+def _normalized_wire_digest(value: object, label: str) -> str:
+    digest = require_text(value, label)
+    normalized = digest if digest.startswith("sha256:") else f"sha256:{digest}"
+    try:
+        return require_sha256(normalized, label)
+    except ValueError as error:
+        raise IntegrityError(str(error)) from error
+
+
+def _contained_regular_file(root: Path, relative: object, label: str) -> Path:
+    try:
+        name = require_relative_path(relative, label)
+    except ValueError as error:
+        raise IntegrityError(str(error)) from error
+    path = root
+    for part in name.split("/"):
+        path /= part
+        if path.is_symlink():
+            raise IntegrityError(f"{label} must not traverse a symlink: {name}")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as error:
+        raise IntegrityError(f"{label} is missing: {name}") from error
+    if not resolved.is_relative_to(root) or not resolved.is_file():
+        raise IntegrityError(f"{label} must be a contained regular file: {name}")
+    return resolved
+
+
+def _file_digest(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size += len(chunk)
+    return size, f"sha256:{digest.hexdigest()}"
+
+
+def _verify_member(path: Path, member: Mapping[str, Any], label: str) -> None:
+    expected_size = _count(member.get("byteSize"), f"{label} byte size")
+    expected_digest = _normalized_wire_digest(member.get("sha256"), f"{label} digest")
+    size, digest = _file_digest(path)
+    if size != expected_size:
+        raise IntegrityError(f"{label} differs in size from its manifest")
+    if digest != expected_digest:
+        raise IntegrityError(f"{label} differs from its manifest digest")
+
+
+def _raise_first_violation(conformance: SourceReleaseConformance) -> None:
+    if conformance.conforms:
+        return
+    first = conformance.violations[0]
+    raise IntegrityError(
+        f"sealed source release violates its published schema, first of {len(conformance.violations)} "
+        f"at {first.member}{first.pointer}: {first.message}"
+    )
+
+
+def _wire_state(disposition: str) -> SourceItemState:
+    if disposition == "selected":
+        return SourceItemState.ACTIVE
+    if disposition == "deleted":
+        return SourceItemState.DELETED
+    if disposition in {"excluded", "unavailable", "failed"}:
+        return SourceItemState.EXCLUDED
+    raise IntegrityError(f"wire source item has unknown disposition {disposition!r}")
+
+
+def _source_item(record: Mapping[str, Any], index: int) -> tuple[SourceItem, str]:
+    try:
+        selection = record["selection"]
+        if not isinstance(selection, Mapping):
+            raise TypeError("selection is not an object")
+        disposition = require_text(selection["disposition"], "wire source item disposition")
+        candidates = tuple(
+            CandidateFile(
+                candidate_id=candidate["renditionId"],
+                locator=candidate["locator"],
+                media_type=candidate["mediaType"],
+                expected_digest=candidate["expectedSha256"],
+                expected_size=candidate["expectedByteSize"],
+            )
+            for candidate in record["candidateRenditions"]
+        )
+        metadata = {
+            "documentId": record["documentId"],
+            "normalizedMetadata": record["normalizedMetadata"],
+            "selection": dict(selection),
+            "sourceNativeMetadata": record["sourceNativeMetadata"],
+            "sourceObservations": record["sourceObservations"],
+            "sourceObservedTopics": record["sourceObservedTopics"],
+        }
+        return (
+            SourceItem(
+                item_id=record["sourceItemId"],
+                version=record["sourceIssuedVersion"],
+                candidates=candidates,
+                state=_wire_state(disposition),
+                metadata=metadata,
+            ),
+            disposition,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise IntegrityError(f"wire source item {index} cannot become a DocSpec SourceItem: {error}") from error
 
 
 def _tracked_files(directory: Path) -> set[str]:
@@ -291,13 +457,34 @@ class JsonSchemaWireSourceReleaseGate:
     ) -> SourceReleaseConformance:
         """Return every root and manifest violation, and the first violation of each item."""
 
-        violations = [
-            *self._violations(WIRE_ROOT_MEMBER, "release-root", root),
-            *self._violations(WIRE_MANIFEST_MEMBER, "member-manifest", manifest),
-        ]
+        violations = list(self.check_header(root=root, manifest=manifest).violations)
         for index, record in enumerate(items):
-            violations.extend(self._violations(WIRE_ITEMS_MEMBER, "source-items", record, prefix=f"/{index}")[:1])
+            violations.extend(self.check_item(record, index=index).violations)
         return SourceReleaseConformance(tuple(violations))
+
+    def check_header(
+        self,
+        *,
+        root: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+    ) -> SourceReleaseConformance:
+        """Return every release-root and member-manifest violation."""
+
+        return SourceReleaseConformance(
+            tuple(
+                [
+                    *self._violations(WIRE_ROOT_MEMBER, "release-root", root),
+                    *self._violations(WIRE_MANIFEST_MEMBER, "member-manifest", manifest),
+                ]
+            )
+        )
+
+    def check_item(self, item: Any, *, index: int) -> SourceReleaseConformance:
+        """Return the first structural violation of one source item."""
+
+        return SourceReleaseConformance(
+            tuple(self._violations(WIRE_ITEMS_MEMBER, "source-items", item, prefix=f"/{index}")[:1])
+        )
 
     def check_bundle(self, directory: Path, *, max_member_bytes: int = MAX_WIRE_MEMBER_BYTES) -> SourceReleaseConformance:
         """Read one exchanged release bundle from disk and return its structural verdict."""
@@ -306,8 +493,234 @@ class JsonSchemaWireSourceReleaseGate:
         return self.check(root=bundle.root, manifest=bundle.manifest, items=bundle.items)
 
 
+class LocalWireSourceReleaseReader:
+    """Admit and stream an exchanged SourceCatalogRelease from one configured root."""
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        wire_gate: SourceReleaseSchemaGate,
+        max_root_bytes: int = 8 * 1024**2,
+        max_manifest_bytes: int = 64 * 1024**2,
+        stream_buffer_bytes: int = 1024 * 1024,
+    ) -> None:
+        unresolved = Path(root).absolute()
+        if unresolved.is_symlink():
+            raise IntegrityError(f"wire source release root must not be a symlink: {unresolved}")
+        try:
+            resolved = unresolved.resolve(strict=True)
+        except OSError as error:
+            raise IntegrityError(f"wire source release root does not exist: {unresolved}") from error
+        if not resolved.is_dir():
+            raise IntegrityError(f"wire source release root must be a directory: {resolved}")
+        if min(max_root_bytes, max_manifest_bytes, stream_buffer_bytes) <= 0:
+            raise ValueError("wire source release byte limits must be positive")
+        self.root = resolved
+        self._wire_gate = wire_gate
+        self._max_root_bytes = max_root_bytes
+        self._max_manifest_bytes = max_manifest_bytes
+        self._stream_buffer_bytes = stream_buffer_bytes
+
+    def _prepare(self, pin: SourceReleasePin) -> _PreparedWireRelease:
+        root_path = _contained_regular_file(self.root, pin.root, "wire source release root")
+        if root_path.name != WIRE_ROOT_MEMBER:
+            raise IntegrityError(f"wire source release root must be named {WIRE_ROOT_MEMBER}")
+        root_payload = _read_bounded(root_path, label="wire source release root", max_bytes=self._max_root_bytes)
+        if sha256_digest(root_payload) != pin.digest:
+            raise IntegrityError("sealed source release root differs from its pinned digest")
+        root_value = thaw_json(parse_closed_json(root_payload, label="wire source release root"))
+        if not isinstance(root_value, Mapping):
+            raise IntegrityError("wire source release root must be a JSON object")
+
+        bundle_root = root_path.parent
+        content = root_value.get("content")
+        if not isinstance(content, Mapping):
+            raise IntegrityError("wire source release root content must be an object")
+        global_manifest = content.get("globalManifest")
+        if not isinstance(global_manifest, Mapping):
+            raise IntegrityError("wire source release global manifest reference must be an object")
+        manifest_path = _contained_regular_file(
+            bundle_root,
+            global_manifest.get("objectKey"),
+            "wire source release global manifest",
+        )
+        if manifest_path.relative_to(bundle_root).as_posix() != WIRE_MANIFEST_MEMBER:
+            raise IntegrityError(f"wire source release global manifest must be {WIRE_MANIFEST_MEMBER}")
+        manifest_payload = _read_bounded(
+            manifest_path,
+            label="wire source release global manifest",
+            max_bytes=self._max_manifest_bytes,
+        )
+        if len(manifest_payload) != _count(global_manifest.get("byteSize"), "global manifest byte size"):
+            raise IntegrityError("wire source release global manifest differs in size from its root reference")
+        if sha256_digest(manifest_payload) != _normalized_wire_digest(
+            global_manifest.get("sha256"), "global manifest digest"
+        ):
+            raise IntegrityError("wire source release global manifest differs from its root digest")
+        manifest_value = thaw_json(parse_closed_json(manifest_payload, label="wire source release global manifest"))
+        if not isinstance(manifest_value, Mapping):
+            raise IntegrityError("wire source release global manifest must be a JSON object")
+        _raise_first_violation(self._wire_gate.check_header(root=root_value, manifest=manifest_value))
+
+        raw_members = manifest_value.get("members")
+        if not isinstance(raw_members, list):
+            raise IntegrityError("wire source release manifest members must be an array")
+        members: dict[str, Mapping[str, Any]] = {}
+        paths: dict[str, Path] = {}
+        for index, member in enumerate(raw_members):
+            if not isinstance(member, Mapping):
+                raise IntegrityError(f"wire source release manifest member {index} must be an object")
+            try:
+                object_key = require_relative_path(member.get("objectKey"), "wire source release member path")
+            except ValueError as error:
+                raise IntegrityError(str(error)) from error
+            if object_key in members:
+                raise IntegrityError(f"wire source release manifest repeats member {object_key}")
+            members[object_key] = member
+            paths[object_key] = _contained_regular_file(bundle_root, object_key, "wire source release member")
+
+        expected_files = {WIRE_ROOT_MEMBER, WIRE_MANIFEST_MEMBER, *members}
+        observed_files: set[str] = set()
+        for path in bundle_root.rglob("*"):
+            if path.is_symlink():
+                raise IntegrityError(f"wire source release contains a symlink: {path.relative_to(bundle_root)}")
+            if path.is_file():
+                observed_files.add(path.relative_to(bundle_root).as_posix())
+        if observed_files != expected_files:
+            raise IntegrityError("wire source release has missing or extra files")
+
+        items_member = members.get(WIRE_ITEMS_MEMBER)
+        if items_member is None or items_member.get("role") != "source-items":
+            raise IntegrityError(f"wire source release manifest must declare {WIRE_ITEMS_MEMBER} as source-items")
+        for object_key, member in members.items():
+            if object_key != WIRE_ITEMS_MEMBER:
+                _verify_member(paths[object_key], member, f"wire source release member {object_key}")
+
+        items_size = _count(items_member.get("byteSize"), "source-items member byte size")
+        if paths[WIRE_ITEMS_MEMBER].stat().st_size != items_size:
+            raise IntegrityError("source-items member differs in size from its manifest")
+        items_digest = _normalized_wire_digest(items_member.get("sha256"), "source-items member digest")
+        items_count = _count(items_member.get("recordCount"), "source-items member record count")
+
+        counts = content.get("counts")
+        coverage = content.get("coverage")
+        if not isinstance(counts, Mapping) or not isinstance(coverage, Mapping):
+            raise IntegrityError("wire source release counts and coverage must be objects")
+        discovered = _count(counts.get("discoveredCount"), "wire discovered count")
+        state_counts = {
+            SourceItemState.ACTIVE.value: _count(counts.get("selectedCount"), "wire selected count"),
+            SourceItemState.DELETED.value: _count(counts.get("deletedCount"), "wire deleted count"),
+            SourceItemState.EXCLUDED.value: sum(
+                _count(counts.get(name), f"wire {name}")
+                for name in ("excludedCount", "unavailableCount", "failedCount")
+            ),
+        }
+        release_id = require_text(root_value.get("releaseId"), "wire source release identity")
+        reference = SourceCatalogRef(release_id, pin.root, pin.digest)
+        summary = SourceCatalogSummary(release_id, "snapshot", discovered, (), state_counts, coverage)
+        return _PreparedWireRelease(
+            pin,
+            reference,
+            summary,
+            root_value,
+            manifest_value,
+            paths[WIRE_ITEMS_MEMBER],
+            items_size,
+            items_digest,
+            items_count,
+        )
+
+    def _items(self, prepared: _PreparedWireRelease) -> Iterator[SourceItem]:
+        try:
+            import ijson  # type: ignore[import-not-found]
+        except ImportError as error:
+            raise WireSourceReleaseError(
+                "install the docspec[wire] extra to read a wire-format source release"
+            ) from error
+
+        expected_dispositions = {
+            "selected": prepared.summary.state_counts[SourceItemState.ACTIVE.value],
+            "deleted": prepared.summary.state_counts[SourceItemState.DELETED.value],
+            "excluded": _count(prepared.root["content"]["counts"].get("excludedCount"), "wire excluded count"),
+            "unavailable": _count(
+                prepared.root["content"]["counts"].get("unavailableCount"), "wire unavailable count"
+            ),
+            "failed": _count(prepared.root["content"]["counts"].get("failedCount"), "wire failed count"),
+        }
+        observed_dispositions = dict.fromkeys(expected_dispositions, 0)
+        previous_item_id: str | None = None
+        count = 0
+
+        with prepared.items_path.open("rb") as stream:
+            initial = os.fstat(stream.fileno())
+            if stream.read(1) != b"[":
+                raise IntegrityError("wire source-items member must be a JSON array")
+            stream.seek(-1, os.SEEK_END)
+            if stream.read(1) != b"]":
+                raise IntegrityError("wire source-items member must end with its JSON array")
+            stream.seek(0)
+            digesting = _DigestingReader(stream)
+            try:
+                records = ijson.items(
+                    digesting,
+                    "item",
+                    map_type=_DuplicateSafeDict,
+                    buf_size=self._stream_buffer_bytes,
+                )
+                for index, record in enumerate(records):
+                    if not isinstance(record, Mapping):
+                        raise IntegrityError(f"wire source item {index} must be an object")
+                    _raise_first_violation(self._wire_gate.check_item(record, index=index))
+                    item, disposition = _source_item(record, index)
+                    if previous_item_id is not None and item.item_id <= previous_item_id:
+                        raise IntegrityError("wire source items are not strictly ordered by sourceItemId")
+                    previous_item_id = item.item_id
+                    observed_dispositions[disposition] += 1
+                    count += 1
+                    yield item
+            except IntegrityError:
+                raise
+            except Exception as error:  # noqa: BLE001 - ijson backends expose backend-specific parse errors
+                raise IntegrityError(f"wire source-items member is not valid duplicate-safe JSON: {error}") from error
+            final = os.fstat(stream.fileno())
+
+        if (initial.st_dev, initial.st_ino, initial.st_size, initial.st_mtime_ns) != (
+            final.st_dev,
+            final.st_ino,
+            final.st_size,
+            final.st_mtime_ns,
+        ):
+            raise IntegrityError("wire source-items member changed while it was read")
+        if digesting.byte_count != prepared.items_size:
+            raise IntegrityError("wire source-items member differs in size from its manifest")
+        if digesting.digest != prepared.items_digest:
+            raise IntegrityError("wire source-items member differs from its manifest digest")
+        if count != prepared.items_count:
+            raise IntegrityError("wire source-items record count differs from its manifest")
+        if count != prepared.summary.item_count:
+            raise IntegrityError("wire source-items record count differs from the release")
+        if observed_dispositions != expected_dispositions:
+            raise IntegrityError("wire source-item dispositions differ from the release counts")
+
+    @staticmethod
+    def _admission(prepared: _PreparedWireRelease) -> SourceReleaseAdmission:
+        return SourceReleaseAdmission(prepared.pin, prepared.reference, prepared.summary)
+
+    def admit(self, pin: SourceReleasePin) -> SourceReleaseAdmission:
+        prepared = self._prepare(pin)
+        for _ in self._items(prepared):
+            pass
+        return self._admission(prepared)
+
+    def open(self, pin: SourceReleasePin) -> SourceReleaseRead:
+        prepared = self._prepare(pin)
+        return SourceReleaseRead(self._admission(prepared), self._items(prepared))
+
+
 __all__ = [
     "JsonSchemaWireSourceReleaseGate",
+    "LocalWireSourceReleaseReader",
     "MAX_WIRE_MEMBER_BYTES",
     "WIRE_FORMAT",
     "WIRE_FORMAT_VERSION",

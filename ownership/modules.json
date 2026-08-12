@@ -113,7 +113,7 @@
     },
     {
       "path": "src/docspec/adapters/wire_source_release.py",
-      "capability": "Digest-verified pinned wire schema set and Draft 2020-12 structural gate for an exchanged source release",
+      "capability": "Digest-verified pinned wire schema set, Draft 2020-12 structural gate, and bounded-memory reader for an exchanged source release",
       "status": "implemented",
       "conformanceTests": [
         "SOURCE-CATALOG-CONTRACT",

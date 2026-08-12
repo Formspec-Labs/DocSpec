@@ -95,3 +95,12 @@ class SourceReleaseSchemaGate(Protocol):
         manifest: Mapping[str, Any],
         items: Sequence[Any],
     ) -> SourceReleaseConformance: ...
+
+    def check_header(
+        self,
+        *,
+        root: Mapping[str, Any],
+        manifest: Mapping[str, Any],
+    ) -> SourceReleaseConformance: ...
+
+    def check_item(self, item: Any, *, index: int) -> SourceReleaseConformance: ...
