@@ -322,8 +322,10 @@
     },
     {
       "testId": "SCHEDULER-PORTABILITY",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_scheduler_portability.py::test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_backend",
+        "tests/conformance/test_scheduler_portability.py::test_the_native_dagster_job_publishes_the_local_backend_state",
         "tests/test_execution_backends.py::test_execution_messages_are_closed_canonical_and_idempotent",
         "tests/test_execution_backends.py::test_local_backend_uses_the_portable_messages_with_bounded_concurrency",
         "tests/test_execution_backends.py::test_external_boundary_delegates_one_serialized_task_stream_without_a_closure",
