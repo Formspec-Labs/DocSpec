@@ -221,8 +221,10 @@
     },
     {
       "testId": "REPRESENTATION",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_representation.py::test_supported_content_produces_identified_receipted_representations",
+        "tests/conformance/test_representation.py::test_unregistered_media_types_fail_closed",
         "tests/test_processing_pipeline.py::test_stdlib_extractors_preserve_exact_source_and_are_retry_stable",
         "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
         "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
@@ -232,8 +234,10 @@
     },
     {
       "testId": "SEGMENTATION",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_segmentation.py::test_segments_are_deterministic_for_every_supported_content_type",
+        "tests/conformance/test_segmentation.py::test_segment_coverage_matches_each_supported_content_type",
         "tests/test_processing_pipeline.py::test_unicode_paragraphs_use_exact_utf8_byte_coordinates",
         "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
         "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
@@ -243,8 +247,10 @@
     },
     {
       "testId": "EVIDENCE-ROUNDTRIP",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
+        "tests/conformance/test_evidence_roundtrip.py::test_roundtrip_fails_closed_when_source_or_coordinates_drift",
         "tests/test_processing_pipeline.py::test_image_passthrough_reports_header_metadata_and_exact_extent",
         "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
         "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
