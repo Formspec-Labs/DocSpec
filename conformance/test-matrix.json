@@ -273,8 +273,11 @@
     },
     {
       "testId": "PROCESSOR-CONTRACT",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_processor_contract.py::test_fake_and_real_processors_pass_one_reference_based_contract",
+        "tests/conformance/test_processor_contract.py::test_dependency_outputs_flow_only_through_declared_edges",
+        "tests/conformance/test_processor_contract.py::test_every_scheduled_item_ends_in_one_registered_processor_disposition",
         "tests/test_domain.py::test_processing_plan_pins_the_complete_processor_graph",
         "tests/test_domain.py::test_processor_description_is_closed_provider_neutral_and_identity_bearing",
         "tests/test_processing_pipeline.py::test_injected_statistics_processor_is_deterministic_and_evidence_linked",
