@@ -198,8 +198,12 @@
     },
     {
       "testId": "ACQUISITION",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_acquisition.py::test_capture_deduplication_and_deletion_reconcile_across_releases",
+        "tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture",
+        "tests/conformance/test_acquisition.py::test_drifted_source_bytes_fail_closed_without_a_stored_object",
+        "tests/conformance/test_acquisition.py::test_an_oversized_declared_candidate_refuses_planning_before_any_io",
         "tests/test_source_catalog.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
         "tests/test_content_fetchers.py::test_fetch_stream_closes_unstarted_source_once",
         "tests/test_content_fetchers.py::test_local_fetcher_does_not_double_close_descriptors_under_concurrency",
