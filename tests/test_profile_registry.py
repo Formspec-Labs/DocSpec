@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from docspec.domain.profiles import ProfileRole
+from docspec.domain.release import RELEASE_LOGICAL_SCHEMA
 from docspec.errors import ProfileError
 from docspec.profile_registry import DEFAULT_GOVERNANCE_POLICY_IDS, ProfileRegistry
 
@@ -91,3 +92,14 @@ def test_profile_registry_rejects_string_values_where_arrays_are_required(
 
     with pytest.raises(ProfileError, match="schemas, media types, or limits"):
         ProfileRegistry.from_file(path)
+
+
+def test_release_bearing_profiles_declare_the_schema_the_code_emits() -> None:
+    """The two profiles that persist DocumentRelease roots must name the exact
+    logical schema `DocumentRelease.to_dict` produces, or a deployment could
+    select storage that silently disagrees with the written surface (the
+    declarations were stale at 1.0 once before)."""
+
+    for name in ("canonical-release-manifest-v1.json", "local-document-catalog-v1.json"):
+        value = json.loads((ROOT / "profiles" / name).read_text(encoding="utf-8"))
+        assert value["logicalSchemas"] == [RELEASE_LOGICAL_SCHEMA], name

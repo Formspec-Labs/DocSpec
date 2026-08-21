@@ -19,6 +19,10 @@ from docspec.domain.profiles import ProfileSet
 from docspec.domain.policies import RetentionPolicy
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef
 
+RELEASE_FORMAT = "docspec-document-release"
+RELEASE_FORMAT_VERSION = "1.1"
+RELEASE_LOGICAL_SCHEMA = f"{RELEASE_FORMAT}/{RELEASE_FORMAT_VERSION}"
+
 
 @dataclass(frozen=True, slots=True)
 class DocumentRelease:
@@ -185,8 +189,8 @@ class DocumentRelease:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "format": "docspec-document-release",
-            "formatVersion": "1.1",
+            "format": RELEASE_FORMAT,
+            "formatVersion": RELEASE_FORMAT_VERSION,
             "releaseId": self.release_id,
             **self.identity_content(),
         }
@@ -212,7 +216,7 @@ class DocumentRelease:
             "coverage",
             "partitionPolicy",
         }
-        if set(value) != expected or value["format"] != "docspec-document-release" or value["formatVersion"] != "1.1":
+        if set(value) != expected or value["format"] != RELEASE_FORMAT or value["formatVersion"] != RELEASE_FORMAT_VERSION:
             raise ValueError("document release has an unknown format or invalid closed shape")
         return cls(
             release_id=value["releaseId"],
