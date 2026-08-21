@@ -69,8 +69,11 @@
     },
     {
       "testId": "RELEASE-MANIFEST",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
+        "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
+        "tests/conformance/test_release_manifest.py::test_release_root_references_fail_closed_for_locator_drift_and_absence",
         "tests/test_domain.py::test_document_release_is_complete_versioned_and_tamper_evident",
         "tests/test_processing_pipeline.py::test_content_records_recompute_identity_and_output_digests_when_read",
         "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
