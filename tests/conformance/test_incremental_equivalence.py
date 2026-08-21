@@ -40,6 +40,34 @@ _plan = _processor_helpers._plan
 _CORE_STATE_LAYERS = ("source-items", "files", "representations", "segments")
 
 
+def _targeted_plan(
+    source,
+    base,
+    processors,
+    retry: RetryPolicy,
+    accepted: AcceptedFailurePolicy,
+    *,
+    selection: dict[str, Any],
+):
+    """The shared plan shape with an explicit targeted selection."""
+
+    untargeted = _plan(source, base, processors, retry, accepted)
+    return type(untargeted).create(
+        source_catalog=untargeted.source_catalog,
+        base_release=untargeted.base_release,
+        profiles=untargeted.profiles,
+        limits=untargeted.limits,
+        stages=untargeted.stages,
+        processors=untargeted.processors,
+        partition_count=untargeted.partition_count,
+        selection=selection,
+        retention_policy=untargeted.retention_policy,
+        data_use_policy=untargeted.data_use_policy,
+        retry_policy_digest=untargeted.retry_policy_digest,
+        accepted_failure_policy_digest=untargeted.accepted_failure_policy_digest,
+    )
+
+
 @dataclass(frozen=True)
 class _Platform:
     sources: Path
@@ -212,57 +240,114 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     )
     assert (len(fetcher.calls), extractor.calls, segmenter.calls) == (2, 2, 2)
 
-    clean = _platform(tmp_path / "clean", member_bytes=1024 * 1024)
-    clean_items = (
-        SourceItem(
-            "document-a",
-            "v2",
-            (
-                _write_source(
-                    clean.sources / "a.txt",
-                    "Alpha after the update in its final paragraph.",
-                ),
+    def _clean_state(
+        root: Path,
+        *,
+        alpha_text: str,
+        alpha_version: str,
+    ) -> dict[str, tuple[dict[str, Any], ...]]:
+        clean = _platform(root, member_bytes=1024 * 1024)
+        clean_items = (
+            SourceItem(
+                "document-a",
+                alpha_version,
+                (_write_source(clean.sources / "a.txt", alpha_text),),
+                metadata={"expectedSegments": 1},
             ),
-            metadata={"expectedSegments": 1},
-        ),
-        SourceItem(
-            "document-b",
-            "v1",
-            (
-                _write_source(
-                    clean.sources / "b.txt",
-                    "Bravo remains stable in its only paragraph.",
+            SourceItem(
+                "document-b",
+                "v1",
+                (
+                    _write_source(
+                        clean.sources / "b.txt",
+                        "Bravo remains stable in its only paragraph.",
+                    ),
                 ),
+                metadata={"expectedSegments": 1},
             ),
-            metadata={"expectedSegments": 1},
-        ),
-        SourceItem(
-            "document-c",
-            "v1",
-            (
-                _write_source(
-                    clean.sources / "c.txt",
-                    "Charlie is newly added with one final paragraph.",
+            SourceItem(
+                "document-c",
+                "v1",
+                (
+                    _write_source(
+                        clean.sources / "c.txt",
+                        "Charlie is newly added with one final paragraph.",
+                    ),
                 ),
+                metadata={"expectedSegments": 1},
             ),
-            metadata={"expectedSegments": 1},
-        ),
+        )
+        clean_source = clean.source_catalog.write(clean_items)
+        clean_processor = _CountingProcessor(_description("equivalence", "2", retry))
+        clean_plan = _plan(clean_source, None, (clean_processor,), retry, accepted)
+        _, _, _, _, clean_release = _run(
+            plan=clean_plan,
+            source_catalog=clean.source_catalog,
+            controls=clean.controls,
+            stores=clean.stores,
+            blobs=clean.blobs,
+            records=clean.records,
+            catalog=clean.catalog,
+            fetcher=LocalFileContentFetcher(clean.sources),
+            processors=(clean_processor,),
+            partition_policy=clean.partition_policy,
+        )
+        return _active_document_state(clean.catalog, clean_release)
+
+    assert _clean_state(
+        tmp_path / "clean-incremental",
+        alpha_text="Alpha after the update in its final paragraph.",
+        alpha_version="v2",
+    ) == _active_document_state(evolving.catalog, incremental_release)
+
+    # Targeted pass: only document-a changes again, and the plan selects it
+    # explicitly; unrelated content must be neither refetched nor reprocessed.
+    targeted_text = "Alpha targeted once more in its last paragraph."
+    targeted_a = _write_source(evolving.sources / "a.txt", targeted_text)
+    targeted_source = evolving.source_catalog.write(
+        (
+            SourceItem("document-a", "v3", (targeted_a,), metadata={"expectedSegments": 1}),
+            final_items[1],
+            final_items[2],
+        )
     )
-    clean_source = clean.source_catalog.write(clean_items)
-    clean_processor = _CountingProcessor(_description("equivalence", "2", retry))
-    clean_plan = _plan(clean_source, None, (clean_processor,), retry, accepted)
-    _, _, _, _, clean_release = _run(
-        plan=clean_plan,
-        source_catalog=clean.source_catalog,
-        controls=clean.controls,
-        stores=clean.stores,
-        blobs=clean.blobs,
-        records=clean.records,
-        catalog=clean.catalog,
-        fetcher=LocalFileContentFetcher(clean.sources),
-        processors=(clean_processor,),
-        partition_policy=clean.partition_policy,
+    targeted_processor = _CountingProcessor(_description("equivalence", "2", retry))
+    targeted_fetcher = _CountingFetcher(LocalFileContentFetcher(evolving.sources))
+    targeted_extractor = _CountingExtractor()
+    targeted_segmenter = _CountingSegmenter()
+    targeted_plan = _targeted_plan(
+        targeted_source,
+        incremental_release,
+        (targeted_processor,),
+        retry,
+        accepted,
+        selection={"includeItemIds": ["document-a"]},
     )
+    targeted_planned, _, _, _, targeted_release = _run(
+        plan=targeted_plan,
+        source_catalog=evolving.source_catalog,
+        controls=evolving.controls,
+        stores=evolving.stores,
+        blobs=evolving.blobs,
+        records=evolving.records,
+        catalog=evolving.catalog,
+        fetcher=targeted_fetcher,
+        processors=(targeted_processor,),
+        extractor=targeted_extractor,
+        segmenter=targeted_segmenter,
+        partition_policy=evolving.partition_policy,
+    )
+    targeted_entries = tuple(
+        entry
+        for reference in targeted_planned
+        for entry in evolving.stores.load(reference).entries
+    )
+    assert [entry.source_item.item_id for entry in targeted_entries] == ["document-a"]
+    assert (targeted_entries[0].change, targeted_entries[0].execution_mode) == (
+        ChangeKind.CHANGED,
+        EntryExecutionMode.FULL,
+    )
+    assert (len(targeted_fetcher.calls), targeted_extractor.calls, targeted_segmenter.calls) == (1, 1, 1)
 
     compacted_records = LocalJsonlRecordStorage(
         evolving.records.root,
@@ -281,23 +366,27 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         stores=evolving.stores,
         document_catalog=compacting_catalog,
         clock=lambda: "2026-08-05T13:00:00Z",
-    ).compact(incremental_release)
+    ).compact(targeted_release)
     receipt = ReleaseCompactionReceipt.from_dict(evolving.controls.load(receipt_ref))
     compacted_release = receipt.successor_release
 
-    clean_state = _active_document_state(clean.catalog, clean_release)
-    incremental_state = _active_document_state(compacting_catalog, incremental_release)
+    clean_targeted_state = _clean_state(
+        tmp_path / "clean-targeted",
+        alpha_text=targeted_text,
+        alpha_version="v3",
+    )
+    targeted_state = _active_document_state(compacting_catalog, targeted_release)
     compacted_state = _active_document_state(compacting_catalog, compacted_release)
-    assert clean_state == incremental_state == compacted_state
+    assert clean_targeted_state == targeted_state == compacted_state
 
-    incremental = compacting_catalog.open(incremental_release)
+    targeted = compacting_catalog.open(targeted_release)
     compacted = compacting_catalog.open(compacted_release)
     assert receipt.source_logical_state_digest == receipt.successor_logical_state_digest
-    assert logical_release_state_digest(compacted_records, incremental) == logical_release_state_digest(
+    assert logical_release_state_digest(compacted_records, targeted) == logical_release_state_digest(
         compacted_records,
         compacted,
     )
     assert all(
-        list(compacting_catalog.compare(incremental_release, compacted_release, layer_kind=layer.layer_kind)) == []
-        for layer in incremental.active_layers
+        list(compacting_catalog.compare(targeted_release, compacted_release, layer_kind=layer.layer_kind)) == []
+        for layer in targeted.active_layers
     )

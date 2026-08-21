@@ -350,7 +350,7 @@
     },
     {
       "testId": "INCREMENTAL-EQUIVALENCE",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
         "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
         "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
