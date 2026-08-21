@@ -379,8 +379,10 @@
     },
     {
       "testId": "RECOVERY",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_recovery.py::test_a_restarted_coordinator_reconciles_replayed_results_to_the_same_release",
+        "tests/conformance/test_recovery.py::test_a_replayed_store_task_reuses_verified_work_and_delivers_identically",
         "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
         "tests/test_storage_adapters.py::test_document_store_latest_reads_only_the_newest_revision_while_revisions_validate_history",
         "tests/test_storage_adapters.py::test_revision_writes_stage_crash_debris_outside_the_declared_revision_set",
