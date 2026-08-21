@@ -128,8 +128,12 @@
     },
     {
       "testId": "DOCUMENT-STORE",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_document_store.py::test_completed_and_accepted_failure_stores_reconcile_with_complete_counts",
+        "tests/conformance/test_document_store.py::test_a_rejected_store_reconciles_but_refuses_publication",
+        "tests/test_result_sinks_and_recovery.py::test_stateless_returned_run_cannot_advance_the_document_catalog",
+        "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
         "tests/test_domain.py::test_document_store_is_a_bounded_revisioned_job_and_receipt",
         "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
         "tests/test_storage_adapters.py::test_document_store_repository_moves_large_entry_ledgers_to_bounded_members",

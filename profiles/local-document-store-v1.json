@@ -47,7 +47,7 @@
     ]
   },
   "verifier": {
-    "status": "partial",
+    "status": "implemented",
     "testId": "DOCUMENT-STORE"
   }
 }

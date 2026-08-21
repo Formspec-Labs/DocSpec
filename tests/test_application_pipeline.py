@@ -116,6 +116,7 @@ def _run(
     segmenter=None,
     processor_cache=None,
     partition_policy,
+    accepted_failure_policy=None,
 ):
     configured_processors = processors
     if configured_processors is None:
@@ -148,7 +149,7 @@ def _run(
         segmenter=segmenter or DefaultSegmenterRegistry(),
         processors=processor_registry,
         retry_policy=retry,
-        accepted_failure_policy=AcceptedFailurePolicy(),
+        accepted_failure_policy=accepted_failure_policy or AcceptedFailurePolicy(),
         processor_cache=processor_cache,
         clock=_clock,
         sleep=lambda _: None,
