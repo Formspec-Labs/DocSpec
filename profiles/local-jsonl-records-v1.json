@@ -50,7 +50,7 @@
     "requires": ["urn:docspec:profile:document-catalog:local-manifest:1"]
   },
   "verifier": {
-    "status": "partial",
+    "status": "implemented",
     "testId": "RECORD-STORAGE-CONTRACT"
   }
 }

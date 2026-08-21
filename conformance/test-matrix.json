@@ -93,8 +93,11 @@
     },
     {
       "testId": "RECORD-STORAGE-CONTRACT",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_passes_the_shared_layer_contract",
+        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_rejects_unordered_and_duplicate_identities",
+        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_fails_closed_on_tampered_member_bytes",
         "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
         "tests/test_storage_records_catalog.py::test_identical_record_layer_roots_publish_atomically_under_concurrency",
         "tests/test_storage_records_catalog.py::test_record_layer_rejects_unsorted_open_or_tampered_records",
