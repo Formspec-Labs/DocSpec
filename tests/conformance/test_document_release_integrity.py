@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from docspec.adapters.source_catalog import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt
@@ -26,8 +27,6 @@ _write_source = _pipeline_helpers._write_source
 _CountingProcessor = _processor_helpers._CountingProcessor
 _description = _processor_helpers._description
 _plan = _processor_helpers._plan
-
-from docspec.adapters.source_catalog import LocalFileContentFetcher
 
 
 def _committed_release(root: Path):

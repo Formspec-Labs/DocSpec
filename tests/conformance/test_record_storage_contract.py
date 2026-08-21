@@ -4,7 +4,7 @@ import hashlib
 import importlib
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 import pytest
 
