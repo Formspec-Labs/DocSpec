@@ -291,8 +291,10 @@
     },
     {
       "testId": "RESULT-SINK",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_result_sink_contract.py::test_every_registered_delivery_profile_passes_the_shared_store_contract",
+        "tests/conformance/test_result_sink_contract.py::test_interrupted_acknowledgement_replays_to_the_same_receipt",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
         "tests/test_result_sinks_and_recovery.py::test_returned_sink_streams_with_acknowledgement_backpressure_and_stable_replay",
         "tests/test_result_sinks_and_recovery.py::test_durable_and_hybrid_sinks_replay_to_the_same_immutable_layers",

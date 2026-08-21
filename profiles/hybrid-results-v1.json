@@ -46,7 +46,7 @@
     ]
   },
   "verifier": {
-    "status": "partial",
+    "status": "implemented",
     "testId": "RESULT-SINK"
   }
 }

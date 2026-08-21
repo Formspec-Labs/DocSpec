@@ -35,7 +35,7 @@
     "requires": ["urn:docspec:profile:document-store-persistence:local-json:1"]
   },
   "verifier": {
-    "status": "partial",
+    "status": "implemented",
     "testId": "RESULT-SINK"
   }
 }
