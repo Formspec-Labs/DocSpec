@@ -81,6 +81,33 @@ The captured Federal Register root is not pinned. It is 192 MB of cached source 
 
 This is a fact about the input, recorded so the pipeline is written against the bundle rather than against a locally invented shape. Authoring and packaging the two schema sets is Rulespec work.
 
+### Consumer-side facts (recorded 2026-08-21)
+
+Two facts about the repositories on the other side of the seam, recorded here
+so the swap is planned against what their code pins today. Both are
+observations of sibling checkouts; changing either is work in that repository.
+
+- SpicySearch admits document releases through `_ReleaseProfile` pins in
+  `spicysearch/src/spicysearch/canonical.py:80-150`: `format_version` markers
+  `spicyregs-document-release/v1` and `spicyregs-document-release/v2`, id
+  prefix `urn:spicyregs:document-release` (plus the test-fixture marker
+  `urn:spicyregs:schema:document-release:1`). The v2 profile requires an exact
+  top-level key set (`source_input`, `release_status`, `passage_coverage`,
+  `policies`, `link_verification_receipts`, the capture and rendition lists,
+  and the v1 keys). DocSpec's live surface is `docspec-document-release/1.1`
+  with a disjoint key set, so DocSpec-as-producer needs either a translation
+  emitting `spicyregs-document-release/v2` or a new SpicySearch profile pinned
+  to `docspec-document-release/1.1`.
+- Rulespec's closed `#CoordinateSystem` enum
+  (`rulespec/constraints/core/source-fragment.cue:19`, mirrored as
+  `COORDINATE_SYSTEM` in `rulespec_conformance/contract/enums.py:279`) has
+  `rkaf:utf8-byte` and no `utf8-byte-range` member; fragments carry
+  `oa:start`/`oa:end` half-open offsets plus `rkaf:coordinateSystem`.
+  DocSpec's `utf8-byte-range` coordinates (`processing/extraction.py`,
+  `processing/segmentation.py`) are the same semantics -- half-open byte
+  offsets into the UTF-8 representation bytes -- so the crossing needs only
+  the label mapping `utf8-byte-range` to `rkaf:utf8-byte`, not an enum change.
+
 ## The source-access port
 
 Add one Protocol to `src/docspec/ports/` and one adapter method. Nothing more.
