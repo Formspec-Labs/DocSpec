@@ -324,8 +324,10 @@
     },
     {
       "testId": "DOCUMENT-RELEASE-INTEGRITY",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
+        "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",
         "tests/test_domain.py::test_document_release_is_complete_versioned_and_tamper_evident",
         "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
