@@ -36,3 +36,27 @@ The five `-pre-*-fix` snapshots (~12.7 GB combined) are stale backups made mid-s
 1. Push `ae601c9` and `8333768` to `origin/main` (or review first).
 2. Resume the full 10k tier from the preserved checkpoints in `fr-mirrulations-10k-v1/` and run it to a closed, classified campaign report.
 3. Delete the `-pre-*-fix` snapshot directories when no longer needed for debugging (~12.7 GB).
+
+## 2026-08-21 addendum: the sealed checkpoints cannot resume under current code
+
+- The 2026-08-10 restart attempt (`output/qualification/full-tier-resume.log`)
+  crashed immediately: `verification/gate-receipt.json` had been renamed to
+  `gate-receipt.superseded-2026-08-10.json` that same minute, and every tier's
+  execution manifest pins that receipt by path and digest.
+- The rename is not the real break. Store identity is
+  `stable_urn("document-store", {planId, logicalPartition, entryIds})`
+  (`src/docspec/domain/jobs.py:249`), and `planId` covers the profile
+  description digests and the source-catalog id, whose coverage embeds the
+  Mirrulations draw path. Two correct fixes landed after the checkpoints were
+  written -- `8d62094` changed two profile description digests, and
+  `2df6e4f`/`8af75cc` moved the draw to a tracked fixture -- so every plan id,
+  and with it every planned-store ledger and sealed store from 2026-08-06, is
+  unreachable from current code. The gate receipt additionally seals the whole
+  working tree, which has moved by twenty-odd commits.
+- Resume therefore means: re-prepare under current code (fresh gate receipt,
+  fresh catalogs, plans, and manifests) and re-run the tiers. The
+  content-addressed blob store still dedupes refetched source bytes and
+  identical derived objects; the orphaned run state stays in place. The stale
+  sealed artifacts were renamed `*.superseded-2026-08-21` following the
+  existing convention, and the five `-pre-*-fix` snapshots (12.8 GB, verified
+  unreferenced by the live campaign directory and the repository) are deleted.
