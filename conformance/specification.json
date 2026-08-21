@@ -6,7 +6,7 @@
   "normativeSource": "docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md",
   "implementationStatus": "standalone-reference-implementation",
   "conformanceVerdict": "not-yet-conformant",
-  "verdictReason": "The standalone kernel, retained-object verification, complete delivery and execution receipts, sealed task handoff, local runner, serialized external-process worker path, exact-result processor cache, shared conformance fixtures, targeted selection, release compaction, active-state equivalence, and restart checkpoints are executable. Full conformance still requires the remaining dedicated contract fixtures, a maintained external-scheduler qualification campaign, ordered scale campaigns, and published-package evidence.",
+  "verdictReason": "Every dedicated contract fixture now runs: acquisition, processor contract, document-store verdicts, run-level recovery, and scheduler portability across the local backend, fresh external worker processes, and Dagster's native dynamic job. Full conformance still requires the ordered scale campaigns -- 100,000, 1,000,000, and 5,000,000 representative units against a sealed ScaleProfile, beyond the checkpointed FR/Mirrulations 10k qualification -- the maintained external-scheduler qualification campaign pinned unrun by the Dagster adapter profile, and published-package evidence once a release destination is selected.",
   "requiredTestIds": [
     "CORE-INSTALL",
     "BOUNDARY-IMPORT",
