@@ -82,8 +82,10 @@
     },
     {
       "testId": "DOCUMENT-CATALOG-CONTRACT",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
+        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_shared_release",
+        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_conflicts_and_refuses_stale_or_unsealed_commits",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
