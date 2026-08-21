@@ -107,11 +107,14 @@
     },
     {
       "testId": "PROFILE-COMPATIBILITY",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
         "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
         "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
-        "tests/test_profile_registry.py::test_profile_selection_fails_before_work_when_a_requirement_is_missing"
+        "tests/test_profile_registry.py::test_profile_selection_fails_before_work_when_a_requirement_is_missing",
+        "tests/conformance/test_profile_compatibility.py::test_every_one_per_role_combination_composes_or_registers_its_incompatibility",
+        "tests/conformance/test_profile_compatibility.py::test_a_specified_but_unimplemented_profile_refuses_selection",
+        "tests/conformance/test_profile_compatibility.py::test_an_incompatible_selection_fails_run_start_before_any_planning_state"
       ],
       "plannedTestModule": null
     },
