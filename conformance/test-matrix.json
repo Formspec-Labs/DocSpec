@@ -15,9 +15,13 @@
     },
     {
       "testId": "BOUNDARY-IMPORT",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
-        "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary"
+        "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
+        "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
+        "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
+        "tests/conformance/test_import_directions.py::test_the_command_surface_is_the_one_composition_root",
+        "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_no_vendor_software"
       ],
       "plannedTestModule": null
     },
