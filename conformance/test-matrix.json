@@ -54,13 +54,16 @@
     },
     {
       "testId": "PROFILE-DESCRIPTION",
-      "status": "partial",
+      "status": "implemented",
       "selectors": [
         "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
         "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
         "tests/test_profile_registry.py::test_profile_pin_identifies_the_complete_machine_description",
         "tests/test_profile_registry.py::test_profile_governance_is_closed_declared_and_identity_bearing",
-        "tests/test_cli.py::test_profile_verification_uses_the_machine_description"
+        "tests/test_cli.py::test_profile_verification_uses_the_machine_description",
+        "tests/conformance/test_profile_descriptions.py::test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable",
+        "tests/conformance/test_profile_descriptions.py::test_unpinned_descriptions_are_rejected_at_load",
+        "tests/conformance/test_profile_descriptions.py::test_unknown_unpinned_capability_and_digest_mismatched_pins_fail_before_work"
       ],
       "plannedTestModule": null
     },
