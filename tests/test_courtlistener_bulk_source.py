@@ -292,3 +292,33 @@ def test_a_real_enumerated_dump_acquires_through_the_https_fetcher():
     # bzip2 magic: the publisher served the dump the listing promised.
     assert payload[:3] == b"BZh"
     assert len(payload) == candidate.expected_size
+
+    # The capture is only proven if it comes back receipted. A CapturedFile is
+    # acquisition's receipt in this codebase, and its file_id is derived from the
+    # bytes plus the pinned identity — so it can only be built if the enumeration,
+    # the transport, and the payload all agree.
+    from docspec.domain.content import AcquisitionDisposition, CapturedFile
+    from docspec.domain.identity import sha256_digest
+    from docspec.domain.references import BlobRef
+
+    blob = BlobRef(
+        locator=f"blobs/{sha256_digest(payload).removeprefix('sha256:')}",
+        digest=sha256_digest(payload),
+        byte_size=len(payload),
+        media_type=candidate.media_type,
+    )
+    receipt = CapturedFile.create(
+        source_item_id=newest.item_id,
+        source_version=newest.version,
+        candidate_id=candidate.candidate_id,
+        blob=blob,
+        media_type=candidate.media_type,
+        acquired_at="2026-08-22T05:00:00Z",
+        downloader_id=fetcher.downloader_id,
+        transport_version=candidate.transport_version,
+        downloader_configuration_digest=config.digest,
+    )
+    assert receipt.file_id.startswith("urn:docspec:captured-file:v1:")
+    assert receipt.disposition is AcquisitionDisposition.CAPTURED
+    assert receipt.blob.byte_size == candidate.expected_size
+    assert receipt.source_item_id.startswith("bulk-data/courts-")
