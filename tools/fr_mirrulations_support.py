@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 import subprocess
 import tempfile
@@ -23,6 +22,7 @@ from docspec.adapters.content_fetchers import (
     s3_transport_version,
 )
 from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.storage import sha256_file
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import (
     canonical_json_bytes,
@@ -38,6 +38,7 @@ from docspec.domain.identity import (
 )
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
 from docspec.errors import IntegrityError
+from docspec.processing.json_tools import strict_json_value
 from docspec.processing.segmentation import SegmentationReceipt
 
 CAMPAIGN_ID = "fr-mirrulations-10k-v1"
@@ -165,33 +166,27 @@ def _read_json(path: Path, *, label: str, canonical: bool = False) -> dict[str, 
     if canonical:
         value = thaw_json(parse_canonical_json(payload, label=label))
     else:
-        def closed_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-            result: dict[str, Any] = {}
-            for key, item in pairs:
-                if key in result:
-                    raise IntegrityError(f"{label} repeats JSON key {key!r}")
-                result[key] = item
-            return result
-
+        # Deliberately not parse_closed_json. These are the producer's manifests
+        # and receipts, not DocSpec artifacts: the real Federal Register draw
+        # carries ten floating-point summary statistics, and DocSpec's identity
+        # rules refuse every float, so identity's reader rejects the corpus
+        # outright ("... .page_span.median contains a floating-point number").
+        # strict_json_value is the reader for documents DocSpec did not write,
+        # and it refuses the same duplicate keys and non-finite constants.
         try:
-            value = json.loads(
-                payload.decode("utf-8"),
-                object_pairs_hook=closed_object,
-                parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)),
-            )
-        except (UnicodeError, json.JSONDecodeError, ValueError) as error:
-            raise IntegrityError(f"{label} is not valid closed UTF-8 JSON: {error}") from error
+            text = payload.decode("utf-8")
+        except UnicodeError as error:
+            raise IntegrityError(f"{label} is not valid UTF-8: {error}") from error
+        value = strict_json_value(text, label=label)
     if not isinstance(value, dict):
         raise IntegrityError(f"{label} must contain a JSON object")
     return value
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as stream:
-        for block in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(block)
-    return f"sha256:{digest.hexdigest()}"
+    """Name the digest half of the repository's one bounded file hash."""
+
+    return sha256_file(Path(path))[0]
 
 
 def _gate_evidence_files(repository: Path) -> list[dict[str, Any]]:

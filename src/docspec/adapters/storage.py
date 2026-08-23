@@ -152,8 +152,14 @@ def _verify_artifact_bytes(reference: ArtifactRef, payload: bytes, *, media_type
         raise IntegrityError("artifact bytes differ from their immutable reference")
 
 
-def _sha256_file(path: Path, *, chunk_size: int = _FILE_CHUNK_BYTES) -> tuple[str, int]:
-    """Hash one regular file in bounded memory and return digest plus size."""
+def sha256_file(path: Path, *, chunk_size: int = _FILE_CHUNK_BYTES) -> tuple[str, int]:
+    """Hash one regular file in bounded memory and return digest plus size.
+
+    Public because it is the repository's one file digest. A caller that wants
+    only the digest takes the first element; a second loop that reads the same
+    bytes to produce the same string is not a second implementation, it is a
+    second thing to keep correct.
+    """
 
     if chunk_size <= 0:
         raise ValueError("file hash chunk_size must be positive")
@@ -202,7 +208,7 @@ def _verified_member_path(
     path = _contained(root, member["path"])
     if not path.is_file() or path.is_symlink() or path.stat().st_size != member["byteSize"]:
         raise IntegrityError("distribution member size or storage type differs from its description")
-    digest, byte_size = _sha256_file(path)
+    digest, byte_size = sha256_file(path)
     if byte_size != member["byteSize"] or digest != member["digest"]:
         raise IntegrityError("distribution member bytes differ from their description")
     return path
@@ -459,7 +465,7 @@ class LocalContentAddressedBlobStore:
         path = _contained(self.root, reference.locator)
         if not path.is_file() or path.is_symlink() or path.stat().st_size != reference.byte_size:
             raise IntegrityError("blob size or storage type differs from its reference")
-        digest, byte_size = _sha256_file(path, chunk_size=self.stream_chunk_bytes)
+        digest, byte_size = sha256_file(path, chunk_size=self.stream_chunk_bytes)
         if byte_size != reference.byte_size or digest != reference.digest:
             raise IntegrityError("blob bytes differ from their immutable reference")
 
@@ -1177,7 +1183,7 @@ class LocalJsonlRecordStorage:
             for key, temporary in writers.paths.items():
                 partition, sequence = key
                 _sync_file(temporary)
-                digest, byte_size = _sha256_file(temporary)
+                digest, byte_size = sha256_file(temporary)
                 if byte_size != sizes[key]:
                     raise IntegrityError("record member size differs from its streamed write count")
                 locator = self._member_locator(digest)
@@ -1187,7 +1193,7 @@ class LocalJsonlRecordStorage:
                 except FileExistsError:
                     if destination.is_symlink() or not destination.is_file():
                         raise IntegrityError("record member conflicts with an existing immutable object") from None
-                    existing_digest, existing_size = _sha256_file(destination)
+                    existing_digest, existing_size = sha256_file(destination)
                     if existing_digest != digest or existing_size != byte_size:
                         raise IntegrityError("record member conflicts with an existing immutable object") from None
                 members[key] = {
