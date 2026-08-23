@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from docspec.domain.identity import (
+    closed_mapping,
     freeze_json,
     identity_digest,
     require_sha256,
@@ -31,12 +32,6 @@ PROCESSOR_DATA_FIELDS = (
     "segmentKind",
     "segmentOrdinal",
 )
-
-
-def _closed_mapping(value: object, expected: set[str], label: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping) or set(value) != expected:
-        raise ValueError(f"{label} has an invalid closed shape")
-    return value
 
 
 def _array(value: object, label: str) -> tuple[Any, ...]:
@@ -134,7 +129,7 @@ class RetentionPolicy:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> RetentionPolicy:
-        raw = _closed_mapping(
+        raw = closed_mapping(
             value,
             {
                 "format",
@@ -148,6 +143,7 @@ class RetentionPolicy:
                 "minimumAgeSeconds",
             },
             "retention policy",
+            error=ValueError,
         )
         if raw["format"] != "docspec-retention-policy" or raw["formatVersion"] != "1.0":
             raise ValueError("retention policy has an unknown format")
@@ -223,7 +219,7 @@ class ProviderEvidence:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> ProviderEvidence:
-        raw = _closed_mapping(value, {"mode", "digest", "redactedRecord"}, "provider evidence")
+        raw = closed_mapping(value, {"mode", "digest", "redactedRecord"}, "provider evidence", error=ValueError)
         return cls(raw["mode"], raw["digest"], raw["redactedRecord"])
 
 
@@ -249,7 +245,12 @@ class ProviderInteractionEvidence:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> ProviderInteractionEvidence:
-        raw = _closed_mapping(value, {"providerId", "request", "response"}, "provider interaction evidence")
+        raw = closed_mapping(
+            value,
+            {"providerId", "request", "response"},
+            "provider interaction evidence",
+            error=ValueError,
+        )
         return cls(
             raw["providerId"],
             ProviderEvidence.from_dict(raw["request"]),
@@ -366,7 +367,7 @@ class DataUsePolicy:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> DataUsePolicy:
-        raw = _closed_mapping(
+        raw = closed_mapping(
             value,
             {
                 "format",
@@ -378,6 +379,7 @@ class DataUsePolicy:
                 "responseEvidence",
             },
             "data-use policy",
+            error=ValueError,
         )
         if raw["format"] != "docspec-data-use-policy" or raw["formatVersion"] != "1.0":
             raise ValueError("data-use policy has an unknown format")

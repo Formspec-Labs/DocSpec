@@ -11,6 +11,7 @@ from typing import Any
 
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import (
+    closed_mapping,
     parse_canonical_json,
     parse_closed_json,
     require_relative_path,
@@ -138,12 +139,6 @@ class WireReleasePins:
     wire_format_version: str
     schemas: Mapping[str, Any]
     bundles: tuple[WireReleaseBundlePin, ...]
-
-
-def _closed_mapping(value: object, keys: frozenset[str], label: str) -> Mapping[str, Any]:
-    if not isinstance(value, Mapping) or set(value) != keys:
-        raise IntegrityError(f"{label} has an invalid closed shape")
-    return value
 
 
 def _count(value: object, label: str) -> int:
@@ -284,7 +279,7 @@ def _tracked_files(directory: Path) -> set[str]:
 def _verified_members(directory: Path, declared: Iterable[Any]) -> dict[str, bytes]:
     payloads: dict[str, bytes] = {}
     for member in declared:
-        member = _closed_mapping(member, _MEMBER_KEYS, "pinned wire release member")
+        member = closed_mapping(member, _MEMBER_KEYS, "pinned wire release member")
         relative = require_relative_path(member["path"], "pinned wire release member path")
         if relative in payloads:
             raise IntegrityError(f"pinned wire release member is declared twice: {relative}")
@@ -314,15 +309,15 @@ def load_wire_release_pins(path: Path) -> WireReleasePins:
     directory = pins_path.parent
     payload = _read_bounded(pins_path, label="wire release pins file", max_bytes=MAX_PINS_BYTES)
     document = thaw_json(parse_canonical_json(payload, label="wire release pins file"))
-    pins = _closed_mapping(document, _PINS_KEYS, "wire release pins file")
+    pins = closed_mapping(document, _PINS_KEYS, "wire release pins file")
     if pins["format"] != PINS_FORMAT or pins["formatVersion"] != PINS_FORMAT_VERSION:
         raise IntegrityError("wire release pins file has an unknown format")
     content = {name: value for name, value in pins.items() if name != "pinsId"}
     if pins["pinsId"] != stable_urn(PINS_IDENTITY_KIND, content):
         raise IntegrityError("wire release pins identity differs from its canonical content")
 
-    origin = _closed_mapping(pins["origin"], _ORIGIN_KEYS, "wire release pins origin")
-    release = _closed_mapping(pins["release"], _RELEASE_KEYS, "wire release pins release")
+    origin = closed_mapping(pins["origin"], _ORIGIN_KEYS, "wire release pins origin")
+    release = closed_mapping(pins["release"], _RELEASE_KEYS, "wire release pins release")
     if release["wireFormat"] != WIRE_FORMAT or release["wireFormatVersion"] != WIRE_FORMAT_VERSION:
         raise IntegrityError("wire release pins name a format this gate does not check")
 
@@ -335,7 +330,7 @@ def load_wire_release_pins(path: Path) -> WireReleasePins:
 
     schemas: dict[str, Any] = {}
     for entry in pins["schemas"]:
-        entry = _closed_mapping(entry, _SCHEMA_KEYS, "pinned wire release schema")
+        entry = closed_mapping(entry, _SCHEMA_KEYS, "pinned wire release schema")
         role = require_text(entry["role"], "pinned wire release schema role")
         if role not in WIRE_SCHEMA_ROLES or role in schemas:
             raise IntegrityError(f"pinned wire release schema role is unknown or repeated: {role}")
@@ -349,7 +344,7 @@ def load_wire_release_pins(path: Path) -> WireReleasePins:
 
     bundles: list[WireReleaseBundlePin] = []
     for entry in pins["bundles"]:
-        entry = _closed_mapping(entry, _BUNDLE_KEYS, "pinned wire release bundle")
+        entry = closed_mapping(entry, _BUNDLE_KEYS, "pinned wire release bundle")
         verdict = entry["structuralVerdict"]
         if verdict not in _STRUCTURAL_VERDICTS:
             raise IntegrityError(f"pinned wire release bundle verdict is unknown: {verdict}")

@@ -49,6 +49,27 @@ def require_relative_path(value: object, label: str = "path") -> str:
     return path.as_posix()
 
 
+def closed_mapping(
+    value: object,
+    keys: Iterable[str],
+    label: str,
+    *,
+    error: type[Exception] = IntegrityError,
+) -> Mapping[str, Any]:
+    """Return one mapping whose keys are exactly ``keys``, or refuse it.
+
+    ``error`` names the boundary, not a second rule. A domain value object
+    reading its own dict raises ``ValueError``; bytes admitted from outside fail
+    closed with ``IntegrityError``; a profile raises ``ProfileError``. The check
+    those boundaries share -- a mapping, and exactly these keys, no more and no
+    fewer -- is written once, here.
+    """
+
+    if not isinstance(value, Mapping) or set(value) != set(keys):
+        raise error(f"{label} has an invalid closed shape")
+    return value
+
+
 def freeze_json(value: Any, *, label: str = "value") -> JSONValue:
     """Return an immutable JSON value and reject ambiguous inputs."""
 
