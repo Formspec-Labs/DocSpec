@@ -16,6 +16,15 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+# The seal over this artifact is DocSpec's identity encoding, not a private copy
+# of it. The two functions this module used to declare here dropped
+# allow_nan=False and the freeze_json pre-pass, so a NaN or a duplicate object
+# key would have sealed silently under a rule the rest of the tree refuses.
+# Re-sealing was not needed: the encoded payload of
+# conformance/predecessor-code-fingerprints-v1.json is byte-identical under both
+# (3,307,968 bytes, sha256:45ad74ef...), because it carries no floats.
+from docspec.domain.identity import canonical_json_bytes, sha256_digest
+
 
 SCHEMA_VERSION = "docspec/predecessor-code-fingerprints/v1"
 NORMALIZATION_VERSION = "python-syntax-token-v1"
@@ -32,18 +41,6 @@ _EXCLUDED_TOKEN_TYPES = frozenset(
         token.ENDMARKER,
     }
 )
-
-
-def canonical_json_bytes(value: object) -> bytes:
-    """Return the stable JSON representation used to seal the artifact."""
-
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
-
-
-def sha256_digest(value: bytes) -> str:
-    """Return a labeled SHA-256 digest."""
-
-    return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
 def normalized_python_tokens(source: bytes, *, filename: str = "<source>") -> tuple[str, ...]:
