@@ -42,7 +42,7 @@ uv run docspec --help  # the one CLI
 | Format adapters + source access | `src/docspec/adapters/` |
 | Processing / segmentation | `src/docspec/processing/` |
 | Release pipeline | `src/docspec/application/` |
-| Document profiles (per source kind) | `src/docspec/profiles/` |
+| Document profiles (per source kind) | `profiles/` |
 | Conformance fixtures | `conformance/`, `fixtures/` |
 | Active plan | `docs/plans/` (newest date wins) |
 
