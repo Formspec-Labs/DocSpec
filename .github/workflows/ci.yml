@@ -44,8 +44,10 @@ jobs:
         run: uv run pytest
 
       - name: Record required-selector conformance evidence
-        # conformance/specification.json honestly declares "not-yet-conformant": 6 of 25
-        # required tests are implemented today, 19 remain partial. `conformance run`
+        # conformance/specification.json honestly declares "not-yet-conformant": 23 of
+        # 25 required tests are implemented today; SCALE and PACKAGE-RELEASE remain
+        # partial, and both need evidence CI cannot produce -- the ordered scale
+        # campaigns and a published package. `conformance run`
         # exits non-zero on anything but a full "pass" verdict, so this step does not
         # gate merges (continue-on-error) — its job is to make the verdict a fact that
         # is recomputed and visible on every push, instead of a stale local claim
