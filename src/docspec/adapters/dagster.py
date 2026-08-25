@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
@@ -63,7 +64,10 @@ _DAGSTER_CONFIGURATION = freeze_json(
         "coordinationStorage": "shared POSIX filesystem",
         "dynamicMappingUnit": "DocumentStore",
         "eventEvidence": "Dagster run event log",
-        "executor": "dagster.multiprocess_executor",
+        "executor": {
+            "default": "dagster.multiprocess_executor",
+            "selection": "injected Dagster ExecutorDefinition at the deployment composition root",
+        },
         "resultPersistence": "one canonical StoreTaskResult file per task",
         "retryClassification": {
             "permanent": "configuration, integrity, limit, and unregistered exit failures",
@@ -81,8 +85,9 @@ _DAGSTER_CAPABILITIES = (
     "deploymentConfigurationSealed",
     "dynamicTaskMapping",
     "eventLog",
+    "executorDefinitionInjection",
     "lazyOptionalImport",
-    "multiprocessExecutor",
+    "multiprocessExecutorDefault",
     "nativeRetries",
     "referenceOnlySchedulerMessages",
     "replaySafeResultPersistence",
@@ -1258,19 +1263,29 @@ def _load_dagster() -> ModuleType:
         raise DagsterAdapterError("the optional 'dagster' package is required for Dagster definitions") from error
 
 
-def dagster_run_config(deployment_path: str | Path, deployment: DagsterDeploymentConfig) -> dict[str, Any]:
+def dagster_run_config(
+    deployment_path: str | Path,
+    deployment: DagsterDeploymentConfig,
+    *,
+    execution: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return the native run configuration pinned by one deployment file."""
 
     return {
         "resources": {"docspec_deployment": {"config": {"path": str(Path(deployment_path))}}},
-        "execution": {"config": {"max_concurrent": deployment.max_concurrent_tasks}},
+        "execution": (
+            {"config": {"max_concurrent": deployment.max_concurrent_tasks}}
+            if execution is None
+            else deepcopy(dict(execution))
+        ),
     }
 
 
-def build_dagster_definitions() -> Any:
-    """Build a Dagster-native dynamic job while keeping the core dependency-free."""
+def build_dagster_definitions(*, executor_def: Any | None = None) -> Any:
+    """Build the dynamic job with a deployment-injected Dagster executor."""
 
     dagster = _load_dagster()
+    selected_executor = dagster.multiprocess_executor if executor_def is None else executor_def
 
     @dagster.resource(config_schema={"path": str})
     def docspec_deployment(context) -> DagsterDeploymentConfig:
@@ -1301,7 +1316,7 @@ def build_dagster_definitions() -> Any:
     @dagster.job(
         name="docspec_store_tasks",
         resource_defs={"docspec_deployment": docspec_deployment},
-        executor_def=dagster.multiprocess_executor,
+        executor_def=selected_executor,
     )
     def docspec_store_tasks() -> None:
         emit_store_tasks().map(execute_store_task)

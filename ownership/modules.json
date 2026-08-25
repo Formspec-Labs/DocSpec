@@ -34,7 +34,7 @@
     },
     {
       "path": "src/docspec/adapters/dagster.py",
-      "capability": "Lazy optional Dagster dynamic-task mapping with one coordinator membership proof, indexed per-task checks, and subprocess workers",
+      "capability": "Deployment-injected Dagster execution with dynamic task mapping, one coordinator membership proof, indexed checks, and subprocess workers",
       "status": "partial",
       "conformanceTests": [
         "SCALE",

@@ -48,7 +48,7 @@ _MODULE_METADATA: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "implemented",
         ("ACQUISITION", "RECOVERY"),
     ),
-    "src/docspec/adapters/dagster.py": ("Lazy optional Dagster dynamic-task mapping with one coordinator membership proof, indexed per-task checks, and subprocess workers", "partial", ("SCALE", "SCHEDULER-PORTABILITY")),
+    "src/docspec/adapters/dagster.py": ("Deployment-injected Dagster execution with dynamic task mapping, one coordinator membership proof, indexed checks, and subprocess workers", "partial", ("SCALE", "SCHEDULER-PORTABILITY")),
     "src/docspec/adapters/execution.py": ("Bounded local execution and scheduler-neutral serialized external dispatch", "partial", ("SCHEDULER-PORTABILITY", "RECOVERY")),
     "src/docspec/adapters/platform_artifact.py": (
         "Rulespec-backed derivation identity, bounded member sealing, and DocSpec semantic verification",

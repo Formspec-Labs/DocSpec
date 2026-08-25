@@ -525,3 +525,20 @@ def test_optional_dagster_package_executes_the_native_dynamic_job_locally(tmp_pa
     assert {node.name for node in job.nodes} == {"emit_store_tasks", "execute_store_task"}
     assert result.success
     assert {item.task.task_id for item in iter_persisted_task_results(deployment)} == {task.task_id for task in tasks}
+
+
+def test_dagster_executor_and_run_configuration_are_injected_at_the_deployment_edge(tmp_path: Path) -> None:
+    dagster = pytest.importorskip("dagster", reason="install the 'dagster' extra to verify executor injection")
+    deployment, _handoff, _tasks = _deployment(tmp_path, worker_command=_worker_command(tmp_path))
+    deployment_path = tmp_path / "deployment.json"
+    deployment_path.write_bytes(deployment.to_bytes())
+
+    job = build_dagster_definitions(executor_def=dagster.in_process_executor).get_job_def("docspec_store_tasks")
+    execution_config = {"config": {}}
+    run_config = dagster_run_config(deployment_path, deployment, execution=execution_config)
+    execution_config["config"]["changedAfterComposition"] = True
+
+    assert job.executor_def.name == "in_process"
+    assert dagster.validate_run_config(job, run_config)["execution"]
+    assert "changedAfterComposition" not in run_config["execution"]["config"]
+    assert run_config["resources"]["docspec_deployment"]["config"]["path"] == str(deployment_path)
