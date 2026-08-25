@@ -201,7 +201,7 @@
         "tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture",
         "tests/conformance/test_acquisition.py::test_drifted_source_bytes_fail_closed_without_a_stored_object",
         "tests/conformance/test_acquisition.py::test_an_oversized_declared_candidate_refuses_planning_before_any_io",
-        "tests/test_source_catalog.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
+        "tests/test_content_fetchers.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
         "tests/test_content_fetchers.py::test_fetch_stream_closes_unstarted_source_once",
         "tests/test_content_fetchers.py::test_local_fetcher_does_not_double_close_descriptors_under_concurrency",
         "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_streams_pinned_object_and_closes",
@@ -331,7 +331,7 @@
         "tests/test_execution_backends.py::test_backend_verifies_the_complete_profile_reference_before_work",
         "tests/test_execution_backends.py::test_local_backend_rejects_a_completion_after_its_deadline",
         "tests/test_execution_backends.py::test_external_backend_bounds_replayed_results_by_the_sealed_attempt_limit",
-        "tests/test_dagster_adapter.py::test_dagster_adapter_profile_is_closed_and_keeps_external_qualification_unrun",
+        "tests/test_dagster_adapter.py::test_dagster_adapter_profile_is_closed_and_pins_passed_multinode_qualification",
         "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
         "tests/test_dagster_adapter.py::test_dagster_worker_crosses_a_process_boundary_and_persists_idempotent_results",
         "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof",
@@ -429,7 +429,6 @@
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",
         "tests/test_cli.py::test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index",
-        "tests/conformance/test_shared_fixtures.py::test_shared_fixture_distribution_is_closed_complete_and_sealed",
         "tests/test_conformance.py::test_conformance_runner_executes_exact_selectors_and_seals_a_report"
       ],
       "plannedTestModule": null

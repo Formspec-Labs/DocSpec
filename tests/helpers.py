@@ -3,7 +3,25 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
+from pathlib import Path
+from urllib.parse import quote, unquote, urlsplit
 
+from rulespec_conformance.platform_artifact import (
+    ROOT_OBJECT_KEY,
+    LocalMemberSource,
+    MemberManifestReference,
+    SOURCE_CATALOG_ITEM_SCHEMA_ID,
+    SourceCatalogSpec,
+    build_artifact_root,
+    canonical_json_bytes as artifact_json_bytes,
+    describe_member,
+    sha256_digest as artifact_set_digest,
+    source_catalog_item_schema_bytes,
+)
+
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
@@ -17,8 +35,9 @@ from docspec.domain.identity import canonical_json_file_bytes, identity_digest, 
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
-from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, StoreRef
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema
+from docspec.ports.content_fetcher import FetchStream
 
 
 EMPTY_DIGEST = sha256_digest(b"")
@@ -30,6 +49,151 @@ TASK_RESULT_SCHEMA = RecordSchema(
     "recordId",
     "sourceItemId",
 )
+_FIXTURE_SOURCE_ORIGIN = "https://fixtures.docspec.test/"
+
+
+def shared_source_record(item: SourceItem) -> dict[str, object]:
+    """Map one test source item to the real shared source-catalog shape."""
+
+    disposition = {
+        SourceItemState.ACTIVE: "selected",
+        SourceItemState.DELETED: "deleted",
+        SourceItemState.EXCLUDED: "excluded",
+    }[item.state]
+    selection: dict[str, object] = {"disposition": disposition}
+    if disposition != "selected":
+        selection.update({"reasonCode": f"test.{disposition}", "reason": f"Test item is {disposition}."})
+    candidates = []
+    for candidate in item.candidates:
+        locator = candidate.locator
+        if not locator.startswith(("http://", "https://")):
+            locator = _FIXTURE_SOURCE_ORIGIN + quote(locator, safe="/")
+        candidates.append(
+            {
+                "renditionId": candidate.candidate_id,
+                "mediaType": candidate.media_type,
+                "locator": locator,
+                "expectedSha256": candidate.expected_digest,
+                "expectedByteSize": candidate.expected_size,
+            }
+        )
+    return {
+        "sourceItemId": item.item_id,
+        "documentId": item.item_id,
+        "sourceIssuedVersion": item.version,
+        "sourceNativeMetadata": item.metadata,
+        "normalizedMetadata": (
+            {
+                "title": item.item_id,
+                "agencies": [{"agencyId": "TEST", "agencyName": "DocSpec test fixture"}],
+                "documentType": "TestDocument",
+                "publicationDate": "2026-08-24",
+                "lastUpdatedDate": None,
+                "docketIds": [],
+                "regulationIdentifierNumbers": [],
+                "commentCloseDate": None,
+                "language": "en",
+                "sourceUrl": f"https://fixtures.docspec.test/source/{quote(item.item_id, safe='')}",
+            }
+            if item.state is SourceItemState.ACTIVE
+            else None
+        ),
+        "sourceObservedTopics": [],
+        "sourceObservations": [],
+        "candidateRenditions": candidates,
+        "selection": selection,
+    }
+
+
+def write_shared_source_catalog(
+    root: Path,
+    items: tuple[dict[str, object] | SourceItem, ...],
+    *,
+    name: str = "catalog",
+    requested_digest: str | None = None,
+    selected_digest: str | None = None,
+) -> SourceCatalogRef:
+    """Publish a small exact shared source-catalog distribution for tests."""
+
+    records = tuple(shared_source_record(item) if isinstance(item, SourceItem) else item for item in items)
+    distribution = root / name
+    (distribution / "records").mkdir(parents=True)
+    (distribution / "schemas").mkdir()
+    items_path = distribution / "records/source-items.jsonl"
+    items_path.write_bytes(b"".join(artifact_json_bytes(item) + b"\n" for item in records))
+    schema_path = distribution / "schemas/source-catalog-item-v1.schema.json"
+    schema_path.write_bytes(source_catalog_item_schema_bytes())
+    source = LocalMemberSource(distribution)
+    members = (
+        describe_member(
+            source,
+            object_key="records/source-items.jsonl",
+            role="source-items",
+            media_type="application/x-ndjson",
+            record_count=len(records),
+            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
+        ),
+        describe_member(
+            source,
+            object_key="schemas/source-catalog-item-v1.schema.json",
+            role="schema",
+            media_type="application/schema+json",
+            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
+        ),
+    )
+    manifest, payload = MemberManifestReference.for_members(
+        scope_kind="global",
+        scope_id="source-items",
+        object_key="manifest.json",
+        members=members,
+    )
+    (distribution / "manifest.json").write_bytes(payload)
+    identities = sorted({str(item["sourceItemId"]) for item in records})
+    selected = sorted(
+        str(item["sourceItemId"])
+        for item in records
+        if item["selection"] == {"disposition": "selected"}
+    )
+    artifact_root = build_artifact_root(
+        spec=SourceCatalogSpec(
+            catalog_id="urn:docspec:test:catalog",
+            source_system_id="urn:docspec:test:source",
+            source_system_version="1",
+            selection_policy_id="urn:docspec:test:selection",
+            selection_policy_version="1",
+            selection_policy_digest="sha256:" + "1" * 64,
+            requested_universe_set_digest=requested_digest or artifact_set_digest(identities),
+            selected_source_set_digest=selected_digest or artifact_set_digest(selected),
+        ),
+        inputs=(),
+        manifests=(manifest,),
+        accounted_input_count=len(records),
+    )
+    (distribution / ROOT_OBJECT_KEY).write_bytes(artifact_json_bytes(artifact_root))
+    return SourceCatalogRef(
+        artifact_root["logicalId"],
+        f"{name}/{ROOT_OBJECT_KEY}",
+        artifact_root["artifactDigest"],
+    )
+
+
+class SharedFixtureContentFetcher:
+    """Resolve the shared test HTTPS namespace through an injected local reader."""
+
+    def __init__(self, root: Path) -> None:
+        self._local = LocalFileContentFetcher(root)
+
+    def fetch(self, candidate: CandidateFile, **kwargs):  # type: ignore[no-untyped-def]
+        parsed = urlsplit(candidate.locator)
+        if parsed.scheme != "https" or parsed.netloc != "fixtures.docspec.test":
+            raise ValueError("shared fixture candidate is outside the test source namespace")
+        local = replace(candidate, locator=unquote(parsed.path.lstrip("/")))
+        result = self._local.fetch(local, **kwargs)
+        return FetchStream(
+            replace(result.metadata, transport_version=candidate.transport_version),
+            result.chunks,
+            result.close_callback,
+        )
 
 
 def artifact(identifier: str, *, locator: str | None = None) -> ArtifactRef:

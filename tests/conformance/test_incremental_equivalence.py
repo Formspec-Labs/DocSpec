@@ -6,8 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -27,6 +26,9 @@ from docspec.domain.storage import PartitionPolicy
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
+write_shared_source_catalog = _helpers.write_shared_source_catalog
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
 _processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
 _run = _pipeline_helpers._run
@@ -72,7 +74,8 @@ def _targeted_plan(
 @dataclass(frozen=True)
 class _Platform:
     sources: Path
-    source_catalog: LocalJsonlSourceCatalog
+    source_catalog: LocalPlatformSourceCatalog
+    source_catalog_root: Path
     controls: LocalJsonControlRepository
     stores: LocalDocumentStoreRepository
     blobs: LocalContentAddressedBlobStore
@@ -80,11 +83,16 @@ class _Platform:
     catalog: LocalManifestDocumentCatalog
     partition_policy: PartitionPolicy
 
+    def publish_source(self, items: tuple[SourceItem, ...], *, name: str = "catalog"):
+        return write_shared_source_catalog(self.source_catalog_root, items, name=name)
+
 
 def _platform(root: Path, *, member_bytes: int) -> _Platform:
     sources = root / "sources"
     sources.mkdir(parents=True)
-    source_catalog = LocalJsonlSourceCatalog(root / "source-catalogs")
+    source_catalog_root = root / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
     controls = LocalJsonControlRepository(root / "controls")
     stores = LocalDocumentStoreRepository(root / "stores")
     blobs = LocalContentAddressedBlobStore(root / "blobs")
@@ -100,6 +108,7 @@ def _platform(root: Path, *, member_bytes: int) -> _Platform:
     return _Platform(
         sources,
         source_catalog,
+        source_catalog_root,
         controls,
         stores,
         blobs,
@@ -167,7 +176,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         evolving.sources / "b.txt",
         "Bravo remains stable in its only paragraph.",
     )
-    first_source = evolving.source_catalog.write(
+    first_source = evolving.publish_source(
         (
             SourceItem("document-a", "v1", (first_a,), metadata={"expectedSegments": 1}),
             SourceItem("document-b", "v1", (first_b,), metadata={"expectedSegments": 1}),
@@ -183,7 +192,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         blobs=evolving.blobs,
         records=evolving.records,
         catalog=evolving.catalog,
-        fetcher=LocalFileContentFetcher(evolving.sources),
+        fetcher=SharedFixtureContentFetcher(evolving.sources),
         processors=(initial_processor,),
         partition_policy=evolving.partition_policy,
     )
@@ -201,9 +210,9 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         SourceItem("document-b", "v1", (first_b,), metadata={"expectedSegments": 1}),
         SourceItem("document-c", "v1", (final_c,), metadata={"expectedSegments": 1}),
     )
-    final_source = evolving.source_catalog.write(final_items)
+    final_source = evolving.publish_source(final_items, name="final")
     final_processor = _CountingProcessor(_description("equivalence", "2", retry))
-    fetcher = _CountingFetcher(LocalFileContentFetcher(evolving.sources))
+    fetcher = _CountingFetcher(SharedFixtureContentFetcher(evolving.sources))
     extractor = _CountingExtractor()
     segmenter = _CountingSegmenter()
     incremental_plan = _plan(final_source, initial_release, (final_processor,), retry, accepted)
@@ -278,7 +287,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
                 metadata={"expectedSegments": 1},
             ),
         )
-        clean_source = clean.source_catalog.write(clean_items)
+        clean_source = clean.publish_source(clean_items)
         clean_processor = _CountingProcessor(_description("equivalence", "2", retry))
         clean_plan = _plan(clean_source, None, (clean_processor,), retry, accepted)
         _, _, _, _, clean_release = _run(
@@ -289,7 +298,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
             blobs=clean.blobs,
             records=clean.records,
             catalog=clean.catalog,
-            fetcher=LocalFileContentFetcher(clean.sources),
+            fetcher=SharedFixtureContentFetcher(clean.sources),
             processors=(clean_processor,),
             partition_policy=clean.partition_policy,
         )
@@ -305,15 +314,16 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     # explicitly; unrelated content must be neither refetched nor reprocessed.
     targeted_text = "Alpha targeted once more in its last paragraph."
     targeted_a = _write_source(evolving.sources / "a.txt", targeted_text)
-    targeted_source = evolving.source_catalog.write(
+    targeted_source = evolving.publish_source(
         (
             SourceItem("document-a", "v3", (targeted_a,), metadata={"expectedSegments": 1}),
             final_items[1],
             final_items[2],
-        )
+        ),
+        name="targeted",
     )
     targeted_processor = _CountingProcessor(_description("equivalence", "2", retry))
-    targeted_fetcher = _CountingFetcher(LocalFileContentFetcher(evolving.sources))
+    targeted_fetcher = _CountingFetcher(SharedFixtureContentFetcher(evolving.sources))
     targeted_extractor = _CountingExtractor()
     targeted_segmenter = _CountingSegmenter()
     targeted_plan = _targeted_plan(

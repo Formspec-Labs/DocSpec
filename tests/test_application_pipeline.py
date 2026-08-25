@@ -7,14 +7,9 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.execution import LocalExecutionBackend
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from tests.legacy_source_catalog import (
-    LocalJsonlSourceCatalog,
-    LocalSourceReleaseReader,
-    SourceReleaseCatalogView,
-)
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -50,7 +45,7 @@ from docspec.errors import IntegrityError
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.helpers import local_profile_set
+from tests.helpers import SharedFixtureContentFetcher, local_profile_set, write_shared_source_catalog
 
 
 def _clock() -> str:
@@ -275,8 +270,9 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     first_candidate = _write_source(sources / "first.txt", "Alpha paragraph.\n\nSecond paragraph.")
     second_candidate = _write_source(sources / "second.txt", "Unchanged document.")
 
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
-    pipeline_source_catalog = SourceReleaseCatalogView(LocalSourceReleaseReader(source_catalog))
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -289,12 +285,13 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
         controls=controls,
         blobs=blobs,
     )
-    fetcher = LocalFileContentFetcher(sources)
+    fetcher = SharedFixtureContentFetcher(sources)
     retry = RetryPolicy(base_delay_milliseconds=0)
     processor = ContentStatisticsProcessor(retry_policy=retry)
     accepted = AcceptedFailurePolicy()
 
-    source_v1 = source_catalog.write(
+    source_v1 = write_shared_source_catalog(
+        source_catalog_root,
         tuple(
             sorted(
                 (
@@ -303,12 +300,13 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
                 ),
                 key=lambda item: item.item_id,
             )
-        )
+        ),
+        name="v1",
     )
     first_plan = _plan(source_v1, None, processor, retry, accepted, buckets=16)
     planned, processed, sealed, run_v1_ref, release_v1_ref = _run(
         plan=first_plan,
-        source_catalog=pipeline_source_catalog,
+        source_catalog=source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,
@@ -334,7 +332,8 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     v1_root = json.loads((records.root / v1_segments.state_ref).read_text())
 
     first_candidate_v2 = _write_source(sources / "first.txt", "Alpha changed.\n\nSecond paragraph.")
-    source_v2 = source_catalog.write(
+    source_v2 = write_shared_source_catalog(
+        source_catalog_root,
         tuple(
             sorted(
                 (
@@ -343,12 +342,13 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
                 ),
                 key=lambda item: item.item_id,
             )
-        )
+        ),
+        name="v2",
     )
     second_plan = _plan(source_v2, release_v1_ref, processor, retry, accepted, buckets=16)
     planned_v2, _, sealed_v2, _, release_v2_ref = _run(
         plan=second_plan,
-        source_catalog=pipeline_source_catalog,
+        source_catalog=source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,
@@ -374,13 +374,15 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     v2_members = {item["partition"]: item["path"] for item in v2_root["members"]}
     assert v2_members[unchanged_bucket] == v1_members[unchanged_bucket]
 
-    source_v3 = source_catalog.write(
-        (SourceItem(first_id, "v2", (first_candidate_v2,), metadata={"expectedSegments": 2}),)
+    source_v3 = write_shared_source_catalog(
+        source_catalog_root,
+        (SourceItem(first_id, "v2", (first_candidate_v2,), metadata={"expectedSegments": 2}),),
+        name="v3",
     )
     third_plan = _plan(source_v3, release_v2_ref, processor, retry, accepted, buckets=16)
     planned_v3, _, _, _, release_v3_ref = _run(
         plan=third_plan,
-        source_catalog=pipeline_source_catalog,
+        source_catalog=source_catalog,
         controls=controls,
         stores=stores,
         blobs=blobs,
@@ -422,7 +424,9 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
 ) -> None:
     sources = tmp_path / "sources"
     sources.mkdir()
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -438,11 +442,12 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
     retry = RetryPolicy(base_delay_milliseconds=0)
     processor = ContentStatisticsProcessor(retry_policy=retry)
     accepted = AcceptedFailurePolicy()
-    source_ref = source_catalog.write(
+    source_ref = write_shared_source_catalog(
+        source_catalog_root,
         (
             SourceItem("document-a", "v1", (_write_source(sources / "a.txt", "Alpha."),)),
             SourceItem("document-b", "v1", (_write_source(sources / "b.txt", "Bravo."),)),
-        )
+        ),
     )
     plan = _plan(source_ref, None, processor, retry, accepted, buckets=1, max_entries=1)
     planned, _, sealed, run_ref, _ = _run(
@@ -453,7 +458,7 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
         blobs=blobs,
         records=records,
         catalog=catalog,
-        fetcher=LocalFileContentFetcher(sources),
+        fetcher=SharedFixtureContentFetcher(sources),
         processor=processor,
         partition_policy=partition_policy,
     )

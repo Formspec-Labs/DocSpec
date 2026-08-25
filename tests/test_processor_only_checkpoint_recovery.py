@@ -5,8 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -22,6 +21,7 @@ from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
 from tests.test_application_pipeline import _run, _write_source
+from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
 from tests.test_processor_reprocessing import (
     _CountingExtractor,
     _CountingFetcher,
@@ -63,8 +63,11 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     sources.mkdir()
     candidate = _write_source(sources / "document.txt", "First paragraph.\n\nSecond paragraph.")
     item = SourceItem("document-a", "v1", (candidate,), metadata={"expectedSegments": 2})
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
-    source_ref = source_catalog.write((item,))
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_ref = write_shared_source_catalog(source_catalog_root, (item,))
+    mapped_item = next(source_catalog.stream(source_ref))
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -77,7 +80,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
         blobs=blobs,
     )
     partition_policy = PartitionPolicy("source-item-sha256-v1", 8)
-    fetcher = _CountingFetcher(LocalFileContentFetcher(sources))
+    fetcher = _CountingFetcher(SharedFixtureContentFetcher(sources))
     extractor = _CountingExtractor()
     segmenter = _CountingSegmenter()
     retry = RetryPolicy(base_delay_milliseconds=0)
@@ -125,7 +128,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
         logical_partition="bucket-00000/store-00000000",
         entries=(
             DocumentEntry.create(
-                item,
+                    mapped_item,
                 ChangeKind.REPAIR,
                 requested,
                 execution_mode=EntryExecutionMode.PROCESSORS_ONLY,

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.application.commit import ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
@@ -28,6 +27,8 @@ from docspec.domain.receipts import RunReceipt
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _document_store = importlib.import_module("tests.conformance.test_document_store")
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
@@ -196,8 +197,8 @@ def _seeded_composition(root: Path, *, items: tuple[str, ...]):
     for item_id in sorted(items):
         candidate = _write_source(platform.sources / f"{item_id}.txt", f"{item_id} holds one paragraph.")
         source_items.append(SourceItem(item_id, "v1", (candidate,), metadata={"expectedSegments": 1}))
-    source = platform.source_catalog.write(tuple(source_items))
-    fetcher = _CountingFetcher(LocalFileContentFetcher(platform.sources))
+    source = platform.publish_source(tuple(source_items))
+    fetcher = _CountingFetcher(SharedFixtureContentFetcher(platform.sources))
     extractor = _CountingExtractor()
     plan = _plan(source, None, (processor,), retry, accepted)
     composition = _Composition(platform, plan, (processor,), fetcher, extractor=extractor)

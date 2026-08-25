@@ -5,11 +5,11 @@ description = "Format-neutral bulk document acquisition, processing, segmentatio
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
-    "rulespec-conformance==0.2.0rc13",
+    "rulespec-conformance==0.2.0rc15",
 ]
 
 [tool.uv.sources]
-rulespec-conformance = { path = "vendor/rulespec_conformance-0.2.0rc13-py3-none-any.whl" }
+rulespec-conformance = { path = "vendor/rulespec_conformance-0.2.0rc15-py3-none-any.whl" }
 
 [project.optional-dependencies]
 http = [

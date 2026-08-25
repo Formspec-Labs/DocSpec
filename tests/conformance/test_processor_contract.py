@@ -4,7 +4,6 @@ import importlib
 import sys
 from pathlib import Path
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import AcquisitionDisposition, DerivedRecord, ProcessorDisposition, SourceItem
 from docspec.domain.identity import canonical_json_bytes, identity_digest
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetryPolicy
@@ -15,6 +14,8 @@ from docspec.processing.processors import ContentStatisticsProcessor
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _document_store = importlib.import_module("tests.conformance.test_document_store")
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
@@ -106,7 +107,7 @@ def _run_processors(platform, processors, plan):
         blobs=platform.blobs,
         records=platform.records,
         catalog=platform.catalog,
-        fetcher=LocalFileContentFetcher(platform.sources),
+        fetcher=SharedFixtureContentFetcher(platform.sources),
         processors=processors,
         partition_policy=platform.partition_policy,
     )
@@ -126,7 +127,7 @@ def test_fake_and_real_processors_pass_one_reference_based_contract(tmp_path: Pa
     for label, processor in adapters:
         platform = _platform(tmp_path / label, member_bytes=1024 * 1024)
         items = _seeded_items(platform, {"document-contract": "One paragraph carries the whole fixture."})
-        source = platform.source_catalog.write(items)
+        source = platform.publish_source(items)
         plan = _plan(source, None, (processor,), retry, accepted)
         _, _, sealed, _, release_ref = _run_processors(platform, (processor,), plan)
 
@@ -182,7 +183,7 @@ def test_dependency_outputs_flow_only_through_declared_edges(tmp_path: Path) -> 
     processors = (upstream, sibling, downstream)
     platform = _platform(tmp_path, member_bytes=1024 * 1024)
     items = _seeded_items(platform, {"document-graph": "One paragraph feeds the processor graph."})
-    source = platform.source_catalog.write(items)
+    source = platform.publish_source(items)
     plan = _plan(source, None, processors, retry, accepted)
     assert plan.processors.execution_order[-1].processor_id == downstream.description.processor_id, (
         "the plan pins the acyclic graph before execution"
@@ -241,7 +242,7 @@ def test_every_scheduled_item_ends_in_one_registered_processor_disposition(tmp_p
             "document-produce": "This paragraph earns a produced record.",
         },
     )
-    source = platform.source_catalog.write(items)
+    source = platform.publish_source(items)
     plan = _plan(source, None, (processor,), retry, accepted)
     _, _, sealed, run_ref, release_ref = _run_processors(platform, (processor,), plan)
 

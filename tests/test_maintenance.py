@@ -9,8 +9,7 @@ from threading import Event
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -29,6 +28,7 @@ from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
 from docspec.processing.processors import ContentStatisticsProcessor
 from tests.test_application_pipeline import _clock, _plan, _run, _write_source
+from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,9 @@ class _Platform:
 def _platform(tmp_path: Path, *, document_count: int, member_bytes: int) -> _Platform:
     sources = tmp_path / "sources"
     sources.mkdir()
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -72,7 +74,7 @@ def _platform(tmp_path: Path, *, document_count: int, member_bytes: int) -> _Pla
         )
         for index in range(document_count)
     )
-    source = source_catalog.write(items)
+    source = write_shared_source_catalog(source_catalog_root, items)
     retry = RetryPolicy(base_delay_milliseconds=0)
     processor = ContentStatisticsProcessor(retry_policy=retry)
     plan = _plan(
@@ -92,7 +94,7 @@ def _platform(tmp_path: Path, *, document_count: int, member_bytes: int) -> _Pla
         blobs=blobs,
         records=records,
         catalog=catalog,
-        fetcher=LocalFileContentFetcher(sources),
+        fetcher=SharedFixtureContentFetcher(sources),
         processor=processor,
         partition_policy=partition_policy,
     )

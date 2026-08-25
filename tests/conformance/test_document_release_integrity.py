@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt
@@ -18,6 +17,8 @@ from docspec.errors import DocSpecError, IntegrityError
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
 _processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
@@ -38,7 +39,7 @@ def _committed_release(root: Path):
     platform = _platform(root, member_bytes=1024 * 1024)
     first = _write_source(platform.sources / "a.txt", "Alpha retains one exact paragraph.")
     second = _write_source(platform.sources / "b.txt", "Bravo retains another exact paragraph.")
-    source = platform.source_catalog.write(
+    source = platform.publish_source(
         (
             SourceItem("document-a", "v1", (first,), metadata={"expectedSegments": 1}),
             SourceItem("document-b", "v1", (second,), metadata={"expectedSegments": 1}),
@@ -54,7 +55,7 @@ def _committed_release(root: Path):
         blobs=platform.blobs,
         records=platform.records,
         catalog=platform.catalog,
-        fetcher=LocalFileContentFetcher(platform.sources),
+        fetcher=SharedFixtureContentFetcher(platform.sources),
         processors=(processor,),
         partition_policy=platform.partition_policy,
     )

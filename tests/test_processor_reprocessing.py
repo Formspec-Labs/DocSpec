@@ -6,8 +6,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -45,13 +44,19 @@ from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
 from docspec.processing.extraction import DefaultExtractorRegistry, TextExtractor
 from docspec.processing.segmentation import DefaultSegmenterRegistry, ParagraphSegmenter
-from tests.helpers import local_profile_set, processor_payload, segment_processor_request
+from tests.helpers import (
+    SharedFixtureContentFetcher,
+    local_profile_set,
+    processor_payload,
+    segment_processor_request,
+    write_shared_source_catalog,
+)
 from tests.test_application_pipeline import _run, _write_source
 from tests.test_processing_pipeline import _captured
 
 
 class _CountingFetcher:
-    def __init__(self, delegate: LocalFileContentFetcher) -> None:
+    def __init__(self, delegate) -> None:  # type: ignore[no-untyped-def]
         self.delegate = delegate
         self.calls: list[str] = []
 
@@ -291,8 +296,10 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
     candidate = _write_source(sources / "document.txt", "First paragraph.\n\nSecond paragraph.")
     item = SourceItem("document-a", "v1", (candidate,), metadata={"expectedSegments": 2})
 
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
-    source_ref = source_catalog.write((item,))
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_ref = write_shared_source_catalog(source_catalog_root, (item,))
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -305,7 +312,7 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
         controls=controls,
         blobs=blobs,
     )
-    fetcher = _CountingFetcher(LocalFileContentFetcher(sources))
+    fetcher = _CountingFetcher(SharedFixtureContentFetcher(sources))
     extractor = _CountingExtractor()
     segmenter = _CountingSegmenter()
     retry = RetryPolicy(base_delay_milliseconds=0)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import sys
 from dataclasses import replace
@@ -201,7 +202,7 @@ args.result.write_bytes(StoreTaskResult.succeeded(
     return sys.executable, str(worker)
 
 
-def test_dagster_adapter_profile_is_closed_and_keeps_external_qualification_unrun() -> None:
+def test_dagster_adapter_profile_is_closed_and_pins_passed_multinode_qualification() -> None:
     payload = PROFILE_PATH.read_bytes()
     profile = DagsterAdapterProfile.from_bytes(payload)
 
@@ -209,8 +210,13 @@ def test_dagster_adapter_profile_is_closed_and_keeps_external_qualification_unru
     assert profile == registered_dagster_adapter_profile()
     assert profile.configuration_digest == profile.to_dict()["configurationDigest"]
     assert profile.implementation_module == "docspec.adapters.dagster:build_dagster_definitions"
-    assert profile.qualification_status == "unrun"
-    assert profile.verifier_status == "partial"
+    assert profile.qualification_status == "passed"
+    assert profile.verifier_status == "implemented"
+    assert profile.qualification_evidence is not None
+    evidence_path = ROOT / profile.qualification_evidence.locator
+    evidence_payload = evidence_path.read_bytes()
+    assert len(evidence_payload) == profile.qualification_evidence.byte_size
+    assert sha256_digest(evidence_payload) == profile.qualification_evidence.digest
     assert profile.profile_id.startswith("urn:docspec:scheduler-adapter-profile:v1:")
 
     mutable = profile.to_dict()
@@ -237,13 +243,16 @@ def test_dagster_adapter_profile_is_closed_and_keeps_external_qualification_unru
         unsupported["verifier"]["status"],
         unsupported["verifier"]["testId"],
         unsupported["verifier"]["qualificationStatus"],
+        profile.qualification_evidence,
     )
     unsupported["profileId"] = unsupported_profile.profile_id
     with pytest.raises(ProfileError, match="not the logical profile"):
         adapter_profile_file_digest(canonical_json_file_bytes(unsupported))
 
     passed_without_evidence = profile.to_dict()
-    passed_without_evidence["verifier"].update({"status": "implemented", "qualificationStatus": "passed"})
+    passed_without_evidence["verifier"].update(
+        {"status": "implemented", "qualificationEvidence": None, "qualificationStatus": "passed"}
+    )
     with pytest.raises(ProfileError, match="requires implemented evidence"):
         DagsterAdapterProfile.from_dict(passed_without_evidence)
 
@@ -272,7 +281,7 @@ def test_dagster_deployment_rejects_changed_adapter_profile_bytes(tmp_path: Path
         load_dagster_adapter_profile(deployment)
 
 
-def test_passed_adapter_profile_requires_and_verifies_exact_qualification_evidence(tmp_path: Path) -> None:
+def test_runtime_profile_requires_the_registered_evidence_pin_without_loading_its_locator(tmp_path: Path) -> None:
     deployment, _handoff, _tasks = _deployment(tmp_path)
     evidence_payload = canonical_json_file_bytes({"campaign": "external-dagster", "verdict": "pass"})
     evidence_path = tmp_path / "qualification-evidence.json"
@@ -310,13 +319,44 @@ def test_passed_adapter_profile_requires_and_verifies_exact_qualification_eviden
         ),
     )
 
-    assert load_dagster_adapter_profile(passed_deployment) == passed
-
-    changed_evidence = bytearray(evidence_payload)
-    changed_evidence[changed_evidence.index(b"external-dagster")] = ord("E")
-    evidence_path.write_bytes(changed_evidence)
-    with pytest.raises(IntegrityError, match="digest differs"):
+    with pytest.raises(ProfileError, match="qualification evidence pin differs"):
         load_dagster_adapter_profile(passed_deployment)
+
+    registered_evidence = registered.qualification_evidence
+    assert registered_evidence is not None
+    relocated_evidence = ArtifactRef(
+        registered_evidence.artifact_id,
+        str(tmp_path / "history-is-not-a-runtime-input.json"),
+        registered_evidence.digest,
+        registered_evidence.media_type,
+        registered_evidence.byte_size,
+    )
+    relocated = replace(passed, qualification_evidence=relocated_evidence)
+    relocated_path = tmp_path / "relocated-profile.json"
+    relocated_path.write_bytes(relocated.to_bytes())
+    relocated_deployment = replace(
+        deployment,
+        adapter_profile=ArtifactRef(
+            relocated.profile_id,
+            str(relocated_path),
+            sha256_digest(relocated.to_bytes()),
+            "application/json",
+            len(relocated.to_bytes()),
+        ),
+    )
+    assert load_dagster_adapter_profile(relocated_deployment) == relocated
+
+
+def test_runtime_profile_loading_is_independent_of_the_history_file_working_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployment, _handoff, _tasks = _deployment(tmp_path)
+    runtime_directory = tmp_path / "runtime"
+    runtime_directory.mkdir()
+    monkeypatch.chdir(runtime_directory)
+
+    assert load_dagster_adapter_profile(deployment) == registered_dagster_adapter_profile()
 
 
 def test_dagster_worker_crosses_a_process_boundary_and_persists_idempotent_results(tmp_path: Path) -> None:
@@ -444,6 +484,52 @@ def test_task_membership_artifact_is_exact_and_tamper_evident(tmp_path: Path) ->
 
     with pytest.raises(IntegrityError, match="verified file snapshot"):
         tuple(iter_persisted_task_results(deployment))
+
+
+def test_task_membership_open_refuses_a_symlink_at_the_verified_path(tmp_path: Path) -> None:
+    deployment, handoff, tasks = _deployment(tmp_path, worker_command=_worker_command(tmp_path))
+    membership_path = Path(deployment.task_membership.locator)
+    moved = tmp_path / "moved-task-membership.sqlite3"
+    membership_path.replace(moved)
+    membership_path.symlink_to(moved)
+
+    with pytest.raises(IntegrityError, match="regular, non-symlink file"):
+        execute_or_reuse_task(deployment, handoff, tasks[0])
+
+
+def test_task_membership_reader_refuses_path_replacement_during_no_follow_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deployment, handoff, tasks = _deployment(tmp_path, worker_command=_worker_command(tmp_path))
+    membership_path = Path(deployment.task_membership.locator)
+    held_path = tmp_path / "held-task-membership.sqlite3"
+    forged_path = tmp_path / "forged-task-membership.sqlite3"
+    shutil.copyfile(membership_path, forged_path)
+    with sqlite3.connect(forged_path) as forged:
+        forged.execute("DELETE FROM tasks")
+
+    real_connect = sqlite3.connect
+    replaced = False
+
+    def connect_after_replacing_path(database, *args, **kwargs):  # type: ignore[no-untyped-def]
+        nonlocal replaced
+        if not replaced and isinstance(database, str) and "immutable=1" in database:
+            replaced = True
+            membership_path.replace(held_path)
+            forged_path.replace(membership_path)
+            try:
+                return real_connect(database, *args, **kwargs)
+            finally:
+                membership_path.replace(forged_path)
+                held_path.replace(membership_path)
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_after_replacing_path)
+
+    with pytest.raises(IntegrityError, match="changed while it was opened"):
+        execute_or_reuse_task(deployment, handoff, tasks[0])
+    assert replaced
 
 
 def test_pinned_membership_index_cannot_substitute_an_unknown_task_for_a_ledger_member(tmp_path: Path) -> None:

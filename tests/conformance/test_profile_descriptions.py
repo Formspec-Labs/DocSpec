@@ -25,6 +25,8 @@ from docspec.profile_registry import ProfileRegistry
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+write_shared_source_catalog = _helpers.write_shared_source_catalog
 _cli_helpers = importlib.import_module("tests.test_cli")
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 _write_local_run_request = _cli_helpers._write_local_run_request
@@ -123,9 +125,9 @@ def _seeded_local_run(tmp_path: Path, profiles: ProfileSet) -> tuple[Path, dict[
     source_content.mkdir()
     source_bytes = b"One conformance paragraph."
     (source_content / "document.txt").write_bytes(source_bytes)
-    catalogs = importlib.import_module("tests.legacy_source_catalog")
     source_catalog_root = tmp_path / "source-catalog"
-    source_ref = catalogs.LocalJsonlSourceCatalog(source_catalog_root).write(
+    source_ref = write_shared_source_catalog(
+        source_catalog_root,
         (
             SourceItem(
                 "document-a",
@@ -142,7 +144,7 @@ def _seeded_local_run(tmp_path: Path, profiles: ProfileSet) -> tuple[Path, dict[
                 ),
                 metadata={"expectedSegments": 1},
             ),
-        )
+        ),
     )
     retry = RetryPolicy()
     accepted = AcceptedFailurePolicy()

@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError
+from tests.helpers import write_shared_source_catalog
 from tools.courtlistener_bulk_source import (
     CONTENT_BASE,
     BulkCapture,
@@ -236,19 +237,19 @@ def test_coverage_states_the_denominator_the_publisher_supplied():
 # -- publishing a catalog a campaign can run over ----------------------------
 
 
-def test_population_publishes_as_a_verified_source_catalog(tmp_path: Path):
+def test_population_publishes_as_a_verified_shared_source_catalog(tmp_path: Path):
     capture = load_capture(PINS_PATH)
     items = build_source_items(capture, datasets={"opinions", "opinion-clusters", "courts"})
-    catalog = LocalJsonlSourceCatalog(tmp_path / "store")
+    root = tmp_path / "store"
+    root.mkdir()
+    catalog = LocalPlatformSourceCatalog(root)
 
-    reference = catalog.write(items, coverage=coverage_for(capture, items))
+    reference = write_shared_source_catalog(root, items)
     summary = catalog.verify(reference)
 
     assert summary.item_count == len(items)
     assert summary.state_counts["active"] == sum(1 for i in items if i.state is SourceItemState.ACTIVE)
     assert summary.state_counts["excluded"] == sum(1 for i in items if i.state is SourceItemState.EXCLUDED)
-    assert summary.coverage["publisherObjectCount"] == EXPECTED_OBJECT_COUNT
-
     # The catalog streams back the same population it admitted.
     streamed = list(catalog.stream(reference))
     assert len(streamed) == len(items)

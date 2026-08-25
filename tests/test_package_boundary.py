@@ -32,11 +32,11 @@ SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
 HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
 
 # Every expression this repository passes as a subprocess working directory.
-# `ROOT` and `REPO_ROOT` are this checkout; `repository` and `root` are
-# parameters their callers bind to this checkout or to a temporary copy of it;
+# `ROOT` and `REPO_ROOT` are this checkout; `root` is a parameter its callers
+# bind to this checkout or to a temporary copy of it;
 # `tmp_path` is the pytest temporary directory. A crossing returns as a new
 # name here, which fails until someone adds it deliberately.
-REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "repository", "root", "tmp_path"})
+REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "root", "tmp_path"})
 
 ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
     {
@@ -109,14 +109,7 @@ def _working_directory_expression(node: ast.expr) -> str:
 
 
 def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_directory() -> None:
-    """The campaign harness once shelled into a SpicyRegs checkout; nothing may again.
-
-    Four crossings used to live in `tools/fr_mirrulations_qualification.py`: an
-    absolute path to the sibling checkout, a path into its gitignored output, a
-    subprocess run with `cwd` set to it, and a `python -c` script importing a
-    private symbol from `spicy_regs`. Their inputs arrive pinned by digest now.
-    This is the gate that keeps them gone.
-    """
+    """Repository code consumes pinned inputs rather than sibling worktrees."""
 
     files = _repository_code_files()
     assert files, "the repository must contain code under src/, tests/, and tools/"
@@ -162,10 +155,10 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
-        "rulespec-conformance==0.2.0rc12",
+        "rulespec-conformance==0.2.0rc15",
     ]
     assert project["tool"]["uv"]["sources"]["rulespec-conformance"] == {
-        "path": "vendor/rulespec_conformance-0.2.0rc12-py3-none-any.whl"
+        "path": "vendor/rulespec_conformance-0.2.0rc15-py3-none-any.whl"
     }
     assert project["project"]["scripts"] == {"docspec": "docspec.cli:main"}
     assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3"}
@@ -180,13 +173,28 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 
 
-def test_legacy_source_formats_are_quarantined_from_public_composition() -> None:
+def test_superseded_source_formats_are_absent_from_repository_code() -> None:
     import docspec.adapters as adapters
     import docspec.ports as ports
 
     assert not (PRODUCTION_ROOT / "adapters/source_catalog.py").exists()
     assert not (PRODUCTION_ROOT / "adapters/wire_source_release.py").exists()
     assert not (PRODUCTION_ROOT / "ports/source_release.py").exists()
+    assert not (ROOT / "tests/legacy_wire_source_release.py").exists()
+    assert not (ROOT / "tests/test_wire_source_release.py").exists()
+    assert not any((ROOT / "fixtures/wire/source-catalog-release-v1").rglob("*"))
+    assert not any((ROOT / "fixtures/conformance/core-v1").rglob("*"))
+    assert not any((ROOT / "fixtures/qualification/fr-mirrulations-10k-v1").rglob("*"))
+    for relative in (
+        "tests/legacy_" + "source_catalog.py",
+        "tests/legacy_" + "source_release.py",
+        "tests/test_" + "source_catalog.py",
+        "tests/test_fr_" + "mirrulations_qualification.py",
+        "tools/fr_" + "mirrulations_support.py",
+        "tools/fr_" + "mirrulations_qualification.py",
+        "tools/export_" + "selection_ledger.py",
+    ):
+        assert not (ROOT / relative).exists()
     for name in (
         "JsonSchemaWireSourceReleaseGate",
         "LocalJsonlSourceCatalog",
@@ -201,6 +209,30 @@ def test_legacy_source_formats_are_quarantined_from_public_composition() -> None
     cli_source = (PRODUCTION_ROOT / "cli.py").read_text(encoding="utf-8")
     assert "LocalJsonlSourceCatalog" not in cli_source
     assert "wire_source_release" not in cli_source
+
+    private_format = "docspec-source-" + "catalog"
+    forbidden_literals = (f'"{private_format}"', f"'{private_format}'")
+    forbidden_tokens = (
+        "tests.legacy_source_" + "catalog",
+        "tests.legacy_source_" + "release",
+        "LocalJsonl" + "SourceCatalog",
+        "LocalSource" + "ReleaseReader",
+        "SourceRelease" + "CatalogView",
+        "SourceRelease" + "Pin",
+    )
+    violations: list[str] = []
+    for root_name in REPOSITORY_CODE_ROOTS:
+        for path in sorted((ROOT / root_name).rglob("*")):
+            if not path.is_file() or path == Path(__file__):
+                continue
+            try:
+                source = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            for token in (*forbidden_literals, *forbidden_tokens):
+                if token in source:
+                    violations.append(f"{path.relative_to(ROOT).as_posix()} contains {token!r}")
+    assert violations == []
 
 
 def test_production_imports_stay_inside_the_standalone_boundary() -> None:
@@ -336,7 +368,7 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_conformance-0.2.0rc12-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_conformance-0.2.0rc15-py3-none-any.whl"),
             str(wheel),
         ],
         cwd=ROOT,

@@ -5,8 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from tests.legacy_source_catalog import LocalJsonlSourceCatalog
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -23,7 +22,7 @@ from docspec.domain.storage import PartitionPolicy
 from docspec.processing.extraction import TextExtractor
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import ParagraphSegmenter
-from tests.helpers import artifact
+from tests.helpers import SharedFixtureContentFetcher, artifact, write_shared_source_catalog
 from tests.test_application_pipeline import _plan, _run, _write_source
 from tests.test_processing_pipeline import _captured
 
@@ -88,8 +87,10 @@ def _pipeline(tmp_path: Path):
     sources.mkdir()
     candidate = _write_source(sources / "document.txt", "A single paragraph.")
     item = SourceItem("document-a", "v1", (candidate,), metadata={"expectedSegments": 1})
-    source_catalog = LocalJsonlSourceCatalog(tmp_path / "source-catalogs")
-    source_ref = source_catalog.write((item,))
+    source_catalog_root = tmp_path / "source-catalogs"
+    source_catalog_root.mkdir()
+    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_ref = write_shared_source_catalog(source_catalog_root, (item,))
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -110,7 +111,7 @@ def _pipeline(tmp_path: Path):
         "blobs": blobs,
         "records": records,
         "catalog": catalog,
-        "fetcher": LocalFileContentFetcher(sources),
+        "fetcher": SharedFixtureContentFetcher(sources),
         "partition_policy": partition_policy,
     }
 

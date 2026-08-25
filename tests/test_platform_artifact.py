@@ -10,18 +10,9 @@ from rulespec_conformance.platform_artifact import (
     ArtifactPin,
     ArtifactVerificationError,
     DerivationSpec,
-    LocalMemberSource,
-    MemberManifestReference,
     MemberSource,
-    SOURCE_CATALOG_ITEM_SCHEMA_ID,
-    SourceCatalogSpec,
     VerifiedArtifact,
     admit_artifact,
-    build_artifact_root,
-    canonical_json_bytes,
-    describe_member,
-    sha256_digest as artifact_digest,
-    source_catalog_item_schema_bytes,
 )
 
 from docspec.adapters.platform_artifact import (
@@ -32,8 +23,8 @@ from docspec.adapters.platform_artifact import (
 )
 from docspec.adapters.storage import LocalContentAddressedBlobStore
 from docspec.domain.references import BlobRef
-from docspec.domain.references import SourceCatalogRef
 from docspec.errors import IntegrityError
+from tests.helpers import write_shared_source_catalog
 
 
 def spec() -> DerivationSpec:
@@ -119,74 +110,6 @@ def shared_source_item() -> dict[str, object]:
     }
 
 
-def write_shared_source_catalog(
-    root: Path,
-    items: tuple[dict[str, object], ...],
-    *,
-    requested_digest: str | None = None,
-    selected_digest: str | None = None,
-) -> SourceCatalogRef:
-    distribution = root / "catalog"
-    (distribution / "records").mkdir(parents=True)
-    (distribution / "schemas").mkdir()
-    items_path = distribution / "records/source-items.jsonl"
-    items_path.write_bytes(b"".join(canonical_json_bytes(item) + b"\n" for item in items))
-    schema_path = distribution / "schemas/source-catalog-item-v1.schema.json"
-    schema_path.write_bytes(source_catalog_item_schema_bytes())
-    source = LocalMemberSource(distribution)
-    members = (
-        describe_member(
-            source,
-            object_key="records/source-items.jsonl",
-            role="source-items",
-            media_type="application/x-ndjson",
-            record_count=len(items),
-            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
-        ),
-        describe_member(
-            source,
-            object_key="schemas/source-catalog-item-v1.schema.json",
-            role="schema",
-            media_type="application/schema+json",
-            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
-        ),
-    )
-    manifest, payload = MemberManifestReference.for_members(
-        scope_kind="global",
-        scope_id="source-items",
-        object_key="manifest.json",
-        members=members,
-    )
-    (distribution / "manifest.json").write_bytes(payload)
-    identities = sorted({str(item["sourceItemId"]) for item in items})
-    selected = sorted(
-        str(item["sourceItemId"])
-        for item in items
-        if item["selection"] == {"disposition": "selected"}
-    )
-    artifact_root = build_artifact_root(
-        spec=SourceCatalogSpec(
-            catalog_id="urn:docspec:test:catalog",
-            source_system_id="urn:docspec:test:source",
-            source_system_version="1",
-            selection_policy_id="urn:docspec:test:selection",
-            selection_policy_version="1",
-            selection_policy_digest="sha256:" + "1" * 64,
-            requested_universe_set_digest=requested_digest or artifact_digest(identities),
-            selected_source_set_digest=selected_digest or artifact_digest(selected),
-        ),
-        inputs=(),
-        manifests=(manifest,),
-        accounted_input_count=len(items),
-    )
-    (distribution / ROOT_OBJECT_KEY).write_bytes(canonical_json_bytes(artifact_root))
-    return SourceCatalogRef(
-        artifact_root["logicalId"],
-        "catalog/artifact.json",
-        artifact_root["artifactDigest"],
-    )
-
-
 def test_byte_identical_results_have_one_identity(tmp_path: Path) -> None:
     pins: list[ArtifactPin] = []
     for name in ("first", "second", "third"):
@@ -245,7 +168,7 @@ def test_blob_member_source_verifies_and_closes_the_same_distribution(tmp_path: 
 
 def test_structural_or_semantic_failure_cannot_publish(tmp_path: Path) -> None:
     root, members = working(tmp_path, "structural")
-    with pytest.raises(ArtifactVerificationError, match="output roles") as raised:
+    with pytest.raises(ArtifactVerificationError, match="output role") as raised:
         builder().seal(
             root,
             spec=replace(spec(), expected_output_roles=("documents", "missing")),

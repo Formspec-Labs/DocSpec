@@ -6,7 +6,7 @@
   "normativeSource": "docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md",
   "implementationStatus": "standalone-reference-implementation",
   "conformanceVerdict": "not-yet-conformant",
-  "verdictReason": "Every dedicated contract fixture now runs: acquisition, processor contract, document-store verdicts, run-level recovery, and scheduler portability across the local backend, fresh external worker processes, and Dagster's native dynamic job. Full conformance still requires the ordered scale campaigns -- 100,000, 1,000,000, and 5,000,000 representative units against a sealed ScaleProfile, beyond the FR/Mirrulations 10k qualification, whose 2026-08-06 checkpoints cannot resume and whose smoke and intermediate tiers alone re-passed on 2026-08-21 under current code -- the maintained external-scheduler qualification campaign pinned unrun by the Dagster adapter profile, and published-package evidence once a release destination is selected.",
+  "verdictReason": "Every dedicated contract fixture now runs: acquisition, processor contract, document-store verdicts, run-level recovery, and scheduler portability across the local backend, fresh external worker processes, and qualified Dagster execution. Full conformance still requires the ordered scale campaigns -- 100,000, 1,000,000, and 5,000,000 representative units against a sealed ScaleProfile -- and published-package evidence once a release destination is selected.",
   "requiredTestIds": [
     "CORE-INSTALL",
     "BOUNDARY-IMPORT",

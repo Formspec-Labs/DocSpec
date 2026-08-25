@@ -225,20 +225,10 @@
     },
     {
       "path": "src/docspec/conformance/__init__.py",
-      "capability": "Public executable conformance evidence and shared-fixture surface",
+      "capability": "Public executable conformance report and runner surface",
       "status": "implemented",
       "conformanceTests": [
-        "PACKAGE-RELEASE",
-        "SOURCE-CATALOG-CONTRACT"
-      ]
-    },
-    {
-      "path": "src/docspec/conformance/fixtures.py",
-      "capability": "Closed byte-exact conformance fixture verification and materialization",
-      "status": "implemented",
-      "conformanceTests": [
-        "PACKAGE-RELEASE",
-        "SOURCE-CATALOG-CONTRACT"
+        "PACKAGE-RELEASE"
       ]
     },
     {

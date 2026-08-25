@@ -6,13 +6,10 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import httpx
 import pytest
 
 import docspec.cli as cli_module
-from docspec.adapters.content_fetchers import HttpsContentFetcher, HttpsContentFetcherConfig
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from tests.legacy_source_catalog import SourceReleaseCatalogView
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -21,12 +18,6 @@ from docspec.adapters.storage import (
     LocalManifestDocumentCatalog,
     RootOnlyBlobProfileStateReachability,
 )
-from tests.legacy_wire_source_release import (
-    JsonSchemaWireSourceReleaseGate,
-    LocalWireSourceReleaseReader,
-    load_wire_release_pins,
-)
-from docspec.application.commit import ReleaseCommitService
 from docspec.application.maintenance import BlobRetentionSetService
 from docspec.cli import main
 from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
@@ -42,9 +33,9 @@ from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCat
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
-from tests.legacy_source_release import SourceReleasePin
 from tests.test_maintenance import _platform
-from tests.test_platform_artifact import shared_source_item, write_shared_source_catalog
+from tests.helpers import write_shared_source_catalog
+from tests.test_platform_artifact import shared_source_item
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -655,105 +646,6 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     assert main(start_arguments) == 2
     error = json.loads(capfd.readouterr().err)
     assert "refusing to replace" in error["message"]
-
-
-def test_local_run_composes_the_wire_release_view_with_https_acquisition(tmp_path: Path) -> None:
-    pins_path = REPO_ROOT / "fixtures/wire/source-catalog-release-v1/pins.json"
-    pins = load_wire_release_pins(pins_path)
-    gate = JsonSchemaWireSourceReleaseGate.from_pins(pins)
-    valid = next(bundle for bundle in pins.bundles if bundle.name == "valid")
-    root_path = valid.directory / "release.json"
-    pin = SourceReleasePin("release.json", sha256_digest(root_path.read_bytes()))
-    reader = LocalWireSourceReleaseReader(valid.directory, wire_gate=gate, stream_buffer_bytes=73)
-    source_ref = reader.admit(pin).reference
-    source_catalog = SourceReleaseCatalogView(reader)
-
-    retry = RetryPolicy(base_delay_milliseconds=0)
-    accepted = AcceptedFailurePolicy()
-    plan = ProcessingPlan.create(
-        source_catalog=source_ref,
-        base_release=None,
-        profiles=_portable_local_profiles(),
-        limits=WorkLimits(1, 1024 * 1024, 10, 10, 10, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            (),
-        ),
-        processors=ProcessorSet(()),
-        partition_count=4,
-        selection={"includeItemIds": ["federalregister.gov/2026-04188"]},
-        retention_policy=RetentionPolicy.retain_all(),
-        data_use_policy=DataUsePolicy.local_content(),
-        retry_policy_digest=retry.digest,
-        accepted_failure_policy_digest=accepted.digest,
-    )
-    plan_path = tmp_path / "wire-plan.json"
-    plan_path.write_bytes(canonical_json_file_bytes(plan.to_dict()))
-    roots = {
-        "blobStorage": (tmp_path / "blobs").as_posix(),
-        "controlRepository": (tmp_path / "controls").as_posix(),
-        "documentCatalog": (tmp_path / "catalog").as_posix(),
-        "documentStores": (tmp_path / "stores").as_posix(),
-        "reconciliation": (tmp_path / "reconciliation").as_posix(),
-        "recordStorage": (tmp_path / "records").as_posix(),
-        "sourceCatalog": (tmp_path / "unused-source-catalog").as_posix(),
-        "sourceContent": (tmp_path / "unused-source-content").as_posix(),
-    }
-    run_request = _write_local_run_request(
-        tmp_path / "wire-run-request.json",
-        plan_path=plan_path,
-        roots=roots,
-        result_sink_id="urn:docspec:test:sink:wire-release",
-        retry=retry,
-        accepted=accepted,
-        completed_at="2026-08-12T18:00:00Z",
-    )
-
-    payload = b"<html><body><p>Air plan approval paragraph.</p></body></html>"
-    requested: list[str] = []
-
-    def respond(request: httpx.Request) -> httpx.Response:
-        requested.append(str(request.url))
-        return httpx.Response(200, stream=httpx.ByteStream(payload), request=request)
-
-    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
-        fetcher = HttpsContentFetcher(
-            client,
-            HttpsContentFetcherConfig(
-                allowed_hosts=("www.govinfo.gov",),
-                user_agent="docspec-wire-composition-test/1.0 (+https://example.test/contact)",
-                chunk_size=7,
-            ),
-        )
-        run_ref = cli_module._execute_local_run(
-            cli_module._local_run_request(run_request),
-            resume=False,
-            source_catalog=source_catalog,
-            content_fetcher=fetcher,
-        )
-
-    request, loaded_plan, controls, stores, records, _, catalog = cli_module._local_storage_for_run_request(run_request)
-    assert request["plan"] == plan_path
-    assert loaded_plan == plan
-    run = RunReceipt.from_dict(controls.load(run_ref))
-    assert run.source_catalog == source_ref
-    assert run.selected_item_count == 1
-    assert run.failures == {"counts": {}, "first": None}
-    assert requested == [
-        "https://www.govinfo.gov/content/pkg/FR-2026-03-04/html/2026-04188.htm"
-    ]
-
-    release_ref = ReleaseCommitService(
-        plan_ref=run.plan,
-        controls=controls,
-        records=records,
-        document_catalog=catalog,
-    ).commit_release(None, run_ref)
-    release = catalog.open(release_ref)
-    assert release.source_catalog == source_ref
-    assert len(list(catalog.scan(release_ref, layer_kind="segments"))) == 1
-    assert all(stores.load(StoreRef.from_dict(row["store"])).state is StoreState.SEALED for row in records.stream(run.store_ledger))
 
 
 def _maintenance_run_request(

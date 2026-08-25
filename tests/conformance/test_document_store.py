@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import SourceItem
 from docspec.domain.jobs import StoreState, StoreVerdict
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
@@ -18,6 +17,8 @@ from docspec.errors import StateTransitionError
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
 _processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
@@ -50,7 +51,7 @@ def _seeded_run(root: Path, *, items: tuple[str, ...], processor, accepted: Acce
     for item_id in sorted(items):
         candidate = _write_source(platform.sources / f"{item_id}.txt", f"{item_id} holds one paragraph.")
         source_items.append(SourceItem(item_id, "v1", (candidate,), metadata={"expectedSegments": 1}))
-    source = platform.source_catalog.write(tuple(source_items))
+    source = platform.publish_source(tuple(source_items))
     plan = _plan(source, None, (processor,), retry, accepted)
     return platform, plan
 
@@ -118,7 +119,7 @@ def test_completed_and_accepted_failure_stores_reconcile_with_complete_counts(tm
         blobs=platform.blobs,
         records=platform.records,
         catalog=platform.catalog,
-        fetcher=LocalFileContentFetcher(platform.sources),
+        fetcher=SharedFixtureContentFetcher(platform.sources),
         processors=(processor,),
         partition_policy=platform.partition_policy,
         accepted_failure_policy=accepted,
@@ -177,7 +178,7 @@ def test_a_rejected_store_reconciles_but_refuses_publication(tmp_path: Path) -> 
             blobs=platform.blobs,
             records=platform.records,
             catalog=platform.catalog,
-            fetcher=LocalFileContentFetcher(platform.sources),
+            fetcher=SharedFixtureContentFetcher(platform.sources),
             processors=(processor,),
             partition_policy=platform.partition_policy,
         )

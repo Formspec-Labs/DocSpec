@@ -59,6 +59,13 @@ _DAGSTER_ADAPTER_ID = "docspec.scheduler.dagster.dynamic-process"
 _DAGSTER_ADAPTER_VERSION = "1.0.0"
 _DAGSTER_PACKAGE_REQUIREMENT = "dagster>=1.13,<2"
 _DAGSTER_IMPLEMENTATION_MODULE = "docspec.adapters.dagster:build_dagster_definitions"
+_DAGSTER_QUALIFICATION_EVIDENCE = ArtifactRef(
+    "urn:docspec:dagster-multinode-qualification:2026-08-25",
+    "docs/history/2026-08-25-dagster-multinode-qualification.json",
+    "sha256:68b7d0219ca719d3899f9f444f12f1c73533156d448768388654ee2ee229e7f4",
+    "application/json",
+    2330,
+)
 _DAGSTER_CONFIGURATION = freeze_json(
     {
         "coordinationStorage": "shared POSIX filesystem",
@@ -100,7 +107,6 @@ MAX_DAGSTER_PROFILE_BYTES = 64 * 1024
 MAX_DAGSTER_DEPLOYMENT_BYTES = 128 * 1024
 MAX_WORKER_REQUEST_BYTES = MAX_HANDOFF_BYTES + MAX_TASK_BYTES + 1024
 MAX_TASK_MEMBERSHIP_BYTES = 4 * 1024**3
-MAX_QUALIFICATION_EVIDENCE_BYTES = 16 * 1024**2
 MAX_MEMBERSHIP_VERIFICATION_BYTES = 64 * 1024
 _READ_CHUNK_BYTES = 1024 * 1024
 
@@ -302,26 +308,53 @@ def registered_dagster_adapter_profile() -> DagsterAdapterProfile:
         _DAGSTER_IMPLEMENTATION_MODULE,
         _DAGSTER_CONFIGURATION,
         _DAGSTER_CAPABILITIES,
-        "partial",
+        "implemented",
         "SCHEDULER-PORTABILITY",
-        "unrun",
+        "passed",
+        _DAGSTER_QUALIFICATION_EVIDENCE,
     )
+
+
+def _require_registered_dagster_adapter_profile(profile: DagsterAdapterProfile) -> None:
+    registered = registered_dagster_adapter_profile()
+    if profile.identity_content() != registered.identity_content():
+        raise ProfileError("Dagster adapter profile is not the logical profile implemented by this module")
+    if (
+        profile.verifier_status != registered.verifier_status
+        or profile.verifier_test_id != registered.verifier_test_id
+        or profile.qualification_status != registered.qualification_status
+    ):
+        raise ProfileError("Dagster adapter profile verifier differs from the registered qualification")
+    evidence = profile.qualification_evidence
+    registered_evidence = registered.qualification_evidence
+    if evidence is None or registered_evidence is None or (
+        evidence.artifact_id,
+        evidence.digest,
+        evidence.media_type,
+        evidence.byte_size,
+    ) != (
+        registered_evidence.artifact_id,
+        registered_evidence.digest,
+        registered_evidence.media_type,
+        registered_evidence.byte_size,
+    ):
+        raise ProfileError("Dagster adapter profile qualification evidence pin differs from the registered evidence")
 
 
 @dataclass(frozen=True, slots=True)
 class PosixFileSnapshot:
-    """Small change-detection identity for an exact file verified earlier."""
+    """Small shared-filesystem change receipt for a file verified earlier.
 
-    device: int
-    inode: int
+    Device and inode numbers identify one mount view, not one shared file, so
+    they cannot be sealed into a receipt consumed by workers on other nodes.
+    """
+
     byte_size: int
     modified_ns: int
     changed_ns: int
 
     def __post_init__(self) -> None:
         for label, value in (
-            ("POSIX file device", self.device),
-            ("POSIX file inode", self.inode),
             ("POSIX file byte size", self.byte_size),
             ("POSIX file modified time", self.modified_ns),
             ("POSIX file changed time", self.changed_ns),
@@ -330,8 +363,6 @@ class PosixFileSnapshot:
 
     def to_dict(self) -> dict[str, int]:
         return {
-            "device": self.device,
-            "inode": self.inode,
             "byteSize": self.byte_size,
             "modifiedNs": self.modified_ns,
             "changedNs": self.changed_ns,
@@ -341,12 +372,10 @@ class PosixFileSnapshot:
     def from_dict(cls, value: object) -> Self:
         item = _closed(
             value,
-            {"device", "inode", "byteSize", "modifiedNs", "changedNs"},
+            {"byteSize", "modifiedNs", "changedNs"},
             "POSIX file snapshot",
         )
         return cls(
-            item["device"],
-            item["inode"],
             item["byteSize"],
             item["modifiedNs"],
             item["changedNs"],
@@ -361,8 +390,6 @@ class PosixFileSnapshot:
         if not stat.S_ISREG(details.st_mode):
             raise IntegrityError(f"{label} must be a regular, non-symlink file")
         return cls(
-            details.st_dev,
-            details.st_ino,
             details.st_size,
             details.st_mtime_ns,
             details.st_ctime_ns,
@@ -661,7 +688,12 @@ def _publish_immutable_bytes(target: Path, payload: bytes, *, label: str) -> Non
 
 
 def load_dagster_adapter_profile(deployment: DagsterDeploymentConfig) -> DagsterAdapterProfile:
-    """Verify the exact adapter-profile bytes and the implementation's logical identity."""
+    """Verify the exact adapter-profile bytes and the implementation's logical identity.
+
+    Qualification evidence is historical build evidence, not a worker runtime
+    input.  Its exact pin remains in the verified profile while deployments
+    avoid depending on a repository-relative history file.
+    """
 
     path = _verified_file(
         deployment.adapter_profile,
@@ -673,15 +705,7 @@ def load_dagster_adapter_profile(deployment: DagsterDeploymentConfig) -> Dagster
     )
     if profile.profile_id != deployment.adapter_profile.artifact_id:
         raise IntegrityError("Dagster adapter profile identity differs from its reference")
-    registered = registered_dagster_adapter_profile()
-    if profile.identity_content() != registered.identity_content():
-        raise ProfileError("Dagster adapter profile is not the logical profile implemented by this module")
-    if profile.qualification_evidence is not None:
-        _verified_file(
-            profile.qualification_evidence,
-            maximum=MAX_QUALIFICATION_EVIDENCE_BYTES,
-            label="Dagster qualification evidence",
-        )
+    _require_registered_dagster_adapter_profile(profile)
     return profile
 
 
@@ -879,12 +903,46 @@ def _open_task_membership_database(
     expected_identity: Mapping[str, Any],
     handoff: ExecutionHandoff,
     verify_count: bool,
+    expected_snapshot: PosixFileSnapshot,
 ) -> Iterator[DagsterTaskMembership]:
-    uri = f"file:{quote(str(path.resolve(strict=True)), safe='/')}?mode=ro&immutable=1"
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise IntegrityError("Dagster task-membership reads require POSIX no-follow file opens")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | no_follow
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise IntegrityError(
+            f"Dagster task-membership index cannot be opened without following links: {type(error).__name__}"
+        ) from error
     connection: sqlite3.Connection | None = None
     try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise IntegrityError("Dagster task-membership index must be a regular, non-symlink file")
+        opened_snapshot = PosixFileSnapshot(
+            opened.st_size,
+            opened.st_mtime_ns,
+            opened.st_ctime_ns,
+        )
+        if opened_snapshot != expected_snapshot:
+            raise IntegrityError("Dagster task-membership index differs from its verified file snapshot")
+        descriptor_path = next(
+            (
+                candidate / str(descriptor)
+                for candidate in (Path("/dev/fd"), Path("/proc/self/fd"))
+                if (candidate / str(descriptor)).exists()
+            ),
+            None,
+        )
+        if descriptor_path is None:
+            raise IntegrityError("Dagster task-membership reads require a file-descriptor filesystem")
+        uri = f"file:{quote(str(descriptor_path), safe='/')}?mode=ro&immutable=1"
         connection = sqlite3.connect(uri, uri=True)
         connection.execute("PRAGMA query_only=ON")
+        current = os.fstat(descriptor)
+        if PosixFileSnapshot(current.st_size, current.st_mtime_ns, current.st_ctime_ns) != opened_snapshot:
+            raise IntegrityError("Dagster task-membership index changed while it was opened")
         table_rows = connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").fetchall()
         if table_rows != [("metadata",), ("tasks",)]:
             raise IntegrityError("Dagster task-membership index has an invalid closed schema")
@@ -897,11 +955,17 @@ def _open_task_membership_database(
             if row is None or row[0] != handoff.expected_task_count:
                 raise IntegrityError("Dagster task-membership count differs from the execution handoff")
         yield DagsterTaskMembership(connection, handoff.handoff_id)
+        current = os.fstat(descriptor)
+        if PosixFileSnapshot(current.st_size, current.st_mtime_ns, current.st_ctime_ns) != opened_snapshot:
+            raise IntegrityError("Dagster task-membership index changed while it was in use")
     except sqlite3.DatabaseError as error:
         raise IntegrityError("Dagster task-membership index is not a valid SQLite artifact") from error
     finally:
-        if connection is not None:
-            connection.close()
+        try:
+            if connection is not None:
+                connection.close()
+        finally:
+            os.close(descriptor)
 
 
 def seal_task_membership_verification(
@@ -935,6 +999,7 @@ def seal_task_membership_verification(
         expected_identity=identity,
         handoff=active_handoff,
         verify_count=True,
+        expected_snapshot=before,
     ) as membership:
         for task in _iter_verified_store_task_references(task_ledger, active_handoff):
             membership.require(task)
@@ -1034,6 +1099,7 @@ def open_task_membership(
         expected_identity=expected_identity,
         handoff=active_handoff,
         verify_count=verify_exact_artifact,
+        expected_snapshot=verification.membership_snapshot,
     ) as membership:
         if (
             PosixFileSnapshot.capture(
@@ -1328,6 +1394,5 @@ def adapter_profile_file_digest(data: bytes) -> str:
     """Verify one adapter profile and return the exact deployable file digest."""
 
     profile = DagsterAdapterProfile.from_bytes(data)
-    if profile.identity_content() != registered_dagster_adapter_profile().identity_content():
-        raise ProfileError("Dagster adapter profile is not the logical profile implemented by this module")
+    _require_registered_dagster_adapter_profile(profile)
     return sha256_digest(data)

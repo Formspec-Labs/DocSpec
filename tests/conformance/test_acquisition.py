@@ -22,6 +22,8 @@ from docspec.ports.content_fetcher import FetchStream
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+_helpers = importlib.import_module("tests.helpers")
+SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _document_store = importlib.import_module("tests.conformance.test_document_store")
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
@@ -38,16 +40,17 @@ _plan = _processor_helpers._plan
 class _FailFirstFetchFetcher:
     """Delegate to the real fetcher, losing one candidate's first transport."""
 
-    def __init__(self, delegate: LocalFileContentFetcher, *, flaky_locator: str) -> None:
+    def __init__(self, delegate: SharedFixtureContentFetcher, *, flaky_locator: str) -> None:
         self.delegate = delegate
         self.flaky_locator = flaky_locator
         self.calls: dict[str, int] = {}
 
     def fetch(self, candidate: CandidateFile, **kwargs: Any) -> FetchStream:
-        count = self.calls.get(candidate.locator, 0) + 1
-        self.calls[candidate.locator] = count
+        locator_name = candidate.locator.rsplit("/", 1)[-1]
+        count = self.calls.get(locator_name, 0) + 1
+        self.calls[locator_name] = count
         stream = self.delegate.fetch(candidate, **kwargs)
-        if candidate.locator != self.flaky_locator or count != 1:
+        if locator_name != self.flaky_locator or count != 1:
             return stream
 
         def interrupted() -> Any:
@@ -117,8 +120,8 @@ def test_capture_deduplication_and_deletion_reconcile_across_releases(tmp_path: 
         "doc-twin-b": shared_text,
     }
     items = _seeded_items(platform, texts)
-    source_v1 = platform.source_catalog.write(items)
-    fetcher = LocalFileContentFetcher(platform.sources)
+    source_v1 = platform.publish_source(items, name="v1")
+    fetcher = SharedFixtureContentFetcher(platform.sources)
     _, _, sealed, run_ref, release_v1 = _run(
         plan=_plan(source_v1, None, (processor,), retry, accepted),
         source_catalog=platform.source_catalog,
@@ -143,7 +146,7 @@ def test_capture_deduplication_and_deletion_reconcile_across_releases(tmp_path: 
         assert captured.media_type == "text/plain"
         assert captured.downloader_id == LocalFileContentFetcher.downloader_id
         assert captured.downloader_configuration_digest, "the receipt pins the downloader configuration"
-        assert captured.transport_version, "the receipt preserves the transport version"
+        assert captured.transport_version is None
         assert captured.acquisition_started_at and captured.acquired_at
         assert captured.task_id and captured.attempt_id, "the receipt pins task and attempt identities"
 
@@ -172,7 +175,7 @@ def test_capture_deduplication_and_deletion_reconcile_across_releases(tmp_path: 
     assert run.counts["capturedFiles"] == 3
 
     survivors = tuple(item for item in items if item.item_id != "doc-solo")
-    source_v2 = platform.source_catalog.write(survivors)
+    source_v2 = platform.publish_source(survivors, name="v2")
     planned_v2, _, sealed_v2, run_v2_ref, release_v2 = _run(
         plan=_plan(source_v2, release_v1, (processor,), retry, accepted),
         source_catalog=platform.source_catalog,
@@ -215,9 +218,9 @@ def test_a_transport_retry_reconciles_into_a_published_capture(tmp_path: Path) -
     platform = _platform(tmp_path, member_bytes=1024 * 1024)
     text = "This capture survives one transport loss."
     items = _seeded_items(platform, {"doc-retry": text})
-    source = platform.source_catalog.write(items)
+    source = platform.publish_source(items)
     fetcher = _FailFirstFetchFetcher(
-        LocalFileContentFetcher(platform.sources),
+        SharedFixtureContentFetcher(platform.sources),
         flaky_locator="doc-retry.txt",
     )
     _, _, sealed, run_ref, release_ref = _run(
@@ -267,7 +270,7 @@ def test_drifted_source_bytes_fail_closed_without_a_stored_object(tmp_path: Path
     processor = _CountingProcessor(_description("acquisition-drift", "1", retry))
     platform = _platform(tmp_path, member_bytes=1024 * 1024)
     items = _seeded_items(platform, {"doc-drift": "The catalog declared these bytes."})
-    source = platform.source_catalog.write(items)
+    source = platform.publish_source(items)
     (platform.sources / "doc-drift.txt").write_text(
         "The source grew past its declared identity after cataloging.", encoding="utf-8"
     )
@@ -280,7 +283,7 @@ def test_drifted_source_bytes_fail_closed_without_a_stored_object(tmp_path: Path
             blobs=platform.blobs,
             records=platform.records,
             catalog=platform.catalog,
-            fetcher=LocalFileContentFetcher(platform.sources),
+            fetcher=SharedFixtureContentFetcher(platform.sources),
             processors=(processor,),
             partition_policy=platform.partition_policy,
         )
@@ -315,7 +318,7 @@ def test_an_oversized_declared_candidate_refuses_planning_before_any_io(tmp_path
     processor = _CountingProcessor(_description("acquisition-bounds", "1", retry))
     platform = _platform(tmp_path, member_bytes=1024 * 1024)
     items = _seeded_items(platform, {"doc-oversize": "These declared bytes exceed the configured store budget."})
-    source = platform.source_catalog.write(items)
+    source = platform.publish_source(items)
     limits = WorkLimits(2, 32, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts)
 
     with pytest.raises(LimitExceededError, match="per-store"):
@@ -327,7 +330,7 @@ def test_an_oversized_declared_candidate_refuses_planning_before_any_io(tmp_path
             blobs=platform.blobs,
             records=platform.records,
             catalog=platform.catalog,
-            fetcher=LocalFileContentFetcher(platform.sources),
+            fetcher=SharedFixtureContentFetcher(platform.sources),
             processors=(processor,),
             partition_policy=platform.partition_policy,
         )

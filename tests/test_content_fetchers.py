@@ -235,6 +235,38 @@ def test_local_fetcher_does_not_double_close_descriptors_under_concurrency(tmp_p
         assert list(executor.map(read, range(500))) == [source] * 500
 
 
+def test_local_file_fetcher_is_contained_streamed_and_receipted(tmp_path: Path) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    (source_root / "document.txt").write_bytes(b"exact bytes")
+    fetcher = LocalFileContentFetcher(source_root, chunk_size=3)
+    candidate = CandidateFile(
+        "main",
+        "document.txt",
+        "text/plain",
+        expected_size=11,
+        transport_version="fixture-v1",
+    )
+
+    result = fetcher.fetch(candidate, max_bytes=20, task_id="task-1", attempt_id="attempt-1")
+    assert b"".join(result.chunks) == b"exact bytes"
+    assert result.metadata.downloader_id == fetcher.downloader_id
+    assert result.metadata.downloader_configuration_digest == fetcher.configuration_digest
+    assert result.metadata.transport_version == "fixture-v1"
+    assert result.metadata.task_id == "task-1"
+    assert result.metadata.attempt_id == "attempt-1"
+
+    with pytest.raises(LimitExceededError):
+        fetcher.fetch(candidate, max_bytes=5, task_id="task-2", attempt_id="attempt-2")
+
+    outside = tmp_path / "outside.txt"
+    outside.write_bytes(b"outside")
+    (source_root / "link.txt").symlink_to(outside)
+    linked = CandidateFile("linked", "link.txt", "text/plain")
+    with pytest.raises(IntegrityError):
+        fetcher.fetch(linked, max_bytes=20, task_id="task-3", attempt_id="attempt-3")
+
+
 def test_https_fetcher_streams_allowed_candidate_with_sealed_configuration() -> None:
     response = _HttpResponse()
     client = _HttpClient({"https://sources.example/document": response})
