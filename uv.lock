@@ -254,7 +254,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24,<2" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5,<7" },
-    { name = "rulespec-conformance", path = "vendor/rulespec_conformance-0.2.0rc12-py3-none-any.whl" },
+    { name = "rulespec-conformance", path = "vendor/rulespec_conformance-0.2.0rc13-py3-none-any.whl" },
 ]
 provides-extras = ["http", "s3", "pdf", "dagster"]
 
@@ -934,8 +934,8 @@ wheels = [
 
 [[package]]
 name = "rulespec-conformance"
-version = "0.2.0rc12"
-source = { path = "vendor/rulespec_conformance-0.2.0rc12-py3-none-any.whl" }
+version = "0.2.0rc13"
+source = { path = "vendor/rulespec_conformance-0.2.0rc13-py3-none-any.whl" }
 dependencies = [
     { name = "jsonschema" },
     { name = "pyshacl" },
@@ -943,7 +943,7 @@ dependencies = [
     { name = "rdflib" },
 ]
 wheels = [
-    { filename = "rulespec_conformance-0.2.0rc12-py3-none-any.whl", hash = "sha256:211608dafd34b27d6b1b1adf8c5e82734545f132c704332b542826f301fc12d8" },
+    { filename = "rulespec_conformance-0.2.0rc13-py3-none-any.whl", hash = "sha256:38674800fc9f374dc27885b5ad4217268bb57b36f4de78a586ee0125b27c49dc" },
 ]
 
 [package.metadata]
