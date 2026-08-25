@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,8 +12,6 @@ from docspec.domain.identity import (
     identity_digest,
     require_sha256,
     require_text,
-    sha256_digest,
-    stable_urn,
     thaw_json,
 )
 from docspec.domain.profiles import ProfileSet
@@ -22,6 +21,7 @@ from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef,
 RELEASE_FORMAT = "docspec-document-release"
 RELEASE_FORMAT_VERSION = "1.1"
 RELEASE_LOGICAL_SCHEMA = f"{RELEASE_FORMAT}/{RELEASE_FORMAT_VERSION}"
+_DERIVATION_ID = re.compile(r"urn:spicy:artifact:derivation:[0-9a-f]{64}\Z")
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +45,8 @@ class DocumentRelease:
     partition_policy: dict[str, Any]
 
     def __post_init__(self) -> None:
-        require_text(self.release_id, "release_id")
+        if _DERIVATION_ID.fullmatch(require_text(self.release_id, "release_id")) is None:
+            raise ValueError("document release identity must be a shared derivation logical ID")
         require_sha256(self.store_receipt_set_digest, "store receipt-set digest")
         layers = [item.layer_kind for item in self.active_layers]
         if layers != sorted(layers) or len(set(layers)) != len(layers):
@@ -65,13 +66,11 @@ class DocumentRelease:
             "partition_policy",
             thaw_json(freeze_json(self.partition_policy, label="partition policy")),
         )
-        if self.release_id != stable_urn("document-release", self.identity_content()):
-            raise ValueError("document release identity differs")
-
     @classmethod
     def create(
         cls,
         *,
+        release_id: str,
         previous_release: DocumentReleaseRef | None,
         source_catalog: SourceCatalogRef,
         processing_plan: ArtifactRef,
@@ -89,24 +88,8 @@ class DocumentRelease:
     ) -> DocumentRelease:
         layers = tuple(sorted(active_layers, key=lambda item: (item.layer_kind, item.layer_id)))
         roots = tuple(sorted(blob_roots, key=lambda item: item.artifact_id))
-        content = cls._content(
-            previous_release,
-            source_catalog,
-            processing_plan,
-            profiles,
-            layers,
-            roots,
-            retention_dispositions,
-            store_receipt_set_digest,
-            run_receipt,
-            catalog_commit_receipt,
-            counts,
-            failures,
-            coverage,
-            partition_policy,
-        )
         return cls(
-            stable_urn("document-release", content),
+            release_id,
             previous_release,
             source_catalog,
             processing_plan,
@@ -242,9 +225,7 @@ class DocumentRelease:
     def file_bytes(self) -> bytes:
         return canonical_json_file_bytes(self.to_dict())
 
-    def reference(self, locator: str) -> DocumentReleaseRef:
-        return DocumentReleaseRef(self.release_id, locator, sha256_digest(self.file_bytes))
+    def reference(self, locator: str, artifact_digest: str) -> DocumentReleaseRef:
+        """Address the shared artifact; semantic member bytes are not a second pin."""
 
-    def artifact_ref(self, locator: str) -> ArtifactRef:
-        payload = self.file_bytes
-        return ArtifactRef(self.release_id, locator, sha256_digest(payload), "application/json", len(payload))
+        return DocumentReleaseRef(self.release_id, locator, artifact_digest)

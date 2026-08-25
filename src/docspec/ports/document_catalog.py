@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any, Protocol
 
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 
@@ -29,6 +30,8 @@ class DocumentCatalogReader(Protocol):
 
 class DocumentCatalog(Protocol):
     """Open and conditionally advance complete release-described state."""
+
+    def release_id(self, plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str: ...
 
     def open(self, reference: DocumentReleaseRef) -> DocumentRelease: ...
 

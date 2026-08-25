@@ -20,7 +20,7 @@ from docspec.adapters.content_fetchers import (
     s3_locator,
     s3_transport_version,
 )
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CandidateFile
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchMetadata, FetchStream

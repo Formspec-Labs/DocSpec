@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -239,7 +239,7 @@ def _harness(
             )
         )
     source_ref = SourceCatalogRef(
-        "source-catalog",
+        "urn:docspec:test:source-catalog",
         "source-catalog.json",
         sha256_digest(b"source-catalog"),
     )

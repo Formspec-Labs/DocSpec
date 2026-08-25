@@ -51,6 +51,17 @@
       ]
     },
     {
+      "path": "src/docspec/adapters/platform_artifact.py",
+      "capability": "Rulespec-backed derivation identity, bounded member sealing, and DocSpec semantic verification",
+      "status": "implemented",
+      "conformanceTests": [
+        "DOCUMENT-CATALOG-CONTRACT",
+        "DOCUMENT-RELEASE-INTEGRITY",
+        "RELEASE-MANIFEST",
+        "SCHEDULER-PORTABILITY"
+      ]
+    },
+    {
       "path": "src/docspec/adapters/processor_cache.py",
       "capability": "Disposable local SQLite lookup from exact reuse keys to immutable processor results",
       "status": "implemented",
@@ -89,17 +100,8 @@
       ]
     },
     {
-      "path": "src/docspec/adapters/source_catalog.py",
-      "capability": "Local immutable JSON Lines source catalogs, digest-pinned sealed release admission, release-backed planning input, and contained file fetching",
-      "status": "implemented",
-      "conformanceTests": [
-        "SOURCE-CATALOG-CONTRACT",
-        "ACQUISITION"
-      ]
-    },
-    {
       "path": "src/docspec/adapters/storage.py",
-      "capability": "Portable local blobs, control records, job revisions, record layers, and coherently verified release catalog",
+      "capability": "Portable local blobs, control records, job revisions, record layers, and shared-derivation release catalog",
       "status": "implemented",
       "conformanceTests": [
         "BLOB-STORE-CONTRACT",
@@ -109,15 +111,6 @@
         "INCREMENTAL-EQUIVALENCE",
         "RECORD-STORAGE-CONTRACT",
         "RELEASE-MANIFEST"
-      ]
-    },
-    {
-      "path": "src/docspec/adapters/wire_source_release.py",
-      "capability": "Digest-verified pinned wire schema set, Draft 2020-12 structural gate, and bounded-memory reader for an exchanged source release",
-      "status": "implemented",
-      "conformanceTests": [
-        "SOURCE-CATALOG-CONTRACT",
-        "DOCUMENT-RELEASE-INTEGRITY"
       ]
     },
     {
@@ -385,7 +378,7 @@
     },
     {
       "path": "src/docspec/domain/release.py",
-      "capability": "Canonical complete-current-state DocumentRelease root",
+      "capability": "Complete-current-state semantic view of one shared derivation",
       "status": "implemented",
       "conformanceTests": [
         "DOCUMENT-RELEASE-INTEGRITY",
@@ -570,15 +563,6 @@
       "status": "implemented",
       "conformanceTests": [
         "SOURCE-CATALOG-CONTRACT"
-      ]
-    },
-    {
-      "path": "src/docspec/ports/source_release.py",
-      "capability": "Digest-pinned sealed source-release admission, source-item stream, and structural schema-gate boundary",
-      "status": "implemented",
-      "conformanceTests": [
-        "SOURCE-CATALOG-CONTRACT",
-        "DOCUMENT-RELEASE-INTEGRITY"
       ]
     },
     {

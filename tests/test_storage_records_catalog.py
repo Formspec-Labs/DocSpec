@@ -206,7 +206,7 @@ def _committed_catalog_state(tmp_path: Path):
         )
     )
     stages = StagePolicy(("text-v1",), "paragraph-v1")
-    source = SourceCatalogRef("catalog-1", "external/catalog.json", sha256_digest(b"catalog-1"))
+    source = SourceCatalogRef("urn:docspec:test:catalog-1", "external/catalog.json", sha256_digest(b"catalog-1"))
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
     plan = ProcessingPlan.create(
@@ -304,6 +304,7 @@ def _committed_catalog_state(tmp_path: Path):
 
 def _release_with(release: DocumentRelease, **changes: Any) -> DocumentRelease:
     values = {
+        "release_id": release.release_id,
         "previous_release": release.previous_release,
         "source_catalog": release.source_catalog,
         "processing_plan": release.processing_plan,
@@ -426,7 +427,7 @@ def test_manifest_catalog_rejects_valid_but_unrelated_release_state(tmp_path: Pa
         sha256_digest(b"unrelated release"),
     )
     unrelated_source = SourceCatalogRef(
-        "catalog-unrelated",
+        "urn:docspec:test:catalog-unrelated",
         "external/unrelated.json",
         sha256_digest(b"unrelated catalog"),
     )

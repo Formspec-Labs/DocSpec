@@ -7,28 +7,14 @@ from docspec.adapters.content_fetchers import (
     HttpsContentFetcher,
     HttpsContentFetcherConfig,
     HttpsContentFetcherError,
+    LocalFileContentFetcher,
     RoutingContentFetcher,
     S3ContentFetcherError,
 )
 from docspec.adapters.execution import ExternalExecutionBackend, LocalExecutionBackend
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog, PlatformSourceCatalog
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache, NullProcessorResultCache
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.source_catalog import (
-    LocalFileContentFetcher,
-    LocalJsonlSourceCatalog,
-    LocalSourceReleaseReader,
-    SourceReleaseCatalogView,
-)
-from docspec.adapters.wire_source_release import (
-    JsonSchemaWireSourceReleaseGate,
-    LocalWireSourceReleaseReader,
-    WireReleaseBundlePin,
-    WireReleasePins,
-    WireSourceReleaseBundle,
-    WireSourceReleaseError,
-    load_wire_release_pins,
-    read_wire_release_bundle,
-)
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -44,7 +30,6 @@ __all__ = [
     "AnonymousS3ContentFetcherConfig",
     "DagsterAdapterProfile",
     "DagsterDeploymentConfig",
-    "JsonSchemaWireSourceReleaseGate",
     "HttpsContentFetcher",
     "HttpsContentFetcherConfig",
     "HttpsContentFetcherError",
@@ -52,24 +37,16 @@ __all__ = [
     "LocalDocumentStoreRepository",
     "LocalFileContentFetcher",
     "LocalJsonControlRepository",
-    "LocalJsonlSourceCatalog",
     "LocalJsonlRecordStorage",
     "LocalExecutionBackend",
     "LocalManifestDocumentCatalog",
-    "LocalSourceReleaseReader",
-    "LocalWireSourceReleaseReader",
+    "LocalPlatformSourceCatalog",
     "LocalSqliteProcessorResultCache",
     "LocalSqliteReconciliationWorkspaceFactory",
     "NullProcessorResultCache",
+    "PlatformSourceCatalog",
     "RootOnlyBlobProfileStateReachability",
-    "SourceReleaseCatalogView",
     "RoutingContentFetcher",
     "S3ContentFetcherError",
-    "WireReleaseBundlePin",
-    "WireReleasePins",
-    "WireSourceReleaseBundle",
-    "WireSourceReleaseError",
     "build_dagster_definitions",
-    "load_wire_release_pins",
-    "read_wire_release_bundle",
 ]

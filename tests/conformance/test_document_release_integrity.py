@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt

@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import AcquisitionDisposition, CandidateFile, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import FailureClass, StoreVerdict

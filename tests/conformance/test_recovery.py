@@ -6,7 +6,7 @@ from pathlib import Path
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.application.commit import ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService

@@ -42,7 +42,7 @@ def _item(identifier: str = "item-1") -> SourceItem:
 
 
 def _plan() -> ProcessingPlan:
-    source = SourceCatalogRef("catalog-1", "memory://catalog", sha256_digest(b"catalog"))
+    source = SourceCatalogRef("urn:docspec:test:catalog-1", "memory://catalog", sha256_digest(b"catalog"))
     return ProcessingPlan.create(
         source_catalog=source,
         base_release=None,
@@ -100,7 +100,7 @@ def test_processing_plan_rejects_ambiguous_json_types() -> None:
 
 
 def test_processing_plan_pins_the_complete_processor_graph() -> None:
-    source = SourceCatalogRef("catalog-1", "memory://catalog", sha256_digest(b"catalog"))
+    source = SourceCatalogRef("urn:docspec:test:catalog-1", "memory://catalog", sha256_digest(b"catalog"))
     description = _processor("stats-v1")
 
     def create(processor: ProcessorDescription) -> ProcessingPlan:
@@ -275,10 +275,11 @@ def test_processor_description_is_closed_provider_neutral_and_identity_bearing()
         replace(baseline, deterministic=False)
 
 
-def test_document_release_is_complete_versioned_and_tamper_evident() -> None:
+def test_document_release_is_a_complete_versioned_derivation_view() -> None:
     plan = _plan()
     plan_ref = plan.artifact_ref(locator="memory://plan")
     release = DocumentRelease.create(
+        release_id="urn:spicy:artifact:derivation:" + "d" * 64,
         previous_release=None,
         source_catalog=plan.source_catalog,
         processing_plan=plan_ref,
@@ -295,10 +296,5 @@ def test_document_release_is_complete_versioned_and_tamper_evident() -> None:
         partition_policy={"identity": "sha256-v1", "bucketCount": 4},
     )
     assert DocumentRelease.from_dict(release.to_dict()) == release
-    reference = release.reference("memory://release")
+    reference = release.reference("memory://release", sha256_digest(b"artifact"))
     assert DocumentReleaseRef.from_dict(reference.to_dict()) == reference
-
-    changed = release.to_dict()
-    changed["counts"] = {"sourceItems": 1}
-    with pytest.raises(ValueError, match="identity differs"):
-        DocumentRelease.from_dict(changed)

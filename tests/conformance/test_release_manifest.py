@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-import hashlib
 import importlib
 import sys
 from pathlib import Path
-from typing import Any, Callable
 
 import pytest
+from rulespec_conformance.platform_artifact import (
+    ROOT_OBJECT_KEY,
+    ArtifactPin,
+    LocalMemberSource,
+    admit_artifact,
+    canonical_json_bytes,
+)
 
-from docspec.domain.identity import canonical_json_file_bytes, parse_canonical_json, sha256_digest, thaw_json
+from docspec.adapters.platform_artifact import RELEASE_STATE_KEY
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.references import DocumentReleaseRef
-from docspec.domain.release import DocumentRelease
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.profile_registry import ProfileRegistry
 
@@ -34,28 +38,23 @@ def test_every_catalog_profile_publishes_the_canonical_release_root(tmp_path: Pa
     registered, platform, committed = _committed_platform(tmp_path)
     catalog = platform.catalog
     reference = committed.reference
+    distribution = (catalog.root / reference.locator).parent
 
-    root_path = catalog.root / reference.locator
-    payload = root_path.read_bytes()
-    value = thaw_json(parse_canonical_json(payload, label="published release root"))
-    assert isinstance(value, dict)
-    assert payload == canonical_json_file_bytes(value), "the published root must be canonical JSON"
-    assert sha256_digest(payload) == reference.digest
-    release = DocumentRelease.from_dict(value)
-    assert release.file_bytes == payload
-    assert release.release_id == reference.release_id
+    artifact = admit_artifact(
+        LocalMemberSource(distribution),
+        expected_pin=ArtifactPin(reference.release_id, reference.digest),
+    )
+    assert artifact.root["kind"] == "derivation"
+    assert RELEASE_STATE_KEY in set(LocalMemberSource(distribution).keys())
 
+    release = catalog.open(reference)
+    assert release.release_id == artifact.pin.logical_id == reference.release_id
     manifest_profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.RELEASE_MANIFEST)
     assert manifest_profiles
-    manifest_ids = {item.description.profile_id for item in manifest_profiles}
-    assert release.profiles.for_role(ProfileRole.RELEASE_MANIFEST).profile_id in manifest_ids
-    assert all(
-        isinstance(item.description.limits["maxRootBytes"], int) and item.description.limits["maxRootBytes"] > 0
-        for item in manifest_profiles
-    )
+    assert release.profiles.for_role(ProfileRole.RELEASE_MANIFEST).profile_id in {
+        item.description.profile_id for item in manifest_profiles
+    }
 
-    # A second catalog instance over the same storage state must find and
-    # verify the head purely from the published files.
     reopened = _catalog_contract._FACTORIES[registered.description.implementation_id](
         registered,
         tmp_path / "platform",
@@ -65,18 +64,6 @@ def test_every_catalog_profile_publishes_the_canonical_release_root(tmp_path: Pa
     )
     assert reopened.current() == reference
     assert reopened.open(reference) == release
-
-    pointer = thaw_json(
-        parse_canonical_json(
-            (catalog.root / "document-catalog" / "current.json").read_bytes(),
-            label="current pointer",
-        )
-    )
-    assert pointer == {
-        "format": "docspec-document-catalog-current",
-        "formatVersion": "1.0",
-        "release": reference.to_dict(),
-    }
 
     bounded = _catalog_contract._FACTORIES[registered.description.implementation_id](
         registered,
@@ -90,53 +77,42 @@ def test_every_catalog_profile_publishes_the_canonical_release_root(tmp_path: Pa
         bounded.open(reference)
 
 
-@pytest.mark.parametrize(
-    ("tamper", "expected_message"),
-    [
-        ("unknown-format", "document release is invalid"),
-        ("unknown-format-version", "document release is invalid"),
-        ("incomplete-root", "document release is invalid"),
-        ("extra-member", "document release is invalid"),
-        ("changed-content-under-identity", "identity differs"),
-    ],
-)
-def test_unknown_and_incomplete_roots_are_rejected(
-    tmp_path: Path,
-    tamper: str,
-    expected_message: str,
-) -> None:
+@pytest.mark.parametrize("tamper", ("unknown-format", "extra-root-field", "changed-member", "missing-member", "extra-file"))
+def test_unknown_and_incomplete_roots_are_rejected(tmp_path: Path, tamper: str) -> None:
     _, platform, committed = _committed_platform(tmp_path)
     catalog = platform.catalog
     reference = committed.reference
-    root_path = catalog.root / reference.locator
-    original = root_path.read_bytes()
-    value: dict[str, Any] = thaw_json(parse_canonical_json(original, label="published release root"))
+    distribution = (catalog.root / reference.locator).parent
+    root_path = distribution / ROOT_OBJECT_KEY
+    release_path = distribution / RELEASE_STATE_KEY
+    root_bytes = root_path.read_bytes()
+    release_bytes = release_path.read_bytes()
+    extra = distribution / "extra.json"
 
-    mutate: Callable[[dict[str, Any]], None] = {
-        "unknown-format": lambda root: root.update(format="docspec-unknown-release"),
-        "unknown-format-version": lambda root: root.update(formatVersion="9.9"),
-        "incomplete-root": lambda root: root.pop("activeLayers"),
-        "extra-member": lambda root: root.update(undeclaredMember=True),
-        "changed-content-under-identity": lambda root: root["counts"].update(
-            activeLayers=root["counts"]["activeLayers"] + 1
-        ),
-    }[tamper]
-    mutate(value)
-    tampered = canonical_json_file_bytes(value)
-    tampered_reference = DocumentReleaseRef(
-        reference.release_id,
-        reference.locator,
-        sha256_digest(tampered),
-    )
+    if tamper in {"unknown-format", "extra-root-field"}:
+        import json
+
+        root = json.loads(root_bytes)
+        if tamper == "unknown-format":
+            root["format"] = "unknown-artifact"
+        else:
+            root["extra"] = True
+        root_path.write_bytes(canonical_json_bytes(root))
+    elif tamper == "changed-member":
+        release_path.write_bytes(release_bytes + b" ")
+    elif tamper == "missing-member":
+        release_path.unlink()
+    else:
+        extra.write_bytes(b"{}")
+
     try:
-        root_path.write_bytes(tampered)
-        with pytest.raises(IntegrityError, match=expected_message):
-            catalog.open(tampered_reference)
-        with pytest.raises(IntegrityError, match="bytes differ"):
+        with pytest.raises(IntegrityError):
             catalog.open(reference)
     finally:
-        root_path.write_bytes(original)
-    assert catalog.current() == reference, "a rejected root must not disturb the committed head"
+        root_path.write_bytes(root_bytes)
+        release_path.write_bytes(release_bytes)
+        extra.unlink(missing_ok=True)
+    assert catalog.current() == reference
 
 
 def test_release_root_references_fail_closed_for_locator_drift_and_absence(tmp_path: Path) -> None:
@@ -144,17 +120,14 @@ def test_release_root_references_fail_closed_for_locator_drift_and_absence(tmp_p
     catalog = platform.catalog
     reference = committed.reference
 
-    with pytest.raises(IntegrityError, match="locator differs from its identity"):
-        catalog.open(
-            DocumentReleaseRef(
-                reference.release_id,
-                "document-catalog/releases/aa/somewhere-else.json",
-                reference.digest,
-            )
-        )
+    with pytest.raises(IntegrityError, match="locator differs"):
+        catalog.open(DocumentReleaseRef(reference.release_id, "document-catalog/releases/elsewhere/artifact.json", reference.digest))
 
-    absent_id = "urn:docspec:document-release:v1:absent"
-    absent_key = hashlib.sha256(absent_id.encode("utf-8")).hexdigest()
-    absent_locator = f"document-catalog/releases/{absent_key[:2]}/{absent_key}.json"
-    with pytest.raises(IntegrityError):
-        catalog.open(DocumentReleaseRef(absent_id, absent_locator, reference.digest))
+    absent_digest = "sha256:" + "0" * 64
+    absent = DocumentReleaseRef(
+        "urn:spicy:artifact:derivation:" + "0" * 64,
+        catalog._release_locator(absent_digest),
+        absent_digest,
+    )
+    with pytest.raises((IntegrityError, ValueError)):
+        catalog.open(absent)

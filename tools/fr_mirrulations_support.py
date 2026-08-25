@@ -21,7 +21,8 @@ from docspec.adapters.content_fetchers import (
     s3_locator,
     s3_transport_version,
 )
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.adapters.storage import sha256_file
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import (
@@ -102,7 +103,7 @@ QUALIFICATION_GATE_SELECTORS = {
     "repository-governance": (
         "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
         "tests/test_package_boundary.py::test_core_import_and_cli_help_need_no_optional_dependency",
-        "tests/test_package_boundary.py::test_built_wheel_contains_only_the_standalone_package",
+        "tests/test_package_boundary.py::test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle",
         "tests/test_machine_files.py::test_module_inventory_matches_the_installed_source_tree",
         "tests/test_fr_mirrulations_qualification.py::test_gate_receipt_seals_the_tested_repository_state",
         "tests/test_fr_mirrulations_qualification.py::test_gate_runner_rejects_source_change_during_execution",

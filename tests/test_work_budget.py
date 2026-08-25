@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -208,7 +208,9 @@ def _execute(
         DefaultSegmenterRegistry.segmenter_id,
         tuple(processors),
     )
-    source_ref = SourceCatalogRef("source-catalog", "source-catalog.json", sha256_digest(b"source-catalog"))
+    source_ref = SourceCatalogRef(
+        "urn:docspec:test:source-catalog", "source-catalog.json", sha256_digest(b"source-catalog")
+    )
     plan = ProcessingPlan.create(
         source_catalog=source_ref,
         base_release=None,

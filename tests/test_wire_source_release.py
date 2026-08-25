@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import (
+from tests.legacy_source_catalog import (
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
     SourceReleaseCatalogView,
 )
-from docspec.adapters.wire_source_release import (
+from tests.legacy_wire_source_release import (
     WIRE_FORMAT,
     WIRE_FORMAT_VERSION,
     WIRE_SCHEMA_ROLES,
@@ -27,7 +27,7 @@ from docspec.adapters.wire_source_release import (
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.errors import IntegrityError
-from docspec.ports.source_release import SourceReleasePin
+from tests.legacy_source_release import SourceReleasePin
 
 ROOT = Path(__file__).resolve().parents[1]
 PINS_PATH = ROOT / "fixtures/wire/source-catalog-release-v1/pins.json"

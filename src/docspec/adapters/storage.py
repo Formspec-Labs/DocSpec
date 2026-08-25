@@ -4,16 +4,29 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import ctypes
+import errno
 import os
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
+from docspec.adapters.platform_artifact import (
+    ARTIFACT_ROOT_KEY,
+    DocumentReleaseArtifactVerifier,
+    LocalDerivationBuilder,
+    admit_local_artifact,
+    derivation_inputs,
+    derivation_logical_id,
+    derivation_spec,
+    write_release_members,
+)
 from docspec.application.commit import DocumentReleaseVerifier
 from docspec.domain.identity import (
     canonical_json_bytes,
@@ -28,6 +41,7 @@ from docspec.domain.identity import (
     thaw_json,
 )
 from docspec.domain.jobs import DocumentEntry, DocumentStore, StoreState
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, LayerRef, StoreRef
 from docspec.domain.storage import partition_bucket
@@ -119,7 +133,7 @@ def _write_once(
         temporary.unlink(missing_ok=True)
 
 
-def _publish_directory_once(root: Path, working: Path, locator: str) -> Path:
+def _publish_directory(root: Path, working: Path, locator: str, *, reuse_existing: bool) -> Path:
     relative = PurePosixPath(require_relative_path(locator))
     destination = _contained(root, relative.as_posix())
     parent_probe = (relative.parent / "placeholder").as_posix()
@@ -137,12 +151,80 @@ def _publish_directory_once(root: Path, working: Path, locator: str) -> Path:
         if destination.exists() or destination.is_symlink():
             if destination.is_symlink() or not destination.is_dir():
                 raise IntegrityError(f"immutable distribution path is not a regular directory: {locator}")
-            shutil.rmtree(working)
-            return destination
-        os.rename(working, destination)
+            if reuse_existing:
+                shutil.rmtree(working)
+                return destination
+            raise FileExistsError(f"refusing to replace immutable distribution: {locator}")
+        for directory in sorted(
+            (path for path in working.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        ):
+            _sync_directory(directory)
+        _sync_directory(working)
+        _rename_directory_no_replace(working, destination)
+        _sync_directory(destination.parent)
         return destination
     finally:
         lock_path.unlink(missing_ok=True)
+
+
+def _publish_directory_once(root: Path, working: Path, locator: str) -> Path:
+    return _publish_directory(root, working, locator, reuse_existing=True)
+
+
+def publish_directory_exclusive(root: Path, working: Path, locator: str) -> Path:
+    """Atomically publish one directory without replacing an existing result."""
+
+    return _publish_directory(root, working, locator, reuse_existing=False)
+
+
+def _sync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _rename_directory_no_replace(source: Path, destination: Path) -> None:
+    """Atomically rename a directory only when the destination is absent."""
+
+    if os.name == "nt":
+        try:
+            os.rename(source, destination)
+        except FileExistsError as error:
+            raise IntegrityError(f"refusing to replace immutable distribution: {destination}") from error
+        return
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        rename.restype = ctypes.c_int
+        result = rename(source_bytes, destination_bytes, 0x4)
+    elif sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
+        rename = libc.renameat2
+        rename.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        rename.restype = ctypes.c_int
+        result = rename(-100, source_bytes, -100, destination_bytes, 1)
+    else:
+        raise IntegrityError("this platform lacks an atomic no-replace directory rename")
+    if result == 0:
+        return
+    error_number = ctypes.get_errno()
+    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
+        raise IntegrityError(f"refusing to replace immutable distribution: {destination}")
+    raise OSError(error_number, os.strerror(error_number), destination)
 
 
 def _verify_artifact_bytes(reference: ArtifactRef, payload: bytes, *, media_type: str = "application/json") -> None:
@@ -1642,7 +1724,7 @@ class _LocalDocumentCatalogReader:
 
 
 class LocalManifestDocumentCatalog:
-    """Publish complete releases with an operator-only compare-and-swap head."""
+    """Publish shared derivations with an operator-only compare-and-swap head."""
 
     def __init__(
         self,
@@ -1666,45 +1748,58 @@ class LocalManifestDocumentCatalog:
             stores=stores,
             blobs=blobs,
         )
+        self.artifact_verifier = DocumentReleaseArtifactVerifier(
+            verifier=self.verifier,
+            controls=controls,
+            records=records,
+        )
+        self.artifact_builder = LocalDerivationBuilder(self.artifact_verifier)
         self.max_release_bytes = max_release_bytes
 
     @staticmethod
-    def _release_key(release_id: str) -> str:
-        require_text(release_id, "release_id")
-        return hashlib.sha256(release_id.encode("utf-8")).hexdigest()
-
-    def _release_locator(self, release_id: str) -> str:
-        key = self._release_key(release_id)
-        return f"document-catalog/releases/{key[:2]}/{key}.json"
+    def release_id(plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str:
+        return derivation_logical_id(plan, partition_policy)
 
     @staticmethod
-    def _parse_release(payload: bytes, *, label: str) -> DocumentRelease:
-        value = thaw_json(parse_canonical_json(payload, label=label))
-        if not isinstance(value, dict):
-            raise IntegrityError("document release root must be a JSON object")
-        try:
-            return DocumentRelease.from_dict(value)
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"document release is invalid: {error}") from error
+    def _artifact_directory(kind: str, digest: str) -> str:
+        hexadecimal = require_sha256(digest, "derivation artifact digest").removeprefix("sha256:")
+        return f"document-catalog/{kind}/{hexadecimal[:2]}/{hexadecimal}"
+
+    @classmethod
+    def _release_locator(cls, digest: str) -> str:
+        return f"{cls._artifact_directory('releases', digest)}/{ARTIFACT_ROOT_KEY}"
+
+    @classmethod
+    def _staged_locator(cls, digest: str) -> str:
+        return f"{cls._artifact_directory('staged', digest)}/{ARTIFACT_ROOT_KEY}"
 
     def _verify_release_dependencies(self, release: DocumentRelease) -> None:
         self.verifier.verify(release)
 
     def open(self, reference: DocumentReleaseRef) -> DocumentRelease:
-        expected_locator = self._release_locator(reference.release_id)
+        expected_locator = self._release_locator(reference.digest)
         if reference.locator != expected_locator:
             raise IntegrityError("document release locator differs from its identity")
-        path = _contained(self.root, reference.locator)
-        if path.is_file() and path.stat().st_size > self.max_release_bytes:
-            raise LimitExceededError(f"document release exceeds the {self.max_release_bytes}-byte limit")
-        payload = _read_exact(self.root, reference.locator)
-        if sha256_digest(payload) != reference.digest:
-            raise IntegrityError("document release bytes differ from their reference")
-        release = self._parse_release(payload, label=reference.release_id)
-        if release.release_id != reference.release_id:
-            raise IntegrityError("document release identity differs from its reference")
-        self._verify_release_dependencies(release)
+        _, release = self._open_artifact(reference)
         return release
+
+    def _open_artifact(self, reference: DocumentReleaseRef, *, staged: bool = False):
+        allowed = {self._release_locator(reference.digest)}
+        if staged:
+            allowed.add(self._staged_locator(reference.digest))
+        if reference.locator not in allowed:
+            raise IntegrityError("document release locator differs from its artifact pin")
+        root_path = _contained(self.root, reference.locator)
+        if root_path.is_file() and root_path.stat().st_size > self.max_release_bytes:
+            raise LimitExceededError(f"document release exceeds the {self.max_release_bytes}-byte limit")
+        artifact, source = admit_local_artifact(
+            root_path.parent,
+            logical_id=reference.release_id,
+            artifact_digest=reference.digest,
+            root_byte_limit=self.max_release_bytes,
+        )
+        release = self.artifact_verifier.read(artifact, source)
+        return artifact, release
 
     def open_reader(self, reference: DocumentReleaseRef) -> _LocalDocumentCatalogReader:
         """Verify once and return a per-operation immutable release reader."""
@@ -1763,27 +1858,72 @@ class LocalManifestDocumentCatalog:
 
     def stage(self, release: DocumentRelease) -> ArtifactRef:
         self._verify_release_dependencies(release)
-        payload = release.file_bytes
-        if len(payload) > self.max_release_bytes:
+        if len(release.file_bytes) > self.max_release_bytes:
             raise LimitExceededError(f"document release exceeds the {self.max_release_bytes}-byte limit")
-        digest = sha256_digest(payload)
-        locator = f"document-catalog/staged/{digest[7:9]}/{digest[7:]}.json"
-        _write_once(self.root, locator, payload)
-        return ArtifactRef(release.release_id, locator, digest, "application/json", len(payload))
+        try:
+            plan = ProcessingPlan.from_dict(self.controls.load(release.processing_plan))
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"document release processing plan is invalid: {error}") from error
+        if release.release_id != derivation_logical_id(plan, release.partition_policy):
+            raise IntegrityError("document release identity differs from its processing plan")
+        staging_root = _contained(self.root, "document-catalog/.staging/placeholder", create_parents=True).parent
+        working = Path(tempfile.mkdtemp(prefix="derivation-", dir=staging_root))
+        try:
+            members = write_release_members(working, release, self.records)
+            artifact = self.artifact_builder.seal(
+                working,
+                spec=derivation_spec(plan, release.partition_policy),
+                inputs=derivation_inputs(plan),
+                members=members,
+            )
+            if artifact.pin.logical_id != release.release_id:
+                raise IntegrityError("document release identity differs from its sealed derivation")
+            locator = self._staged_locator(artifact.pin.artifact_digest)
+            destination = _contained(
+                self.root,
+                self._artifact_directory("staged", artifact.pin.artifact_digest),
+            )
+            if destination.exists():
+                if destination.is_symlink() or not destination.is_dir():
+                    raise IntegrityError("staged derivation path is not a regular directory")
+                shutil.rmtree(working)
+            else:
+                publish_directory_exclusive(
+                    self.root,
+                    working,
+                    destination.relative_to(self.root).as_posix(),
+                )
+            reference = DocumentReleaseRef(release.release_id, locator, artifact.pin.artifact_digest)
+            self._open_artifact(reference, staged=True)
+            root_size = _contained(self.root, locator).stat().st_size
+            return ArtifactRef(
+                release.release_id,
+                locator,
+                artifact.pin.artifact_digest,
+                "application/vnd.spicy-artifact+json",
+                root_size,
+            )
+        finally:
+            if working.exists():
+                shutil.rmtree(working)
 
-    def _load_staged(self, reference: ArtifactRef) -> DocumentRelease:
-        path = _contained(self.root, reference.locator)
-        if path.is_file() and path.stat().st_size > self.max_release_bytes:
-            raise LimitExceededError(f"staged document release exceeds the {self.max_release_bytes}-byte limit")
-        payload = _read_exact(self.root, reference.locator)
-        _verify_artifact_bytes(reference, payload)
-        if reference.locator != f"document-catalog/staged/{reference.digest[7:9]}/{reference.digest[7:]}.json":
-            raise IntegrityError("staged release locator differs from its digest")
-        release = self._parse_release(payload, label=reference.artifact_id)
-        if release.release_id != reference.artifact_id:
-            raise IntegrityError("staged release identity differs from its reference")
-        self._verify_release_dependencies(release)
-        return release
+    def _load_staged(self, reference: ArtifactRef):
+        if reference.media_type != "application/vnd.spicy-artifact+json":
+            raise IntegrityError("staged release has the wrong media type")
+        staged_locator = self._staged_locator(reference.digest)
+        published_locator = self._release_locator(reference.digest)
+        if reference.locator not in {staged_locator, published_locator}:
+            raise IntegrityError("staged release locator differs from its artifact pin")
+        resolved_locator = reference.locator
+        if reference.locator == staged_locator and not _contained(self.root, staged_locator).is_file():
+            resolved_locator = published_locator
+        artifact, release = self._open_artifact(
+            DocumentReleaseRef(reference.artifact_id, resolved_locator, reference.digest),
+            staged=True,
+        )
+        if _contained(self.root, resolved_locator).stat().st_size != reference.byte_size:
+            raise IntegrityError("staged release root size differs from its reference")
+        return artifact, release, resolved_locator
 
     def current(self) -> DocumentReleaseRef | None:
         locator = "document-catalog/current.json"
@@ -1823,6 +1963,7 @@ class LocalManifestDocumentCatalog:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, destination)
+            _sync_directory(destination.parent)
         finally:
             temporary.unlink(missing_ok=True)
 
@@ -1833,7 +1974,7 @@ class LocalManifestDocumentCatalog:
         expected_base: DocumentReleaseRef | None,
         stores: Iterable[StoreRef],
     ) -> DocumentReleaseRef:
-        release = self._load_staged(staged)
+        artifact, release, resolved_locator = self._load_staged(staged)
         previous_store_id: str | None = None
 
         def verified_store_values() -> Iterator[dict[str, Any]]:
@@ -1860,15 +2001,35 @@ class LocalManifestDocumentCatalog:
                 handle.flush()
                 os.fsync(handle.fileno())
             current = self.current()
-            locator = self._release_locator(release.release_id)
-            new_reference = release.reference(locator)
+            locator = self._release_locator(artifact.pin.artifact_digest)
+            new_reference = DocumentReleaseRef(
+                release.release_id,
+                locator,
+                artifact.pin.artifact_digest,
+            )
             if current == new_reference:
                 return new_reference
             if current != expected_base:
                 raise StaleBaseError("document catalog current release differs from the expected base")
             if release.previous_release != expected_base:
                 raise IntegrityError("document release lineage differs from the expected catalog base")
-            _write_once(self.root, locator, release.file_bytes)
+            staged_directory = _contained(self.root, resolved_locator).parent
+            published_directory = _contained(
+                self.root,
+                self._artifact_directory("releases", artifact.pin.artifact_digest),
+            )
+            if staged_directory != published_directory:
+                if published_directory.exists():
+                    if published_directory.is_symlink() or not published_directory.is_dir():
+                        raise IntegrityError("published derivation path is not a regular directory")
+                    self._open_artifact(new_reference)
+                    shutil.rmtree(staged_directory)
+                else:
+                    publish_directory_exclusive(
+                        self.root,
+                        staged_directory,
+                        published_directory.relative_to(self.root).as_posix(),
+                    )
             self.open(new_reference)
             self._write_current(new_reference)
             return new_reference
@@ -1883,4 +2044,5 @@ __all__ = [
     "LocalJsonlRecordStorage",
     "LocalManifestDocumentCatalog",
     "RootOnlyBlobProfileStateReachability",
+    "publish_directory_exclusive",
 ]

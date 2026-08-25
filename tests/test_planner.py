@@ -184,7 +184,7 @@ class MemoryDocumentCatalog:
 
 
 def _source_reference(name: str) -> SourceCatalogRef:
-    return SourceCatalogRef(name, f"memory://catalogs/{name}", sha256_digest(name.encode()))
+    return SourceCatalogRef(f"urn:docspec:test:catalog:{name}", f"memory://catalogs/{name}", sha256_digest(name.encode()))
 
 
 def _candidate(
@@ -266,6 +266,7 @@ def _planned_update(
     )
     previous_plan_ref = controls.put(kind="plans", artifact_id=previous_plan.plan_id, value=previous_plan.to_dict())
     release = DocumentRelease.create(
+        release_id="urn:spicy:artifact:derivation:" + "d" * 64,
         previous_release=None,
         source_catalog=previous_source,
         processing_plan=previous_plan_ref,
@@ -281,7 +282,7 @@ def _planned_update(
         coverage={},
         partition_policy={"policyId": "test", "bucketCount": 4},
     )
-    release_ref = release.reference("memory://releases/base")
+    release_ref = release.reference("memory://releases/base", sha256_digest(release.file_bytes))
     current_source = _source_reference("current")
     plan = _plan(current_source, release_ref, selection=selection)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
@@ -345,7 +346,7 @@ def _planned_initial(
 
 
 def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_path: Path) -> None:
-    source_ref = SourceCatalogRef("catalog", "memory://catalog", sha256_digest(b"catalog"))
+    source_ref = SourceCatalogRef("urn:docspec:test:catalog", "memory://catalog", sha256_digest(b"catalog"))
     items = tuple(
         SourceItem(
             f"item-{index}",

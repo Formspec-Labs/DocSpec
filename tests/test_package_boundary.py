@@ -160,9 +160,15 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == __version__
-    assert project["project"]["dependencies"] == []
+    assert project["project"]["dependencies"] == [
+        "jsonschema>=4.23,<5",
+        "rulespec-conformance==0.2.0rc12",
+    ]
+    assert project["tool"]["uv"]["sources"]["rulespec-conformance"] == {
+        "path": "vendor/rulespec_conformance-0.2.0rc12-py3-none-any.whl"
+    }
     assert project["project"]["scripts"] == {"docspec": "docspec.cli:main"}
-    assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3", "wire"}
+    assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3"}
 
     extras = project["project"]["optional-dependencies"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
@@ -170,10 +176,31 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
-    assert any(requirement.startswith("jsonschema") for requirement in extras["wire"])
-    assert any(requirement.startswith("ijson") for requirement in extras["wire"])
     assert "archive" in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
+
+
+def test_legacy_source_formats_are_quarantined_from_public_composition() -> None:
+    import docspec.adapters as adapters
+    import docspec.ports as ports
+
+    assert not (PRODUCTION_ROOT / "adapters/source_catalog.py").exists()
+    assert not (PRODUCTION_ROOT / "adapters/wire_source_release.py").exists()
+    assert not (PRODUCTION_ROOT / "ports/source_release.py").exists()
+    for name in (
+        "JsonSchemaWireSourceReleaseGate",
+        "LocalJsonlSourceCatalog",
+        "LocalSourceReleaseReader",
+        "LocalWireSourceReleaseReader",
+        "SourceReleaseCatalogView",
+    ):
+        assert not hasattr(adapters, name)
+    for name in ("SourceReleasePin", "SourceReleaseReader", "SourceReleaseSchemaGate"):
+        assert not hasattr(ports, name)
+
+    cli_source = (PRODUCTION_ROOT / "cli.py").read_text(encoding="utf-8")
+    assert "LocalJsonlSourceCatalog" not in cli_source
+    assert "wire_source_release" not in cli_source
 
 
 def test_production_imports_stay_inside_the_standalone_boundary() -> None:
@@ -254,7 +281,7 @@ def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
     assert "DocSpec" in help_result.stdout or "docspec" in help_result.stdout
 
 
-def test_built_wheel_contains_only_the_standalone_package(tmp_path: Path) -> None:
+def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "the package release test requires uv"
 
@@ -299,8 +326,19 @@ def test_built_wheel_contains_only_the_standalone_package(tmp_path: Path) -> Non
     )
     assert create_environment.returncode == 0, create_environment.stderr
     environment_python = environment / "bin" / "python"
+    # Until package publication is separately authorized, these two exact
+    # wheels are the consumer installation bundle. No sibling checkout or
+    # editable path participates in this test.
     install = subprocess.run(
-        [uv, "pip", "install", "--python", str(environment_python), str(wheel)],
+        [
+            uv,
+            "pip",
+            "install",
+            "--python",
+            str(environment_python),
+            str(ROOT / "vendor" / "rulespec_conformance-0.2.0rc12-py3-none-any.whl"),
+            str(wheel),
+        ],
         cwd=ROOT,
         capture_output=True,
         check=False,

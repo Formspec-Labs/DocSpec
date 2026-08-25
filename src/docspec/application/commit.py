@@ -456,6 +456,7 @@ class ReleaseCommitService:
         counts = complete_release_counts(run.staged_layers, run.blob_roots)
         coverage = complete_release_coverage(run.coverage, counts)
         release = DocumentRelease.create(
+            release_id=self._document_catalog.release_id(plan, run.partition_policy),
             previous_release=base_document_release_ref,
             source_catalog=run.source_catalog,
             processing_plan=self._plan_ref,

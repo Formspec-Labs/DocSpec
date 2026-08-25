@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,

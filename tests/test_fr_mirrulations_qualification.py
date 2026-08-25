@@ -10,7 +10,7 @@ import pytest
 import tools.fr_mirrulations_qualification as runner
 import tools.fr_mirrulations_support as qualification
 from docspec.adapters.content_fetchers import AnonymousS3ContentFetcher, RoutingContentFetcher
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest, stable_urn
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef

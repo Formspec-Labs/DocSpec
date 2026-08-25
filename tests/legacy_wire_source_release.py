@@ -1,4 +1,8 @@
-"""Structural conformance of an exchanged SourceCatalogRelease against its pinned schemas."""
+"""Legacy wire-source reader retained only for old qualification tests.
+
+Production composition uses ``PlatformSourceCatalog``. This module is not
+exported from ``docspec.adapters`` and must not admit new release formats.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
+from docspec.adapters.platform_artifact import source_item_from_shared_record
+from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.identity import (
     closed_mapping,
     parse_canonical_json,
@@ -24,7 +29,7 @@ from docspec.domain.identity import (
 from docspec.domain.references import SourceCatalogRef
 from docspec.errors import DocSpecError, IntegrityError, LimitExceededError
 from docspec.ports.source_catalog import SourceCatalogSummary
-from docspec.ports.source_release import (
+from tests.legacy_source_release import (
     SourceReleaseAdmission,
     SourceReleaseConformance,
     SourceReleasePin,
@@ -216,54 +221,6 @@ def _raise_first_violation(conformance: SourceReleaseConformance) -> None:
         f"sealed source release violates its published schema, first of {len(conformance.violations)} "
         f"at {first.member}{first.pointer}: {first.message}"
     )
-
-
-def _wire_state(disposition: str) -> SourceItemState:
-    if disposition == "selected":
-        return SourceItemState.ACTIVE
-    if disposition == "deleted":
-        return SourceItemState.DELETED
-    if disposition in {"excluded", "unavailable", "failed"}:
-        return SourceItemState.EXCLUDED
-    raise IntegrityError(f"wire source item has unknown disposition {disposition!r}")
-
-
-def _source_item(record: Mapping[str, Any], index: int) -> tuple[SourceItem, str]:
-    try:
-        selection = record["selection"]
-        if not isinstance(selection, Mapping):
-            raise TypeError("selection is not an object")
-        disposition = require_text(selection["disposition"], "wire source item disposition")
-        candidates = tuple(
-            CandidateFile(
-                candidate_id=candidate["renditionId"],
-                locator=candidate["locator"],
-                media_type=candidate["mediaType"],
-                expected_digest=candidate["expectedSha256"],
-                expected_size=candidate["expectedByteSize"],
-            )
-            for candidate in record["candidateRenditions"]
-        )
-        metadata = {
-            "documentId": record["documentId"],
-            "normalizedMetadata": record["normalizedMetadata"],
-            "selection": dict(selection),
-            "sourceNativeMetadata": record["sourceNativeMetadata"],
-            "sourceObservations": record["sourceObservations"],
-            "sourceObservedTopics": record["sourceObservedTopics"],
-        }
-        return (
-            SourceItem(
-                item_id=record["sourceItemId"],
-                version=record["sourceIssuedVersion"],
-                candidates=candidates,
-                state=_wire_state(disposition),
-                metadata=metadata,
-            ),
-            disposition,
-        )
-    except (KeyError, TypeError, ValueError) as error:
-        raise IntegrityError(f"wire source item {index} cannot become a DocSpec SourceItem: {error}") from error
 
 
 def _tracked_files(directory: Path) -> set[str]:
@@ -667,7 +624,7 @@ class LocalWireSourceReleaseReader:
                     if not isinstance(record, Mapping):
                         raise IntegrityError(f"wire source item {index} must be an object")
                     _raise_first_violation(self._wire_gate.check_item(record, index=index))
-                    item, disposition = _source_item(record, index)
+                    item, disposition = source_item_from_shared_record(record, index)
                     if previous_item_id is not None and item.item_id <= previous_item_id:
                         raise IntegrityError("wire source items are not strictly ordered by sourceItemId")
                     previous_item_id = item.item_id

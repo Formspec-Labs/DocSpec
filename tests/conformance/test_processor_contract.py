@@ -4,7 +4,7 @@ import importlib
 import sys
 from pathlib import Path
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import AcquisitionDisposition, DerivedRecord, ProcessorDisposition, SourceItem
 from docspec.domain.identity import canonical_json_bytes, identity_digest
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetryPolicy

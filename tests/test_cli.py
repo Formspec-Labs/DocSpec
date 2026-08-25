@@ -12,7 +12,7 @@ import pytest
 import docspec.cli as cli_module
 from docspec.adapters.content_fetchers import HttpsContentFetcher, HttpsContentFetcherConfig
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog, SourceReleaseCatalogView
+from tests.legacy_source_catalog import SourceReleaseCatalogView
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -21,7 +21,7 @@ from docspec.adapters.storage import (
     LocalManifestDocumentCatalog,
     RootOnlyBlobProfileStateReachability,
 )
-from docspec.adapters.wire_source_release import (
+from tests.legacy_wire_source_release import (
     JsonSchemaWireSourceReleaseGate,
     LocalWireSourceReleaseReader,
     load_wire_release_pins,
@@ -29,7 +29,6 @@ from docspec.adapters.wire_source_release import (
 from docspec.application.commit import ReleaseCommitService
 from docspec.application.maintenance import BlobRetentionSetService
 from docspec.cli import main
-from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
@@ -41,11 +40,11 @@ from docspec.domain.receipts import RunReceipt
 from docspec.domain.jobs import StoreState
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
-from docspec.ports.source_release import SourceReleasePin
+from tests.legacy_source_release import SourceReleasePin
 from tests.test_maintenance import _platform
+from tests.test_platform_artifact import shared_source_item, write_shared_source_catalog
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -128,7 +127,7 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     request = {
-        "sourceCatalog": SourceCatalogRef("catalog-1", "catalog.json", ZERO_DIGEST).to_dict(),
+        "sourceCatalog": SourceCatalogRef("urn:docspec:test:catalog-1", "catalog.json", ZERO_DIGEST).to_dict(),
         "baseRelease": None,
         "profiles": _profile_set().to_dict(),
         "limits": WorkLimits(10, 1000, 100, 200, 300, 4000, 60, 2).to_dict(),
@@ -353,32 +352,24 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
 ) -> None:
     source_content = tmp_path / "source-content"
     source_content.mkdir()
-    source_bytes = b"Alpha paragraph.\n\nSecond paragraph."
-    (source_content / "document.txt").write_bytes(source_bytes)
     source_catalog_root = tmp_path / "source-catalog"
-    source_catalog = LocalJsonlSourceCatalog(source_catalog_root)
-    source_ref = source_catalog.write(
-        (
-            SourceItem(
-                "document-a",
-                "v1",
-                (
-                    CandidateFile(
-                        "primary",
-                        "document.txt",
-                        "text/plain",
-                        expected_digest=sha256_digest(source_bytes),
-                        expected_size=len(source_bytes),
-                        transport_version="fixture:v1",
-                    ),
-                ),
-                metadata={"expectedSegments": 2},
-            ),
-        )
+    item = shared_source_item()
+    item.update(
+        {
+            "sourceItemId": "document-a",
+            "documentId": "document-a",
+            "normalizedMetadata": None,
+            "candidateRenditions": [],
+            "selection": {
+                "disposition": "deleted",
+                "reasonCode": "source.deleted",
+                "reason": "Deleted CLI lifecycle fixture",
+            },
+        }
     )
+    source_ref = write_shared_source_catalog(source_catalog_root, (item,))
     retry = RetryPolicy()
     accepted = AcceptedFailurePolicy()
-    processor = ContentStatisticsProcessor()
     plan = ProcessingPlan.create(
         source_catalog=source_ref,
         base_release=None,
@@ -387,9 +378,8 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         stages=StagePolicy(
             (DefaultExtractorRegistry.extractor_id,),
             DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
         ),
-        processors=ProcessorSet((processor.description,)),
+        processors=ProcessorSet(()),
         partition_count=4,
         selection={},
         retention_policy=RetentionPolicy.retain_all(),

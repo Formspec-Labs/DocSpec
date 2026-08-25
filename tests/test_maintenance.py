@@ -9,7 +9,8 @@ from threading import Event
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -259,7 +260,7 @@ def _revision_files(stores: LocalDocumentStoreRepository) -> dict[str, bytes]:
 
 
 def _published_release_count(catalog: LocalManifestDocumentCatalog) -> int:
-    return len(tuple((catalog.root / "document-catalog/releases").rglob("*.json")))
+    return len(tuple((catalog.root / "document-catalog/releases").rglob("artifact.json")))
 
 
 def _compaction_service(

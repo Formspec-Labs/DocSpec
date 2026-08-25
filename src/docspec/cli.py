@@ -14,11 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.execution import LocalExecutionBackend
+from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.source_catalog import LocalFileContentFetcher, LocalJsonlSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -26,7 +27,7 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
-from docspec.application.commit import DocumentReleaseVerifier, ReleaseCommitService
+from docspec.application.commit import ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
 from docspec.application.maintenance import ReleaseCompactionService
@@ -340,13 +341,8 @@ def _cmd_scale_profile_verify(args: argparse.Namespace) -> int:
     return 0
 
 
-def _source_catalog_reader(root: Path) -> LocalJsonlSourceCatalog:
-    reader = object.__new__(LocalJsonlSourceCatalog)
-    reader.root = _existing_root(root, label="source catalog root")
-    reader.max_item_bytes = 8 * 1024**2
-    reader.max_root_bytes = 8 * 1024**2
-    reader._staging = reader.root / ".staging"
-    return reader
+def _source_catalog_reader(root: Path) -> LocalPlatformSourceCatalog:
+    return LocalPlatformSourceCatalog(_existing_root(root, label="source catalog root"))
 
 
 def _cmd_source_catalog_verify(args: argparse.Namespace) -> int:
@@ -396,19 +392,13 @@ def _local_document_catalog(args: argparse.Namespace) -> LocalManifestDocumentCa
     controls = object.__new__(LocalJsonControlRepository)
     controls.root = _existing_root(args.control_root, label="control repository root")
     controls.max_artifact_bytes = 8 * 1024**2
-    catalog = object.__new__(LocalManifestDocumentCatalog)
-    catalog.root = _existing_root(args.catalog_root, label="document catalog root")
-    catalog.records = records
-    catalog.stores = stores
-    catalog.controls = controls
-    catalog.verifier = DocumentReleaseVerifier(
-        controls=controls,
+    return LocalManifestDocumentCatalog(
+        _existing_root(args.catalog_root, label="document catalog root"),
         records=records,
         stores=stores,
+        controls=controls,
         blobs=blobs,
     )
-    catalog.max_release_bytes = 1024**2
-    return catalog
 
 
 def _release_reference(path: Path) -> DocumentReleaseRef:
@@ -890,7 +880,7 @@ def _compose_local_run(
     roots = request["roots"]
     controls, stores, records, blobs, catalog = _local_storage(roots, profiles)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    source_catalog = source_catalog or LocalJsonlSourceCatalog(roots["sourceCatalog"])
+    source_catalog = source_catalog or LocalPlatformSourceCatalog(roots["sourceCatalog"])
     fetcher = content_fetcher or LocalFileContentFetcher(roots["sourceContent"])
     actual_fetcher_composition = {
         "implementationId": getattr(fetcher, "downloader_id", None),

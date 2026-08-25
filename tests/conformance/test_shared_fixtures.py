@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.conformance.fixtures import (
     FixtureCase,
     FixtureCaseDiagnostic,

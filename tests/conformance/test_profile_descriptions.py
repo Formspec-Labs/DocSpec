@@ -123,7 +123,7 @@ def _seeded_local_run(tmp_path: Path, profiles: ProfileSet) -> tuple[Path, dict[
     source_content.mkdir()
     source_bytes = b"One conformance paragraph."
     (source_content / "document.txt").write_bytes(source_bytes)
-    catalogs = importlib.import_module("docspec.adapters.source_catalog")
+    catalogs = importlib.import_module("tests.legacy_source_catalog")
     source_catalog_root = tmp_path / "source-catalog"
     source_ref = catalogs.LocalJsonlSourceCatalog(source_catalog_root).write(
         (

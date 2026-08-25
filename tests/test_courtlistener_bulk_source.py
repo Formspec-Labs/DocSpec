@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError
 from tools.courtlistener_bulk_source import (

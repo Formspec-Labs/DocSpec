@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from docspec.adapters.sinks import DurableDatasetSink, HybridResultSink, ReturnedResultSink
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -388,7 +388,9 @@ def test_stateless_returned_run_cannot_advance_the_document_catalog(tmp_path: Pa
     )
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
-    source = SourceCatalogRef("source-catalog", "source-catalog.json", sha256_digest(b"source-catalog"))
+    source = SourceCatalogRef(
+        "urn:docspec:test:source-catalog", "source-catalog.json", sha256_digest(b"source-catalog")
+    )
     plan = _plan(source, retry, accepted)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     planned_store_ledger = stores.seal_planned_stores(plan.plan_id, ())
@@ -550,7 +552,9 @@ def test_worker_restart_reuses_the_verified_entry_checkpoint(tmp_path: Path) -> 
     fetcher = _CountingFetcher(LocalFileContentFetcher(sources))
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
-    source_ref = SourceCatalogRef("source-catalog", "source-catalog.json", sha256_digest(b"source-catalog"))
+    source_ref = SourceCatalogRef(
+        "urn:docspec:test:source-catalog", "source-catalog.json", sha256_digest(b"source-catalog")
+    )
     plan = _plan(source_ref, retry, accepted)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     planned = DocumentStore.planned(

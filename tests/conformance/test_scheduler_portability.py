@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -18,7 +17,6 @@ from docspec.adapters.storage import (
     LocalManifestDocumentCatalog,
 )
 from docspec.cli import main
-from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.execution import ExecutionHandoff, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
@@ -27,7 +25,6 @@ from docspec.domain.processors import ProcessorSet
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,14 +32,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 _equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
 _cli_helpers = importlib.import_module("tests.test_cli")
+_platform_helpers = importlib.import_module("tests.test_platform_artifact")
 _active_document_state = _equivalence._active_document_state
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 _write_local_run_request = _cli_helpers._write_local_run_request
+shared_source_item = _platform_helpers.shared_source_item
+write_shared_source_catalog = _platform_helpers.write_shared_source_catalog
 
-_FIXTURE_TEXTS = {
-    "document-a": b"Alpha paragraph carries the shared fixture.",
-    "document-b": b"Beta paragraph carries the shared fixture.",
-}
+_FIXTURE_IDENTITIES = ("document-a", "document-b")
 
 
 @dataclass(frozen=True)
@@ -92,29 +89,25 @@ def _seed(root: Path) -> _Arm:
     source_content = root / "source-content"
     source_content.mkdir(parents=True)
     items = []
-    for item_id, payload in sorted(_FIXTURE_TEXTS.items()):
-        (source_content / f"{item_id}.txt").write_bytes(payload)
-        items.append(
-            SourceItem(
-                item_id,
-                "v1",
-                (
-                    CandidateFile(
-                        "primary",
-                        f"{item_id}.txt",
-                        "text/plain",
-                        expected_digest=sha256_digest(payload),
-                        expected_size=len(payload),
-                        transport_version="fixture:v1",
-                    ),
-                ),
-                metadata={"expectedSegments": 1},
-            )
+    for item_id in _FIXTURE_IDENTITIES:
+        item = shared_source_item()
+        item.update(
+            {
+                "sourceItemId": item_id,
+                "documentId": item_id,
+                "normalizedMetadata": None,
+                "candidateRenditions": [],
+                "selection": {
+                    "disposition": "deleted",
+                    "reasonCode": "source.deleted",
+                    "reason": "Deleted distributed-execution fixture",
+                },
+            }
         )
-    source_ref = LocalJsonlSourceCatalog(root / "source-catalog").write(tuple(items))
+        items.append(item)
+    source_ref = write_shared_source_catalog(root / "source-catalog", tuple(items))
     retry = RetryPolicy()
     accepted = AcceptedFailurePolicy()
-    processor = ContentStatisticsProcessor()
     plan = ProcessingPlan.create(
         source_catalog=source_ref,
         base_release=None,
@@ -123,9 +116,8 @@ def _seed(root: Path) -> _Arm:
         stages=StagePolicy(
             (DefaultExtractorRegistry.extractor_id,),
             DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
         ),
-        processors=ProcessorSet((processor.description,)),
+        processors=ProcessorSet(()),
         partition_count=4,
         selection={},
         retention_policy=RetentionPolicy.retain_all(),
@@ -313,6 +305,9 @@ def _reconcile(arm: _Arm, handoff_reference: ArtifactRef, results_path: Path) ->
 
 
 def _assert_equivalent(local: _Arm, local_run: RunReceipt, local_release, other: _Arm, other_run: RunReceipt, other_release) -> None:
+    assert other_release.release_id == local_release.release_id, (
+        "scheduler handoffs and task evidence must not change derivation logical identity"
+    )
     assert dict(other_run.counts) == dict(local_run.counts), "backend selection must not change the counts"
     assert other_run.failures["counts"] == local_run.failures["counts"] == {}
     assert other.store_verdicts(other_run) == local.store_verdicts(local_run), (

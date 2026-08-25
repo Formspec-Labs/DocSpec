@@ -8,7 +8,7 @@
       "testId": "CORE-INSTALL",
       "status": "implemented",
       "selectors": [
-        "tests/test_package_boundary.py::test_built_wheel_contains_only_the_standalone_package",
+        "tests/test_package_boundary.py::test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle",
         "tests/test_package_boundary.py::test_core_import_and_cli_help_need_no_optional_dependency"
       ],
       "plannedTestModule": null
@@ -41,14 +41,11 @@
       "testId": "SOURCE-CATALOG-CONTRACT",
       "status": "implemented",
       "selectors": [
-        "tests/test_source_catalog.py::test_source_catalog_round_trips_complete_stable_distribution",
-        "tests/test_source_catalog.py::test_source_catalog_change_set_pins_its_verified_base",
-        "tests/test_source_catalog.py::test_source_catalog_rejects_unstable_or_ambiguous_input",
-        "tests/conformance/test_shared_fixtures.py::test_shared_fixture_distribution_is_closed_complete_and_sealed",
-        "tests/conformance/test_shared_fixtures.py::test_independent_fixture_verifier_rejects_changed_extra_and_symlinked_bytes",
-        "tests/conformance/test_shared_fixtures.py::test_source_catalog_producer_matches_shared_valid_fixture_bytes",
-        "tests/conformance/test_shared_fixtures.py::test_source_catalog_independent_reader_uses_every_shared_exact_fixture",
-        "tests/conformance/test_shared_fixtures.py::test_source_catalog_producer_preserves_conflicting_immutable_fixture_bytes"
+        "tests/test_platform_artifact.py::test_shared_source_catalog_maps_through_the_injected_local_member_source",
+        "tests/test_platform_artifact.py::test_shared_source_catalog_refuses_changed_member_before_mapping",
+        "tests/test_platform_artifact.py::test_shared_source_catalog_applies_the_packaged_schema_to_each_record",
+        "tests/test_platform_artifact.py::test_shared_source_catalog_refuses_invalid_nested_source_data",
+        "tests/test_platform_artifact.py::test_shared_source_catalog_recomputes_both_set_digests"
       ],
       "plannedTestModule": null
     },
@@ -74,7 +71,7 @@
         "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
         "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
         "tests/conformance/test_release_manifest.py::test_release_root_references_fail_closed_for_locator_drift_and_absence",
-        "tests/test_domain.py::test_document_release_is_complete_versioned_and_tamper_evident",
+        "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
         "tests/test_processing_pipeline.py::test_content_records_recompute_identity_and_output_digests_when_read",
         "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
         "tests/test_release_integrity.py::test_logical_release_verifier_rejects_individually_valid_but_unlinked_records",
@@ -349,7 +346,7 @@
       "selectors": [
         "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
         "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",
-        "tests/test_domain.py::test_document_release_is_complete_versioned_and_tamper_evident",
+        "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
         "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
@@ -427,7 +424,7 @@
       "testId": "PACKAGE-RELEASE",
       "status": "partial",
       "selectors": [
-        "tests/test_package_boundary.py::test_built_wheel_contains_only_the_standalone_package",
+        "tests/test_package_boundary.py::test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle",
         "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",

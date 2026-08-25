@@ -3,7 +3,13 @@ name = "docspec"
 version = "0.2.0"
 description = "Format-neutral bulk document acquisition, processing, segmentation, and release management"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "jsonschema>=4.23,<5",
+    "rulespec-conformance==0.2.0rc12",
+]
+
+[tool.uv.sources]
+rulespec-conformance = { path = "vendor/rulespec_conformance-0.2.0rc12-py3-none-any.whl" }
 
 [project.optional-dependencies]
 http = [
@@ -19,11 +25,6 @@ pdf = [
 dagster = [
     "dagster>=1.13,<2",
 ]
-wire = [
-    "ijson>=3.3,<4",
-    "jsonschema>=4.23,<5",
-]
-
 [dependency-groups]
 dev = [
     "httpx>=0.27,<1",

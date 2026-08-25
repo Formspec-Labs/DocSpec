@@ -71,7 +71,7 @@ class _CommittedRun:
     run_ref: ArtifactRef
     planned_store: StoreRef
     sealed_store: StoreRef
-    staged_bytes: bytes
+    artifact: ArtifactRef
 
 
 def _local_manifest_catalog(registered: RegisteredProfile, platform_root: Path, records, stores, controls):
@@ -138,7 +138,11 @@ def _commit_run(
         )
     )
     stages = StagePolicy(("text-v1",), "paragraph-v1")
-    source = SourceCatalogRef(f"catalog-{run_tag}", f"external/catalog-{run_tag}.json", sha256_digest(run_tag.encode()))
+    source = SourceCatalogRef(
+        f"urn:docspec:test:catalog-{run_tag}",
+        f"external/catalog-{run_tag}.json",
+        sha256_digest(run_tag.encode()),
+    )
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
     plan = ProcessingPlan.create(
@@ -224,14 +228,27 @@ def _commit_run(
         completed_at="2026-08-05T12:00:00Z",
     )
     run_ref = controls.put(kind="run-receipts", artifact_id=run.run_id, value=run.to_dict())
-    reference = ReleaseCommitService(
-        plan_ref=plan_ref,
-        controls=controls,
-        records=records,
-        document_catalog=platform.catalog,
-    ).commit_release(base, run_ref)
-    release = platform.catalog.open(reference)
-    return _CommittedRun(reference, plan_ref, run_ref, planned_job_ref, job_ref, release.file_bytes)
+    staged: list[ArtifactRef] = []
+    original_stage = platform.catalog.stage
+
+    def capture_stage(release) -> ArtifactRef:
+        reference = original_stage(release)
+        staged.append(reference)
+        return reference
+
+    platform.catalog.stage = capture_stage  # type: ignore[method-assign]
+    try:
+        reference = ReleaseCommitService(
+            plan_ref=plan_ref,
+            controls=controls,
+            records=records,
+            document_catalog=platform.catalog,
+        ).commit_release(base, run_ref)
+    finally:
+        platform.catalog.stage = original_stage  # type: ignore[method-assign]
+    platform.catalog.open(reference)
+    assert len(staged) == 1
+    return _CommittedRun(reference, plan_ref, run_ref, planned_job_ref, job_ref, staged[0])
 
 
 BASE_ROWS = (
@@ -256,7 +273,7 @@ def test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_
         assert catalog.current() == base.reference
         opened = catalog.open(base.reference)
         assert opened.previous_release is None
-        assert opened.reference(base.reference.locator) == base.reference
+        assert opened.reference(base.reference.locator, base.reference.digest) == base.reference
 
         reader = catalog.open_reader(base.reference)
         assert reader.lookup(layer_kind=LAYER_KIND, record_id="alpha") == BASE_ROWS[0]
@@ -284,23 +301,60 @@ def test_every_registered_catalog_profile_replays_conflicts_and_refuses_stale_or
         base = _commit_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
         successor = _commit_run(platform, run_tag="successor", rows=SUCCESSOR_ROWS, base=base.reference)
 
-        digest = sha256_digest(successor.staged_bytes)
-        staged = ArtifactRef(
-            successor.reference.release_id,
-            f"document-catalog/staged/{digest[7:9]}/{digest[7:]}.json",
-            digest,
-            "application/json",
-            len(successor.staged_bytes),
-        )
         replayed = catalog.commit(
-            staged,
+            successor.artifact,
             expected_base=base.reference,
             stores=(successor.sealed_store,),
         )
         assert replayed == successor.reference, "an identical replay must return the committed head unchanged"
 
         with pytest.raises(IntegrityError, match="unsealed document store"):
-            catalog.commit(staged, expected_base=base.reference, stores=(successor.planned_store,))
+            catalog.commit(successor.artifact, expected_base=base.reference, stores=(successor.planned_store,))
 
         with pytest.raises(StaleBaseError, match="differs from the expected base"):
             _commit_run(platform, run_tag="stale", rows=BASE_ROWS, base=base.reference)
+
+
+def test_every_registered_catalog_profile_replays_the_exact_stage_after_publish_before_head_update(
+    tmp_path: Path,
+) -> None:
+    for registered in _registered_catalog_profiles():
+        platform = _platform(registered, tmp_path / registered.description.implementation_id)
+        catalog = platform.catalog
+        base = _commit_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
+        captured: list[tuple[ArtifactRef, DocumentReleaseRef | None, tuple[StoreRef, ...]]] = []
+        original_commit = catalog.commit
+
+        def fail_after_publish(
+            staged: ArtifactRef,
+            *,
+            expected_base: DocumentReleaseRef | None,
+            stores,
+        ) -> DocumentReleaseRef:
+            store_tuple = tuple(stores)
+            captured.append((staged, expected_base, store_tuple))
+            original_write_current = catalog._write_current
+
+            def fail_current(_reference: DocumentReleaseRef) -> None:
+                raise OSError("simulated failure after immutable publication")
+
+            catalog._write_current = fail_current
+            try:
+                return original_commit(staged, expected_base=expected_base, stores=store_tuple)
+            finally:
+                catalog._write_current = original_write_current
+
+        catalog.commit = fail_after_publish  # type: ignore[method-assign]
+        try:
+            with pytest.raises(OSError, match="after immutable publication"):
+                _commit_run(platform, run_tag="successor", rows=SUCCESSOR_ROWS, base=base.reference)
+        finally:
+            catalog.commit = original_commit  # type: ignore[method-assign]
+
+        assert catalog.current() == base.reference
+        assert len(captured) == 1
+        staged, expected_base, stores = captured[0]
+        assert not (catalog.root / staged.locator).exists()
+        replayed = catalog.commit(staged, expected_base=expected_base, stores=stores)
+        assert catalog.current() == replayed
+        assert catalog.open(replayed).previous_release == base.reference

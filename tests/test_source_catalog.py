@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import (
-    LocalFileContentFetcher,
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from tests.legacy_source_catalog import (
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
     SourceReleaseCatalogView,
@@ -14,7 +14,7 @@ from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import sha256_digest
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.domain.references import SourceCatalogRef
-from docspec.ports.source_release import SourceReleasePin
+from tests.legacy_source_release import SourceReleasePin
 
 
 def _items() -> list[SourceItem]:
@@ -115,7 +115,7 @@ def test_sealed_source_release_admits_by_digest_and_streams_its_items(tmp_path: 
     assert list(release_catalog.open(reference).items) == items
     assert list(release_catalog.stream(reference)) == items
 
-    wrong_identity = SourceCatalogRef("different-catalog", reference.locator, reference.digest)
+    wrong_identity = SourceCatalogRef("urn:docspec:test:different-catalog", reference.locator, reference.digest)
     with pytest.raises(IntegrityError, match="differs from the admitted source release"):
         release_catalog.open(wrong_identity)
 

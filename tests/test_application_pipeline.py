@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.execution import LocalExecutionBackend
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.source_catalog import (
-    LocalFileContentFetcher,
+from tests.legacy_source_catalog import (
     LocalJsonlSourceCatalog,
     LocalSourceReleaseReader,
     SourceReleaseCatalogView,

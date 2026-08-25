@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.source_catalog import LocalFileContentFetcher
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import SourceItem
 from docspec.domain.jobs import StoreState, StoreVerdict
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy

@@ -67,7 +67,7 @@ def _planning_plan(
 def test_planner_spools_many_touched_partitions_with_deterministic_store_order(tmp_path: Path) -> None:
     bucket_count = 4096
     items = _source_items_in_distinct_partitions(512, bucket_count)
-    source_ref = SourceCatalogRef("catalog", "memory://catalog", EMPTY_DIGEST)
+    source_ref = SourceCatalogRef("urn:docspec:test:catalog", "memory://catalog", EMPTY_DIGEST)
     controls = MemoryControls()
     stores = MemoryStores()
     plan = _planning_plan(source_ref, bucket_count=bucket_count, max_entries=2)
@@ -108,7 +108,7 @@ def test_planner_preserves_full_then_remaining_store_emission_order(tmp_path: Pa
         )
         for index in range(40)
     )
-    source_ref = SourceCatalogRef("catalog", "memory://catalog", EMPTY_DIGEST)
+    source_ref = SourceCatalogRef("urn:docspec:test:catalog", "memory://catalog", EMPTY_DIGEST)
     controls = MemoryControls()
     stores = MemoryStores()
     plan = _planning_plan(source_ref, bucket_count=bucket_count, max_entries=1)

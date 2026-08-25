@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from docspec.adapters.source_catalog import LocalJsonlSourceCatalog
+from tests.legacy_source_catalog import LocalJsonlSourceCatalog
 from docspec.application.commit import ReleaseCommitService
 from docspec.cli import _execute_local_run, _local_run_request, _local_storage_for_run_request
 from docspec.domain.identity import (
