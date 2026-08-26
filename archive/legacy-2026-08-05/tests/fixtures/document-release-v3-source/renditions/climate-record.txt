@@ -1,1 +1,0 @@
-The monitoring record reports monthly temperature and precipitation observations with documented measurement methods.

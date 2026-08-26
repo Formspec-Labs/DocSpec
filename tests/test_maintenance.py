@@ -9,7 +9,6 @@ from threading import Event
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -28,7 +27,12 @@ from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
 from docspec.processing.processors import ContentStatisticsProcessor
 from tests.test_application_pipeline import _clock, _plan, _run, _write_source
-from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
+from tests.helpers import (
+    SharedFixtureContentFetcher,
+    document_release_producer,
+    source_catalog_reader,
+    write_shared_source_catalog,
+)
 
 
 @dataclass(frozen=True)
@@ -48,7 +52,7 @@ def _platform(tmp_path: Path, *, document_count: int, member_bytes: int) -> _Pla
     sources.mkdir()
     source_catalog_root = tmp_path / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -59,6 +63,7 @@ def _platform(tmp_path: Path, *, document_count: int, member_bytes: int) -> _Pla
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     items = tuple(
@@ -279,6 +284,7 @@ def _compaction_service(
         records=records,
         stores=platform.stores,
         controls=platform.controls,
+        producer=document_release_producer(),
         blobs=platform.blobs,
     )
     return (

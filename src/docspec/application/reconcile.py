@@ -27,7 +27,7 @@ from docspec.ports.document_catalog import DocumentCatalog
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_storage import RecordStorage
 from docspec.ports.reconciliation_workspace import ReconciliationWorkspace, ReconciliationWorkspaceFactory
-from docspec.ports.source_catalog import SourceCatalog
+from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 
 _STORE_LEDGER_SCHEMA = RecordSchema(
     "docspec-run-store-reference/1.0",
@@ -77,7 +77,7 @@ class RunReconciler:
         stores: DocumentStoreRepository,
         records: RecordStorage,
         document_catalog: DocumentCatalog,
-        source_catalog: SourceCatalog,
+        source_catalog: ImmutableSourceCatalogReader,
         workspace_factory: ReconciliationWorkspaceFactory,
         partition_policy: PartitionPolicy,
         clock: Callable[[], str],
@@ -113,7 +113,20 @@ class RunReconciler:
             raise IntegrityError("reconciler inputs differ from the sealed processing plan")
         if self._partition_policy.bucket_count != plan.partition_count:
             raise IntegrityError("record partition policy differs from the processing plan")
-        summary = self._source_catalog.verify(self._source_catalog_ref)
+        snapshot = self._source_catalog.open_snapshot(self._source_catalog_ref)
+        for _ in snapshot.items:
+            pass
+        summary = snapshot.summary
+        dispositions = summary.disposition_counts
+        state_counts = {
+            "active": dispositions["selected"],
+            "deleted": dispositions["deleted"],
+            "excluded": (
+                dispositions["excluded"]
+                + dispositions["unavailable"]
+                + dispositions["failed"]
+            ),
+        }
         planned_store_ledger = self._stores.planned_store_ledger(plan.plan_id)
         handoff = self._verified_execution_handoff(plan, planned_store_ledger)
         active = self._base_layers()
@@ -242,9 +255,15 @@ class RunReconciler:
         }
         coverage = {
             "catalogItems": summary.item_count,
-            "catalogStateCounts": dict(summary.state_counts),
+            "catalogStateCounts": state_counts,
             "selectedItems": counts["selectedItems"],
-            "sourceCatalog": dict(summary.coverage),
+            "sourceCatalog": {
+                "catalogStateDigest": summary.catalog_state_digest,
+                "complete": True,
+                "requestedUniverseSetDigest": summary.requested_universe_set_digest,
+                "selectedSourceSetDigest": summary.selected_source_set_digest,
+                "unaccountedInputCount": 0,
+            },
         }
         receipt = RunReceipt.create(
             plan=self._plan_ref,

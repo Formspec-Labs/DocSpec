@@ -11,12 +11,10 @@ import zipfile
 from pathlib import Path
 
 from docspec import __version__
-from tools.generate_archive_manifest import manifest_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
-ARCHIVE_ROOT = ROOT / "archive" / "legacy-2026-08-05"
 REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 
 # A path naming the sibling checkout: the name flanked by separators, or ending
@@ -27,6 +25,16 @@ REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 SIBLING_CHECKOUT_PATH = re.compile(r"(?:^|/)spicy[-_]regs(?:/|\Z)")
 SIBLING_MODULE_PATH = re.compile(r"\bspicy_regs\.")
 SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
+OPTIONAL_SOURCE_ADAPTER = "src/docspec/adapters/spicyregs_source_native.py"
+OPTIONAL_SOURCE_MODULES = frozenset(
+    {
+        "spicy_" + "regs.source_native",
+        "spicy_" + "regs.source_native_profiles",
+    }
+)
+OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
+    {"src/docspec/cli.py", "src/docspec/source_catalog_cli.py"}
+)
 # An absolute path whose first segment is a home-directory root belongs to one
 # developer's machine, so it can only reach code this repository does not own.
 HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
@@ -128,7 +136,10 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
                     violations.append(f"{relative}:{node.lineno} names a home directory: {value!r}")
                 if "/" in value and SIBLING_CHECKOUT_PATH.search(value):
                     violations.append(f"{relative}:{node.lineno} names a SpicyRegs path: {value!r}")
-                if SIBLING_MODULE_PATH.search(value):
+                if SIBLING_MODULE_PATH.search(value) and not (
+                    relative == OPTIONAL_SOURCE_ADAPTER
+                    and value in OPTIONAL_SOURCE_MODULES
+                ):
                     violations.append(f"{relative}:{node.lineno} names a spicy_regs module: {value!r}")
             elif isinstance(node, ast.Call):
                 for keyword in node.keywords:
@@ -155,12 +166,13 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
-        "rulespec-conformance==0.2.0rc15",
+        "rulespec-artifacts==1.0.0",
     ]
-    assert project["tool"]["uv"]["sources"]["rulespec-conformance"] == {
-        "path": "vendor/rulespec_conformance-0.2.0rc15-py3-none-any.whl"
+    assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
+        "path": "vendor/rulespec_artifacts-1.0.0-py3-none-any.whl"
     }
-    assert project["project"]["scripts"] == {"docspec": "docspec.cli:main"}
+    assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
+    assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
     assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3"}
 
     extras = project["project"]["optional-dependencies"]
@@ -169,7 +181,7 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
-    assert "archive" in project["tool"]["ruff"]["exclude"]
+    assert "archive" not in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 
 
@@ -210,8 +222,6 @@ def test_superseded_source_formats_are_absent_from_repository_code() -> None:
     assert "LocalJsonlSourceCatalog" not in cli_source
     assert "wire_source_release" not in cli_source
 
-    private_format = "docspec-source-" + "catalog"
-    forbidden_literals = (f'"{private_format}"', f"'{private_format}'")
     forbidden_tokens = (
         "tests.legacy_source_" + "catalog",
         "tests.legacy_source_" + "release",
@@ -229,7 +239,7 @@ def test_superseded_source_formats_are_absent_from_repository_code() -> None:
                 source = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 continue
-            for token in (*forbidden_literals, *forbidden_tokens):
+            for token in forbidden_tokens:
                 if token in source:
                     violations.append(f"{path.relative_to(ROOT).as_posix()} contains {token!r}")
     assert violations == []
@@ -243,11 +253,17 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
+        is_command_surface = relative_parts[0] in {"cli.py", "entrypoint.py", "source_catalog_cli.py"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
-            if not is_adapter and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
+            if not is_adapter and not is_command_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
-            if not is_adapter and root_name != "docspec" and root_name not in sys.stdlib_module_names:
+            if (
+                not is_adapter
+                and not is_command_surface
+                and root_name != "docspec"
+                and root_name not in sys.stdlib_module_names
+            ):
                 violations.append(f"{path.relative_to(ROOT)} imports non-stdlib core dependency {imported}")
             if imported.startswith("docspec."):
                 area = imported.split(".", 2)[1]
@@ -257,39 +273,31 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     assert violations == []
 
 
-def test_archived_product_areas_are_absent_from_production() -> None:
-    assert ARCHIVE_ROOT.is_dir()
-    archive_manifest_path = ARCHIVE_ROOT / "archive.json"
-    assert archive_manifest_path.is_file()
-
+def test_non_docspec_product_areas_are_absent_from_production() -> None:
     top_level_names = {path.stem if path.is_file() else path.name for path in PRODUCTION_ROOT.iterdir()}
     assert top_level_names.isdisjoint(ARCHIVED_PRODUCT_AREAS)
 
     violations: list[str] = []
     for path in _production_files():
+        relative = path.relative_to(ROOT).as_posix()
         if path.relative_to(PRODUCTION_ROOT).parts[0] == "adapters":
             continue
         source = path.read_text(encoding="utf-8").casefold()
         for word in ADAPTER_ONLY_SIBLING_PACKAGES:
+            if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicyregs":
+                continue
             if re.search(rf"\b{re.escape(word.casefold())}\b", source):
                 violations.append(f"{path.relative_to(ROOT)} names {word}")
     assert violations == []
 
 
-def test_archive_manifest_is_generated_from_the_archive_and_up_to_date() -> None:
-    # archive.json used to enumerate all 587 archived files individually (byteSize,
-    # sha256, category, reason, originalPath -- ~268 KB) with no generator: touching
-    # anything under the frozen archive/ tree meant hand-editing 588 entries by hand,
-    # for content nothing outside this one test ever read.
-    #
-    # tools/generate_archive_manifest.py replaces the enumeration with a single
-    # content-addressed tree digest over every archived file's path and bytes, so
-    # this test only has to confirm the checked-in manifest is exactly what the
-    # generator currently produces from the files actually on disk -- any archived
-    # file added, removed, or changed fails here instead of the manifest quietly
-    # going stale.
-    manifest_path = ARCHIVE_ROOT / "archive.json"
-    assert manifest_path.read_bytes() == manifest_bytes()
+def test_git_is_the_only_predecessor_code_record() -> None:
+    assert not (ROOT / "archive/legacy-2026-08-05").exists()
+    assert not (ROOT / "conformance/predecessor-code-fingerprints-v1.json").exists()
+    assert not (ROOT / "ownership/modules.json").exists()
+    assert not (ROOT / "tools/generate_archive_manifest.py").exists()
+    assert not (ROOT / "tools/generate_ownership_manifest.py").exists()
+    assert not (ROOT / "tools/predecessor_code_fingerprints.py").exists()
 
 
 def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
@@ -303,7 +311,7 @@ def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
     assert import_result.returncode == 0, import_result.stderr
 
     help_result = subprocess.run(
-        [sys.executable, "-I", "-m", "docspec.cli", "--help"],
+        [sys.executable, "-I", "-m", "docspec.entrypoint", "--help"],
         cwd=ROOT,
         capture_output=True,
         check=False,
@@ -313,7 +321,29 @@ def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
     assert "DocSpec" in help_result.stdout or "docspec" in help_result.stdout
 
 
-def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path: Path) -> None:
+def test_dagster_adapter_has_one_lazy_runtime_resource_and_no_deployment_schema() -> None:
+    import docspec.adapters as adapters
+
+    assert adapters.DagsterRuntime.__name__ == "DagsterRuntime"
+    for removed_name in ("DagsterAdapterProfile", "DagsterDeploymentConfig"):
+        assert not hasattr(adapters, removed_name)
+    assert not any((ROOT / "profiles/schedulers").glob("*.json"))
+    isolated = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys; from docspec.adapters import DagsterRuntime; assert 'dagster' not in sys.modules",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert isolated.returncode == 0, isolated.stderr
+
+
+def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "the package release test requires uv"
 
@@ -346,7 +376,7 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
         entry_points_name = next(name for name in members if name.endswith(".dist-info/entry_points.txt"))
         parser = configparser.ConfigParser()
         parser.read_string(archive.read(entry_points_name).decode("utf-8"))
-        assert dict(parser["console_scripts"]) == {"docspec": "docspec.cli:main"}
+        assert dict(parser["console_scripts"]) == {"docspec": "docspec.entrypoint:main"}
 
     environment = tmp_path / "wheel-environment"
     create_environment = subprocess.run(
@@ -358,9 +388,9 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
     )
     assert create_environment.returncode == 0, create_environment.stderr
     environment_python = environment / "bin" / "python"
-    # Until package publication is separately authorized, these two exact
-    # wheels are the consumer installation bundle. No sibling checkout or
-    # editable path participates in this test.
+    # Until package publication is separately authorized, these exact wheels
+    # are the metadata consumer installation bundle. No sibling checkout,
+    # legacy document extra, or editable path participates in this test.
     install = subprocess.run(
         [
             uv,
@@ -368,7 +398,7 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_conformance-0.2.0rc15-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_artifacts-1.0.0-py3-none-any.whl"),
             str(wheel),
         ],
         cwd=ROOT,
@@ -378,7 +408,26 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
     )
     assert install.returncode == 0, install.stderr
     import_result = subprocess.run(
-        [environment_python, "-I", "-c", "import docspec"],
+        [
+            environment_python,
+            "-I",
+            "-c",
+            (
+                "import docspec; "
+                "import docspec.entrypoint; "
+                "from docspec.adapters import DagsterRuntime; "
+                "assert DagsterRuntime.__name__ == 'DagsterRuntime'; "
+                "from docspec.source_catalog import requested_universe_set_digest; "
+                "assert requested_universe_set_digest(0, ()).startswith('sha256:'); "
+                "import importlib.util, sys; "
+                    "import docspec.cli; "
+                    "import docspec.adapters.platform_artifact; "
+                "assert importlib.util.find_spec('rulespec_conformance') is None; "
+                "assert importlib.util.find_spec('refspec') is None; "
+                "assert importlib.util.find_spec('rdflib') is None; "
+                "assert importlib.util.find_spec('dagster') is None"
+            ),
+        ],
         cwd=tmp_path,
         capture_output=True,
         check=False,
@@ -394,3 +443,12 @@ def test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle(tmp_path
     )
     assert help_result.returncode == 0, help_result.stderr
     assert "DocSpec" in help_result.stdout or "docspec" in help_result.stdout
+    source_catalog_help = subprocess.run(
+        [environment / "bin" / "docspec", "source-catalog", "--help"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert source_catalog_help.returncode == 0, source_catalog_help.stderr
+    assert "source-catalog" in source_catalog_help.stdout

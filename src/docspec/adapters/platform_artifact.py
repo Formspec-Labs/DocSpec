@@ -4,30 +4,26 @@ from __future__ import annotations
 
 import hashlib
 import io
-import json
 import os
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, ClassVar
 
-import jsonschema
-from rulespec_conformance.platform_artifact import (
+from rulespec_artifacts import (
     FORMAT,
     FORMAT_VERSION,
     ROOT_OBJECT_KEY,
     ArtifactInput,
     ArtifactPin,
     ArtifactVerificationError,
-    CanonicalSetDigester,
-    DerivationSpec,
     LocalMemberSource,
     MemberDescriptor,
     MemberNotFoundError,
     MemberSource,
     MemberSourceError,
-    SOURCE_CATALOG_ITEM_SCHEMA_ID,
+    Producer,
     SemanticVerifier,
     VerifiedArtifact,
     admit_artifact,
@@ -36,29 +32,26 @@ from rulespec_conformance.platform_artifact import (
     describe_member,
     expected_logical_id,
     iter_member_descriptors,
-    parse_canonical_json as parse_artifact_json,
-    source_catalog_item_schema_bytes,
     write_member_manifest,
 )
 
 from docspec.application.commit import DocumentReleaseVerifier
-from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import (
     canonical_json_bytes,
     identity_digest,
     parse_canonical_json,
-    require_relative_path,
+    require_sha256,
+    require_text,
     stable_urn,
     thaw_json,
 )
 from docspec.domain.plans import ProcessingPlan
-from docspec.domain.references import BlobRef, LayerRef, SourceCatalogRef
+from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.release import DocumentRelease
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.control_repository import ControlRepository
 from docspec.ports.record_storage import RecordStorage
-from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
 
 RELEASE_STATE_KEY = "release.json"
 ARTIFACT_ROOT_KEY = ROOT_OBJECT_KEY
@@ -68,11 +61,6 @@ RELEASE_STATE_MEDIA_TYPE = "application/vnd.docspec.document-release+json"
 RECORDS_MEDIA_TYPE = "application/x-ndjson"
 _RELEASE_BYTE_LIMIT = 1024 * 1024
 _RECORD_BYTE_LIMIT = 8 * 1024 * 1024
-_SOURCE_ITEM_KEY = "records/source-items.jsonl"
-_SOURCE_SCHEMA_KEY = "schemas/source-catalog-item-v1.schema.json"
-_SOURCE_ITEM_LIMIT = 4 * 1024 * 1024
-_SOURCE_SCHEMA_LIMIT = 512 * 1024
-_SOURCE_ITEM_VALIDATOR = jsonschema.Draft202012Validator(json.loads(source_catalog_item_schema_bytes()))
 
 
 def admit_local_artifact(
@@ -162,185 +150,6 @@ class BlobMemberSource:
             stream.close()
 
 
-def source_item_from_shared_record(value: Mapping[str, object], index: int) -> tuple[SourceItem, str]:
-    """Translate the shared source record without changing its product meaning."""
-
-    try:
-        selection = value["selection"]
-        if not isinstance(selection, Mapping):
-            raise TypeError("selection is not an object")
-        disposition = selection["disposition"]
-        state = {
-            "selected": SourceItemState.ACTIVE,
-            "deleted": SourceItemState.DELETED,
-            "excluded": SourceItemState.EXCLUDED,
-            "unavailable": SourceItemState.EXCLUDED,
-            "failed": SourceItemState.EXCLUDED,
-        }[disposition]
-        raw_candidates = value["candidateRenditions"]
-        if not isinstance(raw_candidates, list):
-            raise TypeError("candidateRenditions is not an array")
-        candidates = tuple(
-            CandidateFile(
-                candidate_id=candidate["renditionId"],
-                locator=candidate["locator"],
-                media_type=candidate["mediaType"],
-                expected_digest=candidate["expectedSha256"],
-                expected_size=candidate["expectedByteSize"],
-            )
-            for candidate in raw_candidates
-        )
-        return (
-            SourceItem(
-                item_id=value["sourceItemId"],
-                version=value["sourceIssuedVersion"],
-                candidates=candidates,
-                state=state,
-                metadata={
-                    "documentId": value["documentId"],
-                    "normalizedMetadata": value["normalizedMetadata"],
-                    "selection": dict(selection),
-                    "sourceNativeMetadata": value["sourceNativeMetadata"],
-                    "sourceObservations": value["sourceObservations"],
-                    "sourceObservedTopics": value["sourceObservedTopics"],
-                },
-            ),
-            disposition,
-        )
-    except (KeyError, TypeError, ValueError) as error:
-        raise IntegrityError(f"shared source item {index} cannot become a DocSpec SourceItem: {error}") from error
-
-
-class PlatformSourceCatalog:
-    """Read a shared source-catalog through an injected member-source resolver."""
-
-    def __init__(self, source_for: Callable[[SourceCatalogRef], MemberSource]) -> None:
-        self._source_for = source_for
-
-    def _admit(self, reference: SourceCatalogRef):
-        try:
-            source = self._source_for(reference)
-            artifact = admit_artifact(
-                source,
-                expected_pin=ArtifactPin(reference.catalog_id, reference.digest),
-            )
-        except ArtifactVerificationError as error:
-            raise IntegrityError(f"source catalog artifact is invalid: {error}") from error
-        if artifact.root["kind"] != "source-catalog":
-            raise IntegrityError("source catalog reference names a different artifact kind")
-        members = {member.object_key: member for member in iter_member_descriptors(artifact, source)}
-        if set(members) != {_SOURCE_ITEM_KEY, _SOURCE_SCHEMA_KEY}:
-            raise IntegrityError("source catalog members differ from the shared source view")
-        items = members[_SOURCE_ITEM_KEY]
-        schema = members[_SOURCE_SCHEMA_KEY]
-        if (
-            items.role != "source-items"
-            or items.media_type != RECORDS_MEDIA_TYPE
-            or items.schema_id != SOURCE_CATALOG_ITEM_SCHEMA_ID
-            or items.record_count is None
-            or schema.role != "schema"
-            or schema.media_type != "application/schema+json"
-            or schema.schema_id != SOURCE_CATALOG_ITEM_SCHEMA_ID
-            or schema.record_count is not None
-        ):
-            raise IntegrityError("source catalog member descriptions differ from the shared source view")
-        with source.open(_SOURCE_SCHEMA_KEY) as stream:
-            schema_bytes = stream.read(_SOURCE_SCHEMA_LIMIT + 1)
-        if schema_bytes != source_catalog_item_schema_bytes():
-            raise IntegrityError("source catalog carries a different source-item schema")
-        return artifact, source, items
-
-    @staticmethod
-    def _items(
-        source: MemberSource,
-        expected_count: int,
-        source_spec: Mapping[str, object],
-    ) -> Iterator[SourceItem]:
-        requested = CanonicalSetDigester()
-        selected = CanonicalSetDigester()
-        count = 0
-        with source.open(_SOURCE_ITEM_KEY) as stream:
-            while raw := stream.readline(_SOURCE_ITEM_LIMIT + 2):
-                if len(raw) > _SOURCE_ITEM_LIMIT + 1:
-                    raise LimitExceededError("shared source item exceeds its row limit")
-                if not raw.endswith(b"\n"):
-                    raise IntegrityError("shared source-items member ends with an incomplete record")
-                try:
-                    value = parse_artifact_json(raw[:-1], path=_SOURCE_ITEM_KEY, code="invalid.schema")
-                except ArtifactVerificationError as error:
-                    raise IntegrityError(f"shared source item {count} is invalid: {error}") from error
-                if not isinstance(value, Mapping):
-                    raise IntegrityError("shared source item must be an object")
-                try:
-                    _SOURCE_ITEM_VALIDATOR.validate(value)
-                except jsonschema.ValidationError as error:
-                    raise IntegrityError(
-                        f"shared source item {count} does not match its schema: {error.message}"
-                    ) from error
-                item, disposition = source_item_from_shared_record(value, count)
-                try:
-                    requested.add(item.item_id)
-                    if disposition == "selected":
-                        selected.add(item.item_id)
-                except ValueError as error:
-                    raise IntegrityError("shared source item identities are not strictly increasing") from error
-                count += 1
-                yield item
-        if count != expected_count:
-            raise IntegrityError("shared source item count differs from its manifest")
-        if requested.finish() != source_spec["requestedUniverseSetDigest"]:
-            raise IntegrityError("shared source requested-universe set digest differs")
-        if selected.finish() != source_spec["selectedSourceSetDigest"]:
-            raise IntegrityError("shared source selected set digest differs")
-
-    def _summary(self, reference: SourceCatalogRef, artifact, source, expected_count: int) -> SourceCatalogSummary:
-        counts = dict.fromkeys((state.value for state in SourceItemState), 0)
-        for item in self._items(source, expected_count, artifact.root["spec"]):
-            counts[item.state.value] += 1
-        return SourceCatalogSummary(
-            reference.catalog_id,
-            "snapshot",
-            expected_count,
-            (),
-            counts,
-            dict(artifact.root["coverage"]),
-        )
-
-    def open(self, reference: SourceCatalogRef) -> SourceCatalogRead:
-        artifact, source, member = self._admit(reference)
-        summary = self._summary(reference, artifact, source, member.record_count)
-        return SourceCatalogRead(summary, self._items(source, member.record_count, artifact.root["spec"]))
-
-    def verify(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
-        artifact, source, member = self._admit(reference)
-        return self._summary(reference, artifact, source, member.record_count)
-
-    def describe(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
-        return self.verify(reference)
-
-    def stream(self, reference: SourceCatalogRef) -> Iterator[SourceItem]:
-        yield from self.open(reference).items
-
-
-class LocalPlatformSourceCatalog(PlatformSourceCatalog):
-    """Resolve shared source artifacts below one injected local root."""
-
-    def __init__(self, root: Path) -> None:
-        self.root = Path(root).resolve(strict=True)
-        super().__init__(self._source)
-
-    def _source(self, reference: SourceCatalogRef) -> MemberSource:
-        relative = require_relative_path(reference.locator, "source artifact locator")
-        root_path = self.root.joinpath(*Path(relative).parts)
-        if root_path.name != ROOT_OBJECT_KEY:
-            raise IntegrityError("source artifact locator must name artifact.json")
-        try:
-            root_path.parent.resolve(strict=True).relative_to(self.root)
-        except (FileNotFoundError, ValueError) as error:
-            raise IntegrityError("source artifact locator is unavailable or outside its root") from error
-        return LocalMemberSource(root_path.parent)
-
-
 @dataclass(frozen=True, slots=True)
 class DerivationMember:
     """DocSpec meaning for one already-written output member."""
@@ -349,6 +158,61 @@ class DerivationMember:
     role: str
     media_type: str
     record_count: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DerivationSpec:
+    """Current DocSpec release identity fields carried by the shared container."""
+
+    kind: ClassVar[str] = "derivation"
+
+    processor_id: str
+    processor_version: str
+    processor_digest: str
+    policy_id: str
+    policy_version: str
+    policy_digest: str
+    parameters_digest: str
+    partitioning_id: str
+    partitioning_digest: str
+    expected_output_roles: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("processor_id", self.processor_id),
+            ("processor_version", self.processor_version),
+            ("policy_id", self.policy_id),
+            ("policy_version", self.policy_version),
+            ("partitioning_id", self.partitioning_id),
+        ):
+            require_text(value, name)
+        for name, value in (
+            ("processor_digest", self.processor_digest),
+            ("policy_digest", self.policy_digest),
+            ("parameters_digest", self.parameters_digest),
+            ("partitioning_digest", self.partitioning_digest),
+        ):
+            require_sha256(value, name)
+        if not self.expected_output_roles or len(self.expected_output_roles) != len(
+            set(self.expected_output_roles)
+        ):
+            raise ValueError("derivation expected output roles must be nonempty and distinct")
+        for role in self.expected_output_roles:
+            require_text(role, "derivation expected output role")
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "expectedOutputRoles": sorted(self.expected_output_roles),
+            "parametersDigest": self.parameters_digest,
+            "partitioningDigest": self.partitioning_digest,
+            "partitioningId": self.partitioning_id,
+            "policyDigest": self.policy_digest,
+            "policyId": self.policy_id,
+            "policyVersion": self.policy_version,
+            "processorDigest": self.processor_digest,
+            "processorId": self.processor_id,
+            "processorVersion": self.processor_version,
+        }
 
 
 def record_member_key(layer: LayerRef) -> str:
@@ -456,7 +320,8 @@ def _exclusive_writer(directory_fd: int, name: str) -> Iterator[BinaryIO]:
 class LocalDerivationBuilder:
     """Add the shared root and manifest to producer-written local outputs."""
 
-    def __init__(self, semantic_verifier: SemanticVerifier) -> None:
+    def __init__(self, producer: Producer, semantic_verifier: SemanticVerifier) -> None:
+        self._producer = producer
         self._semantic_verifier = semantic_verifier
 
     def seal(
@@ -470,6 +335,9 @@ class LocalDerivationBuilder:
         working = Path(working)
         if working.is_symlink() or not working.is_dir():
             raise IntegrityError("derivation working root must be a real directory")
+        output_roles = {member.role for member in members}
+        if output_roles != set(spec.expected_output_roles):
+            raise IntegrityError("derivation output roles differ from the declared output roles")
         manifest_key = "manifest.json"
         flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
         directory_fd = os.open(working, flags)
@@ -499,10 +367,11 @@ class LocalDerivationBuilder:
                     members=descriptors,
                 )
             root = build_artifact_root(
-                spec=spec,
+                kind=spec.kind,
+                spec=spec.as_dict(),
+                producer=self._producer,
                 inputs=inputs,
                 manifests=(manifest,),
-                accounted_input_count=len(inputs),
             )
             with _exclusive_writer(directory_fd, ROOT_OBJECT_KEY) as stream:
                 root_created = True
@@ -536,10 +405,12 @@ class DocumentReleaseArtifactVerifier:
         verifier: DocumentReleaseVerifier,
         controls: ControlRepository,
         records: RecordStorage,
+        producer: Producer,
     ) -> None:
         self._verifier = verifier
         self._controls = controls
         self._records = records
+        self._producer = producer
 
     @staticmethod
     def _descriptors(artifact: VerifiedArtifact, source: MemberSource) -> dict[str, MemberDescriptor]:
@@ -565,6 +436,10 @@ class DocumentReleaseArtifactVerifier:
         return release
 
     def read(self, artifact: VerifiedArtifact, source: MemberSource) -> DocumentRelease:
+        if artifact.root["kind"] != DerivationSpec.kind:
+            raise IntegrityError("document release reference names a different artifact kind")
+        if artifact.root["producer"] != self._producer.as_dict():
+            raise IntegrityError("document release producer differs from the installed implementation")
         descriptors = self._descriptors(artifact, source)
         release_member = descriptors.get(RELEASE_STATE_KEY)
         if release_member is None:
@@ -618,14 +493,12 @@ __all__ = [
     "BlobMemberSource",
     "DerivationMember",
     "DocumentReleaseArtifactVerifier",
+    "DerivationSpec",
     "LocalDerivationBuilder",
-    "LocalPlatformSourceCatalog",
-    "PlatformSourceCatalog",
     "admit_local_artifact",
     "derivation_inputs",
     "derivation_logical_id",
     "derivation_spec",
     "record_member_key",
-    "source_item_from_shared_record",
     "write_release_members",
 ]

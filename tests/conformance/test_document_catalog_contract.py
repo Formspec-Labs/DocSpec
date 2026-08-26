@@ -33,6 +33,7 @@ _record_contract = importlib.import_module("tests.conformance.test_record_storag
 _helpers = importlib.import_module("tests.helpers")
 local_profile_set = _helpers.local_profile_set
 persist_execution_evidence = _helpers.persist_execution_evidence
+document_release_producer = _helpers.document_release_producer
 
 LAYER_KIND = "conformance-release-records"
 SCHEMA = RecordSchema(
@@ -82,6 +83,7 @@ def _local_manifest_catalog(registered: RegisteredProfile, platform_root: Path, 
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         max_release_bytes=registered.description.limits["maxManifestBytes"],
     )
 
@@ -138,10 +140,11 @@ def _commit_run(
         )
     )
     stages = StagePolicy(("text-v1",), "paragraph-v1")
+    source_digest = sha256_digest(run_tag.encode())
     source = SourceCatalogRef(
-        f"urn:docspec:test:catalog-{run_tag}",
+        f"urn:docspec:test:catalog:{source_digest.removeprefix('sha256:')}",
         f"external/catalog-{run_tag}.json",
-        sha256_digest(run_tag.encode()),
+        source_digest,
     )
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()

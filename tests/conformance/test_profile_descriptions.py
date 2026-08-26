@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.dagster import DagsterAdapterProfile
 from docspec.cli import main
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_file_bytes, identity_digest, sha256_digest
@@ -32,8 +31,6 @@ _portable_local_profiles = _cli_helpers._portable_local_profiles
 _write_local_run_request = _cli_helpers._write_local_run_request
 
 PROFILE_ROOT = ROOT / "profiles"
-SCHEDULER_ROOT = PROFILE_ROOT / "schedulers"
-
 # Identity-bearing description fields: changing any one must change the
 # description digest a plan pins, or a deployment could swap executable
 # behavior under an existing pin.
@@ -58,7 +55,7 @@ def _storage_profile_paths() -> list[Path]:
 
 
 def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable(tmp_path: Path) -> None:
-    governed = set(_storage_profile_paths()) | set(SCHEDULER_ROOT.glob("*.json"))
+    governed = set(_storage_profile_paths())
     assert set(PROFILE_ROOT.rglob("*.json")) == governed, (
         "a profile description exists that no registered loader governs"
     )
@@ -100,15 +97,6 @@ def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable
         assert flipped.description.pin(description_digest=flipped.description_digest) == description.pin(
             description_digest=registered.description_digest
         )
-
-    scheduler_paths = sorted(SCHEDULER_ROOT.glob("*.json"))
-    assert scheduler_paths
-    for path in scheduler_paths:
-        profile = DagsterAdapterProfile.from_bytes(path.read_bytes())
-        assert profile.profile_id == f"urn:docspec:scheduler-adapter-profile:v1:{identity_digest(profile.identity_content()).removeprefix('sha256:')}"
-        assert profile.capabilities == tuple(sorted(profile.capabilities))
-        assert profile.capabilities
-
 
 def test_unpinned_descriptions_are_rejected_at_load(tmp_path: Path) -> None:
     for path in _storage_profile_paths():

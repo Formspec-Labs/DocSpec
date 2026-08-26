@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,8 @@ from docspec.domain.identity import canonical_json_file_bytes
 def _definitions(
     root: Path,
     tests: list[dict[str, object]],
+    *,
+    commit: bool = True,
 ) -> tuple[Path, Path]:
     test_ids = [item["testId"] for item in tests]
     specification = {
@@ -45,6 +48,16 @@ def _definitions(
     matrix_path = conformance / "test-matrix.json"
     specification_path.write_text(json.dumps(specification, indent=2) + "\n", encoding="utf-8")
     matrix_path.write_text(json.dumps(matrix, indent=2) + "\n", encoding="utf-8")
+    if commit:
+        subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "docspec-tests@example.invalid"],
+            cwd=root,
+            check=True,
+        )
+        subprocess.run(["git", "config", "user.name", "DocSpec Tests"], cwd=root, check=True)
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "--quiet", "-m", "fixture"], cwd=root, check=True)
     return specification_path, matrix_path
 
 
@@ -187,3 +200,44 @@ def test_report_reader_rejects_unknown_fields_even_when_json_is_valid(tmp_path: 
     output.write_bytes(canonical_json_file_bytes(tampered))
     with pytest.raises(ConformanceError, match="invalid closed shape"):
         load_report(output)
+
+
+def test_conformance_runner_refuses_a_non_git_source(tmp_path: Path) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_probe.py").write_text("def test_pass():\n    assert True\n", encoding="utf-8")
+    specification, matrix = _definitions(
+        tmp_path,
+        [_test_definition("CORE", "tests/test_probe.py::test_pass")],
+        commit=False,
+    )
+
+    with pytest.raises(ConformanceError, match="Git checkout"):
+        run_conformance(
+            source_root=tmp_path,
+            specification_path=specification,
+            matrix_path=matrix,
+            output_path=tmp_path / "report.json",
+            timeout_seconds=30,
+        )
+
+
+def test_conformance_runner_refuses_a_dirty_git_source(tmp_path: Path) -> None:
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    probe = tests / "test_probe.py"
+    probe.write_text("def test_pass():\n    assert True\n", encoding="utf-8")
+    specification, matrix = _definitions(
+        tmp_path,
+        [_test_definition("CORE", "tests/test_probe.py::test_pass")],
+    )
+    probe.write_text("def test_pass():\n    assert False\n", encoding="utf-8")
+
+    with pytest.raises(ConformanceError, match="must be clean"):
+        run_conformance(
+            source_root=tmp_path,
+            specification_path=specification,
+            matrix_path=matrix,
+            output_path=tmp_path / "report.json",
+            timeout_seconds=30,
+        )

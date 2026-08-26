@@ -17,7 +17,7 @@ from docspec.ports.control_repository import ControlRepository
 from docspec.ports.document_catalog import DocumentCatalog, DocumentCatalogReader
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFactory
-from docspec.ports.source_catalog import SourceCatalog
+from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 
 _SELECTION_FIELDS = frozenset(
     {
@@ -281,7 +281,7 @@ class RunPlanner:
     def __init__(
         self,
         *,
-        source_catalog: SourceCatalog,
+        source_catalog: ImmutableSourceCatalogReader,
         document_catalog: DocumentCatalog,
         stores: DocumentStoreRepository,
         controls: ControlRepository,
@@ -306,22 +306,18 @@ class RunPlanner:
         if plan.source_catalog != source_catalog_ref or plan.base_release != base_document_release_ref:
             raise IntegrityError("plan inputs differ from the requested source catalog or base release")
         selection = _CompiledSelection.compile(plan.selection, partition_count=plan.partition_count)
-        source_read = self._source_catalog.open(source_catalog_ref)
-        source_summary = source_read.summary
+        source_snapshot = self._source_catalog.open_snapshot(source_catalog_ref)
+        source_summary = source_snapshot.summary
         selection.validate_source_partitions(source_summary.partitions)
         base_reader = self._open_base_reader(base_document_release_ref)
         base = None if base_reader is None else base_reader.release
-        if source_summary.kind == "change-set":
-            if base is None or source_summary.base_catalog != base.source_catalog:
-                raise IntegrityError("source change-set ancestry differs from the base DocumentRelease")
         plan_impact = self._plan_impact(base, plan)
         with self._workspace_factory.create() as workspace:
             ledger = self._stores.seal_planned_stores(
                 plan.plan_id,
                 self._plan_store_references(
                     plan,
-                    source_read.items,
-                    source_summary.kind,
+                    (item.to_processing_item() for item in source_snapshot.items),
                     base_reader,
                     plan_impact,
                     selection,
@@ -334,7 +330,6 @@ class RunPlanner:
         self,
         plan: ProcessingPlan,
         source_items: Iterator[SourceItem],
-        source_catalog_kind: str,
         base_reader: DocumentCatalogReader | None,
         plan_impact: _PlanImpact,
         selection: _CompiledSelection,
@@ -346,7 +341,6 @@ class RunPlanner:
         ordinal = 0
         for item, change in self._planned_changes(
             source_items,
-            source_catalog_kind,
             base_reader,
             plan_impact.change_kind,
         ):
@@ -518,7 +512,6 @@ class RunPlanner:
     def _planned_changes(
         self,
         current_items: Iterator[SourceItem],
-        source_catalog_kind: str,
         base_reader: DocumentCatalogReader | None,
         unchanged_change: ChangeKind | None,
     ) -> Iterator[tuple[SourceItem, ChangeKind]]:
@@ -527,24 +520,11 @@ class RunPlanner:
                 yield item, self._classify(item, None, unchanged_change)
             return
 
-        if source_catalog_kind == "snapshot":
-            yield from self._merge_snapshot(
-                current_items,
-                self._previous_source_items(base_reader),
-                unchanged_change,
-            )
-            return
-        if source_catalog_kind == "change-set":
-            if unchanged_change is None:
-                yield from self._lookup_change_set(current_items, base_reader)
-            else:
-                yield from self._merge_change_set(
-                    current_items,
-                    self._previous_source_items(base_reader),
-                    unchanged_change,
-                )
-            return
-        raise IntegrityError(f"source catalog has unsupported kind {source_catalog_kind!r}")
+        yield from self._merge_snapshot(
+            current_items,
+            self._previous_source_items(base_reader),
+            unchanged_change,
+        )
 
     @staticmethod
     def _prior_source_item(record: dict[str, Any]) -> _PriorSourceItem:
@@ -569,18 +549,6 @@ class RunPlanner:
 
         for record in base_reader.scan(layer_kind="source-items"):
             yield self._prior_source_item(record)
-
-    def _lookup_change_set(
-        self,
-        current_items: Iterator[SourceItem],
-        base_reader: DocumentCatalogReader,
-    ) -> Iterator[tuple[SourceItem, ChangeKind]]:
-        """Classify only declared changes through partition-directed base lookups."""
-
-        for current in current_items:
-            record = base_reader.lookup(layer_kind="source-items", record_id=current.item_id)
-            previous = None if record is None else self._prior_source_item(record)
-            yield current, self._classify(current, previous, None)
 
     def _merge_snapshot(
         self,
@@ -613,29 +581,6 @@ class RunPlanner:
             yield current, self._classify(current, previous, unchanged_change)
             current = next(current_items, None)
             previous = next(previous_items, None)
-
-    def _merge_change_set(
-        self,
-        current_items: Iterator[SourceItem],
-        previous_items: Iterator[_PriorSourceItem],
-        unchanged_change: ChangeKind | None,
-    ) -> Iterator[tuple[SourceItem, ChangeKind]]:
-        """Join a complete ordered change sequence to prior state in one pass."""
-
-        previous = next(previous_items, None)
-        for current in current_items:
-            while previous is not None and previous.item.item_id < current.item_id:
-                if unchanged_change is not None:
-                    yield previous.item, self._classify(previous.item, previous, unchanged_change)
-                previous = next(previous_items, None)
-            matched = previous if previous is not None and previous.item.item_id == current.item_id else None
-            yield current, self._classify(current, matched, unchanged_change)
-            if matched is not None:
-                previous = next(previous_items, None)
-        if unchanged_change is not None:
-            while previous is not None:
-                yield previous.item, self._classify(previous.item, previous, unchanged_change)
-                previous = next(previous_items, None)
 
     @staticmethod
     def _classify(

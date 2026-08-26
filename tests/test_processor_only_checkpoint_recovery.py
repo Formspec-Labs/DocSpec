@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -21,7 +20,12 @@ from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
 from tests.test_application_pipeline import _run, _write_source
-from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
+from tests.helpers import (
+    SharedFixtureContentFetcher,
+    document_release_producer,
+    source_catalog_reader,
+    write_shared_source_catalog,
+)
 from tests.test_processor_reprocessing import (
     _CountingExtractor,
     _CountingFetcher,
@@ -65,9 +69,9 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     item = SourceItem("document-a", "v1", (candidate,), metadata={"expectedSegments": 2})
     source_catalog_root = tmp_path / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     source_ref = write_shared_source_catalog(source_catalog_root, (item,))
-    mapped_item = next(source_catalog.stream(source_ref))
+    mapped_item = next(source_catalog.open_snapshot(source_ref).items).to_processing_item()
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -77,6 +81,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     partition_policy = PartitionPolicy("source-item-sha256-v1", 8)

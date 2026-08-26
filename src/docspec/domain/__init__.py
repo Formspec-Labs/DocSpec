@@ -63,6 +63,12 @@ from docspec.domain.receipts import CatalogCommitReceipt, DeliveryReceipt, RunRe
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
 from docspec.domain.scale import ScaleProfile
+from docspec.domain.source_catalog import (
+    CatalogDisposition,
+    SourceCatalogCandidate,
+    SourceCatalogItem,
+    SourceCatalogSelection,
+)
 
 __all__ = [
     "AcquisitionDisposition",
@@ -73,6 +79,7 @@ __all__ = [
     "CandidateFile",
     "CapturedFile",
     "CatalogCommitReceipt",
+    "CatalogDisposition",
     "ChangeKind",
     "DeliveryReceipt",
     "DataUsePolicy",
@@ -120,6 +127,9 @@ __all__ = [
     "ScaleProfile",
     "Segment",
     "SourceCatalogRef",
+    "SourceCatalogCandidate",
+    "SourceCatalogItem",
+    "SourceCatalogSelection",
     "SourceItem",
     "SourceItemState",
     "StagePolicy",

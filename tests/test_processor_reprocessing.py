@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -46,10 +45,12 @@ from docspec.processing.extraction import DefaultExtractorRegistry, TextExtracto
 from docspec.processing.segmentation import DefaultSegmenterRegistry, ParagraphSegmenter
 from tests.helpers import (
     SharedFixtureContentFetcher,
+    document_release_producer,
     local_profile_set,
     processor_payload,
     segment_processor_request,
     write_shared_source_catalog,
+    source_catalog_reader,
 )
 from tests.test_application_pipeline import _run, _write_source
 from tests.test_processing_pipeline import _captured
@@ -298,7 +299,7 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
 
     source_catalog_root = tmp_path / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     source_ref = write_shared_source_catalog(source_catalog_root, (item,))
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
@@ -310,6 +311,7 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     fetcher = _CountingFetcher(SharedFixtureContentFetcher(sources))

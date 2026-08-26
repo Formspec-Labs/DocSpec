@@ -9,7 +9,6 @@ import pytest
 from docspec.adapters.execution import LocalExecutionBackend
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -45,7 +44,13 @@ from docspec.errors import IntegrityError
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.helpers import SharedFixtureContentFetcher, local_profile_set, write_shared_source_catalog
+from tests.helpers import (
+    SharedFixtureContentFetcher,
+    document_release_producer,
+    local_profile_set,
+    source_catalog_reader,
+    write_shared_source_catalog,
+)
 
 
 def _clock() -> str:
@@ -272,7 +277,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
 
     source_catalog_root = tmp_path / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -283,6 +288,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     fetcher = SharedFixtureContentFetcher(sources)
@@ -426,7 +432,7 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
     sources.mkdir()
     source_catalog_root = tmp_path / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
@@ -437,6 +443,7 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     retry = RetryPolicy(base_delay_milliseconds=0)

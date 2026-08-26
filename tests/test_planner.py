@@ -18,7 +18,7 @@ from docspec.domain.processors import ProcessorSet
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
 from docspec.errors import IntegrityError
-from docspec.ports.source_catalog import SourceCatalogRead, SourceCatalogSummary
+from docspec.ports.source_catalog import SourceCatalogSnapshot, SourceCatalogSnapshotSummary
 from tests.helpers import EMPTY_DIGEST, artifact, profile_set
 
 
@@ -42,43 +42,46 @@ class MemoryControls:
 
 
 @dataclass
+class MemoryCatalogItem:
+    item: SourceItem
+
+    def to_processing_item(self) -> SourceItem:
+        return self.item
+
+
+@dataclass
 class MemorySourceCatalog:
     reference: SourceCatalogRef
     items: tuple[SourceItem, ...]
-    kind: str = "snapshot"
-    base_catalog: SourceCatalogRef | None = None
     partitions: tuple[str, ...] = ()
     open_calls: int = 0
-    verify_calls: int = 0
-    stream_calls: int = 0
 
-    def verify(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
-        self.verify_calls += 1
-        assert reference == self.reference
-        return self.describe(reference)
-
-    def describe(self, reference: SourceCatalogRef) -> SourceCatalogSummary:
-        assert reference == self.reference
-        state_counts = {state.value: sum(item.state == state for item in self.items) for state in SourceItemState}
-        return SourceCatalogSummary(
-            reference.catalog_id,
-            self.kind,
-            len(self.items),
-            self.partitions,
-            state_counts,
-            {},
-            self.base_catalog,
-        )
-
-    def open(self, reference: SourceCatalogRef) -> SourceCatalogRead:
+    def open_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshot:
         self.open_calls += 1
         assert reference == self.reference
-        return SourceCatalogRead(self.describe(reference), iter(self.items))
-
-    def stream(self, reference: SourceCatalogRef) -> Iterator[SourceItem]:
-        self.stream_calls += 1
-        assert reference == self.reference
-        yield from self.items
+        disposition_counts = {
+            "selected": sum(item.state is SourceItemState.ACTIVE for item in self.items),
+            "excluded": sum(item.state is SourceItemState.EXCLUDED for item in self.items),
+            "deleted": sum(item.state is SourceItemState.DELETED for item in self.items),
+            "unavailable": 0,
+            "failed": 0,
+        }
+        summary = SourceCatalogSnapshotSummary(
+            logical_id=reference.catalog_id,
+            artifact_digest=reference.digest,
+            catalog_id=reference.catalog_id,
+            catalog_state_digest=reference.digest,
+            requested_universe_set_digest=reference.digest,
+            selected_source_set_digest=reference.digest,
+            item_count=len(self.items),
+            disposition_counts=disposition_counts,
+            partitions=self.partitions,
+            item_member_path="records/source-items.jsonl",
+        )
+        return SourceCatalogSnapshot(
+            summary,
+            iter(MemoryCatalogItem(item) for item in self.items),  # type: ignore[arg-type]
+        )
 
 
 @dataclass
@@ -150,8 +153,6 @@ class MemoryCatalogReader:
 
     def scan(self, *, layer_kind: str) -> Iterator[dict]:
         self.owner.scan_calls += 1
-        if self.owner.fail_on_scan:
-            raise AssertionError("sparse change-set planning must not scan the base source-items layer")
         assert layer_kind == "source-items"
         yield from self.owner.rows()
 
@@ -165,7 +166,6 @@ class MemoryDocumentCatalog:
     scan_calls: int = 0
     lookup_calls: int = 0
     lookup_ids: list[str] = field(default_factory=list)
-    fail_on_scan: bool = False
 
     def open_reader(self, reference: DocumentReleaseRef) -> MemoryCatalogReader:
         assert reference == self.reference
@@ -252,8 +252,6 @@ def _planned_update(
     *,
     selection: dict | None = None,
     previous_selection: dict | None = None,
-    kind: str = "snapshot",
-    fail_on_scan: bool = False,
     partitions: tuple[str, ...] = (),
 ) -> tuple[tuple, MemoryDocumentCatalog]:
     controls = MemoryControls()
@@ -290,13 +288,10 @@ def _planned_update(
         release_ref,
         release,
         previous_items,
-        fail_on_scan=fail_on_scan,
     )
     source_catalog = MemorySourceCatalog(
         current_source,
         current_items,
-        kind,
-        previous_source if kind == "change-set" else None,
         partitions,
     )
     with tempfile.TemporaryDirectory(prefix="docspec-planner-test-") as directory:
@@ -401,8 +396,6 @@ def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_pat
         "item-3",
     }
     assert source_catalog.open_calls == 1
-    assert source_catalog.verify_calls == 0
-    assert source_catalog.stream_calls == 0
 
 
 def test_targeted_selection_uses_source_partitions_and_stable_logical_buckets(tmp_path: Path) -> None:
@@ -587,48 +580,3 @@ def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> N
     assert deletion.terminal
     assert catalog.reader_calls == 1
     assert catalog.scan_calls == 1
-
-
-def test_change_set_compares_declared_items_without_inferring_omissions() -> None:
-    unchanged = _source_item("unchanged")
-    omitted = _source_item("omitted")
-    changed = _source_item("unchanged", candidates=(_candidate(locator="memory://changed.txt"),))
-
-    entries, catalog = _planned_update(
-        (omitted, unchanged),
-        (changed,),
-        kind="change-set",
-    )
-
-    assert [(entry.source_item.item_id, entry.change) for entry in entries] == [(changed.item_id, ChangeKind.CHANGED)]
-    assert catalog.reader_calls == 1
-    assert catalog.scan_calls == 0
-    assert catalog.lookup_calls == 1
-    assert catalog.lookup_ids == [changed.item_id]
-
-
-def test_sparse_change_set_looks_up_and_schedules_only_declared_changes() -> None:
-    changed_before = _source_item("changed")
-    deleted_before = _source_item("deleted")
-    omitted = _source_item("omitted")
-    changed = _source_item("changed", candidates=(_candidate(locator="memory://changed.txt"),))
-    deleted = _source_item("deleted", state=SourceItemState.DELETED)
-    added = _source_item("new")
-
-    entries, catalog = _planned_update(
-        (changed_before, deleted_before, omitted),
-        (changed, deleted, added),
-        kind="change-set",
-        fail_on_scan=True,
-    )
-
-    entries_by_id = {entry.source_item.item_id: entry for entry in entries}
-    assert {item_id: entry.change for item_id, entry in entries_by_id.items()} == {
-        changed.item_id: ChangeKind.CHANGED,
-        deleted.item_id: ChangeKind.DELETED,
-        added.item_id: ChangeKind.ADDED,
-    }
-    assert entries_by_id[deleted.item_id].source_item == deleted
-    assert entries_by_id[deleted.item_id].terminal
-    assert catalog.scan_calls == 0
-    assert catalog.lookup_ids == [changed.item_id, deleted.item_id, added.item_id]

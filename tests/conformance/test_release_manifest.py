@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from rulespec_conformance.platform_artifact import (
+from rulespec_artifacts import (
     ROOT_OBJECT_KEY,
     ArtifactPin,
     LocalMemberSource,

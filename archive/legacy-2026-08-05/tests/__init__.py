@@ -1,1 +1,0 @@
-"""DocSpec test support package."""

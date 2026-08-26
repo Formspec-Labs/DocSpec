@@ -20,6 +20,7 @@ from docspec.adapters.storage import (
 )
 from docspec.application.maintenance import BlobRetentionSetService
 from docspec.cli import main
+from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
@@ -34,8 +35,11 @@ from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
 from tests.test_maintenance import _platform
-from tests.helpers import write_shared_source_catalog
-from tests.test_platform_artifact import shared_source_item
+from tests.helpers import (
+    document_release_producer,
+    source_catalog_producer,
+    write_shared_source_catalog,
+)
 
 
 REPO_ROOT = Path(__file__).parents[1]
@@ -45,7 +49,7 @@ ZERO_DIGEST = "sha256:" + "0" * 64
 @pytest.mark.parametrize(
     ("group", "commands"),
     [
-        ("source-catalog", ("verify",)),
+        ("source-catalog", ("build", "verify")),
         ("profile", ("list", "verify")),
         ("scale-profile", ("seal", "verify")),
         ("document-catalog", ("open", "compare")),
@@ -256,6 +260,8 @@ def _write_local_run_request(
             {
                 "format": "docspec-local-run-request",
                 "formatVersion": "1.0",
+                "documentReleaseProducer": document_release_producer().as_dict(),
+                "sourceCatalogProducer": source_catalog_producer().as_dict(),
                 "plan": plan_path.as_posix(),
                 "profileDirectory": (REPO_ROOT / "profiles").as_posix(),
                 "roots": roots,
@@ -344,19 +350,11 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     source_content = tmp_path / "source-content"
     source_content.mkdir()
     source_catalog_root = tmp_path / "source-catalog"
-    item = shared_source_item()
-    item.update(
-        {
-            "sourceItemId": "document-a",
-            "documentId": "document-a",
-            "normalizedMetadata": None,
-            "candidateRenditions": [],
-            "selection": {
-                "disposition": "deleted",
-                "reasonCode": "source.deleted",
-                "reason": "Deleted CLI lifecycle fixture",
-            },
-        }
+    item = SourceItem(
+        "document-a",
+        "2026-08-24",
+        (),
+        state=SourceItemState.DELETED,
     )
     source_ref = write_shared_source_catalog(source_catalog_root, (item,))
     retry = RetryPolicy()
@@ -611,6 +609,7 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=LocalContentAddressedBlobStore(Path(roots["blobStorage"])),
     )
     assert commit_operation["operation"] == "document-release.commit"
@@ -635,6 +634,10 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
                 roots["controlRepository"],
                 "--reference",
                 str(release_reference_path),
+                "--implementation-id",
+                document_release_producer().implementation_id,
+                "--verifier-implementation-id",
+                document_release_producer().verifier_implementation_id,
             ]
         )
         == 0
@@ -704,13 +707,14 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         records=compacted_records,
         stores=platform.stores,
         controls=platform.controls,
+        producer=document_release_producer(),
         blobs=platform.blobs,
     )
     monkeypatch.setattr(cli_module, "_verified_local_plan", lambda _request: (plan, {}, {}))
     monkeypatch.setattr(
         cli_module,
         "_local_storage",
-        lambda _roots, _profiles: (
+        lambda _roots, _profiles, _producer: (
             platform.controls,
             platform.stores,
             compacted_records,
@@ -799,7 +803,7 @@ def test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index(
     monkeypatch.setattr(
         cli_module,
         "_local_storage",
-        lambda _roots, _profiles: (
+        lambda _roots, _profiles, _producer: (
             platform.controls,
             platform.stores,
             platform.records,

@@ -6,10 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError
-from tests.helpers import write_shared_source_catalog
+from tests.helpers import source_catalog_reader, write_shared_source_catalog
 from tools.courtlistener_bulk_source import (
     CONTENT_BASE,
     BulkCapture,
@@ -242,16 +241,21 @@ def test_population_publishes_as_a_verified_shared_source_catalog(tmp_path: Path
     items = build_source_items(capture, datasets={"opinions", "opinion-clusters", "courts"})
     root = tmp_path / "store"
     root.mkdir()
-    catalog = LocalPlatformSourceCatalog(root)
+    catalog = source_catalog_reader(root)
 
     reference = write_shared_source_catalog(root, items)
-    summary = catalog.verify(reference)
+    snapshot = catalog.open_snapshot(reference)
+    summary = snapshot.summary
 
     assert summary.item_count == len(items)
-    assert summary.state_counts["active"] == sum(1 for i in items if i.state is SourceItemState.ACTIVE)
-    assert summary.state_counts["excluded"] == sum(1 for i in items if i.state is SourceItemState.EXCLUDED)
+    assert summary.disposition_counts["selected"] == sum(
+        1 for i in items if i.state is SourceItemState.ACTIVE
+    )
+    assert summary.disposition_counts["excluded"] == sum(
+        1 for i in items if i.state is SourceItemState.EXCLUDED
+    )
     # The catalog streams back the same population it admitted.
-    streamed = list(catalog.stream(reference))
+    streamed = [item.to_processing_item() for item in snapshot.items]
     assert len(streamed) == len(items)
     assert [i.item_id for i in streamed] == [i.item_id for i in items]
 

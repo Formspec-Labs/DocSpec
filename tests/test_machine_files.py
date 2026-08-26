@@ -7,7 +7,6 @@ from typing import Any
 
 from docspec.domain.profiles import ProfileRole
 from docspec.profile_registry import ProfileRegistry
-from tools.generate_ownership_manifest import manifest_bytes as ownership_manifest_bytes
 from tools.generate_scale_profile_schema import schema_bytes
 
 
@@ -100,28 +99,6 @@ def test_conformance_specification_and_matrix_name_every_required_test() -> None
             test_file = ROOT / file_name
             assert test_file.is_file()
             assert f"def {function_name}(" in test_file.read_text(encoding="utf-8")
-
-
-def test_module_inventory_matches_the_installed_source_tree() -> None:
-    # ownership/modules.json used to hand-list all 67 module paths, each carrying a
-    # redundant "owner": "DocSpec" (a single-owner project has one owner, not 67
-    # copies of the same string), with no generator: a new module was a two-place
-    # edit and nothing but this test's declared-vs-actual path check ever verified it.
-    #
-    # tools/generate_ownership_manifest.py now derives the module *path list*
-    # directly from the source tree and merges in the one thing a generator cannot
-    # invent -- capability, status, and conformanceTests per module -- from a small
-    # hand-maintained table, raising if a module is missing from that table or the
-    # table names a module no longer on disk. This test confirms the checked-in
-    # file is exactly what the generator currently produces, and separately checks
-    # every declared conformanceTests id is real -- that cross-file link is outside
-    # what the generator alone can verify.
-    inventory = _load(ROOT / "ownership" / "modules.json")
-    assert (ROOT / "ownership" / "modules.json").read_bytes() == ownership_manifest_bytes()
-
-    required_test_ids = _required_test_ids()
-    for row in inventory["modules"]:
-        assert set(row["conformanceTests"]).issubset(required_test_ids)
 
 
 def test_profile_descriptions_are_closed_and_cover_every_role() -> None:

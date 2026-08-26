@@ -14,9 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from rulespec_artifacts import ArtifactVerificationError, Producer
+
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.execution import LocalExecutionBackend
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
 from docspec.adapters.processor_cache import LocalSqliteProcessorResultCache
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.sinks import DurableDatasetSink
@@ -27,6 +28,8 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
+from docspec.adapters.source_catalog_artifact import SourceCatalogArtifactReader
+from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.application.commit import ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
@@ -72,8 +75,9 @@ from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.ports.content_fetcher import ContentFetcher
-from docspec.ports.source_catalog import SourceCatalog
+from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
+from docspec.source_catalog_cli import add_source_catalog_command
 
 _MAX_JSON_BYTES = 16 * 1024 * 1024
 _MAX_GC_SAMPLE_COUNT = 1_000
@@ -83,6 +87,29 @@ _SHA256_PREFIX = re.compile(r"^[0-9a-f]{2}$")
 
 class CliError(DocSpecError):
     """The requested operator action failed preflight or verification."""
+
+
+def _producer_record(value: object, *, label: str) -> Producer:
+    try:
+        return Producer.from_dict(value, path=f"$/{label}")
+    except ArtifactVerificationError as error:
+        raise CliError(f"{label} is invalid: {error}") from error
+
+
+def _document_release_producer(
+    implementation_id: str,
+    verifier_implementation_id: str,
+) -> Producer:
+    return _producer_record(
+        {
+            "product": "docspec",
+            "implementationId": implementation_id,
+            "verifierId": "urn:docspec:verifier:document-release",
+            "verifierVersion": "1.0.0",
+            "verifierImplementationId": verifier_implementation_id,
+        },
+        label="document-release producer",
+    )
 
 
 def _read_bytes(path: Path, *, label: str, max_bytes: int = _MAX_JSON_BYTES) -> bytes:
@@ -341,30 +368,6 @@ def _cmd_scale_profile_verify(args: argparse.Namespace) -> int:
     return 0
 
 
-def _source_catalog_reader(root: Path) -> LocalPlatformSourceCatalog:
-    return LocalPlatformSourceCatalog(_existing_root(root, label="source catalog root"))
-
-
-def _cmd_source_catalog_verify(args: argparse.Namespace) -> int:
-    reference = SourceCatalogRef.from_dict(_read_json_object(args.reference, label="source catalog reference"))
-    summary = _source_catalog_reader(args.root).verify(reference)
-    _emit(
-        {
-            "format": "docspec-source-catalog-verification",
-            "formatVersion": "1.0",
-            "catalogId": summary.catalog_id,
-            "kind": summary.kind,
-            "itemCount": summary.item_count,
-            "partitions": list(summary.partitions),
-            "stateCounts": dict(summary.state_counts),
-            "coverage": summary.coverage,
-            "baseCatalog": None if summary.base_catalog is None else summary.base_catalog.to_dict(),
-            "verdict": "pass",
-        }
-    )
-    return 0
-
-
 def _local_document_catalog(args: argparse.Namespace) -> LocalManifestDocumentCatalog:
     blobs = object.__new__(LocalContentAddressedBlobStore)
     blobs.root = _existing_root(args.blob_root, label="blob storage root")
@@ -397,6 +400,10 @@ def _local_document_catalog(args: argparse.Namespace) -> LocalManifestDocumentCa
         records=records,
         stores=stores,
         controls=controls,
+        producer=_document_release_producer(
+            args.implementation_id,
+            args.verifier_implementation_id,
+        ),
         blobs=blobs,
     )
 
@@ -600,6 +607,8 @@ _LOCAL_RUN_FIELDS = {
     "acceptedFailurePolicy",
     "execution",
     "completedAt",
+    "documentReleaseProducer",
+    "sourceCatalogProducer",
 }
 _LOCAL_EXECUTION_REQUIRED_FIELDS = {"maxWorkers", "maxInFlight", "deadlineEpochSeconds"}
 _LOCAL_EXECUTION_OPTIONAL_DEFAULTS = {
@@ -717,6 +726,14 @@ def _local_run_request(path: Path) -> dict[str, Any]:
         },
         "retryPolicy": _retry_policy(value["retryPolicy"]),
         "acceptedFailurePolicy": _accepted_failure_policy(value["acceptedFailurePolicy"]),
+        "documentReleaseProducer": _producer_record(
+            value["documentReleaseProducer"],
+            label="local-run document-release producer",
+        ),
+        "sourceCatalogProducer": _producer_record(
+            value["sourceCatalogProducer"],
+            label="local-run source-catalog producer",
+        ),
         "execution": execution,
         "completedAt": _utc_instant(value["completedAt"], label="local run completedAt"),
     }
@@ -776,6 +793,7 @@ def _verified_local_plan(
 def _local_storage(
     roots: dict[str, Path],
     profiles: dict[ProfileRole, RegisteredProfile],
+    producer: Producer,
 ) -> tuple[
     LocalJsonControlRepository,
     LocalDocumentStoreRepository,
@@ -814,6 +832,7 @@ def _local_storage(
         records=records,
         stores=stores,
         controls=controls,
+        producer=producer,
         blobs=blobs,
         max_release_bytes=min(release_limit, catalog_limit),
     )
@@ -835,7 +854,11 @@ def _local_storage_for_run_request(
 
     request = _local_run_request(path)
     plan, _, profiles = _verified_local_plan(request)
-    controls, stores, records, blobs, catalog = _local_storage(request["roots"], profiles)
+    controls, stores, records, blobs, catalog = _local_storage(
+        request["roots"],
+        profiles,
+        request["documentReleaseProducer"],
+    )
     return request, plan, controls, stores, records, blobs, catalog
 
 
@@ -847,7 +870,7 @@ class _LocalRunComposition:
     stores: LocalDocumentStoreRepository
     records: LocalJsonlRecordStorage
     catalog: LocalManifestDocumentCatalog
-    source_catalog: SourceCatalog
+    source_catalog: ImmutableSourceCatalogReader
     partition_policy: PartitionPolicy
     plan_ref: ArtifactRef
     sink_ref: ArtifactRef
@@ -872,15 +895,23 @@ def _local_processor_cache_path(roots: dict[str, Path]) -> Path:
 def _compose_local_run(
     request: dict[str, Any],
     *,
-    source_catalog: SourceCatalog | None = None,
+    source_catalog: ImmutableSourceCatalogReader | None = None,
     content_fetcher: ContentFetcher | None = None,
     content_fetcher_composition: dict[str, Any] | None = None,
 ) -> _LocalRunComposition:
     plan, processors, profiles = _verified_local_plan(request)
     roots = request["roots"]
-    controls, stores, records, blobs, catalog = _local_storage(roots, profiles)
+    controls, stores, records, blobs, catalog = _local_storage(
+        roots,
+        profiles,
+        request["documentReleaseProducer"],
+    )
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    source_catalog = source_catalog or LocalPlatformSourceCatalog(roots["sourceCatalog"])
+    if source_catalog is None:
+        source_catalog = SourceCatalogArtifactReader(
+            LocalSourceCatalogStore(roots["sourceCatalog"], create=False),
+            producer=request["sourceCatalogProducer"],
+        )
     fetcher = content_fetcher or LocalFileContentFetcher(roots["sourceContent"])
     actual_fetcher_composition = {
         "implementationId": getattr(fetcher, "downloader_id", None),
@@ -1190,7 +1221,7 @@ def _execute_local_run(
     request: dict[str, Any],
     *,
     resume: bool | None,
-    source_catalog: SourceCatalog | None = None,
+    source_catalog: ImmutableSourceCatalogReader | None = None,
     content_fetcher: ContentFetcher | None = None,
     content_fetcher_composition: dict[str, Any] | None = None,
 ) -> ArtifactRef:
@@ -1803,6 +1834,8 @@ def _add_local_catalog_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--record-root", type=Path, required=True, help="Existing local record-storage root")
     parser.add_argument("--store-root", type=Path, required=True, help="Existing local document-store root")
     parser.add_argument("--control-root", type=Path, required=True, help="Existing local control-artifact root")
+    parser.add_argument("--implementation-id", required=True)
+    parser.add_argument("--verifier-implementation-id", required=True)
 
 
 def _add_mutating_paths(
@@ -1825,12 +1858,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="docspec", description=__doc__)
     commands = _subcommands(parser, dest="command")
 
-    source_catalog = commands.add_parser("source-catalog", help="Verify immutable source-catalog inputs")
-    source_commands = _subcommands(source_catalog, dest="source_catalog_command")
-    source_verify = source_commands.add_parser("verify", help="Verify a complete local source-catalog distribution")
-    source_verify.add_argument("--root", type=Path, required=True)
-    source_verify.add_argument("--reference", type=Path, required=True, help="JSON SourceCatalogRef")
-    source_verify.set_defaults(func=_cmd_source_catalog_verify)
+    add_source_catalog_command(commands)
 
     profile = commands.add_parser("profile", help="Inspect storage and delivery profile descriptions")
     profile_commands = _subcommands(profile, dest="profile_command")

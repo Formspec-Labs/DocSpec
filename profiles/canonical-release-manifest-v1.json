@@ -32,7 +32,7 @@
     "requires": []
   },
   "verifier": {
-    "status": "implemented",
+    "status": "partial",
     "testId": "RELEASE-MANIFEST"
   }
 }

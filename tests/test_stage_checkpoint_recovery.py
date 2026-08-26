@@ -25,6 +25,7 @@ from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.references import SourceCatalogRef, StoreRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchStream
+from tests.helpers import document_release_producer
 from tests.test_processor_reprocessing import (
     _CountingExtractor,
     _CountingFetcher,
@@ -221,6 +222,7 @@ def _harness(
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     retry = RetryPolicy(max_attempts=3, base_delay_milliseconds=0)

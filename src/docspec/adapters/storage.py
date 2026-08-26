@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import hashlib
 import heapq
-import ctypes
-import errno
 import os
 import re
 import shutil
 import sqlite3
-import sys
 import tempfile
 from collections import OrderedDict
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
+from rulespec_artifacts import Producer
+
+from docspec.adapters.atomic_directory import publish_directory_no_replace, sync_directory
 from docspec.adapters.platform_artifact import (
     ARTIFACT_ROOT_KEY,
     DocumentReleaseArtifactVerifier,
@@ -133,98 +133,15 @@ def _write_once(
         temporary.unlink(missing_ok=True)
 
 
-def _publish_directory(root: Path, working: Path, locator: str, *, reuse_existing: bool) -> Path:
+def publish_directory_exclusive(root: Path, working: Path, locator: str) -> Path:
+    """Atomically publish one directory without replacing an existing result."""
+
     relative = PurePosixPath(require_relative_path(locator))
     destination = _contained(root, relative.as_posix())
     parent_probe = (relative.parent / "placeholder").as_posix()
     _contained(root, parent_probe, create_parents=True)
-    lock_path = destination.parent / f".{destination.name}.publish.lock"
-    try:
-        descriptor = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    except FileExistsError as error:
-        raise StateTransitionError(f"publication is already in progress for {locator}") from error
-    try:
-        with os.fdopen(descriptor, "wb") as lock:
-            lock.write(working.name.encode("utf-8"))
-            lock.flush()
-            os.fsync(lock.fileno())
-        if destination.exists() or destination.is_symlink():
-            if destination.is_symlink() or not destination.is_dir():
-                raise IntegrityError(f"immutable distribution path is not a regular directory: {locator}")
-            if reuse_existing:
-                shutil.rmtree(working)
-                return destination
-            raise FileExistsError(f"refusing to replace immutable distribution: {locator}")
-        for directory in sorted(
-            (path for path in working.rglob("*") if path.is_dir()),
-            key=lambda path: len(path.parts),
-            reverse=True,
-        ):
-            _sync_directory(directory)
-        _sync_directory(working)
-        _rename_directory_no_replace(working, destination)
-        _sync_directory(destination.parent)
-        return destination
-    finally:
-        lock_path.unlink(missing_ok=True)
-
-
-def _publish_directory_once(root: Path, working: Path, locator: str) -> Path:
-    return _publish_directory(root, working, locator, reuse_existing=True)
-
-
-def publish_directory_exclusive(root: Path, working: Path, locator: str) -> Path:
-    """Atomically publish one directory without replacing an existing result."""
-
-    return _publish_directory(root, working, locator, reuse_existing=False)
-
-
-def _sync_directory(path: Path) -> None:
-    if os.name == "nt":
-        return
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-def _rename_directory_no_replace(source: Path, destination: Path) -> None:
-    """Atomically rename a directory only when the destination is absent."""
-
-    if os.name == "nt":
-        try:
-            os.rename(source, destination)
-        except FileExistsError as error:
-            raise IntegrityError(f"refusing to replace immutable distribution: {destination}") from error
-        return
-    libc = ctypes.CDLL(None, use_errno=True)
-    source_bytes = os.fsencode(source)
-    destination_bytes = os.fsencode(destination)
-    if sys.platform == "darwin":
-        rename = libc.renamex_np
-        rename.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
-        rename.restype = ctypes.c_int
-        result = rename(source_bytes, destination_bytes, 0x4)
-    elif sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
-        rename = libc.renameat2
-        rename.argtypes = (
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_uint,
-        )
-        rename.restype = ctypes.c_int
-        result = rename(-100, source_bytes, -100, destination_bytes, 1)
-    else:
-        raise IntegrityError("this platform lacks an atomic no-replace directory rename")
-    if result == 0:
-        return
-    error_number = ctypes.get_errno()
-    if error_number in {errno.EEXIST, errno.ENOTEMPTY}:
-        raise IntegrityError(f"refusing to replace immutable distribution: {destination}")
-    raise OSError(error_number, os.strerror(error_number), destination)
+    publish_directory_no_replace(working, destination)
+    return destination
 
 
 def _verify_artifact_bytes(reference: ArtifactRef, payload: bytes, *, media_type: str = "application/json") -> None:
@@ -1733,6 +1650,7 @@ class LocalManifestDocumentCatalog:
         records: RecordStorage,
         stores: DocumentStoreRepository,
         controls: ControlRepository,
+        producer: Producer,
         blobs: BlobStore | None = None,
         max_release_bytes: int = 1024**2,
     ) -> None:
@@ -1742,6 +1660,7 @@ class LocalManifestDocumentCatalog:
         self.records = records
         self.stores = stores
         self.controls = controls
+        self.producer = producer
         self.verifier = DocumentReleaseVerifier(
             controls=controls,
             records=records,
@@ -1752,12 +1671,12 @@ class LocalManifestDocumentCatalog:
             verifier=self.verifier,
             controls=controls,
             records=records,
+            producer=producer,
         )
-        self.artifact_builder = LocalDerivationBuilder(self.artifact_verifier)
+        self.artifact_builder = LocalDerivationBuilder(producer, self.artifact_verifier)
         self.max_release_bytes = max_release_bytes
 
-    @staticmethod
-    def release_id(plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str:
+    def release_id(self, plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str:
         return derivation_logical_id(plan, partition_policy)
 
     @staticmethod
@@ -1963,7 +1882,7 @@ class LocalManifestDocumentCatalog:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, destination)
-            _sync_directory(destination.parent)
+            sync_directory(destination.parent)
         finally:
             temporary.unlink(missing_ok=True)
 

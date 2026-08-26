@@ -2,25 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from dataclasses import replace
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
-from rulespec_conformance.platform_artifact import (
-    ROOT_OBJECT_KEY,
-    LocalMemberSource,
-    MemberManifestReference,
-    SOURCE_CATALOG_ITEM_SCHEMA_ID,
-    SourceCatalogSpec,
-    build_artifact_root,
-    canonical_json_bytes as artifact_json_bytes,
-    describe_member,
-    sha256_digest as artifact_set_digest,
-    source_catalog_item_schema_bytes,
-)
+from rulespec_artifacts import Producer
 
+from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from docspec.adapters.source_catalog_artifact import (
+    SourceCatalogArtifactReader,
+    SourceCatalogBuildRequest,
+    SourceCatalogBuilder,
+)
+from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
@@ -31,13 +28,34 @@ from docspec.domain.execution import (
     iter_store_tasks,
     summarize_store_tasks,
 )
-from docspec.domain.identity import canonical_json_file_bytes, identity_digest, sha256_digest, stable_urn
+from docspec.domain.identity import (
+    canonical_json_bytes,
+    canonical_json_file_bytes,
+    identity_digest,
+    sha256_digest,
+    stable_urn,
+)
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema
+from docspec.domain.source_catalog import (
+    CatalogDisposition,
+    CatalogNormalizationField,
+    CatalogRenditionFamily,
+    CatalogSelectionDecision,
+    SourceCatalogCandidate,
+    SourceCatalogItem,
+    SourceCatalogSelection,
+)
 from docspec.ports.content_fetcher import FetchStream
+from docspec.ports.source_catalog import (
+    CatalogPolicyInputs,
+    CatalogPolicyWorkspace,
+    SourceInputSelector,
+    SourceNativeDescription,
+)
 
 
 EMPTY_DIGEST = sha256_digest(b"")
@@ -50,130 +68,263 @@ TASK_RESULT_SCHEMA = RecordSchema(
     "sourceItemId",
 )
 _FIXTURE_SOURCE_ORIGIN = "https://fixtures.docspec.test/"
+_FIXTURE_SCHEMA_DIGEST = "sha256:" + "f" * 64
+_FIXTURE_SOURCE_SYSTEM = "urn:docspec:test:source-native"
+_FIXTURE_SELECTOR = SourceInputSelector(
+    _FIXTURE_SOURCE_SYSTEM,
+    "1",
+    "docspec-test-items",
+    "docspec-test-source-item",
+    "1.0",
+)
+
+
+def source_catalog_producer() -> Producer:
+    implementation = "git+https://example.test/docspec@" + "1" * 40
+    return Producer(
+        "docspec",
+        implementation,
+        "urn:docspec:verifier:source-catalog",
+        "1.0.0",
+        implementation,
+    )
+
+
+def document_release_producer() -> Producer:
+    implementation = "git+https://example.test/docspec@" + "1" * 40
+    return Producer(
+        "docspec",
+        implementation,
+        "urn:docspec:verifier:document-release",
+        "1.0.0",
+        implementation,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _FixtureCatalogPolicy:
+    policy_id = "urn:docspec:test:catalog-policy"
+    policy_version = "1.0.0"
+
+    @property
+    def universe_input(self) -> SourceInputSelector:
+        return _FIXTURE_SELECTOR
+
+    @property
+    def configuration(self) -> Mapping[str, object]:
+        return {"universeInput": self.universe_input.to_dict()}
+
+    @property
+    def policy_digest(self) -> str:
+        return sha256_digest(
+            canonical_json_bytes(
+                {
+                    "format": "docspec-catalog-policy",
+                    "formatVersion": "1.0",
+                    "policyId": self.policy_id,
+                    "policyVersion": self.policy_version,
+                    "configuration": dict(self.configuration),
+                }
+            )
+        )
+
+    def iter_items(
+        self,
+        inputs: CatalogPolicyInputs,
+        workspace: CatalogPolicyWorkspace,
+    ) -> Iterator[SourceCatalogItem]:
+        del workspace
+        for row in inputs.iter_universe_rows():
+            payload = row.record["record"]
+            if not isinstance(payload, Mapping) or set(payload) != {"catalogItem"}:
+                raise ValueError("test source-native payload differs")
+            yield SourceCatalogItem.from_dict(payload["catalogItem"])
+
+
+@dataclass(slots=True)
+class _FixtureSource:
+    metadata: SourceNativeDescription
+    records: tuple[Mapping[str, object], ...]
+
+    def describe(self) -> SourceNativeDescription:
+        return self.metadata
+
+    def iter_records(self) -> Iterator[Mapping[str, object]]:
+        yield from self.records
+
+    def iter_renditions(self) -> Iterator[Mapping[str, object]]:
+        return
+        yield
 
 
 def shared_source_record(item: SourceItem) -> dict[str, object]:
-    """Map one test source item to the real shared source-catalog shape."""
+    """Map one processing fixture into the current normative catalog shape."""
 
     disposition = {
         SourceItemState.ACTIVE: "selected",
         SourceItemState.DELETED: "deleted",
         SourceItemState.EXCLUDED: "excluded",
     }[item.state]
-    selection: dict[str, object] = {"disposition": disposition}
-    if disposition != "selected":
-        selection.update({"reasonCode": f"test.{disposition}", "reason": f"Test item is {disposition}."})
-    candidates = []
+    selected_disposition = CatalogDisposition(disposition)
+    reason_code = None if disposition == "selected" else f"test.{disposition}"
+    reason = None if disposition == "selected" else f"Test item is {disposition}."
+    candidates: list[SourceCatalogCandidate] = []
     for candidate in item.candidates:
         locator = candidate.locator
         if not locator.startswith(("http://", "https://")):
             locator = _FIXTURE_SOURCE_ORIGIN + quote(locator, safe="/")
         candidates.append(
-            {
-                "renditionId": candidate.candidate_id,
-                "mediaType": candidate.media_type,
-                "locator": locator,
-                "expectedSha256": candidate.expected_digest,
-                "expectedByteSize": candidate.expected_size,
-            }
+            SourceCatalogCandidate(
+                candidate.candidate_id,
+                candidate.media_type,
+                "source-url",
+                locator,
+                candidate.expected_digest,
+                candidate.expected_size,
+            )
         )
-    return {
-        "sourceItemId": item.item_id,
-        "documentId": item.item_id,
-        "sourceIssuedVersion": item.version,
-        "sourceNativeMetadata": item.metadata,
-        "normalizedMetadata": (
-            {
-                "title": item.item_id,
-                "agencies": [{"agencyId": "TEST", "agencyName": "DocSpec test fixture"}],
-                "documentType": "TestDocument",
-                "publicationDate": "2026-08-24",
-                "lastUpdatedDate": None,
-                "docketIds": [],
-                "regulationIdentifierNumbers": [],
-                "commentCloseDate": None,
-                "language": "en",
-                "sourceUrl": f"https://fixtures.docspec.test/source/{quote(item.item_id, safe='')}",
-            }
-            if item.state is SourceItemState.ACTIVE
-            else None
-        ),
-        "sourceObservedTopics": [],
-        "sourceObservations": [],
-        "candidateRenditions": candidates,
-        "selection": selection,
+    policy = _FixtureCatalogPolicy()
+    pin = {
+        "policyId": policy.policy_id,
+        "policyVersion": policy.policy_version,
+        "policyDigest": policy.policy_digest,
+        "inputScopeIds": [_FIXTURE_SELECTOR.scope_id],
     }
+    candidate_ids = [candidate.rendition_id for candidate in candidates]
+    decision = CatalogSelectionDecision(
+        "fixture-state",
+        disposition == "selected",
+        None if disposition == "selected" else selected_disposition,
+        reason_code,
+        reason,
+    )
+    normalized = {
+        "title": item.item_id,
+        "agencies": [{"agencyId": "TEST", "agencyName": "DocSpec test fixture"}],
+        "documentType": "TestDocument",
+        "publicationDate": "2026-08-24",
+        "lastUpdatedDate": None,
+        "docketIds": [],
+        "regulationIdentifierNumbers": [],
+        "commentCloseDate": None,
+        "language": "en",
+        "sourceUrl": f"https://fixtures.docspec.test/source/{quote(item.item_id, safe='')}",
+    }
+    return SourceCatalogItem(
+        source_item_id=item.item_id,
+        document_id=item.item_id,
+        source_issued_version=item.version,
+        source_native_facts=(
+            {
+                "scopeId": _FIXTURE_SELECTOR.scope_id,
+                "schemaName": _FIXTURE_SELECTOR.schema_name,
+                "schemaVersion": _FIXTURE_SELECTOR.schema_version,
+                "schemaDigest": _FIXTURE_SCHEMA_DIGEST,
+                "fields": {"processingMetadata": item.metadata},
+            },
+        ),
+        normalized_metadata=normalized,
+        source_observed_topics=(),
+        source_observations=(),
+        interpretations=(
+            {
+                "interpretationKind": "normalization",
+                **pin,
+                "result": {
+                    "fields": [
+                        CatalogNormalizationField(
+                            "title",
+                            ("record.itemId",),
+                            "source",
+                            "normalized",
+                            item.item_id,
+                        ).to_dict()
+                    ]
+                },
+            },
+            {
+                "interpretationKind": "rendition-preference",
+                **pin,
+                "result": {
+                    "orderedFamilyIds": ["fixture"],
+                    "families": [CatalogRenditionFamily("fixture", tuple(candidate_ids)).to_dict()],
+                    "selectedFamilyId": "fixture" if candidates else None,
+                    "selectedRenditionIds": candidate_ids,
+                },
+            },
+            {
+                "interpretationKind": "selection",
+                **pin,
+                "result": {
+                    "decisions": [decision.to_dict()],
+                    "finalDisposition": disposition,
+                    "reasonCode": reason_code,
+                    "reason": reason,
+                },
+            },
+            {
+                "interpretationKind": "topic-recovery",
+                **pin,
+                "result": {
+                    "sourceField": "record.topics",
+                    "outcome": "not-recovered",
+                    "evidenceDigest": None,
+                    "observedTopicIds": [],
+                },
+            },
+        ),
+        candidate_renditions=tuple(candidates),
+        selection=SourceCatalogSelection(selected_disposition, reason_code, reason),
+    ).to_dict()
 
 
 def write_shared_source_catalog(
     root: Path,
-    items: tuple[dict[str, object] | SourceItem, ...],
+    items: tuple[SourceItem, ...],
     *,
     name: str = "catalog",
-    requested_digest: str | None = None,
-    selected_digest: str | None = None,
 ) -> SourceCatalogRef:
-    """Publish a small exact shared source-catalog distribution for tests."""
+    """Publish a small exact current-format source catalog for tests."""
 
-    records = tuple(shared_source_record(item) if isinstance(item, SourceItem) else item for item in items)
-    distribution = root / name
-    (distribution / "records").mkdir(parents=True)
-    (distribution / "schemas").mkdir()
-    items_path = distribution / "records/source-items.jsonl"
-    items_path.write_bytes(b"".join(artifact_json_bytes(item) + b"\n" for item in records))
-    schema_path = distribution / "schemas/source-catalog-item-v1.schema.json"
-    schema_path.write_bytes(source_catalog_item_schema_bytes())
-    source = LocalMemberSource(distribution)
-    members = (
-        describe_member(
-            source,
-            object_key="records/source-items.jsonl",
-            role="source-items",
-            media_type="application/x-ndjson",
-            record_count=len(records),
-            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
+    catalog_items = tuple(shared_source_record(item) for item in items)
+    records = tuple(
+        {
+            "sourceRecordId": item.item_id,
+            "scopeId": _FIXTURE_SELECTOR.scope_id,
+            "schemaName": _FIXTURE_SELECTOR.schema_name,
+            "schemaVersion": _FIXTURE_SELECTOR.schema_version,
+            "schemaDigest": _FIXTURE_SCHEMA_DIGEST,
+            "record": {"catalogItem": catalog_item},
+            "fieldDiagnostics": [],
+        }
+        for item, catalog_item in zip(items, catalog_items, strict=True)
+    )
+    state_digest = sha256_digest(canonical_json_bytes(list(records)))
+    source = _FixtureSource(
+        SourceNativeDescription(
+            logical_id="urn:docspec:test:source-native:" + state_digest.removeprefix("sha256:"),
+            artifact_digest=state_digest,
+            source_system_id=_FIXTURE_SELECTOR.source_system_id,
+            source_system_version=_FIXTURE_SELECTOR.source_system_version,
+            source_state_scope="complete-snapshot",
+            source_state_digest=state_digest,
+            source_native_schema_set_digest=_FIXTURE_SCHEMA_DIGEST,
         ),
-        describe_member(
-            source,
-            object_key="schemas/source-catalog-item-v1.schema.json",
-            role="schema",
-            media_type="application/schema+json",
-            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
-        ),
+        records,
     )
-    manifest, payload = MemberManifestReference.for_members(
-        scope_kind="global",
-        scope_id="source-items",
-        object_key="manifest.json",
-        members=members,
-    )
-    (distribution / "manifest.json").write_bytes(payload)
-    identities = sorted({str(item["sourceItemId"]) for item in records})
-    selected = sorted(
-        str(item["sourceItemId"])
-        for item in records
-        if item["selection"] == {"disposition": "selected"}
-    )
-    artifact_root = build_artifact_root(
-        spec=SourceCatalogSpec(
-            catalog_id="urn:docspec:test:catalog",
-            source_system_id="urn:docspec:test:source",
-            source_system_version="1",
-            selection_policy_id="urn:docspec:test:selection",
-            selection_policy_version="1",
-            selection_policy_digest="sha256:" + "1" * 64,
-            requested_universe_set_digest=requested_digest or artifact_set_digest(identities),
-            selected_source_set_digest=selected_digest or artifact_set_digest(selected),
-        ),
-        inputs=(),
-        manifests=(manifest,),
-        accounted_input_count=len(records),
-    )
-    (distribution / ROOT_OBJECT_KEY).write_bytes(artifact_json_bytes(artifact_root))
-    return SourceCatalogRef(
-        artifact_root["logicalId"],
-        f"{name}/{ROOT_OBJECT_KEY}",
-        artifact_root["artifactDigest"],
+    result = SourceCatalogBuilder(
+        store=LocalSourceCatalogStore(root),
+        policy=_FixtureCatalogPolicy(),
+        request=SourceCatalogBuildRequest(f"urn:docspec:test:catalog:{name}", source_catalog_producer()),
+        workspace_factory=SqliteCatalogPolicyWorkspace,
+    ).build((source,))
+    return result.reference
+
+
+def source_catalog_reader(root: Path) -> SourceCatalogArtifactReader:
+    return SourceCatalogArtifactReader(
+        LocalSourceCatalogStore(root, create=False),
+        producer=source_catalog_producer(),
     )
 
 

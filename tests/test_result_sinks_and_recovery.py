@@ -37,7 +37,7 @@ from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError, StateTransitionError
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.helpers import artifact, persist_execution_evidence, profile_set
+from tests.helpers import artifact, document_release_producer, persist_execution_evidence, profile_set
 
 
 NOW = "2026-08-05T12:00:00Z"
@@ -385,6 +385,7 @@ def test_stateless_returned_run_cannot_advance_the_document_catalog(tmp_path: Pa
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
     )
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
@@ -547,6 +548,7 @@ def test_worker_restart_reuses_the_verified_entry_checkpoint(tmp_path: Path) -> 
         records=records,
         stores=durable_stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     fetcher = _CountingFetcher(LocalFileContentFetcher(sources))

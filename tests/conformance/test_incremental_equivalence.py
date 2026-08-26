@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docspec.adapters.platform_artifact import LocalPlatformSourceCatalog
+from docspec.adapters.source_catalog_artifact import SourceCatalogArtifactReader
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
@@ -29,6 +29,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 _helpers = importlib.import_module("tests.helpers")
 SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
 write_shared_source_catalog = _helpers.write_shared_source_catalog
+source_catalog_reader = _helpers.source_catalog_reader
+document_release_producer = _helpers.document_release_producer
 _pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
 _processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
 _run = _pipeline_helpers._run
@@ -74,7 +76,7 @@ def _targeted_plan(
 @dataclass(frozen=True)
 class _Platform:
     sources: Path
-    source_catalog: LocalPlatformSourceCatalog
+    source_catalog: SourceCatalogArtifactReader
     source_catalog_root: Path
     controls: LocalJsonControlRepository
     stores: LocalDocumentStoreRepository
@@ -92,7 +94,7 @@ def _platform(root: Path, *, member_bytes: int) -> _Platform:
     sources.mkdir(parents=True)
     source_catalog_root = root / "source-catalogs"
     source_catalog_root.mkdir()
-    source_catalog = LocalPlatformSourceCatalog(source_catalog_root)
+    source_catalog = source_catalog_reader(source_catalog_root)
     controls = LocalJsonControlRepository(root / "controls")
     stores = LocalDocumentStoreRepository(root / "stores")
     blobs = LocalContentAddressedBlobStore(root / "blobs")
@@ -103,6 +105,7 @@ def _platform(root: Path, *, member_bytes: int) -> _Platform:
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     return _Platform(
@@ -167,7 +170,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
 
-    evolving = _platform(tmp_path / "evolving", member_bytes=2 * 1024)
+    evolving = _platform(tmp_path / "evolving", member_bytes=3700)
     first_a = _write_source(
         evolving.sources / "a.txt",
         "Alpha before the update in its initial paragraph.",
@@ -176,10 +179,15 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         evolving.sources / "b.txt",
         "Bravo remains stable in its only paragraph.",
     )
+    first_i = _write_source(
+        evolving.sources / "i.txt",
+        "India shares a storage partition and remains stable.",
+    )
     first_source = evolving.publish_source(
         (
-            SourceItem("document-a", "v1", (first_a,), metadata={"expectedSegments": 1}),
-            SourceItem("document-b", "v1", (first_b,), metadata={"expectedSegments": 1}),
+                SourceItem("document-a", "v1", (first_a,), metadata={"expectedSegments": 1}),
+                SourceItem("document-b", "v1", (first_b,), metadata={"expectedSegments": 1}),
+                SourceItem("document-i", "v1", (first_i,), metadata={"expectedSegments": 1}),
         )
     )
     initial_processor = _CountingProcessor(_description("equivalence", "1", retry))
@@ -209,6 +217,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         SourceItem("document-a", "v2", (final_a,), metadata={"expectedSegments": 1}),
         SourceItem("document-b", "v1", (first_b,), metadata={"expectedSegments": 1}),
         SourceItem("document-c", "v1", (final_c,), metadata={"expectedSegments": 1}),
+        SourceItem("document-i", "v1", (first_i,), metadata={"expectedSegments": 1}),
     )
     final_source = evolving.publish_source(final_items, name="final")
     final_processor = _CountingProcessor(_description("equivalence", "2", retry))
@@ -275,8 +284,8 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
                 ),
                 metadata={"expectedSegments": 1},
             ),
-            SourceItem(
-                "document-c",
+                SourceItem(
+                    "document-c",
                 "v1",
                 (
                     _write_source(
@@ -284,8 +293,19 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
                         "Charlie is newly added with one final paragraph.",
                     ),
                 ),
-                metadata={"expectedSegments": 1},
-            ),
+                    metadata={"expectedSegments": 1},
+                ),
+                SourceItem(
+                    "document-i",
+                    "v1",
+                    (
+                        _write_source(
+                            clean.sources / "i.txt",
+                            "India shares a storage partition and remains stable.",
+                        ),
+                    ),
+                    metadata={"expectedSegments": 1},
+                ),
         )
         clean_source = clean.publish_source(clean_items)
         clean_processor = _CountingProcessor(_description("equivalence", "2", retry))
@@ -317,8 +337,9 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     targeted_source = evolving.publish_source(
         (
             SourceItem("document-a", "v3", (targeted_a,), metadata={"expectedSegments": 1}),
-            final_items[1],
-            final_items[2],
+                final_items[1],
+                final_items[2],
+                final_items[3],
         ),
         name="targeted",
     )
@@ -369,6 +390,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         records=compacted_records,
         stores=evolving.stores,
         controls=evolving.controls,
+        producer=document_release_producer(),
         blobs=evolving.blobs,
     )
     receipt_ref = ReleaseCompactionService(

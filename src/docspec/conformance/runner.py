@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import platform
+import re
 import subprocess
 import sys
 import tempfile
@@ -56,7 +56,6 @@ _REPORT_KEYS = {
     "specificationVersion",
     "conformanceClass",
     "source",
-    "dependencyLock",
     "artifacts",
     "planAndConfiguration",
     "command",
@@ -88,10 +87,8 @@ _TEST_RESULT_KEYS = {
     "verdict",
 }
 _ARTIFACT_EVIDENCE_KEYS = {"identity", "role", "locator", "digest", "byteSize"}
-_TREE_FILES = {"pyproject.toml", "uv.lock"}
-_TREE_DIRECTORIES = ("src/docspec", "tests", "conformance", "profiles", "ownership", "fixtures")
-_IGNORED_TREE_PARTS = {"__pycache__", ".pytest_cache", ".ruff_cache"}
 _MAX_MACHINE_FILE_BYTES = 16 * 1024 * 1024
+_GIT_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
 class ConformanceError(DocSpecError):
@@ -317,51 +314,20 @@ def _run_required_test(
     }
 
 
-def _file_evidence(path: Path, *, role: str, root: Path) -> dict[str, Any]:
-    payload = path.read_bytes()
+def _git_revision(root: Path) -> str:
+    """Return the exact clean Git commit that contains the tested source."""
+
     try:
-        locator = path.resolve().relative_to(root).as_posix()
-    except ValueError:
-        locator = path.resolve().as_posix()
-    digest = sha256_digest(payload)
-    return {
-        "identity": stable_urn("artifact", {"role": role, "digest": digest}),
-        "role": role,
-        "locator": locator,
-        "digest": digest,
-        "byteSize": len(payload),
-    }
-
-
-def _source_tree_digest(root: Path) -> str:
-    paths: list[Path] = []
-    for name in sorted(_TREE_FILES):
-        candidate = root / name
-        if candidate.is_file() and not candidate.is_symlink():
-            paths.append(candidate)
-    for name in _TREE_DIRECTORIES:
-        directory = root / name
-        if not directory.is_dir() or directory.is_symlink():
-            continue
-        for path in directory.rglob("*"):
-            if any(part in _IGNORED_TREE_PARTS for part in path.parts):
-                continue
-            if path.is_file() and not path.is_symlink() and path.suffix != ".pyc":
-                paths.append(path)
-    digest = hashlib.sha256()
-    for path in sorted(set(paths), key=lambda item: item.relative_to(root).as_posix()):
-        relative = path.relative_to(root).as_posix().encode("utf-8")
-        payload = path.read_bytes()
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        digest.update(len(payload).to_bytes(8, "big"))
-        digest.update(payload)
-    return f"sha256:{digest.hexdigest()}"
-
-
-def _git_revision(root: Path) -> str | None:
-    try:
-        result = subprocess.run(
+        top_level = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+            text=True,
+        )
+        revision_result = subprocess.run(
             ["git", "rev-parse", "--verify", "HEAD"],
             cwd=root,
             stdout=subprocess.PIPE,
@@ -370,18 +336,34 @@ def _git_revision(root: Path) -> str | None:
             timeout=10,
             text=True,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    revision = result.stdout.strip()
-    return revision if result.returncode == 0 and revision else None
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+            text=True,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ConformanceError("conformance source must be a clean Git checkout") from error
 
-
-def _dependency_lock(root: Path) -> dict[str, Any]:
-    path = root / "uv.lock"
-    if not path.is_file() or path.is_symlink():
-        return {"locator": None, "digest": None, "byteSize": 0}
-    payload = path.read_bytes()
-    return {"locator": "uv.lock", "digest": sha256_digest(payload), "byteSize": len(payload)}
+    try:
+        repository_root = Path(top_level.stdout.strip()).resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise ConformanceError("conformance source must be a clean Git checkout") from error
+    revision = revision_result.stdout.strip()
+    if (
+        top_level.returncode != 0
+        or revision_result.returncode != 0
+        or status.returncode != 0
+        or repository_root != root
+        or _GIT_COMMIT_PATTERN.fullmatch(revision) is None
+    ):
+        raise ConformanceError("conformance source must be the root of a Git checkout")
+    if status.stdout:
+        raise ConformanceError("conformance source Git checkout must be clean")
+    return revision
 
 
 def _write_new(path: Path, payload: bytes) -> None:
@@ -425,10 +407,14 @@ def run_conformance(
     if output_path.exists() or output_path.is_symlink():
         raise ConformanceError(f"refusing to replace existing conformance report: {output_path}")
 
-    source = {"revision": _git_revision(root), "treeDigest": _source_tree_digest(root)}
-    dependency_lock = _dependency_lock(root)
-    specification_evidence = _file_evidence(specification_path, role="specification", root=root)
-    matrix_evidence = _file_evidence(matrix_path, role="test-matrix", root=root)
+    revision = _git_revision(root)
+    try:
+        specification_locator = specification_path.relative_to(root).as_posix()
+        matrix_locator = matrix_path.relative_to(root).as_posix()
+    except ValueError as error:
+        raise ConformanceError(
+            "conformance specification and matrix must belong to the tested Git checkout"
+        ) from error
     started = time.monotonic_ns()
     test_results = [
         _run_required_test(root, definition, timeout_seconds=timeout_seconds) for definition in matrix["tests"]
@@ -438,8 +424,9 @@ def run_conformance(
     verdict = "pass" if first_failure is None else "fail"
     configuration = {
         "conformanceClass": conformance_class,
-        "specificationDigest": specification_evidence["digest"],
-        "testMatrixDigest": matrix_evidence["digest"],
+        "sourceRevision": revision,
+        "specificationPath": specification_locator,
+        "testMatrixPath": matrix_locator,
         "timeoutSeconds": timeout_seconds,
     }
     command_arguments = [
@@ -472,9 +459,8 @@ def run_conformance(
         "specificationId": specification["specificationId"],
         "specificationVersion": specification["formatVersion"],
         "conformanceClass": conformance_class,
-        "source": source,
-        "dependencyLock": dependency_lock,
-        "artifacts": {"inputs": [specification_evidence, matrix_evidence], "outputs": []},
+        "source": {"revision": revision},
+        "artifacts": {"inputs": [], "outputs": []},
         "planAndConfiguration": {
             "planId": None,
             "configurationId": stable_urn("conformance-configuration", configuration),
@@ -534,8 +520,7 @@ def load_report(path: Path) -> dict[str, Any]:
 
 def _validate_report_shape(report: dict[str, Any]) -> None:
     nested_shapes = {
-        "source": {"revision", "treeDigest"},
-        "dependencyLock": {"locator", "digest", "byteSize"},
+        "source": {"revision"},
         "artifacts": {"inputs", "outputs"},
         "planAndConfiguration": {"planId", "configurationId", "configurationDigest"},
         "command": {"identity", "arguments", "workingDirectory"},
@@ -569,16 +554,8 @@ def _validate_report_shape(report: dict[str, Any]) -> None:
         except ValueError as error:
             raise ConformanceError(str(error)) from error
     source = report["source"]
-    if source["revision"] is not None and not isinstance(source["revision"], str):
-        raise ConformanceError("conformance report source revision must be a string or null")
-    _require_report_digest(source["treeDigest"], "source-tree digest")
-    dependency = report["dependencyLock"]
-    if (dependency["locator"] is None) != (dependency["digest"] is None):
-        raise ConformanceError("conformance report dependency-lock identity is incomplete")
-    if dependency["digest"] is not None:
-        _require_report_digest(dependency["digest"], "dependency-lock digest")
-    if not isinstance(dependency["byteSize"], int) or isinstance(dependency["byteSize"], bool) or dependency["byteSize"] < 0:
-        raise ConformanceError("conformance report dependency-lock byte size is invalid")
+    if not isinstance(source["revision"], str) or _GIT_COMMIT_PATTERN.fullmatch(source["revision"]) is None:
+        raise ConformanceError("conformance report source revision must be a full lowercase Git commit")
     artifacts = report["artifacts"]
     for direction in ("inputs", "outputs"):
         values = artifacts[direction]

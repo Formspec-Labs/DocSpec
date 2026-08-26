@@ -1,1 +1,0 @@
-This notice summarizes digital accessibility checks for headings, keyboard operation, focus order, labels, and color contrast.

@@ -1,51 +1,51 @@
 {
   "format": "docspec-conformance-test-matrix",
   "formatVersion": "1.0",
-  "specificationId": "urn:docspec:conformance:standalone-platform:2026-08-05",
+  "specificationId": "urn:docspec:conformance:standalone-platform:1",
   "implementationStatus": "standalone-reference-implementation",
   "tests": [
     {
       "testId": "CORE-INSTALL",
       "status": "implemented",
       "selectors": [
-        "tests/test_package_boundary.py::test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle",
+        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency",
         "tests/test_package_boundary.py::test_core_import_and_cli_help_need_no_optional_dependency"
       ],
       "plannedTestModule": null
     },
     {
       "testId": "BOUNDARY-IMPORT",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
         "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
         "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
         "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
-        "tests/conformance/test_import_directions.py::test_the_command_surface_is_the_one_composition_root",
+        "tests/conformance/test_import_directions.py::test_command_surfaces_are_explicit_composition_roots",
         "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_no_vendor_software"
       ],
       "plannedTestModule": null
     },
     {
       "testId": "BOUNDARY-CODE",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
-        "tests/test_boundary_code.py::test_predecessor_fingerprint_artifact_is_closed_complete_and_sealed",
-        "tests/test_boundary_code.py::test_active_production_contains_no_predecessor_blob_verbatim",
-        "tests/test_boundary_code.py::test_normalization_detects_reformatted_and_renamed_implementation",
-        "tests/test_boundary_code.py::test_short_boilerplate_does_not_create_a_syntax_fingerprint",
-        "tests/test_package_boundary.py::test_archive_manifest_is_generated_from_the_archive_and_up_to_date"
+        "tests/test_package_boundary.py::test_git_is_the_only_predecessor_code_record",
+        "tests/test_package_boundary.py::test_superseded_source_formats_are_absent_from_repository_code",
+        "tests/test_package_boundary.py::test_non_docspec_product_areas_are_absent_from_production",
+        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency"
       ],
       "plannedTestModule": null
     },
     {
       "testId": "SOURCE-CATALOG-CONTRACT",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
-        "tests/test_platform_artifact.py::test_shared_source_catalog_maps_through_the_injected_local_member_source",
-        "tests/test_platform_artifact.py::test_shared_source_catalog_refuses_changed_member_before_mapping",
-        "tests/test_platform_artifact.py::test_shared_source_catalog_applies_the_packaged_schema_to_each_record",
-        "tests/test_platform_artifact.py::test_shared_source_catalog_refuses_invalid_nested_source_data",
-        "tests/test_platform_artifact.py::test_shared_source_catalog_recomputes_both_set_digests"
+        "tests/test_source_catalog_snapshot.py::test_builds_and_streams_one_complete_normative_snapshot",
+        "tests/test_source_catalog_snapshot.py::test_policy_must_account_for_every_universe_row_before_publication",
+        "tests/test_source_catalog_snapshot.py::test_accounts_for_an_observed_crawl_without_claiming_source_completeness",
+        "tests/test_source_catalog_snapshot.py::test_refuses_unknown_boundary_fields",
+        "tests/test_source_catalog_snapshot.py::test_tampering_fails_before_a_snapshot_row_is_returned",
+        "tests/test_source_catalog_snapshot.py::test_producer_gate_recomputes_state_before_publication"
       ],
       "plannedTestModule": null
     },
@@ -66,7 +66,7 @@
     },
     {
       "testId": "RELEASE-MANIFEST",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
         "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
         "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
@@ -162,38 +162,6 @@
       "plannedTestModule": null
     },
     {
-      "testId": "AMAZON-S3-BLOB-STORE",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_s3_blob_adapter.py::test_blob_store_behavioral_contract",
-        "tests/test_s3_blob_adapter.py::test_put_is_bounded_and_checks_declared_identity_before_upload",
-        "tests/test_s3_blob_adapter.py::test_conditional_create_accepts_only_an_identical_concurrent_object",
-        "tests/test_s3_blob_adapter.py::test_stat_and_verify_reject_tampered_metadata_and_bytes",
-        "tests/test_s3_blob_adapter.py::test_reads_are_bounded_streaming_and_ranges_are_half_open",
-        "tests/test_s3_blob_adapter.py::test_materialization_is_contained_and_never_replaces_files",
-        "tests/test_s3_blob_adapter.py::test_provider_failures_are_normalized_at_the_adapter_boundary",
-        "tests/test_s3_blob_adapter.py::test_configuration_and_reference_validation_fail_closed",
-        "tests/test_s3_blob_adapter.py::test_boto3_factory_is_lazy_and_uses_the_same_injected_client_boundary"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "S3-COMPATIBLE-BLOB-STORE",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_s3_blob_adapter.py::test_blob_store_behavioral_contract",
-        "tests/test_s3_blob_adapter.py::test_put_is_bounded_and_checks_declared_identity_before_upload",
-        "tests/test_s3_blob_adapter.py::test_conditional_create_accepts_only_an_identical_concurrent_object",
-        "tests/test_s3_blob_adapter.py::test_stat_and_verify_reject_tampered_metadata_and_bytes",
-        "tests/test_s3_blob_adapter.py::test_reads_are_bounded_streaming_and_ranges_are_half_open",
-        "tests/test_s3_blob_adapter.py::test_materialization_is_contained_and_never_replaces_files",
-        "tests/test_s3_blob_adapter.py::test_provider_failures_are_normalized_at_the_adapter_boundary",
-        "tests/test_s3_blob_adapter.py::test_configuration_and_reference_validation_fail_closed",
-        "tests/test_s3_blob_adapter.py::test_boto3_factory_is_lazy_and_uses_the_same_injected_client_boundary"
-      ],
-      "plannedTestModule": null
-    },
-    {
       "testId": "ACQUISITION",
       "status": "implemented",
       "selectors": [
@@ -269,6 +237,16 @@
       "plannedTestModule": null
     },
     {
+      "testId": "COMPLETE-SEARCH-CORPUS",
+      "status": "partial",
+      "selectors": [
+        "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
+        "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
+        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+      ],
+      "plannedTestModule": null
+    },
+    {
       "testId": "PROCESSOR-CONTRACT",
       "status": "implemented",
       "selectors": [
@@ -319,10 +297,10 @@
     },
     {
       "testId": "SCHEDULER-PORTABILITY",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
         "tests/conformance/test_scheduler_portability.py::test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_backend",
-        "tests/conformance/test_scheduler_portability.py::test_the_native_dagster_job_publishes_the_local_backend_state",
+        "tests/test_dagster_adapter.py::test_reconstructable_job_crosses_dagsters_multiprocess_worker_boundary",
         "tests/test_execution_backends.py::test_execution_messages_are_closed_canonical_and_idempotent",
         "tests/test_execution_backends.py::test_local_backend_uses_the_portable_messages_with_bounded_concurrency",
         "tests/test_execution_backends.py::test_external_boundary_delegates_one_serialized_task_stream_without_a_closure",
@@ -331,10 +309,12 @@
         "tests/test_execution_backends.py::test_backend_verifies_the_complete_profile_reference_before_work",
         "tests/test_execution_backends.py::test_local_backend_rejects_a_completion_after_its_deadline",
         "tests/test_execution_backends.py::test_external_backend_bounds_replayed_results_by_the_sealed_attempt_limit",
-        "tests/test_dagster_adapter.py::test_dagster_adapter_profile_is_closed_and_pins_passed_multinode_qualification",
-        "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
-        "tests/test_dagster_adapter.py::test_dagster_worker_crosses_a_process_boundary_and_persists_idempotent_results",
-        "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof",
+        "tests/test_dagster_adapter.py::test_real_dagster_job_executes_reference_only_tasks_and_records_events",
+        "tests/test_dagster_adapter.py::test_dagster_retry_policy_recovers_one_mapped_task_without_rewriting_siblings",
+        "tests/test_dagster_adapter.py::test_rerunning_the_job_reuses_idempotent_handler_results",
+        "tests/test_dagster_adapter.py::test_malformed_or_incomplete_task_stream_fails_the_run",
+        "tests/test_dagster_adapter.py::test_missing_mapped_result_cannot_produce_a_successful_run",
+        "tests/test_dagster_adapter.py::test_executor_and_retry_policy_are_injected_at_the_composition_root",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
       ],
@@ -342,7 +322,7 @@
     },
     {
       "testId": "DOCUMENT-RELEASE-INTEGRITY",
-      "status": "implemented",
+      "status": "partial",
       "selectors": [
         "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
         "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",
@@ -414,9 +394,7 @@
         "tests/test_scale_profile.py::test_scale_profile_identity_changes_with_claim_inputs_or_targets",
         "tests/test_scale_profile.py::test_scale_profile_fails_closed_for_tampering_unknown_fields_and_missing_processor_targets",
         "tests/test_scale_profile.py::test_scale_profile_rejects_ambiguous_or_impossible_bounds",
-        "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact",
-        "tests/test_dagster_adapter.py::test_dagster_deployment_and_task_ledger_are_sealed_and_streamable",
-        "tests/test_dagster_adapter.py::test_dynamic_tasks_do_only_indexed_membership_work_after_one_coordinator_proof"
+        "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact"
       ],
       "plannedTestModule": null
     },
@@ -424,7 +402,7 @@
       "testId": "PACKAGE-RELEASE",
       "status": "partial",
       "selectors": [
-        "tests/test_package_boundary.py::test_docspec_and_pinned_rulespec_wheels_form_a_clean_install_bundle",
+        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency",
         "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",

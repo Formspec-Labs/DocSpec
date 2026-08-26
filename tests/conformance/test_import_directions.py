@@ -40,6 +40,11 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "errors",
         "__init__",
     },
+    # Stable public assembly surface. It re-exports explicit constructors but
+    # selects and instantiates none of them; the CLI remains the composition root.
+    "source_catalog": {"adapters", "application", "domain", "ports"},
+    "source_catalog_cli": {"adapters", "application", "domain", "errors"},
+    "entrypoint": {"cli", "source_catalog_cli"},
     "cli": {
         "adapters",
         "application",
@@ -49,14 +54,16 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "ports",
         "processing",
         "profile_registry",
+        "source_catalog_cli",
         "__init__",
     },
 }
 
 # Areas whose modules the core must never import back: concrete adapters and
 # the operator command are the outermost ring.
-_OUTER_AREAS = {"adapters", "cli"}
+_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "source_catalog_cli"}
 _CORE_AREAS = set(_ALLOWED_INTERNAL_IMPORTS) - _OUTER_AREAS
+_PUBLIC_FACADE_MODULES = {"docspec.source_catalog"}
 
 
 def _module_name(path: Path) -> str:
@@ -130,15 +137,23 @@ def test_core_areas_never_import_adapters_or_the_command_surface() -> None:
     assert violations == []
 
 
-def test_the_command_surface_is_the_one_composition_root() -> None:
+def test_command_surfaces_are_explicit_composition_roots() -> None:
     modules = _production_modules()
     wiring = {
         module
         for module, path in modules.items()
-        if _area(module) not in {"adapters"}
+        if _area(module) not in {"adapters"} and module not in _PUBLIC_FACADE_MODULES
         and any(_area(imported) == "adapters" for imported in _internal_imports(path, module))
     }
-    assert wiring == {"docspec.cli"}
+    assert wiring == {"docspec.cli", "docspec.source_catalog_cli"}
+    assert {
+        module
+        for module in _PUBLIC_FACADE_MODULES
+        if any(
+            _area(imported) == "adapters"
+            for imported in _internal_imports(modules[module], module)
+        )
+    } == _PUBLIC_FACADE_MODULES
     cli_imports = {_area(imported) for imported in _internal_imports(modules["docspec.cli"], "docspec.cli")}
     assert {"adapters", "application"} <= cli_imports
     importers_of_cli = {
@@ -146,7 +161,7 @@ def test_the_command_surface_is_the_one_composition_root() -> None:
         for module, path in modules.items()
         if "docspec.cli" in _internal_imports(path, module)
     }
-    assert importers_of_cli == set()
+    assert importers_of_cli == {"docspec.entrypoint"}
 
 
 def test_importing_the_complete_core_loads_no_vendor_software() -> None:

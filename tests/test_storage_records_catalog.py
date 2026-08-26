@@ -34,7 +34,7 @@ from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError, LimitExceededError
-from tests.helpers import local_profile_set, persist_execution_evidence
+from tests.helpers import document_release_producer, local_profile_set, persist_execution_evidence
 
 
 SCHEMA = RecordSchema(
@@ -181,7 +181,13 @@ def _committed_catalog_state(tmp_path: Path):
         verification_scratch=tmp_path / "verification-scratch",
     )
     controls = LocalJsonControlRepository(tmp_path / "controls")
-    catalog = LocalManifestDocumentCatalog(tmp_path / "catalog", records=records, stores=stores, controls=controls)
+    catalog = LocalManifestDocumentCatalog(
+        tmp_path / "catalog",
+        records=records,
+        stores=stores,
+        controls=controls,
+        producer=document_release_producer(),
+    )
     extension_layer = records.write_layer(
         [{"recordId": "a", "sourceItemId": "source-a", "value": 1}],
         layer_kind="test-records",
@@ -206,7 +212,11 @@ def _committed_catalog_state(tmp_path: Path):
         )
     )
     stages = StagePolicy(("text-v1",), "paragraph-v1")
-    source = SourceCatalogRef("urn:docspec:test:catalog-1", "external/catalog.json", sha256_digest(b"catalog-1"))
+    source = SourceCatalogRef(
+        "urn:docspec:test:catalog:" + "1" * 64,
+        "external/catalog.json",
+        sha256_digest(b"catalog-1"),
+    )
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
     plan = ProcessingPlan.create(
@@ -413,6 +423,7 @@ def test_manifest_catalog_commits_and_reopens_complete_state(tmp_path: Path) -> 
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         max_release_bytes=64,
     )
     with pytest.raises(LimitExceededError, match="document release"):

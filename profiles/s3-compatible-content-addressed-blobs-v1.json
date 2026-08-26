@@ -48,6 +48,6 @@
   },
   "verifier": {
     "status": "implemented",
-    "testId": "S3-COMPATIBLE-BLOB-STORE"
+    "testId": "BLOB-STORE-CONTRACT"
   }
 }

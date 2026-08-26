@@ -34,7 +34,7 @@ from docspec.ports.content_fetcher import FetchStream
 from docspec.processing.extraction import DefaultExtractorRegistry, ExtractionResult
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.helpers import profile_set
+from tests.helpers import document_release_producer, profile_set
 
 
 NOW = "2026-08-05T12:00:00Z"
@@ -196,6 +196,7 @@ def _execute(
         records=records,
         stores=stores,
         controls=controls,
+        producer=document_release_producer(),
         blobs=blobs,
     )
     base_fetcher = LocalFileContentFetcher(sources)

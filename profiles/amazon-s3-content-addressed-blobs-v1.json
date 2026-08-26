@@ -46,6 +46,6 @@
   },
   "verifier": {
     "status": "implemented",
-    "testId": "AMAZON-S3-BLOB-STORE"
+    "testId": "BLOB-STORE-CONTRACT"
   }
 }

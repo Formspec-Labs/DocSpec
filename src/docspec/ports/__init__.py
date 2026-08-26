@@ -15,10 +15,26 @@ from docspec.ports.record_storage import PartitionPolicy, RecordSchema, RecordSt
 from docspec.ports.reconciliation_workspace import ReconciliationWorkspace, ReconciliationWorkspaceFactory
 from docspec.ports.result_sink import ResultSink
 from docspec.ports.segmenter import Segmenter
-from docspec.ports.source_catalog import SourceCatalog, SourceCatalogRead, SourceCatalogReader, SourceCatalogSummary
+from docspec.ports.source_catalog import (
+    CatalogPolicyInputs,
+    CatalogPolicyWorkspace,
+    ImmutableSourceCatalogReader,
+    SourceInputSelector,
+    SourceCatalogMemberSource,
+    SourceCatalogPolicy,
+    SourceCatalogSnapshot,
+    SourceCatalogSnapshotSummary,
+    SourceCatalogStaging,
+    SourceCatalogStore,
+    SourceNativeDescription,
+    SourceNativeRecordSource,
+    SourceNativeRow,
+)
 
 __all__ = [
     "BlobStore",
+    "CatalogPolicyInputs",
+    "CatalogPolicyWorkspace",
     "AcquisitionSource",
     "ContentFetcher",
     "ControlRepository",
@@ -42,9 +58,16 @@ __all__ = [
     "ResultSink",
     "Segmenter",
     "SerializedTaskDispatcher",
-    "SourceCatalog",
-    "SourceCatalogRead",
-    "SourceCatalogReader",
-    "SourceCatalogSummary",
+    "SourceCatalogMemberSource",
+    "SourceCatalogPolicy",
+    "SourceCatalogSnapshot",
+    "SourceCatalogSnapshotSummary",
+    "SourceCatalogStaging",
+    "SourceCatalogStore",
+    "SourceInputSelector",
+    "SourceNativeDescription",
+    "SourceNativeRecordSource",
+    "SourceNativeRow",
+    "ImmutableSourceCatalogReader",
     "StoreTaskHandler",
 ]
