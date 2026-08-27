@@ -11,10 +11,21 @@ import zipfile
 from pathlib import Path
 
 from docspec import __version__
+from docspec.domain.identity import canonical_json_file_bytes
+from docspec.domain.source_catalog import source_catalog_schemas
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
+SOURCE_CATALOG_SCHEMA_ROOT = PRODUCTION_ROOT / "schemas" / "source_catalog" / "1.0"
+PACKAGED_SCALE_SCHEMAS = {
+    "docspec/schemas/scale_profile/2.0/scale-profile.schema.json": (
+        ROOT / "conformance" / "scale-profile.schema.json"
+    ),
+    "docspec/schemas/scale_result/1.0/scale-result.schema.json": (
+        ROOT / "conformance" / "scale-result.schema.json"
+    ),
+}
 REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 
 # A path naming the sibling checkout: the name flanked by separators, or ending
@@ -26,6 +37,7 @@ SIBLING_CHECKOUT_PATH = re.compile(r"(?:^|/)spicy[-_]regs(?:/|\Z)")
 SIBLING_MODULE_PATH = re.compile(r"\bspicy_regs\.")
 SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
 OPTIONAL_SOURCE_ADAPTER = "src/docspec/adapters/spicyregs_source_native.py"
+PINNED_INSTALLED_SOURCE_PROBE = "tests/test_source_catalog_installed_wheel.py"
 OPTIONAL_SOURCE_MODULES = frozenset(
     {
         "spicy_" + "regs.source_native",
@@ -137,8 +149,11 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
                 if "/" in value and SIBLING_CHECKOUT_PATH.search(value):
                     violations.append(f"{relative}:{node.lineno} names a SpicyRegs path: {value!r}")
                 if SIBLING_MODULE_PATH.search(value) and not (
-                    relative == OPTIONAL_SOURCE_ADAPTER
-                    and value in OPTIONAL_SOURCE_MODULES
+                    (
+                        relative == OPTIONAL_SOURCE_ADAPTER
+                        and value in OPTIONAL_SOURCE_MODULES
+                    )
+                    or relative == PINNED_INSTALLED_SOURCE_PROBE
                 ):
                     violations.append(f"{relative}:{node.lineno} names a spicy_regs module: {value!r}")
             elif isinstance(node, ast.Call):
@@ -166,10 +181,10 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
-        "rulespec-artifacts==1.0.0",
+        "rulespec-artifacts==1.0.9",
     ]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
-        "path": "vendor/rulespec_artifacts-1.0.0-py3-none-any.whl"
+        "path": "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl"
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
@@ -183,6 +198,14 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert "archive" not in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
+
+
+def test_checked_in_source_catalog_schemas_equal_domain_generation() -> None:
+    generated = source_catalog_schemas()
+
+    assert {path.name for path in SOURCE_CATALOG_SCHEMA_ROOT.iterdir()} == set(generated)
+    for name, schema in generated.items():
+        assert (SOURCE_CATALOG_SCHEMA_ROOT / name).read_bytes() == canonical_json_file_bytes(schema)
 
 
 def test_superseded_source_formats_are_absent_from_repository_code() -> None:
@@ -373,6 +396,14 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
         }
         assert packaged_areas.isdisjoint(ARCHIVED_PRODUCT_AREAS)
 
+        for name, schema in source_catalog_schemas().items():
+            member = f"docspec/schemas/source_catalog/1.0/{name}"
+            assert member in members
+            assert archive.read(member) == canonical_json_file_bytes(schema)
+        for member, checked_in_schema in PACKAGED_SCALE_SCHEMAS.items():
+            assert member in members
+            assert archive.read(member) == checked_in_schema.read_bytes()
+
         entry_points_name = next(name for name in members if name.endswith(".dist-info/entry_points.txt"))
         parser = configparser.ConfigParser()
         parser.read_string(archive.read(entry_points_name).decode("utf-8"))
@@ -398,7 +429,7 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_artifacts-1.0.0-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_artifacts-1.0.9-py3-none-any.whl"),
             str(wheel),
         ],
         cwd=ROOT,

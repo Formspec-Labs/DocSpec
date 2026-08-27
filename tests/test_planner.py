@@ -18,7 +18,11 @@ from docspec.domain.processors import ProcessorSet
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
 from docspec.errors import IntegrityError
-from docspec.ports.source_catalog import SourceCatalogSnapshot, SourceCatalogSnapshotSummary
+from docspec.ports.source_catalog import (
+    LocatedSourceCatalogItem,
+    SourceCatalogSnapshot,
+    SourceCatalogSnapshotSummary,
+)
 from tests.helpers import EMPTY_DIGEST, artifact, profile_set
 
 
@@ -76,11 +80,48 @@ class MemorySourceCatalog:
             item_count=len(self.items),
             disposition_counts=disposition_counts,
             partitions=self.partitions,
-            item_member_path="records/source-items.jsonl",
+            selection_policy={
+                "policyId": "urn:test:selection-policy",
+                "policyVersion": "1.0.0",
+                "policyDigest": reference.digest,
+            },
+            partition_policy={
+                "policyId": "urn:test:partition-policy",
+                "policyVersion": "1.0.0",
+                "policyDigest": reference.digest,
+                "bucketCount": 1,
+            },
+            join_coverage=(),
+            diagnostic_digests={
+                "normalizedFieldsDigest": reference.digest,
+                "joinedFieldsDigest": reference.digest,
+                "dispositionsDigest": reference.digest,
+                "reasonsDigest": reference.digest,
+                "interpretationsDigest": reference.digest,
+                "renditionChoicesDigest": reference.digest,
+            },
+            source_native_inputs=(
+                {
+                    "logicalId": "urn:test:source-native",
+                    "artifactDigest": reference.digest,
+                },
+            ),
+            byte_measurements={
+                "payloadBytesRead": 0,
+                "payloadBytesReused": 0,
+                "payloadBytesWritten": 0,
+                "publicationBytesWritten": 0,
+            },
         )
         return SourceCatalogSnapshot(
             summary,
-            iter(MemoryCatalogItem(item) for item in self.items),  # type: ignore[arg-type]
+            iter(
+                LocatedSourceCatalogItem(
+                    MemoryCatalogItem(item),  # type: ignore[arg-type]
+                    reference.digest,
+                )
+                for item in self.items
+            ),
         )
 
 

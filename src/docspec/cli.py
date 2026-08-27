@@ -172,10 +172,22 @@ def _write_new(path: Path, payload: bytes, *, label: str) -> None:
 def _write_failure_receipt(args: argparse.Namespace, error: Exception) -> None:
     """Best-effort write-once failure evidence for mutating operator commands."""
 
+    if getattr(args, "_suppress_failure_receipt", False):
+        return
     receipt_value = getattr(args, "receipt", None)
     if receipt_value is None:
         return
     receipt_path = Path(receipt_value)
+    destination_value = getattr(args, "destination", None)
+    if destination_value is not None:
+        destination_path = Path(destination_value).resolve(strict=False)
+        resolved_receipt = receipt_path.resolve(strict=False)
+        if (
+            destination_path == resolved_receipt
+            or destination_path in resolved_receipt.parents
+            or resolved_receipt in destination_path.parents
+        ):
+            return
     if receipt_path.exists() or receipt_path.is_symlink():
         return
     request_digest: str | None = None
@@ -191,6 +203,9 @@ def _write_failure_receipt(args: argparse.Namespace, error: Exception) -> None:
         "diagnosticCode": f"DOCSPEC-CLI-{type(error).__name__.upper()}",
         "verdict": "failed",
     }
+    blob_store_evidence = getattr(args, "_source_catalog_blob_store_evidence", None)
+    if blob_store_evidence is not None:
+        content["blobStore"] = blob_store_evidence
     receipt = {
         "format": "docspec-operation-failure-receipt",
         "formatVersion": "1.0",

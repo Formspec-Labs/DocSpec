@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import heapq
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -19,11 +21,12 @@ from rulespec_artifacts import (
     MemberManifestReference,
     MemberSource,
     Producer,
+    Supersedes,
     VerifiedArtifact,
     admit_artifact,
     build_artifact_root,
     canonical_json_bytes,
-    describe_member,
+    describe_member_from_receipt,
     framed_section_digest,
     iter_member_descriptors,
     parse_canonical_json,
@@ -32,10 +35,12 @@ from rulespec_artifacts import (
 )
 
 from docspec.domain.references import SourceCatalogRef
-from docspec.domain.identity import require_sha256
+from docspec.domain.identity import require_sha256, require_text
+from docspec.domain.storage import partition_bucket
 from docspec.domain.source_catalog import (
     CatalogDisposition,
     SOURCE_CATALOG_ITEM_SCHEMA_ID,
+    SOURCE_CATALOG_MAX_JOIN_IDS,
     SOURCE_CATALOG_POLICY_SCHEMA_ID,
     SOURCE_CATALOG_RECEIPT_SCHEMA_ID,
     SourceCatalogItem,
@@ -46,10 +51,13 @@ from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
     CatalogPolicyWorkspace,
     ImmutableSourceCatalogReader,
+    LocatedSourceCatalogItem,
     SourceInputSelector,
     SourceCatalogPolicy,
+    SourceCatalogBlobSource,
     SourceCatalogSnapshot,
     SourceCatalogSnapshotSummary,
+    SourceCatalogSuccession,
     SourceCatalogStore,
     SourceNativeDescription,
     SourceNativeRecordSource,
@@ -58,7 +66,6 @@ from docspec.ports.source_catalog import (
 
 CATALOG_KIND = "docspec-source-catalog"
 CATALOG_POLICY_KEY = "catalog-policy.json"
-CATALOG_ITEMS_KEY = "records/source-items.jsonl"
 CATALOG_RECEIPT_KEY = "catalog-build-receipt.json"
 CATALOG_MANIFEST_KEY = "manifests/catalog.json"
 CATALOG_POLICY_ROLE = "catalog-policy"
@@ -71,9 +78,31 @@ CATALOG_RECEIPT_FORMAT = "docspec-source-catalog-build-receipt"
 CATALOG_FORMAT_VERSION = "1.0"
 MAX_CATALOG_ROW_BYTES = 4 * 1024 * 1024
 MAX_SMALL_MEMBER_BYTES = 1024 * 1024
+MAX_SOURCE_RENDITIONS_PER_RECORD = 1024
+MAX_SOURCE_RENDITION_BYTES_PER_RECORD = 4 * 1024 * 1024
+CATALOG_PARTITION_POLICY_ID = "urn:docspec:partition-policy:source-item-sha256:1"
+CATALOG_PARTITION_POLICY_VERSION = "1.0.0"
+CATALOG_PARTITION_BUCKET_COUNT = 64
 _UNIVERSE_ACCOUNTING_NAMESPACE = "docspec-internal/universe"
 _OUTPUT_ACCOUNTING_NAMESPACE = "docspec-internal/output"
+_OUTPUT_PARTITION_NAMESPACE_PREFIX = "docspec-internal/output-partition/"
 _SOURCE_ROW_NAMESPACE_PREFIX = "docspec-internal/source-rows/"
+_DIAGNOSTIC_DIGEST_FIELDS = (
+    "normalizedFieldsDigest",
+    "joinedFieldsDigest",
+    "dispositionsDigest",
+    "reasonsDigest",
+    "interpretationsDigest",
+    "renditionChoicesDigest",
+)
+_INTERPRETATION_KINDS = (
+    "exact-join",
+    "normalization",
+    "rendition-preference",
+    "sampling",
+    "selection",
+    "topic-recovery",
+)
 
 _CATALOG_SPEC_FIELDS = {
     "catalogId",
@@ -136,12 +165,56 @@ def source_catalog_producer(
 class SourceCatalogBuildRequest:
     catalog_id: str
     producer: Producer
+    supersedes: Supersedes | None = None
+
+    def __post_init__(self) -> None:
+        require_text(self.catalog_id, "source catalog series catalog_id")
+        if self.supersedes is not None:
+            if not isinstance(self.supersedes, Supersedes):
+                raise TypeError("source catalog supersedes must use Rulespec Supersedes")
+            Supersedes.from_dict(self.supersedes.as_dict(), path="source-catalog/supersedes")
+            require_text(self.supersedes.reason, "source catalog supersedes reason")
 
 
 @dataclass(frozen=True, slots=True)
 class SourceCatalogBuildResult:
     reference: SourceCatalogRef
     summary: SourceCatalogSnapshotSummary
+    byte_measurements: Mapping[str, int]
+
+
+@dataclass(frozen=True, slots=True)
+class _CatalogPartition:
+    partition_id: str
+    member: MemberDescriptor
+
+    def to_receipt(self) -> dict[str, object]:
+        if self.member.blob_ref is None or self.member.record_count is None:
+            raise ValueError("source-item partitions require blobRef and recordCount")
+        return {
+            "partitionId": self.partition_id,
+            "blobRef": self.member.blob_ref,
+            "byteSize": self.member.byte_size,
+            "recordCount": self.member.record_count,
+        }
+
+
+def _partition_policy() -> dict[str, object]:
+    identity = {
+        "policyId": CATALOG_PARTITION_POLICY_ID,
+        "policyVersion": CATALOG_PARTITION_POLICY_VERSION,
+        "bucketCount": CATALOG_PARTITION_BUCKET_COUNT,
+    }
+    return {**identity, "policyDigest": sha256_digest(canonical_json_bytes(identity))}
+
+
+def _partition_id(source_item_id: str) -> str:
+    bucket = partition_bucket(source_item_id, CATALOG_PARTITION_BUCKET_COUNT)
+    return f"{bucket:04d}"
+
+
+def _partition_namespace(partition_id: str) -> str:
+    return f"{_OUTPUT_PARTITION_NAMESPACE_PREFIX}{partition_id}"
 
 
 def _mapping(value: object, label: str) -> Mapping[str, Any]:
@@ -165,6 +238,12 @@ def _utf16_key(value: str) -> bytes:
         raise IntegrityError("catalog identity contains a lone Unicode surrogate") from error
 
 
+def _require_interpretation_order(item: SourceCatalogItem) -> None:
+    kinds = tuple(value["interpretationKind"] for value in item.to_dict()["interpretations"])
+    if kinds != _INTERPRETATION_KINDS:
+        raise IntegrityError("source-catalog interpretations differ from the closed ordered kind set")
+
+
 def _read_small(source: MemberSource, key: str) -> bytes:
     with source.open(key) as stream:
         payload = stream.read(MAX_SMALL_MEMBER_BYTES + 1)
@@ -181,17 +260,26 @@ def _schema_error(validator: jsonschema.Draft202012Validator, value: object, lab
         raise IntegrityError(f"{label} schema failure at {path}: {error.message}") from error
 
 
-def _iter_catalog_rows(source: MemberSource, expected_count: int) -> Iterator[SourceCatalogItem]:
+def _iter_partition_rows(
+    blob_source: SourceCatalogBlobSource,
+    partition: _CatalogPartition,
+) -> Iterator[SourceCatalogItem]:
+    member = partition.member
+    if member.blob_ref is None or member.record_count is None:
+        raise IntegrityError("source-item partition descriptor requires blobRef and recordCount")
     previous: str | None = None
     count = 0
-    with source.open(CATALOG_ITEMS_KEY) as stream:
+    with blob_source.open(member.blob_ref) as stream:
         while raw := stream.readline(MAX_CATALOG_ROW_BYTES + 2):
             if len(raw) > MAX_CATALOG_ROW_BYTES + 1:
                 raise LimitExceededError("source-catalog row exceeds its byte limit")
             if not raw.endswith(b"\n"):
                 raise IntegrityError("source-catalog rows must end with a newline")
             try:
-                value = parse_canonical_json(raw[:-1], path=f"{CATALOG_ITEMS_KEY}/{count}")
+                value = parse_canonical_json(
+                    raw[:-1],
+                    path=f"source-items/{partition.partition_id}/{count}",
+                )
             except ArtifactVerificationError as error:
                 raise IntegrityError(f"source-catalog row {count} is not canonical: {error}") from error
             _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {count}")
@@ -199,13 +287,61 @@ def _iter_catalog_rows(source: MemberSource, expected_count: int) -> Iterator[So
                 item = SourceCatalogItem.from_dict(value)
             except (TypeError, ValueError) as error:
                 raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
+            _require_interpretation_order(item)
+            if _partition_id(item.source_item_id) != partition.partition_id:
+                raise IntegrityError("source-catalog row is stored in the wrong logical partition")
             if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
-                raise IntegrityError("source-catalog rows must have strictly increasing sourceItemId values")
+                raise IntegrityError("source-catalog partition rows must be strictly ordered and distinct")
             previous = item.source_item_id
             count += 1
             yield item
+    if count != member.record_count:
+        raise IntegrityError("source-catalog row count differs from its partition descriptor")
+
+
+def _iter_catalog_rows(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    expected_count: int,
+) -> Iterator[SourceCatalogItem]:
+    for located in _iter_located_catalog_rows(blob_source, partitions, expected_count):
+        yield located.item
+
+
+def _iter_located_catalog_rows(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    expected_count: int,
+) -> Iterator[LocatedSourceCatalogItem]:
+    """Attach each parsed row to its supplying partition without reparsing it."""
+
+    streams = [iter(_iter_partition_rows(blob_source, partition)) for partition in partitions]
+    heap: list[tuple[bytes, int, SourceCatalogItem]] = []
+    previous: str | None = None
+    count = 0
+    try:
+        for index, stream in enumerate(streams):
+            item = next(stream, None)
+            if item is not None:
+                heapq.heappush(heap, (_utf16_key(item.source_item_id), index, item))
+        while heap:
+            _, index, item = heapq.heappop(heap)
+            if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
+                raise IntegrityError("source-catalog rows must be globally ordered and distinct")
+            previous = item.source_item_id
+            blob_ref = partitions[index].member.blob_ref
+            if blob_ref is None:
+                raise IntegrityError("source-item partition descriptor requires blobRef")
+            count += 1
+            yield LocatedSourceCatalogItem(item, blob_ref)
+            following = next(streams[index], None)
+            if following is not None:
+                heapq.heappush(heap, (_utf16_key(following.source_item_id), index, following))
+    finally:
+        for stream in streams:
+            stream.close()
     if count != expected_count:
-        raise IntegrityError("source-catalog row count differs from its member descriptor")
+        raise IntegrityError("source-catalog row count differs from its partition descriptors")
 
 
 def _framed_digest(domain: str, name: str, count: int, records: Iterable[object]) -> str:
@@ -364,6 +500,7 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
             raise IntegrityError("source-native records must be strictly ordered by sourceRecordId")
         previous_record_id = record_id
         selected: list[Mapping[str, Any]] = []
+        selected_bytes = 0
         while next_rendition is not None:
             rendition, key = checked_rendition(next_rendition)
             key_order = tuple(_utf16_key(part) for part in key)
@@ -379,6 +516,16 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
             if _utf16_key(key[0]) > _utf16_key(record_id):
                 break
             previous_rendition_key = key
+            if len(selected) >= MAX_SOURCE_RENDITIONS_PER_RECORD:
+                raise LimitExceededError(
+                    "source-native rendition count exceeds its per-record limit"
+                )
+            rendition_bytes = len(canonical_json_bytes(rendition))
+            if selected_bytes + rendition_bytes > MAX_SOURCE_RENDITION_BYTES_PER_RECORD:
+                raise LimitExceededError(
+                    "source-native rendition bytes exceed their per-record limit"
+                )
+            selected_bytes += rendition_bytes
             selected.append(rendition)
             next_rendition = next(renditions, None)
         yield record, tuple(selected)
@@ -393,12 +540,16 @@ class _CatalogPolicyInputs:
         self,
         sources: Sequence[SourceNativeRecordSource],
         descriptions: Sequence[SourceNativeDescription],
-        universe_input: SourceInputSelector,
+        universe_inputs: Sequence[SourceInputSelector],
         workspace: CatalogPolicyWorkspace,
     ) -> None:
         self._sources = tuple(sources)
         self._descriptions = tuple(descriptions)
-        self._universe_input = universe_input
+        self._universe_inputs = tuple(universe_inputs)
+        if not self._universe_inputs:
+            raise ValueError("catalog policy must declare at least one universe input")
+        if len(self._universe_inputs) != len(set(self._universe_inputs)):
+            raise ValueError("catalog policy universe inputs must be distinct")
         self._workspace = workspace
         self._loaded = False
         self._opened: set[SourceInputSelector] = set()
@@ -475,8 +626,6 @@ class _CatalogPolicyInputs:
     def _rows(
         self,
         selector: SourceInputSelector,
-        *,
-        account_for_universe: bool,
     ) -> Iterator[SourceNativeRow]:
         self._ensure_available(selector)
         if selector in self._opened:
@@ -498,12 +647,6 @@ class _CatalogPolicyInputs:
             if previous is not None and _utf16_key(source_item_id) <= _utf16_key(previous):
                 raise IntegrityError("catalog policy workspace source rows are not sorted and distinct")
             previous = source_item_id
-            if account_for_universe:
-                self._workspace.put(
-                    _UNIVERSE_ACCOUNTING_NAMESPACE,
-                    (source_item_id,),
-                    {"sourceItemId": source_item_id},
-                )
             yield row
         self._completed.add(selector)
 
@@ -511,16 +654,56 @@ class _CatalogPolicyInputs:
         if self._universe_opened:
             raise IntegrityError("catalog policy attempted to open the universe more than once")
         self._universe_opened = True
-        yield from self._rows(self._universe_input, account_for_universe=True)
+        streams = [
+            iter(self._rows(selector))
+            for selector in self._universe_inputs
+        ]
+        heap: list[tuple[bytes, int, SourceNativeRow]] = []
+        try:
+            for index, stream in enumerate(streams):
+                row = next(stream, None)
+                if row is not None:
+                    heapq.heappush(
+                        heap,
+                        (_utf16_key(str(row.record["sourceRecordId"])), index, row),
+                    )
+            previous: str | None = None
+            while heap:
+                _, index, row = heapq.heappop(heap)
+                source_item_id = str(row.record["sourceRecordId"])
+                if previous is not None and _utf16_key(source_item_id) <= _utf16_key(previous):
+                    raise IntegrityError(
+                        "catalog policy universe sourceItemId values are not globally distinct"
+                    )
+                previous = source_item_id
+                self._workspace.put(
+                    _UNIVERSE_ACCOUNTING_NAMESPACE,
+                    (source_item_id,),
+                    {"sourceItemId": source_item_id},
+                )
+                yield row
+                following = next(streams[index], None)
+                if following is not None:
+                    heapq.heappush(
+                        heap,
+                        (
+                            _utf16_key(str(following.record["sourceRecordId"])),
+                            index,
+                            following,
+                        ),
+                    )
+        finally:
+            for stream in streams:
+                stream.close()
 
     def iter_lookup_rows(self, selector: SourceInputSelector) -> Iterator[SourceNativeRow]:
-        if selector == self._universe_input:
+        if selector in self._universe_inputs:
             raise IntegrityError("catalog policy lookup input must differ from its universe input")
-        yield from self._rows(selector, account_for_universe=False)
+        yield from self._rows(selector)
 
     def finish(self) -> None:
-        if not self._universe_opened or self._universe_input not in self._completed:
-            raise IntegrityError("catalog policy did not read its declared universe input")
+        if not self._universe_opened or not set(self._universe_inputs).issubset(self._completed):
+            raise IntegrityError("catalog policy did not read every declared universe input")
         if self._opened != self._completed:
             raise IntegrityError("catalog policy did not fully consume every selected source input")
 
@@ -535,7 +718,7 @@ def _policy_rows(
     inputs: CatalogPolicyInputs = _CatalogPolicyInputs(
         sources,
         descriptions,
-        policy.universe_input,
+        policy.universe_inputs,
         workspace,
     )
     for item in policy.iter_items(inputs, workspace):
@@ -560,14 +743,15 @@ def _policy_rows(
             raise IntegrityError("catalog policy output does not account for its complete universe")
 
 
-class _CatalogRowWriter:
+class _CatalogRowPartitioner:
     def __init__(self, rows: Iterable[SourceCatalogItem]) -> None:
         self._rows = rows
         self.item_count = 0
         self.disposition_counts = {value.value: 0 for value in CatalogDisposition}
         self.selected_count = 0
+        self.partition_counts: dict[str, int] = {}
 
-    def chunks(self) -> Iterator[bytes]:
+    def stage(self, workspace: CatalogPolicyWorkspace) -> None:
         previous: str | None = None
         for item in self._rows:
             if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
@@ -575,6 +759,7 @@ class _CatalogRowWriter:
             previous = item.source_item_id
             value = item.to_dict()
             _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {self.item_count}")
+            _require_interpretation_order(item)
             payload = canonical_json_bytes(value)
             if len(payload) > MAX_CATALOG_ROW_BYTES:
                 raise LimitExceededError("source-catalog row exceeds its byte limit")
@@ -582,11 +767,34 @@ class _CatalogRowWriter:
             self.disposition_counts[item.disposition.value] += 1
             if item.disposition is CatalogDisposition.SELECTED:
                 self.selected_count += 1
-            yield payload + b"\n"
+            selected_partition = _partition_id(item.source_item_id)
+            workspace.put(
+                _partition_namespace(selected_partition),
+                (item.source_item_id,),
+                value,
+            )
+            self.partition_counts[selected_partition] = self.partition_counts.get(selected_partition, 0) + 1
+
+    @staticmethod
+    def chunks(workspace: CatalogPolicyWorkspace, partition_id: str) -> Iterator[bytes]:
+        for value in workspace.iter_ordered(_partition_namespace(partition_id)):
+            yield canonical_json_bytes(value) + b"\n"
+
+
+def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    byte_size = 0
+    for chunk in chunks:
+        if not isinstance(chunk, bytes):
+            raise TypeError("source-catalog blob measurements require bytes")
+        digest.update(chunk)
+        byte_size += len(chunk)
+    return "sha256:" + digest.hexdigest(), byte_size
 
 
 def _catalog_state_digests(
-    source: MemberSource,
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
     *,
     item_count: int,
     selected_count: int,
@@ -595,17 +803,17 @@ def _catalog_state_digests(
         "docspec-source-catalog-state/1",
         "sourceItems",
         item_count,
-        (item.to_dict() for item in _iter_catalog_rows(source, item_count)),
+        (item.to_dict() for item in _iter_catalog_rows(blob_source, partitions, item_count)),
     )
     requested = requested_universe_set_digest(
         item_count,
-        (item.source_item_id for item in _iter_catalog_rows(source, item_count)),
+        (item.source_item_id for item in _iter_catalog_rows(blob_source, partitions, item_count)),
     )
     selected = selected_source_set_digest(
         selected_count,
         (
             (item.source_item_id, item.document_id)
-            for item in _iter_catalog_rows(source, item_count)
+            for item in _iter_catalog_rows(blob_source, partitions, item_count)
             if item.disposition is CatalogDisposition.SELECTED
         ),
     )
@@ -613,21 +821,235 @@ def _catalog_state_digests(
 
 
 def _catalog_disposition_counts(
-    source: MemberSource,
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
     item_count: int,
 ) -> dict[str, int]:
     counts = {value.value: 0 for value in CatalogDisposition}
-    for item in _iter_catalog_rows(source, item_count):
+    for item in _iter_catalog_rows(blob_source, partitions, item_count):
         counts[item.disposition.value] += 1
     return counts
+
+
+def _item_interpretations(item: SourceCatalogItem, kind: str) -> tuple[Mapping[str, Any], ...]:
+    return tuple(
+        value
+        for value in item.to_dict()["interpretations"]
+        if value["interpretationKind"] == kind
+    )
+
+
+def _diagnostic_digest(
+    domain: str,
+    records: Callable[[], Iterator[Mapping[str, Any]]],
+) -> str:
+    count = sum(1 for _ in records())
+    return _framed_digest(domain, "records", count, records())
+
+
+def _normalized_field_records(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> Iterator[Mapping[str, Any]]:
+    for item in _iter_catalog_rows(blob_source, partitions, item_count):
+        fields: list[Mapping[str, Any]] = []
+        for interpretation in _item_interpretations(item, "normalization"):
+            fields.extend(interpretation["result"]["fields"])
+        previous_key: tuple[bytes, int] | None = None
+        for field in sorted(fields, key=lambda value: _utf16_key(value["normalizedField"])):
+            field_path = field["normalizedField"]
+            for value_index, value in _indexed_values(field["value"]):
+                key = (_utf16_key(field_path), value_index)
+                if previous_key is not None and key <= previous_key:
+                    raise IntegrityError("normalized-field diagnostic keys must be ordered and distinct")
+                previous_key = key
+                yield {
+                    "sourceItemId": item.source_item_id,
+                    "fieldPath": field_path,
+                    "valueIndex": value_index,
+                    "value": value,
+                    "diagnostics": {
+                        "outcome": field["outcome"],
+                        "sourcePaths": field["sourcePaths"],
+                        "unparseableValues": field["unparseableValues"],
+                        "valueSource": field["valueSource"],
+                    },
+                }
+
+
+def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
+    if isinstance(value, list) and value:
+        yield from enumerate(value)
+        return
+    yield 0, value
+
+
+def _joined_field_records(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> Iterator[Mapping[str, Any]]:
+    for item in _iter_catalog_rows(blob_source, partitions, item_count):
+        joins: list[Mapping[str, Any]] = []
+        for interpretation in _item_interpretations(item, "exact-join"):
+            joins.extend(interpretation["result"]["joins"])
+        previous_key: tuple[bytes, bytes, int] | None = None
+        for join in sorted(joins, key=lambda value: _utf16_key(value["joinId"])):
+            key = (_utf16_key(join["joinId"]), _utf16_key("matchedSourceRecordId"), 0)
+            if previous_key is not None and key <= previous_key:
+                raise IntegrityError("joined-field diagnostic keys must be ordered and distinct")
+            previous_key = key
+            yield {
+                "sourceItemId": item.source_item_id,
+                "joinId": join["joinId"],
+                "outputPath": "matchedSourceRecordId",
+                "valueIndex": 0,
+                "value": join["matchedSourceRecordId"],
+                "outcome": join["outcome"],
+                "evidence": {
+                    "lookupScopeId": join["lookupScopeId"],
+                    "sourceField": join["sourceField"],
+                    "sourceValue": join["sourceValue"],
+                },
+            }
+
+
+def _interpretation_records(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> Iterator[Mapping[str, Any]]:
+    for item in _iter_catalog_rows(blob_source, partitions, item_count):
+        by_kind: dict[str, list[Mapping[str, Any]]] = {}
+        for interpretation in item.to_dict()["interpretations"]:
+            by_kind.setdefault(interpretation["interpretationKind"], []).append(interpretation)
+        for kind in sorted(by_kind, key=_utf16_key):
+            for index, interpretation in enumerate(by_kind[kind]):
+                yield {
+                    "sourceItemId": item.source_item_id,
+                    "interpretationKind": kind,
+                    "interpretationId": f"{index:04d}",
+                    "value": interpretation["result"],
+                    "diagnostics": {
+                        "inputScopeIds": interpretation["inputScopeIds"],
+                        "policyDigest": interpretation["policyDigest"],
+                        "policyId": interpretation["policyId"],
+                        "policyVersion": interpretation["policyVersion"],
+                    },
+                }
+
+
+def _rendition_choice_records(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> Iterator[Mapping[str, Any]]:
+    for item in _iter_catalog_rows(blob_source, partitions, item_count):
+        choices = _item_interpretations(item, "rendition-preference")
+        if len(choices) != 1:
+            raise IntegrityError("source-catalog row requires one rendition-preference interpretation")
+        yield {
+            "sourceItemId": item.source_item_id,
+            "selectedFamilyId": choices[0]["result"]["selectedFamilyId"],
+            "candidateIds": [candidate.rendition_id for candidate in item.candidate_renditions],
+        }
+
+
+def _join_coverage(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> list[dict[str, object]]:
+    counts: dict[str, dict[str, int]] = {}
+    for record in _joined_field_records(blob_source, partitions, item_count):
+        join_id = record["joinId"]
+        if not isinstance(join_id, str):
+            raise IntegrityError("catalog join identity must be text")
+        if join_id not in counts and len(counts) >= SOURCE_CATALOG_MAX_JOIN_IDS:
+            raise LimitExceededError("catalog join coverage exceeds its distinct-identity limit")
+        selected = counts.setdefault(
+            join_id,
+            {"eligible": 0, "matched": 0, "unmatched": 0, "nullResult": 0},
+        )
+        outcome = record["outcome"]
+        if outcome == "matched":
+            selected["eligible"] += 1
+            selected["matched"] += 1
+        elif outcome == "no-match":
+            selected["eligible"] += 1
+            selected["unmatched"] += 1
+        elif outcome == "not-stated":
+            selected["nullResult"] += 1
+        else:
+            raise IntegrityError("catalog join outcome is not recognized")
+    return [
+        {"joinId": join_id, **counts[join_id]}
+        for join_id in sorted(counts, key=_utf16_key)
+    ]
+
+
+def _catalog_diagnostics(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    item_count: int,
+) -> dict[str, object]:
+    def rows() -> Iterator[SourceCatalogItem]:
+        return _iter_catalog_rows(blob_source, partitions, item_count)
+
+    return {
+        "joinCoverage": _join_coverage(blob_source, partitions, item_count),
+        "normalizedFieldsDigest": _diagnostic_digest(
+            "docspec-catalog-normalized-fields/1",
+            lambda: _normalized_field_records(blob_source, partitions, item_count),
+        ),
+        "joinedFieldsDigest": _diagnostic_digest(
+            "docspec-catalog-joined-fields/1",
+            lambda: _joined_field_records(blob_source, partitions, item_count),
+        ),
+        "dispositionsDigest": _framed_digest(
+            "docspec-catalog-dispositions/1",
+            "records",
+            item_count,
+            ({"sourceItemId": item.source_item_id, "disposition": item.disposition.value} for item in rows()),
+        ),
+        "reasonsDigest": _framed_digest(
+            "docspec-catalog-reasons/1",
+            "records",
+            item_count,
+            ({"sourceItemId": item.source_item_id, "reason": item.selection.reason} for item in rows()),
+        ),
+        "interpretationsDigest": _diagnostic_digest(
+            "docspec-catalog-interpretations/1",
+            lambda: _interpretation_records(blob_source, partitions, item_count),
+        ),
+        "renditionChoicesDigest": _framed_digest(
+            "docspec-catalog-rendition-choices/1",
+            "records",
+            item_count,
+            _rendition_choice_records(blob_source, partitions, item_count),
+        ),
+    }
+
+
+def _source_catalog_succession(value: object) -> SourceCatalogSuccession:
+    supersedes = Supersedes.from_dict(value, path="source-catalog/supersedes")
+    return SourceCatalogSuccession(
+        supersedes.logical_id,
+        supersedes.artifact_digest,
+        supersedes.reason,
+    )
 
 
 class SourceCatalogArtifactVerifier:
     """Check DocSpec meaning after Rulespec has checked generic structure."""
 
-    def __init__(self, producer: Producer) -> None:
+    def __init__(self, producer: Producer, blob_source: SourceCatalogBlobSource) -> None:
         self._producer = producer
+        self._blob_source = blob_source
         self.summary: SourceCatalogSnapshotSummary | None = None
+        self.partitions: tuple[_CatalogPartition, ...] = ()
+        self.receipt: Mapping[str, Any] | None = None
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
         root = artifact.root
@@ -638,21 +1060,22 @@ class SourceCatalogArtifactVerifier:
             raise IntegrityError("source-catalog spec has an invalid closed shape")
         if not artifact.inputs or {value.role for value in artifact.inputs} != {"source-native"}:
             raise IntegrityError("source catalog must pin one or more source-native inputs")
-        members = {value.object_key: value for value in iter_member_descriptors(artifact, source)}
-        if set(members) != {CATALOG_POLICY_KEY, CATALOG_ITEMS_KEY, CATALOG_RECEIPT_KEY}:
+        declared_members = tuple(iter_member_descriptors(artifact, source))
+        local_members = {
+            value.object_key: value for value in declared_members if value.object_key is not None
+        }
+        item_members = tuple(value for value in declared_members if value.role == CATALOG_ITEMS_ROLE)
+        if set(local_members) != {CATALOG_POLICY_KEY, CATALOG_RECEIPT_KEY}:
             raise IntegrityError("source-catalog members differ from the DocSpec product view")
-        policy_member = members[CATALOG_POLICY_KEY]
-        item_member = members[CATALOG_ITEMS_KEY]
-        receipt_member = members[CATALOG_RECEIPT_KEY]
+        if len(declared_members) != len(local_members) + len(item_members):
+            raise IntegrityError("source-catalog member roles differ from the closed product role set")
+        policy_member = local_members[CATALOG_POLICY_KEY]
+        receipt_member = local_members[CATALOG_RECEIPT_KEY]
         if (
             policy_member.role != CATALOG_POLICY_ROLE
             or policy_member.media_type != CATALOG_JSON_MEDIA_TYPE
             or policy_member.schema_id != SOURCE_CATALOG_POLICY_SCHEMA_ID
             or policy_member.record_count is not None
-            or item_member.role != CATALOG_ITEMS_ROLE
-            or item_member.media_type != CATALOG_ITEMS_MEDIA_TYPE
-            or item_member.schema_id != SOURCE_CATALOG_ITEM_SCHEMA_ID
-            or item_member.record_count is None
             or receipt_member.role != CATALOG_RECEIPT_ROLE
             or receipt_member.media_type != CATALOG_JSON_MEDIA_TYPE
             or receipt_member.schema_id != SOURCE_CATALOG_RECEIPT_SCHEMA_ID
@@ -704,11 +1127,78 @@ class SourceCatalogArtifactVerifier:
             or receipt["verifierImplementationId"] != producer["verifierImplementationId"]
         ):
             raise IntegrityError("catalog build receipt verifier differs from the root producer")
-        if receipt["itemCount"] != item_member.record_count:
-            raise IntegrityError("catalog build receipt item count differs from the source-items member")
+        if receipt["partitionPolicy"] != _partition_policy():
+            raise IntegrityError("catalog build receipt partition policy differs from the installed policy")
+        partition_rows = receipt["partitions"]
+        partitions: list[_CatalogPartition] = []
+        previous_partition: str | None = None
+        members_by_ref = {value.blob_ref: value for value in item_members}
+        if None in members_by_ref or len(members_by_ref) != len(item_members):
+            raise IntegrityError("source-item members require distinct blobRef values")
+        for raw_partition in partition_rows:
+            partition = _mapping(raw_partition, "catalog receipt partition")
+            partition_id = _text(partition["partitionId"], "catalog partitionId")
+            if (
+                previous_partition is not None
+                and _utf16_key(partition_id) <= _utf16_key(previous_partition)
+            ):
+                raise IntegrityError("catalog receipt partitions must be ordered and distinct")
+            previous_partition = partition_id
+            if (
+                len(partition_id) != 4
+                or not partition_id.isascii()
+                or not partition_id.isdigit()
+                or not 0 <= int(partition_id) < CATALOG_PARTITION_BUCKET_COUNT
+            ):
+                raise IntegrityError("catalog receipt partitionId is outside the installed policy")
+            member = members_by_ref.get(partition["blobRef"])
+            if member is None:
+                raise IntegrityError("catalog receipt partition has no matching source-items member")
+            if (
+                member.media_type != CATALOG_ITEMS_MEDIA_TYPE
+                or member.schema_id != SOURCE_CATALOG_ITEM_SCHEMA_ID
+                or member.record_count != partition["recordCount"]
+                or member.byte_size != partition["byteSize"]
+                or member.object_key is not None
+                or member.sha256 is not None
+            ):
+                raise IntegrityError("source-item partition descriptor differs from its build receipt")
+            partitions.append(_CatalogPartition(partition_id, member))
+        if {value.member.blob_ref for value in partitions} != set(members_by_ref):
+            raise IntegrityError("catalog receipt does not account for every source-items member")
+        if receipt["itemCount"] != sum(value.member.record_count or 0 for value in partitions):
+            raise IntegrityError("catalog build receipt item count differs from its source-item partitions")
         counts = receipt["dispositionCounts"]
         if sum(counts.values()) != receipt["itemCount"]:
             raise IntegrityError("catalog build receipt dispositions do not account for every row")
+        measurements = receipt["byteMeasurements"]
+        payload_bytes = sum(value.member.byte_size for value in partitions)
+        if (
+            measurements["payloadBytesRead"] != payload_bytes
+            or measurements["payloadBytesReused"] + measurements["payloadBytesWritten"]
+            != payload_bytes
+        ):
+            raise IntegrityError("catalog build receipt payload byte measurements do not reconcile")
+        publication_bytes = (
+            policy_member.byte_size
+            + receipt_member.byte_size
+            + sum(value.byte_size for value in artifact.manifests)
+            + len(_read_small(source, ROOT_OBJECT_KEY))
+        )
+        if measurements["publicationBytesWritten"] != publication_bytes:
+            raise IntegrityError("catalog build receipt publication byte measurements do not reconcile")
+        previous_join: str | None = None
+        for coverage in receipt["joinCoverage"]:
+            join_id = coverage["joinId"]
+            if previous_join is not None and _utf16_key(join_id) <= _utf16_key(previous_join):
+                raise IntegrityError("catalog join coverage must be ordered and distinct")
+            previous_join = join_id
+            if coverage["eligible"] != coverage["matched"] + coverage["unmatched"]:
+                raise IntegrityError("catalog join coverage eligible count does not reconcile")
+            if coverage["eligible"] + coverage["nullResult"] > receipt["itemCount"]:
+                raise IntegrityError("catalog join coverage exceeds the catalog population")
+        self.partitions = tuple(partitions)
+        self.receipt = receipt
         self.summary = SourceCatalogSnapshotSummary(
             logical_id=artifact.pin.logical_id,
             artifact_digest=artifact.pin.artifact_digest,
@@ -718,27 +1208,44 @@ class SourceCatalogArtifactVerifier:
             selected_source_set_digest=spec["selectedSourceSetDigest"],
             item_count=receipt["itemCount"],
             disposition_counts=dict(counts),
-            partitions=("all",),
-            item_member_path=CATALOG_ITEMS_KEY,
+            partitions=tuple(value.partition_id for value in partitions),
+            selection_policy={
+                "policyId": spec["selectionPolicyId"],
+                "policyVersion": spec["selectionPolicyVersion"],
+                "policyDigest": spec["selectionPolicyDigest"],
+            },
+            partition_policy=dict(receipt["partitionPolicy"]),
+            join_coverage=tuple(dict(value) for value in receipt["joinCoverage"]),
+            diagnostic_digests={name: receipt[name] for name in _DIAGNOSTIC_DIGEST_FIELDS},
+            source_native_inputs=tuple(dict(value) for value in receipt["sourceNativeInputs"]),
+            byte_measurements=dict(receipt["byteMeasurements"]),
+            succession=(
+                None
+                if "supersedes" not in root
+                else _source_catalog_succession(root["supersedes"])
+            ),
         )
 
 
 class SourceCatalogBuildGateVerifier:
     """Add the producer-only full semantic pass to bounded receipt checks."""
 
-    def __init__(self, producer: Producer) -> None:
+    def __init__(self, producer: Producer, blob_source: SourceCatalogBlobSource) -> None:
         self._producer = producer
+        self._blob_source = blob_source
         self.summary: SourceCatalogSnapshotSummary | None = None
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
-        receipt_verifier = SourceCatalogArtifactVerifier(self._producer)
+        receipt_verifier = SourceCatalogArtifactVerifier(self._producer, self._blob_source)
         receipt_verifier(artifact, source)
         summary = receipt_verifier.summary
-        if summary is None:
+        receipt = receipt_verifier.receipt
+        if summary is None or receipt is None:
             raise RuntimeError("source catalog receipt verifier produced no summary")
 
         state, requested, selected = _catalog_state_digests(
-            source,
+            self._blob_source,
+            receipt_verifier.partitions,
             item_count=summary.item_count,
             selected_count=summary.disposition_counts[CatalogDisposition.SELECTED.value],
         )
@@ -755,10 +1262,22 @@ class SourceCatalogBuildGateVerifier:
         for name, digest in computed.items():
             if digest != expected[name]:
                 raise IntegrityError(f"producer semantic gate recomputed a different {name}")
-        if _catalog_disposition_counts(source, summary.item_count) != dict(
+        if _catalog_disposition_counts(
+            self._blob_source,
+            receipt_verifier.partitions,
+            summary.item_count,
+        ) != dict(
             summary.disposition_counts
         ):
             raise IntegrityError("producer semantic gate recomputed different disposition counts")
+        diagnostics = _catalog_diagnostics(
+            self._blob_source,
+            receipt_verifier.partitions,
+            summary.item_count,
+        )
+        for name, value in diagnostics.items():
+            if receipt[name] != value:
+                raise IntegrityError(f"producer semantic gate recomputed a different {name}")
         self.summary = summary
 
 
@@ -770,11 +1289,13 @@ class SourceCatalogArtifactReader(ImmutableSourceCatalogReader):
         self._producer = producer
 
     def open_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshot:
-        source = self._store.source_for(reference)
-        verifier = SourceCatalogArtifactVerifier(self._producer)
         try:
+            source = self._store.source_for(reference)
+            blob_source = self._store.blob_source()
+            verifier = SourceCatalogArtifactVerifier(self._producer, blob_source)
             admit_artifact(
                 source,
+                blob_source=blob_source,
                 expected_pin=ArtifactPin(reference.catalog_id, reference.digest),
                 semantic_verifier=verifier,
             )
@@ -784,7 +1305,11 @@ class SourceCatalogArtifactReader(ImmutableSourceCatalogReader):
             raise RuntimeError("source catalog verifier produced no summary")
         return SourceCatalogSnapshot(
             verifier.summary,
-            _iter_catalog_rows(source, verifier.summary.item_count),
+            _iter_located_catalog_rows(
+                blob_source,
+                verifier.partitions,
+                verifier.summary.item_count,
+            ),
         )
 
     def verify_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshotSummary:
@@ -830,8 +1355,7 @@ class SourceCatalogBuilder:
         catalog_schema_digest = schema_bundle_digest(_SCHEMAS)
 
         with self._workspace_factory() as workspace, self._store.stage() as staging:
-            staging.write(CATALOG_POLICY_KEY, (policy_bytes,))
-            row_writer = _CatalogRowWriter(
+            row_partitioner = _CatalogRowPartitioner(
                 _policy_rows(
                     sources,
                     descriptions,
@@ -840,11 +1364,47 @@ class SourceCatalogBuilder:
                     workspace,
                 )
             )
-            staging.write(CATALOG_ITEMS_KEY, row_writer.chunks())
+            row_partitioner.stage(workspace)
+            partitions: list[_CatalogPartition] = []
+            payload_bytes_reused = 0
+            payload_bytes_written = 0
+            for partition_id in sorted(row_partitioner.partition_counts, key=_utf16_key):
+                blob_ref, byte_size = _measure_blob(
+                    _CatalogRowPartitioner.chunks(workspace, partition_id)
+                )
+                write = staging.put_blob(
+                    blob_ref,
+                    byte_size,
+                    _CatalogRowPartitioner.chunks(workspace, partition_id),
+                )
+                if write.reused:
+                    payload_bytes_reused += write.byte_size
+                else:
+                    payload_bytes_written += write.byte_size
+                partitions.append(
+                    _CatalogPartition(
+                        partition_id,
+                        describe_member_from_receipt(
+                            blob_ref=write.blob_ref,
+                            role=CATALOG_ITEMS_ROLE,
+                            media_type=CATALOG_ITEMS_MEDIA_TYPE,
+                            byte_size=write.byte_size,
+                            record_count=row_partitioner.partition_counts[partition_id],
+                            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
+                        ),
+                    )
+                )
+            selected_blob_source = staging.blob_source()
             state_digest, requested_digest, selected_digest = _catalog_state_digests(
-                staging,
-                item_count=row_writer.item_count,
-                selected_count=row_writer.selected_count,
+                selected_blob_source,
+                partitions,
+                item_count=row_partitioner.item_count,
+                selected_count=row_partitioner.selected_count,
+            )
+            diagnostics = _catalog_diagnostics(
+                selected_blob_source,
+                partitions,
+                row_partitioner.item_count,
             )
             spec = {
                 "catalogId": self._request.catalog_id,
@@ -868,7 +1428,8 @@ class SourceCatalogBuilder:
                     key=lambda value: _utf16_key(value.logical_id.rsplit(":", 1)[-1]),
                 )
             )
-            receipt = {
+            payload_bytes_read = payload_bytes_reused + payload_bytes_written
+            receipt: dict[str, Any] = {
                 "format": CATALOG_RECEIPT_FORMAT,
                 "formatVersion": CATALOG_FORMAT_VERSION,
                 "catalogId": self._request.catalog_id,
@@ -888,63 +1449,83 @@ class SourceCatalogBuilder:
                 "catalogStateDigest": state_digest,
                 "requestedUniverseSetDigest": requested_digest,
                 "selectedSourceSetDigest": selected_digest,
-                "itemCount": row_writer.item_count,
-                "dispositionCounts": row_writer.disposition_counts,
+                "itemCount": row_partitioner.item_count,
+                "dispositionCounts": row_partitioner.disposition_counts,
+                "partitionPolicy": _partition_policy(),
+                "partitions": [value.to_receipt() for value in partitions],
+                **diagnostics,
+                "byteMeasurements": {
+                    "payloadBytesRead": payload_bytes_read,
+                    "payloadBytesReused": payload_bytes_reused,
+                    "payloadBytesWritten": payload_bytes_written,
+                    "publicationBytesWritten": 0,
+                },
                 "verifierId": self._request.producer.verifier_id,
                 "verifierVersion": self._request.producer.verifier_version,
                 "verifierImplementationId": self._request.producer.verifier_implementation_id,
                 "semanticVerdict": "pass",
             }
+            publication_bytes = -1
+            for _ in range(8):
+                receipt["byteMeasurements"]["publicationBytesWritten"] = publication_bytes
+                receipt_bytes = canonical_json_bytes(receipt)
+                local_members = (
+                    describe_member_from_receipt(
+                        object_key=CATALOG_POLICY_KEY,
+                        sha256=sha256_digest(policy_bytes),
+                        role=CATALOG_POLICY_ROLE,
+                        media_type=CATALOG_JSON_MEDIA_TYPE,
+                        byte_size=len(policy_bytes),
+                        schema_id=SOURCE_CATALOG_POLICY_SCHEMA_ID,
+                    ),
+                    describe_member_from_receipt(
+                        object_key=CATALOG_RECEIPT_KEY,
+                        sha256=sha256_digest(receipt_bytes),
+                        role=CATALOG_RECEIPT_ROLE,
+                        media_type=CATALOG_JSON_MEDIA_TYPE,
+                        byte_size=len(receipt_bytes),
+                        schema_id=SOURCE_CATALOG_RECEIPT_SCHEMA_ID,
+                    ),
+                )
+                members = (*local_members, *(value.member for value in partitions))
+                manifest, manifest_bytes = MemberManifestReference.for_members(
+                    scope_kind="global",
+                    scope_id="catalog",
+                    object_key=CATALOG_MANIFEST_KEY,
+                    members=members,
+                )
+                root = build_artifact_root(
+                    kind=CATALOG_KIND,
+                    spec=spec,
+                    producer=self._request.producer,
+                    inputs=ordered_inputs,
+                    manifests=(manifest,),
+                    supersedes=self._request.supersedes,
+                )
+                root_bytes = canonical_json_bytes(root)
+                measured_publication_bytes = (
+                    len(policy_bytes) + len(receipt_bytes) + len(manifest_bytes) + len(root_bytes)
+                )
+                if measured_publication_bytes == publication_bytes:
+                    break
+                publication_bytes = measured_publication_bytes
+            else:
+                raise IntegrityError("catalog publication byte accounting did not stabilize")
             _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
-            staging.write(CATALOG_RECEIPT_KEY, (canonical_json_bytes(receipt),))
-            members: tuple[MemberDescriptor, ...] = (
-                describe_member(
-                    staging,
-                    object_key=CATALOG_POLICY_KEY,
-                    role=CATALOG_POLICY_ROLE,
-                    media_type=CATALOG_JSON_MEDIA_TYPE,
-                    schema_id=SOURCE_CATALOG_POLICY_SCHEMA_ID,
-                ),
-                describe_member(
-                    staging,
-                    object_key=CATALOG_RECEIPT_KEY,
-                    role=CATALOG_RECEIPT_ROLE,
-                    media_type=CATALOG_JSON_MEDIA_TYPE,
-                    schema_id=SOURCE_CATALOG_RECEIPT_SCHEMA_ID,
-                ),
-                describe_member(
-                    staging,
-                    object_key=CATALOG_ITEMS_KEY,
-                    role=CATALOG_ITEMS_ROLE,
-                    media_type=CATALOG_ITEMS_MEDIA_TYPE,
-                    record_count=row_writer.item_count,
-                    schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
-                ),
-            )
-            manifest, manifest_bytes = MemberManifestReference.for_members(
-                scope_kind="global",
-                scope_id="catalog",
-                object_key=CATALOG_MANIFEST_KEY,
-                members=members,
-            )
+            staging.write(CATALOG_POLICY_KEY, (policy_bytes,))
+            staging.write(CATALOG_RECEIPT_KEY, (receipt_bytes,))
             staging.write(CATALOG_MANIFEST_KEY, (manifest_bytes,))
-            root = build_artifact_root(
-                kind=CATALOG_KIND,
-                spec=spec,
-                producer=self._request.producer,
-                inputs=inputs,
-                manifests=(manifest,),
-            )
-            staging.write(ROOT_OBJECT_KEY, (canonical_json_bytes(root),))
+            staging.write(ROOT_OBJECT_KEY, (root_bytes,))
             reference = SourceCatalogRef(
                 root["logicalId"],
                 f"{root['artifactDigest'].removeprefix('sha256:')}/{ROOT_OBJECT_KEY}",
                 root["artifactDigest"],
             )
-            verifier = SourceCatalogBuildGateVerifier(self._request.producer)
+            verifier = SourceCatalogBuildGateVerifier(self._request.producer, selected_blob_source)
             try:
                 admit_artifact(
                     staging,
+                    blob_source=selected_blob_source,
                     expected_pin=ArtifactPin(reference.catalog_id, reference.digest),
                     semantic_verifier=verifier,
                 )
@@ -953,7 +1534,11 @@ class SourceCatalogBuilder:
             published = staging.commit(reference)
         if verifier.summary is None:
             raise RuntimeError("source catalog verifier produced no summary")
-        return SourceCatalogBuildResult(published, verifier.summary)
+        return SourceCatalogBuildResult(
+            published,
+            verifier.summary,
+            dict(receipt["byteMeasurements"]),
+        )
 
 
 __all__ = [

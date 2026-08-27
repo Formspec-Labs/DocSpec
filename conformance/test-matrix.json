@@ -45,7 +45,12 @@
         "tests/test_source_catalog_snapshot.py::test_accounts_for_an_observed_crawl_without_claiming_source_completeness",
         "tests/test_source_catalog_snapshot.py::test_refuses_unknown_boundary_fields",
         "tests/test_source_catalog_snapshot.py::test_tampering_fails_before_a_snapshot_row_is_returned",
-        "tests/test_source_catalog_snapshot.py::test_producer_gate_recomputes_state_before_publication"
+        "tests/test_source_catalog_snapshot.py::test_producer_gate_recomputes_state_before_publication",
+        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_initial_advance_and_readback_never_mutate_roots",
+        "tests/test_source_catalog_succession.py::test_source_catalog_supersedes_moves_only_physical_identity",
+        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_rejects_stale_missing_and_cross_series_candidates",
+        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_tamper_fails_readback",
+        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_crash_before_replace_preserves_current"
       ],
       "plannedTestModule": null
     },
@@ -86,6 +91,8 @@
       "selectors": [
         "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_shared_release",
         "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_conflicts_and_refuses_stale_or_unsealed_commits",
+        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_the_exact_stage_after_publish_before_head_update",
+        "tests/conformance/test_document_catalog_contract.py::test_document_catalog_independent_admission_rejects_cross_series_and_pointer_tamper",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
         "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",

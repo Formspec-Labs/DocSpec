@@ -1,7 +1,10 @@
 """Public build and read surface for DocSpec-owned immutable source catalogs."""
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
+from docspec.adapters.source_catalog_store import (
+    LocalSourceCatalogCurrentPointer,
+    LocalSourceCatalogStore,
+)
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
@@ -26,10 +29,13 @@ from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
     CatalogPolicyWorkspace,
     ImmutableSourceCatalogReader,
+    LocatedSourceCatalogItem,
     SourceInputSelector,
     SourceCatalogPolicy,
+    SourceCatalogCurrentPointer,
     SourceCatalogSnapshot,
     SourceCatalogSnapshotSummary,
+    SourceCatalogSuccession,
     SourceCatalogStore,
     SourceNativeDescription,
     SourceNativeRecordSource,
@@ -42,7 +48,9 @@ __all__ = [
     "CatalogDisposition",
     "FederalRegisterCatalogPolicy",
     "ImmutableSourceCatalogReader",
+    "LocatedSourceCatalogItem",
     "LocalSourceCatalogStore",
+    "LocalSourceCatalogCurrentPointer",
     "RegulationsGovCatalogPolicy",
     "RegulationsGovSamplePolicy",
     "SqliteCatalogPolicyWorkspace",
@@ -53,9 +61,11 @@ __all__ = [
     "SourceCatalogCandidate",
     "SourceCatalogItem",
     "SourceCatalogPolicy",
+    "SourceCatalogCurrentPointer",
     "SourceCatalogSelection",
     "SourceCatalogSnapshot",
     "SourceCatalogSnapshotSummary",
+    "SourceCatalogSuccession",
     "SourceCatalogStore",
     "SourceInputSelector",
     "SourceNativeDescription",

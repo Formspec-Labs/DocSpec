@@ -10,7 +10,7 @@ from typing import Any, BinaryIO, Protocol
 
 from docspec.domain.identity import require_sha256, require_text
 from docspec.domain.references import SourceCatalogRef
-from docspec.domain.source_catalog import SourceCatalogItem
+from docspec.domain.source_catalog import SOURCE_CATALOG_MAX_JOIN_IDS, SourceCatalogItem
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,10 +134,45 @@ class SourceCatalogMemberSource(Protocol):
     def open(self, object_key: str) -> AbstractContextManager[BinaryIO]: ...
 
 
+class SourceCatalogBlobSource(Protocol):
+    """Open one immutable catalog payload by its qualified content digest."""
+
+    def open(self, blob_ref: str) -> AbstractContextManager[BinaryIO]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCatalogBlobWrite:
+    """Report whether one verified content-addressed payload required a write."""
+
+    blob_ref: str
+    byte_size: int
+    reused: bool
+
+    def __post_init__(self) -> None:
+        require_sha256(self.blob_ref, "source catalog blob_ref")
+        if (
+            not isinstance(self.byte_size, int)
+            or isinstance(self.byte_size, bool)
+            or self.byte_size < 0
+        ):
+            raise ValueError("source catalog blob byte_size must be a non-negative integer")
+        if not isinstance(self.reused, bool):
+            raise ValueError("source catalog blob reused flag must be boolean")
+
+
 class SourceCatalogStaging(SourceCatalogMemberSource, Protocol):
     """One unpublished write transaction that is also a readable member source."""
 
     def write(self, object_key: str, chunks: Iterable[bytes]) -> None: ...
+
+    def put_blob(
+        self,
+        blob_ref: str,
+        byte_size: int,
+        chunks: Iterable[bytes],
+    ) -> SourceCatalogBlobWrite: ...
+
+    def blob_source(self) -> SourceCatalogBlobSource: ...
 
     def commit(self, reference: SourceCatalogRef) -> SourceCatalogRef: ...
 
@@ -148,6 +183,8 @@ class SourceCatalogStore(Protocol):
     def stage(self) -> AbstractContextManager[SourceCatalogStaging]: ...
 
     def source_for(self, reference: SourceCatalogRef) -> SourceCatalogMemberSource: ...
+
+    def blob_source(self) -> SourceCatalogBlobSource: ...
 
 
 class SourceCatalogPolicy(Protocol):
@@ -163,13 +200,27 @@ class SourceCatalogPolicy(Protocol):
     def configuration(self) -> Mapping[str, Any]: ...
 
     @property
-    def universe_input(self) -> SourceInputSelector: ...
+    def universe_inputs(self) -> tuple[SourceInputSelector, ...]: ...
 
     def iter_items(
         self,
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> Iterator[SourceCatalogItem]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SourceCatalogSuccession:
+    """Admitted predecessor evidence exposed without a storage dependency."""
+
+    logical_id: str
+    artifact_digest: str
+    reason: str
+
+    def __post_init__(self) -> None:
+        require_text(self.logical_id, "source catalog predecessor logical_id")
+        require_sha256(self.artifact_digest, "source catalog predecessor artifact_digest")
+        require_text(self.reason, "source catalog succession reason")
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,7 +236,13 @@ class SourceCatalogSnapshotSummary:
     item_count: int
     disposition_counts: Mapping[str, int]
     partitions: tuple[str, ...]
-    item_member_path: str
+    selection_policy: Mapping[str, str]
+    partition_policy: Mapping[str, Any]
+    join_coverage: tuple[Mapping[str, Any], ...]
+    diagnostic_digests: Mapping[str, str]
+    source_native_inputs: tuple[Mapping[str, str], ...]
+    byte_measurements: Mapping[str, int]
+    succession: SourceCatalogSuccession | None = None
 
     def __post_init__(self) -> None:
         require_text(self.logical_id, "source catalog logical_id")
@@ -194,7 +251,6 @@ class SourceCatalogSnapshotSummary:
         require_sha256(self.catalog_state_digest, "catalog_state_digest")
         require_sha256(self.requested_universe_set_digest, "requested_universe_set_digest")
         require_sha256(self.selected_source_set_digest, "selected_source_set_digest")
-        require_text(self.item_member_path, "source catalog item_member_path")
         if self.item_count < 0 or any(value < 0 for value in self.disposition_counts.values()):
             raise ValueError("source catalog counts must be non-negative")
         if sum(self.disposition_counts.values()) != self.item_count:
@@ -204,6 +260,134 @@ class SourceCatalogSnapshotSummary:
             "disposition_counts",
             MappingProxyType(dict(self.disposition_counts)),
         )
+        selection_policy = dict(self.selection_policy)
+        if set(selection_policy) != {"policyId", "policyVersion", "policyDigest"}:
+            raise ValueError("source catalog selection policy must have a closed pin")
+        require_text(selection_policy["policyId"], "source catalog selection policyId")
+        require_text(selection_policy["policyVersion"], "source catalog selection policyVersion")
+        require_sha256(
+            selection_policy["policyDigest"],
+            "source catalog selection policyDigest",
+        )
+        partition_policy = dict(self.partition_policy)
+        if set(partition_policy) != {
+            "policyId",
+            "policyVersion",
+            "policyDigest",
+            "bucketCount",
+        }:
+            raise ValueError("source catalog partition policy must have a closed pin")
+        require_text(partition_policy["policyId"], "source catalog partition policyId")
+        require_text(partition_policy["policyVersion"], "source catalog partition policyVersion")
+        require_sha256(
+            partition_policy["policyDigest"],
+            "source catalog partition policyDigest",
+        )
+        bucket_count = partition_policy["bucketCount"]
+        if (
+            not isinstance(bucket_count, int)
+            or isinstance(bucket_count, bool)
+            or not 1 <= bucket_count <= 65_536
+        ):
+            raise ValueError("source catalog partition bucketCount is invalid")
+        coverage_rows: list[Mapping[str, Any]] = []
+        join_ids: set[str] = set()
+        if len(self.join_coverage) > SOURCE_CATALOG_MAX_JOIN_IDS:
+            raise ValueError("source catalog join coverage exceeds its distinct-identity limit")
+        for value in self.join_coverage:
+            coverage = dict(value)
+            if set(coverage) != {
+                "joinId",
+                "eligible",
+                "matched",
+                "unmatched",
+                "nullResult",
+            }:
+                raise ValueError("source catalog join coverage must have a closed shape")
+            join_id = coverage["joinId"]
+            require_text(join_id, "source catalog joinId")
+            if join_id in join_ids:
+                raise ValueError("source catalog join coverage identities must be distinct")
+            join_ids.add(join_id)
+            for name in ("eligible", "matched", "unmatched", "nullResult"):
+                count = coverage[name]
+                if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+                    raise ValueError("source catalog join coverage counts must be non-negative integers")
+            if coverage["eligible"] != coverage["matched"] + coverage["unmatched"]:
+                raise ValueError("source catalog join coverage eligible count does not reconcile")
+            if coverage["eligible"] + coverage["nullResult"] > self.item_count:
+                raise ValueError("source catalog join coverage exceeds the catalog population")
+            coverage_rows.append(MappingProxyType(coverage))
+        diagnostic_digests = dict(self.diagnostic_digests)
+        if set(diagnostic_digests) != {
+            "normalizedFieldsDigest",
+            "joinedFieldsDigest",
+            "dispositionsDigest",
+            "reasonsDigest",
+            "interpretationsDigest",
+            "renditionChoicesDigest",
+        }:
+            raise ValueError("source catalog diagnostic digest set is incomplete")
+        for name, digest in diagnostic_digests.items():
+            require_sha256(digest, f"source catalog {name}")
+        source_native_inputs: list[Mapping[str, str]] = []
+        if not self.source_native_inputs:
+            raise ValueError("source catalog must retain at least one source-native input pin")
+        for value in self.source_native_inputs:
+            source_input = dict(value)
+            if set(source_input) != {"logicalId", "artifactDigest"}:
+                raise ValueError("source catalog input pin must have a closed shape")
+            require_text(source_input["logicalId"], "source catalog input logicalId")
+            require_sha256(
+                source_input["artifactDigest"],
+                "source catalog input artifactDigest",
+            )
+            source_native_inputs.append(MappingProxyType(source_input))
+        if len(
+            {
+                (value["logicalId"], value["artifactDigest"])
+                for value in source_native_inputs
+            }
+        ) != len(source_native_inputs):
+            raise ValueError("source catalog input pins must be distinct")
+        byte_measurements = dict(self.byte_measurements)
+        if set(byte_measurements) != {
+            "payloadBytesRead",
+            "payloadBytesReused",
+            "payloadBytesWritten",
+            "publicationBytesWritten",
+        }:
+            raise ValueError("source catalog byte measurements must have a closed shape")
+        for value in byte_measurements.values():
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError("source catalog byte measurements must be non-negative integers")
+        if byte_measurements["payloadBytesRead"] != (
+            byte_measurements["payloadBytesReused"]
+            + byte_measurements["payloadBytesWritten"]
+        ):
+            raise ValueError("source catalog payload byte measurements do not reconcile")
+        object.__setattr__(self, "selection_policy", MappingProxyType(selection_policy))
+        object.__setattr__(self, "partition_policy", MappingProxyType(partition_policy))
+        object.__setattr__(self, "join_coverage", tuple(coverage_rows))
+        object.__setattr__(self, "diagnostic_digests", MappingProxyType(diagnostic_digests))
+        object.__setattr__(self, "source_native_inputs", tuple(source_native_inputs))
+        object.__setattr__(self, "byte_measurements", MappingProxyType(byte_measurements))
+        if self.succession is not None and not isinstance(
+            self.succession,
+            SourceCatalogSuccession,
+        ):
+            raise TypeError("source catalog succession must use SourceCatalogSuccession")
+
+
+@dataclass(frozen=True, slots=True)
+class LocatedSourceCatalogItem:
+    """One normative item and the exact immutable payload that supplied it."""
+
+    item: SourceCatalogItem
+    blob_ref: str
+
+    def __post_init__(self) -> None:
+        require_sha256(self.blob_ref, "source catalog item blob_ref")
 
 
 @dataclass(slots=True)
@@ -211,10 +395,32 @@ class SourceCatalogSnapshot:
     """One verified root and its bounded full normative row stream."""
 
     summary: SourceCatalogSnapshotSummary
-    items: Iterator[SourceCatalogItem]
+    located_items: Iterator[LocatedSourceCatalogItem]
+
+    @property
+    def items(self) -> Iterator[SourceCatalogItem]:
+        """Expose existing consumers to the same single-pass located stream."""
+
+        return (located.item for located in self.located_items)
 
 
 class ImmutableSourceCatalogReader(Protocol):
     """Open one complete immutable DocSpec source-catalog snapshot."""
 
     def open_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshot: ...
+
+    def verify_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshotSummary: ...
+
+
+class SourceCatalogCurrentPointer(Protocol):
+    """Conditionally advance one catalog series after complete admission."""
+
+    def current(self, catalog_id: str) -> SourceCatalogRef | None: ...
+
+    def advance(
+        self,
+        catalog_id: str,
+        candidate: SourceCatalogRef,
+        *,
+        expected_current: SourceCatalogRef | None,
+    ) -> SourceCatalogRef: ...

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -10,9 +11,16 @@ from types import ModuleType
 from typing import Any
 
 import pytest
-from rulespec_artifacts import ArtifactPin, Producer
+from rulespec_artifacts import (
+    ArtifactPin,
+    ArtifactVerificationError,
+    LocalBlobSource,
+    MemberSourceError,
+    Producer,
+)
 
 import docspec.adapters.source_catalog_artifact as source_catalog_artifact
+import docspec.adapters.source_catalog_store as source_catalog_store
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.adapters.source_catalog_artifact import (
@@ -22,9 +30,22 @@ from docspec.adapters.source_catalog_artifact import (
     requested_universe_set_digest,
     selected_source_set_digest,
 )
-from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
-from docspec.domain.source_catalog import CatalogDisposition, SourceCatalogItem
-from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest
+from docspec.adapters.source_catalog_store import (
+    LocalSourceCatalogPublication,
+    LocalSourceCatalogStore,
+)
+from docspec.adapters.spicyregs_source_native import SpicyRegsSourceNativeAdapter
+from docspec.domain.source_catalog import (
+    CatalogDisposition,
+    SOURCE_CATALOG_MAX_JOIN_IDS,
+    SourceCatalogItem,
+)
+from docspec.domain.identity import (
+    canonical_json_bytes,
+    canonical_json_file_bytes,
+    sha256_digest,
+    stable_urn,
+)
 from docspec.domain.references import SourceCatalogRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.source_catalog import (
@@ -39,6 +60,10 @@ _SHA_A = "sha256:" + "a" * 64
 _SHA_B = "sha256:" + "b" * 64
 _SHA_C = "sha256:" + "c" * 64
 _FEDERAL_REGISTER_SOURCE = "https://www.federalregister.gov/api/v1"
+_ACCEPTED_SOURCE_VERIFIERS = (
+    "urn:test:source-verifier:sha256:" + "8" * 64,
+    "urn:test:source-verifier:sha256:" + "9" * 64,
+)
 
 
 def producer() -> Producer:
@@ -50,6 +75,101 @@ def producer() -> Producer:
         "1.0.0",
         implementation,
     )
+
+
+def test_local_source_catalog_publication_pins_the_destination_parent(
+    tmp_path: Path,
+) -> None:
+    parent = tmp_path / "outputs"
+    parent.mkdir()
+    retained = tmp_path / "outputs-retained"
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+
+    with LocalSourceCatalogPublication(parent / "catalog") as publication:
+        publication.write_file("receipt.json", b"complete\n")
+        parent.rename(retained)
+        parent.symlink_to(replacement, target_is_directory=True)
+
+        with pytest.raises(IntegrityError, match="destination parent.*non-symlink"):
+            publication.publish()
+
+    assert not tuple(replacement.iterdir())
+    assert not tuple(retained.iterdir())
+
+
+def test_local_source_catalog_publication_store_refuses_a_replaced_parent(
+    tmp_path: Path,
+) -> None:
+    parent = tmp_path / "outputs"
+    parent.mkdir()
+    retained = tmp_path / "outputs-retained"
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+
+    with LocalSourceCatalogPublication(parent / "catalog") as publication:
+        stage_name = publication.root.name
+        parent.rename(retained)
+        parent.symlink_to(replacement, target_is_directory=True)
+        (replacement / stage_name).mkdir()
+
+        with pytest.raises(ValueError, match="source-catalog root changed since admission"):
+            publication.store()
+
+    assert not tuple(replacement.joinpath(stage_name).iterdir())
+    assert not (retained / stage_name).exists()
+
+
+def test_local_source_catalog_publication_survives_process_exit_after_rename(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "catalog"
+    process_id = os.fork()
+    if process_id == 0:
+        try:
+            publication = LocalSourceCatalogPublication(destination)
+            publication.write_file("artifact.json", b"artifact\n")
+            publication.write_file(
+                "source-catalog-build-command-receipt.json",
+                b"receipt\n",
+            )
+            publication.publish()
+        except BaseException:
+            os._exit(99)
+        os._exit(23)
+
+    _, status = os.waitpid(process_id, 0)
+    assert os.waitstatus_to_exitcode(status) == 23
+    assert (destination / "artifact.json").read_bytes() == b"artifact\n"
+    assert (destination / "source-catalog-build-command-receipt.json").read_bytes() == b"receipt\n"
+
+
+def test_local_source_catalog_publication_process_exit_before_rename_leaves_no_root_and_retry_succeeds(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "catalog"
+    process_id = os.fork()
+    if process_id == 0:
+        publication = LocalSourceCatalogPublication(destination)
+        publication.write_file("artifact.json", b"unpublished\n")
+        os._exit(31)
+
+    _, status = os.waitpid(process_id, 0)
+    assert os.waitstatus_to_exitcode(status) == 31
+    assert not destination.exists()
+    unpublished = tuple(tmp_path.glob(".catalog.*"))
+    assert len(unpublished) == 1
+
+    with LocalSourceCatalogPublication(destination) as publication:
+        publication.write_file("artifact.json", b"published\n")
+        publication.write_file(
+            "source-catalog-build-command-receipt.json",
+            b"receipt\n",
+        )
+        publication.publish()
+
+    assert (destination / "artifact.json").read_bytes() == b"published\n"
+    assert unpublished[0].is_dir()
 
 
 def description(*, scope: str = "complete-snapshot") -> SourceNativeDescription:
@@ -142,9 +262,7 @@ def build(root: Path, source: FakeSource):
 
 
 def interpretation_result(item: SourceCatalogItem, kind: str) -> Mapping[str, Any]:
-    interpretation = next(
-        value for value in item.interpretations if value["interpretationKind"] == kind
-    )
+    interpretation = next(value for value in item.interpretations if value["interpretationKind"] == kind)
     result = interpretation["result"]
     assert isinstance(result, Mapping)
     return result
@@ -161,6 +279,391 @@ def assert_no_published_catalog(root: Path) -> None:
     staging = root / ".staging"
     if staging.exists():
         assert not tuple(staging.iterdir())
+
+
+def assert_outside_sentinel_unchanged(root: Path) -> None:
+    assert [path.name for path in root.iterdir()] == ["sentinel.txt"]
+    assert (root / "sentinel.txt").read_bytes() == b"outside must stay unchanged"
+
+
+def build_with_store(store: LocalSourceCatalogStore) -> None:
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    SourceCatalogBuilder(
+        store=store,
+        policy=FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE),
+        request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
+        workspace_factory=SqliteCatalogPolicyWorkspace,
+    ).build((source,))
+
+
+def test_local_source_catalog_store_rejects_symlink_root_without_mutation(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    root = tmp_path / "catalog-store"
+    root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="non-symlink directory"):
+        LocalSourceCatalogStore(root)
+
+    assert_outside_sentinel_unchanged(outside)
+
+
+def test_local_source_catalog_store_rejects_non_directory_root(tmp_path: Path) -> None:
+    root = tmp_path / "catalog-store"
+    root.write_bytes(b"not a directory")
+
+    with pytest.raises(ValueError, match="non-symlink directory"):
+        LocalSourceCatalogStore(root)
+
+    assert root.read_bytes() == b"not a directory"
+
+
+def test_local_source_catalog_readers_reject_a_replaced_store_root(tmp_path: Path) -> None:
+    root = tmp_path / "catalog-store"
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    store, result = build(root, source)
+    retained = tmp_path / "catalog-store-retained"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    root.rename(retained)
+    root.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ArtifactVerificationError, match="parent directory must be a real directory"):
+        store.source_for(result.reference)
+    with pytest.raises(ArtifactVerificationError, match="parent directory must be a real directory"):
+        store.blob_source()
+
+    assert_outside_sentinel_unchanged(outside)
+
+
+def test_local_source_catalog_store_rejects_symlink_staging_root_without_mutation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "catalog-store"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    (root / ".staging").symlink_to(outside, target_is_directory=True)
+    store = LocalSourceCatalogStore(root, create=False)
+
+    with pytest.raises(IntegrityError, match="staging root.*non-symlink directory"):
+        with store.stage():
+            raise AssertionError("unsafe staging root must fail before yielding")
+
+    assert_outside_sentinel_unchanged(outside)
+
+
+def test_local_source_catalog_store_uses_pinned_staging_root_during_cleanup(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "catalog-store"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    store = LocalSourceCatalogStore(root)
+
+    with pytest.raises(IntegrityError, match="staging root changed during use"):
+        with store.stage():
+            staging_root = root / ".staging"
+            staging_root.rename(root / ".staging-retained")
+            staging_root.symlink_to(outside, target_is_directory=True)
+
+    assert_outside_sentinel_unchanged(outside)
+    assert not tuple((root / ".staging-retained").iterdir())
+
+
+def test_local_source_catalog_store_creates_session_under_pinned_staging_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "catalog-store"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    store = LocalSourceCatalogStore(root)
+    actual_mkdir = source_catalog_store.os.mkdir
+    swapped = False
+
+    def swap_staging_before_session_mkdir(
+        path: str | bytes,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> None:
+        nonlocal swapped
+        if not swapped and isinstance(path, str) and path.startswith("catalog-"):
+            staging_root = root / ".staging"
+            staging_root.rename(root / ".staging-retained")
+            staging_root.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        actual_mkdir(path, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(source_catalog_store.os, "mkdir", swap_staging_before_session_mkdir)
+
+    with pytest.raises(IntegrityError, match="staging root changed during use"):
+        with store.stage():
+            pass
+
+    assert swapped
+    assert_outside_sentinel_unchanged(outside)
+    assert not tuple((root / ".staging-retained").iterdir())
+
+
+def test_local_source_catalog_store_refuses_same_name_session_replacement_cleanup(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "catalog-store"
+    store = LocalSourceCatalogStore(root)
+    replacement: Path | None = None
+    admitted: Path | None = None
+
+    with pytest.raises(IntegrityError, match="staging session changed before cleanup"):
+        with store.stage():
+            staging_root = root / ".staging"
+            replacement = next(staging_root.glob("catalog-*"))
+            admitted = staging_root / f"{replacement.name}-admitted"
+            replacement.rename(admitted)
+            replacement.mkdir()
+            (replacement / "sentinel.txt").write_bytes(b"replacement must stay unchanged")
+
+    assert replacement is not None and admitted is not None
+    assert (replacement / "sentinel.txt").read_bytes() == b"replacement must stay unchanged"
+    assert admitted.is_dir()
+
+
+def test_local_source_catalog_store_refuses_same_name_tombstone_replacement_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "catalog-store"
+    store = LocalSourceCatalogStore(root)
+    actual_clear = source_catalog_store._clear_directory_contents_at
+    replacement: Path | None = None
+    retained: Path | None = None
+    swapped = False
+
+    def swap_tombstone_before_descriptor_relative_clear(
+        directory: source_catalog_store._PinnedDirectory,
+    ) -> None:
+        nonlocal replacement, retained, swapped
+        if not swapped:
+            staging_root = root / ".staging"
+            replacement = next(staging_root.glob(".cleanup-*"))
+            retained = staging_root / f"{replacement.name}-admitted"
+            replacement.rename(retained)
+            replacement.mkdir()
+            (replacement / "sentinel.txt").write_bytes(b"replacement must stay unchanged")
+            swapped = True
+        actual_clear(directory)
+
+    monkeypatch.setattr(
+        source_catalog_store,
+        "_clear_directory_contents_at",
+        swap_tombstone_before_descriptor_relative_clear,
+    )
+
+    with pytest.raises(IntegrityError, match="cleanup tombstone changed during use"):
+        with store.stage():
+            pass
+
+    assert swapped and replacement is not None and retained is not None
+    assert (replacement / "sentinel.txt").read_bytes() == b"replacement must stay unchanged"
+    assert retained.is_dir()
+    assert not tuple(retained.iterdir())
+
+
+@pytest.mark.parametrize("relative", (Path(".blobs"), Path(".blobs/sha256")))
+def test_local_source_catalog_store_rejects_symlink_blob_roots_without_mutation(
+    tmp_path: Path,
+    relative: Path,
+) -> None:
+    root = tmp_path / "catalog-store"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    attacked = root / relative
+    attacked.parent.mkdir(parents=True, exist_ok=True)
+    attacked.symlink_to(outside, target_is_directory=True)
+    store = LocalSourceCatalogStore(root, create=False)
+
+    with pytest.raises(IntegrityError, match="blob root.*non-symlink directory|SHA-256 root.*non-symlink directory"):
+        build_with_store(store)
+
+    assert_outside_sentinel_unchanged(outside)
+
+
+def test_local_source_catalog_store_rejects_shared_sha_root_symlink_without_mutation(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "catalog-store"
+    shared = tmp_path / "shared-blobs"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    shared.mkdir()
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    (shared / "sha256").symlink_to(outside, target_is_directory=True)
+    store = LocalSourceCatalogStore(root, create=False, shared_blob_root=shared)
+
+    with pytest.raises(IntegrityError, match="shared source-catalog SHA-256 root.*non-symlink directory"):
+        build_with_store(store)
+
+    assert_outside_sentinel_unchanged(outside)
+
+
+def test_local_source_catalog_store_creates_pending_blob_under_pinned_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "catalog-store"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    store = LocalSourceCatalogStore(root)
+    actual_open = source_catalog_store.os.open
+    swapped = False
+
+    def swap_pending_before_file_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        if (
+            not swapped
+            and isinstance(path, str)
+            and path.startswith("blob-")
+            and flags & source_catalog_store.os.O_CREAT
+        ):
+            pending = next((root / ".staging").glob("catalog-*/blobs/.pending"))
+            pending.rename(pending.with_name(".pending-retained"))
+            pending.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return actual_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(source_catalog_store.os, "open", swap_pending_before_file_open)
+
+    with pytest.raises(IntegrityError, match="pending blob root changed during use"):
+        build_with_store(store)
+
+    assert swapped
+    assert_outside_sentinel_unchanged(outside)
+
+
+@pytest.mark.parametrize("destination_kind", ("local", "shared"))
+def test_local_source_catalog_store_links_published_blobs_under_pinned_sha_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_kind: str,
+) -> None:
+    root = tmp_path / "catalog-store"
+    shared = tmp_path / "shared-blobs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    store = LocalSourceCatalogStore(
+        root,
+        shared_blob_root=shared if destination_kind == "shared" else None,
+    )
+    target = (root / ".blobs" if destination_kind == "local" else shared) / "sha256"
+    retained = target.with_name("sha256-retained")
+    actual_link = source_catalog_store.os.link
+    swapped = False
+
+    def swap_sha_before_link(
+        source: str | bytes | Path,
+        destination: str | bytes | Path,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        nonlocal swapped
+        if not swapped and dst_dir_fd is not None and target.is_dir():
+            named = target.lstat()
+            opened = source_catalog_store.os.fstat(dst_dir_fd)
+            if (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino):
+                target.rename(retained)
+                target.symlink_to(outside, target_is_directory=True)
+                swapped = True
+        actual_link(
+            source,
+            destination,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(source_catalog_store.os, "link", swap_sha_before_link)
+
+    with pytest.raises(IntegrityError, match="published SHA-256 root changed during use"):
+        build_with_store(store)
+
+    assert swapped
+    assert_outside_sentinel_unchanged(outside)
+    assert not [path for path in root.iterdir() if not path.name.startswith(".")]
+
+
+def test_local_source_catalog_store_links_shared_reuse_under_pinned_staging_sha_fd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "catalog-store"
+    shared = tmp_path / "shared-blobs"
+    outside = tmp_path / "outside"
+    payload = b"shared source-catalog payload"
+    blob_ref = sha256_digest(payload)
+    shared_sha = shared / "sha256"
+    shared_sha.mkdir(parents=True)
+    (shared_sha / blob_ref.removeprefix("sha256:")).write_bytes(payload)
+    outside.mkdir()
+    (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
+    store = LocalSourceCatalogStore(root, shared_blob_root=shared)
+    actual_link = source_catalog_store.os.link
+    swapped = False
+
+    def swap_staged_sha_before_link(
+        source: str | bytes | Path,
+        destination: str | bytes | Path,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        nonlocal swapped
+        candidates = tuple((root / ".staging").glob("catalog-*/blobs/sha256"))
+        if not swapped and dst_dir_fd is not None and candidates:
+            target = candidates[0]
+            named = target.lstat()
+            opened = source_catalog_store.os.fstat(dst_dir_fd)
+            if (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino):
+                target.rename(target.with_name("sha256-retained"))
+                target.symlink_to(outside, target_is_directory=True)
+                swapped = True
+        actual_link(
+            source,
+            destination,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+
+    monkeypatch.setattr(source_catalog_store.os, "link", swap_staged_sha_before_link)
+
+    with pytest.raises(IntegrityError, match="staged SHA-256 root changed during use"):
+        with store.stage() as staging:
+            staging.put_blob(blob_ref, len(payload), (payload,))
+
+    assert swapped
+    assert_outside_sentinel_unchanged(outside)
 
 
 def test_builds_and_streams_one_complete_normative_snapshot(tmp_path: Path) -> None:
@@ -188,6 +691,17 @@ def test_builds_and_streams_one_complete_normative_snapshot(tmp_path: Path) -> N
         1,
         iter((("2026-00001", "2026-00001"),)),
     )
+    assert snapshot.summary.selection_policy["policyId"] == ("urn:docspec:catalog-policy:federal-register:1")
+    assert snapshot.summary.partition_policy["bucketCount"] == 64
+    assert snapshot.summary.join_coverage == ()
+    assert set(snapshot.summary.diagnostic_digests) == {
+        "normalizedFieldsDigest",
+        "joinedFieldsDigest",
+        "dispositionsDigest",
+        "reasonsDigest",
+        "interpretationsDigest",
+        "renditionChoicesDigest",
+    }
     item = next(snapshot.items)
     assert item.source_item_id == "2026-00001"
     assert item.disposition is CatalogDisposition.SELECTED
@@ -197,11 +711,25 @@ def test_builds_and_streams_one_complete_normative_snapshot(tmp_path: Path) -> N
     expected_policy_digest = FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).policy_digest
     assert all(value["policyDigest"] == expected_policy_digest for value in item.interpretations)
     assert [value["interpretationKind"] for value in item.interpretations] == [
+        "exact-join",
         "normalization",
         "rendition-preference",
+        "sampling",
         "selection",
         "topic-recovery",
     ]
+    assert interpretation_result(item, "exact-join") == {"joins": ()}
+    assert interpretation_result(item, "sampling") == {
+        "frameAdmitted": True,
+        "partition": "all",
+        "stratum": ("all",),
+        "orderHash": None,
+        "rank": None,
+        "stratumSize": None,
+        "allocationMethod": "all",
+        "limit": None,
+        "drawn": True,
+    }
     fields = normalization_fields(item)
     assert list(fields) == [
         "title",
@@ -239,9 +767,7 @@ def test_builds_and_streams_one_complete_normative_snapshot(tmp_path: Path) -> N
     with pytest.raises(StopIteration):
         next(snapshot.items)
 
-    processing_snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(
-        result.reference
-    )
+    processing_snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference)
     assert processing_snapshot.summary.disposition_counts == {
         "selected": 1,
         "excluded": 0,
@@ -249,9 +775,7 @@ def test_builds_and_streams_one_complete_normative_snapshot(tmp_path: Path) -> N
         "unavailable": 0,
         "failed": 0,
     }
-    assert [value.to_processing_item().item_id for value in processing_snapshot.items] == [
-        "2026-00001"
-    ]
+    assert [value.to_processing_item().item_id for value in processing_snapshot.items] == ["2026-00001"]
 
 
 def test_identity_is_deterministic_and_one_row_change_moves_it(tmp_path: Path) -> None:
@@ -272,6 +796,108 @@ def test_identity_is_deterministic_and_one_row_change_moves_it(tmp_path: Path) -
     assert repeated.reference == first.reference
     assert changed.reference.catalog_id != first.reference.catalog_id
     assert changed.reference.digest != first.reference.digest
+
+
+def test_multipart_successor_reuses_unchanged_blob_refs_and_writes_only_changed_partition(
+    tmp_path: Path,
+) -> None:
+    identities_by_partition: dict[str, str] = {}
+    for index in range(1, 100):
+        identity = f"2026-{index:05d}"
+        identities_by_partition.setdefault(source_catalog_artifact._partition_id(identity), identity)
+        if len(identities_by_partition) == 3:
+            break
+    identities = tuple(sorted(identities_by_partition.values()))
+    assert len(identities) == 3
+
+    initial_source = FakeSource(
+        description(),
+        tuple(record(identity) for identity in identities),
+        tuple(value for identity in identities for value in renditions(identity)),
+    )
+    store, initial = build(tmp_path, initial_source)
+    initial_root = tmp_path / initial.reference.digest.removeprefix("sha256:")
+    initial_receipt = json.loads((initial_root / "catalog-build-receipt.json").read_text())
+    initial_partitions = {value["partitionId"]: value for value in initial_receipt["partitions"]}
+
+    assert len(initial_partitions) == 3
+    assert initial.summary.partitions == tuple(initial_partitions)
+    assert initial_receipt["byteMeasurements"] == {
+        "payloadBytesRead": sum(value["byteSize"] for value in initial_partitions.values()),
+        "payloadBytesReused": 0,
+        "payloadBytesWritten": sum(value["byteSize"] for value in initial_partitions.values()),
+        "publicationBytesWritten": sum(path.stat().st_size for path in initial_root.rglob("*") if path.is_file()),
+    }
+    assert initial_receipt["joinCoverage"] == []
+    for name in (
+        "normalizedFieldsDigest",
+        "joinedFieldsDigest",
+        "dispositionsDigest",
+        "reasonsDigest",
+        "interpretationsDigest",
+        "renditionChoicesDigest",
+    ):
+        assert initial_receipt[name].startswith("sha256:")
+
+    changed_identity = identities[0]
+    changed_record = record(changed_identity)
+    changed_record["record"]["title"] = "Changed title"
+    changed_records = tuple(
+        changed_record if identity == changed_identity else record(identity) for identity in identities
+    )
+    changed_description = replace(
+        description(),
+        logical_id="urn:spicy:artifact:spicyregs-source-native-release:" + "d" * 64,
+        artifact_digest="sha256:" + "d" * 64,
+        source_state_digest="sha256:" + "e" * 64,
+    )
+    _, successor = build(
+        tmp_path,
+        FakeSource(
+            changed_description,
+            changed_records,
+            tuple(value for identity in identities for value in renditions(identity)),
+        ),
+    )
+    successor_root = tmp_path / successor.reference.digest.removeprefix("sha256:")
+    successor_receipt = json.loads((successor_root / "catalog-build-receipt.json").read_text())
+    successor_partitions = {value["partitionId"]: value for value in successor_receipt["partitions"]}
+    changed_partition = source_catalog_artifact._partition_id(changed_identity)
+
+    assert successor.reference.catalog_id != initial.reference.catalog_id
+    assert successor_partitions[changed_partition]["blobRef"] != initial_partitions[changed_partition]["blobRef"]
+    unchanged_partitions = set(initial_partitions) - {changed_partition}
+    assert {partition_id: successor_partitions[partition_id]["blobRef"] for partition_id in unchanged_partitions} == {
+        partition_id: initial_partitions[partition_id]["blobRef"] for partition_id in unchanged_partitions
+    }
+    assert successor_receipt["byteMeasurements"]["payloadBytesReused"] == sum(
+        initial_partitions[partition_id]["byteSize"] for partition_id in unchanged_partitions
+    )
+    assert (
+        successor_receipt["byteMeasurements"]["payloadBytesWritten"]
+        == successor_partitions[changed_partition]["byteSize"]
+    )
+    located = tuple(
+        SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(successor.reference).located_items
+    )
+    assert [value.item.source_item_id for value in located] == list(identities)
+    assert {value.item.source_item_id: value.blob_ref for value in located} == {
+        identity: successor_partitions[source_catalog_artifact._partition_id(identity)]["blobRef"]
+        for identity in identities
+    }
+    assert [
+        item.source_item_id
+        for item in SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(successor.reference).items
+    ] == list(identities)
+
+
+def test_normalized_diagnostic_values_use_stable_repeated_value_indices() -> None:
+    assert list(source_catalog_artifact._indexed_values(["EPA", "DOE"])) == [
+        (0, "EPA"),
+        (1, "DOE"),
+    ]
+    assert list(source_catalog_artifact._indexed_values([])) == [(0, [])]
+    assert list(source_catalog_artifact._indexed_values("EPA")) == [(0, "EPA")]
 
 
 def test_generic_builder_accepts_a_second_injected_policy_configuration_shape(tmp_path: Path) -> None:
@@ -299,17 +925,15 @@ def test_generic_builder_accepts_a_second_injected_policy_configuration_shape(tm
             )
 
         @property
-        def universe_input(self) -> SourceInputSelector:
-            return FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).universe_input
+        def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+            return FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).universe_inputs
 
         def iter_items(
             self,
             inputs: CatalogPolicyInputs,
             workspace: CatalogPolicyWorkspace,
         ) -> Iterator[SourceCatalogItem]:
-            for item in FederalRegisterCatalogPolicy(
-                _FEDERAL_REGISTER_SOURCE
-            ).iter_items(inputs, workspace):
+            for item in FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).iter_items(inputs, workspace):
                 value = item.to_dict()
                 for interpretation in value["interpretations"]:
                     interpretation["policyId"] = self.policy_id
@@ -331,12 +955,169 @@ def test_generic_builder_accepts_a_second_injected_policy_configuration_shape(tm
     assert next(snapshot.items).source_item_id == "2026-00001"
 
 
-def test_immutable_store_refuses_replacement(tmp_path: Path) -> None:
-    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
-    build(tmp_path, source)
+def test_join_coverage_refuses_unbounded_row_authored_identities(tmp_path: Path) -> None:
+    @dataclass(frozen=True)
+    class ExcessiveJoinPolicy:
+        policy_id = "urn:docspec:test:catalog-policy:excessive-joins"
+        policy_version = "1.0.0"
 
-    with pytest.raises(IntegrityError, match="already exists"):
+        @property
+        def configuration(self) -> Mapping[str, Any]:
+            return {"mode": "excessive-joins"}
+
+        @property
+        def policy_digest(self) -> str:
+            return sha256_digest(
+                canonical_json_bytes(
+                    {
+                        "format": "docspec-catalog-policy",
+                        "formatVersion": "1.0",
+                        "policyId": self.policy_id,
+                        "policyVersion": self.policy_version,
+                        "configuration": dict(self.configuration),
+                    }
+                )
+            )
+
+        @property
+        def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+            return FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).universe_inputs
+
+        def iter_items(
+            self,
+            inputs: CatalogPolicyInputs,
+            workspace: CatalogPolicyWorkspace,
+        ) -> Iterator[SourceCatalogItem]:
+            for item in FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).iter_items(inputs, workspace):
+                value = item.to_dict()
+                for interpretation in value["interpretations"]:
+                    interpretation["policyId"] = self.policy_id
+                    interpretation["policyVersion"] = self.policy_version
+                    interpretation["policyDigest"] = self.policy_digest
+                exact_join = next(
+                    interpretation
+                    for interpretation in value["interpretations"]
+                    if interpretation["interpretationKind"] == "exact-join"
+                )
+                exact_join["result"]["joins"] = [
+                    {
+                        "joinId": f"join-{index:04d}",
+                        "sourceField": "document_number",
+                        "sourceValue": item.source_item_id,
+                        "lookupScopeId": "federal-register-documents",
+                        "outcome": "no-match",
+                        "matchedSourceRecordId": None,
+                    }
+                    for index in range(SOURCE_CATALOG_MAX_JOIN_IDS + 1)
+                ]
+                yield SourceCatalogItem.from_dict(value)
+
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    with pytest.raises(LimitExceededError, match="distinct-identity limit"):
+        SourceCatalogBuilder(
+            store=LocalSourceCatalogStore(tmp_path),
+            policy=ExcessiveJoinPolicy(),
+            request=SourceCatalogBuildRequest("urn:docspec:catalog:excessive-joins", producer()),
+            workspace_factory=SqliteCatalogPolicyWorkspace,
+        ).build((source,))
+
+    assert_no_published_catalog(tmp_path)
+
+
+def test_physical_rebuild_preserves_logical_identity_and_moves_artifact_evidence(
+    tmp_path: Path,
+) -> None:
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    store, initial = build(tmp_path, source)
+    _, rebuilt = build(tmp_path, source)
+
+    assert rebuilt.reference.catalog_id == initial.reference.catalog_id
+    assert rebuilt.reference.digest != initial.reference.digest
+
+    initial_snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(initial.reference)
+    rebuilt_snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(rebuilt.reference)
+    assert initial_snapshot.summary.logical_id == rebuilt_snapshot.summary.logical_id
+    assert initial_snapshot.summary.artifact_digest != rebuilt_snapshot.summary.artifact_digest
+    assert tuple(initial_snapshot.items) == tuple(rebuilt_snapshot.items)
+
+    with store.source_for(initial.reference).open("catalog-build-receipt.json") as stream:
+        initial_receipt = json.load(stream)
+    with store.source_for(rebuilt.reference).open("catalog-build-receipt.json") as stream:
+        rebuilt_receipt = json.load(stream)
+
+    assert initial_receipt["byteMeasurements"]["payloadBytesWritten"] > 0
+    assert initial_receipt["byteMeasurements"]["payloadBytesReused"] == 0
+    assert rebuilt_receipt["partitions"] == initial_receipt["partitions"]
+    assert rebuilt_receipt["byteMeasurements"]["payloadBytesRead"] > 0
+    assert rebuilt_receipt["byteMeasurements"]["payloadBytesWritten"] == 0
+    assert rebuilt_receipt["byteMeasurements"]["payloadBytesReused"] > 0
+
+    def chunks_must_not_be_consumed() -> Iterator[bytes]:
+        raise AssertionError("verified CAS reuse must not rewrite payload bytes")
+        yield b""  # pragma: no cover
+
+    existing_partition = initial_receipt["partitions"][0]
+    with store.stage() as staging:
+        reused = staging.put_blob(
+            existing_partition["blobRef"],
+            existing_partition["byteSize"],
+            chunks_must_not_be_consumed(),
+        )
+    assert reused.reused is True
+
+
+def test_builder_verifies_existing_blob_before_reuse(tmp_path: Path) -> None:
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    _, initial = build(tmp_path, source)
+    initial_root = tmp_path / initial.reference.digest.removeprefix("sha256:")
+    receipt = json.loads((initial_root / "catalog-build-receipt.json").read_text())
+    blob_path = tmp_path / ".blobs" / "sha256" / receipt["partitions"][0]["blobRef"].removeprefix("sha256:")
+    blob_path.write_bytes(blob_path.read_bytes() + b"tamper")
+
+    with pytest.raises(IntegrityError, match="differs from its content identity"):
         build(tmp_path, source)
+
+    assert [path.name for path in tmp_path.iterdir() if not path.name.startswith(".")] == [
+        initial.reference.digest.removeprefix("sha256:")
+    ]
+
+
+def test_root_publish_failure_exposes_no_artifact_and_recovers_by_blob_reuse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actual_publish = source_catalog_store._publish_directory_no_replace_at
+    attempts = 0
+
+    def fail_root_publication(*args: Any) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise IntegrityError("injected root publication failure")
+        actual_publish(*args)
+
+    monkeypatch.setattr(
+        source_catalog_store,
+        "_publish_directory_no_replace_at",
+        fail_root_publication,
+    )
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+
+    with pytest.raises(IntegrityError, match="injected root publication failure"):
+        build(tmp_path, source)
+
+    assert not [path for path in tmp_path.iterdir() if not path.name.startswith(".")]
+    blob_paths = tuple((tmp_path / ".blobs" / "sha256").iterdir())
+    assert len(blob_paths) == 1
+
+    store, recovered = build(tmp_path, source)
+
+    assert recovered.byte_measurements["payloadBytesWritten"] == 0
+    assert recovered.byte_measurements["payloadBytesReused"] == blob_paths[0].stat().st_size
+    assert (
+        SourceCatalogArtifactReader(store, producer=producer()).verify_snapshot(recovered.reference)
+        == recovered.summary
+    )
 
 
 def test_multi_source_rows_are_streamed_once_and_globally_merged(tmp_path: Path) -> None:
@@ -454,18 +1235,17 @@ def test_one_pass_facade_selects_separate_row_families_from_the_same_source_syst
             return self.delegate.configuration
 
         @property
-        def universe_input(self) -> SourceInputSelector:
-            return self.delegate.universe_input
+        def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+            return self.delegate.universe_inputs
 
         def iter_items(
             self,
             inputs: CatalogPolicyInputs,
             workspace: CatalogPolicyWorkspace,
         ) -> Iterator[SourceCatalogItem]:
-            assert [
-                row.record["sourceRecordId"]
-                for row in inputs.iter_lookup_rows(lookup_selector)
-            ] == ["environmental-protection-agency"]
+            assert [row.record["sourceRecordId"] for row in inputs.iter_lookup_rows(lookup_selector)] == [
+                "environmental-protection-agency"
+            ]
             yield from self.delegate.iter_items(inputs, workspace)
 
     store = LocalSourceCatalogStore(tmp_path)
@@ -524,8 +1304,8 @@ def test_policy_must_account_for_every_universe_row_before_publication(tmp_path:
             return self.delegate.configuration
 
         @property
-        def universe_input(self) -> SourceInputSelector:
-            return self.delegate.universe_input
+        def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+            return self.delegate.universe_inputs
 
         def iter_items(
             self,
@@ -583,7 +1363,49 @@ def test_catalog_row_limit_fails_before_publication(tmp_path: Path) -> None:
     assert_no_published_catalog(tmp_path)
 
 
-def test_concurrent_builders_publish_exactly_one_immutable_winner(tmp_path: Path) -> None:
+def test_source_rendition_count_limit_fails_before_eager_record_allocation(
+    tmp_path: Path,
+) -> None:
+    class ExcessiveRenditionSource(FakeSource):
+        def iter_renditions(self) -> Iterator[Mapping[str, Any]]:
+            for index in range(source_catalog_artifact.MAX_SOURCE_RENDITIONS_PER_RECORD + 1):
+                yield {
+                    "sourceRecordId": "2026-00001",
+                    "renditionId": f"2026-00001/{index:05d}",
+                    "sourceField": "html_url",
+                    "locator": f"https://example.test/{index}",
+                    "mediaType": "text/html",
+                    "expectedSha256": None,
+                    "expectedByteSize": None,
+                }
+
+    source = ExcessiveRenditionSource(
+        description(),
+        (record("2026-00001"),),
+        (),
+    )
+    with pytest.raises(LimitExceededError, match="rendition count"):
+        build(tmp_path, source)
+
+    assert_no_published_catalog(tmp_path)
+
+
+def test_source_rendition_aggregate_byte_limit_fails_before_publication(
+    tmp_path: Path,
+) -> None:
+    oversized = dict(renditions("2026-00001")[0])
+    oversized["locator"] = "https://example.test/" + "x" * source_catalog_artifact.MAX_SOURCE_RENDITION_BYTES_PER_RECORD
+    source = FakeSource(description(), (record("2026-00001"),), (oversized,))
+
+    with pytest.raises(LimitExceededError, match="rendition bytes"):
+        build(tmp_path, source)
+
+    assert_no_published_catalog(tmp_path)
+
+
+def test_concurrent_builders_publish_only_valid_immutable_physical_outcomes(
+    tmp_path: Path,
+) -> None:
     source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(build, tmp_path, source) for _ in range(2)]
@@ -595,13 +1417,17 @@ def test_concurrent_builders_publish_exactly_one_immutable_winner(tmp_path: Path
         except IntegrityError as error:
             errors.append(error)
 
-    assert len(results) == 1
-    assert len(errors) == 1
-    store, result = results[0]
-    summary = SourceCatalogArtifactReader(store, producer=producer()).verify_snapshot(
-        result.reference
-    )
-    assert summary == result.summary
+    assert len(results) in {1, 2}
+    assert len(results) + len(errors) == 2
+    assert len({result.reference.catalog_id for _, result in results}) == 1
+    assert len({result.reference.digest for _, result in results}) == len(results)
+    for store, result in results:
+        summary = SourceCatalogArtifactReader(store, producer=producer()).verify_snapshot(result.reference)
+        assert summary == result.summary
+    if len(results) == 2:
+        measurements = [result.byte_measurements for _, result in results]
+        assert sorted(value["payloadBytesWritten"] for value in measurements)[0] == 0
+        assert sorted(value["payloadBytesReused"] for value in measurements)[1] > 0
 
 
 def test_producer_gate_recomputes_state_before_publication(
@@ -654,11 +1480,7 @@ def test_mixed_valid_and_malformed_metadata_values_are_reported_without_aborting
     mixed["record"]["docket_ids"] = ["EPA-HQ-2026-0001", 7, 7]
     source = FakeSource(description(), (mixed,), renditions("2026-00001"))
     store, result = build(tmp_path, source)
-    item = next(
-        SourceCatalogArtifactReader(store, producer=producer())
-        .open_snapshot(result.reference)
-        .items
-    )
+    item = next(SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items)
 
     field = normalization_fields(item)["docketIds"]
     assert item.disposition is CatalogDisposition.SELECTED
@@ -692,9 +1514,7 @@ def test_missing_rendition_is_unavailable_without_affecting_a_neighbor(tmp_path:
         renditions("2026-00002"),
     )
     store, result = build(tmp_path, source)
-    snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(
-        result.reference
-    )
+    snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference)
     unavailable, selected = tuple(snapshot.items)
 
     assert snapshot.summary.disposition_counts["unavailable"] == 1
@@ -729,15 +1549,9 @@ def test_rendition_preference_records_every_offer_and_selects_the_first_family(
     source_record["record"]["body_html_url"] = body["locator"]
     source = FakeSource(description(), (source_record,), (body, *renditions(identity)))
     store, result = build(tmp_path, source)
-    item = next(
-        SourceCatalogArtifactReader(store, producer=producer())
-        .open_snapshot(result.reference)
-        .items
-    )
+    item = next(SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items)
 
-    assert [candidate.rendition_id for candidate in item.candidate_renditions] == [
-        f"{identity}/body-html"
-    ]
+    assert [candidate.rendition_id for candidate in item.candidate_renditions] == [f"{identity}/body-html"]
     preference = interpretation_result(item, "rendition-preference")
     assert preference["orderedFamilyIds"] == (
         "body_html_url",
@@ -764,9 +1578,7 @@ def test_empty_topics_are_not_recovered_without_evidence_and_do_not_affect_a_nei
     )
     store, result = build(tmp_path, source)
     empty_item, observed_item = tuple(
-        SourceCatalogArtifactReader(store, producer=producer())
-        .open_snapshot(result.reference)
-        .items
+        SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items
     )
 
     assert empty_item.disposition is CatalogDisposition.SELECTED
@@ -779,9 +1591,7 @@ def test_empty_topics_are_not_recovered_without_evidence_and_do_not_affect_a_nei
     }
     assert observed_item.disposition is CatalogDisposition.SELECTED
     assert interpretation_result(observed_item, "topic-recovery")["outcome"] == "observed"
-    assert interpretation_result(observed_item, "topic-recovery")["observedTopicIds"] == (
-        "air-quality",
-    )
+    assert interpretation_result(observed_item, "topic-recovery")["observedTopicIds"] == ("air-quality",)
 
 
 def test_accounts_for_an_observed_crawl_without_claiming_source_completeness(
@@ -793,16 +1603,13 @@ def test_accounts_for_an_observed_crawl_without_claiming_source_completeness(
         renditions("2026-00001"),
     )
     store, result = build(tmp_path / "observed", observed)
-    snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(
-        result.reference
-    )
+    snapshot = SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference)
 
     assert snapshot.summary.item_count == 1
     assert [item.source_item_id for item in snapshot.items] == ["2026-00001"]
 
 
 def test_refuses_unknown_boundary_fields(tmp_path: Path) -> None:
-
     unknown = record("2026-00001")
     unknown["surprise"] = True
     with pytest.raises(IntegrityError, match="invalid closed shape"):
@@ -816,7 +1623,9 @@ def test_tampering_fails_before_a_snapshot_row_is_returned(tmp_path: Path) -> No
     source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
     store, result = build(tmp_path, source)
     artifact_root = tmp_path / result.reference.digest.removeprefix("sha256:")
-    item_path = artifact_root / "records/source-items.jsonl"
+    receipt = json.loads((artifact_root / "catalog-build-receipt.json").read_text())
+    blob_ref = receipt["partitions"][0]["blobRef"]
+    item_path = tmp_path / ".blobs" / "sha256" / blob_ref.removeprefix("sha256:")
     item_path.write_bytes(item_path.read_bytes() + b"{}\n")
 
     with pytest.raises(IntegrityError, match="source catalog artifact is invalid"):
@@ -829,14 +1638,18 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
             self,
             source,
             *,
+            blob_source: object,
             profile: object,
             accepted_verifier_implementation_ids: frozenset[str],
             expected_pin: ArtifactPin | None = None,
         ) -> None:
             assert source is not None
+            assert isinstance(blob_source, LocalBlobSource)
             assert profile is fake_profile
             assert expected_pin is None
-            assert accepted_verifier_implementation_ids == frozenset({"urn:test:source-verifier:sha256:" + "9" * 64})
+            assert accepted_verifier_implementation_ids == frozenset(
+                _ACCEPTED_SOURCE_VERIFIERS
+            )
             self.pin = ArtifactPin(description().logical_id, description().artifact_digest)
             self.source_state_scope = description().source_state_scope
             self.source_system_id = description().source_system_id
@@ -851,6 +1664,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
             yield from renditions("2026-00001")
 
     fake_profile = object()
+
     package_name = "spicy_" + "regs"
     module_name = package_name + ".source_native"
     profiles_module_name = package_name + ".source_native_profiles"
@@ -862,6 +1676,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     profiles_module.FEDERAL_REGISTER_PROFILE = fake_profile  # type: ignore[attr-defined]
     profiles_module.REGULATIONS_GOV_DOCUMENT_PROFILE = object()  # type: ignore[attr-defined]
     profiles_module.REGULATIONS_GOV_DOCKET_PROFILE = object()  # type: ignore[attr-defined]
+    profiles_module.REGULATIONS_GOV_COMMENT_PROFILE = object()  # type: ignore[attr-defined]
     package.source_native = module  # type: ignore[attr-defined]
     package.source_native_profiles = profiles_module  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, package_name, package)
@@ -869,30 +1684,107 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, profiles_module_name, profiles_module)
 
 
+def test_spicyregs_adapter_pins_the_source_blob_root_across_streams(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"original source bytes\n"
+    blob_ref = sha256_digest(payload)
+    source_root = tmp_path / "source"
+    blob_root = tmp_path / "blobs"
+    source_root.mkdir()
+    blob = blob_root / "sha256" / blob_ref.removeprefix("sha256:")
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(payload)
+    observed: list[bytes] = []
+
+    class FakeReader:
+        def __init__(
+            self,
+            source: object,
+            *,
+            blob_source: object,
+            profile: object,
+            accepted_verifier_implementation_ids: frozenset[str],
+            expected_pin: ArtifactPin | None = None,
+        ) -> None:
+            del source, profile, accepted_verifier_implementation_ids
+            assert expected_pin is None
+            assert isinstance(blob_source, LocalBlobSource)
+            self._blob_source = blob_source
+            self.pin = ArtifactPin(description().logical_id, description().artifact_digest)
+            self.source_state_scope = description().source_state_scope
+            self.source_system_id = description().source_system_id
+            self.source_system_version = description().source_system_version
+            self.source_state_digest = description().source_state_digest
+            self.source_native_schema_set_digest = description().source_native_schema_set_digest
+
+        def iter_records(self):
+            with self._blob_source.open(blob_ref) as stream:
+                observed.append(stream.read())
+            return iter(())
+
+        def iter_renditions(self):
+            return iter(())
+
+    module_name = "spicy_" + "regs.source_native"
+    source_native = ModuleType(module_name)
+    source_native.SourceNativeReleaseReader = FakeReader  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        "docspec.adapters.spicyregs_source_native.import_module",
+        lambda name: source_native if name == module_name else (_ for _ in ()).throw(ModuleNotFoundError(name)),
+    )
+    adapter = SpicyRegsSourceNativeAdapter.from_local(
+        source_root,
+        blob_root=blob_root,
+        artifact_digest=description().artifact_digest,
+        profile=object(),
+        accepted_verifier_implementation_ids=frozenset({"urn:test:verifier"}),
+    )
+
+    retained = tmp_path / "retained-blobs"
+    blob_root.rename(retained)
+    replacement = blob_root / "sha256" / blob_ref.removeprefix("sha256:")
+    replacement.parent.mkdir(parents=True)
+    replacement.write_bytes(b"changed source bytes!\n")
+
+    with pytest.raises(MemberSourceError, match="artifact root changed"):
+        tuple(adapter.iter_records())
+    assert observed == []
+    assert replacement.read_bytes() == b"changed source bytes!\n"
+
+
 def source_catalog_build_arguments(
     tmp_path: Path,
     *,
     destination: Path,
     receipt_path: Path,
+    blob_store: Path | None = None,
 ) -> list[str]:
     source_root = tmp_path / "source-native"
     source_root.mkdir(exist_ok=True)
+    source_blob_store = tmp_path / "source-native-blobs"
+    source_blob_store.mkdir(exist_ok=True)
     policy_path = tmp_path / "catalog-policy.json"
     policy_path.write_bytes(
         canonical_json_file_bytes(FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE).to_member())
     )
     implementation_id = "git+https://example.test/docspec@" + "1" * 40
-    return [
+    arguments = [
         "source-catalog",
         "build",
         "--source-native",
         str(source_root),
         "--source-native-artifact-digest",
         _SHA_A,
+        "--source-native-blob-store",
+        str(source_blob_store),
         "--source-native-profile",
         "federal-register",
         "--accepted-source-verifier-implementation-id",
-        "urn:test:source-verifier:sha256:" + "9" * 64,
+        _ACCEPTED_SOURCE_VERIFIERS[1],
+        "--accepted-source-verifier-implementation-id",
+        _ACCEPTED_SOURCE_VERIFIERS[0],
         "--catalog-policy",
         str(policy_path),
         "--implementation-id",
@@ -904,6 +1796,9 @@ def source_catalog_build_arguments(
         "--receipt",
         str(receipt_path),
     ]
+    if blob_store is not None:
+        arguments.extend(("--blob-store", str(blob_store)))
+    return arguments
 
 
 def test_cli_composes_the_optional_source_adapter_and_emits_a_verifiable_snapshot(
@@ -913,7 +1808,7 @@ def test_cli_composes_the_optional_source_adapter_and_emits_a_verifiable_snapsho
 ) -> None:
     install_fake_source_native(monkeypatch)
     destination = tmp_path / "catalog-store"
-    receipt_path = tmp_path / "catalog-build-receipt.json"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
     arguments = source_catalog_build_arguments(
         tmp_path,
         destination=destination,
@@ -926,6 +1821,17 @@ def test_cli_composes_the_optional_source_adapter_and_emits_a_verifiable_snapsho
     assert output["verdict"] == "pass"
     assert output["itemCount"] == 1
     assert output["catalog"] == json.loads(receipt_path.read_text())["catalog"]
+    assert output["byteMeasurements"]["payloadBytesRead"] > 0
+    assert output["byteMeasurements"]["payloadBytesReused"] == 0
+    assert output["byteMeasurements"]["payloadBytesWritten"] > 0
+    assert output["byteMeasurements"]["publicationBytesWritten"] > 0
+    assert output["blobStore"] is None
+    assert output["acceptedSourceVerifierImplementationIds"] == list(
+        _ACCEPTED_SOURCE_VERIFIERS
+    )
+    assert [value["profile"] for value in output["sourceNativeInputs"]] == [
+        "federal-register"
+    ]
 
     reference_path = tmp_path / "source-catalog-ref.json"
     reference_path.write_bytes(canonical_json_file_bytes(output["catalog"]))
@@ -938,6 +1844,8 @@ def test_cli_composes_the_optional_source_adapter_and_emits_a_verifiable_snapsho
                 str(destination),
                 "--reference",
                 str(reference_path),
+                "--expected-command-receipt-id",
+                output["receiptId"],
                 "--implementation-id",
                 implementation_id,
                 "--verifier-implementation-id",
@@ -947,11 +1855,378 @@ def test_cli_composes_the_optional_source_adapter_and_emits_a_verifiable_snapsho
         == 0
     )
     verification = json.loads(capfd.readouterr().out)
+    assert verification["commandReceiptId"] == output["receiptId"]
     assert verification["logicalId"] == output["catalog"]["catalogId"]
-    assert verification["itemMemberPath"] == "records/source-items.jsonl"
+    assert "itemMemberPath" not in verification
+    assert verification["partitions"]
+    assert verification["selectionPolicy"] == output["catalogPolicy"]
+    assert verification["partitionPolicy"] == output["partitionPolicy"]
+    assert verification["joinCoverage"] == output["joinCoverage"]
+    assert verification["diagnosticDigests"] == output["diagnosticDigests"]
 
 
-def test_cli_receipt_write_failure_leaves_no_published_artifact(
+def _verify_source_catalog_arguments(
+    destination: Path,
+    reference_path: Path,
+    expected_command_receipt_id: str,
+) -> list[str]:
+    implementation_id = "git+https://example.test/docspec@" + "1" * 40
+    return [
+        "source-catalog",
+        "verify",
+        "--root",
+        str(destination),
+        "--reference",
+        str(reference_path),
+        "--expected-command-receipt-id",
+        expected_command_receipt_id,
+        "--implementation-id",
+        implementation_id,
+        "--verifier-implementation-id",
+        implementation_id,
+    ]
+
+
+def _rewrite_command_receipt(
+    receipt_path: Path,
+    receipt: dict[str, Any],
+    *,
+    recompute_id: bool,
+) -> None:
+    if recompute_id:
+        content = {
+            key: value
+            for key, value in receipt.items()
+            if key not in {"format", "formatVersion", "receiptId"}
+        }
+        receipt["receiptId"] = stable_urn(
+            "source-catalog-build-command-receipt",
+            content,
+        )
+    receipt_path.write_bytes(canonical_json_file_bytes(receipt))
+
+
+@pytest.mark.parametrize("change", ["missing", "unknown-field"])
+def test_cli_verify_requires_one_closed_build_command_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    change: str,
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    command_receipt = json.loads(capfd.readouterr().out)
+    reference_path = tmp_path / "source-catalog-ref.json"
+    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
+
+    if change == "missing":
+        receipt_path.unlink()
+    else:
+        command_receipt["unknown"] = True
+        _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
+
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                command_receipt["receiptId"],
+            )
+        )
+        == 2
+    )
+    error = capfd.readouterr().err
+    if change == "missing":
+        assert "must be a regular, non-symlink file" in error
+    else:
+        assert "invalid closed shape" in error
+
+
+@pytest.mark.parametrize(
+    ("changed_fact", "expected_label"),
+    [
+        ("catalog-state", "catalogStateDigest"),
+        ("source-logical-id", "sourceNativeInputs"),
+        ("source-artifact-digest", "sourceNativeInputs"),
+        ("byte-measurements", "byteMeasurements"),
+    ],
+)
+def test_cli_verify_rejects_a_self_consistent_command_summary_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    changed_fact: str,
+    expected_label: str,
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    command_receipt = json.loads(capfd.readouterr().out)
+    reference_path = tmp_path / "source-catalog-ref.json"
+    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
+    if changed_fact == "catalog-state":
+        command_receipt["catalogStateDigest"] = "sha256:" + "f" * 64
+    elif changed_fact == "source-logical-id":
+        command_receipt["sourceNativeInputs"][0]["logicalId"] = "urn:test:different-source"
+    elif changed_fact == "source-artifact-digest":
+        command_receipt["sourceNativeInputs"][0]["artifactDigest"] = "sha256:" + "f" * 64
+    else:
+        command_receipt["byteMeasurements"]["payloadBytesRead"] += 1
+        command_receipt["byteMeasurements"]["payloadBytesWritten"] += 1
+    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
+
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                command_receipt["receiptId"],
+            )
+        )
+        == 2
+    )
+    assert f"{expected_label} differs from the admitted catalog" in capfd.readouterr().err
+
+
+def test_cli_verify_requires_the_expected_command_receipt_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    command_receipt = json.loads(capfd.readouterr().out)
+    expected_receipt_id = command_receipt["receiptId"]
+    reference_path = tmp_path / "source-catalog-ref.json"
+    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
+    command_receipt["acceptedSourceVerifierImplementationIds"] = [
+        "urn:test:different-source-verifier"
+    ]
+    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
+
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                expected_receipt_id,
+            )
+        )
+        == 2
+    )
+    assert "differs from the expected receipt identity" in capfd.readouterr().err
+
+
+def test_cli_verify_binds_the_selected_source_profile_to_the_receipt_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    command_receipt = json.loads(capfd.readouterr().out)
+    reference_path = tmp_path / "source-catalog-ref.json"
+    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
+    command_receipt["sourceNativeInputs"][0]["profile"] = "regulations-gov-documents"
+    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=False)
+
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                command_receipt["receiptId"],
+            )
+        )
+        == 2
+    )
+    assert "receiptId does not match its content" in capfd.readouterr().err
+
+    command_receipt["sourceNativeInputs"][0]["profile"] = "unregistered"
+    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                command_receipt["receiptId"],
+            )
+        )
+        == 2
+    )
+    assert "unsupported source-native profile" in capfd.readouterr().err
+
+
+@pytest.mark.parametrize("changed_pin", ["destination", "reference"])
+def test_cli_verify_binds_the_command_receipt_to_the_explicit_admission_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    changed_pin: str,
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    command_receipt = json.loads(capfd.readouterr().out)
+    reference = dict(command_receipt["catalog"])
+    reference_path = tmp_path / "source-catalog-ref.json"
+    if changed_pin == "destination":
+        moved_destination = tmp_path / "moved-catalog-store"
+        destination.rename(moved_destination)
+        destination = moved_destination
+    else:
+        reference["catalogId"] = "urn:test:different-catalog"
+    reference_path.write_bytes(canonical_json_file_bytes(reference))
+
+    assert (
+        main(
+            _verify_source_catalog_arguments(
+                destination,
+                reference_path,
+                command_receipt["receiptId"],
+            )
+        )
+        == 2
+    )
+    error = capfd.readouterr().err
+    if changed_pin == "destination":
+        assert "destination differs from the explicit store root" in error
+    else:
+        assert "reference differs from the published build command receipt" in error
+
+
+def test_cli_new_destinations_reuse_verified_shared_content_blobs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destinations = (tmp_path / "catalog-store-a", tmp_path / "catalog-store-b")
+    receipts = tuple(destination / "source-catalog-build-command-receipt.json" for destination in destinations)
+    blob_store = tmp_path / "catalog-blob-store"
+    outputs: list[Mapping[str, Any]] = []
+
+    for destination, receipt in zip(destinations, receipts, strict=True):
+        assert (
+            main(
+                source_catalog_build_arguments(
+                    tmp_path,
+                    destination=destination,
+                    receipt_path=receipt,
+                    blob_store=blob_store,
+                )
+            )
+            == 0
+        )
+        outputs.append(json.loads(capfd.readouterr().out))
+
+    initial, rebuilt = outputs
+    assert rebuilt["catalog"]["catalogId"] == initial["catalog"]["catalogId"]
+    assert rebuilt["catalog"]["digest"] != initial["catalog"]["digest"]
+    assert initial["byteMeasurements"]["payloadBytesWritten"] > 0
+    assert initial["byteMeasurements"]["payloadBytesReused"] == 0
+    assert rebuilt["byteMeasurements"]["payloadBytesWritten"] == 0
+    assert rebuilt["byteMeasurements"]["payloadBytesReused"] > 0
+    assert rebuilt["blobStore"] == {
+        "path": blob_store.resolve().as_posix(),
+        "retention": "verified-content-addressed-blobs-retained-for-reuse",
+        "accountingStatus": "complete",
+        "payloadBytesWritten": 0,
+        "payloadBytesReused": rebuilt["byteMeasurements"]["payloadBytesReused"],
+    }
+
+    build_receipts = [
+        json.loads(
+            (
+                destination / output["catalog"]["digest"].removeprefix("sha256:") / "catalog-build-receipt.json"
+            ).read_text()
+        )
+        for destination, output in zip(destinations, outputs, strict=True)
+    ]
+    assert build_receipts[1]["partitions"] == build_receipts[0]["partitions"]
+
+
+def test_cli_ignores_a_crash_stale_legacy_publish_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    legacy_lock = tmp_path / ".catalog-store.publish.lock"
+    legacy_lock.write_text("abandoned-owner", encoding="utf-8")
+
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+
+    output = json.loads(capfd.readouterr().out)
+    assert output == json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert legacy_lock.read_text(encoding="utf-8") == "abandoned-owner"
+
+
+def test_cli_receipt_write_failure_leaves_no_published_artifact_or_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
@@ -960,48 +2235,105 @@ def test_cli_receipt_write_failure_leaves_no_published_artifact(
 
     install_fake_source_native(monkeypatch)
     destination = tmp_path / "catalog-store"
-    receipt_path = tmp_path / "catalog-build-receipt.json"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    blob_store = tmp_path / "catalog-blob-store"
     arguments = source_catalog_build_arguments(
         tmp_path,
         destination=destination,
         receipt_path=receipt_path,
+        blob_store=blob_store,
     )
 
-    def fail_receipt_write(*_args: object, **_kwargs: object) -> None:
-        raise OSError("injected receipt write failure")
+    actual_write_file = source_catalog_cli.LocalSourceCatalogPublication.write_file
 
-    monkeypatch.setattr(source_catalog_cli, "_write_new", fail_receipt_write)
+    def fail_success_receipt_write(
+        publication: object,
+        name: str,
+        payload: bytes,
+    ) -> None:
+        if name == "source-catalog-build-command-receipt.json":
+            assert not destination.exists()
+            raise OSError("injected receipt write failure")
+        actual_write_file(publication, name, payload)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        source_catalog_cli.LocalSourceCatalogPublication,
+        "write_file",
+        fail_success_receipt_write,
+    )
 
     assert main(arguments) == 2
     assert "injected receipt write failure" in capfd.readouterr().err
     assert not destination.exists()
-    failure = json.loads(receipt_path.read_text(encoding="utf-8"))
-    assert failure["format"] == "docspec-operation-failure-receipt"
-    assert failure["operation"] == "source-catalog.build"
-    assert failure["verdict"] == "failed"
-    assert not tuple(tmp_path.glob(".catalog-store.*.staging"))
+    assert not receipt_path.exists()
+    assert blob_store.is_dir()
+    assert not tuple(tmp_path.glob(".catalog-store.*"))
 
 
-@pytest.mark.parametrize("shared_output", ["destination", "receipt"])
+@pytest.mark.parametrize("receipt_location", ["outside", "wrong-member"])
+def test_cli_requires_the_atomic_receipt_member_without_poisoning_either_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    receipt_location: str,
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog"
+    receipt_path = tmp_path / "receipt.json" if receipt_location == "outside" else destination / "wrong-name.json"
+
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 2
+    )
+
+    assert "must be the atomic artifact member" in capfd.readouterr().err
+    assert not destination.exists()
+    assert not receipt_path.exists()
+
+
+def test_cli_rejects_blob_store_containment_and_receipts_explicit_retention(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    destination = tmp_path / "catalog-store"
+    blob_store = destination / "blobs"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+                blob_store=blob_store,
+            )
+        )
+        == 2
+    )
+
+    assert "must not contain one another" in capfd.readouterr().err
+    assert not destination.exists()
+    assert not receipt_path.exists()
+
+
 def test_cli_concurrent_publishers_leave_one_artifact_and_one_success_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    shared_output: str,
 ) -> None:
     import docspec.source_catalog_cli as source_catalog_cli
 
     install_fake_source_native(monkeypatch)
     monkeypatch.setattr(source_catalog_cli, "_emit", lambda *_args, **_kwargs: None)
-    destinations = (
-        (tmp_path / "catalog-store", tmp_path / "catalog-store")
-        if shared_output == "destination"
-        else (tmp_path / "catalog-store-a", tmp_path / "catalog-store-b")
-    )
-    receipt_paths = (
-        (tmp_path / "receipt-a.json", tmp_path / "receipt-b.json")
-        if shared_output == "destination"
-        else (tmp_path / "catalog-build-receipt.json",) * 2
-    )
+    destinations = (tmp_path / "catalog-store", tmp_path / "catalog-store")
+    receipt_paths = tuple(destination / "source-catalog-build-command-receipt.json" for destination in destinations)
     argument_sets = tuple(
         source_catalog_build_arguments(
             tmp_path,
@@ -1030,4 +2362,4 @@ def test_cli_concurrent_publishers_leave_one_artifact_and_one_success_receipt(
         producer=producer(),
     ).verify_snapshot(reference)
     assert summary.item_count == 1
-    assert not tuple(tmp_path.glob(".catalog-store*.staging"))
+    assert not tuple(tmp_path.glob(".catalog-store.*"))

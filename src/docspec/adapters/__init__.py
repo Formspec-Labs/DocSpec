@@ -24,6 +24,7 @@ _EXPORTS = {
     "LocalJsonControlRepository": "docspec.adapters.storage",
     "LocalJsonlRecordStorage": "docspec.adapters.storage",
     "LocalManifestDocumentCatalog": "docspec.adapters.storage",
+    "LocalSourceCatalogCurrentPointer": "docspec.adapters.source_catalog_store",
     "LocalSourceCatalogStore": "docspec.adapters.source_catalog_store",
     "LocalSqliteProcessorResultCache": "docspec.adapters.processor_cache",
     "LocalSqliteReconciliationWorkspaceFactory": "docspec.adapters.reconciliation",

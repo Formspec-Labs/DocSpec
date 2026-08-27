@@ -18,6 +18,7 @@ from docspec.domain.identity import closed_mapping, freeze_json, require_sha256,
 SOURCE_CATALOG_ITEM_SCHEMA_ID = "urn:docspec:schema:source-catalog-item:1.0"
 SOURCE_CATALOG_POLICY_SCHEMA_ID = "urn:docspec:schema:source-catalog-policy:1.0"
 SOURCE_CATALOG_RECEIPT_SCHEMA_ID = "urn:docspec:schema:source-catalog-build-receipt:1.0"
+SOURCE_CATALOG_MAX_JOIN_IDS = 256
 
 
 class CatalogDisposition(StrEnum):
@@ -636,7 +637,7 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             },
         ],
     }
-    source_join = {
+    exact_join = {
         "type": "object",
         "additionalProperties": False,
         "required": [
@@ -679,17 +680,49 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             },
         ],
     }
-    source_join_result = {
+    exact_join_result = {
         "type": "object",
         "additionalProperties": False,
         "required": ["joins"],
         "properties": {
             "joins": {
                 "type": "array",
-                "items": source_join,
-                "minItems": 1,
+                "items": exact_join,
                 "uniqueItems": True,
             }
+        },
+    }
+    sampling_result = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "frameAdmitted",
+            "partition",
+            "stratum",
+            "orderHash",
+            "rank",
+            "stratumSize",
+            "allocationMethod",
+            "limit",
+            "drawn",
+        ],
+        "properties": {
+            "frameAdmitted": {"type": "boolean"},
+            "partition": nullable_text,
+            "stratum": {"type": "array", "items": text},
+            "orderHash": {
+                "anyOf": [
+                    {"type": "null"},
+                    {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+                ]
+            },
+            "rank": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]},
+            "stratumSize": {
+                "anyOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]
+            },
+            "allocationMethod": {"enum": ["all", "rank-over-sqrt-stratum-size"]},
+            "limit": {"anyOf": [{"type": "null"}, {"type": "integer", "minimum": 1}]},
+            "drawn": {"type": "boolean"},
         },
     }
     selection_decision = {
@@ -791,13 +824,33 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
                     "oneOf": [
                         interpretation("normalization", normalization_result),
                         interpretation("rendition-preference", rendition_result),
+                        interpretation("sampling", sampling_result),
                         interpretation("selection", selection_result),
-                        interpretation("source-join", source_join_result),
+                        interpretation("exact-join", exact_join_result),
                         interpretation("topic-recovery", topic_recovery_result),
                     ]
                 },
                 "minItems": 1,
                 "uniqueItems": True,
+                "allOf": [
+                    {
+                        "contains": {
+                            "type": "object",
+                            "required": ["interpretationKind"],
+                            "properties": {"interpretationKind": {"const": kind}},
+                        },
+                        "minContains": 1,
+                        "maxContains": 1,
+                    }
+                    for kind in (
+                        "exact-join",
+                        "normalization",
+                        "rendition-preference",
+                        "sampling",
+                        "selection",
+                        "topic-recovery",
+                    )
+                ],
             },
             "candidateRenditions": {"type": "array", "items": candidate},
             "selection": selection,
@@ -840,6 +893,16 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             "selectedSourceSetDigest",
             "itemCount",
             "dispositionCounts",
+            "partitionPolicy",
+            "partitions",
+            "joinCoverage",
+            "normalizedFieldsDigest",
+            "joinedFieldsDigest",
+            "dispositionsDigest",
+            "reasonsDigest",
+            "interpretationsDigest",
+            "renditionChoicesDigest",
+            "byteMeasurements",
             "verifierId",
             "verifierVersion",
             "verifierImplementationId",
@@ -878,6 +941,71 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
                     value.value: {"type": "integer", "minimum": 0} for value in CatalogDisposition
                 },
             },
+            "partitionPolicy": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["policyId", "policyVersion", "policyDigest", "bucketCount"],
+                "properties": {
+                    "policyId": text,
+                    "policyVersion": text,
+                    "policyDigest": digest,
+                    "bucketCount": {"type": "integer", "minimum": 1, "maximum": 65536},
+                },
+            },
+            "partitions": {
+                "type": "array",
+                "uniqueItems": True,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["partitionId", "blobRef", "byteSize", "recordCount"],
+                    "properties": {
+                        "partitionId": text,
+                        "blobRef": digest,
+                        "byteSize": {"type": "integer", "minimum": 0},
+                        "recordCount": {"type": "integer", "minimum": 1},
+                    },
+                },
+            },
+            "joinCoverage": {
+                "type": "array",
+                "uniqueItems": True,
+                "maxItems": SOURCE_CATALOG_MAX_JOIN_IDS,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["joinId", "eligible", "matched", "unmatched", "nullResult"],
+                    "properties": {
+                        "joinId": text,
+                        "eligible": {"type": "integer", "minimum": 0},
+                        "matched": {"type": "integer", "minimum": 0},
+                        "unmatched": {"type": "integer", "minimum": 0},
+                        "nullResult": {"type": "integer", "minimum": 0},
+                    },
+                },
+            },
+            "normalizedFieldsDigest": digest,
+            "joinedFieldsDigest": digest,
+            "dispositionsDigest": digest,
+            "reasonsDigest": digest,
+            "interpretationsDigest": digest,
+            "renditionChoicesDigest": digest,
+            "byteMeasurements": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "payloadBytesRead",
+                    "payloadBytesReused",
+                    "payloadBytesWritten",
+                    "publicationBytesWritten",
+                ],
+                "properties": {
+                    "payloadBytesRead": {"type": "integer", "minimum": 0},
+                    "payloadBytesReused": {"type": "integer", "minimum": 0},
+                    "payloadBytesWritten": {"type": "integer", "minimum": 0},
+                    "publicationBytesWritten": {"type": "integer", "minimum": 0},
+                },
+            },
             "verifierId": {"type": "string", "minLength": 1},
             "verifierVersion": {"type": "string", "minLength": 1},
             "verifierImplementationId": {"type": "string", "minLength": 1},
@@ -897,6 +1025,7 @@ __all__ = [
     "CatalogRenditionFamily",
     "CatalogSelectionDecision",
     "SOURCE_CATALOG_ITEM_SCHEMA_ID",
+    "SOURCE_CATALOG_MAX_JOIN_IDS",
     "SOURCE_CATALOG_POLICY_SCHEMA_ID",
     "SOURCE_CATALOG_RECEIPT_SCHEMA_ID",
     "SourceCatalogCandidate",

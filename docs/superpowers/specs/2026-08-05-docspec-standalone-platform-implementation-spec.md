@@ -1986,9 +1986,12 @@ state change.
 
 `docspec source-catalog build` is the outer composition root. It accepts one or
 more repeated exact `--source-native <locator>
---source-native-artifact-digest <digest> --source-native-profile <profile>`
-triples, one closed `--catalog-policy <path>`, and explicit `--destination` and
-`--receipt` paths. The handler lazily constructs the DocSpec adapter from the
+--source-native-artifact-digest <digest> --source-native-blob-store <locator>
+--source-native-profile <profile>` groups, one closed `--catalog-policy <path>`,
+and explicit `--destination` and `--receipt` paths. The receipt path MUST name
+`<destination>/source-catalog-build-command-receipt.json` so the required
+machine receipt and immutable store cross one atomic publication boundary. The
+handler lazily constructs the DocSpec adapter from the
 installed SpicyRegs `SourceNativeReleaseReader` and injects it as
 `SourceNativeRecordSource`; catalog policy code never imports SpicyRegs. The
 command has no storage-mode or base-catalog options. It derives all logical IDs
@@ -2002,15 +2005,33 @@ the input identity and does not broaden the source claim.
 The command builds one complete snapshot in an unpublished staging location,
 reuses verified content-addressed partition blobs, runs `rulespec-artifacts`
 structural and DocSpec semantic verification, writes the closed build receipt
-described in §5.1, and conditionally creates the immutable destination only
-after both pass.
-The emitted command receipt pins every input, policy, destination, resulting
-logical and artifact IDs, byte-write measurements, verifier, and pass verdict. A
+described in §5.1 plus the command receipt into that staged destination, and
+conditionally creates the immutable destination only after both pass. It MUST
+NOT delete a published destination to compensate for a later operation.
+The atomically published command receipt pins every input, policy, destination,
+resulting logical and artifact IDs, byte-write measurements, verifier, and pass
+verdict. A read-only `source-catalog verify` call supplies that emitted
+`receiptId` as the expected command-receipt identity, so a different
+self-consistent receipt is not accepted as the original build record. A
 clean-wheel end-to-end test builds an initial and changed successor snapshot
 from published source-native artifacts with every sibling checkout absent. It
 proves exact reuse of unchanged `blobRef` values, a new logical identity for
 changed state, bounded newly written bytes, replacement refusal, machine-receipt
 verification, and base-package operation without SpicyRegs installed.
+
+The local reference adapter follows the Rulespec local-filesystem trust
+boundary. Kernel conditional creation and persistent advisory locks coordinate
+cooperative writers using the adapter; deployments give mutually untrusted
+writers separate operating-system accounts, filesystem permissions, or object
+store credentials. Readers still pin directory identity and verify complete
+distribution and blob digests at every admission and open.
+
+An abrupt process exit before the final conditional rename may leave a hidden,
+unpublished staging directory beside the requested destination. That directory
+has no published name or authority, does not block a retry, and MUST NOT be
+admitted as a catalog. Deployment housekeeping may remove such staging only
+after it has established that no writer using the same destination parent is
+active.
 
 Commands MUST use explicit files, immutable locators, or released packages.
 They MUST NOT select sibling worktrees or mutable producer state implicitly.

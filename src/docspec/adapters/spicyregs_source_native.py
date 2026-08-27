@@ -7,7 +7,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from rulespec_artifacts import ArtifactPin, LocalMemberSource, MemberSource
+from rulespec_artifacts import ArtifactPin, LocalBlobSource, LocalMemberSource, MemberSource
 
 from docspec.errors import IntegrityError
 from docspec.ports.source_catalog import SourceNativeDescription
@@ -26,6 +26,8 @@ def spicyregs_source_profile(name: str) -> object:
         return module.REGULATIONS_GOV_DOCUMENT_PROFILE
     if name == "regulations-gov-dockets":
         return module.REGULATIONS_GOV_DOCKET_PROFILE
+    if name == "regulations-gov-comments":
+        return module.REGULATIONS_GOV_COMMENT_PROFILE
     raise ValueError(f"unsupported SpicyRegs source profile: {name}")
 
 
@@ -36,6 +38,7 @@ class SpicyRegsSourceNativeAdapter:
         self,
         source: MemberSource,
         *,
+        blob_source: object,
         profile: object,
         expected_pin: ArtifactPin | None,
         accepted_verifier_implementation_ids: frozenset[str],
@@ -43,12 +46,15 @@ class SpicyRegsSourceNativeAdapter:
         try:
             module = import_module("spicy_regs.source_native")
         except ModuleNotFoundError as error:
-            raise RuntimeError("the SpicyRegs source-native adapter requires an installed spicy-regs package") from error
+            raise RuntimeError(
+                "the SpicyRegs source-native adapter requires an installed spicy-regs package"
+            ) from error
         reader_type = getattr(module, "SourceNativeReleaseReader", None)
         if reader_type is None:
             raise RuntimeError("the installed SpicyRegs package has no SourceNativeReleaseReader")
         self._reader = reader_type(
             source,
+            blob_source=blob_source,
             profile=profile,
             expected_pin=expected_pin,
             accepted_verifier_implementation_ids=accepted_verifier_implementation_ids,
@@ -59,6 +65,7 @@ class SpicyRegsSourceNativeAdapter:
         cls,
         root: Path,
         *,
+        blob_root: Path,
         artifact_digest: str,
         profile: object,
         accepted_verifier_implementation_ids: frozenset[str],
@@ -66,6 +73,7 @@ class SpicyRegsSourceNativeAdapter:
     ) -> SpicyRegsSourceNativeAdapter:
         adapter = cls(
             LocalMemberSource(Path(root)),
+            blob_source=LocalBlobSource(Path(blob_root)),
             profile=profile,
             expected_pin=(ArtifactPin(logical_id, artifact_digest) if logical_id is not None else None),
             accepted_verifier_implementation_ids=accepted_verifier_implementation_ids,

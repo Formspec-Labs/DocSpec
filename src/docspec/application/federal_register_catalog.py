@@ -113,24 +113,29 @@ class FederalRegisterCatalogPolicy:
     policy_version = "1.0.0"
 
     @property
-    def universe_input(self) -> SourceInputSelector:
-        return SourceInputSelector(
-            self.expected_source_system_id,
-            "v1",
-            "federal-register-documents",
-            "federal-register-document",
-            "1.0",
+    def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        return (
+            SourceInputSelector(
+                self.expected_source_system_id,
+                "v1",
+                "federal-register-documents",
+                "federal-register-document",
+                "1.0",
+            ),
         )
 
     @property
     def configuration(self) -> Mapping[str, Any]:
         return {
             "sourceProfile": "federal-register",
-            "universeInput": self.universe_input.to_dict(),
+            "universeInputs": [
+                selector.to_dict() for selector in self.universe_inputs
+            ],
             "language": "en",
             "normalizationFields": list(_NORMALIZED_FIELDS),
             "rinNormalization": "federal-register-rin-syntax/1",
             "requiredNormalizedFields": list(_REQUIRED_NORMALIZED_FIELDS),
+            "sample": {"allocation": "all"},
             "renditionPreference": list(_RENDITION_ORDER),
             "topicRecovery": {
                 "sourceField": "record.topics",
@@ -175,8 +180,9 @@ class FederalRegisterCatalogPolicy:
                 "normalizationFields",
                 "requiredNormalizedFields",
                 "sourceProfile",
-                "universeInput",
+                "universeInputs",
                 "rinNormalization",
+                "sample",
                 "renditionPreference",
                 "topicRecovery",
                 "selectionFailures",
@@ -184,7 +190,12 @@ class FederalRegisterCatalogPolicy:
             "Federal Register catalog policy configuration",
             error=ValueError,
         )
-        selector = SourceInputSelector.from_dict(configuration["universeInput"])
+        universe_inputs = configuration["universeInputs"]
+        if not isinstance(universe_inputs, list) or len(universe_inputs) != 1:
+            raise ValueError(
+                "Federal Register catalog policy requires one universe input"
+            )
+        selector = SourceInputSelector.from_dict(universe_inputs[0])
         policy = cls(selector.source_system_id)
         if member != policy.to_member():
             raise ValueError("Federal Register catalog policy differs from the installed policy version")
@@ -365,6 +376,11 @@ class FederalRegisterCatalogPolicy:
         }
         interpretations = (
             {
+                "interpretationKind": "exact-join",
+                **interpretation_pin,
+                "result": {"joins": []},
+            },
+            {
                 "interpretationKind": "normalization",
                 **interpretation_pin,
                 "result": {"fields": [field.to_dict() for field in normalization_fields]},
@@ -377,6 +393,21 @@ class FederalRegisterCatalogPolicy:
                     "families": [family.to_dict() for family in rendition_families],
                     "selectedFamilyId": selected_family_id,
                     "selectedRenditionIds": [candidate.rendition_id for candidate in candidates],
+                },
+            },
+            {
+                "interpretationKind": "sampling",
+                **interpretation_pin,
+                "result": {
+                    "frameAdmitted": True,
+                    "partition": "all",
+                    "stratum": ["all"],
+                    "orderHash": None,
+                    "rank": None,
+                    "stratumSize": None,
+                    "allocationMethod": "all",
+                    "limit": None,
+                    "drawn": True,
                 },
             },
             {

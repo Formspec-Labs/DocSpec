@@ -67,14 +67,14 @@ TASK_RESULT_SCHEMA = RecordSchema(
     "recordId",
     "sourceItemId",
 )
-_FIXTURE_SOURCE_ORIGIN = "https://fixtures.docspec.test/"
+_FIXTURE_SOURCE_ORIGIN = "https://t.test/"
 _FIXTURE_SCHEMA_DIGEST = "sha256:" + "f" * 64
 _FIXTURE_SOURCE_SYSTEM = "urn:docspec:test:source-native"
 _FIXTURE_SELECTOR = SourceInputSelector(
     _FIXTURE_SOURCE_SYSTEM,
     "1",
-    "docspec-test-items",
-    "docspec-test-source-item",
+    "s",
+    "i",
     "1.0",
 )
 
@@ -103,16 +103,20 @@ def document_release_producer() -> Producer:
 
 @dataclass(frozen=True, slots=True)
 class _FixtureCatalogPolicy:
-    policy_id = "urn:docspec:test:catalog-policy"
-    policy_version = "1.0.0"
+    policy_id = "p"
+    policy_version = "1"
 
     @property
-    def universe_input(self) -> SourceInputSelector:
-        return _FIXTURE_SELECTOR
+    def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        return (_FIXTURE_SELECTOR,)
 
     @property
     def configuration(self) -> Mapping[str, object]:
-        return {"universeInput": self.universe_input.to_dict()}
+        return {
+            "universeInputs": [
+                selector.to_dict() for selector in self.universe_inputs
+            ]
+        }
 
     @property
     def policy_digest(self) -> str:
@@ -192,23 +196,23 @@ def shared_source_record(item: SourceItem) -> dict[str, object]:
     }
     candidate_ids = [candidate.rendition_id for candidate in candidates]
     decision = CatalogSelectionDecision(
-        "fixture-state",
+        "s",
         disposition == "selected",
         None if disposition == "selected" else selected_disposition,
         reason_code,
         reason,
     )
     normalized = {
-        "title": item.item_id,
-        "agencies": [{"agencyId": "TEST", "agencyName": "DocSpec test fixture"}],
-        "documentType": "TestDocument",
-        "publicationDate": "2026-08-24",
+        "title": "T",
+        "agencies": [],
+        "documentType": None,
+        "publicationDate": None,
         "lastUpdatedDate": None,
         "docketIds": [],
         "regulationIdentifierNumbers": [],
         "commentCloseDate": None,
-        "language": "en",
-        "sourceUrl": f"https://fixtures.docspec.test/source/{quote(item.item_id, safe='')}",
+        "language": None,
+        "sourceUrl": None,
     }
     return SourceCatalogItem(
         source_item_id=item.item_id,
@@ -220,7 +224,7 @@ def shared_source_record(item: SourceItem) -> dict[str, object]:
                 "schemaName": _FIXTURE_SELECTOR.schema_name,
                 "schemaVersion": _FIXTURE_SELECTOR.schema_version,
                 "schemaDigest": _FIXTURE_SCHEMA_DIGEST,
-                "fields": {"processingMetadata": item.metadata},
+                "fields": {"metadata": item.metadata},
             },
         ),
         normalized_metadata=normalized,
@@ -228,16 +232,21 @@ def shared_source_record(item: SourceItem) -> dict[str, object]:
         source_observations=(),
         interpretations=(
             {
+                "interpretationKind": "exact-join",
+                **pin,
+                "result": {"joins": []},
+            },
+            {
                 "interpretationKind": "normalization",
                 **pin,
                 "result": {
                     "fields": [
                         CatalogNormalizationField(
                             "title",
-                            ("record.itemId",),
+                            ("i",),
                             "source",
                             "normalized",
-                            item.item_id,
+                            "T",
                         ).to_dict()
                     ]
                 },
@@ -246,10 +255,25 @@ def shared_source_record(item: SourceItem) -> dict[str, object]:
                 "interpretationKind": "rendition-preference",
                 **pin,
                 "result": {
-                    "orderedFamilyIds": ["fixture"],
-                    "families": [CatalogRenditionFamily("fixture", tuple(candidate_ids)).to_dict()],
-                    "selectedFamilyId": "fixture" if candidates else None,
+                    "orderedFamilyIds": ["f"],
+                    "families": [CatalogRenditionFamily("f", tuple(candidate_ids)).to_dict()],
+                    "selectedFamilyId": "f" if candidates else None,
                     "selectedRenditionIds": candidate_ids,
+                },
+            },
+            {
+                "interpretationKind": "sampling",
+                **pin,
+                "result": {
+                    "frameAdmitted": True,
+                    "partition": "p",
+                    "stratum": ["s"],
+                    "orderHash": None,
+                    "rank": None,
+                    "stratumSize": None,
+                    "allocationMethod": "all",
+                    "limit": None,
+                    "drawn": True,
                 },
             },
             {
@@ -266,7 +290,7 @@ def shared_source_record(item: SourceItem) -> dict[str, object]:
                 "interpretationKind": "topic-recovery",
                 **pin,
                 "result": {
-                    "sourceField": "record.topics",
+                    "sourceField": "t",
                     "outcome": "not-recovered",
                     "evidenceDigest": None,
                     "observedTopicIds": [],
@@ -336,7 +360,7 @@ class SharedFixtureContentFetcher:
 
     def fetch(self, candidate: CandidateFile, **kwargs):  # type: ignore[no-untyped-def]
         parsed = urlsplit(candidate.locator)
-        if parsed.scheme != "https" or parsed.netloc != "fixtures.docspec.test":
+        if parsed.scheme != "https" or parsed.netloc != "t.test":
             raise ValueError("shared fixture candidate is outside the test source namespace")
         local = replace(candidate, locator=unquote(parsed.path.lstrip("/")))
         result = self._local.fetch(local, **kwargs)
