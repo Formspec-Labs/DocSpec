@@ -735,7 +735,7 @@ def test_document_release_compact_runs_the_local_maintenance_service(
 ) -> None:
     platform_root = tmp_path / "platform"
     platform_root.mkdir()
-    platform = _platform(platform_root, document_count=12, member_bytes=4 * 1024)
+    platform = _platform(platform_root, document_count=12, member_bytes=8 * 1024)
     run_request, plan = _maintenance_run_request(
         tmp_path,
         platform,
