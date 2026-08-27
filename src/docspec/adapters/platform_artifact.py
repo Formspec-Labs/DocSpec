@@ -25,6 +25,7 @@ from rulespec_artifacts import (
     MemberSourceError,
     Producer,
     SemanticVerifier,
+    Supersedes,
     VerifiedArtifact,
     admit_artifact,
     build_artifact_root,
@@ -331,6 +332,7 @@ class LocalDerivationBuilder:
         spec: DerivationSpec,
         inputs: Sequence[ArtifactInput],
         members: Sequence[DerivationMember],
+        supersedes: Supersedes | None = None,
     ) -> VerifiedArtifact:
         working = Path(working)
         if working.is_symlink() or not working.is_dir():
@@ -372,6 +374,7 @@ class LocalDerivationBuilder:
                 producer=self._producer,
                 inputs=inputs,
                 manifests=(manifest,),
+                supersedes=supersedes,
             )
             with _exclusive_writer(directory_fd, ROOT_OBJECT_KEY) as stream:
                 root_created = True
@@ -447,6 +450,26 @@ class DocumentReleaseArtifactVerifier:
         release = self._release(source, release_member)
         if release.release_id != artifact.pin.logical_id:
             raise IntegrityError("document release identity differs from the shared derivation")
+        raw_supersedes = artifact.root.get("supersedes")
+        supersedes = (
+            None
+            if raw_supersedes is None
+            else Supersedes.from_dict(raw_supersedes, path="document-release/supersedes")
+        )
+        previous = release.previous_release
+        if previous is None:
+            if supersedes is not None:
+                raise IntegrityError("initial document release must not declare supersedes")
+        else:
+            if supersedes is None:
+                raise IntegrityError("document release successor is missing supersedes")
+            if (
+                supersedes.logical_id != previous.release_id
+                or supersedes.artifact_digest != previous.digest
+            ):
+                raise IntegrityError("document release supersedes differs from previousRelease")
+            if not supersedes.reason.strip():
+                raise IntegrityError("document release supersedes reason must be nonempty")
 
         self._controls.verify(release.processing_plan)
         try:

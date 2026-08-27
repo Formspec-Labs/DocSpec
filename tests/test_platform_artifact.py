@@ -9,6 +9,7 @@ from rulespec_artifacts import (
     ArtifactInput,
     ArtifactPin,
     MemberSource,
+    Supersedes,
     VerifiedArtifact,
     admit_artifact,
 )
@@ -88,6 +89,38 @@ def test_byte_identical_results_have_one_identity(tmp_path: Path) -> None:
         pins.append(artifact.pin)
     assert len({pin.logical_id for pin in pins}) == 1
     assert len({pin.artifact_digest for pin in pins}) == 1
+
+
+def test_supersedes_changes_physical_identity_without_changing_logical_identity(
+    tmp_path: Path,
+) -> None:
+    plain_root, plain_members = working(tmp_path, "plain")
+    plain = builder().seal(
+        plain_root,
+        spec=spec(),
+        inputs=(input_pin(),),
+        members=plain_members,
+    )
+    successor_root, successor_members = working(tmp_path, "successor")
+    successor = builder().seal(
+        successor_root,
+        spec=spec(),
+        inputs=(input_pin(),),
+        members=successor_members,
+        supersedes=Supersedes(
+            "urn:spicy:artifact:derivation:" + "9" * 64,
+            "sha256:" + "8" * 64,
+            "advance the current derivation",
+        ),
+    )
+
+    assert successor.pin.logical_id == plain.pin.logical_id
+    assert successor.pin.artifact_digest != plain.pin.artifact_digest
+    assert successor.root["supersedes"] == {
+        "artifactDigest": "sha256:" + "8" * 64,
+        "logicalId": "urn:spicy:artifact:derivation:" + "9" * 64,
+        "reason": "advance the current derivation",
+    }
 
 
 def test_blob_member_source_verifies_and_closes_the_same_distribution(tmp_path: Path) -> None:

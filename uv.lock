@@ -215,7 +215,7 @@ wheels = [
 
 [[package]]
 name = "docspec"
-version = "0.2.0"
+version = "0.2.5"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
@@ -254,7 +254,7 @@ requires-dist = [
     { name = "jsonschema", specifier = ">=4.23,<5" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24,<2" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5,<7" },
-    { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.0-py3-none-any.whl" },
+    { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" },
 ]
 provides-extras = ["http", "s3", "pdf", "dagster"]
 
@@ -847,10 +847,10 @@ wheels = [
 
 [[package]]
 name = "rulespec-artifacts"
-version = "1.0.0"
-source = { path = "vendor/rulespec_artifacts-1.0.0-py3-none-any.whl" }
+version = "1.0.9"
+source = { path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" }
 wheels = [
-    { filename = "rulespec_artifacts-1.0.0-py3-none-any.whl", hash = "sha256:779101450f5b8fbf89196095e5b1e6ce0f1777860faf58e28c5a67d247dac0af" },
+    { filename = "rulespec_artifacts-1.0.9-py3-none-any.whl", hash = "sha256:67cb33bf63c11bc6812ad0e8f0a8b73e89501fa6d4242acf75a7cc6612f5d6c6" },
 ]
 
 [[package]]

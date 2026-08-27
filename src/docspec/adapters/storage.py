@@ -14,7 +14,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
-from rulespec_artifacts import Producer
+from rulespec_artifacts import Producer, Supersedes
 
 from docspec.adapters.atomic_directory import publish_directory_no_replace, sync_directory
 from docspec.adapters.platform_artifact import (
@@ -58,6 +58,7 @@ _PLANNED_STORE_LAYER_KIND = "planned-document-stores"
 _PLANNED_STORE_SCHEMA_ID = "docspec-planned-store-reference/1.0"
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")
 _FILE_CHUNK_BYTES = 1024 * 1024
+_DOCUMENT_RELEASE_SUCCESSION_REASON = "advance document catalog from previousRelease"
 
 
 def _storage_root(path: Path) -> Path:
@@ -1794,6 +1795,15 @@ class LocalManifestDocumentCatalog:
                 spec=derivation_spec(plan, release.partition_policy),
                 inputs=derivation_inputs(plan),
                 members=members,
+                supersedes=(
+                    None
+                    if release.previous_release is None
+                    else Supersedes(
+                        release.previous_release.release_id,
+                        release.previous_release.digest,
+                        _DOCUMENT_RELEASE_SUCCESSION_REASON,
+                    )
+                ),
             )
             if artifact.pin.logical_id != release.release_id:
                 raise IntegrityError("document release identity differs from its sealed derivation")

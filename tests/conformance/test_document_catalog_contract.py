@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import importlib
+import json
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 import pytest
+from rulespec_artifacts import canonical_json_bytes, stamp_root
 
 from docspec.adapters.storage import LocalDocumentStoreRepository, LocalJsonControlRepository
 from docspec.application.commit import ReleaseCommitService
 from docspec.domain.content import SourceItem, SourceItemState
-from docspec.domain.identity import ordered_json_sequence_digest, sha256_digest
+from docspec.domain.identity import (
+    canonical_json_file_bytes,
+    ordered_json_sequence_digest,
+    sha256_digest,
+)
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, StoreVerdict
 from docspec.domain.delivery import core_delivery_schemas
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
@@ -274,6 +281,8 @@ def test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_
 
         base = _commit_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
         assert catalog.current() == base.reference
+        base_root = json.loads((catalog.root / base.reference.locator).read_text(encoding="utf-8"))
+        assert "supersedes" not in base_root
         opened = catalog.open(base.reference)
         assert opened.previous_release is None
         assert opened.reference(base.reference.locator, base.reference.digest) == base.reference
@@ -286,6 +295,14 @@ def test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_
 
         successor = _commit_run(platform, run_tag="successor", rows=SUCCESSOR_ROWS, base=base.reference)
         assert catalog.current() == successor.reference
+        successor_root = json.loads(
+            (catalog.root / successor.reference.locator).read_text(encoding="utf-8")
+        )
+        assert successor_root["supersedes"] == {
+            "artifactDigest": base.reference.digest,
+            "logicalId": base.reference.release_id,
+            "reason": "advance document catalog from previousRelease",
+        }
         assert catalog.open(successor.reference).previous_release == base.reference
         assert sorted(catalog.compare(base.reference, successor.reference, layer_kind=LAYER_KIND)) == [
             ("alpha", "changed"),
@@ -361,3 +378,58 @@ def test_every_registered_catalog_profile_replays_the_exact_stage_after_publish_
         replayed = catalog.commit(staged, expected_base=expected_base, stores=stores)
         assert catalog.current() == replayed
         assert catalog.open(replayed).previous_release == base.reference
+
+
+def test_document_catalog_independent_admission_rejects_cross_series_and_pointer_tamper(
+    tmp_path: Path,
+) -> None:
+    for registered in _registered_catalog_profiles():
+        platform = _platform(registered, tmp_path / registered.description.implementation_id)
+        catalog = platform.catalog
+        base = _commit_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
+        successor = _commit_run(platform, run_tag="successor", rows=SUCCESSOR_ROWS, base=base.reference)
+
+        def copy_with_supersedes(reference: DocumentReleaseRef, supersedes) -> DocumentReleaseRef:
+            source_directory = (catalog.root / reference.locator).parent
+            root = json.loads((source_directory / "artifact.json").read_text(encoding="utf-8"))
+            root["supersedes"] = supersedes
+            stamped = stamp_root(root)
+            digest = stamped["artifactDigest"]
+            destination = catalog.root / catalog._artifact_directory("releases", digest)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source_directory, destination)
+            (destination / "artifact.json").write_bytes(canonical_json_bytes(stamped))
+            return DocumentReleaseRef(
+                stamped["logicalId"],
+                catalog._release_locator(digest),
+                digest,
+            )
+
+        initial_with_predecessor = copy_with_supersedes(
+            base.reference,
+            {
+                "artifactDigest": "sha256:" + "8" * 64,
+                "logicalId": "urn:spicy:artifact:derivation:" + "9" * 64,
+                "reason": "invalid predecessor for an initial release",
+            },
+        )
+        with pytest.raises(IntegrityError, match="initial document release"):
+            catalog.open(initial_with_predecessor)
+
+        cross_series = copy_with_supersedes(
+            successor.reference,
+            {
+                "artifactDigest": "sha256:" + "6" * 64,
+                "logicalId": "urn:spicy:artifact:derivation:" + "7" * 64,
+                "reason": "unrelated document series",
+            },
+        )
+        with pytest.raises(IntegrityError, match="differs from previousRelease"):
+            catalog.open(cross_series)
+
+        pointer_path = catalog.root / "document-catalog/current.json"
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        pointer["release"]["digest"] = "sha256:" + "0" * 64
+        pointer_path.write_bytes(canonical_json_file_bytes(pointer))
+        with pytest.raises(IntegrityError):
+            catalog.current()
