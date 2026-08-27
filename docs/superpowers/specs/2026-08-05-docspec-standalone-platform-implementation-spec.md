@@ -2064,6 +2064,15 @@ machine and resources, cold/warm cache state, measurement method, absolute
 ceilings, and acceptance authority. The checked-in schema, parser, generator,
 and tests MUST evolve together before such a profile can be called sealed.
 
+Each scale run MUST emit one closed, content-addressed `ScaleResult`. The result
+MUST bind the complete `ScaleProfile` pin, including its locator; the workload
+kind; the exact input and output artifact pins; item, partition, task, store,
+release, and byte counts; wall time and peak resource measures; evidence pins;
+the first failure when present; and a `pass` or `fail` verdict. A `pass` MUST
+remain within the profile's declared targets, resources, and absolute ceilings.
+This evidence model records a completed run; it does not add scheduler state or
+campaign execution machinery to DocSpec.
+
 ### 13.2 Ordered campaigns
 
 The reference implementation MUST pass these campaigns in order:
@@ -2477,6 +2486,7 @@ govern the installed package.
 conformance/specification.json
 conformance/test-matrix.json
 conformance/scale-profile.schema.json
+conformance/scale-result.schema.json
 profiles/
 fixtures/execution-handoffs/
 fixtures/source-catalogs/

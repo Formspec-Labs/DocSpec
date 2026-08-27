@@ -7,7 +7,7 @@ from typing import Any
 
 from docspec.domain.profiles import ProfileRole
 from docspec.profile_registry import ProfileRegistry
-from tools.generate_scale_profile_schema import schema_bytes
+from tools.generate_scale_profile_schema import result_schema_bytes, schema_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,17 +137,31 @@ def test_profile_descriptions_are_closed_and_cover_every_role() -> None:
 
 
 def test_scale_profile_schema_is_generated_from_the_domain_model_and_up_to_date() -> None:
-    # conformance/scale-profile.schema.json used to be a hand-typed 13.7 KB JSON Schema
-    # checked only by ~20 hand-picked property assertions here -- nothing verified the
-    # other ~90% of it, and nothing could: pyproject.toml declares `dependencies = []`,
-    # so no JSON Schema validator exists in this tree, and the real constraints live
-    # independently in docspec/domain/scale.py. The two had already drifted (several
-    # fields the domain model enforces as strict integers were declared "number" in the
-    # schema, silently accepting floats the real parser rejects).
-    #
-    # tools/generate_scale_profile_schema.py now derives the schema from the same
-    # dataclasses, so this test only has to confirm the checked-in file is exactly what
-    # the generator currently produces -- any drift between the schema and the domain
-    # model fails here instead of accumulating unnoticed.
+    # Both normative schemas are generated from the live closed dataclasses.
     schema_path = ROOT / "conformance" / "scale-profile.schema.json"
-    assert schema_path.read_bytes() == schema_bytes()
+    packaged_schema_path = (
+        ROOT
+        / "src"
+        / "docspec"
+        / "schemas"
+        / "scale_profile"
+        / "2.0"
+        / "scale-profile.schema.json"
+    )
+    assert schema_path.read_bytes() == packaged_schema_path.read_bytes() == schema_bytes()
+
+    result_schema_path = ROOT / "conformance" / "scale-result.schema.json"
+    packaged_result_schema_path = (
+        ROOT
+        / "src"
+        / "docspec"
+        / "schemas"
+        / "scale_result"
+        / "1.0"
+        / "scale-result.schema.json"
+    )
+    assert (
+        result_schema_path.read_bytes()
+        == packaged_result_schema_path.read_bytes()
+        == result_schema_bytes()
+    )

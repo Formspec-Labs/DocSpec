@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Self
 
@@ -20,8 +21,11 @@ from docspec.domain.references import DocumentReleaseRef
 from docspec.errors import IntegrityError, ProfileError
 
 SCALE_PROFILE_FORMAT = "docspec-scale-profile"
-SCALE_PROFILE_VERSION = "1.1"
+SCALE_PROFILE_VERSION = "2.0"
+SCALE_RESULT_FORMAT = "docspec-scale-result"
+SCALE_RESULT_VERSION = "1.0"
 MAX_SCALE_PROFILE_BYTES = 1024 * 1024
+MAX_SCALE_RESULT_BYTES = 1024 * 1024
 
 
 def _closed(value: object, fields: set[str], label: str) -> dict[str, Any]:
@@ -51,6 +55,19 @@ def _text_tuple(value: object, label: str, *, allow_empty: bool = False) -> tupl
     if len(set(result)) != len(result):
         raise ProfileError(f"{label} must contain distinct values")
     return result
+
+
+def _utc_instant(value: object, label: str) -> datetime:
+    selected = require_text(value, label)
+    if "T" not in selected or not selected.endswith("Z"):
+        raise ProfileError(f"{label} must be a UTC RFC 3339 timestamp")
+    try:
+        parsed = datetime.fromisoformat(selected[:-1] + "+00:00")
+    except ValueError as error:
+        raise ProfileError(f"{label} must be a UTC RFC 3339 timestamp") from error
+    if parsed.tzinfo != UTC:
+        raise ProfileError(f"{label} must be a UTC RFC 3339 timestamp")
+    return parsed
 
 
 @dataclass(frozen=True, slots=True)
@@ -622,7 +639,7 @@ class ScaleAcceptanceAuthority:
         return cls(item["authorityId"], item["decisionArtifact"], item["decisionArtifactDigest"])
 
 
-_SCALE_CONTENT_FIELDS = {
+_DOCUMENT_PROCESSING_WORKLOAD_FIELDS = {
     "processingPlan",
     "executionProfile",
     "corpus",
@@ -643,9 +660,14 @@ _SCALE_CONTENT_FIELDS = {
 }
 
 
+class ScaleWorkloadKind(StrEnum):
+    DOCUMENT_PROCESSING = "document-processing"
+    SOURCE_CATALOG = "source-catalog"
+
+
 @dataclass(frozen=True, slots=True)
-class ScaleProfile:
-    """All fixed inputs, resources, and targets behind one scale claim."""
+class ScaleDocumentProcessingWorkload:
+    """The document-processing branch retained by the ScaleProfile family."""
 
     processing_plan: ScaleArtifactPin
     execution_profile: ScaleArtifactPin
@@ -672,21 +694,22 @@ class ScaleProfile:
         if len(stage_ids) != len(set(stage_ids)):
             raise ProfileError("scale processing graph stage ids must be distinct")
         processor_ids = tuple(
-            stage.stage_id for stage in self.processing_graph if stage.stage_kind is ScaleStageKind.PROCESSOR
+            stage.stage_id
+            for stage in self.processing_graph
+            if stage.stage_kind is ScaleStageKind.PROCESSOR
         )
         target_ids = tuple(target.processor_id for target in self.targets.processor_targets)
         if set(processor_ids) != set(target_ids):
-            raise ProfileError("scale processor targets must name every processor stage exactly once")
+            raise ProfileError(
+                "scale processor targets must name every processor stage exactly once"
+            )
         try:
             cache_state = ScaleCacheState(self.cache_state)
         except (TypeError, ValueError) as error:
             raise ProfileError("scale cache state is not registered") from error
         object.__setattr__(self, "cache_state", cache_state)
-        payload = canonical_json_file_bytes(self.to_dict())
-        if len(payload) > MAX_SCALE_PROFILE_BYTES:
-            raise ProfileError(f"scale profile exceeds its {MAX_SCALE_PROFILE_BYTES}-byte serialized limit")
 
-    def identity_content(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "processingPlan": self.processing_plan.to_dict(),
             "executionProfile": self.execution_profile.to_dict(),
@@ -705,6 +728,342 @@ class ScaleProfile:
             "taskPolicy": self.task_policy.to_dict(),
             "targets": self.targets.to_dict(),
             "acceptanceAuthority": self.acceptance_authority.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            _DOCUMENT_PROCESSING_WORKLOAD_FIELDS,
+            "document-processing scale workload",
+        )
+        graph = item["processingGraph"]
+        if not isinstance(graph, list):
+            raise ProfileError("scale processing graph must be an array")
+        try:
+            cache_state = ScaleCacheState(item["cacheState"])
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale cache state is not registered") from error
+        return cls(
+            ScaleArtifactPin.from_dict(item["processingPlan"]),
+            ScaleArtifactPin.from_dict(item["executionProfile"]),
+            ScaleCorpus.from_dict(item["corpus"]),
+            ScaleInputShape.from_dict(item["inputShape"]),
+            tuple(ScaleProcessingStage.from_dict(stage) for stage in graph),
+            ScaleResources.from_dict(item["resources"]),
+            ScaleDocumentStorePolicy.from_dict(item["documentStorePolicy"]),
+            ScaleResultSinkPin.from_dict(item["resultSink"]),
+            ProfileSet.from_dict(item["profileSet"]),
+            ScaleImplementationPin.from_dict(item["documentCatalog"]),
+            None
+            if item["baseRelease"] is None
+            else DocumentReleaseRef.from_dict(item["baseRelease"]),
+            ScalePlacement.from_dict(item["placement"]),
+            cache_state,
+            ScalePartitionPolicy.from_dict(item["partitionPolicy"]),
+            ScaleTaskPolicy.from_dict(item["taskPolicy"]),
+            ScaleTargets.from_dict(item["targets"]),
+            ScaleAcceptanceAuthority.from_dict(item["acceptanceAuthority"]),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleCatalogProofStrategy:
+    join: ScaleImplementationPin
+    order: ScaleImplementationPin
+    set_proof: ScaleImplementationPin
+    max_join_ids: int
+    partition_count: int
+    max_working_bytes: int
+
+    def __post_init__(self) -> None:
+        for name, strategy in (
+            ("join", self.join),
+            ("order", self.order),
+            ("set-proof", self.set_proof),
+        ):
+            if not isinstance(strategy, ScaleImplementationPin):
+                raise ProfileError(f"scale catalog {name} strategy must be an implementation pin")
+        _non_negative_integer(self.max_join_ids, "scale catalog maximum join ids")
+        _positive_integer(self.partition_count, "scale catalog partition count")
+        _positive_integer(self.max_working_bytes, "scale catalog maximum proof working bytes")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "join": self.join.to_dict(),
+            "order": self.order.to_dict(),
+            "setProof": self.set_proof.to_dict(),
+            "maxJoinIds": self.max_join_ids,
+            "partitionCount": self.partition_count,
+            "maxWorkingBytes": self.max_working_bytes,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            {
+                "join",
+                "order",
+                "setProof",
+                "maxJoinIds",
+                "partitionCount",
+                "maxWorkingBytes",
+            },
+            "scale catalog proof strategy",
+        )
+        return cls(
+            ScaleImplementationPin.from_dict(item["join"]),
+            ScaleImplementationPin.from_dict(item["order"]),
+            ScaleImplementationPin.from_dict(item["setProof"]),
+            item["maxJoinIds"],
+            item["partitionCount"],
+            item["maxWorkingBytes"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleCatalogCeilings:
+    max_source_record_count: int
+    max_source_bytes: int
+    max_wall_time_milliseconds: int
+    max_peak_resident_memory_bytes: int
+    max_output_bytes: int
+    max_payload_bytes_written: int
+    max_publication_bytes_written: int
+    max_partition_count: int
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("source record count", self.max_source_record_count),
+            ("source bytes", self.max_source_bytes),
+            ("wall-time milliseconds", self.max_wall_time_milliseconds),
+            ("peak resident memory bytes", self.max_peak_resident_memory_bytes),
+            ("output bytes", self.max_output_bytes),
+            ("partition count", self.max_partition_count),
+        ):
+            _positive_integer(value, f"scale catalog maximum {label}")
+        _non_negative_integer(
+            self.max_payload_bytes_written,
+            "scale catalog maximum payload bytes written",
+        )
+        _non_negative_integer(
+            self.max_publication_bytes_written,
+            "scale catalog maximum publication bytes written",
+        )
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "maxSourceRecordCount": self.max_source_record_count,
+            "maxSourceBytes": self.max_source_bytes,
+            "maxWallTimeMilliseconds": self.max_wall_time_milliseconds,
+            "maxPeakResidentMemoryBytes": self.max_peak_resident_memory_bytes,
+            "maxOutputBytes": self.max_output_bytes,
+            "maxPayloadBytesWritten": self.max_payload_bytes_written,
+            "maxPublicationBytesWritten": self.max_publication_bytes_written,
+            "maxPartitionCount": self.max_partition_count,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            {
+                "maxSourceRecordCount",
+                "maxSourceBytes",
+                "maxWallTimeMilliseconds",
+                "maxPeakResidentMemoryBytes",
+                "maxOutputBytes",
+                "maxPayloadBytesWritten",
+                "maxPublicationBytesWritten",
+                "maxPartitionCount",
+            },
+            "scale catalog ceilings",
+        )
+        return cls(
+            item["maxSourceRecordCount"],
+            item["maxSourceBytes"],
+            item["maxWallTimeMilliseconds"],
+            item["maxPeakResidentMemoryBytes"],
+            item["maxOutputBytes"],
+            item["maxPayloadBytesWritten"],
+            item["maxPublicationBytesWritten"],
+            item["maxPartitionCount"],
+        )
+
+
+_CATALOG_WORKLOAD_FIELDS = {
+    "sourceNativeInputs",
+    "catalogPolicy",
+    "requestedUniverse",
+    "builder",
+    "verifier",
+    "proofStrategy",
+    "outputProfile",
+    "command",
+    "referenceMachine",
+    "resources",
+    "cacheState",
+    "measurementMethod",
+    "ceilings",
+    "acceptanceAuthority",
+}
+
+
+def _artifact_pin_tuple(
+    value: object,
+    label: str,
+    *,
+    allow_empty: bool = False,
+) -> tuple[ScaleArtifactPin, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ProfileError(f"{label} must be an array")
+    pins = tuple(ScaleArtifactPin.from_dict(item) if isinstance(item, dict) else item for item in value)
+    if any(not isinstance(item, ScaleArtifactPin) for item in pins):
+        raise ProfileError(f"{label} must contain artifact pins")
+    if not allow_empty and not pins:
+        raise ProfileError(f"{label} must not be empty")
+    keys = tuple((item.artifact_id, item.locator, item.digest) for item in pins)
+    if keys != tuple(sorted(keys)) or len({item.artifact_id for item in pins}) != len(pins):
+        raise ProfileError(f"{label} must be sorted and distinct by artifact id")
+    return pins
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleSourceCatalogWorkload:
+    """Every fixed input and bound behind one SourceCatalog scale claim."""
+
+    source_native_inputs: tuple[ScaleArtifactPin, ...]
+    catalog_policy: ScaleArtifactPin
+    requested_universe: ScaleArtifactPin
+    builder: ScaleImplementationPin
+    verifier: ScaleImplementationPin
+    proof_strategy: ScaleCatalogProofStrategy
+    output_profile: ScaleArtifactPin
+    command: ScaleArtifactPin
+    reference_machine: ScaleArtifactPin
+    resources: ScaleResources
+    cache_state: ScaleCacheState
+    measurement_method: ScaleArtifactPin
+    ceilings: ScaleCatalogCeilings
+    acceptance_authority: ScaleAcceptanceAuthority
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "source_native_inputs",
+            _artifact_pin_tuple(
+                self.source_native_inputs,
+                "scale catalog source-native inputs",
+            ),
+        )
+        try:
+            cache_state = ScaleCacheState(self.cache_state)
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale catalog cache state is not registered") from error
+        if cache_state not in {ScaleCacheState.COLD, ScaleCacheState.WARM}:
+            raise ProfileError("scale catalog cache state must be cold or warm")
+        object.__setattr__(self, "cache_state", cache_state)
+        if self.ceilings.max_peak_resident_memory_bytes > max(
+            self.resources.worker_memory_bytes,
+            self.resources.coordinator_memory_bytes,
+        ):
+            raise ProfileError("scale catalog peak-memory ceiling exceeds its resource limit")
+        if self.ceilings.max_partition_count > self.proof_strategy.partition_count:
+            raise ProfileError("scale catalog partition ceiling exceeds its order strategy")
+        if self.proof_strategy.max_working_bytes > self.resources.coordinator_memory_bytes:
+            raise ProfileError("scale catalog proof working bound exceeds its memory limit")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sourceNativeInputs": [item.to_dict() for item in self.source_native_inputs],
+            "catalogPolicy": self.catalog_policy.to_dict(),
+            "requestedUniverse": self.requested_universe.to_dict(),
+            "builder": self.builder.to_dict(),
+            "verifier": self.verifier.to_dict(),
+            "proofStrategy": self.proof_strategy.to_dict(),
+            "outputProfile": self.output_profile.to_dict(),
+            "command": self.command.to_dict(),
+            "referenceMachine": self.reference_machine.to_dict(),
+            "resources": self.resources.to_dict(),
+            "cacheState": self.cache_state.value,
+            "measurementMethod": self.measurement_method.to_dict(),
+            "ceilings": self.ceilings.to_dict(),
+            "acceptanceAuthority": self.acceptance_authority.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(value, _CATALOG_WORKLOAD_FIELDS, "source-catalog scale workload")
+        try:
+            cache_state = ScaleCacheState(item["cacheState"])
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale catalog cache state is not registered") from error
+        return cls(
+            _artifact_pin_tuple(
+                item["sourceNativeInputs"],
+                "scale catalog source-native inputs",
+            ),
+            ScaleArtifactPin.from_dict(item["catalogPolicy"]),
+            ScaleArtifactPin.from_dict(item["requestedUniverse"]),
+            ScaleImplementationPin.from_dict(item["builder"]),
+            ScaleImplementationPin.from_dict(item["verifier"]),
+            ScaleCatalogProofStrategy.from_dict(item["proofStrategy"]),
+            ScaleArtifactPin.from_dict(item["outputProfile"]),
+            ScaleArtifactPin.from_dict(item["command"]),
+            ScaleArtifactPin.from_dict(item["referenceMachine"]),
+            ScaleResources.from_dict(item["resources"]),
+            cache_state,
+            ScaleArtifactPin.from_dict(item["measurementMethod"]),
+            ScaleCatalogCeilings.from_dict(item["ceilings"]),
+            ScaleAcceptanceAuthority.from_dict(item["acceptanceAuthority"]),
+        )
+
+
+ScaleWorkload = ScaleDocumentProcessingWorkload | ScaleSourceCatalogWorkload
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleProfile:
+    """One versioned family with closed document and SourceCatalog variants."""
+
+    workload_kind: ScaleWorkloadKind
+    workload: ScaleWorkload
+
+    def __post_init__(self) -> None:
+        try:
+            kind = ScaleWorkloadKind(self.workload_kind)
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale workload kind is not registered") from error
+        expected_type = {
+            ScaleWorkloadKind.DOCUMENT_PROCESSING: ScaleDocumentProcessingWorkload,
+            ScaleWorkloadKind.SOURCE_CATALOG: ScaleSourceCatalogWorkload,
+        }[kind]
+        if not isinstance(self.workload, expected_type):
+            raise ProfileError("scale workload kind differs from its closed workload section")
+        object.__setattr__(self, "workload_kind", kind)
+        payload = canonical_json_file_bytes(self.to_dict())
+        if len(payload) > MAX_SCALE_PROFILE_BYTES:
+            raise ProfileError(
+                f"scale profile exceeds its {MAX_SCALE_PROFILE_BYTES}-byte serialized limit"
+            )
+
+    @property
+    def document_processing_workload(self) -> ScaleDocumentProcessingWorkload | None:
+        return (
+            self.workload
+            if isinstance(self.workload, ScaleDocumentProcessingWorkload)
+            else None
+        )
+
+    @property
+    def catalog_workload(self) -> ScaleSourceCatalogWorkload | None:
+        return self.workload if isinstance(self.workload, ScaleSourceCatalogWorkload) else None
+
+    def identity_content(self) -> dict[str, Any]:
+        return {
+            "workloadKind": self.workload_kind.value,
+            "workload": self.workload.to_dict(),
         }
 
     @property
@@ -728,45 +1087,36 @@ class ScaleProfile:
 
     @classmethod
     def from_content_dict(cls, value: object) -> Self:
-        item = _closed(value, _SCALE_CONTENT_FIELDS, "scale profile content")
-        graph = item["processingGraph"]
-        if not isinstance(graph, list):
-            raise ProfileError("scale processing graph must be an array")
+        if not isinstance(value, dict):
+            raise ProfileError("scale profile content has an invalid closed shape")
         try:
-            cache_state = ScaleCacheState(item["cacheState"])
+            kind = ScaleWorkloadKind(value.get("workloadKind"))
         except (TypeError, ValueError) as error:
-            raise ProfileError("scale cache state is not registered") from error
-        return cls(
-            ScaleArtifactPin.from_dict(item["processingPlan"]),
-            ScaleArtifactPin.from_dict(item["executionProfile"]),
-            ScaleCorpus.from_dict(item["corpus"]),
-            ScaleInputShape.from_dict(item["inputShape"]),
-            tuple(ScaleProcessingStage.from_dict(stage) for stage in graph),
-            ScaleResources.from_dict(item["resources"]),
-            ScaleDocumentStorePolicy.from_dict(item["documentStorePolicy"]),
-            ScaleResultSinkPin.from_dict(item["resultSink"]),
-            ProfileSet.from_dict(item["profileSet"]),
-            ScaleImplementationPin.from_dict(item["documentCatalog"]),
-            None if item["baseRelease"] is None else DocumentReleaseRef.from_dict(item["baseRelease"]),
-            ScalePlacement.from_dict(item["placement"]),
-            cache_state,
-            ScalePartitionPolicy.from_dict(item["partitionPolicy"]),
-            ScaleTaskPolicy.from_dict(item["taskPolicy"]),
-            ScaleTargets.from_dict(item["targets"]),
-            ScaleAcceptanceAuthority.from_dict(item["acceptanceAuthority"]),
-        )
+            raise ProfileError("scale workload kind is not registered") from error
+        workload_type = {
+            ScaleWorkloadKind.DOCUMENT_PROCESSING: ScaleDocumentProcessingWorkload,
+            ScaleWorkloadKind.SOURCE_CATALOG: ScaleSourceCatalogWorkload,
+        }[kind]
+        item = _closed(value, {"workloadKind", "workload"}, "scale profile content")
+        return cls(kind, workload_type.from_dict(item["workload"]))
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
-        item = _closed(
-            value,
-            _SCALE_CONTENT_FIELDS | {"format", "formatVersion", "profileId"},
-            "scale profile",
-        )
-        if item["format"] != SCALE_PROFILE_FORMAT or item["formatVersion"] != SCALE_PROFILE_VERSION:
+        if not isinstance(value, dict):
+            raise ProfileError("scale profile has an invalid closed shape")
+        if value.get("format") != SCALE_PROFILE_FORMAT or value.get(
+            "formatVersion"
+        ) != SCALE_PROFILE_VERSION:
             raise ProfileError("scale profile has an unknown format")
-        result = cls.from_content_dict({name: item[name] for name in _SCALE_CONTENT_FIELDS})
-        if item["profileId"] != result.profile_id:
+        content = {
+            key: item
+            for key, item in value.items()
+            if key not in {"format", "formatVersion", "profileId"}
+        }
+        result = cls.from_content_dict(content)
+        if set(value) != set(result.to_dict()):
+            raise ProfileError("scale profile has an invalid closed shape")
+        if value.get("profileId") != result.profile_id:
             raise ProfileError("scale profile identity differs from its content")
         return result
 
@@ -775,6 +1125,436 @@ class ScaleProfile:
         if not isinstance(data, bytes):
             raise TypeError("scale profile must be canonical JSON bytes")
         if len(data) > MAX_SCALE_PROFILE_BYTES:
-            raise IntegrityError(f"scale profile exceeds its {MAX_SCALE_PROFILE_BYTES}-byte serialized limit")
+            raise IntegrityError(
+                f"scale profile exceeds its {MAX_SCALE_PROFILE_BYTES}-byte serialized limit"
+            )
         value = thaw_json(parse_canonical_json(data, label="scale profile"))
         return cls.from_dict(value)
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleResultMetrics:
+    input_item_count: int
+    output_item_count: int
+    partition_count: int
+    task_count: int
+    store_count: int
+    release_count: int
+    input_bytes: int
+    output_bytes: int
+    payload_bytes_read: int
+    payload_bytes_reused: int
+    payload_bytes_written: int
+    publication_bytes_written: int
+    wall_time_milliseconds: int
+    peak_worker_cpu: int
+    peak_worker_memory_bytes: int
+    peak_coordinator_memory_bytes: int
+    peak_scratch_bytes: int
+
+    def __post_init__(self) -> None:
+        for field, value in self.to_dict().items():
+            _non_negative_integer(value, f"scale-result metric {field}")
+        _positive_integer(self.wall_time_milliseconds, "scale-result wall-time milliseconds")
+        _positive_integer(self.peak_worker_cpu, "scale-result peak worker CPU")
+        _positive_integer(self.peak_worker_memory_bytes, "scale-result peak worker memory bytes")
+        _positive_integer(
+            self.peak_coordinator_memory_bytes,
+            "scale-result peak coordinator memory bytes",
+        )
+
+    def to_dict(self) -> dict[str, int]:
+        return {
+            "inputItemCount": self.input_item_count,
+            "outputItemCount": self.output_item_count,
+            "partitionCount": self.partition_count,
+            "taskCount": self.task_count,
+            "storeCount": self.store_count,
+            "releaseCount": self.release_count,
+            "inputBytes": self.input_bytes,
+            "outputBytes": self.output_bytes,
+            "payloadBytesRead": self.payload_bytes_read,
+            "payloadBytesReused": self.payload_bytes_reused,
+            "payloadBytesWritten": self.payload_bytes_written,
+            "publicationBytesWritten": self.publication_bytes_written,
+            "wallTimeMilliseconds": self.wall_time_milliseconds,
+            "peakWorkerCpu": self.peak_worker_cpu,
+            "peakWorkerMemoryBytes": self.peak_worker_memory_bytes,
+            "peakCoordinatorMemoryBytes": self.peak_coordinator_memory_bytes,
+            "peakScratchBytes": self.peak_scratch_bytes,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            {
+                "inputItemCount",
+                "outputItemCount",
+                "partitionCount",
+                "taskCount",
+                "storeCount",
+                "releaseCount",
+                "inputBytes",
+                "outputBytes",
+                "payloadBytesRead",
+                "payloadBytesReused",
+                "payloadBytesWritten",
+                "publicationBytesWritten",
+                "wallTimeMilliseconds",
+                "peakWorkerCpu",
+                "peakWorkerMemoryBytes",
+                "peakCoordinatorMemoryBytes",
+                "peakScratchBytes",
+            },
+            "scale-result metrics",
+        )
+        return cls(
+            item["inputItemCount"],
+            item["outputItemCount"],
+            item["partitionCount"],
+            item["taskCount"],
+            item["storeCount"],
+            item["releaseCount"],
+            item["inputBytes"],
+            item["outputBytes"],
+            item["payloadBytesRead"],
+            item["payloadBytesReused"],
+            item["payloadBytesWritten"],
+            item["publicationBytesWritten"],
+            item["wallTimeMilliseconds"],
+            item["peakWorkerCpu"],
+            item["peakWorkerMemoryBytes"],
+            item["peakCoordinatorMemoryBytes"],
+            item["peakScratchBytes"],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleFirstFailure:
+    failure_code: str
+    stage: str
+    evidence: ScaleArtifactPin
+
+    def __post_init__(self) -> None:
+        require_text(self.failure_code, "scale first-failure code")
+        require_text(self.stage, "scale first-failure stage")
+        if not isinstance(self.evidence, ScaleArtifactPin):
+            raise ProfileError("scale first-failure evidence must be an artifact pin")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "failureCode": self.failure_code,
+            "stage": self.stage,
+            "evidence": self.evidence.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            {"failureCode", "stage", "evidence"},
+            "scale first failure",
+        )
+        return cls(
+            item["failureCode"],
+            item["stage"],
+            ScaleArtifactPin.from_dict(item["evidence"]),
+        )
+
+
+class ScaleVerdict(StrEnum):
+    PASS = "pass"
+    FAIL = "fail"
+
+
+_SCALE_RESULT_CONTENT_FIELDS = {
+    "profile",
+    "workloadKind",
+    "startedAt",
+    "completedAt",
+    "inputArtifacts",
+    "outputArtifacts",
+    "metrics",
+    "evidence",
+    "firstFailure",
+    "verdict",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ScaleResult:
+    """Closed, content-addressed evidence for one run; it owns no scheduler."""
+
+    profile: ScaleArtifactPin
+    workload_kind: ScaleWorkloadKind
+    started_at: str
+    completed_at: str
+    input_artifacts: tuple[ScaleArtifactPin, ...]
+    output_artifacts: tuple[ScaleArtifactPin, ...]
+    metrics: ScaleResultMetrics
+    evidence: tuple[ScaleArtifactPin, ...]
+    first_failure: ScaleFirstFailure | None
+    verdict: ScaleVerdict
+
+    def __post_init__(self) -> None:
+        try:
+            kind = ScaleWorkloadKind(self.workload_kind)
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale-result workload kind is not registered") from error
+        try:
+            verdict = ScaleVerdict(self.verdict)
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale-result verdict is not registered") from error
+        started = _utc_instant(self.started_at, "scale-result started_at")
+        completed = _utc_instant(self.completed_at, "scale-result completed_at")
+        if completed < started:
+            raise ProfileError("scale-result completion precedes its start")
+        object.__setattr__(self, "workload_kind", kind)
+        object.__setattr__(self, "verdict", verdict)
+        object.__setattr__(
+            self,
+            "input_artifacts",
+            _artifact_pin_tuple(self.input_artifacts, "scale-result input artifacts"),
+        )
+        object.__setattr__(
+            self,
+            "output_artifacts",
+            _artifact_pin_tuple(
+                self.output_artifacts,
+                "scale-result output artifacts",
+                allow_empty=True,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "evidence",
+            _artifact_pin_tuple(self.evidence, "scale-result evidence"),
+        )
+        if verdict is ScaleVerdict.PASS:
+            if self.first_failure is not None:
+                raise ProfileError("a passing scale result cannot declare a first failure")
+            if not self.output_artifacts:
+                raise ProfileError("a passing scale result must pin at least one output artifact")
+        elif self.first_failure is None:
+            raise ProfileError("a failing scale result must declare its first failure")
+        payload = canonical_json_file_bytes(self.to_dict())
+        if len(payload) > MAX_SCALE_RESULT_BYTES:
+            raise ProfileError(
+                f"scale result exceeds its {MAX_SCALE_RESULT_BYTES}-byte serialized limit"
+            )
+
+    def identity_content(self) -> dict[str, Any]:
+        return {
+            "profile": self.profile.to_dict(),
+            "workloadKind": self.workload_kind.value,
+            "startedAt": self.started_at,
+            "completedAt": self.completed_at,
+            "inputArtifacts": [item.to_dict() for item in self.input_artifacts],
+            "outputArtifacts": [item.to_dict() for item in self.output_artifacts],
+            "metrics": self.metrics.to_dict(),
+            "evidence": [item.to_dict() for item in self.evidence],
+            "firstFailure": None if self.first_failure is None else self.first_failure.to_dict(),
+            "verdict": self.verdict.value,
+        }
+
+    @property
+    def result_id(self) -> str:
+        return stable_urn("scale-result", self.identity_content())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "format": SCALE_RESULT_FORMAT,
+            "formatVersion": SCALE_RESULT_VERSION,
+            "resultId": self.result_id,
+            **self.identity_content(),
+        }
+
+    def to_bytes(self) -> bytes:
+        return canonical_json_file_bytes(self.to_dict())
+
+    @property
+    def digest(self) -> str:
+        return sha256_digest(self.to_bytes())
+
+    @classmethod
+    def from_content_dict(cls, value: object) -> Self:
+        item = _closed(value, _SCALE_RESULT_CONTENT_FIELDS, "scale-result content")
+        for field in ("inputArtifacts", "outputArtifacts", "evidence"):
+            if not isinstance(item[field], list):
+                raise ProfileError(f"scale-result {field} must be an array")
+        try:
+            kind = ScaleWorkloadKind(item["workloadKind"])
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale-result workload kind is not registered") from error
+        try:
+            verdict = ScaleVerdict(item["verdict"])
+        except (TypeError, ValueError) as error:
+            raise ProfileError("scale-result verdict is not registered") from error
+        return cls(
+            ScaleArtifactPin.from_dict(item["profile"]),
+            kind,
+            item["startedAt"],
+            item["completedAt"],
+            _artifact_pin_tuple(item["inputArtifacts"], "scale-result input artifacts"),
+            _artifact_pin_tuple(
+                item["outputArtifacts"],
+                "scale-result output artifacts",
+                allow_empty=True,
+            ),
+            ScaleResultMetrics.from_dict(item["metrics"]),
+            _artifact_pin_tuple(item["evidence"], "scale-result evidence"),
+            None
+            if item["firstFailure"] is None
+            else ScaleFirstFailure.from_dict(item["firstFailure"]),
+            verdict,
+        )
+
+    @classmethod
+    def from_dict(cls, value: object) -> Self:
+        item = _closed(
+            value,
+            _SCALE_RESULT_CONTENT_FIELDS | {"format", "formatVersion", "resultId"},
+            "scale result",
+        )
+        if item["format"] != SCALE_RESULT_FORMAT or item["formatVersion"] != SCALE_RESULT_VERSION:
+            raise ProfileError("scale result has an unknown format")
+        result = cls.from_content_dict(
+            {name: item[name] for name in _SCALE_RESULT_CONTENT_FIELDS}
+        )
+        if item["resultId"] != result.result_id:
+            raise ProfileError("scale result identity differs from its content")
+        return result
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> Self:
+        if not isinstance(data, bytes):
+            raise TypeError("scale result must be canonical JSON bytes")
+        if len(data) > MAX_SCALE_RESULT_BYTES:
+            raise IntegrityError(
+                f"scale result exceeds its {MAX_SCALE_RESULT_BYTES}-byte serialized limit"
+            )
+        value = thaw_json(parse_canonical_json(data, label="scale result"))
+        return cls.from_dict(value)
+
+    def verify_profile(self, profile: ScaleProfile, *, profile_locator: str) -> None:
+        """Bind evidence to the sealed profile and reject an impossible pass claim."""
+
+        expected_profile = ScaleArtifactPin(
+            profile.profile_id,
+            require_text(profile_locator, "scale profile locator"),
+            profile.digest,
+        )
+        if self.profile != expected_profile:
+            raise IntegrityError("scale result names a different sealed profile")
+        if self.workload_kind is not profile.workload_kind:
+            raise IntegrityError("scale result workload kind differs from its profile")
+        if isinstance(profile.workload, ScaleSourceCatalogWorkload):
+            expected_inputs = tuple(
+                sorted(
+                    (
+                        *profile.workload.source_native_inputs,
+                        profile.workload.catalog_policy,
+                        profile.workload.requested_universe,
+                    ),
+                    key=lambda item: (item.artifact_id, item.locator, item.digest),
+                )
+            )
+            if self.input_artifacts != expected_inputs:
+                raise IntegrityError("scale result input artifacts differ from its catalog profile")
+            if self.verdict is ScaleVerdict.PASS:
+                ceilings = profile.workload.ceilings
+                observed = {
+                    "source record count": (
+                        self.metrics.input_item_count,
+                        ceilings.max_source_record_count,
+                    ),
+                    "source bytes": (self.metrics.input_bytes, ceilings.max_source_bytes),
+                    "wall time": (
+                        self.metrics.wall_time_milliseconds,
+                        ceilings.max_wall_time_milliseconds,
+                    ),
+                    "peak resident memory": (
+                        max(
+                            self.metrics.peak_worker_memory_bytes,
+                            self.metrics.peak_coordinator_memory_bytes,
+                        ),
+                        ceilings.max_peak_resident_memory_bytes,
+                    ),
+                    "output bytes": (self.metrics.output_bytes, ceilings.max_output_bytes),
+                    "payload bytes written": (
+                        self.metrics.payload_bytes_written,
+                        ceilings.max_payload_bytes_written,
+                    ),
+                    "publication bytes written": (
+                        self.metrics.publication_bytes_written,
+                        ceilings.max_publication_bytes_written,
+                    ),
+                    "partition count": (
+                        self.metrics.partition_count,
+                        ceilings.max_partition_count,
+                    ),
+                }
+                exceeded = [name for name, (actual, maximum) in observed.items() if actual > maximum]
+                if exceeded:
+                    raise IntegrityError(
+                        "passing scale result exceeds profile ceilings: " + ", ".join(exceeded)
+                    )
+                resources = profile.workload.resources
+                if (
+                    self.metrics.peak_worker_cpu
+                    > resources.worker_count * resources.worker_cpu
+                    or self.metrics.peak_worker_memory_bytes > resources.worker_memory_bytes
+                    or self.metrics.peak_coordinator_memory_bytes
+                    > resources.coordinator_memory_bytes
+                ):
+                    raise IntegrityError("passing scale result exceeds catalog resource limits")
+        elif isinstance(profile.workload, ScaleDocumentProcessingWorkload):
+            if len(self.input_artifacts) != 1:
+                raise IntegrityError("document-processing scale result must pin its one corpus")
+            corpus = self.input_artifacts[0]
+            if (
+                corpus.artifact_id != profile.workload.corpus.identity
+                or corpus.digest != profile.workload.corpus.digest
+            ):
+                raise IntegrityError("scale result corpus differs from its document profile")
+            if self.verdict is ScaleVerdict.PASS:
+                targets = profile.workload.targets
+                resources = profile.workload.resources
+                if self.metrics.input_item_count != targets.unit_count:
+                    raise IntegrityError(
+                        "passing document scale result differs from its target unit count"
+                    )
+                observed = {
+                    "wall time": (
+                        self.metrics.wall_time_milliseconds,
+                        targets.deadline_seconds * 1000,
+                    ),
+                    "worker CPU": (
+                        self.metrics.peak_worker_cpu,
+                        min(
+                            targets.max_worker_cpu,
+                            resources.worker_count * resources.worker_cpu,
+                        ),
+                    ),
+                    "worker memory": (
+                        self.metrics.peak_worker_memory_bytes,
+                        min(
+                            targets.max_worker_memory_bytes,
+                            resources.worker_memory_bytes,
+                        ),
+                    ),
+                    "coordinator memory": (
+                        self.metrics.peak_coordinator_memory_bytes,
+                        min(
+                            targets.max_coordinator_memory_bytes,
+                            resources.coordinator_memory_bytes,
+                        ),
+                    ),
+                }
+                exceeded = [name for name, (actual, maximum) in observed.items() if actual > maximum]
+                if exceeded:
+                    raise IntegrityError(
+                        "passing document scale result exceeds profile ceilings: "
+                        + ", ".join(exceeded)
+                    )

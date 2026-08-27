@@ -354,17 +354,31 @@ def _cmd_scale_profile_seal(args: argparse.Namespace) -> int:
 
 def _cmd_scale_profile_verify(args: argparse.Namespace) -> int:
     profile = ScaleProfile.from_bytes(_read_bytes(args.profile, label="scale profile"))
-    _emit(
-        {
-            "format": "docspec-scale-profile-verification",
-            "formatVersion": "1.0",
-            "profileId": profile.profile_id,
-            "profileDigest": profile.digest,
-            "unitCount": profile.targets.unit_count,
-            "processorTargetCount": len(profile.targets.processor_targets),
-            "verdict": "pass",
-        }
-    )
+    content: dict[str, Any] = {
+        "format": "docspec-scale-profile-verification",
+        "formatVersion": "1.0",
+        "profileId": profile.profile_id,
+        "profileDigest": profile.digest,
+        "workloadKind": profile.workload_kind.value,
+    }
+    document = profile.document_processing_workload
+    catalog = profile.catalog_workload
+    if document is not None:
+        content.update(
+            {
+                "unitCount": document.targets.unit_count,
+                "processorTargetCount": len(document.targets.processor_targets),
+            }
+        )
+    elif catalog is not None:
+        content.update(
+            {
+                "sourceNativeInputCount": len(catalog.source_native_inputs),
+                "maxSourceRecordCount": catalog.ceilings.max_source_record_count,
+            }
+        )
+    content["verdict"] = "pass"
+    _emit(content)
     return 0
 
 

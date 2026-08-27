@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docspec.org/schemas/scale-result/1.0.json",
+  "title": "DocSpec ScaleResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "resultId",
+    "profile",
+    "workloadKind",
+    "startedAt",
+    "completedAt",
+    "inputArtifacts",
+    "outputArtifacts",
+    "metrics",
+    "evidence",
+    "firstFailure",
+    "verdict"
+  ],
+  "properties": {
+    "format": {
+      "const": "docspec-scale-result"
+    },
+    "formatVersion": {
+      "const": "1.0"
+    },
+    "resultId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "profile": {
+      "$ref": "#/$defs/artifactPin"
+    },
+    "workloadKind": {
+      "enum": [
+        "document-processing",
+        "source-catalog"
+      ]
+    },
+    "startedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "completedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputArtifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactPin"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "outputArtifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactPin"
+      },
+      "uniqueItems": true
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputItemCount",
+        "outputItemCount",
+        "partitionCount",
+        "taskCount",
+        "storeCount",
+        "releaseCount",
+        "inputBytes",
+        "outputBytes",
+        "payloadBytesRead",
+        "payloadBytesReused",
+        "payloadBytesWritten",
+        "publicationBytesWritten",
+        "wallTimeMilliseconds",
+        "peakWorkerCpu",
+        "peakWorkerMemoryBytes",
+        "peakCoordinatorMemoryBytes",
+        "peakScratchBytes"
+      ],
+      "properties": {
+        "inputItemCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputItemCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "partitionCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "taskCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storeCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "releaseCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "inputBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outputBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payloadBytesRead": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payloadBytesReused": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payloadBytesWritten": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "publicationBytesWritten": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wallTimeMilliseconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "peakWorkerCpu": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "peakWorkerMemoryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "peakCoordinatorMemoryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "peakScratchBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactPin"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "firstFailure": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "failureCode",
+            "stage",
+            "evidence"
+          ],
+          "properties": {
+            "failureCode": {
+              "type": "string",
+              "minLength": 1
+            },
+            "stage": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence": {
+              "$ref": "#/$defs/artifactPin"
+            }
+          }
+        }
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "verdict": {
+            "const": "pass"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "firstFailure": {
+            "type": "null"
+          },
+          "outputArtifacts": {
+            "minItems": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "firstFailure": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "failureCode",
+              "stage",
+              "evidence"
+            ],
+            "properties": {
+              "failureCode": {
+                "type": "string",
+                "minLength": 1
+              },
+              "stage": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "$ref": "#/$defs/artifactPin"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifactPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactId",
+        "locator",
+        "digest"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "locator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}
