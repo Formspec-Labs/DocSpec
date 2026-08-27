@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 from docspec.adapters.execution import ExternalExecutionBackend
 from docspec.adapters.storage import (
@@ -20,6 +24,7 @@ from docspec.cli import main
 from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes
+from docspec.domain.jobs import StoreState
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
@@ -86,13 +91,27 @@ class _Arm:
             verdicts[store.store_id] = store.verdict.value
         return verdicts
 
+    def store_references(self, run: RunReceipt) -> tuple[StoreRef, ...]:
+        return tuple(StoreRef.from_dict(row["store"]) for row in self.records.stream(run.store_ledger))
+
+    def task_results(self, run: RunReceipt) -> tuple[StoreTaskResult, ...]:
+        return tuple(StoreTaskResult.from_dict(row["result"]) for row in self.records.stream(run.task_result_ledger))
+
+
+@dataclass(frozen=True)
+class _RunOutcome:
+    receipt: RunReceipt
+    release: DocumentReleaseRef
+    store_references: tuple[StoreRef, ...]
+    task_results: tuple[StoreTaskResult, ...]
+    active_state: dict[str, tuple[dict[str, object], ...]]
+
 
 def _seed(root: Path) -> _Arm:
     source_content = root / "source-content"
     source_content.mkdir(parents=True)
     items = tuple(
-        SourceItem(item_id, "2026-08-24", (), state=SourceItemState.DELETED)
-        for item_id in _FIXTURE_IDENTITIES
+        SourceItem(item_id, "2026-08-24", (), state=SourceItemState.DELETED) for item_id in _FIXTURE_IDENTITIES
     )
     source_ref = write_shared_source_catalog(root / "source-catalog", items)
     retry = RetryPolicy()
@@ -310,6 +329,117 @@ def _reconcile(arm: _Arm, handoff_reference: ArtifactRef, results_path: Path) ->
     return ArtifactRef.from_dict(json.loads(reconciled_reference_path.read_text())), reconciled_reference_path
 
 
+def _capture_outcome(
+    arm: _Arm,
+    run_reference: ArtifactRef,
+    release: DocumentReleaseRef,
+) -> _RunOutcome:
+    receipt = arm.run_receipt(run_reference)
+    return _RunOutcome(
+        receipt,
+        release,
+        arm.store_references(receipt),
+        arm.task_results(receipt),
+        _active_document_state(arm.catalog, release),
+    )
+
+
+def _run_external_backend(
+    arm: _Arm,
+) -> tuple[ArtifactRef, DocumentReleaseRef, tuple[StoreTaskResult, ...]]:
+    _, handoff_reference, handoff, tasks = _prepare_handoff(arm)
+    profile = ExecutionProfile.from_dict(arm.controls.load(handoff.execution_profile))
+    backend = ExternalExecutionBackend(
+        profile,
+        _SubprocessDispatcher(arm, handoff_reference),
+        profile_reference=handoff.execution_profile,
+        controls=arm.controls,
+    )
+    results = tuple(backend.execute(handoff, tasks))
+    replayed = StoreTaskResult.from_bytes(_execute_task_in_subprocess(arm, handoff_reference, tasks[0], "replay"))
+    assert replayed == next(result for result in results if result.task == tasks[0])
+
+    results_path = arm.root / "results.jsonl"
+    results_path.write_bytes(b"".join(result.to_bytes() for result in (*reversed(results), replayed)))
+    run_reference, run_reference_path = _reconcile(arm, handoff_reference, results_path)
+    return run_reference, _commit(arm, run_reference_path), results
+
+
+def _dagster_output_payloads(result: object, node_name: str) -> tuple[bytes, ...]:
+    outputs = result.output_for_node(node_name)  # type: ignore[attr-defined]
+    assert isinstance(outputs, dict)
+    return tuple(outputs[key] for key in sorted(outputs))
+
+
+def _run_dagster_tasks(
+    arm: _Arm,
+    handoff_reference_path: Path,
+    *,
+    fail_task_id: str | None = None,
+) -> tuple[bool, tuple[StoreTask, ...], tuple[StoreTaskResult, ...], tuple[dict[str, object], ...]]:
+    dagster = pytest.importorskip("dagster", reason="install the 'dagster' extra for scheduler portability")
+    fixture = importlib.import_module("tests.dagster_process_fixture")
+    job = dagster.reconstructable(fixture.reconstructable_application_job)
+    instance_root = arm.root / "dagster-instance"
+    evidence_root = arm.root / "dagster-worker-evidence"
+    instance_root.mkdir()
+    evidence_root.mkdir()
+    resource_config: dict[str, object] = {
+        "run_request_path": arm.run_request.as_posix(),
+        "handoff_reference_path": handoff_reference_path.as_posix(),
+        "worker_evidence_root": evidence_root.as_posix(),
+    }
+    if fail_task_id is not None:
+        resource_config["fail_task_id"] = fail_task_id
+    run_config = {
+        "execution": {"config": {"max_concurrent": 2}},
+        "resources": {"docspec_runtime": {"config": resource_config}},
+    }
+
+    with dagster.DagsterInstance.local_temp(tempdir=str(instance_root)) as instance:
+        with dagster.execute_job(job, instance=instance, run_config=run_config) as result:
+            success = result.success
+            emitted_payloads = _dagster_output_payloads(result, "emit_store_tasks")
+            result_payloads = _dagster_output_payloads(result, "execute_store_task") if success else ()
+            run_id = result.run_id
+        events = instance.all_logs(run_id)
+
+    tasks = tuple(StoreTask.from_bytes(payload) for payload in emitted_payloads)
+    results = tuple(StoreTaskResult.from_bytes(payload) for payload in result_payloads)
+    evidence = tuple(json.loads(path.read_text(encoding="utf-8")) for path in sorted(evidence_root.glob("*.json")))
+    assert tasks
+    assert all(item["pid"] != os.getpid() for item in evidence)
+    assert any(
+        event.dagster_event and event.dagster_event.event_type is dagster.DagsterEventType.STEP_WORKER_STARTED
+        for event in events
+    )
+    return success, tasks, results, evidence
+
+
+def _run_dagster_backend(
+    arm: _Arm,
+) -> tuple[ArtifactRef, DocumentReleaseRef, tuple[StoreTaskResult, ...], tuple[dict[str, object], ...]]:
+    handoff_reference_path, handoff_reference, handoff, expected_tasks = _prepare_handoff(arm)
+    success, tasks, results, evidence = _run_dagster_tasks(arm, handoff_reference_path)
+    assert success
+    assert len(tasks) == len(expected_tasks)
+    assert set(tasks) == set(expected_tasks)
+    assert {result.task for result in results} == set(tasks)
+    assert all(result.handoff_id == handoff.handoff_id for result in results)
+    assert all(
+        set(item) == {"pid", "result", "status", "task"}
+        and item["status"] == "succeeded"
+        and StoreTask.from_dict(item["task"]) in tasks
+        and StoreTaskResult.from_dict(item["result"]) in results
+        for item in evidence
+    )
+
+    results_path = arm.root / "dagster-results.jsonl"
+    results_path.write_bytes(b"".join(result.to_bytes() for result in reversed(results)))
+    run_reference, run_reference_path = _reconcile(arm, handoff_reference, results_path)
+    return run_reference, _commit(arm, run_reference_path), results, evidence
+
+
 def _assert_equivalent(
     local: _Arm,
     local_run: RunReceipt,
@@ -337,24 +467,8 @@ def test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_back
     local = _seed(tmp_path / "local")
     external = _seed(tmp_path / "external")
     local_run_ref, local_release = _run_local_backend(local)
-
-    _, handoff_reference, handoff, tasks = _prepare_handoff(external)
-    assert len(tasks) == 2
-    profile = ExecutionProfile.from_dict(external.controls.load(handoff.execution_profile))
-    backend = ExternalExecutionBackend(
-        profile,
-        _SubprocessDispatcher(external, handoff_reference),
-        profile_reference=handoff.execution_profile,
-        controls=external.controls,
-    )
-    lines = [result.to_bytes() for result in backend.execute(handoff, tasks)]
-    replayed = _execute_task_in_subprocess(external, handoff_reference, tasks[0], "replay")
-    assert replayed == next(line for line in lines if StoreTaskResult.from_bytes(line).task == tasks[0])
-
-    results_path = external.root / "results.jsonl"
-    results_path.write_bytes(b"".join((*lines, replayed)))
-    run_reference, run_reference_path = _reconcile(external, handoff_reference, results_path)
-    external_release = _commit(external, run_reference_path)
+    run_reference, external_release, results = _run_external_backend(external)
+    assert len(results) == 2
 
     _assert_equivalent(
         local,
@@ -364,3 +478,66 @@ def test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_back
         external.run_receipt(run_reference),
         external_release,
     )
+
+
+def test_native_dagster_executes_the_real_graph_and_matches_local_and_external_runs(
+    tmp_path: Path,
+) -> None:
+    """All three backends seal byte-identical task, store, run, and release evidence."""
+
+    root = tmp_path / "portable-application"
+
+    local = _seed(root)
+    local_run_reference, local_release = _run_local_backend(local)
+    expected = _capture_outcome(local, local_run_reference, local_release)
+    shutil.rmtree(root)
+
+    external = _seed(root)
+    external_run_reference, external_release, external_results = _run_external_backend(external)
+    assert len(external_results) == 2
+    assert _capture_outcome(external, external_run_reference, external_release) == expected
+    shutil.rmtree(root)
+
+    dagster_arm = _seed(root)
+    dagster_run_reference, dagster_release, dagster_results, evidence = _run_dagster_backend(dagster_arm)
+    actual = _capture_outcome(dagster_arm, dagster_run_reference, dagster_release)
+
+    assert actual == expected
+    assert {result.output_store for result in dagster_results} == set(actual.store_references)
+    assert all(len(result.task.to_bytes()) < 4096 and len(result.to_bytes()) < 4096 for result in dagster_results)
+    assert len(evidence) == len(dagster_results) == 2
+    for store_reference in actual.store_references:
+        store = dagster_arm.stores.load(store_reference)
+        assert store.state is StoreState.SEALED
+        assert store.delivery_receipt is not None
+        delivery = dagster_arm.controls.load(store.delivery_receipt)
+        assert delivery["blobRoots"]
+        assert delivery["layers"]
+
+
+def test_native_dagster_worker_failure_publishes_no_partial_run_or_release(
+    tmp_path: Path,
+) -> None:
+    arm = _seed(tmp_path / "dagster-failure")
+    handoff_reference_path, _, _, tasks = _prepare_handoff(arm)
+    failed_task, sibling_task = tasks
+
+    success, emitted_tasks, results, evidence = _run_dagster_tasks(
+        arm,
+        handoff_reference_path,
+        fail_task_id=failed_task.task_id,
+    )
+
+    assert not success
+    assert len(emitted_tasks) == len(tasks)
+    assert set(emitted_tasks) == set(tasks)
+    assert results == ()
+    assert {item["status"] for item in evidence} == {"injected-failure", "succeeded"}
+    failed_reference = arm.stores.latest(failed_task.input_store.store_id)
+    sibling_reference = arm.stores.latest(sibling_task.input_store.store_id)
+    assert failed_reference is not None and sibling_reference is not None
+    assert arm.stores.load(failed_reference).state is StoreState.SEALED
+    assert arm.stores.load(sibling_reference).state is StoreState.SEALED
+    assert arm.catalog.current() is None
+    run_receipt_root = Path(arm.roots["controlRepository"]) / "control" / "run-receipts"
+    assert not run_receipt_root.exists()
