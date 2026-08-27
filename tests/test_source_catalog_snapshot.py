@@ -2297,6 +2297,49 @@ def test_cli_requires_the_atomic_receipt_member_without_poisoning_either_path(
     assert not receipt_path.exists()
 
 
+def test_cli_rejects_source_native_containment_and_accepts_a_separate_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    install_fake_source_native(monkeypatch)
+    source_root = tmp_path / "source-native"
+
+    for destination in (source_root / "catalog-store", tmp_path):
+        receipt_path = destination / "source-catalog-build-command-receipt.json"
+        assert (
+            main(
+                source_catalog_build_arguments(
+                    tmp_path,
+                    destination=destination,
+                    receipt_path=receipt_path,
+                )
+            )
+            == 2
+        )
+        assert (
+            "artifact and source-native input paths must not contain one another"
+            in capfd.readouterr().err
+        )
+        assert not receipt_path.exists()
+
+    destination = tmp_path / "catalog-store"
+    receipt_path = destination / "source-catalog-build-command-receipt.json"
+    assert (
+        main(
+            source_catalog_build_arguments(
+                tmp_path,
+                destination=destination,
+                receipt_path=receipt_path,
+            )
+        )
+        == 0
+    )
+    output = json.loads(capfd.readouterr().out)
+    assert output["destination"] == destination.resolve().as_posix()
+    assert receipt_path.is_file()
+
+
 def test_cli_rejects_blob_store_containment_and_receipts_explicit_retention(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

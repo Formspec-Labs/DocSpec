@@ -115,6 +115,7 @@ def _require_new_outputs(
     destination: Path,
     receipt: Path,
     blob_store: Path | None,
+    source_native_roots: tuple[Path, ...],
 ) -> None:
     expected_receipt = destination / _BUILD_RECEIPT_NAME
     if receipt.resolve(strict=False) != expected_receipt.resolve(strict=False):
@@ -123,6 +124,10 @@ def _require_new_outputs(
         )
     if blob_store is not None and _paths_overlap(destination, blob_store):
         raise SourceCatalogCliError("artifact and blob store paths must not contain one another")
+    if any(_paths_overlap(destination, root) for root in source_native_roots):
+        raise SourceCatalogCliError(
+            "artifact and source-native input paths must not contain one another"
+        )
     if destination.exists() or destination.is_symlink():
         raise SourceCatalogCliError(f"refusing to replace existing artifact: {destination}")
 
@@ -582,7 +587,12 @@ def _build(args: argparse.Namespace) -> int:
     destination = Path(args.destination)
     receipt_path = Path(args.receipt)
     blob_store = Path(args.blob_store) if args.blob_store is not None else None
-    _require_new_outputs(destination, receipt_path, blob_store)
+    _require_new_outputs(
+        destination,
+        receipt_path,
+        blob_store,
+        tuple(source_input[0] for source_input in source_inputs),
+    )
     with LocalSourceCatalogPublication(destination) as publication:
         destination = publication.destination
         catalog_store = publication.store(shared_blob_root=blob_store)
