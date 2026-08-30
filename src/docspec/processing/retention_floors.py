@@ -7,8 +7,9 @@ parse is refused when it is **below the declared floor**, when there is **no
 declared floor for that parser and format**, and when the source's **visible text
 could not be measured**. Undeclared is not "inherit a default".
 
-The two invariants are the predecessor's, carried over unchanged
-(`spicy-regs@integrate/payload-prereqs:src/spicy_regs/docpipeline/source.py:975-1000`):
+The two invariants are the predecessor's, carried over unchanged from the
+sibling regulations document pipeline's acquisition module at the commit
+Decision 0001 cites:
 
 * ``0 < value < 1`` -- outside that a floor either gates nothing or refuses
   everything;

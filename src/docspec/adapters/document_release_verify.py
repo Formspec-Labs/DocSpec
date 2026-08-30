@@ -663,11 +663,29 @@ def _text_bodies(
     return bodies
 
 
+def _spans_by_body(
+    segments: Sequence[Mapping[str, Any]], key: str
+) -> dict[Any, list[tuple[int, int]]]:
+    """Group every well-formed segment range by the text body it names.
+
+    The same selection `_body_totals` made one text body at a time, made once.
+    A release with 8,000 bodies and 28,000 segments is 8,000 full scans of the
+    segment stream otherwise, three times over, and the answer does not change
+    between them.
+    """
+
+    grouped: dict[Any, list[tuple[int, int]]] = {}
+    for segment in segments:
+        start = segment.get("representationStart")
+        end = segment.get("representationEnd")
+        if isinstance(start, int) and isinstance(end, int):
+            grouped.setdefault(segment.get(key), []).append((start, end))
+    return grouped
+
+
 def _body_totals(
     body: tuple[Any, str, Any, Any],
-    segments: Sequence[Mapping[str, Any]],
-    *,
-    key: str,
+    spans: Mapping[Any, Sequence[tuple[int, int]]],
 ) -> tuple[int, int, int]:
     """One text body's representation, segmented, and excluded byte totals."""
 
@@ -677,15 +695,7 @@ def _body_totals(
         if isinstance(representation, Mapping) and isinstance(representation.get("byteSize"), int)
         else 0
     )
-    segmented = _covered_bytes(
-        [
-            (segment["representationStart"], segment["representationEnd"])
-            for segment in segments
-            if segment.get(key) == body_id
-            and isinstance(segment.get("representationStart"), int)
-            and isinstance(segment.get("representationEnd"), int)
-        ]
-    )
+    segmented = _covered_bytes(spans.get(body_id, ()))
     excluded_bytes = _covered_bytes(
         [
             (item["start"], item["end"])
@@ -729,11 +739,12 @@ def derive_per_kind_counts(
         kind = segment.get("textKind") or "document-body"
         if kind in per_kind:
             per_kind[kind]["segments"] += 1
+    spans = _spans_by_body(segments, key)
     for body in _text_bodies(documents, attachments, comments, key=key):
         kind = body[1]
         if kind not in per_kind:
             continue
-        representation, segmented, excluded = _body_totals(body, segments, key=key)
+        representation, segmented, excluded = _body_totals(body, spans)
         tally = per_kind[kind]
         tally["textBodies"] += 1
         tally["representationByteTotal"] += representation
@@ -817,8 +828,9 @@ def derive_coverage(
     representation_total = 0
     segmented_total = 0
     excluded_total = 0
+    spans = _spans_by_body(segments, key)
     for body in _text_bodies(documents, attachments, comments, key=key):
-        representation, segmented, excluded = _body_totals(body, segments, key=key)
+        representation, segmented, excluded = _body_totals(body, spans)
         representation_total += representation
         segmented_total += segmented
         excluded_total += excluded
@@ -846,12 +858,33 @@ def _load_schema(path: Path) -> dict[str, Any]:
 
 
 def _schema_issues(value: Any, schema: Mapping[str, Any], *, path: str) -> list[VerificationIssue]:
-    validator = jsonschema.Draft202012Validator(schema)
+    return _validator_issues(jsonschema.Draft202012Validator(schema), value, path=path)
+
+
+def _validator_issues(
+    validator: jsonschema.Draft202012Validator, value: Any, *, path: str
+) -> list[VerificationIssue]:
+    """The same check, against a validator the caller may reuse across rows.
+
+    Compiling a schema is the expensive half of validating one small record, and
+    a tabular member of this format is one schema and a quarter of a million
+    rows. The rule is unchanged: the same validator, the same errors, the same
+    order.
+    """
+
     issues: list[VerificationIssue] = []
     for error in sorted(validator.iter_errors(value), key=lambda item: list(item.path)):
         suffix = "".join(f"/{part}" for part in error.path)
         _issue(issues, "invalid.schema", f"{path}{suffix}", error.message)
     return issues
+
+
+def _read_slice(path: Path, start: int, length: int) -> bytes:
+    """Read exactly one member's byte slice without holding the member."""
+
+    with path.open("rb") as handle:
+        handle.seek(start)
+        return handle.read(length)
 
 
 def _read_root(bundle: Path, issues: list[VerificationIssue]) -> dict[str, Any] | None:
@@ -1260,11 +1293,15 @@ def _read_text_body_index(
             f"expected {len(rows)}",
         )
     row_schema = _row_subschema(schemas.get("member-manifest"), TEXT_BODY_INDEX_ROW_DEF)
+    row_validator = (
+        None if row_schema is None else jsonschema.Draft202012Validator(row_schema)
+    )
+    sizes: dict[Path, int] = {}
     index: dict[tuple[Any, Any], Mapping[str, Any]] = {}
     for position, row in enumerate(rows):
         row_path = f"{object_key}/{position}"
-        if row_schema is not None:
-            issues.extend(_schema_issues(row, row_schema, path=row_path))
+        if row_validator is not None:
+            issues.extend(_validator_issues(row_validator, row, path=row_path))
         if not isinstance(row, dict):
             continue
         identity = (row.get("family"), row.get("textBodyId"))
@@ -1289,16 +1326,18 @@ def _read_text_body_index(
         start, length = row.get("startByte"), row.get("byteLength")
         if not isinstance(start, int) or not isinstance(length, int):
             continue
-        raw = target.read_bytes()
-        if start + length > len(raw):
+        if target not in sizes:
+            sizes[target] = target.stat().st_size
+        member_size = sizes[target]
+        if start + length > member_size:
             _issue(
                 issues,
                 "invalid.member-digest",
                 f"{row_path}/byteLength",
-                f"slice exceeds the {len(raw)}-byte member",
+                f"slice exceeds the {member_size}-byte member",
             )
             continue
-        actual = hashlib.sha256(raw[start : start + length]).hexdigest()
+        actual = hashlib.sha256(_read_slice(target, start, length)).hexdigest()
         if actual != row.get("sha256"):
             _issue(
                 issues,
@@ -1321,14 +1360,13 @@ def _indexed_bytes(
     the two answers coincide and nothing changes for an unpartitioned reader.
     """
 
-    raw = path.read_bytes()
     row = index.get((family, body_id))
     if not isinstance(row, Mapping):
-        return raw
+        return path.read_bytes()
     start, length = row.get("startByte"), row.get("byteLength")
-    if isinstance(start, int) and isinstance(length, int) and 0 <= start <= start + length <= len(raw):
-        return raw[start : start + length]
-    return raw
+    if isinstance(start, int) and isinstance(length, int) and 0 <= start <= start + length <= path.stat().st_size:
+        return _read_slice(path, start, length)
+    return path.read_bytes()
 
 
 def _validate_capture(
@@ -1576,8 +1614,9 @@ def _read_rows(
         )
     schema = schemas.get(TABULAR_ROLES[role])
     if schema is not None:
+        validator = jsonschema.Draft202012Validator(schema)
         for index, row in enumerate(rows):
-            issues.extend(_schema_issues(row, schema, path=f"{object_key}/{index}"))
+            issues.extend(_validator_issues(validator, row, path=f"{object_key}/{index}"))
     return [row for row in rows if isinstance(row, dict)], object_key
 
 
@@ -2181,19 +2220,14 @@ def _validate_coverage(
 ) -> None:
     """Every visible-text byte is segmented or explicitly excluded, never both."""
 
+    spans = _spans_by_body(segments, key)
     for index, document in enumerate(documents):
         path = f"{object_key}/{index}"
         version_id = document.get(key)
         size = sizes.get(str(version_id))
         if size is None:
             continue
-        segment_ranges = [
-            (segment["representationStart"], segment["representationEnd"])
-            for segment in segments
-            if segment.get(key) == version_id
-            and isinstance(segment.get("representationStart"), int)
-            and isinstance(segment.get("representationEnd"), int)
-        ]
+        segment_ranges = list(spans.get(version_id, ()))
         excluded_ranges = [
             (item["start"], item["end"])
             for item in document.get("excludedRanges") or []
