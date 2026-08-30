@@ -408,7 +408,7 @@ def _extract(payload: bytes, media_type: str, floors: RetentionFloorRegistry) ->
 
 def _structure(
     body_id: str, bounded: BoundedTextSegmentation, representation_size: int
-) -> tuple[list[dict[str, Any]], dict[int, str]]:
+) -> list[dict[str, Any]]:
     """Build the section tree the segmenter's own heading tiling implies.
 
     A root node spans the whole body, so text before the first heading has a
@@ -436,7 +436,6 @@ def _structure(
     # (level, node index) for every open section, outermost first.
     stack: list[tuple[int, int]] = []
     siblings: dict[str | None, int] = {root_id: 0}
-    starts: list[int] = []
     for position, heading in enumerate(bounded.headings, start=1):
         while stack and stack[-1][0] >= heading.level:
             closed = stack.pop()
@@ -462,12 +461,7 @@ def _structure(
         )
         siblings.setdefault(node_id, 0)
         stack.append((heading.level, len(nodes) - 1))
-        starts.append(heading.start)
-    # Which node owns a byte offset: the last section opened at or before it.
-    owner: dict[int, str] = {}
-    for index, start in enumerate(starts, start=1):
-        owner[start] = nodes[index]["structuralNodeId"]
-    return nodes, owner
+    return nodes
 
 
 def _heading_path(node_id: str, by_id: Mapping[str, Mapping[str, Any]]) -> list[str]:
@@ -902,7 +896,7 @@ def _carry(
     representation_key = _text_key(body_id)
     representation_sha256 = partitions.place("text", representation_key, body_id, visible.content)
 
-    document_nodes, _owner = _structure(body_id, bounded, len(visible.content))
+    document_nodes = _structure(body_id, bounded, len(visible.content))
     document_segments = _segments(body_id, bounded, document_nodes, visible, rendition_sha256)
     nodes.extend(document_nodes)
     segments.extend(document_segments)
