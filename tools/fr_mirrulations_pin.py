@@ -33,7 +33,7 @@ import argparse
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -276,6 +276,104 @@ def write_pin(root: Path, *, pin_path: Path = PIN_PATH) -> Path:
     pin_path.parent.mkdir(parents=True, exist_ok=True)
     pin_path.write_bytes(canonical_json_file_bytes(pin))
     return pin_path
+
+
+# ─── Preserved copies ──────────────────────────────────────────────────
+#
+# The checkpoint's blob stores are content-addressed and carry no index of
+# their own; what says which bytes belong to which source item is the run's
+# record layer, `docspec-file-record/1.0`, written by the acquisition that
+# preserved them. Reading it is how "preserved-copy is rung one" is honoured
+# without a single request: the record names the blob, the blob store is
+# addressed by digest, and the builder re-digests the bytes before adopting
+# them.
+
+FILE_RECORD_SCHEMA = "docspec-file-record/1.0"
+
+
+@dataclass(frozen=True, slots=True)
+class PreservedCapture:
+    """One preserved rendition: which item it belongs to, and where its bytes are."""
+
+    source_item_id: str
+    candidate_id: str
+    media_type: str
+    digest: str
+    byte_size: int
+    path: Path
+    acquired_at: str
+    acquisition_started_at: str | None
+    run: str
+
+    def read(self) -> bytes:
+        """The preserved bytes, refusing anything that is not what was recorded."""
+
+        if not self.path.is_file():
+            raise QualificationCorpusError(f"preserved blob is absent: {self.path}")
+        payload = self.path.read_bytes()
+        if len(payload) != self.byte_size:
+            raise QualificationCorpusError(f"preserved blob differs in size from its record: {self.path}")
+        if _digest(payload) != self.digest.removeprefix("sha256:"):
+            raise QualificationCorpusError(f"preserved blob differs from its recorded digest: {self.path}")
+        return payload
+
+
+def _file_records(run_root: Path) -> Iterator[dict[str, Any]]:
+    records = run_root / "records"
+    layers = records / "record-layers"
+    if not layers.is_dir():
+        return
+    for layer_path in sorted(layers.rglob("*.json")):
+        layer = json.loads(layer_path.read_text(encoding="utf-8"))
+        if layer.get("schema", {}).get("schemaId") != FILE_RECORD_SCHEMA:
+            continue
+        for member in layer.get("members", ()):
+            member_path = records / member["path"]
+            if not member_path.is_file():
+                raise QualificationCorpusError(f"record member is absent: {member_path}")
+            with member_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    yield json.loads(line)["payload"]
+
+
+def preserved_captures(pinned: PinnedCorpus) -> dict[str, dict[str, PreservedCapture]]:
+    """Every preserved rendition in the checkpoint, by source item and candidate.
+
+    The runs are read in `RUN_NAMES` order and the first run to preserve a
+    candidate wins, so the full tier's own run is preferred and the smaller runs
+    only supply what it never captured. Which run a copy came from is carried on
+    the record rather than dropped: a release that adopted a copy from another
+    run must be able to say so.
+    """
+
+    found: dict[str, dict[str, PreservedCapture]] = {}
+    for name in RUN_NAMES:
+        run_root = pinned.root / "runs" / name
+        for record in _file_records(run_root):
+            blob = record["blob"]
+            item = found.setdefault(record["sourceItemId"], {})
+            if record["candidateId"] in item:
+                continue
+            item[record["candidateId"]] = PreservedCapture(
+                source_item_id=record["sourceItemId"],
+                candidate_id=record["candidateId"],
+                media_type=record["mediaType"],
+                digest=blob["digest"],
+                byte_size=blob["byteSize"],
+                path=run_root / "blobs" / blob["locator"],
+                acquired_at=record["acquiredAt"],
+                acquisition_started_at=record.get("acquisitionStartedAt"),
+                run=name,
+            )
+    return found
+
+
+def catalog_items(pinned: PinnedCorpus) -> Iterator[dict[str, Any]]:
+    """The pinned catalog's items, streamed in the order the snapshot wrote them."""
+
+    with pinned.items_path.open(encoding="utf-8") as handle:
+        for line in handle:
+            yield json.loads(line)
 
 
 def main(argv: list[str] | None = None) -> int:
