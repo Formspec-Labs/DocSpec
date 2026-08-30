@@ -165,3 +165,60 @@ def test_the_unsafe_path_fixture_is_refused_by_the_relative_path_rule() -> None:
     clean = _load(FIXTURE_DIR / "valid" / "manifests" / "global.json")
     for member in clean["members"]:
         require_relative_path(member["objectKey"], "objectKey")
+
+
+# ─── The docspec generation the packaged schemas now describe ──────────
+
+DOCSPEC_FIXTURE_DIR = ROOT / "tests" / "fixtures" / "document_release_v2_docspec"
+
+
+def test_the_docspec_valid_bundle_satisfies_the_packaged_root_schema() -> None:
+    """The packaged schemas ARE the docspec generation, so its corpus fits them."""
+
+    release = _load(DOCSPEC_FIXTURE_DIR / "valid" / "release.json")
+
+    assert _errors(_root_validator(), release) == []
+    assert release["format"] == "docspec-document-release"
+    assert release["formatVersion"] == "2.0"
+    assert release["documentStateDigest"].startswith("sha256:")
+
+
+def test_the_docspec_valid_root_is_exact_canonical_json_without_a_trailing_newline() -> None:
+    data = (DOCSPEC_FIXTURE_DIR / "valid" / "release.json").read_bytes()
+
+    assert not data.endswith(b"\n")
+    assert parse_canonical_json(data, label="release.json", file_form=False)
+
+
+def test_every_docspec_fixture_bundle_is_present_and_named_by_its_sealed_corpus() -> None:
+    corpus = _load(DOCSPEC_FIXTURE_DIR / "corpus.json")
+    bundles = {case["bundle"] for case in corpus["cases"]}
+
+    assert len(corpus["cases"]) == 20
+    assert bundles == {"valid"} | {
+        f"invalid/{path.name}" for path in (DOCSPEC_FIXTURE_DIR / "invalid").iterdir()
+    }
+    for case in corpus["cases"]:
+        assert (DOCSPEC_FIXTURE_DIR / case["bundle"] / "release.json").is_file()
+
+
+def test_the_docspec_unknown_node_kind_fixture_is_refused_by_the_packaged_schema() -> None:
+    validator = Draft202012Validator(_schema("structural-nodes.schema.json"))
+    rows = [
+        json.loads(line)
+        for line in (
+            DOCSPEC_FIXTURE_DIR / "invalid" / "unknown-node-kind" / "data" / "structural-nodes.jsonl"
+        )
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    refused = [row for row in rows if _errors(validator, row)]
+
+    assert refused, "no structural node row carried the unknown nodeKind"
+    valid_rows = [
+        json.loads(line)
+        for line in (DOCSPEC_FIXTURE_DIR / "valid" / "data" / "structural-nodes.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(_errors(validator, row) == [] for row in valid_rows)
