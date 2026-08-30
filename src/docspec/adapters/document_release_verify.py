@@ -1800,7 +1800,13 @@ def _validate_attachments(
                         capture,
                         member_paths,
                         index,
-                        attachment.get("textBodyId"),
+                        # The index addresses one selected rendition per text
+                        # body, because that is the slice its row shape names.
+                        # Whether an attachment's OTHER renditions are kept as
+                        # blobs at all is a recorded open question, so they are
+                        # read against the whole member rather than borrowing a
+                        # slice that names different bytes.
+                        attachment.get("textBodyId") if disposition == "text-captured" else None,
                         f"{sub_path}/capture",
                         issues,
                     )
@@ -2027,17 +2033,12 @@ def _validate_structure(
 def _validate_segments(
     segments: Sequence[Mapping[str, Any]],
     nodes: Mapping[str, Mapping[str, Any]],
-    documents: Sequence[Mapping[str, Any]],
+    renditions: Mapping[Any, Mapping[str, Any]],
     sizes: Mapping[str, int],
     object_key: str,
     key: str,
     issues: list[VerificationIssue],
 ) -> None:
-    renditions = {
-        document.get(key): document.get("capture")
-        for document in documents
-        if isinstance(document.get("capture"), Mapping)
-    }
     seen: set[str] = set()
     ordinals: dict[str, list[int]] = {}
     for index, segment in enumerate(segments):
@@ -2584,7 +2585,25 @@ def verify_document_release(bundle: Path) -> VerificationResult:
     if nodes is not None:
         node_index = _validate_structure(nodes, sizes, nodes_key, key, issues)
     if segments is not None and documents is not None:
-        _validate_segments(segments, node_index, documents, sizes, segments_key, key, issues)
+        # Evidence is checked against the captured bytes of the body the segment
+        # names, whichever kind that body is: one text pipeline, three kinds.
+        renditions: dict[Any, Mapping[str, Any]] = {}
+        for row, body_key in (
+            *((document, key) for document in documents),
+            *((comment, "textBodyId") for comment in comments or []),
+        ):
+            if isinstance(row.get("capture"), Mapping):
+                renditions[row.get(body_key)] = row["capture"]
+        for attachment in attachments or []:
+            body_id = attachment.get("textBodyId")
+            for rendition in attachment.get("renditions") or []:
+                if (
+                    isinstance(rendition, Mapping)
+                    and rendition.get("attachmentDisposition") == "text-captured"
+                    and isinstance(rendition.get("capture"), Mapping)
+                ):
+                    renditions[body_id] = rendition["capture"]
+        _validate_segments(segments, node_index, renditions, sizes, segments_key, key, issues)
         _validate_coverage(documents, segments, sizes, documents_key, key, issues)
     if None not in (dispositions, documents, attachments, comments, nodes, segments):
         _validate_root_bindings(

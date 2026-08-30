@@ -34,6 +34,7 @@ from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_b
 from docspec.adapters.document_release_verify import (
     ALLOWED_MEMBER_ROLES,
     ATTACHMENT_DISPOSITIONS,
+    CATALOG_DISPOSITIONS,
     DIAGNOSTIC_CODES,
     DOCSPEC_GENERATION,
     FRAMED_SET_DOMAINS,
@@ -72,7 +73,7 @@ from docspec.document_release_support import (
 )
 from docspec.domain.identity import canonical_json_bytes as identity_canonical_json_bytes
 from docspec.domain.storage import partition_bucket
-from docspec.domain.identity import sha256_digest
+from docspec.domain.identity import sha256_digest, stable_urn
 from docspec.source_catalog import selected_source_set_digest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1074,3 +1075,722 @@ def test_the_restamper_never_names_the_frozen_predecessor_corpus_as_its_output()
     assert restamper.FIXTURE_ROOT == DOCSPEC_FIXTURE_ROOT
     assert restamper.PREDECESSOR_FIXTURE_ROOT == FIXTURE_ROOT
     assert restamper.CORPUS_FILE == DOCSPEC_CORPUS_FILE
+
+
+# ─── The sealed extension: attachments, comments, and the byte index ────
+#
+# This corpus's synthetic content carries neither an attachment nor a comment,
+# so both members are minted present and empty. Sealing a schema and never
+# writing a row against it is how a contract rots, so the tests below GROW a
+# real docspec bundle by one comment and one attachment -- through the
+# restamper's own machinery, so every digest, count, and index slice is derived
+# the way the builder derives them -- and then verify it.
+
+
+COMMENT_ID = "0900006485a1b2c3"
+COMMENT_TEXT = "The rule is too strict."
+ATTACHMENT_TEXT = "Attached comment exhibit."
+ATTACHMENT_IDENTITY = "0900006485a1b2c3-0001.pdf"
+
+
+def _rendition_bytes(text: str) -> bytes:
+    return b"<p>" + text.encode("utf-8") + b"</p>\n"
+
+
+def _place(
+    bundle: Path, index_rows: list[dict[str, Any]], family: str, body_id: str, payload: bytes
+) -> tuple[str, str]:
+    """Append one text body's bytes to its partition bucket and index the slice."""
+
+    prefix = "text" if family == "text" else "blobs"
+    object_key = f"{prefix}/{partition_bucket(body_id, 64):04d}"
+    path = bundle / object_key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing = path.read_bytes() if path.exists() else b""
+    path.write_bytes(existing + payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    index_rows.append(
+        {
+            "byteLength": len(payload),
+            "family": family,
+            "member": object_key,
+            "sha256": digest,
+            "startByte": len(existing),
+            "textBodyId": body_id,
+        }
+    )
+    return object_key, digest
+
+
+def _capture(
+    catalog_id: str, rendition_id: str, object_key: str, media_type: str, digest: str, size: int
+) -> dict[str, Any]:
+    return {
+        "acquiredAt": "2026-08-10T00:00:00Z",
+        "acquisitionStartedAt": None,
+        "byteSize": size,
+        "candidateRenditionId": rendition_id,
+        "catalogReleaseId": catalog_id,
+        "expectedSha256": None,
+        "mediaType": media_type,
+        "objectKey": object_key,
+        "sha256": digest,
+    }
+
+
+def _representation(body_id: str, object_key: str, digest: str, size: int) -> dict[str, Any]:
+    return {
+        "byteSize": size,
+        "encoding": "utf-8",
+        "mediaType": "text/plain; charset=utf-8",
+        "objectKey": object_key,
+        "representationId": f"{body_id}#representation",
+        "sha256": digest,
+    }
+
+
+def _one_body_structure(body_id: str, kind: str, size: int, rendition_sha: str) -> tuple[
+    dict[str, Any], dict[str, Any]
+]:
+    """One paragraph node spanning the whole representation, and its segment."""
+
+    node_id = f"{body_id}#n0"
+    node = {
+        "depth": 0,
+        "headingText": None,
+        "nodeKind": "paragraph",
+        "ordinal": 0,
+        "representationEnd": size,
+        "representationStart": 0,
+        "structuralNodeId": node_id,
+        "structuralParentId": None,
+        "textBodyId": body_id,
+        "textKind": kind,
+    }
+    segment = {
+        "evidence": {
+            "coordinateSystem": "rendition-utf8-byte",
+            "end": 3 + size,
+            "renditionSha256": rendition_sha,
+            "start": 3,
+        },
+        "headingPath": [],
+        "ordinal": 0,
+        "representationEnd": size,
+        "representationStart": 0,
+        "segmentId": f"{body_id}#s0",
+        "structuralParentId": node_id,
+        "textBodyId": body_id,
+        "textKind": kind,
+    }
+    return node, segment
+
+
+def _extended_bundle(tmp_path: Path, comment_id: str = COMMENT_ID) -> tuple[Path, dict[str, Any]]:
+    """Grow the sealed docspec bundle by one comment and one attachment of it.
+
+    The attachment hangs off the COMMENT rather than off a document, so the one
+    ownership shape the decision allows beyond the obvious one -- a comment owns
+    attachments, an attachment owns nothing -- is the shape under test.
+    """
+
+    from tools.restamp_document_release_fixtures import _restamp, _state
+
+    bundle = tmp_path / "extended"
+    shutil.copytree(DOCSPEC_VALID, bundle)
+    state = _state(bundle)
+    catalog_id = state["catalog"]["catalogId"]
+    index_rows = list(state["textBodyIndex"])
+
+    comment_representation = COMMENT_TEXT.encode("utf-8")
+    comment_rendition = _rendition_bytes(COMMENT_TEXT)
+    text_key, text_sha = _place(bundle, index_rows, "text", comment_id, comment_representation)
+    blob_key, blob_sha = _place(bundle, index_rows, "blob", comment_id, comment_rendition)
+    state["comments"] = [
+        {
+            "capture": _capture(
+                catalog_id,
+                f"{comment_id}#html",
+                blob_key,
+                "text/html",
+                blob_sha,
+                len(comment_rendition),
+            ),
+            "commentId": comment_id,
+            "commentSelection": {
+                "groupBy": "/data/id",
+                "orderBy": "/data/attributes/modifyDate DESC NULLS LAST",
+                "policyDigest": "sha256:" + "a" * 64,
+                "selectedModifyDate": "2026-03-01T12:00:00Z",
+                "tieDisposition": "refuse-repeated-normalized-instant",
+            },
+            "documentId": state["documents"][0]["documentId"],
+            "excludedRanges": [],
+            "representation": _representation(
+                comment_id, text_key, text_sha, len(comment_representation)
+            ),
+            "sourceItemId": state["documents"][0]["sourceItemId"],
+            "sourceIssuedVersion": state["documents"][0]["sourceIssuedVersion"],
+            "textBodyId": comment_id,
+            "textKind": "comment",
+        }
+    ]
+
+    attachment_id = stable_urn(
+        "document-release-attachment",
+        {
+            "attachmentIdentity": ATTACHMENT_IDENTITY,
+            "ownerKind": "comment",
+            "ownerTextBodyId": comment_id,
+        },
+        version=2,
+    )
+    attachment_representation = ATTACHMENT_TEXT.encode("utf-8")
+    attachment_rendition = _rendition_bytes(ATTACHMENT_TEXT)
+    attachment_text_key, attachment_text_sha = _place(
+        bundle, index_rows, "text", attachment_id, attachment_representation
+    )
+    attachment_blob_key, attachment_blob_sha = _place(
+        bundle, index_rows, "blob", attachment_id, attachment_rendition
+    )
+    state["attachments"] = [
+        {
+            "attachmentId": attachment_id,
+            "attachmentIdentity": ATTACHMENT_IDENTITY,
+            "attachmentTitle": "Exhibit A",
+            "excludedRanges": [],
+            "ownerKind": "comment",
+            "ownerTextBodyId": comment_id,
+            "renditions": [
+                {
+                    "attachmentDisposition": "text-captured",
+                    "capture": _capture(
+                        catalog_id,
+                        f"{attachment_id}#html",
+                        attachment_blob_key,
+                        "text/html",
+                        attachment_blob_sha,
+                        len(attachment_rendition),
+                    ),
+                    "mediaType": "text/html",
+                    "renditionOrdinal": 0,
+                },
+                {
+                    # The enumerated bytes were never fetched, so there is no
+                    # capture to carry and the loss is recorded rather than
+                    # silently dropped.
+                    "attachmentDisposition": "source-unavailable",
+                    "capture": None,
+                    "mediaType": "application/pdf",
+                    "reason": "The publisher returned 404 for the enumerated attachment URL.",
+                    "reasonCode": "source-not-found",
+                    "renditionOrdinal": 1,
+                },
+            ],
+            "representation": _representation(
+                attachment_id,
+                attachment_text_key,
+                attachment_text_sha,
+                len(attachment_representation),
+            ),
+            "textBodyId": attachment_id,
+            "textKind": "attachment",
+        }
+    ]
+
+    for body_id, kind, size, rendition_sha in (
+        (comment_id, "comment", len(comment_representation), blob_sha),
+        (attachment_id, "attachment", len(attachment_representation), attachment_blob_sha),
+    ):
+        node, segment = _one_body_structure(body_id, kind, size, rendition_sha)
+        state["nodes"].append(node)
+        state["segments"].append(segment)
+
+    index_rows.sort(key=lambda row: (row["family"], row["textBodyId"]))
+    state["textBodyIndex"] = index_rows
+    _restamp(bundle, state)
+    return bundle, state
+
+
+@pytest.fixture
+def extended(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+    return _extended_bundle(tmp_path)
+
+
+def _restamped(bundle: Path, mutate: Any) -> Any:
+    """Apply one mutation to a bundle's state, restamp, and verify."""
+
+    from tools.restamp_document_release_fixtures import _restamp, _state
+
+    state = _state(bundle)
+    mutate(state)
+    _restamp(bundle, state)
+    return verify_document_release(bundle)
+
+
+def test_a_bundle_carrying_a_comment_and_an_attachment_of_it_verifies_whole(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The sealed extension, exercised end to end rather than merely declared."""
+
+    bundle, _state = extended
+    result = verify_document_release(bundle)
+
+    assert [str(issue) for issue in result.issues] == []
+    assert result.valid
+
+
+def test_the_grown_bundle_declares_every_kind_in_its_per_kind_counts(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """Amendment A2's fields, and the identity that must hold inside each."""
+
+    bundle, _ = extended
+    counts = load_strict_canonical_json(bundle / "release.json")["content"]["counts"]
+    per_kind = counts["perKind"]
+
+    assert set(per_kind) == set(TEXT_KINDS)
+    assert per_kind["comment"] == {
+        "excludedByteTotal": 0,
+        "representationByteTotal": len(COMMENT_TEXT),
+        "segmentedByteTotal": len(COMMENT_TEXT),
+        "segments": 1,
+        "textBodies": 1,
+    }
+    assert per_kind["attachment"]["textBodies"] == 1
+    assert per_kind["attachment"]["representationByteTotal"] == len(ATTACHMENT_TEXT)
+    assert per_kind["document-body"]["textBodies"] == 2
+    for kind, totals in per_kind.items():
+        assert (
+            totals["segmentedByteTotal"] + totals["excludedByteTotal"]
+            == totals["representationByteTotal"]
+        ), kind
+    # `coverage` stays aggregate, and is the sum over the kinds.
+    coverage = load_strict_canonical_json(bundle / "release.json")["content"]["coverage"]
+    for field in ("representationByteTotal", "segmentedByteTotal", "excludedByteTotal"):
+        assert coverage[field] == sum(totals[field] for totals in per_kind.values())
+
+
+def test_a_per_kind_total_that_does_not_balance_is_a_coverage_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The identity is checked per kind, not only where the aggregate balances.
+
+    The mutation moves bytes BETWEEN kinds so the aggregate still balances,
+    which is exactly the hole a single aggregate figure would hide.
+    """
+
+    bundle, _ = extended
+    root = load_strict_canonical_json(bundle / "release.json")
+    per_kind = root["content"]["counts"]["perKind"]
+    per_kind["comment"]["segmentedByteTotal"] -= 5
+    per_kind["attachment"]["segmentedByteTotal"] += 5
+    (bundle / "release.json").write_bytes(canonical_json_bytes(stamp_root(root)))
+
+    result = verify_document_release(bundle)
+    coverage_paths = [issue.path for issue in result.issues if issue.code == "invalid.coverage"]
+
+    assert "release.json/content/counts/perKind/comment" in coverage_paths
+    assert "release.json/content/counts/perKind/attachment" in coverage_paths
+
+
+def test_the_attachment_id_is_minted_over_the_ordinal_free_preimage(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """Amendment A1: the id names the attachment, the ordinal names its renditions."""
+
+    bundle, _ = extended
+    attachment = load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")[0]
+
+    assert attachment["attachmentId"] == stable_urn(
+        "document-release-attachment",
+        {
+            "attachmentIdentity": attachment["attachmentIdentity"],
+            "ownerKind": attachment["ownerKind"],
+            "ownerTextBodyId": attachment["ownerTextBodyId"],
+        },
+        version=2,
+    )
+    # Two renditions under one id: an id carrying the ordinal could not do this.
+    assert [row["renditionOrdinal"] for row in attachment["renditions"]] == [0, 1]
+    assert attachment["textBodyId"] == attachment["attachmentId"]
+    schema = json.loads(SCHEMA_FILES["attachments"].read_text(encoding="utf-8"))
+    assert "renditionOrdinal" not in schema["properties"]
+    assert (
+        "renditionOrdinal"
+        in schema["$defs"]["rendition"]["properties"]
+    )
+
+
+def test_an_attachment_id_minted_over_another_preimage_is_an_identity_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        state["attachments"][0]["attachmentIdentity"] = "0900006485a1b2c3-0002.pdf"
+
+    result = _restamped(bundle, mutate)
+
+    assert result.code == "invalid.identity"
+    assert result.path == "data/attachments.jsonl/0/attachmentId"
+
+
+def test_an_attachment_owned_by_nothing_in_this_release_is_a_join_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        attachment = state["attachments"][0]
+        attachment["ownerTextBodyId"] = "0900006485deadbeef"
+        attachment["attachmentId"] = stable_urn(
+            "document-release-attachment",
+            {
+                "attachmentIdentity": attachment["attachmentIdentity"],
+                "ownerKind": attachment["ownerKind"],
+                "ownerTextBodyId": attachment["ownerTextBodyId"],
+            },
+            version=2,
+        )
+        attachment["textBodyId"] = attachment["attachmentId"]
+
+    result = _restamped(bundle, mutate)
+    joins = [issue for issue in result.issues if issue.code == "invalid.join"]
+
+    assert [issue.path for issue in joins] == ["data/attachments.jsonl/0/ownerTextBodyId"]
+
+
+def test_an_attachment_that_names_its_owner_by_the_wrong_kind_is_a_join_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The owner exists; the row says it is a document body and it is a comment."""
+
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        attachment = state["attachments"][0]
+        attachment["ownerKind"] = "document-body"
+        attachment["attachmentId"] = stable_urn(
+            "document-release-attachment",
+            {
+                "attachmentIdentity": attachment["attachmentIdentity"],
+                "ownerKind": attachment["ownerKind"],
+                "ownerTextBodyId": attachment["ownerTextBodyId"],
+            },
+            version=2,
+        )
+        attachment["textBodyId"] = attachment["attachmentId"]
+
+    result = _restamped(bundle, mutate)
+    joins = [issue for issue in result.issues if issue.code == "invalid.join"]
+
+    assert [issue.path for issue in joins] == ["data/attachments.jsonl/0/ownerKind"]
+
+
+def test_a_failed_rendition_without_a_reason_is_a_disposition_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """Loss stays visible: a row may say it could not capture, never say nothing."""
+
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        del state["attachments"][0]["renditions"][1]["reason"]
+
+    result = _restamped(bundle, mutate)
+
+    assert result.code == "invalid.schema"
+    assert any(
+        issue.code == "invalid.disposition"
+        and issue.path == "data/attachments.jsonl/0/renditions/1/reason"
+        for issue in result.issues
+    )
+
+
+def test_the_four_attachment_disposition_tokens_are_closed_and_not_the_catalogs(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """An attachment disposition is not a catalog disposition, and cannot be read as one."""
+
+    schema = json.loads(SCHEMA_FILES["attachments"].read_text(encoding="utf-8"))
+    tokens = schema["$defs"]["rendition"]["properties"]["attachmentDisposition"]["enum"]
+
+    assert tokens == list(ATTACHMENT_DISPOSITIONS)
+    assert set(tokens).isdisjoint(CATALOG_DISPOSITIONS)
+    bundle, _ = extended
+    observed = {
+        rendition["attachmentDisposition"]
+        for row in load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")
+        for rendition in row["renditions"]
+    }
+    assert observed <= set(tokens)
+
+
+def test_the_attachment_reason_code_is_a_bounded_kebab_case_string_not_an_enum() -> None:
+    """Amendment A3: sealed as a bound now, closed as an enum at the real mint."""
+
+    schema = json.loads(SCHEMA_FILES["attachments"].read_text(encoding="utf-8"))
+    reason_code = schema["$defs"]["reasonCode"]
+
+    assert reason_code["type"] == "string"
+    assert "enum" not in reason_code
+    assert reason_code["maxLength"] == 64
+    assert re.fullmatch(reason_code["pattern"], "source-not-found")
+    for refused in ("Source-Not-Found", "source_not_found", "source not found", "-source", "x" * 65):
+        assert not (
+            re.fullmatch(reason_code["pattern"], refused) and len(refused) <= 64
+        ), refused
+
+
+def test_a_comment_row_projects_the_sealed_selection_policy_verbatim(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """DocSpec inherits the refusal, so it must not be able to state another policy."""
+
+    bundle, _ = extended
+    comment = load_strict_canonical_jsonl(bundle / "data" / "comments.jsonl")[0]
+    schema = json.loads(SCHEMA_FILES["comments"].read_text(encoding="utf-8"))
+    policy = schema["$defs"]["commentSelection"]["properties"]
+
+    assert comment["commentId"] == comment["textBodyId"]
+    assert policy["groupBy"]["const"] == "/data/id"
+    assert policy["orderBy"]["const"] == "/data/attributes/modifyDate DESC NULLS LAST"
+    assert policy["tieDisposition"]["const"] == "refuse-repeated-normalized-instant"
+    assert comment["commentSelection"]["tieDisposition"] == (
+        "refuse-repeated-normalized-instant"
+    )
+
+
+def test_a_repeated_comment_id_is_a_duplicate_identity_not_a_tie_to_resolve(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """Handed two observations of one comment id, the build fails rather than picks."""
+
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        state["comments"].append(json.loads(json.dumps(state["comments"][0])))
+
+    result = _restamped(bundle, mutate)
+
+    assert result.code == "invalid.duplicate-identity"
+    assert result.path == "data/comments.jsonl/1/commentId"
+
+
+def test_a_comment_filed_against_no_document_in_this_release_is_a_join_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        state["comments"][0]["documentId"] = "FR-2026-99999"
+
+    result = _restamped(bundle, mutate)
+    joins = [issue for issue in result.issues if issue.code == "invalid.join"]
+
+    assert [issue.path for issue in joins] == ["data/comments.jsonl/0/documentId"]
+
+
+def test_the_set_digests_now_stream_the_rows_rather_than_the_empty_set(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The empty-set digests the corpus carries are a measurement, not a constant."""
+
+    bundle, _ = extended
+    content = load_strict_canonical_json(bundle / "release.json")["content"]
+    attachments = load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")
+    comments = load_strict_canonical_jsonl(bundle / "data" / "comments.jsonl")
+
+    assert content["attachmentSetDigest"] == framed_set_digest(
+        "docspec-attachment-set/2",
+        [{"attachmentId": row["attachmentId"]} for row in attachments],
+    )
+    assert content["commentSetDigest"] == framed_set_digest(
+        "docspec-comment-set/2", [{"commentId": row["commentId"]} for row in comments]
+    )
+    assert content["attachmentSetDigest"] != DOCSPEC_ROOT["content"]["attachmentSetDigest"]
+    assert content["commentSetDigest"] != DOCSPEC_ROOT["content"]["commentSetDigest"]
+    # And the text-body set spans all three kinds now.
+    assert content["textBodySetDigest"] != DOCSPEC_ROOT["content"]["textBodySetDigest"]
+
+
+# ─── Amendment A4: the text-body index over partitioned members ────────
+
+
+TEXT_BODY_INDEX_KEY = "manifests/text-body-index.jsonl"
+
+
+def _index(bundle: Path) -> list[dict[str, Any]]:
+    return load_strict_canonical_jsonl(bundle / TEXT_BODY_INDEX_KEY)
+
+
+def _reseal(bundle: Path) -> None:
+    """Re-derive every member digest, the manifest reference, and the identity.
+
+    Everything a hand-edit of a member's bytes invalidates -- and nothing a
+    hand-edit of that member's CONTENT should silently repair. The restamper
+    re-derives the index slice digests from the bytes, which is right for a
+    builder and wrong for a test that needs a slice digest to disagree with
+    them, so the resealing here stops short of the row values themselves.
+    """
+
+    manifest_key = "manifests/global.json"
+    manifest = load_strict_canonical_json(bundle / manifest_key)
+    for member in manifest["members"]:
+        path = bundle / member["objectKey"]
+        member["byteSize"] = path.stat().st_size
+        member["sha256"] = file_sha256(path)
+    manifest["counts"]["totalByteSize"] = sum(
+        member["byteSize"] for member in manifest["members"]
+    )
+    (bundle / manifest_key).write_bytes(canonical_json_bytes(manifest))
+    root = load_strict_canonical_json(bundle / "release.json")
+    root["content"]["globalManifest"]["byteSize"] = (bundle / manifest_key).stat().st_size
+    root["content"]["globalManifest"]["sha256"] = file_sha256(bundle / manifest_key)
+    root["content"]["counts"]["totalMemberByteSize"] = manifest["counts"]["totalByteSize"]
+    (bundle / "release.json").write_bytes(canonical_json_bytes(stamp_root(root)))
+
+
+def test_the_index_covers_every_text_body_and_tiles_every_partition_member() -> None:
+    """The sealed corpus carries the index for its single-body buckets too.
+
+    An accounting that only appears at scale is an accounting nobody tested, so
+    the index is minted for every body in every bucket rather than only where a
+    bucket is shared.
+    """
+
+    rows = _index(DOCSPEC_VALID)
+    documents = _rows("documents")
+
+    assert {(row["family"], row["textBodyId"]) for row in rows} == {
+        (family, document["textBodyId"])
+        for family in ("text", "blob")
+        for document in documents
+    }
+    by_member: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_member.setdefault(row["member"], []).append(row)
+        assert row["sha256"] == hashlib.sha256(
+            (DOCSPEC_VALID / row["member"]).read_bytes()[
+                row["startByte"] : row["startByte"] + row["byteLength"]
+            ]
+        ).hexdigest()
+    for member, slices in by_member.items():
+        cursor = 0
+        for row in sorted(slices, key=lambda item: item["startByte"]):
+            assert row["startByte"] == cursor
+            cursor += row["byteLength"]
+        assert cursor == (DOCSPEC_VALID / member).stat().st_size
+
+
+def test_the_index_member_is_governed_by_the_member_manifest_schema_not_a_ninth() -> None:
+    """The schema set stays at eight; the row shape rides in the manifest schema."""
+
+    member = _members(TEXT_BODY_INDEX_ROLE)[0]
+    schema = json.loads(SCHEMA_FILES["member-manifest"].read_text(encoding="utf-8"))
+
+    assert member["objectKey"] == TEXT_BODY_INDEX_KEY
+    assert member["schemaId"] == SCHEMA_IDS["member-manifest"]
+    assert member["mediaType"] == "application/x-ndjson"
+    assert member["recordCount"] == len(_index(DOCSPEC_VALID))
+    assert TEXT_BODY_INDEX_ROW_DEF in schema["$defs"]
+    assert len(DOCSPEC_ROOT["content"]["schemaSet"]["schemas"]) == 8
+
+
+def _colliding_id(body_id: str) -> str:
+    """A comment id that buckets where ``body_id`` already did."""
+
+    target = partition_bucket(body_id, 64)
+    for candidate in range(100_000):
+        value = f"0900006485{candidate:06d}"
+        if partition_bucket(value, 64) == target:
+            return value
+    raise AssertionError("no colliding identifier found")
+
+
+def test_a_bucket_shared_by_two_text_bodies_verifies_through_the_index(
+    tmp_path: Path,
+) -> None:
+    """The refusal A4 lifts, demonstrated on a bucket that actually is shared.
+
+    Before the amendment the builder refused to mint this at all: nothing could
+    recover one body's bytes from a bucket holding two. Now the index says where
+    each body's slice is, and the whole bundle verifies.
+    """
+
+    document_body = _rows("documents")[0]["textBodyId"]
+    shared_id = _colliding_id(document_body)
+    bundle, _ = _extended_bundle(tmp_path, comment_id=shared_id)
+
+    bucket = f"text/{partition_bucket(document_body, 64):04d}"
+    sharing = [row for row in _index(bundle) if row["member"] == bucket]
+    result = verify_document_release(bundle)
+
+    assert sorted(row["textBodyId"] for row in sharing) == sorted(
+        {document_body, shared_id}
+    )
+    # Two slices, disjoint, tiling the member they share.
+    cursor = 0
+    for row in sorted(sharing, key=lambda item: item["startByte"]):
+        assert row["startByte"] == cursor
+        cursor += row["byteLength"]
+    assert cursor == (bundle / bucket).stat().st_size
+    assert [str(issue) for issue in result.issues] == []
+
+
+def test_an_indexed_slice_whose_digest_disagrees_with_its_bytes_is_a_member_digest_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    bundle, _ = extended
+    rows = _index(bundle)
+    position = next(
+        index for index, row in enumerate(rows) if row["textBodyId"] == COMMENT_ID
+    )
+    rows[position]["sha256"] = "0" * 64
+    (bundle / TEXT_BODY_INDEX_KEY).write_bytes(
+        b"".join(canonical_json_bytes(row) + b"\n" for row in rows)
+    )
+    _reseal(bundle)
+
+    result = verify_document_release(bundle)
+
+    assert result.code == "invalid.member-digest"
+    assert result.path == f"{TEXT_BODY_INDEX_KEY}/{position}/sha256"
+
+
+def test_an_indexed_slice_reaching_past_its_member_is_a_member_digest_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    bundle, _ = extended
+    rows = _index(bundle)
+    position = next(
+        index for index, row in enumerate(rows) if row["textBodyId"] == COMMENT_ID
+    )
+    rows[position]["byteLength"] += 4096
+    (bundle / TEXT_BODY_INDEX_KEY).write_bytes(
+        b"".join(canonical_json_bytes(row) + b"\n" for row in rows)
+    )
+    _reseal(bundle)
+
+    result = verify_document_release(bundle)
+
+    assert result.code == "invalid.member-digest"
+    assert result.path == f"{TEXT_BODY_INDEX_KEY}/{position}/byteLength"
+
+
+def test_the_per_kind_counts_are_exactly_what_the_members_recompute_to(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The root's breakdown is a recomputation, never an assertion."""
+
+    bundle, _ = extended
+    root = load_strict_canonical_json(bundle / "release.json")
+
+    assert root["content"]["counts"]["perKind"] == derive_per_kind_counts(
+        load_strict_canonical_jsonl(bundle / "data" / "documents.jsonl"),
+        load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl"),
+        load_strict_canonical_jsonl(bundle / "data" / "comments.jsonl"),
+        load_strict_canonical_jsonl(bundle / "data" / "search-segments.jsonl"),
+        key="textBodyId",
+    )

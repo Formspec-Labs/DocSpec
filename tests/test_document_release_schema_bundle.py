@@ -19,6 +19,8 @@ SCHEMA_IDS = {
     "member-manifest.schema.json": "urn:docspec:schema:document-release-member-manifest:2.0",
     "source-dispositions.schema.json": "urn:docspec:schema:document-release-source-dispositions:2.0",
     "documents.schema.json": "urn:docspec:schema:document-release-documents:2.0",
+    "attachments.schema.json": "urn:docspec:schema:document-release-attachments:2.0",
+    "comments.schema.json": "urn:docspec:schema:document-release-comments:2.0",
     "structural-nodes.schema.json": "urn:docspec:schema:document-release-structural-nodes:2.0",
     "search-segments.schema.json": "urn:docspec:schema:document-release-search-segments:2.0",
 }
@@ -72,7 +74,10 @@ def _errors(validator: Draft202012Validator, value: Any) -> list[str]:
 
 def test_the_two_zero_schema_bundle_is_complete_and_every_schema_is_valid_json_schema() -> None:
     packaged = sorted(path.name for path in SCHEMA_DIR.glob("*.schema.json"))
+    # Eight since restamp item 3's 6 -> 8 widening: nothing else may be sitting
+    # in the packaged directory, and nothing named here may be missing from it.
     assert packaged == sorted(SCHEMA_IDS)
+    assert len(SCHEMA_IDS) == 8
 
     for name, schema_id in SCHEMA_IDS.items():
         schema = _schema(name)

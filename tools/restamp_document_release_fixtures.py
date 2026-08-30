@@ -585,11 +585,19 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
     # the index, which knows every body in every bucket regardless of kind.
     rendition_counts = _bucket_counts(index_rows, "blob")
     representation_counts = _bucket_counts(index_rows, "text")
+    captures = [
+        *(document["capture"] for document in documents),
+        *(comment["capture"] for comment in comments),
+        *(
+            rendition["capture"]
+            for attachment in attachments
+            for rendition in attachment["renditions"]
+            if rendition["capture"] is not None
+        ),
+    ]
     for object_key, count in sorted(rendition_counts.items()):
         media_type = next(
-            document["capture"]["mediaType"]
-            for document in documents
-            if document["capture"]["objectKey"] == object_key
+            capture["mediaType"] for capture in captures if capture["objectKey"] == object_key
         )
         members.append(
             _member(
