@@ -1,0 +1,1490 @@
+"""Portable verifier for sealed ``DocumentRelease`` v2 bundles.
+
+Moved under REF-048 -- DocumentRelease is DocSpec's record -- from
+`rulespec_conformance/document_release.py` at source commit
+c584a1d9fcb89fb8c4253b5bb6879741b0e24c1c. Every rule, diagnostic code, and
+ordering below is that file's; what changed is where the primitives, the
+schemas, and the fixture corpus are read from, and the schema-identity
+generation described under "Schema identity" below.
+
+This module reads a materialized bundle of immutable files. It opens no
+database, makes no network call, and imports no sibling product.
+
+Why version 2.0
+---------------
+DocSpec's live root already writes ``format: "docspec-document-release"`` at
+``formatVersion: "1.1"`` (`src/docspec/domain/release.py`), and that is a
+different artifact: an internal pointer-record of active layers, blob roots,
+and store receipts. This is the portable wire contract -- a self-contained
+bundle of dispositions, captures, representations, structure, and segments.
+Reusing the token at ``1.0`` would place the portable shape BELOW the internal
+one on the same version line, so a reader would take 1.1 for a newer superset
+of it. ``2.0``, with identity ``urn:docspec:document-release:v2:``, says what
+is true: same product, same logical artifact, not compatible with 1.1.
+`docs/decisions/0001-document-release-2-0.md` records the full deviation list.
+
+Shared bundle protocol
+----------------------
+Canonical bytes, digests, tree digests, and path safety come from
+`docspec.document_release_support`. They are imported rather than restated so
+the traversal check has exactly one implementation, and so this module stays a
+reader of DocSpec's byte rules rather than a second author of them.
+
+Schema identity
+---------------
+A bundle names each schema it was written against by ``$id``. The 2.0 corpus
+was sealed before REF-048 re-homed those identifiers, so its members carry the
+predecessor generation while the packaged schemas carry ``urn:docspec:``. Both
+generations name the same schema for the same role -- the bodies are identical
+-- so `SCHEMA_ID_GENERATIONS` maps every accepted spelling onto the packaged
+one, and every registry comparison runs on the resolved value. Nothing inside a
+bundle is resolved away: an embedded schema's own ``$id`` must still equal the
+descriptor that names it, and the schema-set digest is still taken over the
+descriptors exactly as they were sealed. A bundle is read as it was written.
+
+This module lives beside the other adapters because it validates instances
+against JSON Schema, and `jsonschema` is a third-party dependency the DocSpec
+core deliberately does not import.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import jsonschema
+
+from docspec.document_release_support import (
+    MANIFEST_REFERENCE_FIELDS,
+    MEMBER_DESCRIPTOR_FIELDS,
+    MEMBER_MANIFEST_FORMAT,
+    MEMBER_MANIFEST_VERSION,
+    SUBORDINATE_MANIFEST_FIELDS,
+    canonical_sha256,
+    file_sha256,
+    load_strict_canonical_json,
+    member_path,
+    packaged_schema_root,
+    safe_object_key,
+    source_set_digest,
+    tree_digest,
+)
+
+SCHEMA_ROOT = packaged_schema_root()
+ROOT_SCHEMA = SCHEMA_ROOT / "document-release.schema.json"
+MEMBER_MANIFEST_SCHEMA = SCHEMA_ROOT / "member-manifest.schema.json"
+SOURCE_DISPOSITIONS_SCHEMA = SCHEMA_ROOT / "source-dispositions.schema.json"
+DOCUMENTS_SCHEMA = SCHEMA_ROOT / "documents.schema.json"
+STRUCTURAL_NODES_SCHEMA = SCHEMA_ROOT / "structural-nodes.schema.json"
+SEARCH_SEGMENTS_SCHEMA = SCHEMA_ROOT / "search-segments.schema.json"
+
+FORMAT = "docspec-document-release"
+FORMAT_VERSION = "2.0"
+RELEASE_ID_PREFIX = "urn:docspec:document-release:v2:"
+SOURCE_CATALOG_ID_PREFIX = "urn:spicy-regs:source-catalog-release:v1:"
+
+CATALOG_DISPOSITIONS: tuple[str, ...] = (
+    "selected",
+    "excluded",
+    "deleted",
+    "unavailable",
+    "failed",
+)
+NON_SELECTED_DISPOSITIONS = frozenset(CATALOG_DISPOSITIONS) - {"selected"}
+
+SCHEMA_FILES: dict[str, Path] = {
+    "release-root": ROOT_SCHEMA,
+    "member-manifest": MEMBER_MANIFEST_SCHEMA,
+    "source-dispositions": SOURCE_DISPOSITIONS_SCHEMA,
+    "documents": DOCUMENTS_SCHEMA,
+    "structural-nodes": STRUCTURAL_NODES_SCHEMA,
+    "search-segments": SEARCH_SEGMENTS_SCHEMA,
+}
+
+
+def _registered_schema_id(path: Path) -> str:
+    """Read one packaged schema's ``$id``, or say plainly that it is not there."""
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))["$id"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(
+            f"packaged DocumentRelease schema is missing or unreadable: {path} ({exc})"
+        ) from exc
+
+
+SCHEMA_IDS: dict[str, str] = {
+    role: _registered_schema_id(path) for role, path in SCHEMA_FILES.items()
+}
+
+# Every ``$id`` spelling a conforming 2.0 bundle may carry, mapped onto the
+# packaged one. The predecessor generation is the identifier set the sealed
+# corpus was minted under; it is frozen, so it is listed rather than derived. A
+# spelling absent here is an unregistered schema and still fails closed.
+_PREDECESSOR_SCHEMA_ID_BASE = "https://rulespec.org/schemas/releases"
+_PREDECESSOR_SCHEMA_IDS: dict[str, str] = {
+    "release-root": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2.schema.json",
+    "member-manifest": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/member-manifest-v1.schema.json",
+    "source-dispositions": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/source-dispositions-v1.schema.json",
+    "documents": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/documents-v1.schema.json",
+    "structural-nodes": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/structural-nodes-v1.schema.json",
+    "search-segments": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/search-segments-v1.schema.json",
+}
+SCHEMA_ID_GENERATIONS: dict[str, str] = {
+    **{schema_id: schema_id for schema_id in SCHEMA_IDS.values()},
+    **{
+        predecessor: SCHEMA_IDS[role]
+        for role, predecessor in _PREDECESSOR_SCHEMA_IDS.items()
+        if role in SCHEMA_IDS
+    },
+}
+
+
+def canonical_schema_id(value: Any) -> Any:
+    """Resolve one declared schema ``$id`` onto the packaged spelling.
+
+    An unregistered value is returned unchanged so the caller reports it as the
+    mismatch it is, naming what the bundle actually declared.
+    """
+
+    return SCHEMA_ID_GENERATIONS.get(value, value)
+
+# Member roles that carry schema-governed rows, and the schema role serving each.
+TABULAR_ROLES: dict[str, str] = {
+    "source-dispositions": "source-dispositions",
+    "documents": "documents",
+    "structural-nodes": "structural-nodes",
+    "search-segments": "search-segments",
+}
+OPAQUE_ROLES = frozenset({"rendition", "representation"})
+ALLOWED_MEMBER_ROLES = frozenset({"schema", *TABULAR_ROLES, *OPAQUE_ROLES})
+REPRESENTATION_MEDIA_TYPE = "text/plain; charset=utf-8"
+
+DIAGNOSTIC_CODES: tuple[str, ...] = (
+    # Bundle integrity: nothing below can be judged until the bytes are trusted.
+    "invalid.root-syntax",
+    "invalid.format",
+    "invalid.identity",
+    "invalid.path",
+    "invalid.membership-missing",
+    "invalid.membership-extra",
+    "invalid.member-digest",
+    "invalid.schema",
+    "invalid.duplicate-identity",
+    # Domain, in dependency order: you cannot judge a segment before the
+    # structure it hangs off, nor structure before the representation it
+    # indexes, nor a representation before the capture it was extracted from.
+    "invalid.source-catalog-pin",
+    "invalid.disposition",
+    "invalid.capture",
+    "invalid.representation",
+    "invalid.structure",
+    "invalid.segment",
+    "invalid.coverage",
+    "invalid.join",
+    "invalid.set-digest",
+    "invalid.counts",
+)
+CODE_PRECEDENCE: dict[str, int] = {
+    code: index for index, code in enumerate(DIAGNOSTIC_CODES)
+}
+
+
+@dataclass(frozen=True)
+class VerificationIssue:
+    """One deterministic conformance diagnostic."""
+
+    code: str
+    path: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"{self.code} {self.path}: {self.message}"
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """The ordered result of verifying one materialized bundle."""
+
+    release_id: str | None
+    issues: tuple[VerificationIssue, ...]
+
+    @property
+    def first(self) -> VerificationIssue | None:
+        if not self.issues:
+            return None
+        return min(
+            self.issues, key=lambda issue: CODE_PRECEDENCE.get(issue.code, 10_000)
+        )
+
+    @property
+    def code(self) -> str:
+        first = self.first
+        return "valid" if first is None else first.code
+
+    @property
+    def path(self) -> str | None:
+        first = self.first
+        return None if first is None else first.path
+
+    @property
+    def valid(self) -> bool:
+        return not self.issues
+
+
+# ─── Identity and derived values ───────────────────────────────────────
+
+
+def expected_release_id(root: Mapping[str, Any]) -> str:
+    """Derive the release identity from the exact identity-bearing payload.
+
+    ``annotations`` is excluded, and that is where every fact about the act of
+    publishing lives. Unlike DocSpec's live root, the format token and version
+    are INSIDE the preimage, so a future reshape cannot mint a colliding name.
+    """
+
+    payload = {
+        "format": root.get("format"),
+        "formatVersion": root.get("formatVersion"),
+        "content": root.get("content"),
+    }
+    return RELEASE_ID_PREFIX + canonical_sha256(payload)
+
+
+def stamp_root(root: Mapping[str, Any]) -> dict[str, Any]:
+    """Return a root copy carrying its content-derived identity."""
+
+    stamped = json.loads(json.dumps(root))
+    stamped.pop("releaseId", None)
+    stamped["releaseId"] = expected_release_id(stamped)
+    return stamped
+
+
+def mapping_digest(pairs: Sequence[Sequence[str]]) -> str:
+    """Canonical digest over the sorted source-item/document-version pair list.
+
+    A LIST digest, not a set digest: the pairing IS the fact this release
+    exists to carry, so a repeated pair must move the digest rather than be
+    silently folded away. Duplication is separately reported by the join
+    receipt and by `invalid.duplicate-identity`.
+    """
+
+    return "sha256:" + canonical_sha256(sorted([list(pair) for pair in pairs]))
+
+
+def _interval_union(ranges: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge half-open intervals into a sorted, disjoint cover."""
+
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(ranges):
+        if end <= start:
+            continue
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _covered_bytes(ranges: Sequence[tuple[int, int]]) -> int:
+    return sum(end - start for start, end in _interval_union(ranges))
+
+
+def derive_counts(
+    dispositions: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    nodes: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    member_count: int,
+    total_member_byte_size: int,
+) -> dict[str, int]:
+    """Recompute the diagnostic counts from the members alone."""
+
+    tally = {name: 0 for name in CATALOG_DISPOSITIONS}
+    for row in dispositions:
+        value = row.get("catalogDisposition")
+        if value in tally:
+            tally[value] += 1
+    return {
+        "requestedUniverseCount": len(dispositions),
+        "selectedCount": tally["selected"],
+        "excludedCount": tally["excluded"],
+        "deletedCount": tally["deleted"],
+        "unavailableCount": tally["unavailable"],
+        "failedCount": tally["failed"],
+        "documentVersionCount": len(documents),
+        "structuralNodeCount": len(nodes),
+        "searchSegmentCount": len(segments),
+        "memberCount": member_count,
+        "totalMemberByteSize": total_member_byte_size,
+    }
+
+
+def derive_coverage(
+    dispositions: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Recompute the accounting proof from the members alone."""
+
+    accounted = sum(
+        1 for row in dispositions if row.get("catalogDisposition") in CATALOG_DISPOSITIONS
+    )
+    with_segment = {
+        segment.get("documentVersionId")
+        for segment in segments
+        if isinstance(segment.get("documentVersionId"), str)
+    }
+    representation_total = 0
+    segmented_total = 0
+    excluded_total = 0
+    for document in documents:
+        version_id = document.get("documentVersionId")
+        representation = document.get("representation")
+        if isinstance(representation, Mapping) and isinstance(
+            representation.get("byteSize"), int
+        ):
+            representation_total += representation["byteSize"]
+        segmented_total += _covered_bytes(
+            [
+                (segment["representationStart"], segment["representationEnd"])
+                for segment in segments
+                if segment.get("documentVersionId") == version_id
+                and isinstance(segment.get("representationStart"), int)
+                and isinstance(segment.get("representationEnd"), int)
+            ]
+        )
+        excluded_total += _covered_bytes(
+            [
+                (item["start"], item["end"])
+                for item in document.get("excludedRanges") or []
+                if isinstance(item, Mapping)
+                and isinstance(item.get("start"), int)
+                and isinstance(item.get("end"), int)
+            ]
+        )
+    return {
+        "accountedCount": accounted,
+        "unaccountedCount": len(dispositions) - accounted,
+        "documentsWithSegmentCount": sum(
+            1 for document in documents if document.get("documentVersionId") in with_segment
+        ),
+        "representationByteTotal": representation_total,
+        "segmentedByteTotal": segmented_total,
+        "excludedByteTotal": excluded_total,
+    }
+
+
+# ─── Verification ──────────────────────────────────────────────────────
+
+
+def _issue(issues: list[VerificationIssue], code: str, path: str, message: str) -> None:
+    issues.append(VerificationIssue(code=code, path=path, message=message))
+
+
+def _load_schema(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _schema_issues(value: Any, schema: Mapping[str, Any], *, path: str) -> list[VerificationIssue]:
+    validator = jsonschema.Draft202012Validator(schema)
+    issues: list[VerificationIssue] = []
+    for error in sorted(validator.iter_errors(value), key=lambda item: list(item.path)):
+        suffix = "".join(f"/{part}" for part in error.path)
+        _issue(issues, "invalid.schema", f"{path}{suffix}", error.message)
+    return issues
+
+
+def _read_root(bundle: Path, issues: list[VerificationIssue]) -> dict[str, Any] | None:
+    root_path = bundle / "release.json"
+    if root_path.is_symlink():
+        _issue(issues, "invalid.path", "release.json", "root manifest is a symlink")
+        return None
+    if not root_path.is_file():
+        _issue(issues, "invalid.membership-missing", "release.json", "root manifest is absent")
+        return None
+    try:
+        root = load_strict_canonical_json(root_path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        _issue(issues, "invalid.root-syntax", "release.json", str(exc))
+        return None
+    if not isinstance(root, dict):
+        _issue(issues, "invalid.root-syntax", "release.json", "root must be an object")
+        return None
+    if root.get("format") != FORMAT or root.get("formatVersion") != FORMAT_VERSION:
+        _issue(
+            issues,
+            "invalid.format",
+            "release.json",
+            f"expected {FORMAT!r} version {FORMAT_VERSION!r}",
+        )
+    try:
+        expected = expected_release_id(root)
+    except (TypeError, ValueError) as exc:
+        _issue(issues, "invalid.identity", "release.json", str(exc))
+    else:
+        if root.get("releaseId") != expected:
+            _issue(issues, "invalid.identity", "release.json/releaseId", f"expected {expected}")
+    issues.extend(_schema_issues(root, _load_schema(ROOT_SCHEMA), path="release.json"))
+    return root
+
+
+def _materialized_files(bundle: Path, issues: list[VerificationIssue]) -> set[str]:
+    result: set[str] = set()
+    for path in bundle.rglob("*"):
+        relative = path.relative_to(bundle).as_posix()
+        if path.is_symlink():
+            _issue(issues, "invalid.path", relative, "symlinks are forbidden")
+            result.add(relative)
+            continue
+        if path.is_file():
+            result.add(relative)
+    return result
+
+
+def _validate_member_descriptor(
+    member: Any, *, path: str, issues: list[VerificationIssue]
+) -> dict[str, Any] | None:
+    if not isinstance(member, dict):
+        _issue(issues, "invalid.schema", path, "member descriptor must be an object")
+        return None
+    if set(member) != MEMBER_DESCRIPTOR_FIELDS:
+        _issue(issues, "invalid.schema", path, "member descriptor has an unknown or missing field")
+    if not safe_object_key(member.get("objectKey")):
+        _issue(issues, "invalid.path", f"{path}/objectKey", "unsafe member path")
+    role = member.get("role")
+    if role not in ALLOWED_MEMBER_ROLES:
+        _issue(issues, "invalid.schema", f"{path}/role", f"unknown role {role!r}")
+    if role == "schema" and member.get("mediaType") != "application/schema+json":
+        _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/schema+json")
+    if role in TABULAR_ROLES and member.get("mediaType") != "application/json":
+        _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/json")
+    if role == "representation" and member.get("mediaType") != REPRESENTATION_MEDIA_TYPE:
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{path}/mediaType",
+            f"expected {REPRESENTATION_MEDIA_TYPE}",
+        )
+    if role in TABULAR_ROLES:
+        if not isinstance(member.get("recordCount"), int) or isinstance(
+            member.get("recordCount"), bool
+        ):
+            _issue(issues, "invalid.schema", f"{path}/recordCount", "invalid record count")
+        if canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS[TABULAR_ROLES[role]]:
+            _issue(
+                issues,
+                "invalid.schema",
+                f"{path}/schemaId",
+                f"expected {SCHEMA_IDS[TABULAR_ROLES[role]]}",
+            )
+    elif member.get("recordCount") is not None:
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{path}/recordCount",
+            "a schema, rendition, or representation member has no rows and must declare null",
+        )
+    return member
+
+
+def _read_member_manifest(
+    bundle: Path, root: Mapping[str, Any], issues: list[VerificationIssue]
+) -> tuple[list[dict[str, Any]], dict[str, Path], set[str]]:
+    declared = {"release.json"}
+    content = root.get("content")
+    if not isinstance(content, dict):
+        return [], {}, declared
+    reference = content.get("globalManifest")
+    if not isinstance(reference, dict):
+        _issue(
+            issues,
+            "invalid.schema",
+            "release.json/content/globalManifest",
+            "manifest reference must be an object",
+        )
+        return [], {}, declared
+    if set(reference) != MANIFEST_REFERENCE_FIELDS:
+        _issue(
+            issues,
+            "invalid.schema",
+            "release.json/content/globalManifest",
+            "manifest reference has an unknown or missing field",
+        )
+    object_key = reference.get("objectKey")
+    if not safe_object_key(object_key):
+        _issue(
+            issues,
+            "invalid.path",
+            "release.json/content/globalManifest/objectKey",
+            "unsafe member path",
+        )
+        return [], {}, declared
+    declared.add(object_key)
+    path = member_path(bundle, object_key)
+    if path.is_symlink():
+        _issue(issues, "invalid.path", object_key, "manifest is a symlink")
+        return [], {}, declared
+    if not path.is_file():
+        _issue(issues, "invalid.membership-missing", object_key, "manifest is absent")
+        return [], {}, declared
+    if path.stat().st_size != reference.get("byteSize") or file_sha256(path) != reference.get(
+        "sha256"
+    ):
+        _issue(
+            issues,
+            "invalid.member-digest",
+            object_key,
+            "manifest size or digest differs from the root reference",
+        )
+    try:
+        manifest = load_strict_canonical_json(path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        _issue(issues, "invalid.schema", object_key, str(exc))
+        return [], {}, declared
+    issues.extend(_schema_issues(manifest, _load_schema(MEMBER_MANIFEST_SCHEMA), path=object_key))
+    if not isinstance(manifest, dict) or set(manifest) != SUBORDINATE_MANIFEST_FIELDS:
+        _issue(issues, "invalid.schema", object_key, "invalid member manifest fields")
+        return [], {}, declared
+    if (
+        manifest.get("format") != MEMBER_MANIFEST_FORMAT
+        or manifest.get("formatVersion") != MEMBER_MANIFEST_VERSION
+    ):
+        _issue(issues, "invalid.schema", object_key, "unsupported member manifest format")
+    expected_scope = {"kind": reference.get("scopeKind"), "id": reference.get("scopeId")}
+    if manifest.get("scope") != expected_scope or manifest.get("manifestId") != reference.get(
+        "manifestId"
+    ):
+        _issue(
+            issues,
+            "invalid.schema",
+            object_key,
+            "manifest scope differs from the root reference",
+        )
+    raw_members = manifest.get("members")
+    if not isinstance(raw_members, list):
+        _issue(issues, "invalid.schema", f"{object_key}/members", "members must be an array")
+        return [], {}, declared
+    object_keys = [m.get("objectKey") for m in raw_members if isinstance(m, dict)]
+    if object_keys != sorted(object_keys, key=lambda key: str(key)):
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{object_key}/members",
+            "members must be sorted by objectKey",
+        )
+    members: list[dict[str, Any]] = []
+    member_paths: dict[str, Path] = {}
+    for index, raw_member in enumerate(raw_members):
+        member = _validate_member_descriptor(
+            raw_member, path=f"{object_key}/members/{index}", issues=issues
+        )
+        if member is None:
+            continue
+        member_key = member.get("objectKey")
+        if safe_object_key(member_key):
+            if member_key in member_paths:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{object_key}/members/{index}/objectKey",
+                    f"duplicate member {member_key}",
+                )
+            else:
+                member_paths[member_key] = member_path(bundle, member_key)
+            declared.add(member_key)
+        elif isinstance(member_key, str) and member_key:
+            declared.add(member_key)
+        members.append(member)
+    expected_counts = {
+        "memberCount": len(raw_members),
+        "totalByteSize": sum(
+            m.get("byteSize", 0)
+            for m in raw_members
+            if isinstance(m, dict)
+            and isinstance(m.get("byteSize"), int)
+            and not isinstance(m.get("byteSize"), bool)
+        ),
+        "totalRecordCount": sum(
+            m.get("recordCount") or 0
+            for m in raw_members
+            if isinstance(m, dict)
+            and (
+                m.get("recordCount") is None
+                or (isinstance(m.get("recordCount"), int) and not isinstance(m.get("recordCount"), bool))
+            )
+        ),
+    }
+    if manifest.get("counts") != expected_counts:
+        _issue(issues, "invalid.schema", f"{object_key}/counts", f"expected {expected_counts}")
+    return members, member_paths, declared
+
+
+def _verify_member_files(
+    bundle: Path,
+    members: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    declared: set[str],
+    issues: list[VerificationIssue],
+) -> None:
+    materialized = _materialized_files(bundle, issues)
+    for object_key in sorted(declared - materialized):
+        _issue(issues, "invalid.membership-missing", object_key, "declared member is absent")
+    for object_key in sorted(materialized - declared):
+        _issue(issues, "invalid.membership-extra", object_key, "file is not declared")
+    for member in members:
+        object_key = member.get("objectKey")
+        if not isinstance(object_key, str) or object_key not in member_paths:
+            continue
+        path = member_paths[object_key]
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            size = path.stat().st_size
+            digest = file_sha256(path)
+        except OSError as exc:
+            _issue(issues, "invalid.membership-missing", object_key, str(exc))
+            continue
+        if size != member.get("byteSize") or digest != member.get("sha256"):
+            _issue(
+                issues,
+                "invalid.member-digest",
+                object_key,
+                "member size or digest differs from its descriptor",
+            )
+
+
+def _validate_schema_set(
+    root: Mapping[str, Any],
+    members: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    issues: list[VerificationIssue],
+) -> None:
+    content = root.get("content")
+    schema_set = content.get("schemaSet") if isinstance(content, dict) else None
+    if not isinstance(schema_set, dict):
+        return
+    descriptors = schema_set.get("schemas")
+    if not isinstance(descriptors, list):
+        return
+    base = "release.json/content/schemaSet"
+    ids = [item.get("schemaId") for item in descriptors if isinstance(item, dict)]
+    if ids != sorted(ids, key=lambda value: str(value)):
+        _issue(issues, "invalid.schema", f"{base}/schemas", "schemas must be sorted by schemaId")
+    try:
+        expected_set_id = f"urn:spicy:schema-set:v1:{canonical_sha256(descriptors)}"
+    except (TypeError, ValueError) as exc:
+        _issue(issues, "invalid.schema", base, str(exc))
+    else:
+        if schema_set.get("schemaSetId") != expected_set_id:
+            _issue(issues, "invalid.schema", f"{base}/schemaSetId", f"expected {expected_set_id}")
+    schema_members = {
+        member["schemaId"]: member
+        for member in members
+        if member.get("role") == "schema" and isinstance(member.get("schemaId"), str)
+    }
+    seen_roles: dict[str, int] = {}
+    for index, descriptor in enumerate(descriptors):
+        path = f"{base}/schemas/{index}"
+        if not isinstance(descriptor, dict):
+            continue
+        schema_id = descriptor.get("schemaId")
+        roles = descriptor.get("roles")
+        role = roles[0] if isinstance(roles, list) and len(roles) == 1 else None
+        if role is None or SCHEMA_IDS.get(role) != canonical_schema_id(schema_id):
+            _issue(
+                issues,
+                "invalid.schema",
+                f"{path}/roles",
+                f"role {role!r} must resolve to the registered schema for {schema_id!r}",
+            )
+            continue
+        seen_roles[role] = seen_roles.get(role, 0) + 1
+        member = schema_members.get(schema_id)
+        if member is None:
+            _issue(
+                issues,
+                "invalid.membership-missing",
+                f"{path}/schemaId",
+                "schema descriptor has no schema member",
+            )
+            continue
+        if member.get("sha256") != descriptor.get("schemaSha256"):
+            _issue(
+                issues,
+                "invalid.member-digest",
+                f"{path}/schemaSha256",
+                "schema descriptor digest differs from the member",
+            )
+        resolved = member_paths.get(str(member.get("objectKey")))
+        if resolved is None or not resolved.is_file():
+            continue
+        try:
+            schema = json.loads(resolved.read_text(encoding="utf-8"))
+            jsonschema.Draft202012Validator.check_schema(schema)
+        except (OSError, ValueError, jsonschema.SchemaError) as exc:
+            _issue(issues, "invalid.schema", str(member.get("objectKey")), str(exc))
+            continue
+        if schema.get("$id") != schema_id:
+            _issue(
+                issues,
+                "invalid.schema",
+                str(member.get("objectKey")),
+                "$id differs from the descriptor",
+            )
+    for role in SCHEMA_IDS:
+        if seen_roles.get(role) != 1:
+            _issue(issues, "invalid.schema", f"{base}/schemas", f"role {role!r} must resolve exactly once")
+
+
+def _read_rows(
+    role: str,
+    members: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    issues: list[VerificationIssue],
+) -> tuple[list[dict[str, Any]] | None, str]:
+    """Load one tabular member's rows, or ``None`` when they cannot be trusted."""
+
+    matching = [member for member in members if member.get("role") == role]
+    if len(matching) != 1:
+        _issue(
+            issues,
+            "invalid.schema",
+            "manifests/global.json/members",
+            f"exactly one {role} member is required",
+        )
+        return None, role
+    member = matching[0]
+    object_key = str(member.get("objectKey"))
+    path = member_paths.get(object_key)
+    if path is None or path.is_symlink() or not path.is_file():
+        return None, object_key
+    try:
+        rows = load_strict_canonical_json(path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        _issue(issues, "invalid.schema", object_key, str(exc))
+        return None, object_key
+    if not isinstance(rows, list):
+        _issue(issues, "invalid.schema", object_key, f"{role} must be an array")
+        return None, object_key
+    if len(rows) != member.get("recordCount"):
+        _issue(
+            issues,
+            "invalid.schema",
+            f"member:{object_key}/recordCount",
+            f"expected {len(rows)}",
+        )
+    schema = _load_schema(SCHEMA_FILES[TABULAR_ROLES[role]])
+    for index, row in enumerate(rows):
+        issues.extend(_schema_issues(row, schema, path=f"{object_key}/{index}"))
+    return [row for row in rows if isinstance(row, dict)], object_key
+
+
+def _validate_dispositions(
+    dispositions: Sequence[Mapping[str, Any]], object_key: str, issues: list[VerificationIssue]
+) -> None:
+    seen_items: set[str] = set()
+    seen_documents: set[str] = set()
+    for index, row in enumerate(dispositions):
+        path = f"{object_key}/{index}"
+        source_item_id = row.get("sourceItemId")
+        if isinstance(source_item_id, str):
+            if source_item_id in seen_items:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{path}/sourceItemId",
+                    f"duplicate sourceItemId {source_item_id}",
+                )
+            seen_items.add(source_item_id)
+        disposition = row.get("catalogDisposition")
+        if disposition in NON_SELECTED_DISPOSITIONS:
+            for field in ("reasonCode", "reason"):
+                if not row.get(field):
+                    _issue(
+                        issues,
+                        "invalid.disposition",
+                        f"{path}/{field}",
+                        f"projected disposition {disposition!r} requires a {field}",
+                    )
+        if disposition == "selected":
+            version_id = row.get("documentVersionId")
+            if isinstance(version_id, str):
+                if version_id in seen_documents:
+                    _issue(
+                        issues,
+                        "invalid.duplicate-identity",
+                        f"{path}/documentVersionId",
+                        f"duplicate documentVersionId {version_id}",
+                    )
+                seen_documents.add(version_id)
+
+
+def _validate_documents(
+    documents: Sequence[Mapping[str, Any]],
+    dispositions: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> dict[str, int]:
+    """Check captures and representations. Returns representation byte sizes."""
+
+    selected = {
+        row["sourceItemId"]: row
+        for row in dispositions
+        if row.get("catalogDisposition") == "selected" and isinstance(row.get("sourceItemId"), str)
+    }
+    sizes: dict[str, int] = {}
+    seen_versions: set[str] = set()
+    for index, document in enumerate(documents):
+        path = f"{object_key}/{index}"
+        version_id = document.get("documentVersionId")
+        if isinstance(version_id, str):
+            if version_id in seen_versions:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{path}/documentVersionId",
+                    f"duplicate documentVersionId {version_id}",
+                )
+            seen_versions.add(version_id)
+
+        source_item_id = document.get("sourceItemId")
+        projection = selected.get(source_item_id) if isinstance(source_item_id, str) else None
+        if projection is None:
+            _issue(
+                issues,
+                "invalid.join",
+                f"{path}/sourceItemId",
+                "document has no selected disposition row",
+            )
+        else:
+            for field in ("documentId", "sourceIssuedVersion"):
+                if document.get(field) != projection.get(field):
+                    _issue(
+                        issues,
+                        "invalid.join",
+                        f"{path}/{field}",
+                        f"differs from the disposition projection ({projection.get(field)!r})",
+                    )
+            if projection.get("documentVersionId") != version_id:
+                _issue(
+                    issues,
+                    "invalid.join",
+                    f"{path}/documentVersionId",
+                    "disposition projection names a different document version",
+                )
+
+        capture = document.get("capture")
+        if isinstance(capture, Mapping):
+            key = capture.get("objectKey")
+            resolved = member_paths.get(str(key))
+            if resolved is None or not resolved.is_file():
+                _issue(
+                    issues,
+                    "invalid.capture",
+                    f"{path}/capture/objectKey",
+                    "captured rendition is not a declared member",
+                )
+            else:
+                actual = file_sha256(resolved)
+                if actual != capture.get("sha256"):
+                    _issue(
+                        issues,
+                        "invalid.capture",
+                        f"{path}/capture/sha256",
+                        f"captured bytes digest to {actual}",
+                    )
+                if resolved.stat().st_size != capture.get("byteSize"):
+                    _issue(
+                        issues,
+                        "invalid.capture",
+                        f"{path}/capture/byteSize",
+                        "captured byte size differs",
+                    )
+            expected = capture.get("expectedSha256")
+            if isinstance(expected, str) and expected.removeprefix("sha256:") != capture.get(
+                "sha256"
+            ):
+                _issue(
+                    issues,
+                    "invalid.capture",
+                    f"{path}/capture/expectedSha256",
+                    "the catalog's expected digest does not match the captured bytes",
+                )
+
+        representation = document.get("representation")
+        if isinstance(representation, Mapping):
+            key = representation.get("objectKey")
+            resolved = member_paths.get(str(key))
+            if resolved is None or not resolved.is_file():
+                _issue(
+                    issues,
+                    "invalid.representation",
+                    f"{path}/representation/objectKey",
+                    "representation is not a declared member",
+                )
+            else:
+                raw = resolved.read_bytes()
+                if file_sha256(resolved) != representation.get("sha256"):
+                    _issue(
+                        issues,
+                        "invalid.representation",
+                        f"{path}/representation/sha256",
+                        "representation digest differs",
+                    )
+                if len(raw) != representation.get("byteSize"):
+                    _issue(
+                        issues,
+                        "invalid.representation",
+                        f"{path}/representation/byteSize",
+                        f"representation is {len(raw)} bytes",
+                    )
+                try:
+                    raw.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    _issue(
+                        issues,
+                        "invalid.representation",
+                        f"{path}/representation",
+                        f"representation is not valid UTF-8: {exc}",
+                    )
+                if isinstance(version_id, str):
+                    sizes[version_id] = len(raw)
+    return sizes
+
+
+def _validate_structure(
+    nodes: Sequence[Mapping[str, Any]],
+    sizes: Mapping[str, int],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> dict[str, dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for index, node in enumerate(nodes):
+        path = f"{object_key}/{index}"
+        node_id = node.get("structuralNodeId")
+        if isinstance(node_id, str):
+            if node_id in by_id:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{path}/structuralNodeId",
+                    f"duplicate structuralNodeId {node_id}",
+                )
+            else:
+                by_id[node_id] = dict(node)
+    sibling_ordinals: dict[tuple[str, Any], list[int]] = {}
+    for index, node in enumerate(nodes):
+        path = f"{object_key}/{index}"
+        version_id = node.get("documentVersionId")
+        start, end = node.get("representationStart"), node.get("representationEnd")
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if end < start:
+            _issue(issues, "invalid.structure", f"{path}/representationEnd", "range is inverted")
+        size = sizes.get(str(version_id))
+        if size is None:
+            _issue(
+                issues,
+                "invalid.structure",
+                f"{path}/documentVersionId",
+                "node names no document in this release",
+            )
+        elif end > size:
+            _issue(
+                issues,
+                "invalid.structure",
+                f"{path}/representationEnd",
+                f"range exceeds the {size}-byte representation",
+            )
+        parent_id = node.get("structuralParentId")
+        if parent_id is not None:
+            parent = by_id.get(str(parent_id))
+            if parent is None:
+                _issue(
+                    issues,
+                    "invalid.structure",
+                    f"{path}/structuralParentId",
+                    f"parent {parent_id!r} does not resolve",
+                )
+            else:
+                if parent.get("documentVersionId") != version_id:
+                    _issue(
+                        issues,
+                        "invalid.structure",
+                        f"{path}/structuralParentId",
+                        "parent belongs to a different document",
+                    )
+                if isinstance(parent.get("depth"), int) and node.get("depth") != parent["depth"] + 1:
+                    _issue(
+                        issues,
+                        "invalid.structure",
+                        f"{path}/depth",
+                        f"expected {parent['depth'] + 1}",
+                    )
+                p_start, p_end = parent.get("representationStart"), parent.get("representationEnd")
+                if isinstance(p_start, int) and isinstance(p_end, int) and not (
+                    p_start <= start and end <= p_end
+                ):
+                    _issue(
+                        issues,
+                        "invalid.structure",
+                        f"{path}/representationStart",
+                        "range is not contained in its parent",
+                    )
+        elif node.get("depth") != 0:
+            _issue(issues, "invalid.structure", f"{path}/depth", "a root node has depth 0")
+        ordinal = node.get("ordinal")
+        if isinstance(ordinal, int):
+            sibling_ordinals.setdefault((str(version_id), parent_id), []).append(ordinal)
+    for (version_id, parent_id), ordinals in sorted(
+        sibling_ordinals.items(), key=lambda item: (item[0][0], str(item[0][1]))
+    ):
+        if sorted(ordinals) != list(range(len(ordinals))):
+            _issue(
+                issues,
+                "invalid.structure",
+                f"{object_key}:{version_id}:{parent_id}",
+                f"sibling ordinals must be dense and zero-based, found {sorted(ordinals)}",
+            )
+    return by_id
+
+
+def _validate_segments(
+    segments: Sequence[Mapping[str, Any]],
+    nodes: Mapping[str, Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    sizes: Mapping[str, int],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> None:
+    renditions = {
+        document.get("documentVersionId"): document.get("capture")
+        for document in documents
+        if isinstance(document.get("capture"), Mapping)
+    }
+    seen: set[str] = set()
+    ordinals: dict[str, list[int]] = {}
+    for index, segment in enumerate(segments):
+        path = f"{object_key}/{index}"
+        segment_id = segment.get("segmentId")
+        if isinstance(segment_id, str):
+            if segment_id in seen:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{path}/segmentId",
+                    f"duplicate segmentId {segment_id}",
+                )
+            seen.add(segment_id)
+        version_id = str(segment.get("documentVersionId"))
+        start, end = segment.get("representationStart"), segment.get("representationEnd")
+        size = sizes.get(version_id)
+        if not isinstance(start, int) or not isinstance(end, int):
+            continue
+        if end <= start:
+            _issue(
+                issues,
+                "invalid.segment",
+                f"{path}/representationEnd",
+                "range is empty or inverted",
+            )
+        if size is None:
+            _issue(
+                issues,
+                "invalid.segment",
+                f"{path}/documentVersionId",
+                "segment names no document in this release",
+            )
+        elif end > size:
+            _issue(
+                issues,
+                "invalid.segment",
+                f"{path}/representationEnd",
+                f"range exceeds the {size}-byte representation",
+            )
+        parent = nodes.get(str(segment.get("structuralParentId")))
+        if parent is None:
+            _issue(
+                issues,
+                "invalid.segment",
+                f"{path}/structuralParentId",
+                "structural parent does not resolve",
+            )
+        else:
+            if parent.get("documentVersionId") != segment.get("documentVersionId"):
+                _issue(
+                    issues,
+                    "invalid.segment",
+                    f"{path}/structuralParentId",
+                    "structural parent belongs to a different document",
+                )
+            p_start, p_end = parent.get("representationStart"), parent.get("representationEnd")
+            if isinstance(p_start, int) and isinstance(p_end, int) and not (
+                p_start <= start and end <= p_end
+            ):
+                _issue(
+                    issues,
+                    "invalid.segment",
+                    f"{path}/representationStart",
+                    "range is not contained in its structural parent",
+                )
+            expected_path = _heading_path(parent, nodes)
+            if segment.get("headingPath") != expected_path:
+                _issue(
+                    issues,
+                    "invalid.segment",
+                    f"{path}/headingPath",
+                    f"expected {expected_path}",
+                )
+        evidence = segment.get("evidence")
+        capture = renditions.get(segment.get("documentVersionId"))
+        if isinstance(evidence, Mapping) and isinstance(capture, Mapping):
+            if evidence.get("renditionSha256") != capture.get("sha256"):
+                _issue(
+                    issues,
+                    "invalid.segment",
+                    f"{path}/evidence/renditionSha256",
+                    "evidence names bytes that are not this document's captured rendition",
+                )
+            e_start, e_end = evidence.get("start"), evidence.get("end")
+            rendition_size = capture.get("byteSize")
+            if isinstance(e_start, int) and isinstance(e_end, int):
+                if e_end <= e_start:
+                    _issue(
+                        issues,
+                        "invalid.segment",
+                        f"{path}/evidence/end",
+                        "evidence range is empty or inverted",
+                    )
+                elif isinstance(rendition_size, int) and e_end > rendition_size:
+                    _issue(
+                        issues,
+                        "invalid.segment",
+                        f"{path}/evidence/end",
+                        f"evidence exceeds the {rendition_size}-byte rendition",
+                    )
+        if isinstance(segment.get("ordinal"), int):
+            ordinals.setdefault(version_id, []).append(segment["ordinal"])
+    for version_id, values in sorted(ordinals.items()):
+        if sorted(values) != list(range(len(values))):
+            _issue(
+                issues,
+                "invalid.segment",
+                f"{object_key}:{version_id}",
+                f"segment ordinals must be dense and zero-based, found {sorted(values)}",
+            )
+
+
+def _heading_path(
+    node: Mapping[str, Any], nodes: Mapping[str, Mapping[str, Any]]
+) -> list[str]:
+    """Heading text from the document root down to ``node``, outermost first."""
+
+    chain: list[str] = []
+    current: Mapping[str, Any] | None = node
+    guard = 0
+    while current is not None and guard < 4096:
+        guard += 1
+        text = current.get("headingText")
+        if isinstance(text, str) and text:
+            chain.append(text)
+        parent_id = current.get("structuralParentId")
+        current = nodes.get(str(parent_id)) if parent_id is not None else None
+    chain.reverse()
+    return chain
+
+
+def _validate_coverage(
+    documents: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    sizes: Mapping[str, int],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> None:
+    """Every visible-text byte is segmented or explicitly excluded, never both."""
+
+    for index, document in enumerate(documents):
+        path = f"{object_key}/{index}"
+        version_id = document.get("documentVersionId")
+        size = sizes.get(str(version_id))
+        if size is None:
+            continue
+        segment_ranges = [
+            (segment["representationStart"], segment["representationEnd"])
+            for segment in segments
+            if segment.get("documentVersionId") == version_id
+            and isinstance(segment.get("representationStart"), int)
+            and isinstance(segment.get("representationEnd"), int)
+        ]
+        excluded_ranges = [
+            (item["start"], item["end"])
+            for item in document.get("excludedRanges") or []
+            if isinstance(item, Mapping)
+            and isinstance(item.get("start"), int)
+            and isinstance(item.get("end"), int)
+        ]
+        if not segment_ranges:
+            _issue(
+                issues,
+                "invalid.coverage",
+                f"{path}/documentVersionId",
+                "every document requires at least one search segment",
+            )
+        segment_cover = _interval_union(segment_ranges)
+        excluded_cover = _interval_union(excluded_ranges)
+        for start, end in excluded_cover:
+            for other_start, other_end in segment_cover:
+                if start < other_end and other_start < end:
+                    _issue(
+                        issues,
+                        "invalid.coverage",
+                        f"{path}/excludedRanges",
+                        f"excluded range [{start}, {end}) overlaps a search segment",
+                    )
+                    break
+        combined = _interval_union([*segment_ranges, *excluded_ranges])
+        if combined != ([(0, size)] if size else []):
+            _issue(
+                issues,
+                "invalid.coverage",
+                f"{path}/representation",
+                f"segments plus exclusions must tile [0, {size}); found {combined}",
+            )
+
+
+def _validate_root_bindings(
+    root: Mapping[str, Any],
+    dispositions: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    nodes: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    members: Sequence[Mapping[str, Any]],
+    issues: list[VerificationIssue],
+) -> None:
+    content = root.get("content")
+    if not isinstance(content, Mapping):
+        return
+
+    selected_ids = [
+        row["sourceItemId"]
+        for row in dispositions
+        if row.get("catalogDisposition") == "selected" and isinstance(row.get("sourceItemId"), str)
+    ]
+    version_ids = [
+        document["documentVersionId"]
+        for document in documents
+        if isinstance(document.get("documentVersionId"), str)
+    ]
+    segment_ids = [
+        segment["segmentId"] for segment in segments if isinstance(segment.get("segmentId"), str)
+    ]
+    pairs = [
+        [document["sourceItemId"], document["documentVersionId"]]
+        for document in documents
+        if isinstance(document.get("sourceItemId"), str)
+        and isinstance(document.get("documentVersionId"), str)
+    ]
+
+    catalog = content.get("sourceCatalog")
+    if isinstance(catalog, Mapping):
+        expected_selected = source_set_digest(selected_ids)
+        if catalog.get("selectedSourceSetDigest") != expected_selected:
+            _issue(
+                issues,
+                "invalid.source-catalog-pin",
+                "release.json/content/sourceCatalog/selectedSourceSetDigest",
+                "the pinned catalog's selected set does not equal this release's selected rows",
+            )
+        if content.get("selectedSourceSetDigest") != catalog.get("selectedSourceSetDigest"):
+            _issue(
+                issues,
+                "invalid.source-catalog-pin",
+                "release.json/content/selectedSourceSetDigest",
+                "release and pinned catalog disagree on the selected source set",
+            )
+        pinned = catalog.get("releaseId")
+        for index, document in enumerate(documents):
+            capture = document.get("capture")
+            if isinstance(capture, Mapping) and capture.get("catalogReleaseId") != pinned:
+                _issue(
+                    issues,
+                    "invalid.source-catalog-pin",
+                    f"data/documents.json/{index}/capture/catalogReleaseId",
+                    f"capture names a different catalog release than the root pin {pinned!r}",
+                )
+
+    for field, expected in (
+        ("selectedSourceSetDigest", source_set_digest(selected_ids)),
+        ("documentVersionSetDigest", source_set_digest(version_ids)),
+        ("segmentSetDigest", source_set_digest(segment_ids)),
+        ("sourceDocumentMappingDigest", mapping_digest(pairs)),
+    ):
+        if content.get(field) != expected:
+            _issue(
+                issues,
+                "invalid.set-digest",
+                f"release.json/content/{field}",
+                f"expected {expected}",
+            )
+
+    receipt = content.get("joinReceipt")
+    if isinstance(receipt, Mapping):
+        if receipt.get("mappingDigest") != content.get("sourceDocumentMappingDigest"):
+            _issue(
+                issues,
+                "invalid.join",
+                "release.json/content/joinReceipt/mappingDigest",
+                "join receipt does not seal the release's mapping digest",
+            )
+        if receipt.get("selectedSourceItemCount") != len(selected_ids):
+            _issue(
+                issues,
+                "invalid.join",
+                "release.json/content/joinReceipt/selectedSourceItemCount",
+                f"expected {len(selected_ids)}",
+            )
+        if receipt.get("documentVersionCount") != len(version_ids):
+            _issue(
+                issues,
+                "invalid.join",
+                "release.json/content/joinReceipt/documentVersionCount",
+                f"expected {len(version_ids)}",
+            )
+        if len(selected_ids) != len(version_ids) or len(set(selected_ids)) != len(
+            set(version_ids)
+        ):
+            _issue(
+                issues,
+                "invalid.join",
+                "release.json/content/joinReceipt",
+                "the source-to-document join is not one-to-one",
+            )
+
+    expected_counts = derive_counts(
+        dispositions,
+        documents,
+        nodes,
+        segments,
+        member_count=len(members),
+        total_member_byte_size=sum(
+            member.get("byteSize", 0)
+            for member in members
+            if isinstance(member.get("byteSize"), int) and not isinstance(member.get("byteSize"), bool)
+        ),
+    )
+    if content.get("counts") != expected_counts:
+        _issue(issues, "invalid.counts", "release.json/content/counts", f"expected {expected_counts}")
+    expected_coverage = derive_coverage(dispositions, documents, segments)
+    if content.get("coverage") != expected_coverage:
+        _issue(
+            issues,
+            "invalid.coverage",
+            "release.json/content/coverage",
+            f"expected {expected_coverage}",
+        )
+
+
+def verify_document_release(bundle: Path) -> VerificationResult:
+    """Verify one materialized ``DocumentRelease`` v2 bundle."""
+
+    bundle = Path(bundle)
+    issues: list[VerificationIssue] = []
+    root = _read_root(bundle, issues)
+    if root is None:
+        return VerificationResult(None, tuple(issues))
+    members, member_paths, declared = _read_member_manifest(bundle, root, issues)
+    _verify_member_files(bundle, members, member_paths, declared, issues)
+    _validate_schema_set(root, members, member_paths, issues)
+
+    dispositions, dispositions_key = _read_rows("source-dispositions", members, member_paths, issues)
+    documents, documents_key = _read_rows("documents", members, member_paths, issues)
+    nodes, nodes_key = _read_rows("structural-nodes", members, member_paths, issues)
+    segments, segments_key = _read_rows("search-segments", members, member_paths, issues)
+
+    if dispositions is not None:
+        _validate_dispositions(dispositions, dispositions_key, issues)
+    sizes: dict[str, int] = {}
+    if documents is not None and dispositions is not None:
+        sizes = _validate_documents(documents, dispositions, member_paths, documents_key, issues)
+    node_index: dict[str, dict[str, Any]] = {}
+    if nodes is not None:
+        node_index = _validate_structure(nodes, sizes, nodes_key, issues)
+    if segments is not None and documents is not None:
+        _validate_segments(segments, node_index, documents, sizes, segments_key, issues)
+        _validate_coverage(documents, segments, sizes, documents_key, issues)
+    if None not in (dispositions, documents, nodes, segments):
+        _validate_root_bindings(root, dispositions, documents, nodes, segments, members, issues)
+
+    release_id = root.get("releaseId")
+    return VerificationResult(
+        release_id if isinstance(release_id, str) else None, tuple(issues)
+    )
+
+
+def verify_corpus(corpus_file: Path) -> list[dict[str, Any]]:
+    """Verify every sealed fixture and return one row per case.
+
+    The corpus path is a required argument: the fixture root is a test input,
+    not a packaged one, so an installed DocSpec cannot name a default for it.
+    """
+
+    corpus = json.loads(Path(corpus_file).read_text(encoding="utf-8"))
+    fixture_root = Path(corpus_file).parent
+    rows: list[dict[str, Any]] = []
+    for case in corpus["cases"]:
+        bundle = fixture_root / case["bundle"]
+        observed_tree = tree_digest(bundle) if bundle.is_dir() else None
+        result = (
+            verify_document_release(bundle) if bundle.is_dir() else VerificationResult(None, ())
+        )
+        rows.append(
+            {
+                "name": case["name"],
+                "bundle": case["bundle"],
+                "sealed": observed_tree == case["treeSha256"],
+                "expectedCode": case["expectedCode"],
+                "observedCode": result.code if bundle.is_dir() else "absent",
+                "expectedPath": case["expectedPath"],
+                "observedPath": result.path if bundle.is_dir() else None,
+                "issues": [str(issue) for issue in result.issues],
+            }
+        )
+    return rows
+
+
+__all__ = [
+    "CATALOG_DISPOSITIONS",
+    "CODE_PRECEDENCE",
+    "DIAGNOSTIC_CODES",
+    "DOCUMENTS_SCHEMA",
+    "FORMAT",
+    "FORMAT_VERSION",
+    "MEMBER_MANIFEST_SCHEMA",
+    "RELEASE_ID_PREFIX",
+    "REPRESENTATION_MEDIA_TYPE",
+    "ROOT_SCHEMA",
+    "SCHEMA_FILES",
+    "SCHEMA_ID_GENERATIONS",
+    "SCHEMA_IDS",
+    "SCHEMA_ROOT",
+    "SEARCH_SEGMENTS_SCHEMA",
+    "SOURCE_CATALOG_ID_PREFIX",
+    "SOURCE_DISPOSITIONS_SCHEMA",
+    "STRUCTURAL_NODES_SCHEMA",
+    "VerificationIssue",
+    "VerificationResult",
+    "canonical_schema_id",
+    "derive_counts",
+    "derive_coverage",
+    "expected_release_id",
+    "mapping_digest",
+    "stamp_root",
+    "verify_corpus",
+    "verify_document_release",
+]
