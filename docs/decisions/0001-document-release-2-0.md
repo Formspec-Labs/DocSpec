@@ -719,3 +719,379 @@ sealed bundles and in the verifier's predecessor branch
 
 `selectedSourceSetDigest` is **derived from the pin**, under
 `docspec-selected-source-set/1` — see *The catalog pin*.
+
+## Amendment 2026-08-31 (second): the first-mint blind-gate findings
+
+The first real mint under this decision — `output/document-release-10k-v1`,
+receipt `docs/history/2026-08-30-document-release-10k-v1-mint-receipt.json`,
+builder `96c16f2` — went through a two-reviewer blind gate and **failed**. Six
+findings, verified by construction rather than by reading; six rulings. The
+mint is superseded, not patched: the format, the gate, the builder, and the
+floors all move, so the release that comes out is a new one.
+
+*All rulings below: Accepted-by: agent (delegated scope: owner 2026-08-30
+"execute phase 1... you for human-less decision making"; findings from the
+first-mint blind gate, 2026-08-31).*
+
+### B1 — identity did not name content; the set digests move to `/3` and frame full logical rows
+
+**Finding, by construction.** The `/2` domains project each row onto id fields
+only (`FRAMED_SET_DOMAINS`, `adapters/document_release_verify.py:527-541`), so a
+same-length mutation of a representation's bytes with the physical digests
+restamped verifies clean under an **unchanged** `documentStateDigest`. The same
+hole swallows `sourceMetadata.sourceUrl`, `sourceMetadata.title`, and a narrowed
+`segment.evidence.end`. "Two names over one content" was true of the physical
+half and false of the logical one.
+
+**Ruling.** Every set digest this format carries moves to a `/3` domain, and a
+`/3` domain frames each record's **full logical row**: the canonical row exactly
+as the member carries it, minus an enumerated per-record-type exclusion set. The
+row's own content digests — `capture.sha256`, `representation.sha256`,
+`byteSize`, `expectedSha256` — are **logical** and stay in. Two, and only two,
+kinds of field come out, and both come out for a reason this decision already
+gave:
+
+* **physical locator facts**, which say where a byte landed rather than what it
+  is. Row-level, that is exactly the `objectKey` fields; the bucket offsets
+  (`startByte`, `byteLength`, `member`) live in the `text-body-index` member,
+  which no set digest reads. This is the same physical/logical line the root
+  already draws at `logical_content`, extended one level down.
+* **the acquisition wall clock**, which deviation row 10 already excludes from
+  *every* preimage: "a clock inside a content-derived identity would make two
+  byte-identical captures two releases".
+
+The enumerated exclusion set, per record type, complete:
+
+```text
+source-dispositions   (none)
+documents             capture.objectKey
+                      capture.acquiredAt, capture.acquisitionStartedAt
+attachments           representation.objectKey
+                      renditions[].capture.objectKey
+                      renditions[].capture.acquiredAt
+                      renditions[].capture.acquisitionStartedAt
+comments              capture.objectKey, representation.objectKey
+                      capture.acquiredAt, capture.acquisitionStartedAt
+structural-nodes      (none)
+search-segments       (none)
+```
+
+`documents` also excludes `representation.objectKey`; it is listed once above
+with its sibling to keep the two `objectKey`s of one row together.
+
+**The name now covers every logical row the bundle carries**, which needs two
+digests that did not exist. `content` gains `structuralNodeSetDigest` and
+`sourceDispositionSetDigest`, under `docspec-structural-node-set/3` and
+`docspec-source-disposition-set/3`. Without them, 10,000 disposition rows and
+every structural node would stay outside the name, and B1 would be half-fixed:
+"any logical fact moves the name" has to be true of all of them or it is a
+slogan. `docspec-document-set/2` and `docspec-representation-set/2` are
+**withdrawn** rather than renumbered — they were declared in *Sealed identities*
+and no `content` field ever carried them, so a `/3` spelling would seal a name
+nothing mints.
+
+Two of the `/3` domains stay **projections** rather than full rows, because the
+fact each names is a projection and its rows are already covered whole
+elsewhere: `docspec-text-body-set/3` streams `{textBodyId, textKind}` across all
+three kinds, and `docspec-source-to-document/3` streams
+`{sourceItemId, documentId, documentVersionId}`. Both are declared as
+projections in the table below, so a reader never has to guess which a domain is.
+
+**Repack invariance survives, and is the reason the exclusion set is exactly
+these fields.** A repack rewrites member paths, bucket offsets, member digests,
+the global manifest, `counts.memberCount`, and `counts.totalMemberByteSize`.
+Every one of those is excluded — the `objectKey`s row-level, the rest at
+`logical_content` — so `documentStateDigest` is unmoved, and
+`INCREMENTAL-EQUIVALENCE` still holds.
+
+The `/2` domains are **not** retired from the code: the twenty sealed
+predecessor bundles are not minted under them either (they carry plain sorted-set
+digests), but the docspec-generation fixture corpus was, and it is restamped
+under `/3` as part of the same single restamp operation the first amendment's
+sequencing note describes.
+
+### B2 — the version binding is `documentId@sourceIssuedVersion`, and the gate checks it
+
+**Finding.** `documentVersionId` embeds `@sha256:<hex>` and nothing checked what
+that hex names; the `documentVersionId` ↔ `capture.sha256` embedding was a
+producer convention the verifier never read.
+
+**Ruling, with the finding's own remedy corrected against the corpus.** The gate
+was to bind the embedded digest to `capture.sha256` "where ids embed
+`@sha256:`". Measured against the D1 corpus, that binding is **false for 1,683 of
+8,082 rows**: the Federal Register half embeds the rendition digest (its
+`sourceIssuedVersion` *is* the candidate's `expectedDigest`), while the
+Mirrulations half embeds the catalog's own source-issued version digest, and no
+`expectedDigest` exists there at all. Enforcing the literal rule would refuse a
+fifth of a correct corpus. The convention that is actually true of every row is
+the one the gate now enforces, under a new diagnostic `invalid.version-binding`,
+ordered immediately after `invalid.identity`:
+
+1. `documentVersionId` **equals** `documentId + "@" + sourceIssuedVersion`;
+2. `textBodyId` **equals** `documentVersionId` for a `document-body`, which this
+   decision's mint-rule table already required and nothing checked;
+3. where `sourceIssuedVersion` is a `sha256:` digest **and** the capture declares
+   a non-null `expectedSha256`, the embedded hex equals `capture.sha256` — the
+   finding's rule, scoped to the rows for which its premise holds. An id that
+   claims to name captured bytes must name the digest of the bytes carried.
+
+Under B1 the body bytes already move the name through `capture.sha256` and
+`representation.sha256`; this rule is the second lock, on the id itself.
+
+### B3 — the gate cannot crash, and the corpus test asserts whole diagnostic sets
+
+**Finding.** `_read_slice` (`:882-887`) seeks to a caller-supplied offset; a
+negative `startByte` in a `text-body-index` row raises an uncaught `OSError`,
+because the guard at `:1332` checks only overflow. An untrusted bundle could
+therefore take the gate down instead of being refused by it — a regression
+against the ported validator, which reported diagnostics. Separately, the corpus
+test asserted only each case's primary `code` and `path`, so a bundle emitting
+its expected diagnostic **plus five others** passed.
+
+**Ruling.** Three obligations. `_read_slice` refuses a negative offset or length
+before it seeks. The index reader reports `invalid.member-digest` for a slice
+whose offset or length is negative, exactly as it does for one that overruns.
+And `verify_document_release` is wrapped: any exception escaping any rule is
+caught and reported as `invalid.root-syntax` naming the bundle, so **no input can
+make the gate fail to produce a verdict**. A gate that can crash is a gate that
+can be skipped. The conformance corpus test asserts the **full** diagnostic set —
+every code and every path, in order — per bundle.
+
+### B4 — attachments are enumerated, and the three named diagnostics get fixtures
+
+**Finding.** This decision's L413 says "every attachment enumerated by its
+owner's source record gets a row". All 1,683 selected Mirrulations documents
+enumerate `fileFormats` (a `pdf` and an `htm`) in their preserved source
+records; the builder hardcoded `attachments: []`
+(`tools/build_document_release.py:665-666,778-783`) and the mint manifest
+asserted compliance anyway. The three diagnostics this decision names —
+`invalid.attachment-accounting`, `invalid.comment-selection`,
+`invalid.retention-floor` — existed nowhere: not in `DIAGNOSTIC_CODES`, not in
+the verifier, not in the invalid corpus.
+
+**Ruling.** The builder enumerates. `fileFormats` is this decision's flat
+document packing (`enrich_pdf.py:16-19`), and the flat list is a list of
+**renditions of one attachment**, not a list of attachments: one row, `M`
+sub-rows, exactly as *Cardinality* requires. `attachmentIdentity` is the
+owner-scoped ordinal, because regulations.gov supplies no per-attachment id for a
+document's own content file; `attachmentTitle` is null, because the flat packing
+carries none.
+
+**The `htm` rendition is the owning body's own rendition, and is
+`text-excluded`.** This decision is genuinely ambiguous here — it says
+attachments are "renditions of a member" and that every enumerated attachment
+gets a row, and it never says whether the rendition the release already carries
+as the document body counts twice. Resolved: **a rendition whose captured bytes
+are already carried as its owner's body is enumerated with an honest row and the
+disposition `text-excluded`, reason code `owner-body-rendition`, never extracted
+a second time** — extracting it would put the same text in the corpus twice, and
+omitting it would break the enumeration rule. The `pdf` rendition has no
+preserved copy in the pinned checkpoint and is `source-unavailable` with reason
+code `no-preserved-copy`; the ADR's own rule holds — the build fails when an
+enumerated attachment has no row, never when a row honestly says it could not be
+captured.
+
+Because a rendition may name bytes that belong to another text body's slice of a
+shared bucket, the gate resolves a capture against the `text-body-index` **by
+digest** when the capture's own body is not indexed: the index already records
+which byte range of which member digests to what, and a capture naming one of
+those digests is verified against that range rather than against the whole
+bucket. The body-keyed lookup keeps priority, so nothing about a document body's
+verification changes.
+
+`counts` gains `attachmentAccounting`, a closed object recomputed from the rows
+— `{attachmentRows, renditionRows, textCaptured, textExcluded, sourceUnavailable,
+extractionFailed}`. "Complete attachment accounting" is a claim
+`COMPLETE-SEARCH-CORPUS` requires proving, and a declared tally a reader
+recomputes is how it is proved from bundle bytes alone.
+
+The three diagnostics land with one invalid-corpus fixture each, which means the
+conformance corpus's valid bundle must finally **carry** an attachment and
+comments — it carried neither, so two of the three record types this decision
+sealed had never been minted by anything:
+
+* `invalid.attachment-accounting` — non-dense `renditionOrdinal`s, more than one
+  `text-captured` rendition, a row whose `textBodyId` and captured rendition
+  disagree, a rendition that is not `text-captured` and carries no
+  `reasonCode`/`reason`, or a declared `counts.attachmentAccounting` that
+  disagrees with the rows. These leave `invalid.disposition` and
+  `invalid.duplicate-identity`, where they never belonged: this decision is
+  explicit that an attachment disposition is not a catalog disposition and that
+  reusing the words invites a reader to join them.
+* `invalid.comment-selection` — comment rows that do not all project **one**
+  sealed policy. One release inherits one selection; two `policyDigest`s in one
+  release is the release claiming a selection nobody sealed. Ordered immediately
+  after `invalid.disposition`, as this decision already required.
+* `invalid.retention-floor` — a declared floor that violates its own invariants
+  (`0 < value < 1`, `observedMinimum > value`, a declared unit), or a text body
+  whose `(textKind, mediaType)` has **no** governing `processingPolicies` entry.
+  The second arm is the checkable half of "an undeclared floor fails closed": a
+  body extracted under no declared floor is visible in the bundle without
+  re-running any extractor.
+
+### B5 — the retention floor measures parse quality, on a population it does not gate
+
+**Finding, four defects in one.** The sealed `observedMinimum: 0.4777` was a
+**400-document stride-sample statistic labelled as the population minimum** —
+the true minimum over the gated corpus was 0.1936. The nine refusals the mint
+recorded were **false**: those documents extract completely, and their ratio was
+low only because 48–60% of their raw XML is pretty-print indentation, which the
+denominator counted as content the parser had failed to keep. The floors were
+**pooled with the corpus they gate**, so the calibration could not refuse
+anything it had not already admitted. And the `distribution-html` population
+this decision names went **unused**.
+
+**Ruling, in four parts.**
+
+1. **The metric changes.** Retention is
+   `whitespace-normalized representation bytes / whitespace-normalized rendition
+   bytes`, where normalization replaces every maximal run of ASCII whitespace
+   bytes with one space and strips the ends. Both sides are normalized by the
+   same rule, and that is not decoration: the HTML extractor lays out verbatim
+   and the XML extractor lays out normalized, so an un-normalized numerator makes
+   the two extractors' outputs incommensurable — measured, the raw-numerator form
+   produces retention **above 1.0** on 993 `distribution-html` documents, which
+   the floor's own arithmetic cannot represent. Normalized on both sides the
+   ratio measures what it claims to: the share of the source's non-whitespace
+   substance the parse kept. Publisher indentation cancels; a thin parse still
+   craters it, because the numerator is what survived. The unit is renamed to
+   `normalized-visible-text-fraction`; `visible-text-fraction` stays in the
+   schema's vocabulary because the sealed predecessor corpus carries it, and
+   nothing in the docspec generation may mint it again.
+2. **The calibration population is disjoint from the gated corpus.** Each floor
+   is measured on this decision's own preserved body corpus
+   (`_preserved-2026-08-10/body-retrieval-corpus-2026-08-02`): `distribution-xml`
+   for `application/xml`, `distribution-html` for `text/html` — the population
+   this decision named and the first calibration skipped. Disjointness is
+   **measured, not asserted**: both populations are content-addressed, and zero
+   of their 1,986 rendition digests appears among the pinned corpus's captured
+   digests. The pinned corpus contributes **no** stratum. A floor calibrated on
+   the corpus it gates cannot refuse anything in it, which is what made
+   `observedMinimum: 0.4777` both wrong and unfalsifiable.
+   The `rule-bodies-pre2000-2026-08-22` population is measured and **not pooled**,
+   recorded here so the choice can be re-argued: over its full 39,785 bodies its
+   minimum is 0.0589 against a next-lowest of 0.2481, so pooling it would set an
+   HTML floor of 0.044 — a floor that gates nothing, chosen by one outlier.
+3. **`observedMinimum` is what its name says.** It is the minimum over the
+   **full** named population, never a sample statistic. The calibration receipt
+   is re-formatted so the confusion is not expressible: it has no field named
+   `sample` anywhere, `population.coverage` is the constant `full-population`,
+   `population.measuredCount` must equal `population.documentCount`, and
+   `observedMinimum` must equal `distribution.minimum` over that same count. A
+   receipt that measured a sample cannot be written in this format. The receipt
+   is sealed by its own JSON Schema, `urn:docspec:schema:retention-floor-calibration:2.0`,
+   and the builder refuses a receipt that does not validate against it.
+4. **The margin rule is unchanged and stated:** the floor is three quarters of
+   the population's observed minimum, truncated to two significant digits. It is
+   not a low quantile — a p1 floor would refuse the bottom percent of the very
+   population that defined it.
+
+Measured under this ruling: `application/xml` floor **0.33** under an observed
+minimum of **0.453** over 993 `distribution-xml` renditions; `text/html` floor
+**0.17** under an observed minimum of **0.2382** over 993 `distribution-html`
+renditions. Against the gated corpus these refuse nothing: its lowest XML
+document measures 0.4558 and its lowest HTML document 0.7934. The nine false
+refusals are readmitted, and the mint's selected count becomes 8,091.
+
+### B6 — `selectedSourceSetDigest` is derived from the pin, and the gate stops recomputing it
+
+**Finding.** The builder derived it from the release's **own** document rows
+(`tools/build_document_release.py:754-762`), so a consumer holding the pinned
+catalog bytes could not reproduce it — which is the one thing *The catalog pin*
+says it exists to allow.
+
+**Ruling.** The builder derives it over the **pinned catalog's** items, under the
+catalog's own `docspec-selected-source-set/1` domain and record shape
+(`adapters/source_catalog_artifact.py:375-395`), from a single exported function
+so "the identical function over the identical pinned bytes" names something. The
+domain covers **every item the pinned snapshot carries whose `state` is
+`active`** — the catalog's own vocabulary for what it selected; `deleted` and
+`excluded` items are, by that vocabulary, not selected. Each member is
+`{sourceItemId, documentId}` where `documentId` is derived from the item exactly
+as the builder derives it for a document row, so the pairing is a function of the
+pinned bytes and nothing else. Under the D1 pin all 10,000 items are `active`.
+
+**Consequence, recorded rather than glossed: the gate no longer recomputes this
+digest.** A portable verifier reads one bundle and the pinned catalog is not in
+it, so `selectedSourceSetDigest` becomes a pin-derived **attestation** whose form
+the gate checks and whose value only a holder of the pinned bytes can. That is
+the cost of deriving from the pin rather than projecting from the release, and it
+is the cost this decision already chose when it said a consumer "runs the
+identical function over the identical pinned bytes". The release's own selection
+is not thereby unchecked: it is carried by `data/source-dispositions.jsonl`,
+bound by `counts`, by the join receipt, by the bijection, and — under B1 — by
+`sourceDispositionSetDigest`.
+
+### B7 — the standing obligations come due
+
+**`RELEASE_FORMAT_VERSION` becomes `"2.0"`** (`src/docspec/domain/release.py:22`).
+*Migration, and the builder's obligations* held it at `1.1` "until the builder
+lands, then becomes `2.0` in one commit". The builder landed.
+
+**The `reasonCode` vocabularies close** (amendment A3's first-real-mint
+obligation, and *What this decision does not decide*'s `reasonCode` row). Two
+vocabularies, closed separately because they are separately spelled:
+
+*Source-disposition reason codes* — dotted, on `data/source-dispositions.jsonl`:
+
+```text
+catalog.state-deleted            the pinned catalog records the item as deleted
+catalog.state-excluded           the pinned catalog records the item as excluded
+selection.no-markup-rendition    no markup rendition, and JSON has no floor
+capture.no-preserved-copy        the checkpoint preserved no copy
+capture.preserved-copy-unverifiable   the preserved copy is not what was recorded
+capture.expected-digest-differs  the catalog's expected digest names other bytes
+extraction.no-extractor          no visible-text extractor for that format
+extraction.unparseable-source    the captured bytes could not be parsed
+extraction.no-visible-text       the parse produced no visible text
+extraction.retention-floor-undeclared   no floor is declared for that parser
+extraction.below-retention-floor        the parse fell below its declared floor
+extraction.retention-unmeasurable       retention could not be measured
+segmentation.refused             the bounded segmenter refused the text
+segmentation.no-searchable-segment      the text produced no segment
+segmentation.segment-over-declared-bound  a segment exceeded the declared bound
+structure.heading-path-disagrees the section tree and the segmenter disagree
+metadata.incomplete              the catalog item carries no required metadata
+```
+
+*Attachment rendition reason codes* — kebab-case, on the sub-rows of
+`data/attachments.jsonl`:
+
+```text
+owner-body-rendition   these bytes are the owning body's own rendition (B4)
+no-preserved-copy      the checkpoint preserved no copy of this rendition
+```
+
+Both close **in this decision**, not in the schemas: the schemas keep the
+bounded-string patterns as the **outer** bound, which is what makes a producer's
+new code a decision to record here rather than a schema migration. A code outside
+these lists is a code somebody has to add to this amendment first.
+
+### Sealed identities: the `/3` domains
+
+Superseding the `/2` table. `F` marks a domain that frames the **full logical
+row** minus B1's exclusion set; `P` marks a **projection** with the record shape
+shown.
+
+```text
+F  docspec-source-disposition-set/3   by sourceItemId
+F  docspec-document-version-set/3     by documentVersionId
+F  docspec-attachment-set/3           by attachmentId
+F  docspec-comment-set/3              by commentId
+F  docspec-structural-node-set/3      by structuralNodeId
+F  docspec-segment-set/3              by segmentId
+P  docspec-text-body-set/3            {textBodyId, textKind}          by textBodyId
+P  docspec-source-to-document/3       {sourceItemId, documentId,
+                                       documentVersionId}             by sourceItemId
+```
+
+Each still calls the installed Rulespec `framedSectionDigest` with one `members`
+section, keys still unique, declared count still equal to the streamed count,
+rows still ordered by the key under the UTF-16 rule.
+`selectedSourceSetDigest` stays at `docspec-selected-source-set/1` (B6) — it is
+the catalog's fact under the catalog's name, and it is the one digest in this
+format a bundle-only reader cannot recompute.
+
+| Name | `$id` / form |
+| --- | --- |
+| retention-floor calibration receipt | `urn:docspec:schema:retention-floor-calibration:2.0` |
