@@ -383,9 +383,13 @@ not migrated — no compatibility reader, no dual-write, no conversion tool.
 **Reuse, do not rewrite.** The conformance validator
 (`rulespec@c584a1d:src/rulespec_conformance/document_release.py`, 1,524 lines)
 and the fixture restamper (`tools/build_document_release_fixtures.py`, 889 lines)
-**move to DocSpec** — a port of working code, in progress in a parallel task, not
-a reimplementation. The builder this decision authorises implements the
-**produce** side only and calls the moved validator as its gate.
+**moved to DocSpec** as a port of working code, not a reimplementation: verifier
+at `src/docspec/adapters/document_release_verify.py` with
+`src/docspec/document_release_support.py` (`59616e7`), restamper at
+`tools/restamp_document_release_fixtures.py` (`19ae99b`), every sealed bundle
+run by `tests/test_document_release_verify.py` (`260152f`). The builder this
+decision authorises implements the **produce** side only and calls the moved
+verifier as its gate.
 
 **Its first obligation, before any real corpus, is to restamp the twenty sealed
 conformance bundles.** Each bundle's `manifests/global.json` and `release.json`
