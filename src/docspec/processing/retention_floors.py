@@ -36,11 +36,26 @@ from typing import Any
 from docspec.domain.identity import require_text
 from docspec.errors import IntegrityError
 
-# The unit every markup floor is measured in: retained representation bytes over
-# captured rendition bytes, both UTF-8. The name is the sealed conformance
-# fixture's own (`tests/fixtures/document_release_v2_docspec/valid/release.json`),
-# so a real mint and the fixture corpus report one unit rather than two spellings.
+# The unit every markup floor is measured in (Decision 0001, amendment B5):
+# WHITESPACE-NORMALIZED retained representation bytes over WHITESPACE-NORMALIZED
+# captured rendition bytes. Both sides are normalized by the same rule, and that
+# is not decoration -- the HTML extractor lays out verbatim while the XML one
+# lays out normalized, so an un-normalized numerator makes the two
+# incommensurable and, measured, produces retention above 1.0 on real documents,
+# which this floor's arithmetic cannot represent. Normalized on both sides, the
+# ratio measures the share of the source's non-whitespace substance the parse
+# kept: the publisher's indentation cancels, and a thin parse still craters it.
+NORMALIZED_VISIBLE_TEXT_FRACTION = "normalized-visible-text-fraction"
+# The predecessor spelling, over RAW captured bytes. It survives in the sealed
+# conformance corpus and in the superseded first mint; nothing in the docspec
+# generation may mint it again.
 VISIBLE_TEXT_FRACTION = "visible-text-fraction"
+# Text density for binary renditions, declared and unmeasured: no binary
+# extractor is chosen, so no floor is calibrated in it.
+TEXT_DENSITY = "text-density"
+RETENTION_FLOOR_UNITS: frozenset[str] = frozenset(
+    {NORMALIZED_VISIBLE_TEXT_FRACTION, VISIBLE_TEXT_FRACTION, TEXT_DENSITY}
+)
 
 # The refusal vocabulary, in the release's machine-legible `reasonCode` spelling.
 FLOOR_UNDECLARED = "extraction.retention-floor-undeclared"
@@ -48,6 +63,29 @@ BELOW_FLOOR = "extraction.below-retention-floor"
 UNMEASURABLE = "extraction.retention-unmeasurable"
 
 _WHOLE_FRACTION = re.compile(r"^0\.[0-9]*[1-9]$")
+# Every maximal run of ASCII whitespace, which is what a pretty-printer emits
+# and what the normalized measurement collapses.
+_ASCII_WHITESPACE_RUN = re.compile(rb"[ \t\n\r\f\v]+")
+
+
+def is_whole_fraction(value: object) -> bool:
+    """Whether one value is a decimal string strictly between 0 and 1."""
+
+    return isinstance(value, str) and bool(_WHOLE_FRACTION.match(value))
+
+
+def normalized_byte_size(payload: bytes) -> int:
+    """The byte length of one payload with its whitespace runs collapsed.
+
+    The measurement rule both sides of the retention ratio are taken under
+    (amendment B5): every maximal run of ASCII whitespace bytes becomes one
+    space, and leading and trailing runs go. Defined on BYTES rather than on
+    decoded text so it needs no parser, no encoding guess, and no vocabulary --
+    a denominator that required parsing the source would be measuring the
+    parser it is meant to gate.
+    """
+
+    return len(_ASCII_WHITESPACE_RUN.sub(b" ", payload).strip(b" "))
 
 
 class RetentionFloorError(IntegrityError):
@@ -115,6 +153,10 @@ class RetentionFloor:
             ("population", self.population),
         ):
             require_text(value, f"retention floor {label}")
+        if self.unit not in RETENTION_FLOOR_UNITS:
+            raise ValueError(
+                f"retention floor unit {self.unit!r} is not one this format declares"
+            )
         for label, value in (("value", self.value), ("observed_minimum", self.observed_minimum)):
             if not _WHOLE_FRACTION.match(value):
                 raise ValueError(
@@ -180,6 +222,12 @@ class RetentionFloorRegistry:
     def admit(self, text_kind: str, media_type: str, *, retained: int, source: int) -> str:
         """Measure one parse against its floor and return the measured fraction.
 
+        ``retained`` and ``source`` are both WHITESPACE-NORMALIZED byte counts
+        (`normalized_byte_size`, amendment B5). Passing raw byte counts here
+        would measure the publisher's indentation and refuse documents that
+        extracted completely, which is exactly what the first mint did to nine
+        Federal Register rules.
+
         Raises rather than returning a verdict: a refused parse must not be able
         to continue by ignoring a boolean.
         """
@@ -211,6 +259,9 @@ class RetentionFloorRegistry:
 __all__ = [
     "BELOW_FLOOR",
     "FLOOR_UNDECLARED",
+    "NORMALIZED_VISIBLE_TEXT_FRACTION",
+    "RETENTION_FLOOR_UNITS",
+    "TEXT_DENSITY",
     "UNMEASURABLE",
     "VISIBLE_TEXT_FRACTION",
     "RetentionFloor",
@@ -219,4 +270,6 @@ __all__ = [
     "decimal_fraction",
     "format_key",
     "greater",
+    "is_whole_fraction",
+    "normalized_byte_size",
 ]

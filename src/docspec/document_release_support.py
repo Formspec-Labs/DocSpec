@@ -240,6 +240,114 @@ def logical_content(content: Any) -> Any:
     return projected
 
 
+# The same physical/logical line, extended one level down to the ROWS
+# (`docs/decisions/0001-document-release-2-0.md`, amendment B1). A `/3` set
+# domain frames each record's full logical row, which is the canonical row minus
+# exactly these fields, per record type. Two kinds of field come out and no
+# others: PHYSICAL LOCATORS, which say where a byte landed rather than what it
+# is, so a repack cannot rename a release; and the ACQUISITION WALL CLOCK, which
+# deviation row 10 already excludes from every preimage, so two byte-identical
+# captures stay one release. The row's own content digests -- `capture.sha256`,
+# `representation.sha256`, every `byteSize` -- are LOGICAL and stay in, which is
+# the whole point: before B1 the digests projected rows onto id fields and a
+# same-length mutation of a body's bytes left the release's name unmoved.
+#
+# `[]` addresses every element of an array. A path naming a field no row of that
+# type carries is not an error: a record whose optional half is absent has
+# nothing to drop.
+LOGICAL_ROW_EXCLUSIONS: Mapping[str, tuple[str, ...]] = {
+    "source-dispositions": (),
+    "documents": (
+        "capture.acquiredAt",
+        "capture.acquisitionStartedAt",
+        "capture.objectKey",
+        "representation.objectKey",
+    ),
+    "attachments": (
+        "renditions[].capture.acquiredAt",
+        "renditions[].capture.acquisitionStartedAt",
+        "renditions[].capture.objectKey",
+        "representation.objectKey",
+    ),
+    "comments": (
+        "capture.acquiredAt",
+        "capture.acquisitionStartedAt",
+        "capture.objectKey",
+        "representation.objectKey",
+    ),
+    "structural-nodes": (),
+    "search-segments": (),
+}
+
+_ARRAY_STEP = "[]"
+
+
+def _prune_tree(paths: Sequence[str]) -> dict[str, Any]:
+    """Compile dotted exclusion paths into one nested lookup.
+
+    A leaf is ``None``: the field itself is dropped. A branch is a mapping,
+    descended into. ``[]`` is a step like any other, resolved against every
+    element of an array rather than against a key.
+    """
+
+    tree: dict[str, Any] = {}
+    for path in paths:
+        node = tree
+        steps = path.replace(_ARRAY_STEP, f".{_ARRAY_STEP}").split(".")
+        for step in steps[:-1]:
+            if not step:
+                continue
+            branch = node.get(step)
+            if not isinstance(branch, dict):
+                branch = {}
+                node[step] = branch
+            node = branch
+        node[steps[-1]] = None
+    return tree
+
+
+_PRUNE_TREES: Mapping[str, dict[str, Any]] = {
+    record_type: _prune_tree(paths) for record_type, paths in LOGICAL_ROW_EXCLUSIONS.items()
+}
+
+
+def _prune(value: Any, tree: Mapping[str, Any]) -> Any:
+    if isinstance(value, Mapping):
+        pruned: dict[str, Any] = {}
+        for key, member in value.items():
+            if key not in tree:
+                pruned[key] = member
+                continue
+            branch = tree[key]
+            if branch is None:
+                continue
+            pruned[key] = _prune(member, branch)
+        return pruned
+    if isinstance(value, list):
+        branch = tree.get(_ARRAY_STEP)
+        if branch is None:
+            return list(value)
+        return [_prune(member, branch) for member in value]
+    return value
+
+
+def logical_row(record_type: str, row: Any) -> Any:
+    """Project one tabular record onto the half a ``/3`` set digest covers.
+
+    An unknown record type keeps its whole row rather than silently dropping
+    nothing under a name nobody declared: a set domain is registered with its
+    record type, so reaching here with an unregistered one is a programming
+    error the caller reports, not a projection that quietly succeeds.
+    """
+
+    tree = _PRUNE_TREES.get(record_type)
+    if tree is None:
+        raise ValueError(f"{record_type!r} declares no logical-row exclusion set")
+    if not isinstance(row, Mapping):
+        return row
+    return _prune(row, tree)
+
+
 def safe_object_key(value: object) -> bool:
     """Report whether one member key names a file inside its own bundle.
 
@@ -266,6 +374,7 @@ def member_path(bundle: Path, object_key: str) -> Path:
 
 
 __all__ = [
+    "LOGICAL_ROW_EXCLUSIONS",
     "MANIFEST_REFERENCE_FIELDS",
     "MAX_SAFE_INTEGER",
     "MEMBER_DESCRIPTOR_FIELDS",
@@ -280,6 +389,7 @@ __all__ = [
     "load_strict_canonical_json",
     "load_strict_canonical_jsonl",
     "logical_content",
+    "logical_row",
     "member_path",
     "packaged_schema_root",
     "safe_object_key",

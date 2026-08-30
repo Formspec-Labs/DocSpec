@@ -1,0 +1,300 @@
+{
+  "$id": "urn:docspec:schema:retention-floor-calibration:2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RetentionFloorCalibration",
+  "description": "One measurement per (text kind, format) of the retention floor a parser must clear before it may run. Version 2.0 exists because version 1.0 could express a lie the first real mint told: it sealed a 400-document stride-sample statistic in a field named `observedMinimum` and a release carried it as the population minimum (Decision 0001, amendment B5). This format cannot express that. There is no field named `sample` anywhere in it; `population.coverage` is the constant `full-population`; `population.measuredCount` must equal `population.documentCount`; and `observedMinimum` must equal `distribution.minimum` over that same count. A receipt that measured a sample is not writable here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "metric",
+    "measurements"
+  ],
+  "properties": {
+    "format": {
+      "const": "docspec-retention-floor-calibration"
+    },
+    "formatVersion": {
+      "const": "2.0"
+    },
+    "metric": {
+      "$ref": "#/$defs/metric"
+    },
+    "measurements": {
+      "description": "One per (textKind, formatKey), sorted by that pair. A format nobody measured has no floor and is refused: this array is the whole vocabulary of what may be extracted.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/measurement"
+      }
+    }
+  },
+  "$defs": {
+    "fraction": {
+      "description": "A decimal string strictly between 0 and 1, with no trailing zero. Binary floating point is refused outright by this platform's canonicaliser, and a floor written into a release must survive the round trip it will be read back through.",
+      "type": "string",
+      "pattern": "^0\\.[0-9]{0,8}[1-9]$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "hexDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "metric": {
+      "description": "What the ratio measures, stated once for the whole receipt so no measurement can quietly use another. Both sides are normalized by the same rule: the HTML extractor lays out verbatim and the XML extractor lays out normalized, so an un-normalized numerator makes the two incommensurable and produces ratios above 1.0 on real documents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metricId",
+        "numerator",
+        "denominator",
+        "normalization"
+      ],
+      "properties": {
+        "metricId": {
+          "const": "normalized-visible-text-fraction"
+        },
+        "numerator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "denominator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalization": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "population": {
+      "description": "The named corpus this floor was measured on, in full. It must be DISJOINT from the corpus the floor gates -- a floor calibrated on the population it gates cannot refuse anything in it -- and the disjointness is measured rather than asserted: both are content-addressed, and `disjointness` records the overlap that was counted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "populationId",
+        "description",
+        "root",
+        "coverage",
+        "documentCount",
+        "measuredCount",
+        "inventoryDigest",
+        "disjointness"
+      ],
+      "properties": {
+        "populationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root": {
+          "description": "Path relative to the corpora root, so the receipt names no filesystem.",
+          "type": "string",
+          "minLength": 1
+        },
+        "coverage": {
+          "description": "Constant. There is exactly one legal coverage for a calibration: the whole named population. A sample has no spelling in this format.",
+          "const": "full-population"
+        },
+        "documentCount": {
+          "$ref": "#/$defs/count"
+        },
+        "measuredCount": {
+          "description": "Equal to `documentCount`, or the measurement did not cover the population.",
+          "$ref": "#/$defs/count"
+        },
+        "inventoryDigest": {
+          "description": "Digest over the population's sorted `{documentId, sha256, byteSize}` inventory, so the same population is re-identifiable without carrying every document into the receipt.",
+          "$ref": "#/$defs/hexDigest"
+        },
+        "disjointness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "against",
+            "sharedRenditionDigests"
+          ],
+          "properties": {
+            "against": {
+              "type": "string",
+              "minLength": 1
+            },
+            "sharedRenditionDigests": {
+              "description": "Measured overlap. Non-zero means the floor is partly self-calibrated.",
+              "$ref": "#/$defs/count"
+            }
+          }
+        }
+      }
+    },
+    "distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "count",
+        "minimum",
+        "p01",
+        "p05",
+        "median",
+        "p95",
+        "maximum"
+      ],
+      "properties": {
+        "count": {
+          "$ref": "#/$defs/count"
+        },
+        "minimum": {
+          "$ref": "#/$defs/fraction"
+        },
+        "p01": {
+          "$ref": "#/$defs/fraction"
+        },
+        "p05": {
+          "$ref": "#/$defs/fraction"
+        },
+        "median": {
+          "$ref": "#/$defs/fraction"
+        },
+        "p95": {
+          "$ref": "#/$defs/fraction"
+        },
+        "maximum": {
+          "$ref": "#/$defs/fraction"
+        }
+      }
+    },
+    "lowestDocument": {
+      "description": "The one document that set `observedMinimum`, named so the margin can be re-argued.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "renditionSha256",
+        "renditionByteSize",
+        "normalizedRenditionByteSize",
+        "representationByteSize",
+        "normalizedRepresentationByteSize",
+        "retention"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "renditionSha256": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "renditionByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "normalizedRenditionByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "normalizedRepresentationByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "retention": {
+          "$ref": "#/$defs/fraction"
+        }
+      }
+    },
+    "retentionFloor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "observedMinimum",
+        "population"
+      ],
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/fraction"
+        },
+        "unit": {
+          "const": "normalized-visible-text-fraction"
+        },
+        "observedMinimum": {
+          "$ref": "#/$defs/fraction"
+        },
+        "population": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textKind",
+        "formatKey",
+        "extractorId",
+        "extractorConfiguration",
+        "extractorConfigurationDigest",
+        "population",
+        "distribution",
+        "observedMinimum",
+        "lowestDocument",
+        "marginRule",
+        "retentionFloor"
+      ],
+      "properties": {
+        "textKind": {
+          "enum": [
+            "document-body",
+            "attachment",
+            "comment"
+          ]
+        },
+        "formatKey": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "extractorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractorConfiguration": {
+          "type": "object"
+        },
+        "extractorConfigurationDigest": {
+          "type": "string",
+          "pattern": "^(sha256:)?[0-9a-f]{64}$"
+        },
+        "population": {
+          "$ref": "#/$defs/population"
+        },
+        "distribution": {
+          "$ref": "#/$defs/distribution"
+        },
+        "observedMinimum": {
+          "description": "Equal to `distribution.minimum`, over `population.documentCount` documents. The field name is the claim, and this format makes the claim checkable rather than trusted.",
+          "$ref": "#/$defs/fraction"
+        },
+        "lowestDocument": {
+          "$ref": "#/$defs/lowestDocument"
+        },
+        "marginRule": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retentionFloor": {
+          "$ref": "#/$defs/retentionFloor"
+        }
+      }
+    }
+  }
+}

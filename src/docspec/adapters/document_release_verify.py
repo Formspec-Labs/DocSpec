@@ -98,6 +98,12 @@ from rulespec_artifacts import FramedSection, framed_section_digest
 from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_bytes
 
 from docspec.domain.identity import stable_urn
+from docspec.processing.retention_floors import (
+    RETENTION_FLOOR_UNITS,
+    format_key,
+    greater,
+    is_whole_fraction,
+)
 from docspec.document_release_support import (
     MANIFEST_REFERENCE_FIELDS,
     MEMBER_DESCRIPTOR_FIELDS,
@@ -109,6 +115,7 @@ from docspec.document_release_support import (
     load_strict_canonical_json,
     load_strict_canonical_jsonl,
     logical_content,
+    logical_row,
     member_path,
     packaged_schema_root,
     safe_object_key,
@@ -351,6 +358,9 @@ DIAGNOSTIC_CODES: tuple[str, ...] = (
     "invalid.root-syntax",
     "invalid.format",
     "invalid.identity",
+    # Amendment B2: the id embeds a version, and what it embeds is now checked.
+    # An identity rule, so it sits beside the identity it constrains.
+    "invalid.version-binding",
     "invalid.path",
     "invalid.membership-missing",
     "invalid.membership-extra",
@@ -362,6 +372,13 @@ DIAGNOSTIC_CODES: tuple[str, ...] = (
     # indexes, nor a representation before the capture it was extracted from.
     "invalid.source-catalog-pin",
     "invalid.disposition",
+    # The three Decision 0001 named and nothing implemented (amendment B4).
+    # `invalid.comment-selection` is ordered immediately after
+    # `invalid.disposition` because that decision says so; the other two follow
+    # it, before the capture they gate.
+    "invalid.comment-selection",
+    "invalid.attachment-accounting",
+    "invalid.retention-floor",
     "invalid.capture",
     "invalid.representation",
     "invalid.structure",
@@ -514,30 +531,66 @@ def mapping_digest(pairs: Sequence[Sequence[str]]) -> str:
     return "sha256:" + canonical_sha256(sorted([list(pair) for pair in pairs]))
 
 
-# ─── Framed set digests: the docspec generation's ``/2`` domains ───────
+# ─── Framed set digests: the docspec generation's ``/3`` domains ───────
 
-# Decision 0001, "Sealed identities": 2.0's projections re-key from
-# `documentVersionId` to `textBodyId`, so 2.0 declares its own domains at `/2`
-# rather than reusing the spec's `/1` ones. Each maps a domain onto the exact
-# record it streams; the FIRST field is the key, rows are ordered by the whole
-# tuple under the shared UTF-16 rule, and a repeated key is refused. Every one
-# of these is a SET digest over unique keys.
+# Decision 0001, amendment B1. The `/2` domains projected every row onto its id
+# fields, so a same-length mutation of a body's bytes with the physical digests
+# restamped left `documentStateDigest` unmoved: identity did not name content.
+# The `/3` domains frame each record's FULL LOGICAL ROW -- the canonical row
+# minus `LOGICAL_ROW_EXCLUSIONS`, which drops exactly the physical locators and
+# the acquisition wall clock -- so a repack still preserves the name and any
+# logical fact moves it.
+#
+# Two domains stay PROJECTIONS, because the fact each names is a projection and
+# its rows are covered whole by another domain: the cross-kind text-body census,
+# and the source-to-document mapping.
 SELECTED_SOURCE_SET_DOMAIN = "docspec-selected-source-set/1"
-SOURCE_TO_DOCUMENT_DOMAIN = "docspec-source-to-document/2"
-FRAMED_SET_DOMAINS: dict[str, tuple[str, ...]] = {
+SOURCE_TO_DOCUMENT_DOMAIN = "docspec-source-to-document/3"
+TEXT_BODY_SET_DOMAIN = "docspec-text-body-set/3"
+
+
+@dataclass(frozen=True, slots=True)
+class SetDomain:
+    """One declared set domain: what it keys on, and what it frames.
+
+    Exactly one of ``record_type`` and ``projection`` is set. ``record_type``
+    frames the member's full logical row under that type's exclusion set;
+    ``projection`` frames exactly the named text fields, in that order.
+    """
+
+    key: str
+    record_type: str | None = None
+    projection: tuple[str, ...] | None = None
+
+
+FRAMED_SET_DOMAINS: dict[str, SetDomain] = {
     # The catalog's own domain, at `/1`, because the digest is the same fact
     # under the same name: the release DERIVES it over the pinned catalog's
     # items rather than projecting one the D1 snapshot does not carry, which
-    # is why the name may stay (spec section 7.5, Decision 0001 restamp item 9).
-    SELECTED_SOURCE_SET_DOMAIN: ("sourceItemId", "documentId"),
-    "docspec-document-set/2": ("documentId",),
-    "docspec-document-version-set/2": ("documentVersionId",),
-    "docspec-text-body-set/2": ("textBodyId", "textKind"),
-    "docspec-attachment-set/2": ("attachmentId",),
-    "docspec-comment-set/2": ("commentId",),
-    "docspec-representation-set/2": ("representationId",),
-    "docspec-segment-set/2": ("segmentId",),
-    SOURCE_TO_DOCUMENT_DOMAIN: ("sourceItemId", "documentId", "documentVersionId"),
+    # is why the name may stay (spec section 7.5, Decision 0001 restamp item 9,
+    # amendment B6). It is a projection of catalog items, not of release rows.
+    SELECTED_SOURCE_SET_DOMAIN: SetDomain(
+        key="sourceItemId", projection=("sourceItemId", "documentId")
+    ),
+    "docspec-source-disposition-set/3": SetDomain(
+        key="sourceItemId", record_type="source-dispositions"
+    ),
+    "docspec-document-version-set/3": SetDomain(
+        key="documentVersionId", record_type="documents"
+    ),
+    "docspec-attachment-set/3": SetDomain(key="attachmentId", record_type="attachments"),
+    "docspec-comment-set/3": SetDomain(key="commentId", record_type="comments"),
+    "docspec-structural-node-set/3": SetDomain(
+        key="structuralNodeId", record_type="structural-nodes"
+    ),
+    "docspec-segment-set/3": SetDomain(key="segmentId", record_type="search-segments"),
+    TEXT_BODY_SET_DOMAIN: SetDomain(
+        key="textBodyId", projection=("textBodyId", "textKind")
+    ),
+    SOURCE_TO_DOCUMENT_DOMAIN: SetDomain(
+        key="sourceItemId",
+        projection=("sourceItemId", "documentId", "documentVersionId"),
+    ),
 }
 
 
@@ -565,34 +618,43 @@ def framed_set_digest(domain: str, rows: Iterable[Mapping[str, Any]]) -> str:
     it that `selected_source_set_digest`
     (`adapters/source_catalog_artifact.py:375-395`) states: a declared count, a
     UTF-16-ordered key, and a refusal on a repeated key.
+
+    Callers hand over the member rows exactly as the bundle carries them. A
+    full-row domain projects each through `logical_row` here rather than at the
+    call site, so producer and gate cannot disagree about which fields a `/3`
+    digest covers (amendment B1).
     """
 
-    fields = FRAMED_SET_DOMAINS.get(domain)
-    if fields is None:
+    spec = FRAMED_SET_DOMAINS.get(domain)
+    if spec is None:
         raise ValueError(f"{domain!r} is not a declared DocumentRelease 2.0 set domain")
-    key, *_rest = fields
-    records: list[dict[str, str]] = []
+    keyed: list[tuple[bytes, Any]] = []
     for row in rows:
-        record: dict[str, str] = {}
-        for field in fields:
-            value = row.get(field)
-            if not isinstance(value, str):
-                raise ValueError(f"{domain} member field {field!r} must be text")
-            record[field] = value
-        records.append(record)
-    records.sort(key=lambda record: tuple(_utf16_key(record[field]) for field in fields))
+        key_value = row.get(spec.key)
+        if not isinstance(key_value, str):
+            raise ValueError(f"{domain} member field {spec.key!r} must be text")
+        if spec.projection is not None:
+            record: Any = {}
+            for field in spec.projection:
+                value = row.get(field)
+                if not isinstance(value, str):
+                    raise ValueError(f"{domain} member field {field!r} must be text")
+                record[field] = value
+        else:
+            record = logical_row(str(spec.record_type), row)
+        keyed.append((_utf16_key(key_value), record))
+    keyed.sort(key=lambda entry: entry[0])
 
-    def stream() -> Iterable[Mapping[str, str]]:
+    def stream() -> Iterable[Any]:
         previous: bytes | None = None
-        for record in records:
-            current = _utf16_key(record[key])
+        for current, record in keyed:
             if previous is not None and current <= previous:
                 raise ValueError(f"{domain} members must be sorted and distinct")
             previous = current
             yield record
 
     try:
-        return framed_section_digest(domain, (FramedSection("members", len(records), stream()),))
+        return framed_section_digest(domain, (FramedSection("members", len(keyed), stream()),))
     except (TypeError, ValueError) as error:
         raise ValueError(f"cannot compute {domain}: {error}") from error
 
@@ -753,6 +815,44 @@ def derive_per_kind_counts(
     return per_kind
 
 
+# The four `attachmentDisposition` tokens, in the order `counts` declares them.
+ATTACHMENT_ACCOUNTING_FIELDS: dict[str, str] = {
+    "text-captured": "textCaptured",
+    "text-excluded": "textExcluded",
+    "source-unavailable": "sourceUnavailable",
+    "extraction-failed": "extractionFailed",
+}
+
+
+def derive_attachment_accounting(
+    attachments: Sequence[Mapping[str, Any]],
+) -> dict[str, int]:
+    """Recompute ``counts.attachmentAccounting`` from the attachment rows alone.
+
+    Amendment B4. `COMPLETE-SEARCH-CORPUS` requires proving "complete attachment
+    accounting", and a claim is proved from bundle bytes by declaring the tally
+    and recomputing it. Every token is present even at zero: a reader must be
+    able to tell "none were unavailable" from "nobody counted".
+    """
+
+    tally = {
+        "attachmentRows": 0,
+        "renditionRows": 0,
+        **{name: 0 for name in ATTACHMENT_ACCOUNTING_FIELDS.values()},
+    }
+    for attachment in attachments:
+        tally["attachmentRows"] += 1
+        renditions = attachment.get("renditions")
+        for rendition in renditions if isinstance(renditions, list) else ():
+            if not isinstance(rendition, Mapping):
+                continue
+            tally["renditionRows"] += 1
+            field = ATTACHMENT_ACCOUNTING_FIELDS.get(rendition.get("attachmentDisposition"))
+            if field is not None:
+                tally[field] += 1
+    return tally
+
+
 def derive_counts(
     dispositions: Sequence[Mapping[str, Any]],
     documents: Sequence[Mapping[str, Any]],
@@ -794,6 +894,7 @@ def derive_counts(
         counts["perKind"] = derive_per_kind_counts(
             documents, attachments, comments, segments, key=TEXT_BODY_KEYS[generation]
         )
+        counts["attachmentAccounting"] = derive_attachment_accounting(attachments)
     return counts
 
 
@@ -880,8 +981,20 @@ def _validator_issues(
 
 
 def _read_slice(path: Path, start: int, length: int) -> bytes:
-    """Read exactly one member's byte slice without holding the member."""
+    """Read exactly one member's byte slice without holding the member.
 
+    The bounds are refused before the seek, not after it (amendment B3). A
+    negative offset reaches `seek` as an `OSError` that no caller catches, so an
+    untrusted bundle could take the gate down instead of being refused by it;
+    the caller's own guard checked only the overflow half.
+    """
+
+    if isinstance(start, bool) or isinstance(length, bool):
+        raise ValueError("a member slice offset must be an integer")
+    if not isinstance(start, int) or not isinstance(length, int):
+        raise ValueError("a member slice offset must be an integer")
+    if start < 0 or length < 0:
+        raise ValueError(f"a member slice offset must be non-negative, not [{start}, {length})")
     with path.open("rb") as handle:
         handle.seek(start)
         return handle.read(length)
@@ -1240,13 +1353,37 @@ def _row_subschema(schema: Any, name: str) -> dict[str, Any] | None:
     return {"$defs": dict(definitions), "$ref": f"#/$defs/{name}"}
 
 
+@dataclass(frozen=True, slots=True)
+class TextBodyIndex:
+    """The ``text-body-index`` member, read two ways over the same rows.
+
+    ``by_body`` is amendment A4's own key -- ``(family, textBodyId)`` -- and is
+    what a document body, an attachment's captured rendition, or a comment
+    resolves through. ``by_digest`` is ``(family, member, sha256)`` and exists
+    for the one case A4 did not have to answer: a capture that names bytes
+    belonging to ANOTHER body's slice of a shared bucket, which is exactly what
+    an attachment rendition that IS its owner's body rendition does (amendment
+    B4). The index already records which byte range of which member digests to
+    what, so a capture naming one of those digests is verified against that
+    range rather than against the whole bucket. ``by_body`` keeps priority, so
+    nothing about a document body's verification changes.
+    """
+
+    by_body: Mapping[tuple[Any, Any], Mapping[str, Any]]
+    by_digest: Mapping[tuple[Any, Any, Any], Mapping[str, Any]]
+
+    @classmethod
+    def empty(cls) -> TextBodyIndex:
+        return cls({}, {})
+
+
 def _read_text_body_index(
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
     generation: str,
     schemas: Mapping[str, Mapping[str, Any]],
     issues: list[VerificationIssue],
-) -> dict[tuple[Any, Any], Mapping[str, Any]]:
+) -> TextBodyIndex:
     """Load the ``text-body-index`` member, keyed by ``(family, textBodyId)``.
 
     Amendment A4. Digest-bucketed ``text/`` and ``blobs/`` members hold whatever
@@ -1263,10 +1400,10 @@ def _read_text_body_index(
     """
 
     if generation != DOCSPEC_GENERATION:
-        return {}
+        return TextBodyIndex.empty()
     matching = [member for member in members if member.get("role") == TEXT_BODY_INDEX_ROLE]
     if not matching:
-        return {}
+        return TextBodyIndex.empty()
     if len(matching) > 1:
         _issue(
             issues,
@@ -1274,17 +1411,17 @@ def _read_text_body_index(
             "manifests/global.json/members",
             f"at most one {TEXT_BODY_INDEX_ROLE} member is allowed",
         )
-        return {}
+        return TextBodyIndex.empty()
     member = matching[0]
     object_key = str(member.get("objectKey"))
     path = member_paths.get(object_key)
     if path is None or path.is_symlink() or not path.is_file():
-        return {}
+        return TextBodyIndex.empty()
     try:
         rows = load_strict_canonical_jsonl(path)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         _issue(issues, "invalid.schema", object_key, str(exc))
-        return {}
+        return TextBodyIndex.empty()
     if len(rows) != member.get("recordCount"):
         _issue(
             issues,
@@ -1298,6 +1435,7 @@ def _read_text_body_index(
     )
     sizes: dict[Path, int] = {}
     index: dict[tuple[Any, Any], Mapping[str, Any]] = {}
+    by_digest: dict[tuple[Any, Any, Any], Mapping[str, Any]] = {}
     for position, row in enumerate(rows):
         row_path = f"{object_key}/{position}"
         if row_validator is not None:
@@ -1314,6 +1452,9 @@ def _read_text_body_index(
             )
             continue
         index[identity] = row
+        by_digest.setdefault(
+            (row.get("family"), row.get("member"), row.get("sha256")), row
+        )
         target = member_paths.get(str(row.get("member")))
         if target is None or target.is_symlink() or not target.is_file():
             _issue(
@@ -1325,6 +1466,18 @@ def _read_text_body_index(
             continue
         start, length = row.get("startByte"), row.get("byteLength")
         if not isinstance(start, int) or not isinstance(length, int):
+            continue
+        if isinstance(start, bool) or isinstance(length, bool):
+            continue
+        # Amendment B3: both ends of the range, not just the far one. A negative
+        # offset used to reach `_read_slice` and raise an uncaught `OSError`.
+        if start < 0 or length < 0:
+            _issue(
+                issues,
+                "invalid.member-digest",
+                f"{row_path}/startByte",
+                f"slice [{start}, {start + length}) is not a non-negative byte range",
+            )
             continue
         if target not in sizes:
             sizes[target] = target.stat().st_size
@@ -1345,26 +1498,41 @@ def _read_text_body_index(
                 f"{row_path}/sha256",
                 f"indexed slice digests to {actual}",
             )
-    return index
+    return TextBodyIndex(index, by_digest)
 
 
 def _indexed_bytes(
     path: Path,
-    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    index: TextBodyIndex,
     family: str,
     body_id: Any,
+    *,
+    member: Any = None,
+    digest: Any = None,
 ) -> bytes:
-    """The bytes one text body owns inside a member: its slice, or the whole file.
+    """The bytes one capture or representation owns inside a member.
 
     A bucket holding one body indexes it at offset zero for its whole length, so
-    the two answers coincide and nothing changes for an unpartitioned reader.
+    the body-keyed answer and the whole file coincide and nothing changes for an
+    unpartitioned reader. Where the body is not indexed and the caller supplied
+    the member and digest it declared, the same index is read the other way
+    (amendment B4): a capture naming an indexed slice's digest is checked
+    against that slice rather than against the whole bucket.
     """
 
-    row = index.get((family, body_id))
+    row = index.by_body.get((family, body_id))
+    if not isinstance(row, Mapping) and digest is not None:
+        row = index.by_digest.get((family, member, digest))
     if not isinstance(row, Mapping):
         return path.read_bytes()
     start, length = row.get("startByte"), row.get("byteLength")
-    if isinstance(start, int) and isinstance(length, int) and 0 <= start <= start + length <= path.stat().st_size:
+    if (
+        isinstance(start, int)
+        and isinstance(length, int)
+        and not isinstance(start, bool)
+        and not isinstance(length, bool)
+        and 0 <= start <= start + length <= path.stat().st_size
+    ):
         return _read_slice(path, start, length)
     return path.read_bytes()
 
@@ -1372,7 +1540,7 @@ def _indexed_bytes(
 def _validate_capture(
     capture: Mapping[str, Any],
     member_paths: Mapping[str, Path],
-    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    index: TextBodyIndex,
     body_id: Any,
     path: str,
     issues: list[VerificationIssue],
@@ -1388,7 +1556,14 @@ def _validate_capture(
             "captured rendition is not a declared member",
         )
     else:
-        blob = _indexed_bytes(resolved, index, "blob", body_id)
+        blob = _indexed_bytes(
+            resolved,
+            index,
+            "blob",
+            body_id,
+            member=capture.get("objectKey"),
+            digest=capture.get("sha256"),
+        )
         actual = hashlib.sha256(blob).hexdigest()
         if actual != capture.get("sha256"):
             _issue(issues, "invalid.capture", f"{path}/sha256", f"captured bytes digest to {actual}")
@@ -1407,7 +1582,7 @@ def _validate_capture(
 def _validate_representation(
     representation: Mapping[str, Any],
     member_paths: Mapping[str, Path],
-    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    index: TextBodyIndex,
     body_id: Any,
     path: str,
     issues: list[VerificationIssue],
@@ -1423,7 +1598,14 @@ def _validate_representation(
             "representation is not a declared member",
         )
         return None
-    raw = _indexed_bytes(resolved, index, "text", body_id)
+    raw = _indexed_bytes(
+        resolved,
+        index,
+        "text",
+        body_id,
+        member=representation.get("objectKey"),
+        digest=representation.get("sha256"),
+    )
     if hashlib.sha256(raw).hexdigest() != representation.get("sha256"):
         _issue(issues, "invalid.representation", f"{path}/sha256", "representation digest differs")
     if len(raw) != representation.get("byteSize"):
@@ -1660,13 +1842,63 @@ def _validate_dispositions(
                 seen_documents.add(version_id)
 
 
+def _validate_version_binding(
+    document: Mapping[str, Any], path: str, issues: list[VerificationIssue]
+) -> None:
+    """Check what a ``documentVersionId`` embeds against what the row carries.
+
+    Amendment B2. The finding asked for a `documentVersionId` -> `capture.sha256`
+    binding "where ids embed `@sha256:`". Measured against the D1 corpus that
+    binding is false for 1,683 of 8,082 rows: the Federal Register half embeds
+    the rendition digest, the Mirrulations half embeds the catalog's own
+    source-issued version, and no expected digest exists there at all. What IS
+    true of every row is the convention below, so that is what is enforced --
+    plus the finding's own rule, scoped to the rows whose premise holds.
+    """
+
+    document_id = document.get("documentId")
+    version_id = document.get("documentVersionId")
+    issued = document.get("sourceIssuedVersion")
+    if isinstance(document_id, str) and isinstance(version_id, str) and isinstance(issued, str):
+        expected = f"{document_id}@{issued}"
+        if version_id != expected:
+            _issue(
+                issues,
+                "invalid.version-binding",
+                f"{path}/documentVersionId",
+                f"expected {expected}",
+            )
+    # Decision 0001's own mint rule: a document body's text body IS its document
+    # version, "and a second name would be a second identity for one thing".
+    if document.get("textBodyId") != version_id:
+        _issue(
+            issues,
+            "invalid.version-binding",
+            f"{path}/textBodyId",
+            f"expected {version_id!r}",
+        )
+    capture = document.get("capture")
+    if not isinstance(capture, Mapping) or not isinstance(issued, str):
+        return
+    if not issued.startswith("sha256:") or capture.get("expectedSha256") is None:
+        return
+    if issued.removeprefix("sha256:") != capture.get("sha256"):
+        _issue(
+            issues,
+            "invalid.version-binding",
+            f"{path}/documentVersionId",
+            "the version this id embeds is not the digest of the captured bytes",
+        )
+
+
 def _validate_documents(
     documents: Sequence[Mapping[str, Any]],
     dispositions: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
-    slices: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    slices: TextBodyIndex,
     object_key: str,
     key: str,
+    generation: str,
     issues: list[VerificationIssue],
 ) -> dict[str, int]:
     """Check captures and representations. Returns representation byte sizes.
@@ -1696,6 +1928,8 @@ def _validate_documents(
                     f"duplicate documentVersionId {version_id}",
                 )
             seen_versions.add(version_id)
+        if generation == DOCSPEC_GENERATION:
+            _validate_version_binding(document, path, issues)
 
         source_item_id = document.get("sourceItemId")
         projection = selected.get(source_item_id) if isinstance(source_item_id, str) else None
@@ -1744,7 +1978,7 @@ def _validate_attachments(
     attachments: Sequence[Mapping[str, Any]],
     owners: Mapping[str, str],
     member_paths: Mapping[str, Path],
-    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    index: TextBodyIndex,
     object_key: str,
     issues: list[VerificationIssue],
 ) -> dict[str, int]:
@@ -1829,10 +2063,17 @@ def _validate_attachments(
                         if not rendition.get(field):
                             _issue(
                                 issues,
-                                "invalid.disposition",
+                                "invalid.attachment-accounting",
                                 f"{sub_path}/{field}",
                                 f"attachment disposition {disposition!r} requires a {field}",
                             )
+                else:
+                    _issue(
+                        issues,
+                        "invalid.attachment-accounting",
+                        f"{sub_path}/attachmentDisposition",
+                        f"{disposition!r} is not one of the four accounted dispositions",
+                    )
                 capture = rendition.get("capture")
                 if isinstance(capture, Mapping):
                     _validate_capture(
@@ -1852,10 +2093,17 @@ def _validate_attachments(
             if sorted(ordinals) != list(range(len(ordinals))):
                 _issue(
                     issues,
-                    "invalid.schema",
+                    "invalid.attachment-accounting",
                     f"{path}/renditions",
                     f"rendition ordinals must be dense and zero-based, found {sorted(ordinals)}",
                 )
+        if not renditions:
+            _issue(
+                issues,
+                "invalid.attachment-accounting",
+                f"{path}/renditions",
+                "an enumerated attachment carries at least one rendition sub-row",
+            )
 
         # One attachment is one text body, and a text body has exactly one
         # selected representation, so at most one rendition of it can have been
@@ -1864,7 +2112,7 @@ def _validate_attachments(
         if len(captured) > 1:
             _issue(
                 issues,
-                "invalid.duplicate-identity",
+                "invalid.attachment-accounting",
                 f"{path}/renditions",
                 f"{len(captured)} renditions claim text-captured; one attachment is one text body",
             )
@@ -1872,7 +2120,7 @@ def _validate_attachments(
             if captured:
                 _issue(
                     issues,
-                    "invalid.disposition",
+                    "invalid.attachment-accounting",
                     f"{path}/textBodyId",
                     "a text-captured rendition means this attachment is a text body",
                 )
@@ -1880,7 +2128,7 @@ def _validate_attachments(
             if not captured:
                 _issue(
                     issues,
-                    "invalid.disposition",
+                    "invalid.attachment-accounting",
                     f"{path}/textBodyId",
                     "an attachment carrying text must name the rendition that produced it",
                 )
@@ -1912,7 +2160,7 @@ def _validate_comments(
     comments: Sequence[Mapping[str, Any]],
     documents: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
-    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    index: TextBodyIndex,
     object_key: str,
     issues: list[VerificationIssue],
 ) -> dict[str, int]:
@@ -1934,8 +2182,26 @@ def _validate_comments(
         if isinstance(document.get("documentId"), str)
     }
     seen: set[str] = set()
+    # Decision 0001: "DocSpec is handed the already-selected observation per
+    # comment id, never a candidate set to reduce", and every row projects one
+    # sealed policy verbatim. One release therefore inherits ONE selection; two
+    # policy digests in one release is a release claiming a selection nobody
+    # sealed, which the schema cannot see because it reads one row at a time.
+    inherited: str | None = None
     for position, comment in enumerate(comments):
         path = f"{object_key}/{position}"
+        selection = comment.get("commentSelection")
+        digest = selection.get("policyDigest") if isinstance(selection, Mapping) else None
+        if isinstance(digest, str):
+            if inherited is None:
+                inherited = digest
+            elif digest != inherited:
+                _issue(
+                    issues,
+                    "invalid.comment-selection",
+                    f"{path}/commentSelection/policyDigest",
+                    f"this release already inherits selection policy {inherited}",
+                )
         comment_id = comment.get("commentId")
         if isinstance(comment_id, str):
             if comment_id in seen:
@@ -1969,6 +2235,117 @@ def _validate_comments(
             if size is not None and isinstance(body_id, str):
                 sizes[body_id] = size
     return sizes
+
+
+def _validate_processing_policies(
+    content: Mapping[str, Any],
+    documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
+    issues: list[VerificationIssue],
+) -> None:
+    """Check the declared floors, and that every text body had one to clear.
+
+    Amendment B4's third diagnostic. Two arms, both readable from bundle bytes
+    with no extractor re-run:
+
+    * a declared floor that violates its own invariants -- ``0 < value < 1``,
+      ``observedMinimum > value``, a unit this format declares. A floor with no
+      margin under the lowest legitimate document is a future false refusal, and
+      a floor at or above 1 refuses everything; both are defects in the RECORD,
+      which is what a wire gate can see.
+    * a text body whose ``(textKind, mediaType)`` has no governing policy at
+      all. That is the checkable half of "an undeclared floor fails closed": a
+      body extracted under no declared floor is visible in the release without
+      re-running anything. Media types collapse onto one format key first, by
+      DocSpec's own rule, so a policy declared for `application/xml` governs a
+      `text/xml` capture rather than being missed by a header spelling.
+    """
+
+    policies = content.get("processingPolicies")
+    if not isinstance(policies, list):
+        return
+    governed: set[tuple[Any, Any]] = set()
+    for position, policy in enumerate(policies):
+        if not isinstance(policy, Mapping):
+            continue
+        path = f"release.json/content/processingPolicies/{position}"
+        governed.add((policy.get("textKind"), policy.get("mediaType")))
+        floor = policy.get("retentionFloor")
+        if not isinstance(floor, Mapping):
+            _issue(issues, "invalid.retention-floor", path, "a policy declares a retention floor")
+            continue
+        value, minimum = floor.get("value"), floor.get("observedMinimum")
+        if not is_whole_fraction(value):
+            _issue(
+                issues,
+                "invalid.retention-floor",
+                f"{path}/retentionFloor/value",
+                "a floor is a decimal fraction strictly between 0 and 1",
+            )
+        if not is_whole_fraction(minimum):
+            _issue(
+                issues,
+                "invalid.retention-floor",
+                f"{path}/retentionFloor/observedMinimum",
+                "an observed minimum is a decimal fraction strictly between 0 and 1",
+            )
+        if is_whole_fraction(value) and is_whole_fraction(minimum) and not greater(minimum, value):
+            _issue(
+                issues,
+                "invalid.retention-floor",
+                f"{path}/retentionFloor/observedMinimum",
+                f"floor {value} has no margin under the observed minimum {minimum}",
+            )
+        if floor.get("unit") not in RETENTION_FLOOR_UNITS:
+            _issue(
+                issues,
+                "invalid.retention-floor",
+                f"{path}/retentionFloor/unit",
+                f"{floor.get('unit')!r} is not a unit this format declares",
+            )
+
+    def govern(kind: Any, media_type: Any, where: str) -> None:
+        if not isinstance(media_type, str):
+            return
+        if (kind, format_key(media_type)) in governed:
+            return
+        _issue(
+            issues,
+            "invalid.retention-floor",
+            where,
+            f"no processing policy governs {kind!r} {format_key(media_type)!r}, "
+            "so this body was extracted under no declared floor",
+        )
+
+    for position, document in enumerate(documents):
+        capture = document.get("capture")
+        if isinstance(capture, Mapping):
+            govern(
+                document.get("textKind"),
+                capture.get("mediaType"),
+                f"data/documents.jsonl/{position}/capture/mediaType",
+            )
+    for position, comment in enumerate(comments):
+        capture = comment.get("capture")
+        if isinstance(capture, Mapping):
+            govern(
+                comment.get("textKind"),
+                capture.get("mediaType"),
+                f"data/comments.jsonl/{position}/capture/mediaType",
+            )
+    for position, attachment in enumerate(attachments):
+        renditions = attachment.get("renditions")
+        for order, rendition in enumerate(renditions if isinstance(renditions, list) else ()):
+            if not isinstance(rendition, Mapping):
+                continue
+            if rendition.get("attachmentDisposition") != "text-captured":
+                continue
+            govern(
+                attachment.get("textKind"),
+                rendition.get("mediaType"),
+                f"data/attachments.jsonl/{position}/renditions/{order}/mediaType",
+            )
 
 
 def _validate_structure(
@@ -2291,6 +2668,8 @@ def _validate_root_bindings(
         for document in documents
         if isinstance(document.get("documentVersionId"), str)
     ]
+    # The predecessor generation's plain sorted-set digests, which take the ids
+    # alone. The docspec generation streams the whole rows instead (B1).
     segment_ids = [
         segment["segmentId"] for segment in segments if isinstance(segment.get("segmentId"), str)
     ]
@@ -2319,12 +2698,6 @@ def _validate_root_bindings(
         {"textBodyId": row["textBodyId"], "textKind": row["textKind"]}
         for row in [*attachments, *comments]
         if isinstance(row.get("textBodyId"), str) and isinstance(row.get("textKind"), str)
-    ]
-    attachment_ids = [
-        row["attachmentId"] for row in attachments if isinstance(row.get("attachmentId"), str)
-    ]
-    comment_ids = [
-        row["commentId"] for row in comments if isinstance(row.get("commentId"), str)
     ]
     generation = bundle_generation(root)
 
@@ -2371,24 +2744,35 @@ def _validate_root_bindings(
     # under the domains Decision 0001 declares, the pair digest among them.
     digest_plan: tuple[tuple[str, Callable[[], str]], ...]
     if generation == DOCSPEC_GENERATION:
+        # Amendment B1: every one of these frames the members' FULL LOGICAL
+        # ROWS, so a same-length mutation of a body's bytes, a rewritten
+        # `sourceUrl`, or a narrowed evidence coordinate moves the release's
+        # name. The rows go in as the bundle carries them; `framed_set_digest`
+        # applies the exclusion set, so producer and gate cannot disagree.
+        #
+        # `selectedSourceSetDigest` is NOT here (amendment B6). It is derived
+        # from the pinned catalog's items, and the pinned catalog is not in this
+        # bundle: a portable verifier reads one bundle. Its form is checked by
+        # schema; its value is checkable only by a holder of the pinned bytes,
+        # running the identical function over them. The release's own selection
+        # is bound by `sourceDispositionSetDigest`, by `counts`, by the join
+        # receipt, and by the bijection.
         digest_plan = (
             (
-                "selectedSourceSetDigest",
-                lambda: framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, joined),
+                "sourceDispositionSetDigest",
+                lambda: framed_set_digest("docspec-source-disposition-set/3", dispositions),
             ),
             (
                 "documentVersionSetDigest",
-                lambda: framed_set_digest(
-                    "docspec-document-version-set/2",
-                    [{"documentVersionId": value} for value in version_ids],
-                ),
+                lambda: framed_set_digest("docspec-document-version-set/3", documents),
+            ),
+            (
+                "structuralNodeSetDigest",
+                lambda: framed_set_digest("docspec-structural-node-set/3", nodes),
             ),
             (
                 "segmentSetDigest",
-                lambda: framed_set_digest(
-                    "docspec-segment-set/2",
-                    [{"segmentId": value} for value in segment_ids],
-                ),
+                lambda: framed_set_digest("docspec-segment-set/3", segments),
             ),
             (
                 "sourceDocumentMappingDigest",
@@ -2396,23 +2780,17 @@ def _validate_root_bindings(
             ),
             (
                 "textBodySetDigest",
-                lambda: framed_set_digest("docspec-text-body-set/2", text_bodies),
+                lambda: framed_set_digest(TEXT_BODY_SET_DOMAIN, text_bodies),
             ),
             # A release with none of a kind streams the empty set rather than
             # omitting the digest: a zero is written, never omitted.
             (
                 "attachmentSetDigest",
-                lambda: framed_set_digest(
-                    "docspec-attachment-set/2",
-                    [{"attachmentId": value} for value in attachment_ids],
-                ),
+                lambda: framed_set_digest("docspec-attachment-set/3", attachments),
             ),
             (
                 "commentSetDigest",
-                lambda: framed_set_digest(
-                    "docspec-comment-set/2",
-                    [{"commentId": value} for value in comment_ids],
-                ),
+                lambda: framed_set_digest("docspec-comment-set/3", comments),
             ),
         )
     else:
@@ -2484,6 +2862,21 @@ def _validate_root_bindings(
         comments=comments,
         generation=generation,
     )
+    if generation == DOCSPEC_GENERATION:
+        expected_accounting = expected_counts.get("attachmentAccounting")
+        declared_counts = content.get("counts")
+        declared_accounting = (
+            declared_counts.get("attachmentAccounting")
+            if isinstance(declared_counts, Mapping)
+            else None
+        )
+        if declared_accounting != expected_accounting:
+            _issue(
+                issues,
+                "invalid.attachment-accounting",
+                "release.json/content/counts/attachmentAccounting",
+                f"expected {expected_accounting}",
+            )
     if content.get("counts") != expected_counts:
         _issue(issues, "invalid.counts", "release.json/content/counts", f"expected {expected_counts}")
     expected_coverage = derive_coverage(
@@ -2552,6 +2945,31 @@ def _validate_coverage_identity(
 
 
 def verify_document_release(bundle: Path) -> VerificationResult:
+    """Verify one materialized ``DocumentRelease`` v2 bundle.
+
+    Nothing an untrusted bundle contains can make this raise (amendment B3). A
+    gate that can be crashed is a gate that can be skipped, so an escaping
+    exception is caught here and reported as the refusal it is, naming the
+    bundle. `_verify_document_release` holds the rules; this holds the promise
+    that they always produce a verdict.
+    """
+
+    try:
+        return _verify_document_release(Path(bundle))
+    except Exception as exc:  # noqa: BLE001 - the gate must always answer
+        return VerificationResult(
+            None,
+            (
+                VerificationIssue(
+                    code="invalid.root-syntax",
+                    path="release.json",
+                    message=f"the bundle could not be read: {type(exc).__name__}: {exc}",
+                ),
+            ),
+        )
+
+
+def _verify_document_release(bundle: Path) -> VerificationResult:
     """Verify one materialized ``DocumentRelease`` v2 bundle."""
 
     bundle = Path(bundle)
@@ -2593,7 +3011,14 @@ def verify_document_release(bundle: Path) -> VerificationResult:
     sizes: dict[str, int] = {}
     if documents is not None and dispositions is not None:
         sizes = _validate_documents(
-            documents, dispositions, member_paths, slices, documents_key, key, issues
+            documents,
+            dispositions,
+            member_paths,
+            slices,
+            documents_key,
+            key,
+            generation,
+            issues,
         )
     if comments is not None and documents is not None:
         sizes |= _validate_comments(
@@ -2639,6 +3064,17 @@ def verify_document_release(bundle: Path) -> VerificationResult:
                     renditions[body_id] = rendition["capture"]
         _validate_segments(segments, node_index, renditions, sizes, segments_key, key, issues)
         _validate_coverage(documents, segments, sizes, documents_key, key, issues)
+    if (
+        generation == DOCSPEC_GENERATION
+        and documents is not None
+        and attachments is not None
+        and comments is not None
+    ):
+        content = root.get("content")
+        if isinstance(content, Mapping):
+            _validate_processing_policies(
+                content, documents, attachments, comments, issues
+            )
     if None not in (dispositions, documents, attachments, comments, nodes, segments):
         _validate_root_bindings(
             root,
@@ -2721,18 +3157,23 @@ __all__ = [
     "SOURCE_DISPOSITIONS_SCHEMA",
     "SOURCE_TO_DOCUMENT_DOMAIN",
     "STRUCTURAL_NODES_SCHEMA",
+    "ATTACHMENT_ACCOUNTING_FIELDS",
     "TABULAR_MEDIA_TYPES",
     "TABULAR_ROLES",
     "TEXT_BODY_INDEX_ROLE",
     "TEXT_BODY_INDEX_ROW_DEF",
     "TEXT_BODY_KEYS",
+    "TEXT_BODY_SET_DOMAIN",
     "TEXT_KINDS",
+    "SetDomain",
+    "TextBodyIndex",
     "VerificationIssue",
     "VerificationResult",
     "artifact_sha256",
     "bundle_generation",
     "canonical_schema_id",
     "declared_generations",
+    "derive_attachment_accounting",
     "derive_counts",
     "derive_coverage",
     "derive_per_kind_counts",
