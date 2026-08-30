@@ -167,7 +167,7 @@ an unchanged bucket is reused rather than recopied
 64`). One member per text body would put 10k+ entries in `globalManifest` at the
 first mint and cross the recorded ≈10,000-member threshold at which external
 partition manifests must return (consolidation row 61,
-`spicysearch@main:docs/superpowers/plans/2026-08-29-document-consolidation.md:128`);
+`spicysearch@main:docs/history/2026-08-29-document-consolidation.md:128`);
 partitioned, the first mint's manifest is tens of members. *Accepted-by: agent (delegated scope,
 header).* Manifest roles gain `attachments` and `comments`; every member path is
 a checked relative POSIX `objectKey` carrying `byteSize` and `sha256`.
@@ -583,7 +583,7 @@ One line each, so an absent rule is a recorded absence. *All Accepted-by: agent
 | Active-set diff | Deferred, named: the builder's `diff` verb (`src/docspec/cli.py`, `document-release diff`) owns it; 2.0 defines no cross-release active-set delta. |
 | Compaction trigger | Moot in v2's self-contained shape — a bundle that carries its members has nothing to compact — recorded as moot rather than dropped, so the partitioning decision can reopen it. |
 | Media-type conflict refusal | Adopted as a builder diagnostic: a rendition whose declared media type contradicts its sniffed type is refused at capture, never silently coerced. |
-| K14 invariants | Both adopted as builder diagnostics: an HTTP-200 challenge page is **quarantined, never sealed as body text**; a missing content-type **must not erase a rendition already identified by path** (consolidation K14, `spicysearch@main:docs/superpowers/plans/2026-08-29-document-consolidation.md:214`). |
+| K14 invariants | Both adopted as builder diagnostics: an HTTP-200 challenge page is **quarantined, never sealed as body text**; a missing content-type **must not erase a rendition already identified by path** (consolidation K14, `spicysearch@main:docs/history/2026-08-29-document-consolidation.md:214`). |
 | Evidence grading | Deferred, named: the field is `evidenceGrade` on the evidence coordinate, reserved in the restamp (item 15) and unpopulated in 2.0. |
 | Multi-representation (C5) | Representation stays **singular** in v2 — one selected Unicode representation per text body. OCR and other alternate representations are a recorded **v2.1 extension point**, not a v2 field. |
 | Migration-manifest rows 6/7/8 | Exact source capture, processing segments, and extraction task protocol are **marked ported at the first mint**, when the release that carries them exists — not before. |
