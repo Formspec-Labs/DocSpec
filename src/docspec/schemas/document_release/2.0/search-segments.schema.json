@@ -1,0 +1,94 @@
+{
+  "$id": "urn:docspec:schema:document-release-search-segments:2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseSearchSegment",
+  "description": "One deterministic, bounded search segment. Carries its structural parent, its order, its heading path, its representation range, and reversible coordinates into the exact captured bytes. SpicySearch consumes these; it must not run a second segmentation pipeline.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "segmentId",
+    "documentVersionId",
+    "structuralParentId",
+    "ordinal",
+    "headingPath",
+    "representationStart",
+    "representationEnd",
+    "evidence"
+  ],
+  "properties": {
+    "segmentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "documentVersionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "structuralParentId": {
+      "description": "The structural node this segment came from. Never null: a segment with no source structure has no coordinates to be reversible against.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ordinal": {
+      "description": "Position within the document. Dense and zero-based across the whole document, so segment order is total and reconstructible.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "headingPath": {
+      "description": "Heading text from the document root down to this segment's structural parent, outermost first. Empty when no ancestor carries a heading.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "representationStart": {
+      "description": "Half-open [start, end) over the selected representation's UTF-8 bytes. Must lie inside the structural parent's range.",
+      "$ref": "#/$defs/byteOffset"
+    },
+    "representationEnd": {
+      "$ref": "#/$defs/byteOffset"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidenceCoordinate"
+    }
+  },
+  "$defs": {
+    "byteOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "evidenceCoordinate": {
+      "description": "Reversible coordinates into the exact captured rendition. The rendition is named by digest rather than by path, so evidence survives any relocation of the member.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coordinateSystem",
+        "renditionSha256",
+        "start",
+        "end"
+      ],
+      "properties": {
+        "coordinateSystem": {
+          "description": "`rendition-utf8-byte` when the captured bytes are themselves UTF-8 text; `rendition-byte` for any other captured encoding or binary container.",
+          "enum": [
+            "rendition-utf8-byte",
+            "rendition-byte"
+          ]
+        },
+        "renditionSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "start": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "end": {
+          "$ref": "#/$defs/byteOffset"
+        }
+      }
+    }
+  }
+}

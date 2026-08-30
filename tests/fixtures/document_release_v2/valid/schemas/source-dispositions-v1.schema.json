@@ -1,0 +1,119 @@
+{
+  "$id": "https://rulespec.org/schemas/releases/document-release-v2/source-dispositions-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseSourceDisposition",
+  "description": "The disposition projection for one member of the requested universe U. Every member of U gets a row, so a consumer obtains corpus membership and exclusion coverage from this release alone, without reading the source catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "sourceItemId",
+    "documentId",
+    "sourceIssuedVersion",
+    "catalogDisposition",
+    "documentVersionId",
+    "processingFailures"
+  ],
+  "properties": {
+    "sourceItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceIssuedVersion": {
+      "description": "The version the SOURCE issued, projected unchanged from the catalog. Never a capture digest.",
+      "type": "string",
+      "minLength": 1
+    },
+    "catalogDisposition": {
+      "description": "Projected verbatim from the pinned SourceCatalogRelease. This release never re-decides a selection; a capture result feeds no fact back into the catalog.",
+      "enum": [
+        "selected",
+        "excluded",
+        "deleted",
+        "unavailable",
+        "failed"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "documentVersionId": {
+      "description": "The document/version this item became. Non-null exactly when catalogDisposition is `selected`.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "processingFailures": {
+      "description": "Failures encountered while processing this item. Recorded, never load-bearing for membership: there is no corpus-side disposition that discards a selected item, so a failure can never become a silent downstream exclusion. A selected item that cannot be made searchable blocks the build instead of appearing here with a null documentVersionId.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/processingFailure"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "description": "A selected item is a document. The bijection is structural, not a downstream convention.",
+      "if": {
+        "type": "object",
+        "required": [
+          "catalogDisposition"
+        ],
+        "properties": {
+          "catalogDisposition": {
+            "const": "selected"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "documentVersionId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "documentVersionId": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "processingFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "failureCode",
+        "failureDetail"
+      ],
+      "properties": {
+        "failureCode": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "failureDetail": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

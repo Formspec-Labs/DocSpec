@@ -1,0 +1,135 @@
+{
+  "$id": "https://rulespec.org/schemas/releases/document-release-v2/member-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseMemberManifest",
+  "description": "The one global member manifest of a DocumentRelease v2 bundle. v2 does not partition; every member is listed here, sorted by objectKey. The member-descriptor protocol is identical to SourceCatalogRelease v1's; only the role and media-type vocabularies differ.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "manifestId",
+    "scope",
+    "members",
+    "counts"
+  ],
+  "properties": {
+    "format": {
+      "const": "spicy-artifact-member-manifest"
+    },
+    "formatVersion": {
+      "const": "1.0"
+    },
+    "manifestId": {
+      "const": "global:global"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "global"
+        },
+        "id": {
+          "const": "global"
+        }
+      }
+    },
+    "members": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/memberDescriptor"
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "memberCount",
+        "totalByteSize",
+        "totalRecordCount"
+      ],
+      "properties": {
+        "memberCount": {
+          "$ref": "#/$defs/count"
+        },
+        "totalByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "totalRecordCount": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "memberDescriptor": {
+      "description": "One immutable file inside the bundle. objectKey is a relative POSIX path; no absolute path, no parent traversal, no symlink.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "objectKey",
+        "role",
+        "mediaType",
+        "byteSize",
+        "sha256",
+        "recordCount",
+        "schemaId"
+      ],
+      "properties": {
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "enum": [
+            "schema",
+            "source-dispositions",
+            "documents",
+            "structural-nodes",
+            "search-segments",
+            "rendition",
+            "representation"
+          ]
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+(;\\s?charset=[A-Za-z0-9-]+)?$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recordCount": {
+          "description": "Row count for a tabular member; null for a schema, rendition, or representation member, which has no rows.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/count"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schemaId": {
+          "description": "The schema governing this member's rows, or the media contract for an opaque member.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

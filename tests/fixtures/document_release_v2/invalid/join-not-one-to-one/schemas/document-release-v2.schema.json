@@ -1,0 +1,407 @@
+{
+  "$id": "https://rulespec.org/schemas/releases/document-release-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentRelease",
+  "description": "Root manifest of one sealed, portable DocumentRelease. Rulespec Core owns this schema; DocSpec owns the records it carries (REF-024). Version 2.0 because `docspec-document-release` 1.1 is a different, internal pointer-record shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "releaseId",
+    "annotations",
+    "content"
+  ],
+  "properties": {
+    "format": {
+      "const": "docspec-document-release"
+    },
+    "formatVersion": {
+      "const": "2.0"
+    },
+    "releaseId": {
+      "type": "string",
+      "pattern": "^urn:docspec:document-release:v2:[0-9a-f]{64}$"
+    },
+    "annotations": {
+      "$ref": "#/$defs/annotations"
+    },
+    "content": {
+      "$ref": "#/$defs/content"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hexDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "absoluteId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "annotations": {
+      "description": "The identity-excluded envelope. Everything here is a fact about the act of publishing rather than about the corpus content, so two builds of identical content share one identity. Per-record wall clocks are absent from this contract entirely — see the spec.",
+      "type": "object",
+      "required": [
+        "publishedAt"
+      ],
+      "properties": {
+        "publishedAt": {
+          "$ref": "#/$defs/instant"
+        },
+        "releaseStatus": {
+          "enum": [
+            "fixture",
+            "candidate",
+            "published"
+          ]
+        },
+        "buildRunId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpusId",
+        "sourceCatalog",
+        "processingPolicy",
+        "selectedSourceSetDigest",
+        "documentVersionSetDigest",
+        "segmentSetDigest",
+        "sourceDocumentMappingDigest",
+        "joinReceipt",
+        "counts",
+        "coverage",
+        "globalManifest",
+        "schemaSet"
+      ],
+      "properties": {
+        "corpusId": {
+          "description": "Stable identity of the corpus this release is one version of.",
+          "$ref": "#/$defs/absoluteId"
+        },
+        "sourceCatalog": {
+          "$ref": "#/$defs/sourceCatalogPin"
+        },
+        "processingPolicy": {
+          "$ref": "#/$defs/processingPolicy"
+        },
+        "selectedSourceSetDigest": {
+          "description": "Canonical set digest over the deduplicated sorted selected sourceItemId list. MUST equal the pinned catalog's selectedSourceSetDigest.",
+          "$ref": "#/$defs/digest"
+        },
+        "documentVersionSetDigest": {
+          "description": "Canonical set digest over the deduplicated sorted documentVersionId list.",
+          "$ref": "#/$defs/digest"
+        },
+        "segmentSetDigest": {
+          "description": "Canonical set digest over the deduplicated sorted segmentId list.",
+          "$ref": "#/$defs/digest"
+        },
+        "sourceDocumentMappingDigest": {
+          "description": "Canonical digest over the sorted [sourceItemId, documentVersionId] pair list. A LIST digest, not a set digest: the pairing is the fact, and a repeated pair is a defect the join receipt reports.",
+          "$ref": "#/$defs/digest"
+        },
+        "joinReceipt": {
+          "$ref": "#/$defs/joinReceipt"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "globalManifest": {
+          "$ref": "#/$defs/manifestReference"
+        },
+        "schemaSet": {
+          "$ref": "#/$defs/schemaSet"
+        }
+      }
+    },
+    "sourceCatalogPin": {
+      "description": "The exact SourceCatalogRelease this corpus was built from. Pinned by identity AND digest so a consumer can prove which selection produced it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "releaseId",
+        "releaseDigest",
+        "requestedUniverseSetDigest",
+        "selectedSourceSetDigest"
+      ],
+      "properties": {
+        "releaseId": {
+          "type": "string",
+          "pattern": "^urn:spicy-regs:source-catalog-release:v1:[0-9a-f]{64}$"
+        },
+        "releaseDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "requestedUniverseSetDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "selectedSourceSetDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "processingPolicy": {
+      "description": "The versioned policy that governed extraction and segmentation. The digest pins the exact policy bytes; this release does not carry them.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "policyVersion",
+        "policySha256",
+        "extractorId",
+        "segmenterId",
+        "maxSegmentBytes"
+      ],
+      "properties": {
+        "policyId": {
+          "$ref": "#/$defs/absoluteId"
+        },
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policySha256": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "extractorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "segmenterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "maxSegmentBytes": {
+          "description": "The bound that makes segmentation deterministic. An oversized source structure is split under this policy while preserving its source coordinates.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "joinReceipt": {
+      "description": "The sealed one-to-one source-to-document join. Its counts and digest are recomputed from the members; equality is the proof of the bijection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptId",
+        "selectedSourceItemCount",
+        "documentVersionCount",
+        "mappingDigest"
+      ],
+      "properties": {
+        "receiptId": {
+          "$ref": "#/$defs/absoluteId"
+        },
+        "selectedSourceItemCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentVersionCount": {
+          "$ref": "#/$defs/count"
+        },
+        "mappingDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "counts": {
+      "description": "Diagnostics derived from the members. A count is never the proof of membership; the set digests are.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestedUniverseCount",
+        "selectedCount",
+        "excludedCount",
+        "deletedCount",
+        "unavailableCount",
+        "failedCount",
+        "documentVersionCount",
+        "structuralNodeCount",
+        "searchSegmentCount",
+        "memberCount",
+        "totalMemberByteSize"
+      ],
+      "properties": {
+        "requestedUniverseCount": {
+          "$ref": "#/$defs/count"
+        },
+        "selectedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "deletedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "unavailableCount": {
+          "$ref": "#/$defs/count"
+        },
+        "failedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentVersionCount": {
+          "$ref": "#/$defs/count"
+        },
+        "structuralNodeCount": {
+          "$ref": "#/$defs/count"
+        },
+        "searchSegmentCount": {
+          "$ref": "#/$defs/count"
+        },
+        "memberCount": {
+          "$ref": "#/$defs/count"
+        },
+        "totalMemberByteSize": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "coverage": {
+      "description": "The accounting proof. Every member of U carries one disposition; every selected item became exactly one document; every visible-text byte is segmented or explicitly excluded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountedCount",
+        "unaccountedCount",
+        "documentsWithSegmentCount",
+        "representationByteTotal",
+        "segmentedByteTotal",
+        "excludedByteTotal"
+      ],
+      "properties": {
+        "accountedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "unaccountedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentsWithSegmentCount": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "segmentedByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedByteTotal": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "manifestReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestId",
+        "scopeKind",
+        "scopeId",
+        "objectKey",
+        "byteSize",
+        "sha256"
+      ],
+      "properties": {
+        "manifestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scopeKind": {
+          "const": "global"
+        },
+        "scopeId": {
+          "const": "global"
+        },
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "byteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hexDigest"
+        }
+      }
+    },
+    "schemaSet": {
+      "description": "The schema bytes this release was verified against, carried inside the release so a consumer needs no Rulespec checkout.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaSetId",
+        "schemas"
+      ],
+      "properties": {
+        "schemaSetId": {
+          "type": "string",
+          "pattern": "^urn:spicy:schema-set:v1:[0-9a-f]{64}$"
+        },
+        "schemas": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/schemaDescriptor"
+          }
+        }
+      }
+    },
+    "schemaDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaId",
+        "schemaSha256",
+        "roles"
+      ],
+      "properties": {
+        "schemaId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaSha256": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "roles": {
+          "description": "Schema roles, not member roles. Each role resolves to exactly one schema in the set.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "enum": [
+              "release-root",
+              "member-manifest",
+              "source-dispositions",
+              "documents",
+              "structural-nodes",
+              "search-segments"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

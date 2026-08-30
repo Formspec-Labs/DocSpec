@@ -1,0 +1,215 @@
+{
+  "$id": "https://rulespec.org/schemas/releases/document-release-v2/documents-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseDocument",
+  "description": "One document/version: the selected source item's identity and metadata, the capture record for its exact bytes, the one selected human-readable representation, and the explicit ledger of representation ranges deliberately not searchable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "documentVersionId",
+    "documentId",
+    "sourceItemId",
+    "sourceIssuedVersion",
+    "sourceMetadata",
+    "capture",
+    "representation",
+    "excludedRanges"
+  ],
+  "properties": {
+    "documentVersionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "documentId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceItemId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceIssuedVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceMetadata": {
+      "description": "The selected item's SpicyRegs metadata and provenance, carried forward so a consumer needs no source catalog. Open by construction: this release transports the producer's record, it does not re-model it.",
+      "type": "object",
+      "required": [
+        "catalogReleaseId",
+        "title",
+        "agencies",
+        "documentType",
+        "publicationDate",
+        "sourceUrl"
+      ],
+      "properties": {
+        "catalogReleaseId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agencies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "agencyId",
+              "agencyName"
+            ]
+          }
+        },
+        "documentType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "publicationDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "sourceUrl": {
+          "type": "string",
+          "pattern": "^https?://[^\\s]+$"
+        }
+      }
+    },
+    "capture": {
+      "$ref": "#/$defs/captureRecord"
+    },
+    "representation": {
+      "$ref": "#/$defs/representation"
+    },
+    "excludedRanges": {
+      "description": "Visible-text ranges deliberately not searchable, each with a reason. Every representation byte must be covered by a search segment or by exactly one of these.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/excludedRange"
+      }
+    }
+  },
+  "$defs": {
+    "byteOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "captureRecord": {
+      "description": "Links the captured bytes to the exact catalog release, source item, source-issued version, and candidate rendition. Carries no wall clock: a capture time would put a clock inside a content-derived identity, and the rendition digest is the stronger evidence anyway.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogReleaseId",
+        "candidateRenditionId",
+        "objectKey",
+        "mediaType",
+        "sha256",
+        "byteSize",
+        "expectedSha256"
+      ],
+      "properties": {
+        "catalogReleaseId": {
+          "type": "string",
+          "pattern": "^urn:spicy-regs:source-catalog-release:v1:[0-9a-f]{64}$"
+        },
+        "candidateRenditionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "description": "Relative POSIX path of the immutable, digest-pinned member holding the exact captured bytes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "expectedSha256": {
+          "description": "The digest the catalog declared before capture, when it knew one. Non-null means it MUST equal `sha256`; the build fails otherwise.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "representation": {
+      "description": "The one selected human-readable Unicode representation. Markup is not search text: this is visible text extracted before segmentation, and every offset in this release counts its UTF-8 bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "representationId",
+        "objectKey",
+        "mediaType",
+        "encoding",
+        "sha256",
+        "byteSize"
+      ],
+      "properties": {
+        "representationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "const": "text/plain; charset=utf-8"
+        },
+        "encoding": {
+          "const": "utf-8"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        }
+      }
+    },
+    "excludedRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "reasonCode",
+        "reason"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "end": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

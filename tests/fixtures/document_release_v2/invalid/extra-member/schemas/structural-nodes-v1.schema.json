@@ -1,0 +1,113 @@
+{
+  "$id": "https://rulespec.org/schemas/releases/document-release-v2/structural-nodes-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseStructuralNode",
+  "description": "One source-derived structural node — a heading, paragraph, page, record, section, table, or list — over the selected representation. Source-derived means the structure came from the source format, not from segmentation: a node's range is where the source put it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "structuralNodeId",
+    "documentVersionId",
+    "structuralParentId",
+    "ordinal",
+    "depth",
+    "nodeKind",
+    "headingText",
+    "representationStart",
+    "representationEnd"
+  ],
+  "properties": {
+    "structuralNodeId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "documentVersionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "structuralParentId": {
+      "description": "The containing node, or null for a root node. Must resolve inside the same document.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ordinal": {
+      "description": "Position among siblings under the same parent. Dense and zero-based, so document order is reconstructible without re-reading the representation.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "depth": {
+      "description": "Zero for a root node, parent depth plus one otherwise.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4096
+    },
+    "nodeKind": {
+      "enum": [
+        "heading",
+        "paragraph",
+        "page",
+        "record",
+        "section",
+        "table",
+        "list"
+      ]
+    },
+    "headingText": {
+      "description": "The node's own heading text when it has one, else null. A `heading` node MUST carry text; any other kind MAY.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "representationStart": {
+      "description": "Half-open [start, end) over the selected representation's UTF-8 BYTES. Bytes, not code points: `spicy-regs/PLAN.md` section 1b decides byte offsets, and DocSpec's EvidenceMapping already counts a half-open representation byte interval.",
+      "$ref": "#/$defs/byteOffset"
+    },
+    "representationEnd": {
+      "$ref": "#/$defs/byteOffset"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": [
+          "nodeKind"
+        ],
+        "properties": {
+          "nodeKind": {
+            "const": "heading"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "headingText": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "byteOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  }
+}
