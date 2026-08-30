@@ -195,7 +195,12 @@ class VisibleText:
                 NO_VISIBLE_TEXT,
                 f"representation range [{start}, {end}) came from no captured byte",
             )
-        return min(low for low, _ in resolved), max(high for _, high in resolved)
+        # Clamped to the captured file: an evidence coordinate that ran past the
+        # bytes it names would be a coordinate nothing can check.
+        return (
+            max(0, min(low for low, _ in resolved)),
+            min(self.rendition_byte_size, max(high for _, high in resolved)),
+        )
 
 
 class _Writer:
