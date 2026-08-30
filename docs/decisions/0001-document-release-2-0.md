@@ -599,6 +599,52 @@ One line each, so an absent rule is a recorded absence. *All Accepted-by: agent
 | `reasonCode` vocabularies | Closure is required here; members are sealed with the builder against real corpus. |
 | Non-selected renditions | Whether candidate renditions other than the selected one are kept as blobs is a storage decision. |
 
+
+## Amendment 2026-08-31: the three stopped restamp items
+
+The restamp executed thirteen of sixteen items and stopped on three rather
+than invent — correctly, because item 2 as written was self-contradictory.
+Resolutions, each *Accepted-by: agent (delegated scope, header)*:
+
+**A1 — the `attachmentId` preimage drops the ordinal.** The contradiction:
+`renditionOrdinal` sat in the id preimage while the cardinality rule says one
+attachment row groups its M renditions — an id that changes per rendition
+cannot name the row that groups them. Resolution: `attachmentId` =
+`stable_urn` over `{ownerTextBodyId, ownerKind, attachmentIdentity}` where
+`attachmentIdentity` is the source's own stable identifier for the attached
+file; `renditionOrdinal` lives only on per-rendition sub-rows. The id names
+the attachment; the ordinal names its renditions.
+
+**A2 — per-kind counts and coverage get names.** `counts.perKind` is a closed
+object keyed `document-body` / `attachment` / `comment`, each carrying exactly
+`{textBodies, segments, representationByteTotal, segmentedByteTotal,
+excludedByteTotal}`; the coverage identity
+`segmentedByteTotal + excludedByteTotal == representationByteTotal` holds per
+kind and in aggregate. `coverage` itself stays aggregate; the per-kind
+breakdown lives under `counts`.
+
+**A3 — `reasonCode` seals as a bounded string now, closes at the real mint.**
+The attachment/comment schemas seal with the four disposition tokens closed
+and `reasonCode` a non-empty string (max 64 chars, kebab-case pattern);
+closing the enum requires the real corpus, as *What this does not decide*
+already records. The enum closure is a first-real-mint obligation.
+
+**A4 — the bucket framing gap gets a member role.** Item 11's digest-bucketed
+text/blob members had no way to recover one body's bytes from a shared
+bucket; the builder refused multi-body buckets, which cannot survive real
+scale. Resolution: one new member role `text-body-index` — JSONL rows
+`{family: "text"|"blob", textBodyId, member, startByte, byteLength, sha256}`
+— making every body byte-slice recoverable and digest-verifiable from bundle
+bytes alone. The multi-body refusal lifts where the index covers the bucket;
+an indexed body whose slice hash mismatches is `invalid.member-digest`.
+
+**Sequencing note, recorded honestly:** the restamp ran before item 2 was
+resolvable — the contradiction was discoverable only by attempting the
+implementation. The 2026-08-31 docspec corpus is therefore an intermediate
+state of the single restamp operation, not a second mint: completing items
+2, 3, and 7 under this amendment regenerates it as part of finishing that
+one operation. Nothing real was minted against the intermediate corpus.
+
 ## Sealed identities
 
 Schema `$id`s, packaged at `src/docspec/schemas/document_release/2.0/` — version
