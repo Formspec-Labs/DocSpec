@@ -7,17 +7,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from docspec.domain.content import Segment
 from docspec.domain.identity import identity_digest, require_text
 from docspec.errors import IntegrityError
 from docspec.processing.artifacts import (
     PDF_PAGE_TEXT_TRANSFORM,
     RepresentationPayload,
     SegmentPayload,
-    content_blob_ref,
+    build_segment,
     decode_utf8,
     utf8_byte_offsets,
 )
+from docspec.processing.bounded_segmentation import BOUNDED_TEXT_KINDS, BoundedSegmenter
 from docspec.processing.json_tools import record_char_ranges
 
 PARAGRAPH_SEGMENTER_ID = "docspec.paragraph/v1"
@@ -99,7 +99,7 @@ class ParagraphSegmenter:
         byte_offsets = utf8_byte_offsets(text)
         spans = _paragraph_char_ranges(text)
         return tuple(
-            _build_segment(
+            build_segment(
                 representation,
                 ordinal=ordinal,
                 kind="paragraph",
@@ -133,7 +133,7 @@ class PageSegmenter:
             if mapping.transformation != PDF_PAGE_TEXT_TRANSFORM or mapping.evidence.page is None:
                 raise IntegrityError("PDF text representation has a non-page evidence link")
             pages.append(
-                _build_segment(
+                build_segment(
                     representation,
                     ordinal=ordinal,
                     kind="page",
@@ -166,7 +166,7 @@ class RecordSegmenter:
         text = decode_utf8(representation.content, label="JSON representation")
         byte_offsets = utf8_byte_offsets(text)
         return tuple(
-            _build_segment(
+            build_segment(
                 representation,
                 ordinal=ordinal,
                 kind="record",
@@ -191,7 +191,7 @@ class WholeImageSegmenter:
         if representation.representation.kind != "image":
             raise IntegrityError("whole-image segmentation requires an image representation")
         return (
-            _build_segment(
+            build_segment(
                 representation,
                 ordinal=0,
                 kind="whole-image",
@@ -205,18 +205,42 @@ class WholeImageSegmenter:
 
 
 class DefaultSegmenterRegistry:
-    """Select deterministic source-grounded segmentation from representation kind."""
+    """Select deterministic source-grounded segmentation from representation kind.
+
+    Five segmenters are registered here. Four are exact and unbounded, and one
+    is bounded: `BoundedSegmenter` needs an injected token counter, so it is
+    supplied by the composition root rather than constructed here. When one is
+    supplied it takes the text kinds it declares; when none is, the registry
+    behaves exactly as it did before bounded segmentation existed.
+    """
 
     segmenter_id = DEFAULT_SEGMENTER_REGISTRY_ID
 
-    def __init__(self) -> None:
+    def __init__(self, *, bounded: BoundedSegmenter | None = None) -> None:
         self._paragraph = ParagraphSegmenter()
         self._page = PageSegmenter()
         self._record = RecordSegmenter()
         self._image = WholeImageSegmenter()
+        self._bounded = bounded
+
+    @property
+    def registered_policy_digests(self) -> dict[str, str]:
+        """Every registered segmenter identity beside its digested policy id."""
+
+        registered = {
+            self._paragraph.segmenter_id: self._paragraph.policy_digest,
+            self._page.segmenter_id: self._page.policy_digest,
+            self._record.segmenter_id: self._record.policy_digest,
+            self._image.segmenter_id: self._image.policy_digest,
+        }
+        if self._bounded is not None:
+            registered[self._bounded.segmenter_id] = self._bounded.policy_digest
+        return registered
 
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         kind = representation.representation.kind
+        if self._bounded is not None and kind in BOUNDED_TEXT_KINDS:
+            return self._bounded.segment(representation)
         if kind in {"text", "html", "xml"}:
             return self._paragraph.segment(representation)
         if kind == "pdf-text":
@@ -248,36 +272,3 @@ def _trim_char_range(text: str, start: int, end: int) -> tuple[int, int] | None:
     while end > start and text[end - 1].isspace():
         end -= 1
     return (start, end) if start < end else None
-
-
-def _build_segment(
-    representation: RepresentationPayload,
-    *,
-    ordinal: int,
-    kind: str,
-    start: int,
-    end: int,
-    segmenter_id: str,
-    policy_digest: str,
-    derivation: tuple[str, ...],
-    media_type: str | None = None,
-) -> SegmentPayload:
-    content = representation.content[start:end]
-    reference = content_blob_ref(content, media_type or representation.representation.blob.media_type)
-    evidence = representation.evidence_for_range(start, end)
-    source = representation.representation
-    segment = Segment.create(
-        source_item_id=source.source_item_id,
-        file_id=source.file_id,
-        representation_id=source.representation_id,
-        representation_start=start,
-        representation_end=end,
-        ordinal=ordinal,
-        kind=kind,
-        content=reference,
-        evidence=evidence,
-        segmenter_id=segmenter_id,
-        policy_digest=policy_digest,
-        derivation=(f"representation:{source.representation_id}", *derivation),
-    )
-    return SegmentPayload(segment, content)

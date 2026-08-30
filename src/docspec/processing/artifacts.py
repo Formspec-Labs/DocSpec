@@ -139,6 +139,46 @@ class SegmentPayload:
         return self.segment.representation_end
 
 
+def build_segment(
+    representation: RepresentationPayload,
+    *,
+    ordinal: int,
+    kind: str,
+    start: int,
+    end: int,
+    segmenter_id: str,
+    policy_digest: str,
+    derivation: tuple[str, ...],
+    media_type: str | None = None,
+) -> SegmentPayload:
+    """Build one identified segment from an exact representation byte range.
+
+    Public because every segmenter in this package mints a segment the same
+    way: exact slice, content-addressed reference, evidence resolved through
+    the representation's own mapping, identity recomputed from those inputs.
+    """
+
+    content = representation.content[start:end]
+    reference = content_blob_ref(content, media_type or representation.representation.blob.media_type)
+    evidence = representation.evidence_for_range(start, end)
+    source = representation.representation
+    segment = Segment.create(
+        source_item_id=source.source_item_id,
+        file_id=source.file_id,
+        representation_id=source.representation_id,
+        representation_start=start,
+        representation_end=end,
+        ordinal=ordinal,
+        kind=kind,
+        content=reference,
+        evidence=evidence,
+        segmenter_id=segmenter_id,
+        policy_digest=policy_digest,
+        derivation=(f"representation:{source.representation_id}", *derivation),
+    )
+    return SegmentPayload(segment, content)
+
+
 DerivedEvidenceResolver = Callable[[EvidenceMapping, bytes], bytes]
 
 
