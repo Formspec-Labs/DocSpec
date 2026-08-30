@@ -500,32 +500,39 @@ def test_the_framed_domains_are_exactly_the_ones_the_decision_declares() -> None
     }
 
 
-def test_the_docspec_generation_expects_framed_digests_where_the_corpus_expects_plain(
+def test_relabelling_the_sealed_corpus_does_not_make_it_a_docspec_generation_bundle(
     tmp_path: Path,
 ) -> None:
-    """The set-digest branch, end to end: the sealed values stop satisfying it."""
+    """Re-declaring the `$id`s is not a restamp, and the gate says so.
+
+    Before Decision 0001's restamp landed, swapping the schema identifiers was
+    the only thing that separated the two generations, so this synthetic hybrid
+    was the closest thing to a docspec-generation bundle in existence. The
+    restamp reshaped the RECORDS -- JSONL members, `textBodyId` keys, the
+    reshaped pin, the new digests -- so a bundle that relabels the sealed
+    corpus without re-minting it now embeds schema bodies that are not the
+    registered docspec generation, and is refused for exactly that.
+    """
 
     root = _docspec_generation_root()
-    bundle = tmp_path / "set-digests"
+    bundle = tmp_path / "relabelled"
     shutil.copytree(FIXTURE_ROOT / "valid", bundle)
     (bundle / "release.json").write_bytes(canonical_json_bytes(root))
 
     result = verify_document_release(bundle)
-    refused = {
-        issue.path for issue in result.issues if issue.code == "invalid.set-digest"
-    }
+    messages = [str(issue) for issue in result.issues]
 
-    assert refused == {
-        "release.json/content/selectedSourceSetDigest",
-        "release.json/content/documentVersionSetDigest",
-        "release.json/content/segmentSetDigest",
-        "release.json/content/sourceDocumentMappingDigest",
-    }
-    documents = json.loads((bundle / "data" / "documents.json").read_text(encoding="utf-8"))
-    assert root["content"]["segmentSetDigest"] != framed_set_digest(
-        "docspec-document-version-set/2",
-        [{"documentVersionId": document["documentVersionId"]} for document in documents],
-    )
+    assert not result.valid
+    # The records, not the identifiers: every tabular member is refused as
+    # un-streamable (item 11), for declaring the predecessor's media type
+    # (item 11), and every partition member for declaring no row count
+    # (item 16).
+    assert [item for item in messages if "JSONL record must be terminated" in item] == [
+        f"invalid.schema data/{name}.json: every JSONL record must be terminated by a newline"
+        for name in ("source-dispositions", "documents", "structural-nodes", "search-segments")
+    ]
+    assert sum("expected application/x-ndjson" in item for item in messages) == 4
+    assert sum("invalid record count" in item for item in messages) == 4
 
 
 def test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain() -> None:

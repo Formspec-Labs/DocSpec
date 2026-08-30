@@ -2,12 +2,13 @@
   "$id": "urn:docspec:schema:document-release-search-segments:2.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DocumentReleaseSearchSegment",
-  "description": "One deterministic, bounded search segment. Carries its structural parent, its order, its heading path, its representation range, and reversible coordinates into the exact captured bytes. SpicySearch consumes these; it must not run a second segmentation pipeline.",
+  "description": "One deterministic, bounded search segment. Carries its structural parent, its order, its heading path, its representation range, and reversible coordinates into the exact captured bytes. These segments are a TWO-consumer contract: SpicySearch and the Rulespec Extrapolator both consume them, and neither may run a second segmentation pipeline.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "segmentId",
-    "documentVersionId",
+    "textBodyId",
+    "textKind",
     "structuralParentId",
     "ordinal",
     "headingPath",
@@ -20,9 +21,18 @@
       "type": "string",
       "minLength": 1
     },
-    "documentVersionId": {
+    "textBodyId": {
+      "description": "The text body this row belongs to. Re-keyed from `documentVersionId`: structure and segments are the same records for a document body, an attachment, and a comment. For a `document-body` the value EQUALS its `documentVersionId` — one body per version, and a second name would be a second identity for one thing.",
       "type": "string",
       "minLength": 1
+    },
+    "textKind": {
+      "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+      "enum": [
+        "document-body",
+        "attachment",
+        "comment"
+      ]
     },
     "structuralParentId": {
       "description": "The structural node this segment came from. Never null: a segment with no source structure has no coordinates to be reversible against.",
@@ -36,7 +46,7 @@
       "maximum": 9007199254740991
     },
     "headingPath": {
-      "description": "Heading text from the document root down to this segment's structural parent, outermost first. Empty when no ancestor carries a heading.",
+      "description": "Heading text from the text body's root down to this segment's structural parent, outermost first. Empty when no ancestor carries a heading.",
       "type": "array",
       "items": {
         "type": "string",
@@ -72,7 +82,7 @@
       ],
       "properties": {
         "coordinateSystem": {
-          "description": "`rendition-utf8-byte` when the captured bytes are themselves UTF-8 text; `rendition-byte` for any other captured encoding or binary container.",
+          "description": "CLOSED at exactly two systems: `rendition-utf8-byte` when the captured bytes are themselves UTF-8 text, `rendition-byte` for any other captured encoding or binary container. A third `rendition-page-region` system was designed and dropped — no extractor DocSpec runs emits page geometry, so the release would carry a coordinate nothing can produce or check.",
           "enum": [
             "rendition-utf8-byte",
             "rendition-byte"
@@ -87,6 +97,10 @@
         },
         "end": {
           "$ref": "#/$defs/byteOffset"
+        },
+        "evidenceGrade": {
+          "description": "RESERVED for a later evidence grading and unpopulated in 2.0: the name is claimed beside the closed `coordinateSystem` enum so grading can land without re-keying the coordinate. A 2.0 producer writes null or omits it; nothing reads it.",
+          "type": "null"
         }
       }
     }

@@ -8,6 +8,8 @@
   "required": [
     "documentVersionId",
     "documentId",
+    "textBodyId",
+    "textKind",
     "sourceItemId",
     "sourceIssuedVersion",
     "sourceMetadata",
@@ -23,6 +25,19 @@
     "documentId": {
       "type": "string",
       "minLength": 1
+    },
+    "textBodyId": {
+      "description": "The text body this row belongs to. Re-keyed from `documentVersionId`: structure and segments are the same records for a document body, an attachment, and a comment. For a `document-body` the value EQUALS its `documentVersionId` — one body per version, and a second name would be a second identity for one thing.",
+      "type": "string",
+      "minLength": 1
+    },
+    "textKind": {
+      "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+      "enum": [
+        "document-body",
+        "attachment",
+        "comment"
+      ]
     },
     "sourceItemId": {
       "type": "string",
@@ -97,8 +112,12 @@
       "minimum": 0,
       "maximum": 9007199254740991
     },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
     "captureRecord": {
-      "description": "Links the captured bytes to the exact catalog release, source item, source-issued version, and candidate rendition. Carries no wall clock: a capture time would put a clock inside a content-derived identity, and the rendition digest is the stronger evidence anyway.",
+      "description": "Links the captured bytes to the exact catalog snapshot, source item, source-issued version, and candidate rendition. Carries the acquisition wall clock, and every preimage excludes it: `documentStateDigest` is taken over `content` alone and no set digest names a capture field, so two byte-identical captures stay one release while the provenance a reader needs survives in the record.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -108,12 +127,15 @@
         "mediaType",
         "sha256",
         "byteSize",
-        "expectedSha256"
+        "expectedSha256",
+        "acquiredAt",
+        "acquisitionStartedAt"
       ],
       "properties": {
         "catalogReleaseId": {
+          "description": "The pinned `SourceCatalog` snapshot's own `catalogId`. Same pattern as the root pin's `catalogId`, and checked against it: fixing one and not the other would make every capture row disagree with the root.",
           "type": "string",
-          "pattern": "^urn:spicy-regs:source-catalog-release:v1:[0-9a-f]{64}$"
+          "pattern": "^urn:docspec:source-catalog:v1:[0-9a-f]{64}$"
         },
         "candidateRenditionId": {
           "type": "string",
@@ -141,6 +163,21 @@
             {
               "type": "string",
               "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acquiredAt": {
+          "description": "When the captured bytes were acquired, mirroring `CapturedFile.acquired_at`. Required: erasing acquisition time would destroy provenance the reader needs.",
+          "$ref": "#/$defs/instant"
+        },
+        "acquisitionStartedAt": {
+          "description": "When the acquisition attempt began, mirroring `CapturedFile.acquisition_started_at`, or null when the downloader reported no start. Written, never omitted.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/instant"
             },
             {
               "type": "null"

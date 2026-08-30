@@ -127,6 +127,44 @@ def write_canonical_json(path: Path, value: Any) -> None:
     path.write_bytes(canonical_json_bytes(value))
 
 
+def load_strict_canonical_jsonl(path: Path) -> list[Any]:
+    """Load one JSONL member: one canonical-JSON record per newline-terminated line.
+
+    The docspec minting generation carries every tabular member as JSONL under
+    DocSpec's own `docspec-record-layer/1.1` framing, so a consumer streams rows
+    instead of parsing a whole file to reach the first one. The strictness is
+    the same strictness `load_strict_canonical_json` applies, per line: exact
+    canonical bytes in non-file form, no byte order mark, no blank line, and a
+    final newline after the last record rather than a bare last line.
+    """
+
+    raw = path.read_bytes()
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raise ValueError("a UTF-8 byte order mark is forbidden")
+    if raw and not raw.endswith(b"\n"):
+        raise ValueError("every JSONL record must be terminated by a newline")
+    rows: list[Any] = []
+    for number, line in enumerate(raw.split(b"\n")[:-1], start=1):
+        if not line:
+            raise ValueError(f"{path.name} line {number} is empty")
+        try:
+            value = thaw_json(
+                parse_canonical_json(line, label=f"{path.name}:{number}", file_form=False)
+            )
+        except IntegrityError as exc:
+            raise ValueError(str(exc)) from exc
+        _require_json_safe_integers(value)
+        rows.append(value)
+    return rows
+
+
+def write_canonical_jsonl(path: Path, rows: Sequence[Any]) -> None:
+    """Write one canonical-JSON record per line, each terminated by a newline."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"".join(canonical_json_bytes(row) + b"\n" for row in rows))
+
+
 def file_sha256(path: Path) -> str:
     """Digest a file's exact bytes without holding them in memory."""
 
@@ -240,6 +278,7 @@ __all__ = [
     "canonical_sha256",
     "file_sha256",
     "load_strict_canonical_json",
+    "load_strict_canonical_jsonl",
     "logical_content",
     "member_path",
     "packaged_schema_root",
@@ -247,4 +286,5 @@ __all__ = [
     "source_set_digest",
     "tree_digest",
     "write_canonical_json",
+    "write_canonical_jsonl",
 ]

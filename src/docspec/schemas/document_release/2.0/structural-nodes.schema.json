@@ -7,7 +7,8 @@
   "additionalProperties": false,
   "required": [
     "structuralNodeId",
-    "documentVersionId",
+    "textBodyId",
+    "textKind",
     "structuralParentId",
     "ordinal",
     "depth",
@@ -21,12 +22,21 @@
       "type": "string",
       "minLength": 1
     },
-    "documentVersionId": {
+    "textBodyId": {
+      "description": "The text body this row belongs to. Re-keyed from `documentVersionId`: structure and segments are the same records for a document body, an attachment, and a comment. For a `document-body` the value EQUALS its `documentVersionId` — one body per version, and a second name would be a second identity for one thing.",
       "type": "string",
       "minLength": 1
     },
+    "textKind": {
+      "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+      "enum": [
+        "document-body",
+        "attachment",
+        "comment"
+      ]
+    },
     "structuralParentId": {
-      "description": "The containing node, or null for a root node. Must resolve inside the same document.",
+      "description": "The containing node, or null for a root node. Must resolve inside the same text body.",
       "oneOf": [
         {
           "type": "string",

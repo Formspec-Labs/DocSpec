@@ -61,6 +61,24 @@ generation the bundle itself declares, and a bundle is checked against the rules
 it was minted under. Mixing the two spellings inside one bundle is refused
 (`invalid.schema`) rather than resolved to a winner.
 
+The generations differ in more than identity, because the restamp reshaped the
+records themselves (Decision 0001, restamp items 4, 5, 11, 16): the docspec
+generation carries tabular members as JSONL rather than as one JSON array, keys
+structure and segments by ``textBodyId`` rather than by ``documentVersionId``,
+and gives its partitioned ``text/`` and ``blobs/`` members a ``recordCount``
+where the predecessor's one-file-per-document members declared null. Every one
+of those rules is read off the same declared generation, so a bundle can never
+be parsed under one and judged under the other.
+
+Row schemas follow the same rule. The packaged schemas ARE the docspec
+generation, so a docspec bundle's rows are checked against them AND its embedded
+copies must equal them byte for byte -- the registered body stays the contract.
+The predecessor generation's bodies are not packaged anywhere: they live in the
+twenty sealed bundles that carry them, digest-pinned by their own descriptors and
+sealed into their own identities, so a predecessor bundle's rows are checked
+against the schemas it embeds. That is what carrying the schema set inside the
+bundle was for.
+
 This module lives beside the other adapters because it validates instances
 against JSON Schema, and `jsonschema` is a third-party dependency the DocSpec
 core deliberately does not import.
@@ -88,6 +106,7 @@ from docspec.document_release_support import (
     canonical_sha256,
     file_sha256,
     load_strict_canonical_json,
+    load_strict_canonical_jsonl,
     logical_content,
     member_path,
     packaged_schema_root,
@@ -245,9 +264,31 @@ TABULAR_ROLES: dict[str, str] = {
     "structural-nodes": "structural-nodes",
     "search-segments": "search-segments",
 }
+# `rendition` and `representation`. Opaque in the sense that no row schema
+# governs their bytes -- but under the docspec generation they are partition
+# BUCKETS carrying a `recordCount`, not single documents (restamp items 11, 16).
 OPAQUE_ROLES = frozenset({"rendition", "representation"})
 ALLOWED_MEMBER_ROLES = frozenset({"schema", *TABULAR_ROLES, *OPAQUE_ROLES})
+# `attachments` and `comments` are in the member-manifest schema's role enum
+# (restamp item 13) and deliberately NOT here. Their schemas are not sealed --
+# restamp item 2 is recorded as underspecified -- so there is nothing to check
+# such a member's rows against, and a role the verifier cannot judge fails
+# closed rather than passing unread. The enum widened; the gate did not.
+UNSEALED_MEMBER_ROLES = frozenset({"attachments", "comments"})
 REPRESENTATION_MEDIA_TYPE = "text/plain; charset=utf-8"
+
+# One fact per generation, read off the same declared `$id`s.
+TABULAR_MEDIA_TYPES: dict[str, str] = {
+    PREDECESSOR_GENERATION: "application/json",
+    DOCSPEC_GENERATION: "application/x-ndjson",
+}
+# The field structure and segments hang off. The docspec generation re-keys to
+# `textBodyId` so one set of records serves all three text kinds; for a document
+# body the two values are equal, but the DECLARED key is the one that is read.
+TEXT_BODY_KEYS: dict[str, str] = {
+    PREDECESSOR_GENERATION: "documentVersionId",
+    DOCSPEC_GENERATION: "textBodyId",
+}
 
 DIAGNOSTIC_CODES: tuple[str, ...] = (
     # Bundle integrity: nothing below can be judged until the bytes are trusted.
@@ -553,22 +594,28 @@ def derive_coverage(
     dispositions: Sequence[Mapping[str, Any]],
     documents: Sequence[Mapping[str, Any]],
     segments: Sequence[Mapping[str, Any]],
+    *,
+    key: str = "documentVersionId",
 ) -> dict[str, int]:
-    """Recompute the accounting proof from the members alone."""
+    """Recompute the accounting proof from the members alone.
+
+    ``key`` is the field segments hang off in the generation being read --
+    ``documentVersionId`` for the sealed corpus, ``textBodyId`` for the docspec
+    generation. It defaults to the predecessor's so the sealed corpus keeps
+    being derived exactly as it was sealed.
+    """
 
     accounted = sum(
         1 for row in dispositions if row.get("catalogDisposition") in CATALOG_DISPOSITIONS
     )
     with_segment = {
-        segment.get("documentVersionId")
-        for segment in segments
-        if isinstance(segment.get("documentVersionId"), str)
+        segment.get(key) for segment in segments if isinstance(segment.get(key), str)
     }
     representation_total = 0
     segmented_total = 0
     excluded_total = 0
     for document in documents:
-        version_id = document.get("documentVersionId")
+        version_id = document.get(key)
         representation = document.get("representation")
         if isinstance(representation, Mapping) and isinstance(
             representation.get("byteSize"), int
@@ -578,7 +625,7 @@ def derive_coverage(
             [
                 (segment["representationStart"], segment["representationEnd"])
                 for segment in segments
-                if segment.get("documentVersionId") == version_id
+                if segment.get(key) == version_id
                 and isinstance(segment.get("representationStart"), int)
                 and isinstance(segment.get("representationEnd"), int)
             ]
@@ -596,7 +643,7 @@ def derive_coverage(
         "accountedCount": accounted,
         "unaccountedCount": len(dispositions) - accounted,
         "documentsWithSegmentCount": sum(
-            1 for document in documents if document.get("documentVersionId") in with_segment
+            1 for document in documents if document.get(key) in with_segment
         ),
         "representationByteTotal": representation_total,
         "segmentedByteTotal": segmented_total,
@@ -672,8 +719,26 @@ def _read_root(bundle: Path, issues: list[VerificationIssue]) -> dict[str, Any] 
     else:
         if root.get("releaseId") != expected:
             _issue(issues, "invalid.identity", "release.json/releaseId", f"expected {expected}")
-    issues.extend(_schema_issues(root, _load_schema(ROOT_SCHEMA), path="release.json"))
     return root
+
+
+def _validate_root_shape(
+    root: Mapping[str, Any],
+    schemas: Mapping[str, Mapping[str, Any]],
+    issues: list[VerificationIssue],
+) -> None:
+    """Check the root against the release-root schema of its own generation.
+
+    Deferred until the members have been read, because for a predecessor bundle
+    the only copy of the schema it was written against is the one it carries.
+    A bundle whose release-root schema cannot be resolved has already been
+    reported -- as a missing member, a broken digest, or an unregistered `$id` --
+    and is not reported a second time here.
+    """
+
+    schema = schemas.get("release-root")
+    if schema is not None:
+        issues.extend(_schema_issues(root, schema, path="release.json"))
 
 
 def _materialized_files(bundle: Path, issues: list[VerificationIssue]) -> set[str]:
@@ -689,8 +754,24 @@ def _materialized_files(bundle: Path, issues: list[VerificationIssue]) -> set[st
     return result
 
 
+def _counted_roles(generation: str) -> frozenset[str]:
+    """Which member roles declare an integer ``recordCount`` in this generation.
+
+    Restamp item 16: the rule is stated per ROLE, not per "has rows". A `schema`
+    member is one document and declares null in both generations. A tabular
+    member is a stream of rows in both. A `rendition` or `representation` member
+    was one file per document under the predecessor and declared null; under the
+    docspec generation it is a partition bucket of text bodies and carries its
+    own count, exactly as the catalog's partitions do.
+    """
+
+    if generation == DOCSPEC_GENERATION:
+        return frozenset({*TABULAR_ROLES, *OPAQUE_ROLES})
+    return frozenset(TABULAR_ROLES)
+
+
 def _validate_member_descriptor(
-    member: Any, *, path: str, issues: list[VerificationIssue]
+    member: Any, *, path: str, generation: str, issues: list[VerificationIssue]
 ) -> dict[str, Any] | None:
     if not isinstance(member, dict):
         _issue(issues, "invalid.schema", path, "member descriptor must be an object")
@@ -700,12 +781,20 @@ def _validate_member_descriptor(
     if not safe_object_key(member.get("objectKey")):
         _issue(issues, "invalid.path", f"{path}/objectKey", "unsafe member path")
     role = member.get("role")
-    if role not in ALLOWED_MEMBER_ROLES:
+    if role in UNSEALED_MEMBER_ROLES:
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{path}/role",
+            f"role {role!r} has no sealed schema in this generation, so its rows cannot be checked",
+        )
+    elif role not in ALLOWED_MEMBER_ROLES:
         _issue(issues, "invalid.schema", f"{path}/role", f"unknown role {role!r}")
     if role == "schema" and member.get("mediaType") != "application/schema+json":
         _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/schema+json")
-    if role in TABULAR_ROLES and member.get("mediaType") != "application/json":
-        _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/json")
+    tabular_media_type = TABULAR_MEDIA_TYPES[generation]
+    if role in TABULAR_ROLES and member.get("mediaType") != tabular_media_type:
+        _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {tabular_media_type}")
     if role == "representation" and member.get("mediaType") != REPRESENTATION_MEDIA_TYPE:
         _issue(
             issues,
@@ -713,30 +802,35 @@ def _validate_member_descriptor(
             f"{path}/mediaType",
             f"expected {REPRESENTATION_MEDIA_TYPE}",
         )
-    if role in TABULAR_ROLES:
-        if not isinstance(member.get("recordCount"), int) or isinstance(
-            member.get("recordCount"), bool
-        ):
+    if role in TABULAR_ROLES and canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS[
+        TABULAR_ROLES[role]
+    ]:
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{path}/schemaId",
+            f"expected {SCHEMA_IDS[TABULAR_ROLES[role]]}",
+        )
+    counted = _counted_roles(generation)
+    record_count = member.get("recordCount")
+    if role in counted:
+        if not isinstance(record_count, int) or isinstance(record_count, bool):
             _issue(issues, "invalid.schema", f"{path}/recordCount", "invalid record count")
-        if canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS[TABULAR_ROLES[role]]:
-            _issue(
-                issues,
-                "invalid.schema",
-                f"{path}/schemaId",
-                f"expected {SCHEMA_IDS[TABULAR_ROLES[role]]}",
-            )
-    elif member.get("recordCount") is not None:
+    elif record_count is not None:
         _issue(
             issues,
             "invalid.schema",
             f"{path}/recordCount",
-            "a schema, rendition, or representation member has no rows and must declare null",
+            f"a {role!r} member declares no row count in this generation and must declare null",
         )
     return member
 
 
 def _read_member_manifest(
-    bundle: Path, root: Mapping[str, Any], issues: list[VerificationIssue]
+    bundle: Path,
+    root: Mapping[str, Any],
+    generation: str,
+    issues: list[VerificationIssue],
 ) -> tuple[list[dict[str, Any]], dict[str, Path], set[str]]:
     declared = {"release.json"}
     content = root.get("content")
@@ -824,7 +918,10 @@ def _read_member_manifest(
     member_paths: dict[str, Path] = {}
     for index, raw_member in enumerate(raw_members):
         member = _validate_member_descriptor(
-            raw_member, path=f"{object_key}/members/{index}", issues=issues
+            raw_member,
+            path=f"{object_key}/members/{index}",
+            generation=generation,
+            issues=issues,
         )
         if member is None:
             continue
@@ -905,15 +1002,26 @@ def _validate_schema_set(
     root: Mapping[str, Any],
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
+    generation: str,
     issues: list[VerificationIssue],
-) -> None:
+) -> dict[str, dict[str, Any]]:
+    """Check the carried schema set, and hand back the bodies it resolved.
+
+    The returned map is role -> schema body, and it is what every later row
+    check validates against. Under the docspec generation the packaged body is
+    the contract and the embedded copy must equal it byte for byte; under the
+    predecessor generation the embedded copy IS the contract, because the bodies
+    the sealed corpus was written against are not packaged anywhere else.
+    """
+
+    bodies: dict[str, dict[str, Any]] = {}
     content = root.get("content")
     schema_set = content.get("schemaSet") if isinstance(content, dict) else None
     if not isinstance(schema_set, dict):
-        return
+        return bodies
     descriptors = schema_set.get("schemas")
     if not isinstance(descriptors, list):
-        return
+        return bodies
     base = "release.json/content/schemaSet"
     if len(declared_generations(root)) > 1:
         _issue(
@@ -986,18 +1094,42 @@ def _validate_schema_set(
                 str(member.get("objectKey")),
                 "$id differs from the descriptor",
             )
+            continue
+        if generation == DOCSPEC_GENERATION and schema != _load_schema(SCHEMA_FILES[role]):
+            # The packaged schema is the docspec generation. A bundle may carry
+            # its own copy -- that is what makes it portable -- but a copy that
+            # says something else is a bundle checked against a contract nobody
+            # registered.
+            _issue(
+                issues,
+                "invalid.schema",
+                str(member.get("objectKey")),
+                f"embedded schema differs from the registered schema for role {role!r}",
+            )
+            continue
+        bodies[role] = schema
     for role in SCHEMA_IDS:
         if seen_roles.get(role) != 1:
             _issue(issues, "invalid.schema", f"{base}/schemas", f"role {role!r} must resolve exactly once")
+    return bodies
 
 
 def _read_rows(
     role: str,
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
+    generation: str,
+    schemas: Mapping[str, Mapping[str, Any]],
     issues: list[VerificationIssue],
 ) -> tuple[list[dict[str, Any]] | None, str]:
-    """Load one tabular member's rows, or ``None`` when they cannot be trusted."""
+    """Load one tabular member's rows, or ``None`` when they cannot be trusted.
+
+    Restamp item 11: the docspec generation carries these members as JSONL, one
+    canonical-JSON record per newline-terminated line, so a consumer streams the
+    rows instead of parsing a whole file to reach the first one. The predecessor
+    corpus carries a single JSON array. Which reader runs is read off the
+    generation, never sniffed from the bytes.
+    """
 
     matching = [member for member in members if member.get("role") == role]
     if len(matching) != 1:
@@ -1013,8 +1145,13 @@ def _read_rows(
     path = member_paths.get(object_key)
     if path is None or path.is_symlink() or not path.is_file():
         return None, object_key
+    reader = (
+        load_strict_canonical_jsonl
+        if generation == DOCSPEC_GENERATION
+        else load_strict_canonical_json
+    )
     try:
-        rows = load_strict_canonical_json(path)
+        rows = reader(path)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         _issue(issues, "invalid.schema", object_key, str(exc))
         return None, object_key
@@ -1028,9 +1165,10 @@ def _read_rows(
             f"member:{object_key}/recordCount",
             f"expected {len(rows)}",
         )
-    schema = _load_schema(SCHEMA_FILES[TABULAR_ROLES[role]])
-    for index, row in enumerate(rows):
-        issues.extend(_schema_issues(row, schema, path=f"{object_key}/{index}"))
+    schema = schemas.get(TABULAR_ROLES[role])
+    if schema is not None:
+        for index, row in enumerate(rows):
+            issues.extend(_schema_issues(row, schema, path=f"{object_key}/{index}"))
     return [row for row in rows if isinstance(row, dict)], object_key
 
 
@@ -1079,9 +1217,16 @@ def _validate_documents(
     dispositions: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
     object_key: str,
+    key: str,
     issues: list[VerificationIssue],
 ) -> dict[str, int]:
-    """Check captures and representations. Returns representation byte sizes."""
+    """Check captures and representations. Returns representation byte sizes.
+
+    The returned sizes are keyed by ``key`` -- the field structure and segments
+    hang off in this generation -- because that is what the later range checks
+    resolve against. For a document body the two names hold the same value; the
+    declared one is the one read.
+    """
 
     selected = {
         row["sourceItemId"]: row
@@ -1131,8 +1276,8 @@ def _validate_documents(
 
         capture = document.get("capture")
         if isinstance(capture, Mapping):
-            key = capture.get("objectKey")
-            resolved = member_paths.get(str(key))
+            member_key = capture.get("objectKey")
+            resolved = member_paths.get(str(member_key))
             if resolved is None or not resolved.is_file():
                 _issue(
                     issues,
@@ -1169,8 +1314,8 @@ def _validate_documents(
 
         representation = document.get("representation")
         if isinstance(representation, Mapping):
-            key = representation.get("objectKey")
-            resolved = member_paths.get(str(key))
+            member_key = representation.get("objectKey")
+            resolved = member_paths.get(str(member_key))
             if resolved is None or not resolved.is_file():
                 _issue(
                     issues,
@@ -1203,8 +1348,9 @@ def _validate_documents(
                         f"{path}/representation",
                         f"representation is not valid UTF-8: {exc}",
                     )
-                if isinstance(version_id, str):
-                    sizes[version_id] = len(raw)
+                body_id = document.get(key)
+                if isinstance(body_id, str):
+                    sizes[body_id] = len(raw)
     return sizes
 
 
@@ -1212,6 +1358,7 @@ def _validate_structure(
     nodes: Sequence[Mapping[str, Any]],
     sizes: Mapping[str, int],
     object_key: str,
+    key: str,
     issues: list[VerificationIssue],
 ) -> dict[str, dict[str, Any]]:
     by_id: dict[str, dict[str, Any]] = {}
@@ -1231,7 +1378,7 @@ def _validate_structure(
     sibling_ordinals: dict[tuple[str, Any], list[int]] = {}
     for index, node in enumerate(nodes):
         path = f"{object_key}/{index}"
-        version_id = node.get("documentVersionId")
+        version_id = node.get(key)
         start, end = node.get("representationStart"), node.get("representationEnd")
         if not isinstance(start, int) or not isinstance(end, int):
             continue
@@ -1242,8 +1389,8 @@ def _validate_structure(
             _issue(
                 issues,
                 "invalid.structure",
-                f"{path}/documentVersionId",
-                "node names no document in this release",
+                f"{path}/{key}",
+                "node names no text body in this release",
             )
         elif end > size:
             _issue(
@@ -1263,12 +1410,12 @@ def _validate_structure(
                     f"parent {parent_id!r} does not resolve",
                 )
             else:
-                if parent.get("documentVersionId") != version_id:
+                if parent.get(key) != version_id:
                     _issue(
                         issues,
                         "invalid.structure",
                         f"{path}/structuralParentId",
-                        "parent belongs to a different document",
+                        "parent belongs to a different text body",
                     )
                 if isinstance(parent.get("depth"), int) and node.get("depth") != parent["depth"] + 1:
                     _issue(
@@ -1311,10 +1458,11 @@ def _validate_segments(
     documents: Sequence[Mapping[str, Any]],
     sizes: Mapping[str, int],
     object_key: str,
+    key: str,
     issues: list[VerificationIssue],
 ) -> None:
     renditions = {
-        document.get("documentVersionId"): document.get("capture")
+        document.get(key): document.get("capture")
         for document in documents
         if isinstance(document.get("capture"), Mapping)
     }
@@ -1332,7 +1480,7 @@ def _validate_segments(
                     f"duplicate segmentId {segment_id}",
                 )
             seen.add(segment_id)
-        version_id = str(segment.get("documentVersionId"))
+        version_id = str(segment.get(key))
         start, end = segment.get("representationStart"), segment.get("representationEnd")
         size = sizes.get(version_id)
         if not isinstance(start, int) or not isinstance(end, int):
@@ -1348,8 +1496,8 @@ def _validate_segments(
             _issue(
                 issues,
                 "invalid.segment",
-                f"{path}/documentVersionId",
-                "segment names no document in this release",
+                f"{path}/{key}",
+                "segment names no text body in this release",
             )
         elif end > size:
             _issue(
@@ -1367,12 +1515,12 @@ def _validate_segments(
                 "structural parent does not resolve",
             )
         else:
-            if parent.get("documentVersionId") != segment.get("documentVersionId"):
+            if parent.get(key) != segment.get(key):
                 _issue(
                     issues,
                     "invalid.segment",
                     f"{path}/structuralParentId",
-                    "structural parent belongs to a different document",
+                    "structural parent belongs to a different text body",
                 )
             p_start, p_end = parent.get("representationStart"), parent.get("representationEnd")
             if isinstance(p_start, int) and isinstance(p_end, int) and not (
@@ -1393,7 +1541,7 @@ def _validate_segments(
                     f"expected {expected_path}",
                 )
         evidence = segment.get("evidence")
-        capture = renditions.get(segment.get("documentVersionId"))
+        capture = renditions.get(segment.get(key))
         if isinstance(evidence, Mapping) and isinstance(capture, Mapping):
             if evidence.get("renditionSha256") != capture.get("sha256"):
                 _issue(
@@ -1455,20 +1603,21 @@ def _validate_coverage(
     segments: Sequence[Mapping[str, Any]],
     sizes: Mapping[str, int],
     object_key: str,
+    key: str,
     issues: list[VerificationIssue],
 ) -> None:
     """Every visible-text byte is segmented or explicitly excluded, never both."""
 
     for index, document in enumerate(documents):
         path = f"{object_key}/{index}"
-        version_id = document.get("documentVersionId")
+        version_id = document.get(key)
         size = sizes.get(str(version_id))
         if size is None:
             continue
         segment_ranges = [
             (segment["representationStart"], segment["representationEnd"])
             for segment in segments
-            if segment.get("documentVersionId") == version_id
+            if segment.get(key) == version_id
             and isinstance(segment.get("representationStart"), int)
             and isinstance(segment.get("representationEnd"), int)
         ]
@@ -1515,6 +1664,8 @@ def _validate_root_bindings(
     nodes: Sequence[Mapping[str, Any]],
     segments: Sequence[Mapping[str, Any]],
     members: Sequence[Mapping[str, Any]],
+    documents_key: str,
+    key: str,
     issues: list[VerificationIssue],
 ) -> None:
     content = root.get("content")
@@ -1546,6 +1697,11 @@ def _validate_root_bindings(
         if isinstance(document.get("sourceItemId"), str)
         and isinstance(document.get("documentId"), str)
         and isinstance(document.get("documentVersionId"), str)
+    ]
+    text_bodies = [
+        {"textBodyId": document[key], "textKind": document["textKind"]}
+        for document in documents
+        if isinstance(document.get(key), str) and isinstance(document.get("textKind"), str)
     ]
     generation = bundle_generation(root)
 
@@ -1583,7 +1739,7 @@ def _validate_root_bindings(
                 _issue(
                     issues,
                     "invalid.source-catalog-pin",
-                    f"data/documents.json/{index}/capture/catalogReleaseId",
+                    f"{documents_key}/{index}/capture/catalogReleaseId",
                     f"capture names a different catalog release than the root pin {pinned!r}",
                 )
 
@@ -1615,6 +1771,16 @@ def _validate_root_bindings(
                 "sourceDocumentMappingDigest",
                 lambda: framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined),
             ),
+            (
+                "textBodySetDigest",
+                lambda: framed_set_digest("docspec-text-body-set/2", text_bodies),
+            ),
+            # No attachment or comment member is sealed in this generation
+            # (restamp item 2 is recorded as underspecified), so both stream the
+            # empty set. A zero is written, never omitted: a release with none
+            # of a kind still declares that kind's digest.
+            ("attachmentSetDigest", lambda: framed_set_digest("docspec-attachment-set/2", ())),
+            ("commentSetDigest", lambda: framed_set_digest("docspec-comment-set/2", ())),
         )
     else:
         digest_plan = (
@@ -1684,7 +1850,7 @@ def _validate_root_bindings(
     )
     if content.get("counts") != expected_counts:
         _issue(issues, "invalid.counts", "release.json/content/counts", f"expected {expected_counts}")
-    expected_coverage = derive_coverage(dispositions, documents, segments)
+    expected_coverage = derive_coverage(dispositions, documents, segments, key=key)
     if content.get("coverage") != expected_coverage:
         _issue(
             issues,
@@ -1702,28 +1868,41 @@ def verify_document_release(bundle: Path) -> VerificationResult:
     root = _read_root(bundle, issues)
     if root is None:
         return VerificationResult(None, tuple(issues))
-    members, member_paths, declared = _read_member_manifest(bundle, root, issues)
+    # One reading of the bundle's own declaration, threaded through every rule
+    # below, so a bundle can never be parsed under one generation and judged
+    # under the other.
+    generation = bundle_generation(root)
+    key = TEXT_BODY_KEYS[generation]
+    members, member_paths, declared = _read_member_manifest(bundle, root, generation, issues)
     _verify_member_files(bundle, members, member_paths, declared, issues)
-    _validate_schema_set(root, members, member_paths, issues)
+    schemas = _validate_schema_set(root, members, member_paths, generation, issues)
+    _validate_root_shape(root, schemas, issues)
 
-    dispositions, dispositions_key = _read_rows("source-dispositions", members, member_paths, issues)
-    documents, documents_key = _read_rows("documents", members, member_paths, issues)
-    nodes, nodes_key = _read_rows("structural-nodes", members, member_paths, issues)
-    segments, segments_key = _read_rows("search-segments", members, member_paths, issues)
+    def rows(role: str) -> tuple[list[dict[str, Any]] | None, str]:
+        return _read_rows(role, members, member_paths, generation, schemas, issues)
+
+    dispositions, dispositions_key = rows("source-dispositions")
+    documents, documents_key = rows("documents")
+    nodes, nodes_key = rows("structural-nodes")
+    segments, segments_key = rows("search-segments")
 
     if dispositions is not None:
         _validate_dispositions(dispositions, dispositions_key, issues)
     sizes: dict[str, int] = {}
     if documents is not None and dispositions is not None:
-        sizes = _validate_documents(documents, dispositions, member_paths, documents_key, issues)
+        sizes = _validate_documents(
+            documents, dispositions, member_paths, documents_key, key, issues
+        )
     node_index: dict[str, dict[str, Any]] = {}
     if nodes is not None:
-        node_index = _validate_structure(nodes, sizes, nodes_key, issues)
+        node_index = _validate_structure(nodes, sizes, nodes_key, key, issues)
     if segments is not None and documents is not None:
-        _validate_segments(segments, node_index, documents, sizes, segments_key, issues)
-        _validate_coverage(documents, segments, sizes, documents_key, issues)
+        _validate_segments(segments, node_index, documents, sizes, segments_key, key, issues)
+        _validate_coverage(documents, segments, sizes, documents_key, key, issues)
     if None not in (dispositions, documents, nodes, segments):
-        _validate_root_bindings(root, dispositions, documents, nodes, segments, members, issues)
+        _validate_root_bindings(
+            root, dispositions, documents, nodes, segments, members, documents_key, key, issues
+        )
 
     release_id = root.get("releaseId")
     return VerificationResult(
@@ -1786,6 +1965,10 @@ __all__ = [
     "SOURCE_DISPOSITIONS_SCHEMA",
     "SOURCE_TO_DOCUMENT_DOMAIN",
     "STRUCTURAL_NODES_SCHEMA",
+    "TABULAR_MEDIA_TYPES",
+    "TABULAR_ROLES",
+    "TEXT_BODY_KEYS",
+    "UNSEALED_MEMBER_ROLES",
     "VerificationIssue",
     "VerificationResult",
     "artifact_sha256",

@@ -2,7 +2,7 @@
   "$id": "urn:docspec:schema:document-release-member-manifest:2.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DocumentReleaseMemberManifest",
-  "description": "The one global member manifest of a DocumentRelease v2 bundle. v2 does not partition; every member is listed here, sorted by objectKey. The member-descriptor protocol is identical to SourceCatalogRelease v1's; only the role and media-type vocabularies differ.",
+  "description": "The one global member manifest of a DocumentRelease v2 bundle. v2 does not partition the RELEASE; every member is listed here, sorted by objectKey. Tabular members are JSONL and the `text/` and `blobs/` members are partition buckets, so a large mint's manifest is tens of members rather than one per text body. The member-descriptor protocol is identical to SourceCatalogRelease v1's; only the role and media-type vocabularies differ.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -96,6 +96,8 @@
             "schema",
             "source-dispositions",
             "documents",
+            "attachments",
+            "comments",
             "structural-nodes",
             "search-segments",
             "rendition",
@@ -114,7 +116,7 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "recordCount": {
-          "description": "Row count for a tabular member; null for a schema, rendition, or representation member, which has no rows.",
+          "description": "Stated per ROLE, not per \"has rows\": null for a `schema` member, which is one document rather than a stream; the row count for a tabular member; and the number of text bodies in the bucket for a partitioned `rendition` or `representation` member, which IS a bucket of rows exactly as the catalog's partitions are. The old null-for-rendition rule described an unpartitioned layout that no longer exists.",
           "oneOf": [
             {
               "$ref": "#/$defs/count"

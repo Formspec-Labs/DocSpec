@@ -2,13 +2,14 @@
   "$id": "urn:docspec:schema:document-release:2.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DocumentRelease",
-  "description": "Root manifest of one sealed, portable DocumentRelease. Rulespec Core owns this schema; DocSpec owns the records it carries (REF-024). Version 2.0 because `docspec-document-release` 1.1 is a different, internal pointer-record shape.",
+  "description": "Root manifest of one sealed, portable DocumentRelease. DocSpec owns this schema and the records it carries (REF-048). Version 2.0 because `docspec-document-release` 1.1 is a different, internal pointer-record shape.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "format",
     "formatVersion",
     "releaseId",
+    "documentStateDigest",
     "annotations",
     "content"
   ],
@@ -20,8 +21,13 @@
       "const": "2.0"
     },
     "releaseId": {
+      "description": "The portable, CONTENT-DERIVED release name: the URN prefix followed by `documentStateDigest`'s hexadecimal, by string form. Not minted a second time. The derivation envelope carrying this bundle keeps its own `urn:spicy:artifact:derivation:` id; same key, two meanings, one boundary.",
       "type": "string",
       "pattern": "^urn:docspec:document-release:v2:[0-9a-f]{64}$"
+    },
+    "documentStateDigest": {
+      "description": "Digest over `{format, formatVersion, logicalContent}` under the artifact canonicaliser, where `logicalContent` is `content` minus every physical or packing fact: `globalManifest`, `counts.memberCount`, `counts.totalMemberByteSize`, `processingPolicies`. A physical-only repack therefore preserves it.",
+      "$ref": "#/$defs/digest"
     },
     "annotations": {
       "$ref": "#/$defs/annotations"
@@ -53,7 +59,7 @@
       "maximum": 9007199254740991
     },
     "annotations": {
-      "description": "The identity-excluded envelope. Everything here is a fact about the act of publishing rather than about the corpus content, so two builds of identical content share one identity. Per-record wall clocks are absent from this contract entirely — see the spec.",
+      "description": "The identity-excluded envelope. Everything here is a fact about the act of publishing rather than about the corpus content, so two builds of identical content share one identity. The acquisition wall clock is NOT here: it lives in each document's `captureRecord` (`acquiredAt`, `acquisitionStartedAt`), which no preimage covers — neither `documentStateDigest`, which is taken over `content` alone, nor any set digest.",
       "type": "object",
       "required": [
         "publishedAt"
@@ -81,9 +87,12 @@
       "required": [
         "corpusId",
         "sourceCatalog",
-        "processingPolicy",
+        "processingPolicies",
         "selectedSourceSetDigest",
         "documentVersionSetDigest",
+        "textBodySetDigest",
+        "attachmentSetDigest",
+        "commentSetDigest",
         "segmentSetDigest",
         "sourceDocumentMappingDigest",
         "joinReceipt",
@@ -100,23 +109,35 @@
         "sourceCatalog": {
           "$ref": "#/$defs/sourceCatalogPin"
         },
-        "processingPolicy": {
-          "$ref": "#/$defs/processingPolicy"
+        "processingPolicies": {
+          "$ref": "#/$defs/processingPolicies"
         },
         "selectedSourceSetDigest": {
-          "description": "Canonical set digest over the deduplicated sorted selected sourceItemId list. MUST equal the pinned catalog's selectedSourceSetDigest.",
+          "description": "Framed set digest over the selected `{sourceItemId, documentId}` members under the catalog's own `docspec-selected-source-set/1` domain. DERIVED from the pinned catalog, never projected from it: the pinned snapshot carries no such field.",
           "$ref": "#/$defs/digest"
         },
         "documentVersionSetDigest": {
-          "description": "Canonical set digest over the deduplicated sorted documentVersionId list.",
+          "description": "Framed set digest over the unique `documentVersionId` keys under `docspec-document-version-set/2`.",
+          "$ref": "#/$defs/digest"
+        },
+        "textBodySetDigest": {
+          "description": "Framed set digest over the `{textBodyId, textKind}` members under `docspec-text-body-set/2`. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
+          "$ref": "#/$defs/digest"
+        },
+        "attachmentSetDigest": {
+          "description": "Framed set digest over the unique `attachmentId` keys under `docspec-attachment-set/2`. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
+          "$ref": "#/$defs/digest"
+        },
+        "commentSetDigest": {
+          "description": "Framed set digest over the unique `commentId` keys under `docspec-comment-set/2`. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
           "$ref": "#/$defs/digest"
         },
         "segmentSetDigest": {
-          "description": "Canonical set digest over the deduplicated sorted segmentId list.",
+          "description": "Framed set digest over the unique `segmentId` keys under `docspec-segment-set/2`, every text kind together.",
           "$ref": "#/$defs/digest"
         },
         "sourceDocumentMappingDigest": {
-          "description": "Canonical digest over the sorted [sourceItemId, documentVersionId] pair list. A LIST digest, not a set digest: the pairing is the fact, and a repeated pair is a defect the join receipt reports.",
+          "description": "Framed SET digest over the unique `sourceItemId` keys under `docspec-source-to-document/2`, each record carrying `documentId` and `documentVersionId`. A set, not a list of repeated pairs: U's bijection already makes `sourceItemId` unique, and a repeated pair is `invalid.duplicate-identity` rather than a fact a digest has to preserve.",
           "$ref": "#/$defs/digest"
         },
         "joinReceipt": {
@@ -137,67 +158,116 @@
       }
     },
     "sourceCatalogPin": {
-      "description": "The exact SourceCatalogRelease this corpus was built from. Pinned by identity AND digest so a consumer can prove which selection produced it.",
+      "description": "The exact `SourceCatalog` snapshot this corpus was built from, pinned by the snapshot's own identity and by the BYTE digest of the pinned `catalog.json`. `requestedUniverseSetDigest` and `selectedSourceSetDigest` are not pinned here: the snapshot carries neither at its root, so a pin declaring them would be pinning values it cannot read back.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "releaseId",
-        "releaseDigest",
-        "requestedUniverseSetDigest",
-        "selectedSourceSetDigest"
+        "catalogId",
+        "catalogDigest"
       ],
       "properties": {
-        "releaseId": {
+        "catalogId": {
           "type": "string",
-          "pattern": "^urn:spicy-regs:source-catalog-release:v1:[0-9a-f]{64}$"
+          "pattern": "^urn:docspec:source-catalog:v1:[0-9a-f]{64}$"
         },
-        "releaseDigest": {
-          "$ref": "#/$defs/digest"
-        },
-        "requestedUniverseSetDigest": {
-          "$ref": "#/$defs/digest"
-        },
-        "selectedSourceSetDigest": {
-          "$ref": "#/$defs/digest"
+        "catalogDigest": {
+          "description": "The sha256 of the pinned `catalog.json` BYTES, verified against those bytes rather than against a re-serialisation of the parsed value.",
+          "$ref": "#/$defs/hexDigest"
         }
       }
     },
+    "processingPolicies": {
+      "description": "One closed record per `(textKind, mediaType)`, sorted by that pair. Per-kind is not optional: a `document-body` HTML extractor and a `comment` PDF extractor are different code under different retention floors. Each record digests the extractor and the segmenter themselves, so policy content cannot drift under an unchanged id. This sits BESIDE the identity preimage, not inside it — the plan is already bound into the envelope name, and folding policy digests into `documentStateDigest` would make \"is this the same corpus\" answer no whenever a segmenter is rebuilt over unchanged text.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/processingPolicy"
+      }
+    },
     "processingPolicy": {
-      "description": "The versioned policy that governed extraction and segmentation. The digest pins the exact policy bytes; this release does not carry them.",
+      "description": "The extractor, segmenter, bound, and retention floor that governed one `(textKind, mediaType)` population.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "policyId",
-        "policyVersion",
-        "policySha256",
+        "textKind",
+        "mediaType",
         "extractorId",
+        "extractorDigest",
         "segmenterId",
-        "maxSegmentBytes"
+        "segmenterDigest",
+        "maxSegmentBytes",
+        "retentionFloor"
       ],
       "properties": {
-        "policyId": {
-          "$ref": "#/$defs/absoluteId"
+        "textKind": {
+          "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+          "enum": [
+            "document-body",
+            "attachment",
+            "comment"
+          ]
         },
-        "policyVersion": {
+        "mediaType": {
           "type": "string",
-          "minLength": 1
-        },
-        "policySha256": {
-          "$ref": "#/$defs/hexDigest"
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
         },
         "extractorId": {
           "type": "string",
           "minLength": 1
         },
+        "extractorDigest": {
+          "$ref": "#/$defs/hexDigest"
+        },
         "segmenterId": {
           "type": "string",
           "minLength": 1
+        },
+        "segmenterDigest": {
+          "$ref": "#/$defs/hexDigest"
         },
         "maxSegmentBytes": {
           "description": "The bound that makes segmentation deterministic. An oversized source structure is split under this policy while preserving its source coordinates.",
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
+        },
+        "retentionFloor": {
+          "$ref": "#/$defs/retentionFloor"
+        }
+      }
+    },
+    "retentionFloor": {
+      "description": "The declared floor this parser had to clear on this format before it was allowed to run. Extraction refuses below the floor, refuses when no floor is declared, and refuses when the source's visible text could not be measured; undeclared never inherits a default. Both fractions are DECIMAL STRINGS: this format's canonicaliser refuses binary floating point outright and admits an integer unit or a decimal string, and the decimal string is the form that keeps `0 < value < 1` literally rather than re-scaling it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "observedMinimum",
+        "population"
+      ],
+      "properties": {
+        "value": {
+          "description": "Strictly between 0 and 1, written as a decimal string with no trailing zero: outside that range a floor either gates nothing or refuses everything.",
+          "type": "string",
+          "pattern": "^0\\.[0-9]{0,8}[1-9]$"
+        },
+        "unit": {
+          "description": "The visible-text fraction for markup, text density for binary renditions. Different measurements, never one floor.",
+          "enum": [
+            "visible-text-fraction",
+            "text-density"
+          ]
+        },
+        "observedMinimum": {
+          "description": "The lowest value measured on the named population, in the same decimal-string form. MUST be greater than `value`: no margin under the lowest legitimate document is a future false refusal.",
+          "type": "string",
+          "pattern": "^0\\.[0-9]{0,8}[1-9]$"
+        },
+        "population": {
+          "description": "The named corpus the floor was calibrated on. A format nobody measured has no floor and is refused.",
+          "type": "string",
+          "minLength": 1
         }
       }
     },

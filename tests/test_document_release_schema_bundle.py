@@ -47,6 +47,22 @@ def _root_validator() -> Draft202012Validator:
     return Draft202012Validator(_schema("document-release.schema.json"))
 
 
+def _embedded(bundle: str, name: str) -> dict[str, Any]:
+    """One schema as the sealed bundle carries it.
+
+    The packaged schemas are the DOCSPEC minting generation now that Decision
+    0001's restamp has landed on them, and the twenty sealed bundles were minted
+    under the predecessor generation. Their schema bodies are not packaged
+    anywhere else -- they live in the bundles that carry them, digest-pinned by
+    their own descriptors -- so a predecessor fixture is checked against its own
+    embedded copy. A bundle is read as it was written.
+    """
+
+    value = _load(FIXTURE_DIR / bundle / "schemas" / name)
+    assert isinstance(value, dict)
+    return value
+
+
 def _errors(validator: Draft202012Validator, value: Any) -> list[str]:
     return [
         f"{'/'.join(str(part) for part in error.absolute_path)}: {error.message}"
@@ -67,11 +83,32 @@ def test_the_two_zero_schema_bundle_is_complete_and_every_schema_is_valid_json_s
         assert "rulespec.org" not in (SCHEMA_DIR / name).read_text(encoding="utf-8")
 
 
-def test_the_valid_fixture_bundle_satisfies_the_two_zero_root_schema() -> None:
+def test_the_valid_fixture_bundle_satisfies_the_root_schema_it_was_sealed_under() -> None:
     release = _load(FIXTURE_DIR / "valid" / "release.json")
-    assert _errors(_root_validator(), release) == []
+    sealed_root_schema = Draft202012Validator(
+        _embedded("valid", "document-release-v2.schema.json")
+    )
+
+    assert _errors(sealed_root_schema, release) == []
     assert release["format"] == "docspec-document-release"
     assert release["formatVersion"] == "2.0"
+
+
+def test_the_packaged_root_schema_no_longer_describes_the_predecessor_corpus() -> None:
+    """The restamp moved the packaged generation, and that is visible from here.
+
+    Decision 0001's items 6, 8, and 9 reshaped the root: `documentStateDigest`
+    is required, `processingPolicy` became `processingPolicies`, and the catalog
+    pin became `{catalogId, catalogDigest}`. The sealed corpus predates all
+    three, so the packaged schema must REFUSE it. If this ever passes again,
+    either the restamp was reverted or the sealed corpus was rewritten.
+    """
+
+    release = _load(FIXTURE_DIR / "valid" / "release.json")
+    errors = _errors(_root_validator(), release)
+
+    assert ": 'documentStateDigest' is a required property" in errors
+    assert any("processingPolicies" in item for item in errors), errors
 
 
 def test_the_valid_fixture_root_is_exact_canonical_json_without_a_trailing_newline() -> None:
@@ -98,7 +135,9 @@ def test_the_unknown_version_fixture_is_refused_by_the_root_schema() -> None:
 
 
 def test_the_unknown_node_kind_fixture_is_refused_by_the_structural_node_schema() -> None:
-    validator = Draft202012Validator(_schema("structural-nodes.schema.json"))
+    validator = Draft202012Validator(
+        _embedded("valid", "structural-nodes-v1.schema.json")
+    )
     rows = _load(FIXTURE_DIR / "invalid" / "unknown-node-kind" / "data" / "structural-nodes.json")
     refused = [row for row in rows if _errors(validator, row)]
     assert refused, "no structural node row carried the unknown nodeKind"
