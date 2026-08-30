@@ -73,6 +73,7 @@ from docspec.adapters.document_release_verify import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
+    TEXT_BODY_SET_DOMAIN,
     TABULAR_MEDIA_TYPES,
     TEXT_BODY_INDEX_ROLE,
     TEXT_BODY_KEYS,
@@ -90,7 +91,12 @@ from docspec.document_release_support import (
     write_canonical_json,
     write_canonical_jsonl,
 )
+from docspec.domain.identity import stable_urn
 from docspec.domain.storage import partition_bucket
+from docspec.processing.retention_floors import (
+    NORMALIZED_VISIBLE_TEXT_FRACTION,
+    normalized_byte_size,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "document_release_v2_docspec"
@@ -165,8 +171,13 @@ SEGMENTER_BODY = {
 # observed minimum beside it IS measured, from the fixture's own bodies, and the
 # builder refuses unless `observedMinimum > value` holds.
 RETENTION_FLOOR_VALUE = "0.5"
-RETENTION_FLOOR_UNIT = "visible-text-fraction"
+RETENTION_FLOOR_UNIT = NORMALIZED_VISIBLE_TEXT_FRACTION
 RETENTION_FLOOR_POPULATION = "document-release-v2-conformance-fixture"
+# The kinds this corpus mints text for. A policy per `(textKind, mediaType)` is
+# not decoration here: amendment B4's `invalid.retention-floor` refuses a text
+# body whose kind and media type no declared policy governs, so a corpus that
+# carries an attachment must declare the attachment's floor.
+POLICY_KINDS: tuple[str, ...] = (DOCUMENT_BODY, "attachment")
 
 
 def _decimal_fraction(numerator: int, denominator: int, places: int = 4) -> str:
@@ -196,23 +207,27 @@ def _processing_policies(observed_minimum: str) -> list[dict[str, Any]]:
             f"{observed_minimum}: a floor at or above the lowest legitimate document is a future "
             "false refusal"
         )
-    return [
-        {
-            "extractorDigest": canonical_sha256(EXTRACTOR_BODY),
-            "extractorId": EXTRACTOR_ID,
-            "maxSegmentBytes": MAX_SEGMENT_BYTES,
-            "mediaType": "text/html",
-            "retentionFloor": {
-                "observedMinimum": observed_minimum,
-                "population": RETENTION_FLOOR_POPULATION,
-                "unit": RETENTION_FLOOR_UNIT,
-                "value": RETENTION_FLOOR_VALUE,
-            },
-            "segmenterDigest": canonical_sha256(SEGMENTER_BODY),
-            "segmenterId": SEGMENTER_ID,
-            "textKind": DOCUMENT_BODY,
-        }
-    ]
+    return sorted(
+        (
+            {
+                "extractorDigest": canonical_sha256(EXTRACTOR_BODY),
+                "extractorId": EXTRACTOR_ID,
+                "maxSegmentBytes": MAX_SEGMENT_BYTES,
+                "mediaType": "text/html",
+                "retentionFloor": {
+                    "observedMinimum": observed_minimum,
+                    "population": RETENTION_FLOOR_POPULATION,
+                    "unit": RETENTION_FLOOR_UNIT,
+                    "value": RETENTION_FLOOR_VALUE,
+                },
+                "segmenterDigest": canonical_sha256(SEGMENTER_BODY),
+                "segmenterId": SEGMENTER_ID,
+                "textKind": text_kind,
+            }
+            for text_kind in POLICY_KINDS
+        ),
+        key=lambda policy: (policy["textKind"], policy["mediaType"]),
+    )
 
 
 def _greater(left: str, right: str) -> bool:
@@ -352,7 +367,12 @@ def _build_document_bytes(document_id: str) -> dict[str, Any]:
     }
 
 
-def _structural_nodes(document_id: str, body_id: str, blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _structural_nodes(
+    document_id: str,
+    body_id: str,
+    blocks: list[dict[str, Any]],
+    text_kind: str = DOCUMENT_BODY,
+) -> list[dict[str, Any]]:
     """Build the source-derived node tree: depth-1 blocks hang off the last heading.
 
     A section node spans its whole section — its own heading line through the
@@ -394,7 +414,7 @@ def _structural_nodes(document_id: str, body_id: str, blocks: list[dict[str, Any
                 "structuralNodeId": node_id,
                 "structuralParentId": parent_id,
                 TEXT_BODY_KEY: body_id,
-                "textKind": DOCUMENT_BODY,
+                "textKind": text_kind,
             }
         )
     return nodes
@@ -418,6 +438,7 @@ def _search_segments(
     blocks: list[dict[str, Any]],
     nodes: list[dict[str, Any]],
     rendition_sha256: str,
+    text_kind: str = DOCUMENT_BODY,
 ) -> list[dict[str, Any]]:
     segments: list[dict[str, Any]] = []
     ordinal = 0
@@ -442,7 +463,7 @@ def _search_segments(
                 "segmentId": f"{body_id}#s{ordinal}",
                 "structuralParentId": node_id,
                 TEXT_BODY_KEY: body_id,
-                "textKind": DOCUMENT_BODY,
+                "textKind": text_kind,
             }
         )
         ordinal += 1

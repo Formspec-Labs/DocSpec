@@ -747,18 +747,28 @@ half and false of the logical one.
 `/3` domain frames each record's **full logical row**: the canonical row exactly
 as the member carries it, minus an enumerated per-record-type exclusion set. The
 row's own content digests — `capture.sha256`, `representation.sha256`,
-`byteSize`, `expectedSha256` — are **logical** and stay in. Two, and only two,
-kinds of field come out, and both come out for a reason this decision already
-gave:
+`byteSize`, `expectedSha256` — are **logical** and stay in. **The line, stated once and then enumerated: a
+source-issued fact is content; a DocSpec-process fact is packing.** A
+`modifyDate`, a source id, a content digest came from the publisher and belongs
+in the name. A fetch time, a run id, a tool version came from this producer's
+act of building, and putting one inside a content-derived identity would break
+**remint-idempotence** -- an honest remint of identical content would mint a
+different name. Two kinds of field come out, and both are that line:
 
 * **physical locator facts**, which say where a byte landed rather than what it
   is. Row-level, that is exactly the `objectKey` fields; the bucket offsets
   (`startByte`, `byteLength`, `member`) live in the `text-body-index` member,
   which no set digest reads. This is the same physical/logical line the root
   already draws at `logical_content`, extended one level down.
-* **the acquisition wall clock**, which deviation row 10 already excludes from
-  *every* preimage: "a clock inside a content-derived identity would make two
-  byte-identical captures two releases".
+* **process-provenance facts**, of which this format's rows carry exactly two:
+  `capture.acquiredAt` and `capture.acquisitionStartedAt`, which deviation row
+  10 already excludes from *every* preimage -- "a clock inside a content-derived
+  identity would make two byte-identical captures two releases". The other
+  process facts this release carries -- `annotations.buildRunId`,
+  `annotations.publishedAt`, and `processingPolicies` with its tool digests --
+  are already outside the identity preimage at the root, and stay there. The
+  enumeration below is exhaustive per record type, so a field added to any row
+  later is content until this decision says otherwise.
 
 The enumerated exclusion set, per record type, complete:
 
@@ -963,16 +973,29 @@ this decision names went **unused**.
    (`_preserved-2026-08-10/body-retrieval-corpus-2026-08-02`): `distribution-xml`
    for `application/xml`, `distribution-html` for `text/html` — the population
    this decision named and the first calibration skipped. Disjointness is
-   **measured, not asserted**: both populations are content-addressed, and zero
-   of their 1,986 rendition digests appears among the pinned corpus's captured
-   digests. The pinned corpus contributes **no** stratum. A floor calibrated on
+   **measured two ways, not asserted**: zero of the 1,986 rendition digests
+   appears among the pinned corpus's captured digests, and -- because the same
+   Federal Register document can be retrieved twice into different bytes -- zero
+   of their 1,986 source document numbers appears among the pinned corpus's
+   6,408. A digest check alone would have missed a redraw of the same document;
+   the id check is the one that settles it. Both counts ride in the receipt, and
+   a non-zero one drops those documents from the calibration. The pinned corpus contributes **no** stratum. A floor calibrated on
    the corpus it gates cannot refuse anything in it, which is what made
    `observedMinimum: 0.4777` both wrong and unfalsifiable.
    The `rule-bodies-pre2000-2026-08-22` population is measured and **not pooled**,
    recorded here so the choice can be re-argued: over its full 39,785 bodies its
    minimum is 0.0589 against a next-lowest of 0.2481, so pooling it would set an
    HTML floor of 0.044 — a floor that gates nothing, chosen by one outlier.
-3. **`observedMinimum` is what its name says.** It is the minimum over the
+3. **The receipt carries both ratios for every document it measured**, raw
+   (representation bytes over rendition bytes) and normalized, one row per
+   document over the whole population. The gate keys on the normalized one only.
+   The raw column is kept because normalization hides exactly one thin-parse
+   mode: content whose meaning is carried BY its whitespace -- a positional
+   table, an indented hierarchy -- is destroyed by a parse that keeps the
+   characters and drops the layout, and the signature of that is a cratered raw
+   ratio under a healthy normalized one. Two cheap columns, one signal nothing
+   else in this format reports.
+4. **`observedMinimum` is what its name says.** It is the minimum over the
    **full** named population, never a sample statistic. The calibration receipt
    is re-formatted so the confusion is not expressible: it has no field named
    `sample` anywhere, `population.coverage` is the constant `full-population`,
@@ -981,7 +1004,7 @@ this decision names went **unused**.
    receipt that measured a sample cannot be written in this format. The receipt
    is sealed by its own JSON Schema, `urn:docspec:schema:retention-floor-calibration:2.0`,
    and the builder refuses a receipt that does not validate against it.
-4. **The margin rule is unchanged and stated:** the floor is three quarters of
+5. **The margin rule is unchanged and stated:** the floor is three quarters of
    the population's observed minimum, truncated to two significant digits. It is
    not a low quantile — a p1 floor would refuse the bottom percent of the very
    population that defined it.
@@ -1027,6 +1050,14 @@ bound by `counts`, by the join receipt, by the bijection, and — under B1 — b
 **`RELEASE_FORMAT_VERSION` becomes `"2.0"`** (`src/docspec/domain/release.py:22`).
 *Migration, and the builder's obligations* held it at `1.1` "until the builder
 lands, then becomes `2.0` in one commit". The builder landed.
+
+**The release URN prefix does not move with it.**
+`urn:docspec:document-release:v2:` is a string downstream consumers pin, and
+`RELEASE_FORMAT_VERSION` is a different fact from the identity namespace: the
+format version says which contract the bytes obey, the URN prefix says which
+identity namespace the name lives in, and *Sealed identities* fixed the latter
+at `v2` for the 2.0 format deliberately. Flipping one must not move the other,
+and anything that would move it stops and reports instead.
 
 **The `reasonCode` vocabularies close** (amendment A3's first-real-mint
 obligation, and *What this decision does not decide*'s `reasonCode` row). Two
@@ -1088,6 +1119,18 @@ P  docspec-source-to-document/3       {sourceItemId, documentId,
 Each still calls the installed Rulespec `framedSectionDigest` with one `members`
 section, keys still unique, declared count still equal to the streamed count,
 rows still ordered by the key under the UTF-16 rule.
+
+**A `/3` digest refuses a repeated key; it never absorbs one.** The guarantee
+`invalid.duplicate-identity` already gave `sourceItemId` now holds for every one
+of these domains, and it has to: with the physical locators excluded, two
+identical attachments enumerated on one document would frame to one identical
+record, and a set digest that folded them would leave a multiplicity change
+invisible to the release's name -- the same shape of hole B1 exists to close.
+Every row type carries a unique identity field with its own duplicate
+diagnostic (`sourceItemId`, `documentVersionId`, `attachmentId`, `commentId`,
+`structuralNodeId`, `segmentId`), the digester raises rather than dedupes, and
+the invalid corpus proves it for the attachment set.
+
 `selectedSourceSetDigest` stays at `docspec-selected-source-set/1` (B6) — it is
 the catalog's fact under the catalog's name, and it is the one digest in this
 format a bundle-only reader cannot recompute.
