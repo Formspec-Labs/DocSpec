@@ -2,7 +2,7 @@
   "$id": "urn:docspec:schema:document-release-member-manifest:2.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "DocumentReleaseMemberManifest",
-  "description": "The one global member manifest of a DocumentRelease v2 bundle. v2 does not partition the RELEASE; every member is listed here, sorted by objectKey. Tabular members are JSONL and the `text/` and `blobs/` members are partition buckets, so a large mint's manifest is tens of members rather than one per text body. The member-descriptor protocol is identical to SourceCatalogRelease v1's; only the role and media-type vocabularies differ.",
+  "description": "The one global member manifest of a DocumentRelease v2 bundle. v2 does not partition the RELEASE; every member is listed here, sorted by objectKey. Tabular members are JSONL and the `text/` and `blobs/` members are partition buckets, so a large mint's manifest is tens of members rather than one per text body. A bucket holding several text bodies is recoverable only through the `text-body-index` member, whose row shape this schema also owns — an index over member bytes is a fact about how members are packed, which is this manifest's business and no row schema's. The member-descriptor protocol is identical to SourceCatalogRelease v1's; only the role and media-type vocabularies differ.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -100,6 +100,7 @@
             "comments",
             "structural-nodes",
             "search-segments",
+            "text-body-index",
             "rendition",
             "representation"
           ]
@@ -116,7 +117,7 @@
           "pattern": "^[0-9a-f]{64}$"
         },
         "recordCount": {
-          "description": "Stated per ROLE, not per \"has rows\": null for a `schema` member, which is one document rather than a stream; the row count for a tabular member; and the number of text bodies in the bucket for a partitioned `rendition` or `representation` member, which IS a bucket of rows exactly as the catalog's partitions are. The old null-for-rendition rule described an unpartitioned layout that no longer exists.",
+          "description": "Stated per ROLE, not per \"has rows\": null for a `schema` member, which is one document rather than a stream; the row count for a tabular member and for the `text-body-index`; and the number of text bodies in the bucket for a partitioned `rendition` or `representation` member, which IS a bucket of rows exactly as the catalog's partitions are. The old null-for-rendition rule described an unpartitioned layout that no longer exists.",
           "oneOf": [
             {
               "$ref": "#/$defs/count"
@@ -127,9 +128,52 @@
           ]
         },
         "schemaId": {
-          "description": "The schema governing this member's rows, or the media contract for an opaque member.",
+          "description": "The schema governing this member's rows, or the media contract for an opaque member. A `text-body-index` member names THIS schema: its row shape is `$defs/textBodyIndexRow` below.",
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "textBodyIndexRow": {
+      "description": "One text body's byte slice inside one partitioned member. Digest-bucketed `text/` and `blobs/` members hold whatever bodies hash into them, and without this row nothing recovers one body's bytes from a bucket it shares — no other field in this format carries an offset into a member. With it, every body's slice is addressable and digest-verifiable from bundle bytes alone, so the refusal to mint a multi-body bucket lifts wherever the index covers that bucket. A slice whose bytes do not digest to `sha256` is `invalid.member-digest`, exactly as a whole member's would be.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "textBodyId",
+        "member",
+        "startByte",
+        "byteLength",
+        "sha256"
+      ],
+      "properties": {
+        "family": {
+          "description": "Which partition family the member belongs to: `text` for a selected representation, `blob` for a captured rendition. One text body has one slice in each family it is present in.",
+          "enum": [
+            "text",
+            "blob"
+          ]
+        },
+        "textBodyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "member": {
+          "description": "The declared `objectKey` of the partitioned member this slice lies in. A relative POSIX path, and a member the manifest lists.",
+          "type": "string",
+          "minLength": 1
+        },
+        "startByte": {
+          "description": "Half-open [startByte, startByte + byteLength) over the member's bytes.",
+          "$ref": "#/$defs/count"
+        },
+        "byteLength": {
+          "$ref": "#/$defs/count"
+        },
+        "sha256": {
+          "description": "Digest of exactly those slice bytes, so a consumer verifies the body it extracted rather than the bucket it came from.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       }
     }

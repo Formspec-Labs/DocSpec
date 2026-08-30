@@ -97,6 +97,7 @@ import jsonschema
 from rulespec_artifacts import FramedSection, framed_section_digest
 from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_bytes
 
+from docspec.domain.identity import stable_urn
 from docspec.document_release_support import (
     MANIFEST_REFERENCE_FIELDS,
     MEMBER_DESCRIPTOR_FIELDS,
@@ -122,6 +123,8 @@ SOURCE_DISPOSITIONS_SCHEMA = SCHEMA_ROOT / "source-dispositions.schema.json"
 DOCUMENTS_SCHEMA = SCHEMA_ROOT / "documents.schema.json"
 STRUCTURAL_NODES_SCHEMA = SCHEMA_ROOT / "structural-nodes.schema.json"
 SEARCH_SEGMENTS_SCHEMA = SCHEMA_ROOT / "search-segments.schema.json"
+ATTACHMENTS_SCHEMA = SCHEMA_ROOT / "attachments.schema.json"
+COMMENTS_SCHEMA = SCHEMA_ROOT / "comments.schema.json"
 
 FORMAT = "docspec-document-release"
 FORMAT_VERSION = "2.0"
@@ -142,9 +145,21 @@ SCHEMA_FILES: dict[str, Path] = {
     "member-manifest": MEMBER_MANIFEST_SCHEMA,
     "source-dispositions": SOURCE_DISPOSITIONS_SCHEMA,
     "documents": DOCUMENTS_SCHEMA,
+    "attachments": ATTACHMENTS_SCHEMA,
+    "comments": COMMENTS_SCHEMA,
     "structural-nodes": STRUCTURAL_NODES_SCHEMA,
     "search-segments": SEARCH_SEGMENTS_SCHEMA,
 }
+
+# The three text kinds, in the order `counts.perKind` declares them.
+TEXT_KINDS: tuple[str, ...] = ("document-body", "attachment", "comment")
+ATTACHMENT_DISPOSITIONS: tuple[str, ...] = (
+    "text-captured",
+    "text-excluded",
+    "source-unavailable",
+    "extraction-failed",
+)
+ATTACHMENT_URN_PREFIX = "urn:docspec:document-release-attachment:v2:"
 
 
 def _registered_schema_id(path: Path) -> str:
@@ -209,6 +224,16 @@ _GENERATION_OF_SCHEMA_ID: dict[str, str] = {
     **{schema_id: PREDECESSOR_GENERATION for schema_id in _PREDECESSOR_SCHEMA_IDS.values()},
 }
 
+# How many schemas a conforming bundle of each generation declares, and which
+# roles. The docspec generation is the packaged eight (restamp item 3's 6 -> 8
+# widening); the predecessor generation is the frozen six the sealed corpus was
+# minted with, and `attachments`/`comments` are absent there because they did
+# not exist. One table, so neither branch can silently demand the other's roles.
+GENERATION_SCHEMA_ROLES: dict[str, frozenset[str]] = {
+    PREDECESSOR_GENERATION: frozenset(_PREDECESSOR_SCHEMA_IDS),
+    DOCSPEC_GENERATION: frozenset(SCHEMA_FILES),
+}
+
 
 def schema_id_generation(value: Any) -> str | None:
     """Name the minting generation one declared ``$id`` belongs to, or nothing."""
@@ -258,23 +283,54 @@ def bundle_generation(root: Mapping[str, Any]) -> str:
 
 
 # Member roles that carry schema-governed rows, and the schema role serving each.
+# `attachments` and `comments` were fail-closed here until restamp item 2 was
+# resolvable: a role whose rows no sealed schema governs cannot be judged, and a
+# role the verifier cannot judge must not pass unread. Both schemas are sealed
+# now, so both roles are judged rather than refused -- under the docspec
+# generation only. Under the predecessor generation they are still refused,
+# because the schemas that would govern them are not that generation's.
 TABULAR_ROLES: dict[str, str] = {
     "source-dispositions": "source-dispositions",
     "documents": "documents",
+    "attachments": "attachments",
+    "comments": "comments",
     "structural-nodes": "structural-nodes",
     "search-segments": "search-segments",
 }
+# The tabular members every generation carries. `attachments` and `comments` are
+# the two the docspec generation added; the four here are the ones a predecessor
+# bundle also declares, and the ones every bundle must declare exactly one of.
+PREDECESSOR_TABULAR_ROLES: tuple[str, ...] = (
+    "source-dispositions",
+    "documents",
+    "structural-nodes",
+    "search-segments",
+)
+# The index over partitioned member bytes (amendment A4). Its rows are governed
+# by the member-manifest schema's own `textBodyIndexRow` `$def` rather than by a
+# ninth schema: an index over member bytes is a fact about how members are
+# packed, which is the manifest's business, and restamp item 3 fixes the schema
+# set at exactly eight.
+TEXT_BODY_INDEX_ROLE = "text-body-index"
+TEXT_BODY_INDEX_ROW_DEF = "textBodyIndexRow"
+TEXT_BODY_INDEX_FAMILIES: dict[str, str] = {"text": "representation", "blob": "capture"}
 # `rendition` and `representation`. Opaque in the sense that no row schema
 # governs their bytes -- but under the docspec generation they are partition
 # BUCKETS carrying a `recordCount`, not single documents (restamp items 11, 16).
 OPAQUE_ROLES = frozenset({"rendition", "representation"})
-ALLOWED_MEMBER_ROLES = frozenset({"schema", *TABULAR_ROLES, *OPAQUE_ROLES})
-# `attachments` and `comments` are in the member-manifest schema's role enum
-# (restamp item 13) and deliberately NOT here. Their schemas are not sealed --
-# restamp item 2 is recorded as underspecified -- so there is nothing to check
-# such a member's rows against, and a role the verifier cannot judge fails
-# closed rather than passing unread. The enum widened; the gate did not.
-UNSEALED_MEMBER_ROLES = frozenset({"attachments", "comments"})
+ALLOWED_MEMBER_ROLES = frozenset(
+    {"schema", TEXT_BODY_INDEX_ROLE, *TABULAR_ROLES, *OPAQUE_ROLES}
+)
+# One role vocabulary per generation, read off the same declaration everything
+# else is. The predecessor corpus has no attachment, comment, or index member,
+# and a bundle that declared one would be declaring a member this verifier could
+# only judge against another generation's schemas.
+MEMBER_ROLES_BY_GENERATION: dict[str, frozenset[str]] = {
+    PREDECESSOR_GENERATION: frozenset(
+        {"schema", *PREDECESSOR_TABULAR_ROLES, *OPAQUE_ROLES}
+    ),
+    DOCSPEC_GENERATION: ALLOWED_MEMBER_ROLES,
+}
 REPRESENTATION_MEDIA_TYPE = "text/plain; charset=utf-8"
 
 # One fact per generation, read off the same declared `$id`s.
@@ -559,6 +615,133 @@ def _covered_bytes(ranges: Sequence[tuple[int, int]]) -> int:
     return sum(end - start for start, end in _interval_union(ranges))
 
 
+def _text_bodies(
+    documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
+    *,
+    key: str,
+) -> list[tuple[Any, str, Any, Any]]:
+    """Every text body this release carries, as ``(id, kind, representation, excluded)``.
+
+    One text pipeline, three kinds: a document body, an attachment, and a
+    comment each have captured bytes, one selected representation, and an
+    exclusion ledger, so the byte accounting reads them through one projection
+    rather than three. An attachment with a null ``textBodyId`` carries no text
+    -- every rendition of it failed or was excluded -- and is not a text body;
+    it is still enumerated, still accounted, and still counted nowhere here.
+    """
+
+    bodies: list[tuple[Any, str, Any, Any]] = [
+        (
+            document.get(key),
+            document.get("textKind") or "document-body",
+            document.get("representation"),
+            document.get("excludedRanges"),
+        )
+        for document in documents
+    ]
+    for attachment in attachments:
+        if isinstance(attachment.get("textBodyId"), str):
+            bodies.append(
+                (
+                    attachment["textBodyId"],
+                    "attachment",
+                    attachment.get("representation"),
+                    attachment.get("excludedRanges"),
+                )
+            )
+    for comment in comments:
+        bodies.append(
+            (
+                comment.get("textBodyId"),
+                "comment",
+                comment.get("representation"),
+                comment.get("excludedRanges"),
+            )
+        )
+    return bodies
+
+
+def _body_totals(
+    body: tuple[Any, str, Any, Any],
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    key: str,
+) -> tuple[int, int, int]:
+    """One text body's representation, segmented, and excluded byte totals."""
+
+    body_id, _kind, representation, excluded = body
+    representation_bytes = (
+        representation["byteSize"]
+        if isinstance(representation, Mapping) and isinstance(representation.get("byteSize"), int)
+        else 0
+    )
+    segmented = _covered_bytes(
+        [
+            (segment["representationStart"], segment["representationEnd"])
+            for segment in segments
+            if segment.get(key) == body_id
+            and isinstance(segment.get("representationStart"), int)
+            and isinstance(segment.get("representationEnd"), int)
+        ]
+    )
+    excluded_bytes = _covered_bytes(
+        [
+            (item["start"], item["end"])
+            for item in excluded or []
+            if isinstance(item, Mapping)
+            and isinstance(item.get("start"), int)
+            and isinstance(item.get("end"), int)
+        ]
+    )
+    return representation_bytes, segmented, excluded_bytes
+
+
+def derive_per_kind_counts(
+    documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    *,
+    key: str,
+) -> dict[str, dict[str, int]]:
+    """Recompute ``counts.perKind`` from the members alone (amendment A2).
+
+    Closed at the three text kinds and keyed by them, each carrying exactly
+    ``textBodies``, ``segments``, and the three byte totals. Every kind is
+    present even when the release carries none of it: a zero is written, never
+    omitted, so a consumer reads absence as a measured zero rather than as a
+    field somebody forgot.
+    """
+
+    per_kind = {
+        kind: {
+            "textBodies": 0,
+            "segments": 0,
+            "representationByteTotal": 0,
+            "segmentedByteTotal": 0,
+            "excludedByteTotal": 0,
+        }
+        for kind in TEXT_KINDS
+    }
+    for segment in segments:
+        kind = segment.get("textKind") or "document-body"
+        if kind in per_kind:
+            per_kind[kind]["segments"] += 1
+    for body in _text_bodies(documents, attachments, comments, key=key):
+        kind = body[1]
+        if kind not in per_kind:
+            continue
+        representation, segmented, excluded = _body_totals(body, segments, key=key)
+        tally = per_kind[kind]
+        tally["textBodies"] += 1
+        tally["representationByteTotal"] += representation
+        tally["segmentedByteTotal"] += segmented
+        tally["excludedByteTotal"] += excluded
+    return per_kind
+
+
 def derive_counts(
     dispositions: Sequence[Mapping[str, Any]],
     documents: Sequence[Mapping[str, Any]],
@@ -567,15 +750,23 @@ def derive_counts(
     *,
     member_count: int,
     total_member_byte_size: int,
-) -> dict[str, int]:
-    """Recompute the diagnostic counts from the members alone."""
+    attachments: Sequence[Mapping[str, Any]] = (),
+    comments: Sequence[Mapping[str, Any]] = (),
+    generation: str = PREDECESSOR_GENERATION,
+) -> dict[str, Any]:
+    """Recompute the diagnostic counts from the members alone.
+
+    ``perKind`` is the docspec generation's field and only that generation's:
+    the sealed corpus was minted before amendment A2 named those fields, and a
+    recomputation that added them would rename all twenty bundles.
+    """
 
     tally = {name: 0 for name in CATALOG_DISPOSITIONS}
     for row in dispositions:
         value = row.get("catalogDisposition")
         if value in tally:
             tally[value] += 1
-    return {
+    counts: dict[str, Any] = {
         "requestedUniverseCount": len(dispositions),
         "selectedCount": tally["selected"],
         "excludedCount": tally["excluded"],
@@ -588,6 +779,11 @@ def derive_counts(
         "memberCount": member_count,
         "totalMemberByteSize": total_member_byte_size,
     }
+    if generation == DOCSPEC_GENERATION:
+        counts["perKind"] = derive_per_kind_counts(
+            documents, attachments, comments, segments, key=TEXT_BODY_KEYS[generation]
+        )
+    return counts
 
 
 def derive_coverage(
@@ -596,6 +792,8 @@ def derive_coverage(
     segments: Sequence[Mapping[str, Any]],
     *,
     key: str = "documentVersionId",
+    attachments: Sequence[Mapping[str, Any]] = (),
+    comments: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, int]:
     """Recompute the accounting proof from the members alone.
 
@@ -603,6 +801,11 @@ def derive_coverage(
     ``documentVersionId`` for the sealed corpus, ``textBodyId`` for the docspec
     generation. It defaults to the predecessor's so the sealed corpus keeps
     being derived exactly as it was sealed.
+
+    ``coverage`` stays AGGREGATE (amendment A2): the byte totals span every text
+    kind together, and the per-kind breakdown lives under ``counts.perKind``.
+    ``documentsWithSegmentCount`` stays a fact about documents, because that is
+    what it counts.
     """
 
     accounted = sum(
@@ -614,31 +817,11 @@ def derive_coverage(
     representation_total = 0
     segmented_total = 0
     excluded_total = 0
-    for document in documents:
-        version_id = document.get(key)
-        representation = document.get("representation")
-        if isinstance(representation, Mapping) and isinstance(
-            representation.get("byteSize"), int
-        ):
-            representation_total += representation["byteSize"]
-        segmented_total += _covered_bytes(
-            [
-                (segment["representationStart"], segment["representationEnd"])
-                for segment in segments
-                if segment.get(key) == version_id
-                and isinstance(segment.get("representationStart"), int)
-                and isinstance(segment.get("representationEnd"), int)
-            ]
-        )
-        excluded_total += _covered_bytes(
-            [
-                (item["start"], item["end"])
-                for item in document.get("excludedRanges") or []
-                if isinstance(item, Mapping)
-                and isinstance(item.get("start"), int)
-                and isinstance(item.get("end"), int)
-            ]
-        )
+    for body in _text_bodies(documents, attachments, comments, key=key):
+        representation, segmented, excluded = _body_totals(body, segments, key=key)
+        representation_total += representation
+        segmented_total += segmented
+        excluded_total += excluded
     return {
         "accountedCount": accounted,
         "unaccountedCount": len(dispositions) - accounted,
@@ -766,8 +949,8 @@ def _counted_roles(generation: str) -> frozenset[str]:
     """
 
     if generation == DOCSPEC_GENERATION:
-        return frozenset({*TABULAR_ROLES, *OPAQUE_ROLES})
-    return frozenset(TABULAR_ROLES)
+        return frozenset({*TABULAR_ROLES, *OPAQUE_ROLES, TEXT_BODY_INDEX_ROLE})
+    return frozenset(PREDECESSOR_TABULAR_ROLES)
 
 
 def _validate_member_descriptor(
@@ -781,20 +964,30 @@ def _validate_member_descriptor(
     if not safe_object_key(member.get("objectKey")):
         _issue(issues, "invalid.path", f"{path}/objectKey", "unsafe member path")
     role = member.get("role")
-    if role in UNSEALED_MEMBER_ROLES:
+    if role not in MEMBER_ROLES_BY_GENERATION[generation]:
         _issue(
             issues,
             "invalid.schema",
             f"{path}/role",
-            f"role {role!r} has no sealed schema in this generation, so its rows cannot be checked",
+            f"role {role!r} has no sealed schema in this generation, so its rows cannot be checked"
+            if role in ALLOWED_MEMBER_ROLES
+            else f"unknown role {role!r}",
         )
-    elif role not in ALLOWED_MEMBER_ROLES:
-        _issue(issues, "invalid.schema", f"{path}/role", f"unknown role {role!r}")
     if role == "schema" and member.get("mediaType") != "application/schema+json":
         _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/schema+json")
     tabular_media_type = TABULAR_MEDIA_TYPES[generation]
     if role in TABULAR_ROLES and member.get("mediaType") != tabular_media_type:
         _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {tabular_media_type}")
+    if role == TEXT_BODY_INDEX_ROLE:
+        if member.get("mediaType") != tabular_media_type:
+            _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {tabular_media_type}")
+        if canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS["member-manifest"]:
+            _issue(
+                issues,
+                "invalid.schema",
+                f"{path}/schemaId",
+                f"expected {SCHEMA_IDS['member-manifest']}",
+            )
     if role == "representation" and member.get("mediaType") != REPRESENTATION_MEDIA_TYPE:
         _issue(
             issues,
@@ -998,6 +1191,222 @@ def _verify_member_files(
             )
 
 
+def _row_subschema(schema: Any, name: str) -> dict[str, Any] | None:
+    """Address one ``$defs`` entry of a carried schema as a schema in its own right.
+
+    The wrapper keeps the whole ``$defs`` block so the entry's internal ``$ref``s
+    still resolve, and carries nothing else, so none of the enclosing document's
+    own keywords leak onto the row being checked.
+    """
+
+    if not isinstance(schema, Mapping):
+        return None
+    definitions = schema.get("$defs")
+    if not isinstance(definitions, Mapping) or name not in definitions:
+        return None
+    return {"$defs": dict(definitions), "$ref": f"#/$defs/{name}"}
+
+
+def _read_text_body_index(
+    members: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    generation: str,
+    schemas: Mapping[str, Mapping[str, Any]],
+    issues: list[VerificationIssue],
+) -> dict[tuple[Any, Any], Mapping[str, Any]]:
+    """Load the ``text-body-index`` member, keyed by ``(family, textBodyId)``.
+
+    Amendment A4. Digest-bucketed ``text/`` and ``blobs/`` members hold whatever
+    bodies hash into them, and no other field in this format carries an offset
+    into a member, so without this index one body's bytes cannot be recovered
+    from a bucket it shares. With it they can, and the refusal to mint a
+    multi-body bucket lifts wherever the index covers that bucket -- which needs
+    no separate rule here: an indexed body is checked against its slice, an
+    unindexed body against the whole member, and a body sharing an unindexed
+    bucket therefore fails its own capture or representation digest.
+
+    An indexed slice whose bytes do not digest to the row's ``sha256`` is
+    ``invalid.member-digest``, exactly as a whole member's would be.
+    """
+
+    if generation != DOCSPEC_GENERATION:
+        return {}
+    matching = [member for member in members if member.get("role") == TEXT_BODY_INDEX_ROLE]
+    if not matching:
+        return {}
+    if len(matching) > 1:
+        _issue(
+            issues,
+            "invalid.schema",
+            "manifests/global.json/members",
+            f"at most one {TEXT_BODY_INDEX_ROLE} member is allowed",
+        )
+        return {}
+    member = matching[0]
+    object_key = str(member.get("objectKey"))
+    path = member_paths.get(object_key)
+    if path is None or path.is_symlink() or not path.is_file():
+        return {}
+    try:
+        rows = load_strict_canonical_jsonl(path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        _issue(issues, "invalid.schema", object_key, str(exc))
+        return {}
+    if len(rows) != member.get("recordCount"):
+        _issue(
+            issues,
+            "invalid.schema",
+            f"member:{object_key}/recordCount",
+            f"expected {len(rows)}",
+        )
+    row_schema = _row_subschema(schemas.get("member-manifest"), TEXT_BODY_INDEX_ROW_DEF)
+    index: dict[tuple[Any, Any], Mapping[str, Any]] = {}
+    for position, row in enumerate(rows):
+        row_path = f"{object_key}/{position}"
+        if row_schema is not None:
+            issues.extend(_schema_issues(row, row_schema, path=row_path))
+        if not isinstance(row, dict):
+            continue
+        identity = (row.get("family"), row.get("textBodyId"))
+        if identity in index:
+            _issue(
+                issues,
+                "invalid.duplicate-identity",
+                f"{row_path}/textBodyId",
+                f"duplicate {identity[0]!r} slice for text body {identity[1]!r}",
+            )
+            continue
+        index[identity] = row
+        target = member_paths.get(str(row.get("member")))
+        if target is None or target.is_symlink() or not target.is_file():
+            _issue(
+                issues,
+                "invalid.membership-missing",
+                f"{row_path}/member",
+                "indexed member is not a declared member of this bundle",
+            )
+            continue
+        start, length = row.get("startByte"), row.get("byteLength")
+        if not isinstance(start, int) or not isinstance(length, int):
+            continue
+        raw = target.read_bytes()
+        if start + length > len(raw):
+            _issue(
+                issues,
+                "invalid.member-digest",
+                f"{row_path}/byteLength",
+                f"slice exceeds the {len(raw)}-byte member",
+            )
+            continue
+        actual = hashlib.sha256(raw[start : start + length]).hexdigest()
+        if actual != row.get("sha256"):
+            _issue(
+                issues,
+                "invalid.member-digest",
+                f"{row_path}/sha256",
+                f"indexed slice digests to {actual}",
+            )
+    return index
+
+
+def _indexed_bytes(
+    path: Path,
+    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    family: str,
+    body_id: Any,
+) -> bytes:
+    """The bytes one text body owns inside a member: its slice, or the whole file.
+
+    A bucket holding one body indexes it at offset zero for its whole length, so
+    the two answers coincide and nothing changes for an unpartitioned reader.
+    """
+
+    raw = path.read_bytes()
+    row = index.get((family, body_id))
+    if not isinstance(row, Mapping):
+        return raw
+    start, length = row.get("startByte"), row.get("byteLength")
+    if isinstance(start, int) and isinstance(length, int) and 0 <= start <= start + length <= len(raw):
+        return raw[start : start + length]
+    return raw
+
+
+def _validate_capture(
+    capture: Mapping[str, Any],
+    member_paths: Mapping[str, Path],
+    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    body_id: Any,
+    path: str,
+    issues: list[VerificationIssue],
+) -> None:
+    """Check one captured rendition against the member bytes it names."""
+
+    resolved = member_paths.get(str(capture.get("objectKey")))
+    if resolved is None or not resolved.is_file():
+        _issue(
+            issues,
+            "invalid.capture",
+            f"{path}/objectKey",
+            "captured rendition is not a declared member",
+        )
+    else:
+        blob = _indexed_bytes(resolved, index, "blob", body_id)
+        actual = hashlib.sha256(blob).hexdigest()
+        if actual != capture.get("sha256"):
+            _issue(issues, "invalid.capture", f"{path}/sha256", f"captured bytes digest to {actual}")
+        if len(blob) != capture.get("byteSize"):
+            _issue(issues, "invalid.capture", f"{path}/byteSize", "captured byte size differs")
+    expected = capture.get("expectedSha256")
+    if isinstance(expected, str) and expected.removeprefix("sha256:") != capture.get("sha256"):
+        _issue(
+            issues,
+            "invalid.capture",
+            f"{path}/expectedSha256",
+            "the catalog's expected digest does not match the captured bytes",
+        )
+
+
+def _validate_representation(
+    representation: Mapping[str, Any],
+    member_paths: Mapping[str, Path],
+    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    body_id: Any,
+    path: str,
+    issues: list[VerificationIssue],
+) -> int | None:
+    """Check one selected representation and return its byte length."""
+
+    resolved = member_paths.get(str(representation.get("objectKey")))
+    if resolved is None or not resolved.is_file():
+        _issue(
+            issues,
+            "invalid.representation",
+            f"{path}/objectKey",
+            "representation is not a declared member",
+        )
+        return None
+    raw = _indexed_bytes(resolved, index, "text", body_id)
+    if hashlib.sha256(raw).hexdigest() != representation.get("sha256"):
+        _issue(issues, "invalid.representation", f"{path}/sha256", "representation digest differs")
+    if len(raw) != representation.get("byteSize"):
+        _issue(
+            issues,
+            "invalid.representation",
+            f"{path}/byteSize",
+            f"representation is {len(raw)} bytes",
+        )
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        _issue(
+            issues,
+            "invalid.representation",
+            path,
+            f"representation is not valid UTF-8: {exc}",
+        )
+    return len(raw)
+
+
 def _validate_schema_set(
     root: Mapping[str, Any],
     members: Sequence[Mapping[str, Any]],
@@ -1108,7 +1517,7 @@ def _validate_schema_set(
             )
             continue
         bodies[role] = schema
-    for role in SCHEMA_IDS:
+    for role in sorted(GENERATION_SCHEMA_ROLES[generation]):
         if seen_roles.get(role) != 1:
             _issue(issues, "invalid.schema", f"{base}/schemas", f"role {role!r} must resolve exactly once")
     return bodies
@@ -1216,6 +1625,7 @@ def _validate_documents(
     documents: Sequence[Mapping[str, Any]],
     dispositions: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
+    slices: Mapping[tuple[Any, Any], Mapping[str, Any]],
     object_key: str,
     key: str,
     issues: list[VerificationIssue],
@@ -1274,83 +1684,245 @@ def _validate_documents(
                     "disposition projection names a different document version",
                 )
 
+        body_id = document.get(key)
         capture = document.get("capture")
         if isinstance(capture, Mapping):
-            member_key = capture.get("objectKey")
-            resolved = member_paths.get(str(member_key))
-            if resolved is None or not resolved.is_file():
-                _issue(
-                    issues,
-                    "invalid.capture",
-                    f"{path}/capture/objectKey",
-                    "captured rendition is not a declared member",
-                )
-            else:
-                actual = file_sha256(resolved)
-                if actual != capture.get("sha256"):
-                    _issue(
-                        issues,
-                        "invalid.capture",
-                        f"{path}/capture/sha256",
-                        f"captured bytes digest to {actual}",
-                    )
-                if resolved.stat().st_size != capture.get("byteSize"):
-                    _issue(
-                        issues,
-                        "invalid.capture",
-                        f"{path}/capture/byteSize",
-                        "captured byte size differs",
-                    )
-            expected = capture.get("expectedSha256")
-            if isinstance(expected, str) and expected.removeprefix("sha256:") != capture.get(
-                "sha256"
-            ):
-                _issue(
-                    issues,
-                    "invalid.capture",
-                    f"{path}/capture/expectedSha256",
-                    "the catalog's expected digest does not match the captured bytes",
-                )
+            _validate_capture(
+                capture, member_paths, slices, body_id, f"{path}/capture", issues
+            )
 
         representation = document.get("representation")
         if isinstance(representation, Mapping):
-            member_key = representation.get("objectKey")
-            resolved = member_paths.get(str(member_key))
-            if resolved is None or not resolved.is_file():
+            size = _validate_representation(
+                representation, member_paths, slices, body_id, f"{path}/representation", issues
+            )
+            if size is not None and isinstance(body_id, str):
+                sizes[body_id] = size
+    return sizes
+
+
+def _validate_attachments(
+    attachments: Sequence[Mapping[str, Any]],
+    owners: Mapping[str, str],
+    member_paths: Mapping[str, Path],
+    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> dict[str, int]:
+    """Check the attachment rows, their renditions, and their accounting.
+
+    Amendment A1 governs the identity: ``attachmentId`` is minted over
+    ``{ownerTextBodyId, ownerKind, attachmentIdentity}`` and nothing else, so
+    re-enumerating an unchanged owner re-mints the same id and the row that
+    groups M renditions is not renamed by any one of them.
+
+    Attachments are not members of ``U``, so nothing here blocks a build for a
+    rendition that failed: the build fails when an enumerated attachment has no
+    row, and a row that honestly says it could not be captured is the accounting
+    working. What IS refused is a row that claims text without carrying it, or
+    carries text without saying which rendition produced it.
+    """
+
+    sizes: dict[str, int] = {}
+    seen: set[str] = set()
+    for position, attachment in enumerate(attachments):
+        path = f"{object_key}/{position}"
+        attachment_id = attachment.get("attachmentId")
+        if isinstance(attachment_id, str):
+            if attachment_id in seen:
                 _issue(
                     issues,
-                    "invalid.representation",
-                    f"{path}/representation/objectKey",
-                    "representation is not a declared member",
+                    "invalid.duplicate-identity",
+                    f"{path}/attachmentId",
+                    f"duplicate attachmentId {attachment_id}",
                 )
-            else:
-                raw = resolved.read_bytes()
-                if file_sha256(resolved) != representation.get("sha256"):
-                    _issue(
+            seen.add(attachment_id)
+        owner_id = attachment.get("ownerTextBodyId")
+        owner_kind = attachment.get("ownerKind")
+        if isinstance(owner_id, str) and isinstance(owner_kind, str):
+            expected_id = stable_urn(
+                "document-release-attachment",
+                {
+                    "attachmentIdentity": attachment.get("attachmentIdentity"),
+                    "ownerKind": owner_kind,
+                    "ownerTextBodyId": owner_id,
+                },
+                version=2,
+            )
+            if attachment_id != expected_id:
+                _issue(
+                    issues,
+                    "invalid.identity",
+                    f"{path}/attachmentId",
+                    f"expected {expected_id}",
+                )
+            owned = owners.get(owner_id)
+            if owned is None:
+                _issue(
+                    issues,
+                    "invalid.join",
+                    f"{path}/ownerTextBodyId",
+                    "attachment names no text body in this release",
+                )
+            elif owned != owner_kind:
+                _issue(
+                    issues,
+                    "invalid.join",
+                    f"{path}/ownerKind",
+                    f"owner {owner_id!r} is a {owned!r}, not a {owner_kind!r}",
+                )
+
+        renditions = attachment.get("renditions")
+        captured: list[int] = []
+        if isinstance(renditions, list):
+            ordinals: list[int] = []
+            for order, rendition in enumerate(renditions):
+                if not isinstance(rendition, Mapping):
+                    continue
+                sub_path = f"{path}/renditions/{order}"
+                if isinstance(rendition.get("renditionOrdinal"), int):
+                    ordinals.append(rendition["renditionOrdinal"])
+                disposition = rendition.get("attachmentDisposition")
+                if disposition == "text-captured":
+                    captured.append(order)
+                elif disposition in ATTACHMENT_DISPOSITIONS:
+                    for field in ("reasonCode", "reason"):
+                        if not rendition.get(field):
+                            _issue(
+                                issues,
+                                "invalid.disposition",
+                                f"{sub_path}/{field}",
+                                f"attachment disposition {disposition!r} requires a {field}",
+                            )
+                capture = rendition.get("capture")
+                if isinstance(capture, Mapping):
+                    _validate_capture(
+                        capture,
+                        member_paths,
+                        index,
+                        attachment.get("textBodyId"),
+                        f"{sub_path}/capture",
                         issues,
-                        "invalid.representation",
-                        f"{path}/representation/sha256",
-                        "representation digest differs",
                     )
-                if len(raw) != representation.get("byteSize"):
-                    _issue(
-                        issues,
-                        "invalid.representation",
-                        f"{path}/representation/byteSize",
-                        f"representation is {len(raw)} bytes",
-                    )
-                try:
-                    raw.decode("utf-8")
-                except UnicodeDecodeError as exc:
-                    _issue(
-                        issues,
-                        "invalid.representation",
-                        f"{path}/representation",
-                        f"representation is not valid UTF-8: {exc}",
-                    )
-                body_id = document.get(key)
-                if isinstance(body_id, str):
-                    sizes[body_id] = len(raw)
+            if sorted(ordinals) != list(range(len(ordinals))):
+                _issue(
+                    issues,
+                    "invalid.schema",
+                    f"{path}/renditions",
+                    f"rendition ordinals must be dense and zero-based, found {sorted(ordinals)}",
+                )
+
+        # One attachment is one text body, and a text body has exactly one
+        # selected representation, so at most one rendition of it can have been
+        # text-captured. `textBodyId` names that body and EQUALS `attachmentId`.
+        body_id = attachment.get("textBodyId")
+        if len(captured) > 1:
+            _issue(
+                issues,
+                "invalid.duplicate-identity",
+                f"{path}/renditions",
+                f"{len(captured)} renditions claim text-captured; one attachment is one text body",
+            )
+        if body_id is None:
+            if captured:
+                _issue(
+                    issues,
+                    "invalid.disposition",
+                    f"{path}/textBodyId",
+                    "a text-captured rendition means this attachment is a text body",
+                )
+        else:
+            if not captured:
+                _issue(
+                    issues,
+                    "invalid.disposition",
+                    f"{path}/textBodyId",
+                    "an attachment carrying text must name the rendition that produced it",
+                )
+            if body_id != attachment_id:
+                _issue(
+                    issues,
+                    "invalid.identity",
+                    f"{path}/textBodyId",
+                    f"expected {attachment_id!r}",
+                )
+        representation = attachment.get("representation")
+        if isinstance(representation, Mapping):
+            size = _validate_representation(
+                representation, member_paths, index, body_id, f"{path}/representation", issues
+            )
+            if size is not None and isinstance(body_id, str):
+                sizes[body_id] = size
+        elif body_id is not None:
+            _issue(
+                issues,
+                "invalid.representation",
+                f"{path}/representation",
+                "an attachment carrying text must carry its selected representation",
+            )
+    return sizes
+
+
+def _validate_comments(
+    comments: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    member_paths: Mapping[str, Path],
+    index: Mapping[tuple[Any, Any], Mapping[str, Any]],
+    object_key: str,
+    issues: list[VerificationIssue],
+) -> dict[str, int]:
+    """Check the comment rows: identity, ownership, and the inherited refusal.
+
+    ``commentId`` equals the catalog's own comment ``sourceRecordId``, so the
+    release cannot disagree with the selection it inherits, and ``textBodyId``
+    equals it in turn. A comment's owner is exactly one document. The selection
+    policy itself is projected verbatim and checked by schema; the tie REFUSAL
+    it carries is the upstream owner's, and a repeated comment id here would be
+    DocSpec resolving a tie the source owner refused to resolve, so a repeat is
+    a duplicate identity rather than a value this release picks between.
+    """
+
+    sizes: dict[str, int] = {}
+    document_ids = {
+        document["documentId"]
+        for document in documents
+        if isinstance(document.get("documentId"), str)
+    }
+    seen: set[str] = set()
+    for position, comment in enumerate(comments):
+        path = f"{object_key}/{position}"
+        comment_id = comment.get("commentId")
+        if isinstance(comment_id, str):
+            if comment_id in seen:
+                _issue(
+                    issues,
+                    "invalid.duplicate-identity",
+                    f"{path}/commentId",
+                    f"duplicate commentId {comment_id}",
+                )
+            seen.add(comment_id)
+        body_id = comment.get("textBodyId")
+        if body_id != comment_id:
+            _issue(issues, "invalid.identity", f"{path}/textBodyId", f"expected {comment_id!r}")
+        if comment.get("documentId") not in document_ids:
+            _issue(
+                issues,
+                "invalid.join",
+                f"{path}/documentId",
+                "comment names no document in this release",
+            )
+        capture = comment.get("capture")
+        if isinstance(capture, Mapping):
+            _validate_capture(
+                capture, member_paths, index, body_id, f"{path}/capture", issues
+            )
+        representation = comment.get("representation")
+        if isinstance(representation, Mapping):
+            size = _validate_representation(
+                representation, member_paths, index, body_id, f"{path}/representation", issues
+            )
+            if size is not None and isinstance(body_id, str):
+                sizes[body_id] = size
     return sizes
 
 
@@ -1661,6 +2233,8 @@ def _validate_root_bindings(
     root: Mapping[str, Any],
     dispositions: Sequence[Mapping[str, Any]],
     documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
     nodes: Sequence[Mapping[str, Any]],
     segments: Sequence[Mapping[str, Any]],
     members: Sequence[Mapping[str, Any]],
@@ -1702,6 +2276,20 @@ def _validate_root_bindings(
         {"textBodyId": document[key], "textKind": document["textKind"]}
         for document in documents
         if isinstance(document.get(key), str) and isinstance(document.get("textKind"), str)
+    ]
+    # One text pipeline, three kinds: the text-body set spans every kind that
+    # carries text. An attachment whose renditions all failed carries none and
+    # is not a member of it -- it is accounted in its own row, not here.
+    text_bodies += [
+        {"textBodyId": row["textBodyId"], "textKind": row["textKind"]}
+        for row in [*attachments, *comments]
+        if isinstance(row.get("textBodyId"), str) and isinstance(row.get("textKind"), str)
+    ]
+    attachment_ids = [
+        row["attachmentId"] for row in attachments if isinstance(row.get("attachmentId"), str)
+    ]
+    comment_ids = [
+        row["commentId"] for row in comments if isinstance(row.get("commentId"), str)
     ]
     generation = bundle_generation(root)
 
@@ -1775,12 +2363,22 @@ def _validate_root_bindings(
                 "textBodySetDigest",
                 lambda: framed_set_digest("docspec-text-body-set/2", text_bodies),
             ),
-            # No attachment or comment member is sealed in this generation
-            # (restamp item 2 is recorded as underspecified), so both stream the
-            # empty set. A zero is written, never omitted: a release with none
-            # of a kind still declares that kind's digest.
-            ("attachmentSetDigest", lambda: framed_set_digest("docspec-attachment-set/2", ())),
-            ("commentSetDigest", lambda: framed_set_digest("docspec-comment-set/2", ())),
+            # A release with none of a kind streams the empty set rather than
+            # omitting the digest: a zero is written, never omitted.
+            (
+                "attachmentSetDigest",
+                lambda: framed_set_digest(
+                    "docspec-attachment-set/2",
+                    [{"attachmentId": value} for value in attachment_ids],
+                ),
+            ),
+            (
+                "commentSetDigest",
+                lambda: framed_set_digest(
+                    "docspec-comment-set/2",
+                    [{"commentId": value} for value in comment_ids],
+                ),
+            ),
         )
     else:
         digest_plan = (
@@ -1847,10 +2445,20 @@ def _validate_root_bindings(
             for member in members
             if isinstance(member.get("byteSize"), int) and not isinstance(member.get("byteSize"), bool)
         ),
+        attachments=attachments,
+        comments=comments,
+        generation=generation,
     )
     if content.get("counts") != expected_counts:
         _issue(issues, "invalid.counts", "release.json/content/counts", f"expected {expected_counts}")
-    expected_coverage = derive_coverage(dispositions, documents, segments, key=key)
+    expected_coverage = derive_coverage(
+        dispositions,
+        documents,
+        segments,
+        key=key,
+        attachments=attachments,
+        comments=comments,
+    )
     if content.get("coverage") != expected_coverage:
         _issue(
             issues,
@@ -1858,6 +2466,54 @@ def _validate_root_bindings(
             "release.json/content/coverage",
             f"expected {expected_coverage}",
         )
+    _validate_coverage_identity(content, generation, issues)
+
+
+def _validate_coverage_identity(
+    content: Mapping[str, Any], generation: str, issues: list[VerificationIssue]
+) -> None:
+    """``segmented + excluded == representation``, per kind and in aggregate.
+
+    Amendment A2 states the identity twice on purpose. An aggregate that
+    balances while one kind's does not is a hole in one kind hidden by a surplus
+    in another, and the whole point of the per-kind breakdown is that such a
+    hole has nowhere to hide. The per-kind half is the docspec generation's:
+    the sealed corpus carries no `perKind` to check.
+    """
+
+    def holds(totals: Any) -> bool:
+        values = [
+            totals.get(field)
+            for field in ("segmentedByteTotal", "excludedByteTotal", "representationByteTotal")
+        ]
+        if not all(isinstance(value, int) and not isinstance(value, bool) for value in values):
+            return True
+        segmented, excluded, representation = values
+        return segmented + excluded == representation
+
+    coverage = content.get("coverage")
+    if isinstance(coverage, Mapping) and not holds(coverage):
+        _issue(
+            issues,
+            "invalid.coverage",
+            "release.json/content/coverage",
+            "segmentedByteTotal + excludedByteTotal must equal representationByteTotal",
+        )
+    if generation != DOCSPEC_GENERATION:
+        return
+    counts = content.get("counts")
+    per_kind = counts.get("perKind") if isinstance(counts, Mapping) else None
+    if not isinstance(per_kind, Mapping):
+        return
+    for kind in TEXT_KINDS:
+        totals = per_kind.get(kind)
+        if isinstance(totals, Mapping) and not holds(totals):
+            _issue(
+                issues,
+                "invalid.coverage",
+                f"release.json/content/counts/perKind/{kind}",
+                "segmentedByteTotal + excludedByteTotal must equal representationByteTotal",
+            )
 
 
 def verify_document_release(bundle: Path) -> VerificationResult:
@@ -1885,13 +2541,44 @@ def verify_document_release(bundle: Path) -> VerificationResult:
     documents, documents_key = rows("documents")
     nodes, nodes_key = rows("structural-nodes")
     segments, segments_key = rows("search-segments")
+    # The two members restamp item 2 sealed. They belong to the docspec
+    # generation alone: a predecessor bundle declaring one would be declaring a
+    # member only another generation's schemas could judge, which the role
+    # vocabulary already refuses.
+    if generation == DOCSPEC_GENERATION:
+        attachments, attachments_key = rows("attachments")
+        comments, comments_key = rows("comments")
+    else:
+        attachments, attachments_key = [], "data/attachments.jsonl"
+        comments, comments_key = [], "data/comments.jsonl"
+    slices = _read_text_body_index(members, member_paths, generation, schemas, issues)
 
     if dispositions is not None:
         _validate_dispositions(dispositions, dispositions_key, issues)
     sizes: dict[str, int] = {}
     if documents is not None and dispositions is not None:
         sizes = _validate_documents(
-            documents, dispositions, member_paths, documents_key, key, issues
+            documents, dispositions, member_paths, slices, documents_key, key, issues
+        )
+    if comments is not None and documents is not None:
+        sizes |= _validate_comments(
+            comments, documents, member_paths, slices, comments_key, issues
+        )
+    if attachments is not None and documents is not None and comments is not None:
+        owners = {
+            **{
+                document[key]: "document-body"
+                for document in documents
+                if isinstance(document.get(key), str)
+            },
+            **{
+                comment["textBodyId"]: "comment"
+                for comment in comments
+                if isinstance(comment.get("textBodyId"), str)
+            },
+        }
+        sizes |= _validate_attachments(
+            attachments, owners, member_paths, slices, attachments_key, issues
         )
     node_index: dict[str, dict[str, Any]] = {}
     if nodes is not None:
@@ -1899,9 +2586,19 @@ def verify_document_release(bundle: Path) -> VerificationResult:
     if segments is not None and documents is not None:
         _validate_segments(segments, node_index, documents, sizes, segments_key, key, issues)
         _validate_coverage(documents, segments, sizes, documents_key, key, issues)
-    if None not in (dispositions, documents, nodes, segments):
+    if None not in (dispositions, documents, attachments, comments, nodes, segments):
         _validate_root_bindings(
-            root, dispositions, documents, nodes, segments, members, documents_key, key, issues
+            root,
+            dispositions,
+            documents,
+            attachments,
+            comments,
+            nodes,
+            segments,
+            members,
+            documents_key,
+            key,
+            issues,
         )
 
     release_id = root.get("releaseId")
@@ -1942,7 +2639,10 @@ def verify_corpus(corpus_file: Path) -> list[dict[str, Any]]:
 
 
 __all__ = [
+    "ATTACHMENTS_SCHEMA",
+    "ATTACHMENT_DISPOSITIONS",
     "CATALOG_DISPOSITIONS",
+    "COMMENTS_SCHEMA",
     "CODE_PRECEDENCE",
     "DIAGNOSTIC_CODES",
     "DOCSPEC_GENERATION",
@@ -1950,8 +2650,11 @@ __all__ = [
     "FORMAT",
     "FORMAT_VERSION",
     "FRAMED_SET_DOMAINS",
+    "GENERATION_SCHEMA_ROLES",
     "MEMBER_MANIFEST_SCHEMA",
+    "MEMBER_ROLES_BY_GENERATION",
     "PREDECESSOR_GENERATION",
+    "PREDECESSOR_TABULAR_ROLES",
     "RELEASE_ID_PREFIX",
     "REPRESENTATION_MEDIA_TYPE",
     "ROOT_SCHEMA",
@@ -1967,8 +2670,10 @@ __all__ = [
     "STRUCTURAL_NODES_SCHEMA",
     "TABULAR_MEDIA_TYPES",
     "TABULAR_ROLES",
+    "TEXT_BODY_INDEX_ROLE",
+    "TEXT_BODY_INDEX_ROW_DEF",
     "TEXT_BODY_KEYS",
-    "UNSEALED_MEMBER_ROLES",
+    "TEXT_KINDS",
     "VerificationIssue",
     "VerificationResult",
     "artifact_sha256",
@@ -1977,6 +2682,7 @@ __all__ = [
     "declared_generations",
     "derive_counts",
     "derive_coverage",
+    "derive_per_kind_counts",
     "expected_document_state_digest",
     "expected_release_id",
     "framed_set_digest",

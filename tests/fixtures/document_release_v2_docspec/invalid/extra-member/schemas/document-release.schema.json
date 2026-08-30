@@ -310,6 +310,7 @@
         "documentVersionCount",
         "structuralNodeCount",
         "searchSegmentCount",
+        "perKind",
         "memberCount",
         "totalMemberByteSize"
       ],
@@ -341,10 +342,63 @@
         "searchSegmentCount": {
           "$ref": "#/$defs/count"
         },
+        "perKind": {
+          "$ref": "#/$defs/countsPerKind"
+        },
         "memberCount": {
           "$ref": "#/$defs/count"
         },
         "totalMemberByteSize": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "countsPerKind": {
+      "description": "The per-kind breakdown, keyed by the three text kinds and closed at exactly those three. Every kind is present even when the release carries none of it: a zero is written, never omitted, so a consumer reads absence as a measured zero rather than as a field somebody forgot. It lives under `counts` and not under `coverage`, which stays aggregate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document-body",
+        "attachment",
+        "comment"
+      ],
+      "properties": {
+        "document-body": {
+          "$ref": "#/$defs/kindCounts"
+        },
+        "attachment": {
+          "$ref": "#/$defs/kindCounts"
+        },
+        "comment": {
+          "$ref": "#/$defs/kindCounts"
+        }
+      }
+    },
+    "kindCounts": {
+      "description": "One text kind's text bodies, segments, and visible-text byte accounting. The coverage identity `segmentedByteTotal + excludedByteTotal == representationByteTotal` holds HERE as well as in aggregate: an aggregate that balances while one kind's does not is a hole hidden by another kind's surplus.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textBodies",
+        "segments",
+        "representationByteTotal",
+        "segmentedByteTotal",
+        "excludedByteTotal"
+      ],
+      "properties": {
+        "textBodies": {
+          "$ref": "#/$defs/count"
+        },
+        "segments": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "segmentedByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedByteTotal": {
           "$ref": "#/$defs/count"
         }
       }
@@ -430,9 +484,10 @@
           "pattern": "^urn:spicy:schema-set:v1:[0-9a-f]{64}$"
         },
         "schemas": {
+          "description": "EXACTLY eight, one per schema role: the six the format was minted with plus `attachments` and `comments`. Fixed rather than bounded, because a set that could be short is a set a consumer might verify half of.",
           "type": "array",
-          "minItems": 6,
-          "maxItems": 6,
+          "minItems": 8,
+          "maxItems": 8,
           "items": {
             "$ref": "#/$defs/schemaDescriptor"
           }
@@ -466,6 +521,8 @@
               "member-manifest",
               "source-dispositions",
               "documents",
+              "attachments",
+              "comments",
               "structural-nodes",
               "search-segments"
             ]

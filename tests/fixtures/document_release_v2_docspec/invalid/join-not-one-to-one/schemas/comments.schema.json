@@ -1,0 +1,250 @@
+{
+  "$id": "urn:docspec:schema:document-release-comments:2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseComment",
+  "description": "One selected comment, carried as a text body under the document body's capture, representation, structure, segment, excluded-range, and evidence rules unchanged — one text pipeline, three kinds. DocSpec does not select comments: the sealed upstream policy does, and the interface contract is POST-selection rows. Each row projects that policy verbatim so the release cannot disagree with the selection it inherits. The inheritance is the REFUSAL, not the ordering: handed two observations of one comment id the build fails, because resolving a tie would be DocSpec deciding a selection the source owner refused to decide.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "commentId",
+    "textBodyId",
+    "textKind",
+    "documentId",
+    "sourceItemId",
+    "sourceIssuedVersion",
+    "commentSelection",
+    "capture",
+    "representation",
+    "excludedRanges"
+  ],
+  "properties": {
+    "commentId": {
+      "description": "EQUALS the catalog's comment `sourceRecordId`, i.e. `/data/id` — the value the upstream selection policy groups by. Minting a second name here would let the release disagree with the selection it inherits.",
+      "type": "string",
+      "minLength": 1
+    },
+    "textBodyId": {
+      "description": "The text body this row belongs to, EQUAL to its own `commentId` — one body per comment, and a second name would be a second identity for one thing.",
+      "type": "string",
+      "minLength": 1
+    },
+    "textKind": {
+      "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+      "const": "comment"
+    },
+    "documentId": {
+      "description": "The one document this comment was filed against. A comment's owner is exactly one document and may itself own attachments, so the ownership graph is two levels deep and acyclic.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceItemId": {
+      "description": "The member of the requested universe U this comment was selected into. Comments reach a release only where the pinned catalog selects them into U; the zero-accepted-failure bijection then binds them exactly as it binds document bodies.",
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceIssuedVersion": {
+      "description": "The version the SOURCE issued, projected unchanged from the catalog. Never a capture digest.",
+      "type": "string",
+      "minLength": 1
+    },
+    "commentSelection": {
+      "$ref": "#/$defs/commentSelection"
+    },
+    "capture": {
+      "$ref": "#/$defs/captureRecord"
+    },
+    "representation": {
+      "$ref": "#/$defs/representation"
+    },
+    "excludedRanges": {
+      "description": "Representation ranges deliberately not searchable, each with a reason. Every representation byte must be covered by a search segment or by exactly one of these.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/excludedRange"
+      }
+    }
+  },
+  "$defs": {
+    "byteOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "commentSelection": {
+      "description": "The sealed upstream selection policy, projected verbatim, plus its digest and the normalized instant the selected observation was ordered on. Every field here is READ from the source owner; none is decided by this release. The three policy fields are constants because there is exactly one sealed policy: a row declaring another policy would be a release claiming a selection nobody sealed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupBy",
+        "orderBy",
+        "tieDisposition",
+        "policyDigest",
+        "selectedModifyDate"
+      ],
+      "properties": {
+        "groupBy": {
+          "const": "/data/id"
+        },
+        "orderBy": {
+          "const": "/data/attributes/modifyDate DESC NULLS LAST"
+        },
+        "tieDisposition": {
+          "description": "The refusal this release inherits. Handed two observations of one comment id whose normalized instants are equal, the build fails; it does not re-order, tie-break, or pick the first.",
+          "const": "refuse-repeated-normalized-instant"
+        },
+        "policyDigest": {
+          "description": "The sealed selection policy's own digest, projected verbatim from the source. DocSpec does not compute it: DocSpec does not select comments, so a digest minted here would be a second, weaker report of a fact the source owner already sealed.",
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "selectedModifyDate": {
+          "description": "The normalized `modifyDate` of the observation the policy selected, or null where the source published none — which is exactly what `NULLS LAST` in the ordering exists to place.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/instant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "captureRecord": {
+      "description": "Links the captured bytes to the exact catalog snapshot, source item, source-issued version, and candidate rendition. Carries the acquisition wall clock, and every preimage excludes it: `documentStateDigest` is taken over `content` alone and no set digest names a capture field, so two byte-identical captures stay one release while the provenance a reader needs survives in the record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogReleaseId",
+        "candidateRenditionId",
+        "objectKey",
+        "mediaType",
+        "sha256",
+        "byteSize",
+        "expectedSha256",
+        "acquiredAt",
+        "acquisitionStartedAt"
+      ],
+      "properties": {
+        "catalogReleaseId": {
+          "description": "The pinned `SourceCatalog` snapshot's own `catalogId`. Same pattern as the root pin's `catalogId`, and checked against it: fixing one and not the other would make every capture row disagree with the root.",
+          "type": "string",
+          "pattern": "^urn:docspec:source-catalog:v1:[0-9a-f]{64}$"
+        },
+        "candidateRenditionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "description": "Relative POSIX path of the immutable, digest-pinned member holding the exact captured bytes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "expectedSha256": {
+          "description": "The digest the catalog declared before capture, when it knew one. Non-null means it MUST equal `sha256`; the build fails otherwise.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acquiredAt": {
+          "description": "When the captured bytes were acquired, mirroring `CapturedFile.acquired_at`. Required: erasing acquisition time would destroy provenance the reader needs.",
+          "$ref": "#/$defs/instant"
+        },
+        "acquisitionStartedAt": {
+          "description": "When the acquisition attempt began, mirroring `CapturedFile.acquisition_started_at`, or null when the downloader reported no start. Written, never omitted.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/instant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "representation": {
+      "description": "The one selected human-readable Unicode representation. Markup is not search text: this is visible text extracted before segmentation, and every offset in this release counts its UTF-8 bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "representationId",
+        "objectKey",
+        "mediaType",
+        "encoding",
+        "sha256",
+        "byteSize"
+      ],
+      "properties": {
+        "representationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "const": "text/plain; charset=utf-8"
+        },
+        "encoding": {
+          "const": "utf-8"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        }
+      }
+    },
+    "excludedRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "reasonCode",
+        "reason"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "end": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

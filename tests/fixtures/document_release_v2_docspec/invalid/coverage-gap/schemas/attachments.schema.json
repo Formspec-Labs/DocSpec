@@ -1,0 +1,367 @@
+{
+  "$id": "urn:docspec:schema:document-release-attachments:2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentReleaseAttachment",
+  "description": "One enumerated attachment of one owning text body, and the renditions it was published in. The ROW is the attachment and the text body it becomes; the per-rendition SUB-ROWS are the renditions that succeeded or failed. Attachments are not members of the requested universe U — they are renditions of a member — so they get accounting rather than a retention floor: every attachment enumerated by its owner's source record gets a row, every rendition of it a sub-row with a disposition, and the build fails when an enumerated attachment has NO row, never when a row honestly says it could not be captured.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "attachmentId",
+    "ownerTextBodyId",
+    "ownerKind",
+    "attachmentIdentity",
+    "attachmentTitle",
+    "textBodyId",
+    "textKind",
+    "representation",
+    "excludedRanges",
+    "renditions"
+  ],
+  "properties": {
+    "attachmentId": {
+      "description": "`stable_urn(\"document-release-attachment\", {ownerTextBodyId, ownerKind, attachmentIdentity}, version=2)`. The preimage carries NO rendition ordinal: one row groups its M renditions, and an id that changed per rendition could not name the row that groups them. Re-enumerating an unchanged owner therefore re-mints the same id.",
+      "type": "string",
+      "pattern": "^urn:docspec:document-release-attachment:v2:[0-9a-f]{64}$"
+    },
+    "ownerTextBodyId": {
+      "description": "The one text body that enumerated this attachment. An attachment's owner is exactly one text body and never another attachment, so the graph is two levels deep and acyclic.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ownerKind": {
+      "description": "Which unpacking rule produced this row, so the source shape stays reversible: the live pipeline packs document attachments flat and comment attachments nested, and both unpack once, at ingest, into one record. Never `attachment`: an attachment does not own an attachment.",
+      "enum": [
+        "document-body",
+        "comment"
+      ]
+    },
+    "attachmentIdentity": {
+      "description": "The source's own stable identifier for the attached file, or the owner-scoped ordinal where the source supplies none. Part of the id preimage, so it must be stable across re-enumeration of an unchanged owner.",
+      "type": "string",
+      "minLength": 1
+    },
+    "attachmentTitle": {
+      "description": "The title the source gave the attachment, or null. Non-null only where the nested packing supplied one; the flat packing carries no title, and inventing one would make the record irreversible.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "textBodyId": {
+      "description": "The text body this attachment became, EQUAL to its own `attachmentId` — one body per attachment, and a second name would be a second identity for one thing. Null when no rendition was `text-captured`: an attachment whose renditions all failed is still enumerated and still accounted, it just carries no text.",
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^urn:docspec:document-release-attachment:v2:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "textKind": {
+      "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+      "const": "attachment"
+    },
+    "representation": {
+      "description": "The one selected human-readable Unicode representation of this attachment, under the document body's representation rules unchanged, or null when `textBodyId` is null. Representation is SINGULAR in v2, which is why at most one rendition of an attachment may be `text-captured`.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/representation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "excludedRanges": {
+      "description": "Representation ranges deliberately not searchable, under the document body's exclusion rules unchanged. Empty when this attachment carries no text. An excluded range is a SEARCH exclusion, never a redaction: its bytes stay in the representation member and a reader slices them out by offset.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/excludedRange"
+      }
+    },
+    "renditions": {
+      "description": "One sub-row per rendition the source published this attachment in, ordered by `renditionOrdinal`. At least one: an attachment nobody published in any rendition was not enumerated.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/rendition"
+      }
+    }
+  },
+  "$defs": {
+    "byteOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "reasonCode": {
+      "description": "Machine-legible reason for a disposition other than `text-captured`. SEALED as a bounded kebab-case string rather than as an enum: closing the vocabulary requires the real corpus, so the enum closure is a first-real-mint obligation and this bound is what holds until then.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "rendition": {
+      "description": "One published rendition of the attachment: the thing that succeeded or failed. Anything but `text-captured` carries a `reasonCode` and a presentable `reason`, so loss stays visible rather than being accepted silently. A below-floor attachment rendition is `extraction-failed` and never blocks the build.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "renditionOrdinal",
+        "mediaType",
+        "attachmentDisposition",
+        "capture"
+      ],
+      "properties": {
+        "renditionOrdinal": {
+          "description": "Source order, dense and zero-based within this attachment. It lives HERE and not in the `attachmentId` preimage: the id names the attachment, the ordinal names its renditions.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mediaType": {
+          "description": "The media type the source declared for this rendition. Carried on the sub-row rather than read off `capture`, because an unfetched rendition has no capture and is still enumerated with the type it was offered under.",
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "attachmentDisposition": {
+          "description": "CLOSED at four tokens, deliberately avoiding the catalog's `selected | excluded | deleted | unavailable | failed` vocabulary: an attachment disposition is not a catalog disposition, and reusing the words would invite a reader to join them.",
+          "enum": [
+            "text-captured",
+            "text-excluded",
+            "source-unavailable",
+            "extraction-failed"
+          ]
+        },
+        "capture": {
+          "description": "The captured bytes of this rendition, under the document body's capture rules unchanged, or null for `source-unavailable` — the one token that says the enumerated bytes were never fetched, and so the one under which no capture record can honestly exist.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/captureRecord"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reasonCode": {
+          "$ref": "#/$defs/reasonCode"
+        },
+        "reason": {
+          "description": "Prose fit to show a reader, beside the machine-legible code.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "description": "The bytes exist unless the token says they were never fetched.",
+          "if": {
+            "type": "object",
+            "required": [
+              "attachmentDisposition"
+            ],
+            "properties": {
+              "attachmentDisposition": {
+                "const": "source-unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "capture": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "capture": {
+                "$ref": "#/$defs/captureRecord"
+              }
+            }
+          }
+        },
+        {
+          "description": "Anything but `text-captured` carries both halves of its reason.",
+          "if": {
+            "type": "object",
+            "required": [
+              "attachmentDisposition"
+            ],
+            "properties": {
+              "attachmentDisposition": {
+                "const": "text-captured"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "reasonCode"
+                  ]
+                },
+                {
+                  "required": [
+                    "reason"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "reasonCode",
+              "reason"
+            ]
+          }
+        }
+      ]
+    },
+    "captureRecord": {
+      "description": "Links the captured bytes to the exact catalog snapshot, source item, source-issued version, and candidate rendition. Carries the acquisition wall clock, and every preimage excludes it: `documentStateDigest` is taken over `content` alone and no set digest names a capture field, so two byte-identical captures stay one release while the provenance a reader needs survives in the record.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogReleaseId",
+        "candidateRenditionId",
+        "objectKey",
+        "mediaType",
+        "sha256",
+        "byteSize",
+        "expectedSha256",
+        "acquiredAt",
+        "acquisitionStartedAt"
+      ],
+      "properties": {
+        "catalogReleaseId": {
+          "description": "The pinned `SourceCatalog` snapshot's own `catalogId`. Same pattern as the root pin's `catalogId`, and checked against it: fixing one and not the other would make every capture row disagree with the root.",
+          "type": "string",
+          "pattern": "^urn:docspec:source-catalog:v1:[0-9a-f]{64}$"
+        },
+        "candidateRenditionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "description": "Relative POSIX path of the immutable, digest-pinned member holding the exact captured bytes.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "expectedSha256": {
+          "description": "The digest the catalog declared before capture, when it knew one. Non-null means it MUST equal `sha256`; the build fails otherwise.",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acquiredAt": {
+          "description": "When the captured bytes were acquired, mirroring `CapturedFile.acquired_at`. Required: erasing acquisition time would destroy provenance the reader needs.",
+          "$ref": "#/$defs/instant"
+        },
+        "acquisitionStartedAt": {
+          "description": "When the acquisition attempt began, mirroring `CapturedFile.acquisition_started_at`, or null when the downloader reported no start. Written, never omitted.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/instant"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "representation": {
+      "description": "The one selected human-readable Unicode representation. Markup is not search text: this is visible text extracted before segmentation, and every offset in this release counts its UTF-8 bytes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "representationId",
+        "objectKey",
+        "mediaType",
+        "encoding",
+        "sha256",
+        "byteSize"
+      ],
+      "properties": {
+        "representationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mediaType": {
+          "const": "text/plain; charset=utf-8"
+        },
+        "encoding": {
+          "const": "utf-8"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "byteSize": {
+          "$ref": "#/$defs/byteOffset"
+        }
+      }
+    },
+    "excludedRange": {
+      "description": "Reused from the document body unchanged, dotted `reasonCode` vocabulary included: the exclusion ledger is one vocabulary across all three text kinds, and the bounded `attachmentDisposition` reason code is a different one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start",
+        "end",
+        "reasonCode",
+        "reason"
+      ],
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "end": {
+          "$ref": "#/$defs/byteOffset"
+        },
+        "reasonCode": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

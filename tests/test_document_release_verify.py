@@ -33,9 +33,12 @@ from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_b
 
 from docspec.adapters.document_release_verify import (
     ALLOWED_MEMBER_ROLES,
+    ATTACHMENT_DISPOSITIONS,
     DIAGNOSTIC_CODES,
     DOCSPEC_GENERATION,
     FRAMED_SET_DOMAINS,
+    GENERATION_SCHEMA_ROLES,
+    MEMBER_ROLES_BY_GENERATION,
     PREDECESSOR_GENERATION,
     RELEASE_ID_PREFIX,
     SCHEMA_FILES,
@@ -43,10 +46,13 @@ from docspec.adapters.document_release_verify import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    UNSEALED_MEMBER_ROLES,
+    TEXT_BODY_INDEX_ROLE,
+    TEXT_BODY_INDEX_ROW_DEF,
+    TEXT_KINDS,
     bundle_generation,
     canonical_schema_id,
     declared_generations,
+    derive_per_kind_counts,
     expected_document_state_digest,
     expected_release_id,
     framed_set_digest,
@@ -266,7 +272,16 @@ def test_the_packaged_schema_identifiers_resolve_to_themselves() -> None:
     assert set(SCHEMA_FILES) == set(SCHEMA_IDS)
     for schema_id in SCHEMA_IDS.values():
         assert canonical_schema_id(schema_id) == schema_id
-    assert len(set(SCHEMA_ID_GENERATIONS)) == 2 * len(SCHEMA_IDS)
+    # Every packaged spelling, plus one predecessor spelling for each role that
+    # generation had. `attachments` and `comments` have no predecessor spelling
+    # because they did not exist under it.
+    predecessor = GENERATION_SCHEMA_ROLES[PREDECESSOR_GENERATION]
+    assert len(set(SCHEMA_ID_GENERATIONS)) == len(SCHEMA_IDS) + len(predecessor)
+    assert predecessor < GENERATION_SCHEMA_ROLES[DOCSPEC_GENERATION]
+    assert GENERATION_SCHEMA_ROLES[DOCSPEC_GENERATION] - predecessor == {
+        "attachments",
+        "comments",
+    }
 
 
 def test_an_unregistered_schema_identifier_resolves_to_itself_and_so_fails_closed() -> None:
@@ -288,7 +303,7 @@ def test_each_bundle_embedded_schema_still_carries_the_id_its_descriptor_names()
     }
 
     descriptors = root["content"]["schemaSet"]["schemas"]
-    assert len(descriptors) == len(SCHEMA_IDS)
+    assert len(descriptors) == len(GENERATION_SCHEMA_ROLES[PREDECESSOR_GENERATION])
     for descriptor in descriptors:
         member = members[descriptor["schemaId"]]
         embedded = json.loads(
@@ -727,25 +742,31 @@ def test_item_1_every_declared_schema_id_is_the_re_homed_docspec_spelling() -> N
     assert all(value.startswith("urn:docspec:schema:") for value in declared)
 
 
-def test_item_3_the_schema_set_is_the_six_sealed_schemas_with_a_recomputed_id() -> None:
-    """Item 2 is unimplemented, so the set stays at six -- but its id is re-taken.
+def test_item_3_the_schema_set_is_the_eight_sealed_schemas_with_a_recomputed_id() -> None:
+    """The 6 -> 8 widening, and the recomputed set id that follows it.
 
-    The 6 -> 8 widening waits on the `attachments` and `comments` schemas, which
-    the decision does not specify well enough to mint. What did happen is the
-    rest of item 3: every descriptor moved to a re-homed `$id`, so the set digest
-    over those descriptors is a different value than the sealed corpus carries.
+    Item 2's two schemas are sealed, so the set is eight and the root schema
+    fixes it at eight rather than bounding it: a set that could be short is a set
+    a consumer might verify half of. Every descriptor also moved to a re-homed
+    `$id`, so the digest over them is a different value than the sealed corpus
+    carries for its six.
     """
 
-    descriptors = DOCSPEC_ROOT["content"]["schemaSet"]["schemas"]
+    schema_set = DOCSPEC_ROOT["content"]["schemaSet"]
+    descriptors = schema_set["schemas"]
+    root_schema = json.loads(SCHEMA_FILES["release-root"].read_text(encoding="utf-8"))
+    bounds = root_schema["$defs"]["schemaSet"]["properties"]["schemas"]
 
-    assert len(descriptors) == 6
-    assert DOCSPEC_ROOT["content"]["schemaSet"]["schemaSetId"] == (
+    assert len(descriptors) == 8 == len(SCHEMA_IDS)
+    assert (bounds["minItems"], bounds["maxItems"]) == (8, 8)
+    assert {role for descriptor in descriptors for role in descriptor["roles"]} == set(
+        SCHEMA_FILES
+    )
+    assert schema_set["schemaSetId"] == (
         f"urn:spicy:schema-set:v1:{canonical_sha256(descriptors)}"
     )
-    assert (
-        DOCSPEC_ROOT["content"]["schemaSet"]["schemaSetId"]
-        != SEALED_ROOT["content"]["schemaSet"]["schemaSetId"]
-    )
+    assert schema_set["schemaSetId"] != SEALED_ROOT["content"]["schemaSet"]["schemaSetId"]
+    assert len(SEALED_ROOT["content"]["schemaSet"]["schemas"]) == 6
 
 
 def test_the_embedded_schemas_are_the_packaged_generation_byte_for_byte() -> None:
@@ -798,7 +819,7 @@ def test_item_11_text_and_blob_members_are_partition_buckets_of_the_text_body_id
 
 
 def test_item_16_record_count_is_stated_per_role_not_per_has_rows() -> None:
-    assert [member["recordCount"] for member in _members("schema")] == [None] * 6
+    assert [member["recordCount"] for member in _members("schema")] == [None] * 8
     for role in ("rendition", "representation"):
         counts = [member["recordCount"] for member in _members(role)]
         assert counts and all(isinstance(count, int) and count >= 1 for count in counts)
@@ -812,6 +833,8 @@ def test_item_16_record_count_is_stated_per_role_not_per_has_rows() -> None:
 
 
 def test_item_13_the_manifest_role_vocabulary_gained_the_two_tabular_roles() -> None:
+    """The enum widened at item 13; the gate has now caught up with it."""
+
     schema = json.loads(
         (SCHEMA_FILES["member-manifest"]).read_text(encoding="utf-8")
     )
@@ -819,9 +842,15 @@ def test_item_13_the_manifest_role_vocabulary_gained_the_two_tabular_roles() -> 
 
     assert "attachments" in roles
     assert "comments" in roles
-    # And the gate still refuses them, because their schemas are not sealed.
-    assert UNSEALED_MEMBER_ROLES == {"attachments", "comments"}
-    assert UNSEALED_MEMBER_ROLES.isdisjoint(ALLOWED_MEMBER_ROLES)
+    # Both roles were fail-closed while their schemas were unsealed. They are
+    # sealed now, so the docspec generation judges them -- and the predecessor
+    # generation, whose schemas would not govern them, still refuses them.
+    assert {"attachments", "comments"} <= ALLOWED_MEMBER_ROLES
+    assert {"attachments", "comments"} <= MEMBER_ROLES_BY_GENERATION[DOCSPEC_GENERATION]
+    assert MEMBER_ROLES_BY_GENERATION[PREDECESSOR_GENERATION].isdisjoint(
+        {"attachments", "comments", TEXT_BODY_INDEX_ROLE}
+    )
+    assert set(roles) == ALLOWED_MEMBER_ROLES
 
 
 @pytest.mark.parametrize("name", ["documents", "structural-nodes", "search-segments"])

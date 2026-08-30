@@ -25,30 +25,28 @@ far as they are mechanically specified. The predecessor corpus at
 should be: it is the frozen regression anchor the generation-aware verifier is
 measured against, sealed by the tree digests in its own `corpus.json`.
 
-Two restamp items are NOT implemented, and are recorded here rather than
-guessed at:
+All sixteen items are implemented. Three of them -- 2, 3, and 7 -- were stopped
+on the first pass because item 2 as written was self-contradictory, and the
+2026-08-31 amendment to that decision resolved exactly that:
 
-* Item 2 -- the `attachments` and `comments` schemas. The decision fixes their
-  ids and sketches their fields, but `renditionOrdinal` is simultaneously part
-  of the `attachmentId` preimage, a field of the attachment row, and a field of
-  each rendition sub-row, and the "one row groups its M renditions" rule cannot
-  hold while the id preimage contains the ordinal. `attachmentDisposition`'s
-  `reasonCode` vocabulary is explicitly left open by the same decision. Minting
-  either schema would require choosing, which is inventing. Item 3's 6 -> 8
-  schema-set widening follows item 2 and is not implemented either; the set
-  stays at the six schemas that exist, with their re-homed ids and their
-  recomputed `schemaSetId`.
-* Item 7's per-kind `counts` and `coverage` breakdowns. The decision requires
-  them but names no fields, and with item 2 stopped there is no non-document
-  kind to break down. The three new SET digests it names in the same sentence
-  ARE minted, over the empty set where the kind is absent.
+* A1 drops `renditionOrdinal` from the `attachmentId` preimage, so one row can
+  name the attachment while its sub-rows name the renditions, and item 2's two
+  schemas are mintable. Item 3's 6 -> 8 widening follows.
+* A2 names the per-kind fields item 7 required and left unnamed.
+* A3 seals `reasonCode` as a bounded kebab-case string, with the enum closure
+  recorded as a first-real-mint obligation rather than guessed at now.
+* A4 gives the digest-bucketed `text/` and `blobs/` members a `text-body-index`,
+  so one body's bytes are recoverable and digest-verifiable from a bucket it
+  shares. The refusal to mint a multi-body bucket therefore lifts wherever the
+  index covers it, and this builder writes the index for every body in every
+  bucket -- including the single-body buckets this corpus happens to produce,
+  because an accounting that only appears at scale is an accounting nobody
+  tested.
 
-Item 11's `text/` and `blobs/` partitioning is implemented as specified --
-buckets by digest of `textBodyId`, 64 of them, each a member with its own
-`recordCount` -- and refuses at build time if any bucket holds more than one
-text body: the decision does not define how a consumer recovers one body's
-bytes from a shared bucket, and no field it names carries an offset. This
-corpus's two bodies fall in different buckets, so the case does not arise here.
+This corpus's synthetic content carries no attachments and no comments, so both
+members are minted PRESENT AND EMPTY with a zero count, which is what the
+decision's "the first mint writes zero comment rows and a zero count" asks for:
+an absent member would make "none" and "not accounted for" the same reading.
 
 Usage:
   uv run python tools/restamp_document_release_fixtures.py --check
@@ -58,6 +56,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -75,6 +74,7 @@ from docspec.adapters.document_release_verify import (
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
     TABULAR_MEDIA_TYPES,
+    TEXT_BODY_INDEX_ROLE,
     TEXT_BODY_KEYS,
     derive_counts,
     derive_coverage,
@@ -465,9 +465,19 @@ def _member(bundle: Path, object_key: str, *, role: str, record_count: int | Non
 DATA_MEMBERS: tuple[tuple[str, str], ...] = (
     ("source-dispositions", "dispositions"),
     ("documents", "documents"),
+    # Restamp item 2, minted present and empty: this corpus's synthetic content
+    # has no attachments and no comments, and an absent member would make "none"
+    # and "not accounted for" read the same.
+    ("attachments", "attachments"),
+    ("comments", "comments"),
     ("structural-nodes", "nodes"),
     ("search-segments", "segments"),
 )
+
+# Amendment A4's index over partitioned member bytes. Its rows are governed by
+# the member-manifest schema's own `textBodyIndexRow` `$def`, so the schema set
+# stays at the eight restamp item 3 fixes it at.
+TEXT_BODY_INDEX_KEY = "manifests/text-body-index.jsonl"
 
 
 def _unique(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
@@ -488,14 +498,22 @@ def _unique(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
-def _bucket_counts(documents: list[dict[str, Any]], field: str) -> dict[str, int]:
+def _bucket_counts(index_rows: list[dict[str, Any]], family: str) -> dict[str, int]:
     """How many text bodies share each partition member, keyed by object key."""
 
     counts: dict[str, int] = {}
-    for document in documents:
-        key = document[field]["objectKey"]
-        counts[key] = counts.get(key, 0) + 1
+    for row in index_rows:
+        if row["family"] != family:
+            continue
+        counts[row["member"]] = counts.get(row["member"], 0) + 1
     return counts
+
+
+def _slice_digest(bundle: Path, row: dict[str, Any]) -> str:
+    """Digest exactly the member bytes one text body owns."""
+
+    raw = (bundle / row["member"]).read_bytes()
+    return hashlib.sha256(raw[row["startByte"] : row["startByte"] + row["byteLength"]]).hexdigest()
 
 
 def _restamp(bundle: Path, state: dict[str, Any]) -> None:
@@ -503,14 +521,27 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
 
     dispositions = state["dispositions"]
     documents = state["documents"]
+    attachments = state["attachments"]
+    comments = state["comments"]
     nodes = state["nodes"]
     segments = state["segments"]
     rows_by_role = {
         "source-dispositions": dispositions,
         "documents": documents,
+        "attachments": attachments,
+        "comments": comments,
         "structural-nodes": nodes,
         "search-segments": segments,
     }
+
+    # Amendment A4. The layout -- which member a body's bytes lie in, and where
+    # -- is a structural fact carried in the state; the slice DIGEST is derived,
+    # and is re-taken here from the member's current bytes like every other
+    # derived value in this builder.
+    index_rows = [
+        {**row, "sha256": _slice_digest(bundle, row)} for row in state["textBodyIndex"]
+    ]
+    write_canonical_jsonl(bundle / TEXT_BODY_INDEX_KEY, index_rows)
 
     # Restamp item 11: tabular members are JSONL, one canonical-JSON record per
     # newline-terminated line, following `docspec-record-layer/1.1`.
@@ -539,10 +570,21 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
                 media_type="application/schema+json",
             )
         )
+    members.append(
+        _member(
+            bundle,
+            TEXT_BODY_INDEX_KEY,
+            role=TEXT_BODY_INDEX_ROLE,
+            record_count=len(index_rows),
+            schema_id=SCHEMA_IDS["member-manifest"],
+            media_type=TABULAR_MEDIA_TYPE,
+        )
+    )
     # Restamp items 11 and 16: one member per partition bucket, each carrying
-    # the number of text bodies it holds rather than a null.
-    rendition_counts = _bucket_counts(documents, "capture")
-    representation_counts = _bucket_counts(documents, "representation")
+    # the number of text bodies it holds rather than a null. The count comes off
+    # the index, which knows every body in every bucket regardless of kind.
+    rendition_counts = _bucket_counts(index_rows, "blob")
+    representation_counts = _bucket_counts(index_rows, "text")
     for object_key, count in sorted(rendition_counts.items()):
         media_type = next(
             document["capture"]["mediaType"]
@@ -616,19 +658,28 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
     )
     text_bodies = _unique(
         [
-            {TEXT_BODY_KEY: document[TEXT_BODY_KEY], "textKind": document["textKind"]}
-            for document in documents
+            {TEXT_BODY_KEY: row[TEXT_BODY_KEY], "textKind": row["textKind"]}
+            for row in [*documents, *attachments, *comments]
+            if row.get(TEXT_BODY_KEY) is not None
         ],
         TEXT_BODY_KEY,
     )
     mapping = framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined)
 
     content = {
-        # Restamp item 7's three new set digests. Attachments and comments have
-        # no member in this generation -- item 2 is recorded as underspecified --
-        # so both stream the empty set rather than being omitted.
-        "attachmentSetDigest": framed_set_digest("docspec-attachment-set/2", ()),
-        "commentSetDigest": framed_set_digest("docspec-comment-set/2", ()),
+        # Restamp item 7's three new set digests. This corpus carries no
+        # attachment and no comment, so both stream the EMPTY set -- written,
+        # never omitted, over rows that are present and empty rather than absent.
+        "attachmentSetDigest": framed_set_digest(
+            "docspec-attachment-set/2",
+            _unique(
+                [{"attachmentId": row["attachmentId"]} for row in attachments], "attachmentId"
+            ),
+        ),
+        "commentSetDigest": framed_set_digest(
+            "docspec-comment-set/2",
+            _unique([{"commentId": row["commentId"]} for row in comments], "commentId"),
+        ),
         "corpusId": CORPUS_ID,
         "counts": derive_counts(
             dispositions,
@@ -637,8 +688,18 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             segments,
             member_count=len(members),
             total_member_byte_size=sum(member["byteSize"] for member in members),
+            attachments=attachments,
+            comments=comments,
+            generation=DOCSPEC_GENERATION,
         ),
-        "coverage": derive_coverage(dispositions, documents, segments, key=TEXT_BODY_KEY),
+        "coverage": derive_coverage(
+            dispositions,
+            documents,
+            segments,
+            key=TEXT_BODY_KEY,
+            attachments=attachments,
+            comments=comments,
+        ),
         "documentVersionSetDigest": framed_set_digest(
             "docspec-document-version-set/2",
             _unique(
@@ -706,7 +767,30 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
     nodes: list[dict[str, Any]] = []
     segments: list[dict[str, Any]] = []
     retention_ratios: list[tuple[int, int]] = []
-    occupancy: dict[str, list[str]] = {}
+    # Restamp item 11's partition buckets, accumulated rather than written one
+    # file per body, and amendment A4's index over them. `_place` appends one
+    # body's bytes to its bucket and records the slice, so a bucket holding
+    # several bodies stays recoverable byte for byte.
+    partitions: dict[str, bytearray] = {}
+    index_rows: list[dict[str, Any]] = []
+
+    def _place(family: str, prefix: str, body_id: str, payload: bytes) -> tuple[str, str]:
+        object_key = _partition_key(prefix, body_id)
+        bucket = partitions.setdefault(object_key, bytearray())
+        start = len(bucket)
+        bucket.extend(payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        index_rows.append(
+            {
+                "byteLength": len(payload),
+                "family": family,
+                "member": object_key,
+                "sha256": digest,
+                "startByte": start,
+                "textBodyId": body_id,
+            }
+        )
+        return object_key, digest
 
     for item in _catalog_items():
         disposition = item["selection"]["disposition"]
@@ -736,15 +820,10 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
         # Restamp item 11: bucket by digest of the text body id, one member per
         # bucket. `textBodyId` EQUALS `documentVersionId` for a document body.
         body_id = version_id
-        rendition_key = _partition_key("blobs", body_id)
-        representation_key = _partition_key("text", body_id)
-        for key in (rendition_key, representation_key):
-            occupancy.setdefault(key, []).append(body_id)
-        (bundle / "blobs").mkdir(parents=True, exist_ok=True)
-        (bundle / "text").mkdir(parents=True, exist_ok=True)
-        (bundle / rendition_key).write_bytes(laid_out["rendition"])
-        (bundle / representation_key).write_bytes(laid_out["representation"])
-        rendition_sha = file_sha256(bundle / rendition_key)
+        rendition_key, rendition_sha = _place("blob", "blobs", body_id, laid_out["rendition"])
+        representation_key, representation_sha = _place(
+            "text", "text", body_id, laid_out["representation"]
+        )
         retention_ratios.append((len(laid_out["representation"]), len(laid_out["rendition"])))
 
         rendition = next(
@@ -793,7 +872,7 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
                     "mediaType": REPRESENTATION_MEDIA_TYPE,
                     "objectKey": representation_key,
                     "representationId": f"{version_id}#representation",
-                    "sha256": file_sha256(bundle / representation_key),
+                    "sha256": representation_sha,
                 },
                 "sourceIssuedVersion": row["sourceIssuedVersion"],
                 "sourceItemId": row["sourceItemId"],
@@ -817,18 +896,39 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
             _search_segments(body_id, laid_out["blocks"], document_nodes, rendition_sha)
         )
 
-    shared = {key: bodies for key, bodies in occupancy.items() if len(bodies) > 1}
-    if shared:
+    for object_key, payload in sorted(partitions.items()):
+        path = bundle / object_key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(bytes(payload))
+
+    # Amendment A4 lifts the multi-body refusal WHERE THE INDEX COVERS THE
+    # BUCKET, and no further: a bucket holding several bodies with no slice for
+    # one of them is still unrecoverable, and is still refused here rather than
+    # minted and left for a consumer to discover.
+    spans: dict[str, list[tuple[int, int]]] = {}
+    for row in index_rows:
+        spans.setdefault(row["member"], []).append((row["startByte"], row["byteLength"]))
+    uncovered: list[str] = []
+    for object_key, payload in sorted(partitions.items()):
+        cursor = 0
+        for start, length in sorted(spans.get(object_key, [])):
+            if start != cursor:
+                break
+            cursor += length
+        if cursor != len(payload):
+            uncovered.append(object_key)
+    if uncovered:
         raise SystemExit(
-            "cannot mint this corpus: partition "
-            + ", ".join(f"{key} holds {len(bodies)} text bodies" for key, bodies in sorted(shared.items()))
-            + ". Decision 0001 fixes the bucketing but defines no framing for recovering one "
-            "text body's bytes from a shared bucket, and names no field to carry an offset, so "
-            "a multi-body bucket cannot be minted without inventing the contract."
+            "cannot mint this corpus: the text-body index does not tile partitions "
+            + ", ".join(uncovered)
+            + ", so one body's bytes cannot be recovered from the bucket it shares."
         )
+    index_rows.sort(key=lambda row: (row["family"], row["textBodyId"]))
 
     state = {
+        "attachments": [],
         "catalog": catalog,
+        "comments": [],
         "dispositions": dispositions,
         "documents": documents,
         "nodes": nodes,
@@ -836,6 +936,7 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
             min(_decimal_fraction(kept, total) for kept, total in retention_ratios)
         ),
         "segments": segments,
+        "textBodyIndex": index_rows,
     }
     _restamp(bundle, state)
     return state
@@ -848,12 +949,15 @@ def _load(path: Path) -> Any:
 def _state(bundle: Path) -> dict[str, Any]:
     root = _load(bundle / "release.json")
     return {
+        "attachments": load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl"),
         "catalog": root["content"]["sourceCatalog"],
+        "comments": load_strict_canonical_jsonl(bundle / "data" / "comments.jsonl"),
         "dispositions": load_strict_canonical_jsonl(bundle / "data" / "source-dispositions.jsonl"),
         "documents": load_strict_canonical_jsonl(bundle / "data" / "documents.jsonl"),
         "nodes": load_strict_canonical_jsonl(bundle / "data" / "structural-nodes.jsonl"),
         "processingPolicies": root["content"]["processingPolicies"],
         "segments": load_strict_canonical_jsonl(bundle / "data" / "search-segments.jsonl"),
+        "textBodyIndex": load_strict_canonical_jsonl(bundle / TEXT_BODY_INDEX_KEY),
     }
 
 
