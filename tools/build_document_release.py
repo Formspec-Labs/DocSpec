@@ -270,6 +270,7 @@ def _agencies(item: Mapping[str, Any], metadata: Mapping[str, Any]) -> list[dict
 
 def _source_metadata(
     item: Mapping[str, Any],
+    candidate: Mapping[str, Any],
     attributes: Mapping[str, Any] | None,
     catalog_id: str,
 ) -> dict[str, Any]:
@@ -286,7 +287,11 @@ def _source_metadata(
     title = draw.get("title") or attributes.get("title")
     document_type = draw.get("document_type") or attributes.get("documentType")
     published = draw.get("publication_date") or attributes.get("postedDate")
-    source_url = metadata.get("sourceUrl") or _public_url(item)
+    # The URL of the rendition this release actually carries, so a reader who
+    # follows it sees the document rather than its metadata sibling.
+    source_url = metadata.get("sourceUrl") or (candidate.get("metadata") or {}).get(
+        "publicSourceUrl"
+    )
     projected: dict[str, Any] = {
         "agencies": _agencies({"attributes": attributes}, metadata),
         "catalogReleaseId": catalog_id,
@@ -312,14 +317,6 @@ def _source_metadata(
             "the catalog item carries no " + ", ".join(missing or ["agency"]),
         )
     return projected
-
-
-def _public_url(item: Mapping[str, Any]) -> str | None:
-    for candidate in item.get("candidates", ()):
-        url = (candidate.get("metadata") or {}).get("publicSourceUrl")
-        if url:
-            return url
-    return None
 
 
 def _document_id(item: Mapping[str, Any]) -> str:
@@ -868,7 +865,7 @@ def _carry(
     candidate = _markup_candidate(item)
     capture, payload = _adopt(candidate, inputs.captures.get(item["itemId"], {}))
     attributes = _attributes(item, inputs.captures.get(item["itemId"], {}))
-    metadata = _source_metadata(item, attributes, inputs.catalog_id)
+    metadata = _source_metadata(item, candidate, attributes, inputs.catalog_id)
 
     media_type = candidate["mediaType"]
     visible, measured = _extract(payload, media_type, inputs.floors)
