@@ -304,6 +304,10 @@ def test_the_docspec_generation_mints_two_names_over_one_content() -> None:
 
 def test_the_state_digest_is_taken_with_the_containers_canonicaliser() -> None:
     root = _docspec_generation_root()
+    # The sealed root carries the singular predecessor key; give the content the
+    # plural docspec-generation key so the exclusion below is exercised, not
+    # vacuously true.
+    root["content"]["processingPolicies"] = {"document-body/text-html": {}}
     payload = {
         "format": root["format"],
         "formatVersion": root["formatVersion"],
@@ -522,3 +526,22 @@ def test_the_docspec_generation_expects_framed_digests_where_the_corpus_expects_
         "docspec-document-version-set/2",
         [{"documentVersionId": document["documentVersionId"]} for document in documents],
     )
+
+
+def test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain() -> None:
+    """D2's surviving factual basis, asserted rather than cited.
+
+    The container's canonicaliser and DocSpec's identity canonicaliser emit
+    identical bytes for every value this format actually carries: the sealed
+    valid root, its content object, and the logical payload the docspec
+    generation digests. Where they differ (non-BMP object keys, refusal
+    surfaces) is outside this format's domain.
+    """
+    root = SEALED_ROOT
+    logical = {
+        "format": root["format"],
+        "formatVersion": root["formatVersion"],
+        "logicalContent": logical_content(root["content"]),
+    }
+    for value in (root, root["content"], logical):
+        assert artifact_canonical_json_bytes(value) == identity_canonical_json_bytes(value)

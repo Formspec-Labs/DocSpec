@@ -65,7 +65,9 @@ ordered by UTF-16 code unit under `artifact_json_bytes` and by code point under
 `canonical_json_bytes` — needs an object key outside the Basic Multilingual
 Plane, which no member of this format carries. The landed support module asserts
 the byte agreement directly
-(`tests/test_document_release_verify.py::test_the_wire_contract_digest_is_the_unqualified_spelling_of_docspec_identity`),
+(`tests/test_document_release_verify.py::test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain`,
+which runs both encoders over the sealed root, its content, and the logical
+payload),
 modulo the safe-integer guard `document_release_support.py:75-90` adds on top.
 The measurement is withdrawn rather than repeated.
 
@@ -81,7 +83,7 @@ signed a digest is not observable from the digest*, so the choice has to be made
 once, up front, and read back off the bundle rather than inferred — which is
 exactly why the landed gate detects the minting generation instead of guessing
 it. The principle is scoped to exactly that name — it is **not** "product code
-never mints names": `stable_urn` has 105 legitimate call sites in `src/` (record
+never mints names": `stable_urn` has 85 legitimate call sites in `src/` (record
 layers, catalogs, receipts), none retired here.
 *Accepted-by: agent (delegated scope, header).*
 
@@ -560,7 +562,7 @@ the first obligation, before item 1 below.
     carries its own `recordCount`, exactly as the catalog's partitions do
     (`source_catalog_artifact.py:79-85,1375-1395`), so the null-for-rendition
     rule must be restated per role rather than per "has rows", and the
-    verifier's `OPAQUE_ROLES` branch restated with it.
+    verifier's member-descriptor rule (`_validate_member_descriptor`'s `elif`; `OPAQUE_ROLES` only feeds `ALLOWED_MEMBER_ROLES`) restated with it.
 
 The invalid-bundle corpus grows by `invalid.comment-selection`,
 `invalid.attachment-accounting`, and `invalid.retention-floor`, each still a

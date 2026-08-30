@@ -9,8 +9,9 @@ Editor's Draft — 30 August 2026
 > *adoption* — what DocSpec took over from the Rulespec candidate, byte-faithful,
 > and what the delta to the live 1.1 record was. It left §9's reconciliation
 > question open, and Decision 0001 answered it, in places by deciding against
-> what is written here. The four sections that no longer state the rule are
+> what is written here. The five sections that no longer state the rule are
 > annotated in place: **§2** (members and partitioning), **§3** (identity),
+> **§4** (set digests — the list-digest rule),
 > **§6 row 10** (the capture wall clock), and **§8** (which schema carries the
 > ownership prose). **§9** is annotated separately: it was overtaken by the
 > verifier and restamper landing, not by a decision. Where this document and the
@@ -157,7 +158,9 @@ how it was packed. The canonicaliser is the container's,
 the root gains `documentStateDigest` as a key (restamp item 8). Decision 0001,
 *Identity — two minted names, one derived form*, is the governing text.
 
-Both generations agree on the rest. Root and member bytes are exactly canonical
+Both generations agree on everything else in THIS section; the set-digest
+algorithms in §4 differ per generation as annotated there. Root and member
+bytes are exactly canonical
 bytes with **no** trailing newline; `canonical_json_file_bytes` is the file form
 and is not used here. `annotations` is excluded from every preimage, and that is
 where `publishedAt`, `releaseStatus`, and `buildRunId` live, so two builds of
@@ -206,7 +209,18 @@ Segments may overlap each other; `segmentedByteTotal` is the size of their
 union, so `segmentedByteTotal + excludedByteTotal == representationByteTotal`
 holds regardless.
 
-**Set digests and the join receipt.** `selectedSourceSetDigest`,
+**Set digests and the join receipt.**
+
+> **Superseded for the docspec generation (Decision 0001, Sealed identities).**
+> The paragraph below states the predecessor generation's algorithms, kept for
+> reading the sealed corpus. In the docspec generation every one of these is a
+> framed set digest under its declared `/2` domain — including
+> `sourceDocumentMappingDigest`, which is a framed SET digest over unique
+> `sourceItemId` keys; the list-digest rule below does not survive, because
+> `U`'s bijection already makes the pairing unique and a repeat is
+> `invalid.duplicate-identity`.
+
+`selectedSourceSetDigest`,
 `documentVersionSetDigest`, and `segmentSetDigest` are canonical set digests over
 deduplicated sorted identifier lists. `sourceDocumentMappingDigest` is a **list**
 digest over the sorted `[sourceItemId, documentVersionId]` pairs — the pairing is
