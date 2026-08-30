@@ -312,6 +312,51 @@ class BoundedSegment:
 
 
 @dataclass(frozen=True, slots=True)
+class TextSpan:
+    """One bounded segment as a half-open UTF-8 byte range and its heading path."""
+
+    start: int
+    end: int
+    headings: tuple[str, ...]
+    token_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class HeadingRegion:
+    """One heading the region tiling found: its bytes, its level, its title.
+
+    Reported beside the exclusion ledger rather than folded into it. A heading
+    IS an excluded range -- its bytes are context, never evidence -- but a
+    caller building a structural record needs the level and the title the
+    tiling already parsed, and re-deriving them from the slice would be a second
+    implementation of the same rule.
+    """
+
+    start: int
+    end: int
+    level: int
+    title: str
+
+
+@dataclass(frozen=True, slots=True)
+class BoundedTextSegmentation:
+    """One representation's boundaries, headings, exclusions, and coverage.
+
+    The policy without the record plumbing. `segment_bounded` builds DocSpec
+    `Segment` records on top of exactly this, and a producer that mints its own
+    record shape -- a `DocumentRelease` builder, say -- reads it directly rather
+    than minting an internal representation record it does not need. One
+    boundary implementation either way: nothing here re-decides where a segment
+    ends.
+    """
+
+    spans: tuple[TextSpan, ...]
+    headings: tuple[HeadingRegion, ...]
+    excluded: tuple[ExcludedRegion, ...]
+    coverage: SegmentCoverage
+
+
+@dataclass(frozen=True, slots=True)
 class BoundedSegmentationReceipt:
     """Recomputable evidence for one bounded segmenter invocation."""
 
@@ -631,14 +676,16 @@ def _heading_path(stack: Sequence[tuple[int, str]]) -> tuple[str, ...]:
     return tuple(title for _, title in stack)
 
 
-def _push_heading(stack: list[tuple[int, str]], body: str) -> None:
+def _push_heading(stack: list[tuple[int, str]], body: str) -> tuple[int, str]:
     match = _ATX_HEADING.match(body)
     if match is None:  # pragma: no cover - only a heading region reaches here
         raise BoundedSegmentationError("a heading region must carry a heading")
     level = len(match.group(1))
     while stack and stack[-1][0] >= level:
         stack.pop()
-    stack.append((level, match.group(2).strip()))
+    entry = (level, match.group(2).strip())
+    stack.append(entry)
+    return entry
 
 
 # ---------------------------------------------------------------------------
@@ -648,12 +695,21 @@ def _push_heading(stack: list[tuple[int, str]], body: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class _HeldBack:
-    """One region the stream held back, in character coordinates, and why."""
+    """One region the stream held back, in character coordinates, and why.
+
+    A heading also carries the level and title `_push_heading` just parsed out
+    of it. That fact is free here and unrecoverable later: an exclusion ledger
+    entry says only that bytes were held back, and a caller building a
+    structural record from it would have to re-parse the slice to learn what
+    the segmenter already decided.
+    """
 
     start_char: int
     end_char: int
     reason_code: str
     reason: str
+    level: int | None = None
+    title: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -685,7 +741,7 @@ def _units(
     epoch = 0
     for region in regions:
         if region.kind == "heading":
-            _push_heading(stack, region.text)
+            level, title = _push_heading(stack, region.text)
             epoch += 1
             held.append(
                 _HeldBack(
@@ -693,6 +749,8 @@ def _units(
                     region.end_char,
                     EXCLUDED_NOT_EVIDENCE_ELIGIBLE,
                     HEADING_EXCLUSION_REASON,
+                    level,
+                    title,
                 )
             )
             continue
@@ -921,10 +979,21 @@ class BoundedSegmenter:
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         return self.segment_bounded(representation).payloads
 
+    def segment_text(self, content: bytes, *, label: str = "representation") -> BoundedTextSegmentation:
+        """Bound one UTF-8 text body: boundaries, headings, exclusions, coverage.
+
+        The whole body is one window, because a caller holding text alone has no
+        evidence mapping to cut it at. Everything else -- the region tiling, the
+        budget, the overlap, the heading rule, the coverage sweep -- is the same
+        code `segment_bounded` runs.
+        """
+
+        text = decode_utf8(content, label=f"bounded segmentation {label}")
+        offsets = utf8_byte_offsets(text)
+        return self._bound(text, offsets, ((0, len(text)),), len(content), label)
+
     def segment_bounded(self, representation: RepresentationPayload) -> BoundedSegmentation:
         settings = self._settings
-        counter = self._counter
-        _require_matching_counter(settings, counter)
         kind = representation.representation.kind
         if kind not in BOUNDED_TEXT_KINDS:
             raise BoundedSegmentationError(f"bounded segmentation does not accept representation kind {kind!r}")
@@ -932,12 +1001,54 @@ class BoundedSegmenter:
         text = decode_utf8(representation.content, label="bounded segmentation representation")
         offsets = utf8_byte_offsets(text)
         windows = _identity_windows(representation, offsets)
+        representation_id = representation.representation.representation_id
+        bounded = self._bound(text, offsets, windows, len(representation.content), representation_id)
+
+        segments = [
+            BoundedSegment(
+                payload=build_segment(
+                    representation,
+                    ordinal=ordinal,
+                    kind=BOUNDED_SEGMENT_KIND,
+                    start=span.start,
+                    end=span.end,
+                    segmenter_id=self.segmenter_id,
+                    policy_digest=settings.policy_digest,
+                    derivation=("source-native-text", f"bounded:{settings.policy}"),
+                ),
+                context=SegmentContext(headings=span.headings),
+                token_count=span.token_count,
+            )
+            for ordinal, span in enumerate(bounded.spans)
+        ]
+        return BoundedSegmentation(
+            representation_id=representation_id,
+            segmenter_id=self.segmenter_id,
+            settings=settings,
+            segments=tuple(segments),
+            excluded=bounded.excluded,
+            coverage=bounded.coverage,
+        )
+
+    def _bound(
+        self,
+        text: str,
+        offsets: Sequence[int],
+        windows: Sequence[tuple[int, int]],
+        content_length: int,
+        label: str,
+    ) -> BoundedTextSegmentation:
+        """The one implementation of this policy's boundaries and its accounting."""
+
+        settings = self._settings
+        counter = self._counter
+        _require_matching_counter(settings, counter)
         regions = _regions(text, windows)
         units, held = _units(regions, settings=settings, counter=counter)
         groups = _pack(text, units, settings=settings, counter=counter)
 
-        segments: list[BoundedSegment] = []
-        spans: list[tuple[int, int]] = []
+        spans: list[TextSpan] = []
+        byte_spans: list[tuple[int, int]] = []
         char_spans: list[tuple[int, int]] = []
         for ordinal, group in enumerate(groups):
             start_char = group[0].start_char
@@ -945,29 +1056,13 @@ class BoundedSegmenter:
             token_count = counter.count(text[start_char:end_char])
             if token_count > settings.max_tokens:
                 raise BoundedSegmentationError(
-                    f"segment {ordinal} of {representation.representation.representation_id} needs "
-                    f"{token_count} tokens, over the hard budget of {settings.max_tokens}"
+                    f"segment {ordinal} of {label} needs {token_count} tokens, "
+                    f"over the hard budget of {settings.max_tokens}"
                 )
             start = offsets[start_char]
             end = offsets[end_char]
-            payload = build_segment(
-                representation,
-                ordinal=ordinal,
-                kind=BOUNDED_SEGMENT_KIND,
-                start=start,
-                end=end,
-                segmenter_id=self.segmenter_id,
-                policy_digest=settings.policy_digest,
-                derivation=("source-native-text", f"bounded:{settings.policy}"),
-            )
-            segments.append(
-                BoundedSegment(
-                    payload=payload,
-                    context=SegmentContext(headings=group[0].headings),
-                    token_count=token_count,
-                )
-            )
-            spans.append((start, end))
+            spans.append(TextSpan(start, end, group[0].headings, token_count))
+            byte_spans.append((start, end))
             char_spans.append((start_char, end_char))
 
         covered = _merge(char_spans)
@@ -981,16 +1076,19 @@ class BoundedSegmenter:
             for item in held
             for start, end in _remainder(item.start_char, item.end_char, covered)
         )
-        coverage = _coverage(len(representation.content), spans, byte_excluded)
+        coverage = _coverage(content_length, byte_spans, byte_excluded)
         if coverage.uncovered_bytes:
             raise BoundedSegmentationError(
                 f"{coverage.uncovered_bytes} representation bytes reached neither a segment nor the excluded ledger"
             )
-        return BoundedSegmentation(
-            representation_id=representation.representation.representation_id,
-            segmenter_id=self.segmenter_id,
-            settings=settings,
-            segments=tuple(segments),
+        headings = tuple(
+            HeadingRegion(offsets[item.start_char], offsets[item.end_char], item.level, item.title)
+            for item in held
+            if item.level is not None and item.title is not None
+        )
+        return BoundedTextSegmentation(
+            spans=tuple(spans),
+            headings=headings,
             excluded=byte_excluded,
             coverage=coverage,
         )

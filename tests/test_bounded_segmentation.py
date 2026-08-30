@@ -630,3 +630,70 @@ def test_the_provider_counter_says_which_extra_installs_it(monkeypatch: pytest.M
     monkeypatch.setattr(module, "import_module", missing)
     with pytest.raises(RuntimeError, match="'tokens' extra"):
         module.TiktokenCounter()
+
+
+# ─── the text-level entry point ────────────────────────────────────────────
+#
+# `segment_text` is the same policy without the record plumbing, for a producer
+# that mints its own record shape. These prove it is the SAME policy: identical
+# boundaries, identical exclusions, identical coverage, and the heading facts the
+# region tiling already knew reported rather than left to be re-parsed.
+
+
+HEADED = "# Alpha\n\nOne two three.\n\n## Beta\n\nFour five six.\n\nSeven eight."
+
+
+def test_segment_text_reaches_the_same_boundaries_as_the_record_path() -> None:
+    counter = WordCounter()
+    payload, bounded = _bounded(HEADED, counter, max_tokens=10, min_tokens=2, overlap_tokens=1)
+    settings = BoundedSegmentSettings.for_counter(counter, max_tokens=10, min_tokens=2, overlap_tokens=1)
+    text_only = BoundedSegmenter(counter, settings=settings).segment_text(payload.content)
+
+    assert [(span.start, span.end) for span in text_only.spans] == [
+        (item.payload.representation_start, item.payload.representation_end) for item in bounded.segments
+    ]
+    assert [span.headings for span in text_only.spans] == [
+        item.context.headings for item in bounded.segments
+    ]
+    assert [span.token_count for span in text_only.spans] == [item.token_count for item in bounded.segments]
+    assert text_only.excluded == bounded.excluded
+    assert text_only.coverage == bounded.coverage
+
+
+def test_segment_text_reports_the_heading_level_and_title_the_tiling_parsed() -> None:
+    counter = WordCounter()
+    settings = BoundedSegmentSettings.for_counter(counter, max_tokens=10, min_tokens=2, overlap_tokens=1)
+    result = BoundedSegmenter(counter, settings=settings).segment_text(HEADED.encode("utf-8"))
+
+    assert [(item.level, item.title) for item in result.headings] == [(1, "Alpha"), (2, "Beta")]
+    body = HEADED.encode("utf-8")
+    assert [body[item.start : item.end].decode("utf-8") for item in result.headings] == [
+        "# Alpha",
+        "## Beta",
+    ]
+
+
+def test_segment_text_accounts_for_every_byte_of_the_body_it_was_given() -> None:
+    counter = WordCounter()
+    settings = BoundedSegmentSettings.for_counter(counter, max_tokens=10, min_tokens=2, overlap_tokens=1)
+    body = HEADED.encode("utf-8")
+    result = BoundedSegmenter(counter, settings=settings).segment_text(body)
+
+    covered: list[tuple[int, int]] = [(span.start, span.end) for span in result.spans]
+    covered += [(item.start, item.end) for item in result.excluded]
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(covered):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    assert merged == [(0, len(body))], "segments plus exclusions must tile the whole body"
+    assert result.coverage.identity_holds
+
+
+def test_a_body_with_no_heading_carries_an_empty_heading_path() -> None:
+    counter = WordCounter()
+    settings = BoundedSegmentSettings.for_counter(counter, max_tokens=10, min_tokens=2, overlap_tokens=1)
+    result = BoundedSegmenter(counter, settings=settings).segment_text(b"One two three.")
+    assert result.headings == ()
+    assert [span.headings for span in result.spans] == [()]
