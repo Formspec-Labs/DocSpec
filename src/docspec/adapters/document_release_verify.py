@@ -42,6 +42,25 @@ bundle is resolved away: an embedded schema's own ``$id`` must still equal the
 descriptor that names it, and the schema-set digest is still taken over the
 descriptors exactly as they were sealed. A bundle is read as it was written.
 
+Minting generations
+-------------------
+Those two spellings are not only two names for one schema; they are two
+*minting generations*, and identity and the set digests were minted differently
+under each. `docs/decisions/0001-document-release-2-0.md` settles the
+docspec-generation rules -- a ``documentStateDigest`` over the bundle's LOGICAL
+content under the artifact canonicaliser, a ``releaseId`` DERIVED from it by
+string form, and framed set digests under the ``/2`` domains that decision
+declares. The twenty sealed bundles predate all of that and were minted under
+the predecessor rules: a full-content digest under DocSpec's own canonicaliser
+and plain sorted-set digests.
+
+A verifier that applied either rule to both would be wrong about half its
+corpus, so verification is generation-aware and keyed off the same declared
+``$id``s `SCHEMA_ID_GENERATIONS` already resolves: `bundle_generation` reads the
+generation the bundle itself declares, and a bundle is checked against the rules
+it was minted under. Mixing the two spellings inside one bundle is refused
+(`invalid.schema`) rather than resolved to a winner.
+
 This module lives beside the other adapters because it validates instances
 against JSON Schema, and `jsonschema` is a third-party dependency the DocSpec
 core deliberately does not import.
@@ -49,13 +68,16 @@ core deliberately does not import.
 
 from __future__ import annotations
 
+import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+from rulespec_artifacts import FramedSection, framed_section_digest
+from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_bytes
 
 from docspec.document_release_support import (
     MANIFEST_REFERENCE_FIELDS,
@@ -66,6 +88,7 @@ from docspec.document_release_support import (
     canonical_sha256,
     file_sha256,
     load_strict_canonical_json,
+    logical_content,
     member_path,
     packaged_schema_root,
     safe_object_key,
@@ -151,6 +174,69 @@ def canonical_schema_id(value: Any) -> Any:
     """
 
     return SCHEMA_ID_GENERATIONS.get(value, value)
+
+
+# ─── Minting generations ───────────────────────────────────────────────
+
+PREDECESSOR_GENERATION = "predecessor"
+DOCSPEC_GENERATION = "docspec"
+
+# The same two id sets `SCHEMA_ID_GENERATIONS` maps, read for the other fact
+# they carry: which minting rules the bundle declaring them was written under.
+# One table, two questions, so a bundle can never resolve its schemas under one
+# generation and its identity under the other.
+_GENERATION_OF_SCHEMA_ID: dict[str, str] = {
+    **{schema_id: DOCSPEC_GENERATION for schema_id in SCHEMA_IDS.values()},
+    **{schema_id: PREDECESSOR_GENERATION for schema_id in _PREDECESSOR_SCHEMA_IDS.values()},
+}
+
+
+def schema_id_generation(value: Any) -> str | None:
+    """Name the minting generation one declared ``$id`` belongs to, or nothing."""
+
+    return _GENERATION_OF_SCHEMA_ID.get(value)
+
+
+def declared_generations(root: Mapping[str, Any]) -> set[str]:
+    """Every registered generation this root's schema set declares.
+
+    Unregistered spellings are dropped here rather than guessed at: they are
+    already reported as unregistered schemas, and one unknown id must not
+    silently move a bundle onto the other generation's identity rule.
+    """
+
+    content = root.get("content")
+    schema_set = content.get("schemaSet") if isinstance(content, Mapping) else None
+    descriptors = schema_set.get("schemas") if isinstance(schema_set, Mapping) else None
+    if not isinstance(descriptors, list):
+        return set()
+    found = {
+        schema_id_generation(descriptor.get("schemaId"))
+        for descriptor in descriptors
+        if isinstance(descriptor, Mapping)
+    }
+    found.discard(None)
+    return {generation for generation in found if generation is not None}
+
+
+def bundle_generation(root: Mapping[str, Any]) -> str:
+    """Which generation's minting rules this bundle must be verified under.
+
+    Only a root whose declared schema identifiers are ALL the docspec spelling
+    is read under the docspec rules. Everything else -- the predecessor corpus,
+    a mixed set, a root with no legible schema set at all -- is read under the
+    predecessor rules, which is where a bundle that cannot say what it is
+    belongs: they are the rules the only sealed bundles in existence were minted
+    under, and a mixed or illegible set is separately refused as
+    ``invalid.schema``.
+    """
+
+    return (
+        DOCSPEC_GENERATION
+        if declared_generations(root) == {DOCSPEC_GENERATION}
+        else PREDECESSOR_GENERATION
+    )
+
 
 # Member roles that carry schema-governed rows, and the schema role serving each.
 TABULAR_ROLES: dict[str, str] = {
@@ -238,14 +324,56 @@ class VerificationResult:
 # ─── Identity and derived values ───────────────────────────────────────
 
 
-def expected_release_id(root: Mapping[str, Any]) -> str:
+def artifact_sha256(value: Any) -> str:
+    """Digest one value under the artifact canonicaliser, unqualified.
+
+    The docspec generation mints with `rulespec_artifacts.canonical_json_bytes`
+    -- the container's canonicaliser, not DocSpec's -- so the container is the
+    single minter of the top-level release name (Decision 0001, D2). The two
+    encoders agree byte for byte on every value this format carries; they part
+    company on their refusal surfaces and on object keys outside the Basic
+    Multilingual Plane, which this format has none of. Which one signed a digest
+    is therefore not observable from the digest, and that is exactly why the
+    generation has to be read from the bundle rather than guessed at.
+    """
+
+    return hashlib.sha256(artifact_canonical_json_bytes(value)).hexdigest()
+
+
+def expected_document_state_digest(root: Mapping[str, Any]) -> str:
+    """The docspec-generation digest over this bundle's LOGICAL content.
+
+    `logical_content` drops the physical and packing facts, so a repack that
+    changes only how the bundle was written -- its member manifest, its member
+    count, its total member byte size -- leaves this digest where it was. That
+    is the INCREMENTAL-EQUIVALENCE property, and a flat hash over the whole
+    root would break it.
+    """
+
+    payload = {
+        "format": root.get("format"),
+        "formatVersion": root.get("formatVersion"),
+        "logicalContent": logical_content(root.get("content")),
+    }
+    return "sha256:" + artifact_sha256(payload)
+
+
+def expected_release_id(root: Mapping[str, Any], *, generation: str | None = None) -> str:
     """Derive the release identity from the exact identity-bearing payload.
 
     ``annotations`` is excluded, and that is where every fact about the act of
     publishing lives. Unlike DocSpec's live root, the format token and version
     are INSIDE the preimage, so a future reshape cannot mint a colliding name.
+
+    Under the docspec generation the name is not minted a second time: it is
+    the URN prefix plus the ``documentStateDigest`` hex, by string form
+    (Decision 0001, identity rule 2). Under the predecessor generation -- the
+    twenty sealed bundles -- it is the full-content digest those bundles were
+    sealed with, taken under DocSpec's own canonicaliser.
     """
 
+    if (generation or bundle_generation(root)) == DOCSPEC_GENERATION:
+        return RELEASE_ID_PREFIX + expected_document_state_digest(root).split(":", 1)[1]
     payload = {
         "format": root.get("format"),
         "formatVersion": root.get("formatVersion"),
@@ -255,24 +383,121 @@ def expected_release_id(root: Mapping[str, Any]) -> str:
 
 
 def stamp_root(root: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a root copy carrying its content-derived identity."""
+    """Return a root copy carrying its content-derived identity.
+
+    A docspec-generation root is stamped with both names, in the order the
+    decision derives them: the state digest over logical content first, the
+    release id from its hex second.
+    """
 
     stamped = json.loads(json.dumps(root))
     stamped.pop("releaseId", None)
-    stamped["releaseId"] = expected_release_id(stamped)
+    generation = bundle_generation(stamped)
+    if generation == DOCSPEC_GENERATION:
+        stamped.pop("documentStateDigest", None)
+        stamped["documentStateDigest"] = expected_document_state_digest(stamped)
+    stamped["releaseId"] = expected_release_id(stamped, generation=generation)
     return stamped
 
 
 def mapping_digest(pairs: Sequence[Sequence[str]]) -> str:
-    """Canonical digest over the sorted source-item/document-version pair list.
+    """The PREDECESSOR generation's source-item/document-version pair digest.
 
-    A LIST digest, not a set digest: the pairing IS the fact this release
-    exists to carry, so a repeated pair must move the digest rather than be
-    silently folded away. Duplication is separately reported by the join
-    receipt and by `invalid.duplicate-identity`.
+    A LIST digest, not a set digest: under the rules the sealed corpus was
+    minted with, the pairing IS the fact this release exists to carry, so a
+    repeated pair moves the digest rather than being silently folded away.
+    Duplication is separately reported by the join receipt and by
+    `invalid.duplicate-identity`.
+
+    The docspec generation does not use this. There the same fact is a framed
+    SET digest over unique ``sourceItemId`` keys under
+    ``docspec-source-to-document/2`` -- see `FRAMED_SET_DOMAINS`.
     """
 
     return "sha256:" + canonical_sha256(sorted([list(pair) for pair in pairs]))
+
+
+# ─── Framed set digests: the docspec generation's ``/2`` domains ───────
+
+# Decision 0001, "Sealed identities": 2.0's projections re-key from
+# `documentVersionId` to `textBodyId`, so 2.0 declares its own domains at `/2`
+# rather than reusing the spec's `/1` ones. Each maps a domain onto the exact
+# record it streams; the FIRST field is the key, rows are ordered by the whole
+# tuple under the shared UTF-16 rule, and a repeated key is refused. Every one
+# of these is a SET digest over unique keys.
+SELECTED_SOURCE_SET_DOMAIN = "docspec-selected-source-set/1"
+SOURCE_TO_DOCUMENT_DOMAIN = "docspec-source-to-document/2"
+FRAMED_SET_DOMAINS: dict[str, tuple[str, ...]] = {
+    # The catalog's own domain, at `/1`, because the digest is the same fact
+    # under the same name: the release DERIVES it over the pinned catalog's
+    # items rather than projecting one the D1 snapshot does not carry, which
+    # is why the name may stay (spec section 7.5, Decision 0001 restamp item 9).
+    SELECTED_SOURCE_SET_DOMAIN: ("sourceItemId", "documentId"),
+    "docspec-document-set/2": ("documentId",),
+    "docspec-document-version-set/2": ("documentVersionId",),
+    "docspec-text-body-set/2": ("textBodyId", "textKind"),
+    "docspec-attachment-set/2": ("attachmentId",),
+    "docspec-comment-set/2": ("commentId",),
+    "docspec-representation-set/2": ("representationId",),
+    "docspec-segment-set/2": ("segmentId",),
+    SOURCE_TO_DOCUMENT_DOMAIN: ("sourceItemId", "documentId", "documentVersionId"),
+}
+
+
+def _utf16_key(value: str) -> bytes:
+    """Order row keys by the shared artifact rule, not by Python's default.
+
+    UTF-16 code units, the ordering `rulespec_artifacts` sorts object keys
+    under, so a release digest and a catalog digest cannot disagree about what
+    "sorted" means.
+    """
+
+    try:
+        return value.encode("utf-16-be")
+    except UnicodeEncodeError as error:
+        raise ValueError("set member identity contains a lone Unicode surrogate") from error
+
+
+def framed_set_digest(domain: str, rows: Iterable[Mapping[str, Any]]) -> str:
+    """Digest one bounded, UTF-16-ordered member stream under a 2.0 set domain.
+
+    The framing itself is `rulespec_artifacts.framed_section_digest` -- the one
+    implementation in the installed container, the same one
+    `adapters/source_catalog_artifact.py:347-352` wraps -- so nothing here
+    re-derives a digest algorithm. What is written out is the discipline around
+    it that `selected_source_set_digest`
+    (`adapters/source_catalog_artifact.py:375-395`) states: a declared count, a
+    UTF-16-ordered key, and a refusal on a repeated key.
+    """
+
+    fields = FRAMED_SET_DOMAINS.get(domain)
+    if fields is None:
+        raise ValueError(f"{domain!r} is not a declared DocumentRelease 2.0 set domain")
+    key, *_rest = fields
+    records: list[dict[str, str]] = []
+    for row in rows:
+        record: dict[str, str] = {}
+        for field in fields:
+            value = row.get(field)
+            if not isinstance(value, str):
+                raise ValueError(f"{domain} member field {field!r} must be text")
+            record[field] = value
+        records.append(record)
+    records.sort(key=lambda record: tuple(_utf16_key(record[field]) for field in fields))
+
+    def stream() -> Iterable[Mapping[str, str]]:
+        previous: bytes | None = None
+        for record in records:
+            current = _utf16_key(record[key])
+            if previous is not None and current <= previous:
+                raise ValueError(f"{domain} members must be sorted and distinct")
+            previous = current
+            yield record
+
+    try:
+        return framed_section_digest(domain, (FramedSection("members", len(records), stream()),))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"cannot compute {domain}: {error}") from error
 
 
 def _interval_union(ranges: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
@@ -422,8 +647,26 @@ def _read_root(bundle: Path, issues: list[VerificationIssue]) -> dict[str, Any] 
             "release.json",
             f"expected {FORMAT!r} version {FORMAT_VERSION!r}",
         )
+    generation = bundle_generation(root)
+    if generation == DOCSPEC_GENERATION:
+        # Two names over one content: the state digest is the minted one, the
+        # release id is derived from its hex. Both are checked, because a root
+        # that carries a correct id beside a wrong state digest is a root whose
+        # two names disagree about the same corpus.
+        try:
+            expected_state = expected_document_state_digest(root)
+        except (TypeError, ValueError) as exc:
+            _issue(issues, "invalid.identity", "release.json", str(exc))
+        else:
+            if root.get("documentStateDigest") != expected_state:
+                _issue(
+                    issues,
+                    "invalid.identity",
+                    "release.json/documentStateDigest",
+                    f"expected {expected_state}",
+                )
     try:
-        expected = expected_release_id(root)
+        expected = expected_release_id(root, generation=generation)
     except (TypeError, ValueError) as exc:
         _issue(issues, "invalid.identity", "release.json", str(exc))
     else:
@@ -672,6 +915,13 @@ def _validate_schema_set(
     if not isinstance(descriptors, list):
         return
     base = "release.json/content/schemaSet"
+    if len(declared_generations(root)) > 1:
+        _issue(
+            issues,
+            "invalid.schema",
+            f"{base}/schemas",
+            "schema identifiers mix minting generations",
+        )
     ids = [item.get("schemaId") for item in descriptors if isinstance(item, dict)]
     if ids != sorted(ids, key=lambda value: str(value)):
         _issue(issues, "invalid.schema", f"{base}/schemas", "schemas must be sorted by schemaId")
@@ -1290,25 +1540,43 @@ def _validate_root_bindings(
         if isinstance(document.get("sourceItemId"), str)
         and isinstance(document.get("documentVersionId"), str)
     ]
+    joined = [
+        document
+        for document in documents
+        if isinstance(document.get("sourceItemId"), str)
+        and isinstance(document.get("documentId"), str)
+        and isinstance(document.get("documentVersionId"), str)
+    ]
+    generation = bundle_generation(root)
 
     catalog = content.get("sourceCatalog")
     if isinstance(catalog, Mapping):
-        expected_selected = source_set_digest(selected_ids)
-        if catalog.get("selectedSourceSetDigest") != expected_selected:
-            _issue(
-                issues,
-                "invalid.source-catalog-pin",
-                "release.json/content/sourceCatalog/selectedSourceSetDigest",
-                "the pinned catalog's selected set does not equal this release's selected rows",
-            )
-        if content.get("selectedSourceSetDigest") != catalog.get("selectedSourceSetDigest"):
-            _issue(
-                issues,
-                "invalid.source-catalog-pin",
-                "release.json/content/selectedSourceSetDigest",
-                "release and pinned catalog disagree on the selected source set",
-            )
-        pinned = catalog.get("releaseId")
+        # The predecessor pin carries the catalog's own `selectedSourceSetDigest`
+        # and is checked against it. The docspec-generation pin is
+        # `{catalogId, catalogDigest}` (Decision 0001, restamp item 9) and
+        # carries no set digest at all, so there is nothing for the release to
+        # agree with; its own value is checked below, against the members.
+        if generation == PREDECESSOR_GENERATION:
+            expected_selected = source_set_digest(selected_ids)
+            if catalog.get("selectedSourceSetDigest") != expected_selected:
+                _issue(
+                    issues,
+                    "invalid.source-catalog-pin",
+                    "release.json/content/sourceCatalog/selectedSourceSetDigest",
+                    "the pinned catalog's selected set does not equal this release's selected rows",
+                )
+            if content.get("selectedSourceSetDigest") != catalog.get("selectedSourceSetDigest"):
+                _issue(
+                    issues,
+                    "invalid.source-catalog-pin",
+                    "release.json/content/selectedSourceSetDigest",
+                    "release and pinned catalog disagree on the selected source set",
+                )
+        pinned = (
+            catalog.get("catalogId")
+            if generation == DOCSPEC_GENERATION
+            else catalog.get("releaseId")
+        )
         for index, document in enumerate(documents):
             capture = document.get("capture")
             if isinstance(capture, Mapping) and capture.get("catalogReleaseId") != pinned:
@@ -1319,12 +1587,48 @@ def _validate_root_bindings(
                     f"capture names a different catalog release than the root pin {pinned!r}",
                 )
 
-    for field, expected in (
-        ("selectedSourceSetDigest", source_set_digest(selected_ids)),
-        ("documentVersionSetDigest", source_set_digest(version_ids)),
-        ("segmentSetDigest", source_set_digest(segment_ids)),
-        ("sourceDocumentMappingDigest", mapping_digest(pairs)),
-    ):
+    # One fact, two minting rules. The sealed corpus is plain sorted-set digests
+    # and a list digest over the pairs; the docspec generation is framed digests
+    # under the domains Decision 0001 declares, the pair digest among them.
+    digest_plan: tuple[tuple[str, Callable[[], str]], ...]
+    if generation == DOCSPEC_GENERATION:
+        digest_plan = (
+            (
+                "selectedSourceSetDigest",
+                lambda: framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, joined),
+            ),
+            (
+                "documentVersionSetDigest",
+                lambda: framed_set_digest(
+                    "docspec-document-version-set/2",
+                    [{"documentVersionId": value} for value in version_ids],
+                ),
+            ),
+            (
+                "segmentSetDigest",
+                lambda: framed_set_digest(
+                    "docspec-segment-set/2",
+                    [{"segmentId": value} for value in segment_ids],
+                ),
+            ),
+            (
+                "sourceDocumentMappingDigest",
+                lambda: framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined),
+            ),
+        )
+    else:
+        digest_plan = (
+            ("selectedSourceSetDigest", lambda: source_set_digest(selected_ids)),
+            ("documentVersionSetDigest", lambda: source_set_digest(version_ids)),
+            ("segmentSetDigest", lambda: source_set_digest(segment_ids)),
+            ("sourceDocumentMappingDigest", lambda: mapping_digest(pairs)),
+        )
+    for field, compute in digest_plan:
+        try:
+            expected = compute()
+        except (TypeError, ValueError) as exc:
+            _issue(issues, "invalid.set-digest", f"release.json/content/{field}", str(exc))
+            continue
         if content.get(field) != expected:
             _issue(
                 issues,
@@ -1462,10 +1766,13 @@ __all__ = [
     "CATALOG_DISPOSITIONS",
     "CODE_PRECEDENCE",
     "DIAGNOSTIC_CODES",
+    "DOCSPEC_GENERATION",
     "DOCUMENTS_SCHEMA",
     "FORMAT",
     "FORMAT_VERSION",
+    "FRAMED_SET_DOMAINS",
     "MEMBER_MANIFEST_SCHEMA",
+    "PREDECESSOR_GENERATION",
     "RELEASE_ID_PREFIX",
     "REPRESENTATION_MEDIA_TYPE",
     "ROOT_SCHEMA",
@@ -1474,16 +1781,24 @@ __all__ = [
     "SCHEMA_IDS",
     "SCHEMA_ROOT",
     "SEARCH_SEGMENTS_SCHEMA",
+    "SELECTED_SOURCE_SET_DOMAIN",
     "SOURCE_CATALOG_ID_PREFIX",
     "SOURCE_DISPOSITIONS_SCHEMA",
+    "SOURCE_TO_DOCUMENT_DOMAIN",
     "STRUCTURAL_NODES_SCHEMA",
     "VerificationIssue",
     "VerificationResult",
+    "artifact_sha256",
+    "bundle_generation",
     "canonical_schema_id",
+    "declared_generations",
     "derive_counts",
     "derive_coverage",
+    "expected_document_state_digest",
     "expected_release_id",
+    "framed_set_digest",
     "mapping_digest",
+    "schema_id_generation",
     "stamp_root",
     "verify_corpus",
     "verify_document_release",

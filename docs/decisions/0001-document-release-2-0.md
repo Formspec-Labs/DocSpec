@@ -3,7 +3,7 @@
 - Date: 2026-08-30
 - Status: accepted for local implementation; nothing minted, nothing published
 - Accepted-by: agent (delegated scope: owner 2026-08-30 "execute phase 1... you for human-less decision making"; D1/D2 choices were made by the lead agent and NOT individually shown to the owner)
-- Supersedes: the `docspec-document-release` `1.1` root shape (`src/docspec/domain/release.py:21-22`) as DocSpec's publication surface; the nineteen-field `release.json` shape at `docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md:1439-1444`; and **that spec's `documentStateDigest` definition at `:1507-1533`** — the `framedSectionDigest` call with domain `docspec-document-state/2` over eight ordered sections, three of which (`activeLayers`, `partitionPolicy`, the store-addressed half of `sourceCatalog`) do not exist in a 2.0 bundle. That block is dead for this format; the preimage below replaces it. It does not supersede §7.5; it implements it.
+- Supersedes: the `docspec-document-release` `1.1` root shape (`src/docspec/domain/release.py:21-22`) as DocSpec's publication surface; the nineteen-field `release.json` shape at `docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md:1439-1444`; and **that spec's `documentStateDigest` definition at `:1507-1533`** — the `framedSectionDigest` call with domain `docspec-document-state/2` over eight ordered sections, four of which (`processingPlan`, `activeLayers`, `retentionDispositions`, `partitionPolicy`) have no counterpart at all in a 2.0 bundle, and a fifth (`sourceCatalog`) survives only in part: its store-addressed half — `catalogStateDigest`, the catalog schema digest, the catalog-policy digest — does not exist here. Only `counts` and `coverage` come across whole; `failures` leaves with the rest. That block is dead for this format; the preimage below replaces it. It does not supersede §7.5; it implements it.
 - Decides the question left open by `docs/superpowers/specs/2026-08-30-document-release-2.0-adoption.md` §9.
 
 Conventions: a standalone **Decision**; every obligation a checkable rule against
@@ -53,12 +53,35 @@ catalog would mint a release whose disposition projection over `U` describes a
 universe its documents did not come from.
 *Accepted-by: agent (delegated scope, header).*
 
-**D2 — the container mints the top-level release name.** The two canonicalisers
-were measured disagreeing on four of five inputs and both are imported into one
-module: `artifact_json_bytes` (`platform_artifact.py:32`) beside DocSpec's own
-`canonical_json_bytes` (`platform_artifact.py:41`, defined at `identity.py:112`).
-The principle is scoped to exactly that name — it is **not** "product code never
-mints names": `stable_urn` has 105 legitimate call sites in `src/` (record
+**D2 — the container mints the top-level release name.** The rationale first
+recorded here — that the two canonicalisers "were measured disagreeing on four of
+five inputs" — **did not reproduce.** Two independent re-runs since, and a third
+made while writing this correction, found the two encoders agreeing byte for byte
+on every value in this format's domain, including the sealed valid root itself; where they part company they *refuse* differently
+rather than emit differently (an unsafe integer, a lone surrogate, a float each
+raise a different exception type with a different message from the two
+implementations), and the one byte-level divergence found — object keys are
+ordered by UTF-16 code unit under `artifact_json_bytes` and by code point under
+`canonical_json_bytes` — needs an object key outside the Basic Multilingual
+Plane, which no member of this format carries. The landed support module asserts
+the byte agreement directly
+(`tests/test_document_release_verify.py::test_the_wire_contract_digest_is_the_unqualified_spelling_of_docspec_identity`),
+modulo the safe-integer guard `document_release_support.py:75-90` adds on top.
+The measurement is withdrawn rather than repeated.
+
+What survives is enough to decide the same way, and is stated as what it is:
+**single-minter discipline** — both are imported into one module,
+`artifact_json_bytes` (`platform_artifact.py:32`) beside DocSpec's own
+`canonical_json_bytes` (`platform_artifact.py:41`, defined at `identity.py:112`),
+and one name minted by two encoders in one file is a coin flip waiting to be
+called wrong by a later editor — and **divergent refusal surfaces**: a value one
+encoder seals and the other refuses is a bundle whose validity depends on which
+import the producer reached for. Because the two agree on the bytes, *which one
+signed a digest is not observable from the digest*, so the choice has to be made
+once, up front, and read back off the bundle rather than inferred — which is
+exactly why the landed gate detects the minting generation instead of guessing
+it. The principle is scoped to exactly that name — it is **not** "product code
+never mints names": `stable_urn` has 105 legitimate call sites in `src/` (record
 layers, catalogs, receipts), none retired here.
 *Accepted-by: agent (delegated scope, header).*
 
@@ -76,7 +99,8 @@ annotations          publishedAt, releaseStatus, buildRunId
 ```
 
 `annotations` is outside every preimage. This reconciles the nineteen-field spec
-shape against the seventeen-key `to_dict` (`release.py:183-201`): the missing two
+shape against the seventeen-key closed shape `from_dict` accepts
+(`release.py:183-201`; `to_dict` itself is `release.py:173-179`): the missing two
 were `documentStateDigest` (named, never implemented) and `physicalShardPolicy`
 (not carried — v2 does not partition, adoption spec §2, so it would have one
 legal value). The 1.1 pointer-record fields `activeLayers`, `blobRoots`,
@@ -140,8 +164,9 @@ an unchanged bucket is reused rather than recopied
 (`source_catalog_artifact.py:79-85,1375-1395`; `CATALOG_PARTITION_BUCKET_COUNT =
 64`). One member per text body would put 10k+ entries in `globalManifest` at the
 first mint and cross the recorded ≈10,000-member threshold at which external
-partition manifests must return (consolidation row 61); partitioned, the first
-mint's manifest is tens of members. *Accepted-by: agent (delegated scope,
+partition manifests must return (consolidation row 61,
+`spicysearch@main:docs/superpowers/plans/2026-08-29-document-consolidation.md:128`);
+partitioned, the first mint's manifest is tens of members. *Accepted-by: agent (delegated scope,
 header).* Manifest roles gain `attachments` and `comments`; every member path is
 a checked relative POSIX `objectKey` carrying `byteSize` and `sha256`.
 
@@ -158,9 +183,9 @@ All thirteen rows are live at `main@e8ee58f`. One line each.
 | 5 | A new `data/source-dispositions.jsonl` member carries one row per member of `U` with the catalog disposition projected verbatim; the release stops implying membership from what is present. |
 | 6 | `accepted-failure` and `rejected-run` stay in `AcquisitionDisposition`/`ProcessorDisposition` (`content.py:29,38`), but the build gate refuses any release that emits either for a selected item — conformance is a producer that never emits them, not a narrower type. |
 | 7 | A new `structuralNode` record type with `structuralParentId`, `depth`, dense sibling `ordinal`, and containment; `Segment` (`content.py:652-665`) gains `structuralParentId` and `headingPath`. |
-| 8 | `Representation.warnings: tuple[str, ...]` (`content.py:492`) is replaced by `excludedRanges` with byte range, machine-legible `reasonCode`, and presentable prose `reason`. |
-| 9 | The release carries `selectedSourceSetDigest` (the catalog's, projected), `documentVersionSetDigest`, `segmentSetDigest`, `sourceDocumentMappingDigest`, and the sealed `joinReceipt`; `selected_source_set_digest` (`source_catalog_artifact.py:375`) is projected, never recomputed. |
-| 10 | `CapturedFile.acquired_at` (`content.py:236`) **stays in the capture record** and is **excluded from every preimage**. A9 governs preimages, not records: a clock inside a content-derived identity would make two byte-identical captures two releases, but erasing acquisition time would destroy provenance the reader needs. |
+| 8 | `Representation.warnings: tuple[str, ...]` (`content.py:502`) is replaced by `excludedRanges` with byte range, machine-legible `reasonCode`, and presentable prose `reason`. |
+| 9 | The release carries `selectedSourceSetDigest`, `documentVersionSetDigest`, `segmentSetDigest`, `sourceDocumentMappingDigest`, and the sealed `joinReceipt`. `selectedSourceSetDigest` is **derived from the pin, not projected from it** — see *The catalog pin* below; the other three are the release's own, under the `/2` domains in *Sealed identities*. |
+| 10 | `CapturedFile.acquired_at` (`content.py:243`) **stays in the capture record** and is **excluded from every preimage**. A9 governs preimages, not records: a clock inside a content-derived identity would make two byte-identical captures two releases, but erasing acquisition time would destroy provenance the reader needs. |
 | 11 | `require_relative_path` (`identity.py:42-49`) — already owned, simply not applied — is applied to every `objectKey`; `ArtifactRef.locator`/`BlobRef.locator` (`references.py:21,57`) stop being bare `require_text`. |
 | 12 | `EvidenceCoordinate` (`content.py:384-390`) makes `start` and `end` required and renames `source_digest` to `renditionSha256`; the coordinate enum stays the two systems under *Coordinates*. |
 | 13 | `to_dict` gains `schemaSet`, and the eight schemas ride inside the bundle digest-pinned, so a consumer verifies with no Rulespec checkout. |
@@ -282,10 +307,46 @@ corpus" answer "no" whenever a segmenter is rebuilt over unchanged text.
 *Accepted-by: agent (delegated scope, header).*
 
 New set digests `attachmentSetDigest`, `commentSetDigest`, `textBodySetDigest`
-join `selectedSourceSetDigest` (the catalog's, projected, never recomputed under
-another name — spec §7.5), `documentVersionSetDigest`, `segmentSetDigest`,
-`sourceDocumentMappingDigest`, and the `joinReceipt`. `counts` and `coverage`
-gain per-kind breakdowns; a zero is written, never omitted.
+join `selectedSourceSetDigest` (derived from the pin — see *The catalog pin*),
+`documentVersionSetDigest`, `segmentSetDigest`, `sourceDocumentMappingDigest`,
+and the `joinReceipt`. `counts` and `coverage` gain per-kind breakdowns; a zero
+is written, never omitted.
+
+## The catalog pin
+
+**`sourceCatalogPin` reshapes to `{catalogId, catalogDigest}`.** The ported pin
+is four fields — `releaseId`, `releaseDigest`, `requestedUniverseSetDigest`,
+`selectedSourceSetDigest` (`document-release.schema.json:139-164`) — and three of
+them describe an artifact DocSpec no longer produces. What the D1 catalog
+actually is, read at the locator D1 quotes
+(`~/Work/corpora/_salvage-2026-08-28/docspec-qualification/fr-mirrulations-10k-v1/source-catalogs/source-catalogs/42/42890dab2fadf68b0a710e8e155293101830645ef0526d0404e6c76fb4f82176/catalog.json`),
+is a `docspec-source-catalog` `1.0` snapshot whose root keys are exactly
+`baseCatalog`, `catalogId`, `counts`, `coverage`, `format`, `formatVersion`,
+`itemsMember`, `kind`, `partitions`. So:
+
+- `catalogId` is the snapshot's own
+  `urn:docspec:source-catalog:v1:973aaa19…` value, verbatim;
+- `catalogDigest` is the **byte** sha256 of the pinned `catalog.json` —
+  `ded6649aab3f04faa6a48f867de0854648ec10c04fcdad8f6527e075d97c45d6`, which is
+  the digest `catalog-set.json` already records for the full tier — and is
+  verified against those bytes, not against a re-serialisation of the parsed
+  value;
+- `requestedUniverseSetDigest` and `selectedSourceSetDigest` **leave the pin**.
+  The snapshot carries neither at its root, so a pin declaring them would be
+  pinning values it cannot read back.
+
+**`selectedSourceSetDigest` is therefore not projected.** There is nothing to
+project: the D1 snapshot has no such field. The builder **derives** it, over the
+pinned catalog's items, under the catalog's own domain
+`docspec-selected-source-set/1` with the catalog's own record shape
+(`source_catalog_artifact.py:375-395`), and records it as **derived-from-pin**.
+§7.5's rule is *no recompute under another name*; this recomputes under **the
+same** name, in the same domain, with the same algorithm, so the rule permits it
+— what §7.5 forbids is a second digest of the same fact wearing a different
+domain, and there is none here. A consumer that wants the check re-run runs the
+identical function over the identical pinned bytes and must get the identical
+value; that is the whole point of deriving rather than copying.
+*Accepted-by: agent (delegated scope, header).*
 
 ## Acceptance gates
 
@@ -391,13 +452,46 @@ run by `tests/test_document_release_verify.py` (`260152f`). The builder this
 decision authorises implements the **produce** side only and calls the moved
 verifier as its gate.
 
+**The gate is generation-aware, because the corpus it gates is.** The identity
+and set-digest rules above are this decision's; the twenty sealed bundles were
+minted under the predecessor's — a full-content digest through
+`docspec.domain.identity.canonical_json_bytes`, and plain sorted-set digests. A
+verifier holding one rule would be wrong about half of what it reads: applying
+the rules here to the sealed corpus renames all twenty, and applying the
+predecessor's to a bundle minted under this decision would accept a
+`documentStateDigest` that moved on a physical-only repack. So
+`document_release_verify.py` reads the **minting generation off the bundle** —
+from the same declared schema `$id`s `SCHEMA_ID_GENERATIONS` already resolves,
+since the re-homing in restamp item 1 is exactly the boundary between the two
+rule sets — and checks each bundle against the rules it was minted under.
+Predecessor bundles keep verifying unchanged, 20/20; a bundle declaring the
+re-homed `$id`s is checked against this decision. A bundle mixing the two
+spellings is refused (`invalid.schema`) rather than resolved to a winner, and a
+bundle that cannot say what it is falls to the predecessor rules, which are the
+only rules any sealed bundle was ever minted under. This is a property of the
+restamp, not a permanent compatibility layer: after the restamp lands, the
+predecessor branch has no bundle left to serve and the decision to retire it is
+the restamp's to record. *Accepted-by: agent (delegated scope, header).*
+
 **Its first obligation, before any real corpus, is to restamp the twenty sealed
 conformance bundles.** Each bundle's `manifests/global.json` and `release.json`
 `schemaSet` carry `https://rulespec.org/...` `schemaId` strings inside digest
 preimages that `corpus.json` seals with `treeSha256`, so hand-editing invalidates
 every member digest, the manifest digest, the `schemaSetId`, the `byteSize`
 counts, the `releaseId`, and the tree digest of all twenty. They restamp by a
-builder or not at all (adoption spec §8). **One operation, this exhaustive list:**
+builder or not at all (adoption spec §8).
+
+**Precondition, unrecorded until now: the restamper's own input is not here.**
+Every fixture in this corpus is built from the sealed `SourceCatalogRelease` v1
+fixture, which it pins by identity and digest (adoption spec §7), and that
+fixture **did not come across with the restamper**:
+`tools/restamp_document_release_fixtures.py:76` names
+`tests/fixtures/source_catalog_release_v1/valid`, and no such directory exists
+in this repository, so both modes stop at `_require_inputs` (`:79-96`) rather
+than half-building a corpus. Importing that fixture is therefore step zero of
+the first obligation, before item 1 below.
+
+**One operation, this exhaustive list:**
 
 1. the six schema `$id`s move to `urn:docspec:schema:document-release-*:2.0`
    (adoption spec §8 table);
@@ -413,19 +507,60 @@ builder or not at all (adoption spec §8). **One operation, this exhaustive list
 8. the root gains `documentStateDigest`; the `releaseId` pattern stays
    `^urn:docspec:document-release:v2:[0-9a-f]{64}$`, documented as the
    content-derived form (see *Sealed identities*);
-9. the catalog-pin pattern changes from
-   `^urn:spicy-regs:source-catalog-release:v1:[0-9a-f]{64}$` to
-   **`^urn:docspec:source-catalog:v1:[0-9a-f]{64}$`** — the ported pattern names
-   a producer that no longer owns catalogs and does not match the D1 catalog's
-   own `catalogId`;
+9. the catalog pin reshapes to **`{catalogId, catalogDigest}`** (*The catalog
+   pin*): `sourceCatalogPin` (`document-release.schema.json:139-164`) drops
+   `requestedUniverseSetDigest` and `selectedSourceSetDigest`, which the D1
+   snapshot does not carry, renames `releaseId`/`releaseDigest` to
+   `catalogId`/`catalogDigest`, and takes
+   **`^urn:docspec:source-catalog:v1:[0-9a-f]{64}$`** for the id — the ported
+   pattern names a producer that no longer owns catalogs and does not match the
+   D1 catalog's own `catalogId`. The **same pattern appears twice**, and both
+   sites move together: `sourceCatalogPin.releaseId`
+   (`document-release.schema.json:151-152`) and
+   `captureRecord.catalogReleaseId` (`documents.schema.json:116`), the
+   per-document back-reference the root pin is checked against. Fixing one and
+   not the other would make every capture row disagree with the root;
 10. the evidence `coordinateSystem` enum stays the two systems above, documented
     as closed;
 11. member re-keying: `data/*` members become **JSONL**, and `blobs/`/`text/`
     become partitioned members rather than one file per document;
-12. the six schemas' `description` prose saying Rulespec owns them, and the root's
-    citation of REF-024, are corrected to DocSpec ownership under REF-048 — and
-    the sealed root description must also name the Rulespec Extrapolator as the
-    second consumer.
+12. **ownership and consumer prose, at the two sites that actually carry it.**
+    Only **one** schema claims Rulespec ownership — `document-release.schema.json:5`,
+    "Rulespec Core owns this schema; DocSpec owns the records it carries
+    (REF-024)" — and it is corrected to DocSpec ownership under REF-048. The
+    other five carry no ownership sentence at all. The **second-consumer**
+    correction belongs to a different file: `search-segments.schema.json:5`
+    says "SpicySearch consumes these; it must not run a second segmentation
+    pipeline", and that is the single-consumer sentence the C27 disposition
+    contradicts, so it is the one that must also name the Rulespec
+    Extrapolator and carry the no-re-segmentation obligation onto it;
+13. `member-manifest.schema.json:94-104` — the member `role` enum gains
+    **`attachments`** and **`comments`**, the two new tabular roles from
+    restamp item 2, so the manifest can describe the members the schema set
+    now declares;
+14. `documents.schema.json:100-101` — `captureRecord` **gains the acquisition
+    wall clock**: `acquiredAt` required and `acquisitionStartedAt` nullable,
+    mirroring `CapturedFile` (`content.py:243,247`), under deviation row 10's
+    ruling that the clock stays in the record and out of every preimage. **Two
+    descriptions must be corrected, not one**, because both currently assert
+    the opposite: `documents.schema.json:101` ("Carries no wall clock: a
+    capture time would put a clock inside a content-derived identity…") and
+    `document-release.schema.json:56` ("Per-record wall clocks are absent from
+    this contract entirely — see the spec"). Both sentences die; what replaces
+    them says where the clock lives and which preimages exclude it;
+15. `search-segments.schema.json` — the evidence coordinate reserves
+    **`evidenceGrade`**, unpopulated in 2.0 (*Recorded dispositions*), beside
+    the closed `coordinateSystem` enum at `:74-80`;
+16. `member-manifest.schema.json:116-117` — `recordCount` semantics widen for
+    the partitioned members item 11 introduces. Today the description reads
+    "Row count for a tabular member; null for a schema, rendition, or
+    representation member, which has no rows", and the verifier enforces
+    exactly that (`document_release_verify.py`, `_validate_member_descriptor`).
+    A partitioned `text/` or `blobs/` member **is** a bucket of rows and
+    carries its own `recordCount`, exactly as the catalog's partitions do
+    (`source_catalog_artifact.py:79-85,1375-1395`), so the null-for-rendition
+    rule must be restated per role rather than per "has rows", and the
+    verifier's `OPAQUE_ROLES` branch restated with it.
 
 The invalid-bundle corpus grows by `invalid.comment-selection`,
 `invalid.attachment-accounting`, and `invalid.retention-floor`, each still a
@@ -442,12 +577,12 @@ One line each, so an absent rule is a recorded absence. *All Accepted-by: agent
 
 | Item | Disposition |
 | --- | --- |
-| Second consumer (C27) | The **Rulespec Extrapolator** is consumer #2 and is contractually forbidden from re-segmenting; the segment records are a two-consumer contract, and the sealed root schema description is corrected to say so (restamp item 12). |
+| Second consumer (C27) | The **Rulespec Extrapolator** is consumer #2 and is contractually forbidden from re-segmenting; the segment records are a two-consumer contract, and the sentence that says otherwise — `search-segments.schema.json:5`, "SpicySearch consumes these" — is corrected to say so (restamp item 12). |
 | Active-set diff | Deferred, named: the builder's `diff` verb (`src/docspec/cli.py`, `document-release diff`) owns it; 2.0 defines no cross-release active-set delta. |
 | Compaction trigger | Moot in v2's self-contained shape — a bundle that carries its members has nothing to compact — recorded as moot rather than dropped, so the partitioning decision can reopen it. |
 | Media-type conflict refusal | Adopted as a builder diagnostic: a rendition whose declared media type contradicts its sniffed type is refused at capture, never silently coerced. |
-| K14 invariants | Both adopted as builder diagnostics: an HTTP-200 challenge page is **quarantined, never sealed as body text**; a missing content-type **must not erase a rendition already identified by path** (consolidation row 214). |
-| Evidence grading | Deferred, named: the field is `evidenceGrade` on the evidence coordinate, reserved in the restamp and unpopulated in 2.0. |
+| K14 invariants | Both adopted as builder diagnostics: an HTTP-200 challenge page is **quarantined, never sealed as body text**; a missing content-type **must not erase a rendition already identified by path** (consolidation K14, `spicysearch@main:docs/superpowers/plans/2026-08-29-document-consolidation.md:214`). |
+| Evidence grading | Deferred, named: the field is `evidenceGrade` on the evidence coordinate, reserved in the restamp (item 15) and unpopulated in 2.0. |
 | Multi-representation (C5) | Representation stays **singular** in v2 — one selected Unicode representation per text body. OCR and other alternate representations are a recorded **v2.1 extension point**, not a v2 field. |
 | Migration-manifest rows 6/7/8 | Exact source capture, processing segments, and extraction task protocol are **marked ported at the first mint**, when the release that carries them exists — not before. |
 
@@ -486,7 +621,9 @@ in the directory, no version suffix in the filename, `$id` a
 | `releaseId` (2.0 bundle) | `urn:docspec:document-release:v2:<64 hex>` | derived: URN prefix + `documentStateDigest` hex |
 | `releaseId` (1.1 / envelope) | `urn:spicy:artifact:derivation:<64 hex>` | `rulespec_artifacts.expected_logical_id` |
 | `documentStateDigest` | `sha256:<64 hex>` | `artifact_json_bytes` over `{format, formatVersion, logicalContent}` |
-| catalog pin `catalogId` | `urn:docspec:source-catalog:v1:<64 hex>` | the pinned `SourceCatalog`, projected |
+| catalog pin `catalogId` | `urn:docspec:source-catalog:v1:<64 hex>` | the pinned `SourceCatalog` snapshot's own value, verbatim |
+| catalog pin `catalogDigest` | `<64 hex>` | byte sha256 of the pinned `catalog.json`, verified against those bytes |
+| `selectedSourceSetDigest` | `sha256:<64 hex>` | derived from the pin under `docspec-selected-source-set/1` (*The catalog pin*) |
 
 **The `releaseId` wire key changes meaning between 1.1-wire and 2.0-wire, and
 that is recorded rather than glossed.** In 1.1 and in the derivation envelope,
@@ -518,8 +655,19 @@ docspec-source-to-document/2    {sourceItemId, documentId,
 
 Each calls the installed Rulespec `framedSectionDigest` with one `members`
 section. Every key is unique; the declared count must equal the streamed count;
-no profile defines another set-digest algorithm. `sourceDocumentMappingDigest`
-remains a **list** digest over the sorted `[sourceItemId, documentVersionId]`
-pairs — the pairing is the fact, so a repeated pair moves the digest rather than
-being folded away — and `selectedSourceSetDigest` is the pinned catalog's own
-value, projected and never recomputed under another name.
+no profile defines another set-digest algorithm.
+
+`sourceDocumentMappingDigest` is **`docspec-source-to-document/2` in that table
+and nothing else**: a framed SET digest over unique `sourceItemId` keys, carrying
+`documentId` and `documentVersionId` in each record. The candidate's list digest
+over repeated `[sourceItemId, documentVersionId]` pairs does not survive into
+2.0. It cannot: `U`'s bijection already makes `sourceItemId` unique across the
+selected rows, so a repeated pair is not a fact the digest has to preserve — it
+is `invalid.duplicate-identity`, and a digest that quietly absorbed it would be
+a second, weaker report of a defect that already has a diagnostic. The
+predecessor generation's list digest stays exactly where it is, in the twenty
+sealed bundles and in the verifier's predecessor branch
+(`adapters/document_release_verify.py`, `mapping_digest`), and nowhere else.
+
+`selectedSourceSetDigest` is **derived from the pin**, under
+`docspec-selected-source-set/1` — see *The catalog pin*.

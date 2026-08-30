@@ -11,8 +11,9 @@ the duplicate-key refusal, and the exact-bytes check delegate to
 `docspec.domain.identity`; the containment test delegates to
 `require_relative_path`. What is written out is only what DocSpec had no
 equivalent for: the unqualified hexadecimal digest spelling this wire contract
-uses, the streamed file digest, the bundle tree inventory, the set digest, and
-the JSON safe-integer bound.
+uses, the streamed file digest, the bundle tree inventory, the set digest, the
+JSON safe-integer bound, and the logical-content projection a content-derived
+identity is taken over.
 
 Failures raise `ValueError` rather than `IntegrityError`. The verifier reports a
 diagnostic code for every refusal and must catch one exception type across
@@ -24,7 +25,7 @@ verifier's `except` clauses exactly as they were written.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from importlib import resources
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -170,6 +171,37 @@ def source_set_digest(source_item_ids: Sequence[str]) -> str:
     return "sha256:" + canonical_sha256(sorted(set(source_item_ids)))
 
 
+# The physical and packing facts a docspec-generation identity preimage leaves
+# out (`docs/decisions/0001-document-release-2-0.md`, "Identity -- two minted
+# names, one derived form"). `coverage`'s representation and segment byte totals
+# stay IN: they are facts about the corpus text, not about how it was packed.
+# A physical-only repack therefore preserves `documentStateDigest`, which
+# INCREMENTAL-EQUIVALENCE requires and a flat hash over the whole root breaks.
+PHYSICAL_CONTENT_KEYS = frozenset({"globalManifest", "processingPolicies"})
+PHYSICAL_COUNT_KEYS = frozenset({"memberCount", "totalMemberByteSize"})
+
+
+def logical_content(content: Any) -> Any:
+    """Project one release ``content`` object onto the half identity covers.
+
+    A value that is not an object comes back unchanged, so a malformed root
+    reaches the identity comparison as the mismatch it is rather than as a
+    crash inside this projection.
+    """
+
+    if not isinstance(content, Mapping):
+        return content
+    projected: dict[str, Any] = {
+        key: value for key, value in content.items() if key not in PHYSICAL_CONTENT_KEYS
+    }
+    counts = projected.get("counts")
+    if isinstance(counts, Mapping):
+        projected["counts"] = {
+            key: value for key, value in counts.items() if key not in PHYSICAL_COUNT_KEYS
+        }
+    return projected
+
+
 def safe_object_key(value: object) -> bool:
     """Report whether one member key names a file inside its own bundle.
 
@@ -201,11 +233,14 @@ __all__ = [
     "MEMBER_DESCRIPTOR_FIELDS",
     "MEMBER_MANIFEST_FORMAT",
     "MEMBER_MANIFEST_VERSION",
+    "PHYSICAL_CONTENT_KEYS",
+    "PHYSICAL_COUNT_KEYS",
     "SUBORDINATE_MANIFEST_FIELDS",
     "canonical_json_bytes",
     "canonical_sha256",
     "file_sha256",
     "load_strict_canonical_json",
+    "logical_content",
     "member_path",
     "packaged_schema_root",
     "safe_object_key",
