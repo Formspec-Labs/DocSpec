@@ -1666,6 +1666,16 @@ root.
 
 ### 9.10 FR-Mirrulations v3 transition gate
 
+> **Status 2026-08-30 — gate dropped by product ruling.** The v3 migration
+> differential served migration fidelity, a goal the owner retired with the
+> other migration ceremony; the 10k campaign checkpoint superseded the 1k v3
+> corpus as the demonstration input. The sealed corpus remains archived at
+> `~/Work/corpora/fr-mirrulations-1k-v1` (digest-verified, reversible), and
+> per REF-048 the read-only adapter this gate would have required retires
+> with it. Recorded in the platform plan and the 2026-08-29 document
+> consolidation [R3].
+
+
 The known-good 2026-08-10 FR-Mirrulations release is mandatory migration input,
 not disposable compatibility debt. The old artifact is
 `spicyregs-document-release/3.0` with release digest
