@@ -34,6 +34,7 @@ _EXPORTS = {
     "S3ContentFetcherError": "docspec.adapters.content_fetchers",
     "SqliteCatalogPolicyWorkspace": "docspec.adapters.catalog_policy_workspace",
     "SpicyRegsSourceNativeAdapter": "docspec.adapters.spicyregs_source_native",
+    "TiktokenCounter": "docspec.adapters.token_counters",
     "build_dagster_definitions": "docspec.adapters.dagster",
 }
 

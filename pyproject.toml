@@ -18,6 +18,9 @@ http = [
 s3 = [
     "boto3>=1.34,<2",
 ]
+tokens = [
+    "tiktoken>=0.7,<1",
+]
 pdf = [
     "pymupdf>=1.24,<2",
     "pypdf>=5,<7",

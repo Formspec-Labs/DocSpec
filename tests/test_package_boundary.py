@@ -188,7 +188,7 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
-    assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3"}
+    assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3", "tokens"}
 
     extras = project["project"]["optional-dependencies"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
@@ -196,6 +196,7 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
+    assert any(requirement.startswith("tiktoken") for requirement in extras["tokens"])
     assert "archive" not in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 

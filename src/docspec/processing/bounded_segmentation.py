@@ -283,6 +283,14 @@ class SegmentCoverage:
     uncovered_bytes: int
     segment_count: int
 
+    @property
+    def identity_holds(self) -> bool:
+        """ADR 0001: `segmentedByteTotal + excludedByteTotal == representationByteTotal`."""
+
+        return not self.uncovered_bytes and (
+            self.covered_bytes + self.excluded_bytes == self.representation_bytes
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "representationByteTotal": self.representation_bytes,
