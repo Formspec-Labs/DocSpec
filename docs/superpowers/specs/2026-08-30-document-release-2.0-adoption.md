@@ -4,6 +4,20 @@
 
 Editor's Draft — 30 August 2026
 
+> **Partly superseded by Decision 0001 (2026-08-30),**
+> `docs/decisions/0001-document-release-2-0.md`. This document records the
+> *adoption* — what DocSpec took over from the Rulespec candidate, byte-faithful,
+> and what the delta to the live 1.1 record was. It left §9's reconciliation
+> question open, and Decision 0001 answered it, in places by deciding against
+> what is written here. The four sections that no longer state the rule are
+> annotated in place: **§2** (members and partitioning), **§3** (identity),
+> **§6 row 10** (the capture wall clock), and **§8** (which schema carries the
+> ownership prose). **§9** is annotated separately: it was overtaken by the
+> verifier and restamper landing, not by a decision. Where this document and the
+> decision disagree, the decision governs; this one is kept because the delta
+> table and the provenance it records are still the record of where the format
+> came from.
+
 ## Provenance
 
 This specification was authored in the `rulespec` repository as
@@ -80,8 +94,21 @@ text/<documentId>.txt                              the selected visible-text rep
 ```
 
 Only relative POSIX member paths. No absolute path, no parent traversal, no
-symlink. Every member carries its exact `byteSize` and `sha256`. v2 does not
-partition.
+symlink. Every member carries its exact `byteSize` and `sha256`.
+
+> **Superseded — Decision 0001, "The format", *Member set*.** The two sentences
+> this section rests on are both reversed there. `data/*` members are **JSONL**,
+> one canonical-JSON record per line, not the single-line JSON arrays the sealed
+> fixtures carry; and `blobs/`/`text/` are **partitioned** members following the
+> `SourceCatalog` multipart pattern — rows bucket by digest of their
+> `textBodyId`, each bucket written once as a `blobRef`-carrying member with a
+> `recordCount` — not one member per document. "v2 does not partition" is
+> therefore false as written: what v2 does not partition is the *release*, which
+> stays one bundle (Decision 0001, *What this decision does not decide*, "Scale
+> beyond 10k"); its members do partition. One member per text body would put
+> 10k+ entries in `globalManifest` at the first mint. The member list also grows
+> by `data/attachments.jsonl` and `data/comments.jsonl`, and the schema list from
+> six to eight (Decision 0001 restamp items 2, 11).
 
 The member paths above are the paths *inside a bundle*, and the sealed fixtures
 use them verbatim. The same six schemas are also packaged for DocSpec's own use
@@ -90,6 +117,16 @@ naming and URN `$id` scheme; §8 records that mapping.
 
 ## 3. Identity
 
+There are **two** minting generations under this format version, and the rule
+below is only the first one's. Both are live, because the sealed conformance
+corpus was minted under one and everything DocSpec will ever produce is minted
+under the other. `src/docspec/adapters/document_release_verify.py` reads which
+generation a bundle declares — from its schema `$id`s — and checks it against
+the rules it was minted under.
+
+**The predecessor generation** — the twenty sealed bundles in
+`tests/fixtures/document_release_v2/`, and nothing else, ever again:
+
 ```text
 urn:docspec:document-release:v2:<sha256 over canonical {format, formatVersion, content}>
 ```
@@ -97,16 +134,36 @@ urn:docspec:document-release:v2:<sha256 over canonical {format, formatVersion, c
 Canonical JSON is DocSpec's `canonical_json_bytes`
 (`src/docspec/domain/identity.py:112`) — UTF-8, sorted keys, no insignificant
 whitespace, no floating point, no unsafe integer — which equals RFC 8785 on that
-value domain. Root and member bytes are exactly those bytes, with **no** trailing
-newline; `canonical_json_file_bytes` is the file form and is not used here.
+value domain. The digest is over the **whole** `content`, member manifest and
+packing counts included, so a physical-only repack of one of these bundles
+renames it.
 
-`annotations` is excluded from the preimage, and that is where `publishedAt`,
-`releaseStatus`, and `buildRunId` live. Two builds of identical corpus content
-share one identity.
+**The docspec generation** — every bundle minted under Decision 0001, and the
+shape the restamp moves the sealed corpus to. Two names over one content, and
+the second is derived rather than minted:
 
-The format token and version are **inside** the preimage. A content-only digest
-lets a future reshape of the same fields mint a colliding name; binding the token
-closes that.
+```text
+documentStateDigest  sha256:<sha256 over artifact-canonical {format, formatVersion, logicalContent}>
+releaseId            "urn:docspec:document-release:v2:" + documentStateDigest hex
+```
+
+`logicalContent` is `content` minus every physical or packing fact —
+`globalManifest`, `counts.memberCount`, `counts.totalMemberByteSize`,
+`processingPolicies` — so a physical-only repack **preserves** the identity,
+which `INCREMENTAL-EQUIVALENCE` requires and the flat digest above breaks.
+`coverage`'s byte totals stay in: they are facts about the corpus text, not about
+how it was packed. The canonicaliser is the container's,
+`rulespec_artifacts.canonical_json_bytes`, not DocSpec's (Decision 0001, D2), and
+the root gains `documentStateDigest` as a key (restamp item 8). Decision 0001,
+*Identity — two minted names, one derived form*, is the governing text.
+
+Both generations agree on the rest. Root and member bytes are exactly canonical
+bytes with **no** trailing newline; `canonical_json_file_bytes` is the file form
+and is not used here. `annotations` is excluded from every preimage, and that is
+where `publishedAt`, `releaseStatus`, and `buildRunId` live, so two builds of
+identical corpus content share one identity. The format token and version are
+**inside** the preimage: a content-only digest lets a future reshape of the same
+fields mint a colliding name, and binding the token closes that.
 
 ## 4. What the release contains
 
@@ -187,9 +244,12 @@ validator.
 ## 6. Deviations from DocSpec's live `docspec-document-release` 1.1
 
 This is DocSpec's migration work. Recorded so the delta is a list rather than a
-discovery. The table below is reproduced verbatim from the candidate; it is the
-migration delta and is not edited here. §6.1 records what each row is worth
-against the code as it stands.
+discovery. The table below was reproduced verbatim from the candidate; §6.1
+records what each row is worth against the code as it stands. **One row is no
+longer verbatim**: row 10's proposal was decided the other way in Decision 0001
+and is annotated in place, because a delta table that still proposes what was
+decided against is not a record of the delta, it is a second claimant. Every
+other row stands as the candidate wrote it.
 
 | # | Live 1.1 | Portable 2.0 |
 | --- | --- | --- |
@@ -202,7 +262,7 @@ against the code as it stands.
 | 7 | No structural-node record. `Segment` carries `kind` and `derivation` but no parent, depth, or heading path (`content.py:652`) | `structuralNode` records with `structuralParentId`, `depth`, dense sibling `ordinal`, and containment; segments carry `headingPath` |
 | 8 | `Representation.warnings` is a free string tuple (`content.py:492`) | Explicit `excludedRanges` with byte ranges, machine-legible `reasonCode`, and prose `reason` |
 | 9 | No selected-source, document/version, segment, or source-document mapping digest; only `store_receipt_set_digest` and `logical_state_digest` | Four canonical digests plus a sealed one-to-one join receipt |
-| 10 | `CapturedFile.acquired_at` is required, and `acquisition_started_at` optional (`content.py:236`) | No wall clock on a capture record. A clock inside a content-derived identity makes two byte-identical captures two releases; the rendition digest is the stronger evidence. Publication time lives once, in `annotations` |
+| 10 | `CapturedFile.acquired_at` is required, and `acquisition_started_at` optional (`content.py:243,247`) | **[Decided otherwise — Decision 0001 row 10.]** The candidate proposed removing the wall clock. It is **kept in the capture record** and **excluded from every preimage** instead: the identity argument governs preimages, not records, and erasing acquisition time would destroy provenance the reader needs. `captureRecord` therefore *gains* `acquiredAt` and a nullable `acquisitionStartedAt` in the restamp (item 14), and the two schema descriptions that assert the opposite are corrected with it |
 | 11 | `ArtifactRef.locator`/`BlobRef.locator` are free strings and may be absolute | Every member path is a checked relative POSIX `objectKey` |
 | 12 | Evidence names its source by `EvidenceCoordinate.source_digest` with optional `start`/`end`/`page`/`region` | Evidence requires `coordinateSystem`, `renditionSha256`, `start`, `end`, and must resolve inside the named rendition |
 | 13 | No schema set inside the release | The six schemas ride inside the bundle, digest-pinned, so a consumer verifies with no Rulespec checkout |
@@ -301,13 +361,29 @@ here:
   of the twenty bundles. The fixtures are sealed evidence; they are restamped by
   a builder or not at all. Until a DocSpec builder exists, the packaged schemas
   and the fixture-embedded schemas are byte-identical apart from the `$id` line.
-- **The schema `description` strings still say Rulespec owns them.** Each of the
-  six carries prose to that effect, and the root cites REF-024. That prose is
-  stale under REF-048. It was left byte-faithful in this port so the diff shows
-  exactly one changed line per file; correcting it is a deliberate edit, and it
-  should happen alongside whatever restamps the fixtures.
+- **The root schema's `description` still says Rulespec owns it.** **One** of
+  the six carries that prose, not each: `document-release.schema.json:5`,
+  "Rulespec Core owns this schema; DocSpec owns the records it carries
+  (REF-024)". The other five describe their records and claim no owner. That one
+  sentence is stale under REF-048. It was left byte-faithful in this port so the
+  diff shows exactly one changed line per file; correcting it is a deliberate
+  edit, and it should happen alongside whatever restamps the fixtures
+  (Decision 0001 restamp item 12, which also redirects the *second-consumer*
+  correction to the sentence that actually needs it —
+  `search-segments.schema.json:5`, "SpicySearch consumes these").
 
 ## 9. What this adoption does not do
+
+> **Overtaken by events.** This section described the state on the day of
+> adoption. Since then the conformance validator and the fixture restamper moved
+> in (`src/docspec/adapters/document_release_verify.py`,
+> `src/docspec/document_release_support.py`,
+> `tools/restamp_document_release_fixtures.py`), so the packaged 2.0 schemas
+> **are** read by production code and every sealed bundle is run by
+> `tests/test_document_release_verify.py`. What is still true is the sentence
+> that matters: `src/docspec/domain/release.py` is untouched and
+> `RELEASE_FORMAT_VERSION` remains `"1.1"`, so nothing is minted in 2.0 yet.
+> The next decision this section asks for is Decision 0001, which is written.
 
 No production code changes. `src/docspec/domain/release.py` is untouched, and
 `RELEASE_FORMAT_VERSION` remains `"1.1"`. Nothing in DocSpec reads the 2.0
