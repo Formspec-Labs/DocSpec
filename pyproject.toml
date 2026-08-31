@@ -12,6 +12,9 @@ dependencies = [
 rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" }
 
 [project.optional-dependencies]
+fast = [
+    "jsonschema-rs>=0.52,<1",
+]
 http = [
     "httpx>=0.27,<1",
 ]
@@ -33,6 +36,7 @@ dev = [
     "httpx>=0.27,<1",
     "ijson>=3.3,<4",
     "jsonschema>=4.23,<5",
+    "jsonschema-rs>=0.52,<1",
     "pytest",
     "ruff>=0.12,<0.13",
 ]

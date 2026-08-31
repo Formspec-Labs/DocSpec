@@ -188,7 +188,14 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
-    assert set(project["project"]["optional-dependencies"]) == {"dagster", "http", "pdf", "s3", "tokens"}
+    assert set(project["project"]["optional-dependencies"]) == {
+        "dagster",
+        "fast",
+        "http",
+        "pdf",
+        "s3",
+        "tokens",
+    }
 
     extras = project["project"]["optional-dependencies"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])

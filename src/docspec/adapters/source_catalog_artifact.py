@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import io
 import json
+import os
+import pickle
 import struct
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
@@ -13,6 +16,11 @@ from itertools import zip_longest
 from typing import Any
 
 import jsonschema
+
+try:  # the compiled validator is the optional `fast` extra; the authority always works
+    import jsonschema_rs
+except ImportError:  # pragma: no cover - environment without the extra
+    jsonschema_rs = None  # type: ignore[assignment]
 from rulespec_artifacts import (
     ROOT_OBJECT_KEY,
     ArtifactInput,
@@ -137,7 +145,6 @@ _SOURCE_RENDITION_REQUIRED_FIELDS = {
     "expectedByteSize",
 }
 _SCHEMAS = source_catalog_schemas()
-_ITEM_VALIDATOR = jsonschema.Draft202012Validator(_SCHEMAS["source-item.schema.json"])
 _POLICY_VALIDATOR = jsonschema.Draft202012Validator(_SCHEMAS["catalog-policy.schema.json"])
 _RECEIPT_VALIDATOR = jsonschema.Draft202012Validator(_SCHEMAS["catalog-build-receipt.schema.json"])
 
@@ -262,6 +269,36 @@ def _schema_error(validator: jsonschema.Draft202012Validator, value: object, lab
         raise IntegrityError(f"{label} schema failure at {path}: {error.message}") from error
 
 
+class _CompiledSchemaGate:
+    """Fast-accept schema checking with python-jsonschema as the sole authority.
+
+    The compiled validator only ever short-circuits ACCEPTANCE; every rejection
+    is re-decided by ``jsonschema`` so refusal semantics and error text cannot
+    drift behind a faster engine. The differential test pins the two validators
+    to each other on this schema's shapes.
+    """
+
+    __slots__ = ("_authority", "_fast")
+
+    def __init__(self, schema: Mapping[str, Any]) -> None:
+        self._authority = jsonschema.Draft202012Validator(schema)
+        if jsonschema_rs is None:
+            self._fast = None
+            return
+        try:
+            self._fast = jsonschema_rs.validator_for(dict(schema))
+        except Exception:  # noqa: BLE001 - an uncompilable schema falls back to the authority
+            self._fast = None
+
+    def error(self, value: object, label: str) -> None:
+        if self._fast is not None and self._fast.is_valid(value):
+            return
+        _schema_error(self._authority, value, label)
+
+
+_ITEM_VALIDATOR = _CompiledSchemaGate(_SCHEMAS["source-item.schema.json"])
+
+
 class _FramedSectionHasher:
     """Incrementally reproduce ``framed_section_digest`` for one known-count section.
 
@@ -317,45 +354,62 @@ def _iter_partition_rows(
     member = partition.member
     if member.blob_ref is None or member.record_count is None:
         raise IntegrityError("source-item partition descriptor requires blobRef and recordCount")
+    with blob_source.open(member.blob_ref) as stream:
+        yield from _iter_partition_stream(
+            stream,
+            partition_id=partition.partition_id,
+            record_count=member.record_count,
+            validate=validate,
+            with_raw=with_raw,
+        )
+
+
+def _iter_partition_stream(
+    stream: Any,
+    *,
+    partition_id: str,
+    record_count: int,
+    validate: bool,
+    with_raw: bool,
+) -> Iterator[Any]:
     previous: bytes | None = None
     count = 0
-    with blob_source.open(member.blob_ref) as stream:
-        while raw := stream.readline(MAX_CATALOG_ROW_BYTES + 2):
-            if len(raw) > MAX_CATALOG_ROW_BYTES + 1:
-                raise LimitExceededError("source-catalog row exceeds its byte limit")
-            if not raw.endswith(b"\n"):
-                raise IntegrityError("source-catalog rows must end with a newline")
-            if validate:
-                try:
-                    value = parse_canonical_json(
-                        raw[:-1],
-                        path=f"source-items/{partition.partition_id}/{count}",
-                    )
-                except ArtifactVerificationError as error:
-                    raise IntegrityError(
-                        f"source-catalog row {count} is not canonical: {error}"
-                    ) from error
-                _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {count}")
-            else:
-                # An unvalidated pass only re-reads bytes that a validated pass of
-                # the same derivation (or the producer gate) proves canonical and
-                # schema-conformant; plain parsing avoids re-serializing every row.
-                value = json.loads(raw[:-1])
+    while raw := stream.readline(MAX_CATALOG_ROW_BYTES + 2):
+        if len(raw) > MAX_CATALOG_ROW_BYTES + 1:
+            raise LimitExceededError("source-catalog row exceeds its byte limit")
+        if not raw.endswith(b"\n"):
+            raise IntegrityError("source-catalog rows must end with a newline")
+        if validate:
             try:
-                item = SourceCatalogItem.from_dict(value)
-            except (TypeError, ValueError) as error:
-                raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
-            if validate:
-                _require_interpretation_order(item)
-            if _partition_id(item.source_item_id) != partition.partition_id:
-                raise IntegrityError("source-catalog row is stored in the wrong logical partition")
-            key = _utf16_key(item.source_item_id)
-            if previous is not None and key <= previous:
-                raise IntegrityError("source-catalog partition rows must be strictly ordered and distinct")
-            previous = key
-            count += 1
-            yield (item, raw[:-1]) if with_raw else item
-    if count != member.record_count:
+                value = parse_canonical_json(
+                    raw[:-1],
+                    path=f"source-items/{partition_id}/{count}",
+                )
+            except ArtifactVerificationError as error:
+                raise IntegrityError(
+                    f"source-catalog row {count} is not canonical: {error}"
+                ) from error
+            _ITEM_VALIDATOR.error(value, f"source-catalog row {count}")
+        else:
+            # An unvalidated pass only re-reads bytes that a validated pass of
+            # the same derivation (or the producer gate) proves canonical and
+            # schema-conformant; plain parsing avoids re-serializing every row.
+            value = json.loads(raw[:-1])
+        try:
+            item = SourceCatalogItem.from_dict(value)
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
+        if validate:
+            _require_interpretation_order(item)
+        if _partition_id(item.source_item_id) != partition_id:
+            raise IntegrityError("source-catalog row is stored in the wrong logical partition")
+        key = _utf16_key(item.source_item_id)
+        if previous is not None and key <= previous:
+            raise IntegrityError("source-catalog partition rows must be strictly ordered and distinct")
+        previous = key
+        count += 1
+        yield (item, raw[:-1]) if with_raw else item
+    if count != record_count:
         raise IntegrityError("source-catalog row count differs from its partition descriptor")
 
 
@@ -840,7 +894,7 @@ class _CatalogRowPartitioner:
                 raise IntegrityError("catalog policy produced duplicate or out-of-order sourceItemId values")
             previous = item.source_item_id
             value = item.to_dict()
-            _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {self.item_count}")
+            _ITEM_VALIDATOR.error(value, f"source-catalog row {self.item_count}")
             _require_interpretation_order(item)
             payload = canonical_json_bytes(value)
             if len(payload) > MAX_CATALOG_ROW_BYTES:
@@ -874,6 +928,145 @@ def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
     return "sha256:" + digest.hexdigest(), byte_size
 
 
+_PARALLEL_ROW_THRESHOLD = 5_000
+_MAX_DERIVE_WORKERS = 8
+
+
+def _derive_worker_count(item_count: int, workers: int | None) -> int:
+    if workers is not None:
+        return max(1, workers)
+    if item_count < _PARALLEL_ROW_THRESHOLD:
+        return 1
+    return max(1, min(_MAX_DERIVE_WORKERS, os.cpu_count() or 1))
+
+
+def _row_digest_payloads(
+    item: SourceCatalogItem,
+    item_dict: Mapping[str, Any],
+    raw: bytes,
+) -> tuple[
+    bytes,
+    bytes,
+    bytes | None,
+    bytes,
+    bytes,
+    bytes,
+    list[bytes],
+    list[tuple[bytes, str]],
+    list[bytes],
+]:
+    """Build every framed payload one row contributes, in one place.
+
+    The serial engine and the parallel workers both call this, so the bytes a
+    digest consumes cannot depend on which path derived them.
+    """
+
+    selected_payload = (
+        canonical_json_bytes(
+            {"sourceItemId": item.source_item_id, "documentId": item.document_id}
+        )
+        if item.disposition is CatalogDisposition.SELECTED
+        else None
+    )
+    joined: list[tuple[bytes, str]] = []
+    for record in _joined_field_records_for(item, item_dict):
+        joined.append((canonical_json_bytes(record), str(record["outcome"])))
+    return (
+        raw,
+        canonical_json_bytes({"sourceItemId": item.source_item_id}),
+        selected_payload,
+        canonical_json_bytes(
+            {"sourceItemId": item.source_item_id, "disposition": item.disposition.value}
+        ),
+        canonical_json_bytes(
+            {"sourceItemId": item.source_item_id, "reason": item.selection.reason}
+        ),
+        canonical_json_bytes(_rendition_choice_record(item, item_dict)),
+        [canonical_json_bytes(r) for r in _normalized_field_records_for(item, item_dict)],
+        joined,
+        [canonical_json_bytes(r) for r in _interpretation_records_for(item, item_dict)],
+    )
+
+
+def _parallel_probe() -> bool:
+    """A no-op worker task proving this interpreter can host spawned workers."""
+
+    return True
+
+
+def _derive_partition_worker(
+    args: tuple[str, bytes, int, bool, str],
+) -> tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]:
+    """Process one partition's rows in a subprocess and spill ordered payloads.
+
+    Returns (partition_id, spill_path, row_count, disposition_counts,
+    join_counts, normalized_count, joined_count, interpretation_count). The
+    spill holds one pickled payload tuple per row, in partition order; global
+    ordering across partitions is enforced by the parent's merge.
+    """
+
+    partition_id, payload, record_count, validate, spill_dir = args
+    spill_path = os.path.join(spill_dir, f"{partition_id}.rows")
+    disposition_counts = {value.value: 0 for value in CatalogDisposition}
+    join_counts: dict[str, dict[str, int]] = {}
+    normalized_count = 0
+    joined_count = 0
+    interpretation_count = 0
+    rows = 0
+    with open(spill_path, "wb") as spill:
+        for item, raw in _iter_partition_stream(
+            io.BytesIO(payload),
+            partition_id=partition_id,
+            record_count=record_count,
+            validate=validate,
+            with_raw=True,
+        ):
+            item_dict = item.to_dict()
+            payloads = _row_digest_payloads(item, item_dict, raw)
+            disposition_counts[item.disposition.value] += 1
+            normalized_count += len(payloads[6])
+            for record_bytes, outcome in payloads[7]:
+                joined_count += 1
+                _accumulate_join_coverage(
+                    join_counts,
+                    {"joinId": _join_id_of(record_bytes), "outcome": outcome},
+                )
+            interpretation_count += len(payloads[8])
+            pickle.dump(
+                (_utf16_key(item.source_item_id), payloads),
+                spill,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+            rows += 1
+    return (
+        partition_id,
+        spill_path,
+        rows,
+        disposition_counts,
+        join_counts,
+        normalized_count,
+        joined_count,
+        interpretation_count,
+    )
+
+
+def _join_id_of(record_bytes: bytes) -> str:
+    value = json.loads(record_bytes)
+    join_id = value["joinId"]
+    if not isinstance(join_id, str):
+        raise IntegrityError("catalog join identity must be text")
+    return join_id
+
+
+def _iter_spill(spill_path: str) -> Iterator[tuple[bytes, tuple[Any, ...]]]:
+    with open(spill_path, "rb") as spill:
+        while True:
+            try:
+                yield pickle.load(spill)
+            except EOFError:
+                return
+
+
 @dataclass(frozen=True, slots=True)
 class _DerivedCatalog:
     """Every digest and diagnostic one derivation pass proves about the rows."""
@@ -892,6 +1085,7 @@ def _derive_catalog(
     item_count: int,
     selected_count: int,
     validate_rows: bool = True,
+    workers: int | None = None,
 ) -> _DerivedCatalog:
     """Derive the catalog's digests and diagnostics in two streamed passes.
 
@@ -906,6 +1100,16 @@ def _derive_catalog(
     ``_iter_located_catalog_rows``.
     """
 
+    worker_count = _derive_worker_count(item_count, workers)
+    if worker_count > 1 and len(partitions) > 1:
+        return _derive_catalog_parallel(
+            blob_source,
+            partitions,
+            item_count=item_count,
+            selected_count=selected_count,
+            validate_rows=validate_rows,
+            worker_count=worker_count,
+        )
     state = _FramedSectionHasher("docspec-source-catalog-state/1", "sourceItems", item_count)
     requested = _FramedSectionHasher("docspec-requested-universe-set/1", "members", item_count)
     selected = _FramedSectionHasher("docspec-selected-source-set/1", "members", selected_count)
@@ -974,6 +1178,170 @@ def _derive_catalog(
             "renditionChoicesDigest": rendition_choices.digest(),
         },
     )
+
+
+def _derive_catalog_parallel(
+    blob_source: SourceCatalogBlobSource,
+    partitions: Sequence[_CatalogPartition],
+    *,
+    item_count: int,
+    selected_count: int,
+    validate_rows: bool,
+    worker_count: int,
+) -> _DerivedCatalog:
+    """Derive the same digests with per-partition workers and one ordered merge.
+
+    Workers own every expensive per-row step -- parse, schema check, item
+    construction, projection canonicalization -- and spill ordered digest-ready
+    payloads built by the same helpers the serial engine uses. The parent sums
+    the counters, initializes every framed hasher with known counts, and feeds
+    them from one heap-merge of the ordered spills, so the byte stream each
+    digest consumes is identical to the serial derivation's. Task submission is
+    windowed so partition bytes never pile up in the pool's queue. When several
+    partitions carry defects, which partition's refusal surfaces first may
+    differ from the serial order; the refusals themselves are identical.
+    """
+
+    import multiprocessing
+    import tempfile
+
+    context = multiprocessing.get_context("spawn")
+    ordered = sorted(partitions, key=lambda value: _utf16_key(value.partition_id))
+    with tempfile.TemporaryDirectory(prefix="docspec-catalog-derive-") as spill_dir:
+
+        def task_arguments() -> Iterator[tuple[str, bytes, int, bool, str]]:
+            for partition in ordered:
+                member = partition.member
+                if member.blob_ref is None or member.record_count is None:
+                    raise IntegrityError(
+                        "source-item partition descriptor requires blobRef and recordCount"
+                    )
+                with blob_source.open(member.blob_ref) as stream:
+                    payload = stream.read()
+                yield (
+                    partition.partition_id,
+                    payload,
+                    member.record_count,
+                    validate_rows,
+                    spill_dir,
+                )
+
+        summaries: list[tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]] = []
+        arguments = task_arguments()
+        with context.Pool(worker_count) as pool:
+            try:
+                pool.apply(_parallel_probe)
+            except Exception:  # noqa: BLE001 - an interpreter whose __main__ cannot
+                # be re-imported (frozen, embedded, stdin) cannot host spawned
+                # workers; the serial derivation is always available and identical.
+                return _derive_catalog(
+                    blob_source,
+                    partitions,
+                    item_count=item_count,
+                    selected_count=selected_count,
+                    validate_rows=validate_rows,
+                    workers=1,
+                )
+            pending: list[Any] = []
+
+            def submit_next() -> bool:
+                try:
+                    args = next(arguments)
+                except StopIteration:
+                    return False
+                pending.append(pool.apply_async(_derive_partition_worker, (args,)))
+                return True
+
+            for _ in range(worker_count * 2):
+                if not submit_next():
+                    break
+            while pending:
+                summaries.append(pending.pop(0).get())
+                submit_next()
+
+        disposition_counts = {value.value: 0 for value in CatalogDisposition}
+        join_counts: dict[str, dict[str, int]] = {}
+        normalized_count = 0
+        joined_count = 0
+        interpretation_count = 0
+        total_rows = 0
+        for summary in sorted(summaries, key=lambda value: _utf16_key(value[0])):
+            _, _, rows, partition_dispositions, partition_joins, n_count, j_count, i_count = summary
+            total_rows += rows
+            for name, value in partition_dispositions.items():
+                disposition_counts[name] += value
+            for join_id in sorted(partition_joins, key=_utf16_key):
+                if join_id not in join_counts and len(join_counts) >= SOURCE_CATALOG_MAX_JOIN_IDS:
+                    raise LimitExceededError(
+                        "catalog join coverage exceeds its distinct-identity limit"
+                    )
+                target = join_counts.setdefault(
+                    join_id,
+                    {"eligible": 0, "matched": 0, "unmatched": 0, "nullResult": 0},
+                )
+                for name in target:
+                    target[name] += partition_joins[join_id][name]
+            normalized_count += n_count
+            joined_count += j_count
+            interpretation_count += i_count
+        if total_rows != item_count:
+            raise IntegrityError(
+                "source-catalog row count differs from its partition descriptors"
+            )
+
+        state = _FramedSectionHasher("docspec-source-catalog-state/1", "sourceItems", item_count)
+        requested = _FramedSectionHasher("docspec-requested-universe-set/1", "members", item_count)
+        selected = _FramedSectionHasher("docspec-selected-source-set/1", "members", selected_count)
+        dispositions = _FramedSectionHasher("docspec-catalog-dispositions/1", "records", item_count)
+        reasons = _FramedSectionHasher("docspec-catalog-reasons/1", "records", item_count)
+        rendition_choices = _FramedSectionHasher(
+            "docspec-catalog-rendition-choices/1", "records", item_count
+        )
+        normalized = _FramedSectionHasher(
+            "docspec-catalog-normalized-fields/1", "records", normalized_count
+        )
+        joined = _FramedSectionHasher("docspec-catalog-joined-fields/1", "records", joined_count)
+        interpretations = _FramedSectionHasher(
+            "docspec-catalog-interpretations/1", "records", interpretation_count
+        )
+        previous: bytes | None = None
+        spill_streams = [_iter_spill(summary[1]) for summary in summaries]
+        for key, payloads in heapq.merge(*spill_streams, key=lambda entry: entry[0]):
+            if previous is not None and key <= previous:
+                raise IntegrityError("source-catalog rows must be globally ordered and distinct")
+            previous = key
+            state.add_payload(payloads[0])
+            requested.add_payload(payloads[1])
+            if payloads[2] is not None:
+                selected.add_payload(payloads[2])
+            dispositions.add_payload(payloads[3])
+            reasons.add_payload(payloads[4])
+            rendition_choices.add_payload(payloads[5])
+            for record_bytes in payloads[6]:
+                normalized.add_payload(record_bytes)
+            for record_bytes, _outcome in payloads[7]:
+                joined.add_payload(record_bytes)
+            for record_bytes in payloads[8]:
+                interpretations.add_payload(record_bytes)
+        join_coverage = [
+            {"joinId": join_id, **join_counts[join_id]}
+            for join_id in sorted(join_counts, key=_utf16_key)
+        ]
+        return _DerivedCatalog(
+            state.digest(),
+            requested.digest(),
+            selected.digest(),
+            disposition_counts,
+            {
+                "joinCoverage": join_coverage,
+                "normalizedFieldsDigest": normalized.digest(),
+                "joinedFieldsDigest": joined.digest(),
+                "dispositionsDigest": dispositions.digest(),
+                "reasonsDigest": reasons.digest(),
+                "interpretationsDigest": interpretations.digest(),
+                "renditionChoicesDigest": rendition_choices.digest(),
+            },
+        )
 
 
 def _item_interpretations(item_dict: Mapping[str, Any], kind: str) -> tuple[Mapping[str, Any], ...]:

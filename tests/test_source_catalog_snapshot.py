@@ -2474,3 +2474,131 @@ def test_a_stored_catalog_row_is_byte_identical_to_its_reserialized_item(tmp_pat
         assert canonical_json_bytes(SourceCatalogItem.from_dict(parsed).to_dict()) == raw
         checked += 1
     assert checked == summary.item_count == 3
+
+
+def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows(
+    tmp_path: Path,
+) -> None:
+    """The fast validator may only short-circuit acceptance, never decide refusal.
+
+    Pins jsonschema-rs to python-jsonschema on this schema: every row of a real
+    built catalog, plus systematic mutations of one (each required key dropped,
+    each top-level field type-flipped, an unknown key added), must get the same
+    accept/reject verdict from both engines -- and the gate's own error() must
+    raise exactly when the authority rejects, with the authority's message.
+    """
+
+    gate = source_catalog_artifact._ITEM_VALIDATOR
+    assert gate._fast is not None, "compiled validator failed to build for the item schema"
+    authority = gate._authority
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002", malformed_rin=True)),
+        (*renditions("2026-00001"), *renditions("2026-00002")),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    reader.verify_snapshot(result.reference)
+    rows = [item.to_dict() for item in reader.open_snapshot(result.reference).items]
+    assert rows
+
+    def verdicts(value: object) -> tuple[bool, bool, bool]:
+        fast_ok = gate._fast.is_valid(value)
+        authority_ok = not list(authority.iter_errors(value))
+        try:
+            gate.error(value, "differential row")
+            gate_ok = True
+        except IntegrityError:
+            gate_ok = False
+        return fast_ok, authority_ok, gate_ok
+
+    mutants: list[object] = [dict(rows[0])]
+    for key in list(rows[0]):
+        dropped = dict(rows[0])
+        del dropped[key]
+        mutants.append(dropped)
+        flipped = dict(rows[0])
+        flipped[key] = 12345 if not isinstance(flipped[key], int) else "not-an-integer"
+        mutants.append(flipped)
+    unknown = dict(rows[0])
+    unknown["unknownExtraKey"] = "x"
+    mutants.append(unknown)
+
+    for value in [*rows, *mutants]:
+        fast_ok, authority_ok, gate_ok = verdicts(value)
+        assert gate_ok == authority_ok, f"gate diverged from authority: {value!r:.120}"
+        assert fast_ok == authority_ok, f"engines disagree (authority decides, but pin it): {value!r:.120}"
+
+
+def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: Path) -> None:
+    """Workers may change wall time, never a digest.
+
+    Builds a real multi-partition catalog, then derives serially and with two
+    forced workers: every digest, count, and diagnostic must be identical --
+    the parallel path spills the same payload bytes the serial helpers build
+    and merges them in the same global order.
+    """
+
+    from rulespec_artifacts import LocalMemberSource, admit_artifact
+
+    identities = [f"2026-0000{i}" for i in range(1, 8)]
+    source = FakeSource(
+        description(),
+        tuple(record(identity) for identity in identities),
+        tuple(r for identity in identities for r in renditions(identity)),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    summary = reader.verify_snapshot(result.reference)
+
+    blob_source = store.blob_source()
+    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
+    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    admit_artifact(
+        LocalMemberSource(artifact_root),
+        blob_source=blob_source,
+        expected_pin=None,
+        scratch_directory=tmp_path / "admit-scratch",
+        semantic_verifier=verifier,
+    )
+    assert len(verifier.partitions) > 1, "test needs a multi-partition catalog"
+
+    selected_count = summary.disposition_counts[
+        source_catalog_artifact.CatalogDisposition.SELECTED.value
+    ]
+    serial = source_catalog_artifact._derive_catalog(
+        blob_source,
+        verifier.partitions,
+        item_count=summary.item_count,
+        selected_count=selected_count,
+        workers=1,
+    )
+    parallel = source_catalog_artifact._derive_catalog(
+        blob_source,
+        verifier.partitions,
+        item_count=summary.item_count,
+        selected_count=selected_count,
+        workers=2,
+    )
+    assert parallel == serial
+    assert serial.catalog_state_digest == summary.catalog_state_digest
+
+
+def test_the_automatic_worker_count_resolves_on_this_interpreter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The auto path must not depend on APIs newer than the pinned Python.
+
+    Explicit worker counts pass straight through; below the threshold the
+    derivation stays serial; at or above it the count resolves from the real
+    interpreter's CPU API (this call is the regression: it once used a 3.13-only
+    function that every explicit-workers test skipped past).
+    """
+
+    resolve = source_catalog_artifact._derive_worker_count
+    assert resolve(10, 3) == 3
+    assert resolve(10, None) == 1
+    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_ROW_THRESHOLD", 5)
+    automatic = resolve(10, None)
+    assert 1 <= automatic <= source_catalog_artifact._MAX_DERIVE_WORKERS
