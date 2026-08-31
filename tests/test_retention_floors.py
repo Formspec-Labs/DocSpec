@@ -9,6 +9,9 @@ calibration receipt the builder reads its floors from.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import pytest
 
 from docspec.processing.retention_floors import (
@@ -178,3 +181,66 @@ def test_every_committed_floor_names_the_extractor_that_measured_it() -> None:
     for policy in policies.values():
         assert policy["extractorId"].startswith("docspec.")
         assert len(policy["extractorDigest"].removeprefix("sha256:")) == 64
+
+
+# ─── Amendment C5: the receipt is recomputed, never merely self-consistent ──
+
+
+def _committed_receipt() -> dict[str, Any]:
+    from tools.calibrate_retention_floors import load_receipt
+
+    return json.loads(json.dumps(load_receipt()))
+
+
+@pytest.mark.parametrize(
+    ("name", "doctor"),
+    [
+        (
+            "a distribution that agrees with itself and with no row",
+            lambda m: m["distribution"].update(minimum="0.4", median="0.4"),
+        ),
+        (
+            "an observed minimum moved in lockstep with the distribution",
+            lambda m: (
+                m.__setitem__("observedMinimum", "0.4"),
+                m["distribution"].__setitem__("minimum", "0.4"),
+                m["retentionFloor"].__setitem__("observedMinimum", "0.4"),
+            ),
+        ),
+        (
+            "a document row whose declared ratio is not its own byte counts",
+            lambda m: m["documents"][0].__setitem__("retention", "0.9999"),
+        ),
+        (
+            "a lowest document that is not the lowest row",
+            lambda m: m.__setitem__("lowestDocument", m["documents"][0]),
+        ),
+        (
+            "a floor loosened under an untouched observed minimum",
+            lambda m: m["retentionFloor"].__setitem__("value", "0.01"),
+        ),
+    ],
+)
+def test_a_receipt_that_only_agrees_with_itself_is_refused(name: str, doctor: Any) -> None:
+    """The lie amendment B5 found was self-consistent, so consistency is not the test.
+
+    Each mutation below leaves the receipt internally coherent -- and schema
+    valid -- and disagrees with the 993 document rows it carries. Every one is a
+    receipt the old `validate_receipt` admitted.
+    """
+
+    from tools.calibrate_retention_floors import validate_receipt
+
+    receipt = _committed_receipt()
+    doctor(receipt["measurements"][0])
+
+    with pytest.raises(ValueError):
+        validate_receipt(receipt)
+
+
+def test_the_committed_receipt_survives_the_recomputation_it_now_faces() -> None:
+    """And the one in the repository is not doctored, which is the other half."""
+
+    from tools.calibrate_retention_floors import validate_receipt
+
+    validate_receipt(_committed_receipt())

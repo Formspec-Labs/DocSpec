@@ -458,27 +458,85 @@ def calibrate(
 def validate_receipt(receipt: Mapping[str, Any]) -> None:
     """Refuse a receipt the sealed contract does not admit.
 
-    The schema is what makes the honesty structural rather than conventional:
-    it has no field named `sample`, `population.coverage` is a constant, and the
-    two consistency rules below close the gap a schema cannot express -- that
-    the declared count IS the measured one, and that `observedMinimum` IS the
-    minimum of the distribution beside it.
+    The schema is what makes the honesty structural rather than conventional: it
+    has no field named `sample` and `population.coverage` is a constant. The
+    rules below close the gap a schema cannot express -- and, since amendment C5,
+    they RECOMPUTE rather than compare declarations to each other.
+
+    The old rules asked whether `observedMinimum` equalled `distribution.minimum`
+    and whether three counts agreed, and never opened the 993 document rows
+    sitting beside them. A receipt whose distribution and observed minimum agreed
+    with one another and with NEITHER of its rows was expressible -- which is the
+    exact shape of what amendment B5 found the first time: a statistic that was
+    self-consistent and false. So every derived figure is re-derived here from
+    `measurement.documents` alone: each row's two ratios from its own four byte
+    counts, the whole distribution, the lowest document, and the floor value the
+    margin rule implies. The receipt keeps its declared fields, because a reader
+    should not have to recompute to read one; nothing in it is believed.
     """
 
     jsonschema.Draft202012Validator(packaged_receipt_schema()).validate(receipt)
     for measurement in receipt["measurements"]:
         population = measurement["population"]
         label = population["populationId"]
+        rows = measurement["documents"]
         if population["measuredCount"] != population["documentCount"]:
             raise ValueError(f"{label} measured {population['measuredCount']} of its documents")
-        if len(measurement["documents"]) != population["documentCount"]:
+        if len(rows) != population["documentCount"]:
             raise ValueError(f"{label} declares a count its document rows do not support")
-        if measurement["distribution"]["count"] != population["documentCount"]:
-            raise ValueError(f"{label} distributed a different count than it measured")
-        if measurement["observedMinimum"] != measurement["distribution"]["minimum"]:
+        for row in rows:
+            recomputed = {
+                "retention": decimal_fraction(
+                    row["normalizedRepresentationByteSize"],
+                    row["normalizedRenditionByteSize"],
+                ),
+                "rawRetention": decimal_fraction(
+                    row["representationByteSize"], row["renditionByteSize"]
+                ),
+            }
+            for field, value in recomputed.items():
+                if row[field] != value:
+                    raise ValueError(
+                        f"{label} document {row['documentId']} declares {field} {row[field]} "
+                        f"where its own byte counts give {value}"
+                    )
+        expected = _distribution(rows)
+        if measurement["distribution"] != expected:
+            raise ValueError(
+                f"{label} declares a distribution its own rows do not produce: "
+                f"expected {expected}"
+            )
+        lowest = min(
+            rows,
+            key=lambda row: Fraction(
+                row["normalizedRepresentationByteSize"], row["normalizedRenditionByteSize"]
+            ),
+        )
+        if measurement["lowestDocument"] != lowest:
+            raise ValueError(
+                f"{label} names {measurement['lowestDocument']['documentId']} as its lowest "
+                f"document where its rows give {lowest['documentId']}"
+            )
+        if measurement["observedMinimum"] != expected["minimum"]:
             raise ValueError(f"{label} observedMinimum is not the minimum it measured")
         if measurement["observedMinimum"] != measurement["retentionFloor"]["observedMinimum"]:
             raise ValueError(f"{label} declares two different observed minima")
+        # The margin rule is B5's and is stated there: three quarters of the
+        # population's observed minimum, truncated to two significant digits.
+        # Recomputed from the lowest row's exact fraction, so a floor cannot be
+        # loosened by a hand that leaves every other figure alone.
+        floor_value = _two_significant_digits_below(
+            Fraction(
+                lowest["normalizedRepresentationByteSize"],
+                lowest["normalizedRenditionByteSize"],
+            )
+            * MARGIN
+        )
+        if measurement["retentionFloor"]["value"] != floor_value:
+            raise ValueError(
+                f"{label} declares floor {measurement['retentionFloor']['value']} where the "
+                f"margin rule over its own rows gives {floor_value}"
+            )
 
 
 def load_receipt(receipt_path: Path = RECEIPT_PATH) -> dict[str, Any]:
