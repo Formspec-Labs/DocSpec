@@ -995,11 +995,13 @@ def _carry(
     )
     attachments.extend(_attachment_rows(attributes, body_id, capture_record))
     report.adopted_runs[capture.run] = report.adopted_runs.get(capture.run, 0) + 1
-    key = format_key(media_type)
-    report.retention.setdefault(key, []).append(measured)
+    # Amendment C1: keyed by the media type the row carries, both here and in
+    # the receipt's retention quantiles, so every figure a reader joins is keyed
+    # the way the rows are.
+    report.retention.setdefault(media_type, []).append(measured)
     policies.setdefault(
-        (DOCUMENT_BODY, key),
-        _policy(DOCUMENT_BODY, key, inputs, segmenter),
+        (DOCUMENT_BODY, media_type),
+        _policy(DOCUMENT_BODY, media_type, inputs, segmenter),
     )
 
 
@@ -1126,17 +1128,35 @@ def _attributes(
 
 
 def _policy(
-    text_kind: str, key: str, inputs: BuildInputs, segmenter: BoundedSegmenter
+    text_kind: str, media_type: str, inputs: BuildInputs, segmenter: BoundedSegmenter
 ) -> dict[str, Any]:
-    """One `(textKind, mediaType)` policy, digesting the code that governed it."""
+    """One `(textKind, mediaType)` policy, digesting the code that governed it.
 
+    Amendment C1: the declared `mediaType` is the one the CAPTURE ROW carries,
+    verbatim -- not the retention format key it collapses onto. The first two
+    mints declared their XML policy under `application/xml` while all 6,408 of
+    their Federal Register rows carried `text/xml`, and the first consumer to
+    join the two refused the bundle for declaring no policy for the media type
+    its own rows named. The table exists to be joined; a table keyed on a value
+    no row holds is a table nobody can join.
+
+    The two spellings are related in exactly one place -- `format_key`, on the
+    LOOKUP side. A floor is a property of a parser and a document family, so it
+    is calibrated and looked up under the format key; a policy row is a property
+    of the bytes this release carries, so it is declared under the media type.
+    Two media types collapsing onto one key therefore produce TWO policy rows
+    with the same extractor, segmenter, and floor, which is the table saying of
+    each media type it carries which policy governed it.
+    """
+
+    key = format_key(media_type)
     declared = inputs.extractor_policies[(text_kind, key)]
-    floor = inputs.floors.floor_for(text_kind, key)
+    floor = inputs.floors.floor_for(text_kind, media_type)
     return {
         "extractorDigest": declared["extractorDigest"].removeprefix("sha256:"),
         "extractorId": declared["extractorId"],
         "maxSegmentBytes": MAX_SEGMENT_BYTES,
-        "mediaType": key,
+        "mediaType": media_type,
         "retentionFloor": floor.to_dict(),
         "segmenterDigest": segmenter.policy_digest.removeprefix("sha256:"),
         "segmenterId": BOUNDED_SEGMENTER_ID,
@@ -1322,10 +1342,17 @@ def mint(
     inputs = BuildInputs(
         catalog_id=pinned.catalog_id,
         catalog_digest=pinned.catalog_digest,
-        # Over the WHOLE pinned catalog, never over the sample: a development
-        # sample changes which documents this release carries and changes
-        # nothing about what the pinned catalog selected.
-        selected_source_set_digest=selected_source_set_digest_from_pin(catalog_items(pinned)),
+        # Over the items this release's universe actually holds -- the whole
+        # pinned catalog for a real mint, and the sample for a sampled one.
+        #
+        # It used to be derived over the whole catalog either way, on the
+        # reasoning that a development sample "changes nothing about what the
+        # pinned catalog selected". Amendment C3's gate check refuted that the
+        # first time it ran: a sampled bundle declares `requestedUniverseCount`
+        # over its own 200 rows, so a pin digest over 10,000 items is that
+        # bundle attesting to a universe it does not carry. A release describes
+        # the universe it has.
+        selected_source_set_digest=selected_source_set_digest_from_pin(items),
         items=items,
         captures=captures,
         floors=RetentionFloorRegistry(load_floors()),

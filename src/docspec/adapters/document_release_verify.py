@@ -100,7 +100,6 @@ from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_b
 from docspec.domain.identity import stable_urn
 from docspec.processing.retention_floors import (
     RETENTION_FLOOR_UNITS,
-    format_key,
     greater,
     is_whole_fraction,
 )
@@ -167,6 +166,73 @@ ATTACHMENT_DISPOSITIONS: tuple[str, ...] = (
     "extraction-failed",
 )
 ATTACHMENT_URN_PREFIX = "urn:docspec:document-release-attachment:v2:"
+
+# ─── The closed reason-code vocabularies ───────────────────────────────
+#
+# Decision 0001 amendment B7 closed these two lists "in this decision, not in the
+# schemas": the schemas keep their dotted and kebab-case patterns as the OUTER
+# bound, which is what makes a producer's new code a decision to record in that
+# amendment rather than a schema migration. Amendment C4 supplies the inner bound
+# -- until it, the lists were prose nothing read, and a code outside them
+# (`unmapped-rendition-format`) had already been written and never noticed.
+#
+# Transcribed from the amendment rather than derived, because that is where they
+# are decided; a code here that is not there, or there and not here, is a bug in
+# one of the two and the test that compares them says which.
+
+# The refusals THIS producer mints, on `data/source-dispositions.jsonl` (B7).
+_MINTED_SOURCE_DISPOSITION_REASON_CODES: frozenset[str] = frozenset(
+    {
+        "catalog.state-deleted",
+        "catalog.state-excluded",
+        "selection.no-markup-rendition",
+        "capture.no-preserved-copy",
+        "capture.preserved-copy-unverifiable",
+        "capture.expected-digest-differs",
+        "extraction.no-extractor",
+        "extraction.unparseable-source",
+        "extraction.no-visible-text",
+        "extraction.retention-floor-undeclared",
+        "extraction.below-retention-floor",
+        "extraction.retention-unmeasurable",
+        "segmentation.refused",
+        "segmentation.no-searchable-segment",
+        "segmentation.segment-over-declared-bound",
+        "structure.heading-path-disagrees",
+        "metadata.incomplete",
+    }
+)
+# The codes a PINNED CATALOG supplies and a producer projects verbatim (C4.3).
+# The 10k builder mints its own and emits none of these; the sealed conformance
+# corpus projects its catalog's four, and a closed list that cannot spell the
+# only sealed corpus in existence is a list the gate cannot turn on.
+_PROJECTED_SOURCE_DISPOSITION_REASON_CODES: frozenset[str] = frozenset(
+    {
+        "policy.document-type-out-of-scope",
+        "source.withdrawn-after-publication",
+        "source.rendition-forbidden",
+        "source.metadata-unparsable",
+    }
+)
+SOURCE_DISPOSITION_REASON_CODES: frozenset[str] = (
+    _MINTED_SOURCE_DISPOSITION_REASON_CODES | _PROJECTED_SOURCE_DISPOSITION_REASON_CODES
+)
+# The two codes that mean THE CATALOG did not select this item, as opposed to
+# this producer refusing an item the catalog did select. Amendment C3 reads the
+# catalog-selected member set off exactly these, which is sound only because the
+# vocabulary above is enforced: an invented code could otherwise move an item in
+# or out of that set with nothing to say so.
+CATALOG_STATE_REASON_CODES: frozenset[str] = frozenset(
+    {"catalog.state-deleted", "catalog.state-excluded"}
+)
+# The kebab-case codes on the sub-rows of `data/attachments.jsonl` (B7, C4.1).
+ATTACHMENT_RENDITION_REASON_CODES: frozenset[str] = frozenset(
+    {
+        "owner-body-rendition",
+        "no-preserved-copy",
+        "unmapped-rendition-format",
+    }
+)
 
 
 def _registered_schema_id(path: Path) -> str:
@@ -1803,8 +1869,21 @@ def _read_rows(
 
 
 def _validate_dispositions(
-    dispositions: Sequence[Mapping[str, Any]], object_key: str, issues: list[VerificationIssue]
+    dispositions: Sequence[Mapping[str, Any]],
+    object_key: str,
+    generation: str,
+    issues: list[VerificationIssue],
 ) -> None:
+    """Check one row per member of ``U``: identity, and the refusal it declares.
+
+    Amendment C4 adds the vocabulary. A `reasonCode` outside
+    `SOURCE_DISPOSITION_REASON_CODES` is refused here, under the docspec
+    generation only: the twenty sealed predecessor bundles were minted before any
+    such list existed and are not retroactively judged by it. The schema's dotted
+    pattern stays the outer bound; this is the inner one, and it is what turns
+    "the vocabulary is closed" from a sentence into a check.
+    """
+
     seen_items: set[str] = set()
     seen_documents: set[str] = set()
     for index, row in enumerate(dispositions):
@@ -1829,6 +1908,18 @@ def _validate_dispositions(
                         f"{path}/{field}",
                         f"projected disposition {disposition!r} requires a {field}",
                     )
+        reason_code = row.get("reasonCode")
+        if (
+            generation == DOCSPEC_GENERATION
+            and isinstance(reason_code, str)
+            and reason_code not in SOURCE_DISPOSITION_REASON_CODES
+        ):
+            _issue(
+                issues,
+                "invalid.disposition",
+                f"{path}/reasonCode",
+                f"{reason_code!r} is not a source-disposition reason code this format declares",
+            )
         if disposition == "selected":
             version_id = row.get("documentVersionId")
             if isinstance(version_id, str):
@@ -2067,6 +2158,21 @@ def _validate_attachments(
                                 f"{sub_path}/{field}",
                                 f"attachment disposition {disposition!r} requires a {field}",
                             )
+                    # Amendment C4: the kebab-case pattern is the outer bound,
+                    # this list is the inner one. Attachment rows exist only in
+                    # the docspec generation, so no generation guard is needed.
+                    reason_code = rendition.get("reasonCode")
+                    if (
+                        isinstance(reason_code, str)
+                        and reason_code not in ATTACHMENT_RENDITION_REASON_CODES
+                    ):
+                        _issue(
+                            issues,
+                            "invalid.attachment-accounting",
+                            f"{sub_path}/reasonCode",
+                            f"{reason_code!r} is not an attachment rendition reason code this "
+                            "format declares",
+                        )
                 else:
                     _issue(
                         issues,
@@ -2257,9 +2363,19 @@ def _validate_processing_policies(
     * a text body whose ``(textKind, mediaType)`` has no governing policy at
       all. That is the checkable half of "an undeclared floor fails closed": a
       body extracted under no declared floor is visible in the release without
-      re-running anything. Media types collapse onto one format key first, by
-      DocSpec's own rule, so a policy declared for `application/xml` governs a
-      `text/xml` capture rather than being missed by a header spelling.
+      re-running anything.
+
+    Amendment C1: the pairing is matched **literally**, on the media type the
+    capture record carries. This check used to collapse both sides onto the
+    retention floor's format key first, and collapsing is what made it blind to
+    the defect it exists to catch -- a release declaring its policy under
+    ``application/xml`` while all 6,408 of its rows carry ``text/xml`` passed
+    here and was refused by the first consumer to join the two. A floor is
+    looked up by format key because a floor is a property of a parser; a policy
+    ROW is declared by media type because it is a table a consumer joins its
+    rows against, and a table keyed on a value no row holds is a table nobody
+    can join. Where two spellings of one family are both carried, the release
+    declares two rows.
     """
 
     policies = content.get("processingPolicies")
@@ -2308,13 +2424,13 @@ def _validate_processing_policies(
     def govern(kind: Any, media_type: Any, where: str) -> None:
         if not isinstance(media_type, str):
             return
-        if (kind, format_key(media_type)) in governed:
+        if (kind, media_type) in governed:
             return
         _issue(
             issues,
             "invalid.retention-floor",
             where,
-            f"no processing policy governs {kind!r} {format_key(media_type)!r}, "
+            f"no processing policy governs {kind!r} {media_type!r}, "
             "so this body was extracted under no declared floor",
         )
 
@@ -2750,14 +2866,26 @@ def _validate_root_bindings(
         # name. The rows go in as the bundle carries them; `framed_set_digest`
         # applies the exclusion set, so producer and gate cannot disagree.
         #
-        # `selectedSourceSetDigest` is NOT here (amendment B6). It is derived
-        # from the pinned catalog's items, and the pinned catalog is not in this
-        # bundle: a portable verifier reads one bundle. Its form is checked by
-        # schema; its value is checkable only by a holder of the pinned bytes,
-        # running the identical function over them. The release's own selection
-        # is bound by `sourceDispositionSetDigest`, by `counts`, by the join
-        # receipt, and by the bijection.
+        # Amendment C3: `selectedSourceSetDigest` IS here, and B6's reason for
+        # leaving it out is withdrawn. The pinned catalog's BYTES are not in the
+        # bundle, but the MEMBERS the domain digests are: every disposition row
+        # carries both fields `docspec-selected-source-set/1` takes. The member
+        # set is every row the CATALOG selected -- which is every row except the
+        # two reason codes that say the catalog itself did not, every other
+        # refusal in the vocabulary being this producer's about an item the
+        # catalog did select. The builder still DERIVES the value from the pin
+        # (B6 is unchanged); this is a second, independent route to it from
+        # bundle bytes alone, and the two must agree.
+        catalog_selected = [
+            {"documentId": row.get("documentId"), "sourceItemId": row.get("sourceItemId")}
+            for row in dispositions
+            if row.get("reasonCode") not in CATALOG_STATE_REASON_CODES
+        ]
         digest_plan = (
+            (
+                "selectedSourceSetDigest",
+                lambda: framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, catalog_selected),
+            ),
             (
                 "sourceDispositionSetDigest",
                 lambda: framed_set_digest("docspec-source-disposition-set/3", dispositions),
@@ -3007,7 +3135,7 @@ def _verify_document_release(bundle: Path) -> VerificationResult:
     slices = _read_text_body_index(members, member_paths, generation, schemas, issues)
 
     if dispositions is not None:
-        _validate_dispositions(dispositions, dispositions_key, issues)
+        _validate_dispositions(dispositions, dispositions_key, generation, issues)
     sizes: dict[str, int] = {}
     if documents is not None and dispositions is not None:
         sizes = _validate_documents(

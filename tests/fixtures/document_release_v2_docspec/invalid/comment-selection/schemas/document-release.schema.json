@@ -1,0 +1,582 @@
+{
+  "$id": "urn:docspec:schema:document-release:2.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentRelease",
+  "description": "Root manifest of one sealed, portable DocumentRelease. DocSpec owns this schema and the records it carries (REF-048). Version 2.0 because `docspec-document-release` 1.1 is a different, internal pointer-record shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "formatVersion",
+    "releaseId",
+    "documentStateDigest",
+    "annotations",
+    "content"
+  ],
+  "properties": {
+    "format": {
+      "const": "docspec-document-release"
+    },
+    "formatVersion": {
+      "const": "2.0"
+    },
+    "releaseId": {
+      "description": "The portable, CONTENT-DERIVED release name: the URN prefix followed by `documentStateDigest`'s hexadecimal, by string form. Not minted a second time. The derivation envelope carrying this bundle keeps its own `urn:spicy:artifact:derivation:` id; same key, two meanings, one boundary.",
+      "type": "string",
+      "pattern": "^urn:docspec:document-release:v2:[0-9a-f]{64}$"
+    },
+    "documentStateDigest": {
+      "description": "Digest over `{format, formatVersion, logicalContent}` under the artifact canonicaliser, where `logicalContent` is `content` minus every physical or packing fact: `globalManifest`, `counts.memberCount`, `counts.totalMemberByteSize`, `processingPolicies`. A physical-only repack therefore preserves it.",
+      "$ref": "#/$defs/digest"
+    },
+    "annotations": {
+      "$ref": "#/$defs/annotations"
+    },
+    "content": {
+      "$ref": "#/$defs/content"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hexDigest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "absoluteId": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+    },
+    "instant": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "annotations": {
+      "description": "The identity-excluded envelope. Everything here is a fact about the act of publishing rather than about the corpus content, so two builds of identical content share one identity. The acquisition wall clock is NOT here: it lives in each document's `captureRecord` (`acquiredAt`, `acquisitionStartedAt`), which no preimage covers — neither `documentStateDigest`, which is taken over `content` alone, nor any set digest.",
+      "type": "object",
+      "required": [
+        "publishedAt"
+      ],
+      "properties": {
+        "publishedAt": {
+          "$ref": "#/$defs/instant"
+        },
+        "releaseStatus": {
+          "enum": [
+            "fixture",
+            "candidate",
+            "published"
+          ]
+        },
+        "buildRunId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "corpusId",
+        "sourceCatalog",
+        "processingPolicies",
+        "selectedSourceSetDigest",
+        "sourceDispositionSetDigest",
+        "documentVersionSetDigest",
+        "textBodySetDigest",
+        "attachmentSetDigest",
+        "commentSetDigest",
+        "structuralNodeSetDigest",
+        "segmentSetDigest",
+        "sourceDocumentMappingDigest",
+        "joinReceipt",
+        "counts",
+        "coverage",
+        "globalManifest",
+        "schemaSet"
+      ],
+      "properties": {
+        "corpusId": {
+          "description": "Stable identity of the corpus this release is one version of.",
+          "$ref": "#/$defs/absoluteId"
+        },
+        "sourceCatalog": {
+          "$ref": "#/$defs/sourceCatalogPin"
+        },
+        "processingPolicies": {
+          "$ref": "#/$defs/processingPolicies"
+        },
+        "selectedSourceSetDigest": {
+          "description": "Framed set digest over the `{sourceItemId, documentId}` members of the PINNED CATALOG's items -- every item whose `state` is `active` -- under the catalog's own `docspec-selected-source-set/1` domain, where `documentId` is derived from the item exactly as a document row derives it. DERIVED from the pinned catalog, never projected from the release's own rows: the pinned snapshot carries no such field, and a value projected from the release could not be reproduced by a consumer holding the pinned bytes (amendment B6). It is the one digest here a bundle-only reader cannot recompute; its form is checked, its value only by a holder of the pinned catalog running the identical function over it.",
+          "$ref": "#/$defs/digest"
+        },
+        "documentVersionSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/documents.jsonl`, keyed by `documentVersionId`, under `docspec-document-version-set/3`. The whole row, minus its `objectKey`s and its acquisition wall clock: before amendment B1 this digest covered the id alone, so a same-length mutation of a body's bytes with the physical digests restamped left the release's name unmoved.",
+          "$ref": "#/$defs/digest"
+        },
+        "textBodySetDigest": {
+          "description": "Framed set digest over the `{textBodyId, textKind}` members under `docspec-text-body-set/3`. A PROJECTION rather than a full-row domain, because the cross-kind census is a projection and its rows are covered whole by the three row domains. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
+          "$ref": "#/$defs/digest"
+        },
+        "attachmentSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/attachments.jsonl`, keyed by `attachmentId`, under `docspec-attachment-set/3`. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
+          "$ref": "#/$defs/digest"
+        },
+        "commentSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/comments.jsonl`, keyed by `commentId`, under `docspec-comment-set/3`. A release with none of that kind writes the digest of the empty set; a zero is written, never omitted.",
+          "$ref": "#/$defs/digest"
+        },
+        "segmentSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/search-segments.jsonl`, keyed by `segmentId`, under `docspec-segment-set/3`, every text kind together. Nothing is excluded: a segment row carries no physical locator and no clock, so a narrowed evidence coordinate moves this digest.",
+          "$ref": "#/$defs/digest"
+        },
+        "sourceDocumentMappingDigest": {
+          "description": "Framed SET digest over the unique `sourceItemId` keys under `docspec-source-to-document/3`, each record carrying `documentId` and `documentVersionId`. A PROJECTION, and a set rather than a list of repeated pairs: U's bijection already makes `sourceItemId` unique, and a repeated pair is `invalid.duplicate-identity` rather than a fact a digest has to preserve.",
+          "$ref": "#/$defs/digest"
+        },
+        "joinReceipt": {
+          "$ref": "#/$defs/joinReceipt"
+        },
+        "counts": {
+          "$ref": "#/$defs/counts"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "globalManifest": {
+          "$ref": "#/$defs/manifestReference"
+        },
+        "schemaSet": {
+          "$ref": "#/$defs/schemaSet"
+        },
+        "sourceDispositionSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/source-dispositions.jsonl`, keyed by `sourceItemId`, under `docspec-source-disposition-set/3`. New in amendment B1: without it 10,000 disposition rows -- every projected catalog disposition, every refusal reason a reader is shown -- sat outside the release's name.",
+          "$ref": "#/$defs/digest"
+        },
+        "structuralNodeSetDigest": {
+          "description": "Framed set digest over the FULL LOGICAL ROWS of `data/structural-nodes.jsonl`, keyed by `structuralNodeId`, under `docspec-structural-node-set/3`. New in amendment B1, for the same reason: the section tree a reader navigates by is a logical fact and must move the name when it moves.",
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "sourceCatalogPin": {
+      "description": "The exact `SourceCatalog` snapshot this corpus was built from, pinned by the snapshot's own identity and by the BYTE digest of the pinned `catalog.json`. `requestedUniverseSetDigest` and `selectedSourceSetDigest` are not pinned here: the snapshot carries neither at its root, so a pin declaring them would be pinning values it cannot read back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalogId",
+        "catalogDigest"
+      ],
+      "properties": {
+        "catalogId": {
+          "type": "string",
+          "pattern": "^urn:docspec:source-catalog:v1:[0-9a-f]{64}$"
+        },
+        "catalogDigest": {
+          "description": "The sha256 of the pinned `catalog.json` BYTES, verified against those bytes rather than against a re-serialisation of the parsed value.",
+          "$ref": "#/$defs/hexDigest"
+        }
+      }
+    },
+    "processingPolicies": {
+      "description": "One closed record per `(textKind, mediaType)`, sorted by that pair. Per-kind is not optional: a `document-body` HTML extractor and a `comment` PDF extractor are different code under different retention floors. Each record digests the extractor and the segmenter themselves, so policy content cannot drift under an unchanged id. This sits BESIDE the identity preimage, not inside it — the plan is already bound into the envelope name, and folding policy digests into `documentStateDigest` would make \"is this the same corpus\" answer no whenever a segmenter is rebuilt over unchanged text.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/processingPolicy"
+      }
+    },
+    "processingPolicy": {
+      "description": "The extractor, segmenter, bound, and retention floor that governed one `(textKind, mediaType)` population.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textKind",
+        "mediaType",
+        "extractorId",
+        "extractorDigest",
+        "segmenterId",
+        "segmenterDigest",
+        "maxSegmentBytes",
+        "retentionFloor"
+      ],
+      "properties": {
+        "textKind": {
+          "description": "Which kind of text body this row belongs to. Exactly TEXT_SOURCE_KINDS minus `metadata-field`: one text pipeline, three kinds.",
+          "enum": [
+            "document-body",
+            "attachment",
+            "comment"
+          ]
+        },
+        "mediaType": {
+          "type": "string",
+          "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+        },
+        "extractorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extractorDigest": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "segmenterId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "segmenterDigest": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "maxSegmentBytes": {
+          "description": "The bound that makes segmentation deterministic. An oversized source structure is split under this policy while preserving its source coordinates.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "retentionFloor": {
+          "$ref": "#/$defs/retentionFloor"
+        }
+      }
+    },
+    "retentionFloor": {
+      "description": "The declared floor this parser had to clear on this format before it was allowed to run. Extraction refuses below the floor, refuses when no floor is declared, and refuses when the source's visible text could not be measured; undeclared never inherits a default. Both fractions are DECIMAL STRINGS: this format's canonicaliser refuses binary floating point outright and admits an integer unit or a decimal string, and the decimal string is the form that keeps `0 < value < 1` literally rather than re-scaling it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "unit",
+        "observedMinimum",
+        "population"
+      ],
+      "properties": {
+        "value": {
+          "description": "Strictly between 0 and 1, written as a decimal string with no trailing zero: outside that range a floor either gates nothing or refuses everything.",
+          "type": "string",
+          "pattern": "^0\\.[0-9]{0,8}[1-9]$"
+        },
+        "unit": {
+          "description": "`normalized-visible-text-fraction` is the markup unit under amendment B5: whitespace-normalized representation bytes over whitespace-normalized rendition bytes, both sides normalized by one rule so the publisher's indentation cancels and a thin parse still craters the ratio. `visible-text-fraction` is the predecessor spelling over RAW captured bytes -- it survives here because the sealed conformance corpus carries it, and nothing in the docspec generation may mint it again. `text-density` is for binary renditions: different measurements, never one floor.",
+          "enum": [
+            "normalized-visible-text-fraction",
+            "visible-text-fraction",
+            "text-density"
+          ]
+        },
+        "observedMinimum": {
+          "description": "The lowest value measured over the FULL named population -- never a sample statistic, which is what the superseded first mint sealed here (amendment B5). MUST be greater than `value`: no margin under the lowest legitimate document is a future false refusal.",
+          "type": "string",
+          "pattern": "^0\\.[0-9]{0,8}[1-9]$"
+        },
+        "population": {
+          "description": "The named corpus the floor was calibrated on, which must be DISJOINT from the corpus this release gates: a floor calibrated on the population it gates cannot refuse anything in it. A format nobody measured has no floor and is refused.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "joinReceipt": {
+      "description": "The sealed one-to-one source-to-document join. Its counts and digest are recomputed from the members; equality is the proof of the bijection.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receiptId",
+        "selectedSourceItemCount",
+        "documentVersionCount",
+        "mappingDigest"
+      ],
+      "properties": {
+        "receiptId": {
+          "$ref": "#/$defs/absoluteId"
+        },
+        "selectedSourceItemCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentVersionCount": {
+          "$ref": "#/$defs/count"
+        },
+        "mappingDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "counts": {
+      "description": "Diagnostics derived from the members. A count is never the proof of membership; the set digests are.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestedUniverseCount",
+        "selectedCount",
+        "excludedCount",
+        "deletedCount",
+        "unavailableCount",
+        "failedCount",
+        "documentVersionCount",
+        "structuralNodeCount",
+        "searchSegmentCount",
+        "perKind",
+        "attachmentAccounting",
+        "memberCount",
+        "totalMemberByteSize"
+      ],
+      "properties": {
+        "requestedUniverseCount": {
+          "$ref": "#/$defs/count"
+        },
+        "selectedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "deletedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "unavailableCount": {
+          "$ref": "#/$defs/count"
+        },
+        "failedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentVersionCount": {
+          "$ref": "#/$defs/count"
+        },
+        "structuralNodeCount": {
+          "$ref": "#/$defs/count"
+        },
+        "searchSegmentCount": {
+          "$ref": "#/$defs/count"
+        },
+        "perKind": {
+          "$ref": "#/$defs/countsPerKind"
+        },
+        "memberCount": {
+          "$ref": "#/$defs/count"
+        },
+        "totalMemberByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "attachmentAccounting": {
+          "$ref": "#/$defs/attachmentAccounting"
+        }
+      }
+    },
+    "countsPerKind": {
+      "description": "The per-kind breakdown, keyed by the three text kinds and closed at exactly those three. Every kind is present even when the release carries none of it: a zero is written, never omitted, so a consumer reads absence as a measured zero rather than as a field somebody forgot. It lives under `counts` and not under `coverage`, which stays aggregate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document-body",
+        "attachment",
+        "comment"
+      ],
+      "properties": {
+        "document-body": {
+          "$ref": "#/$defs/kindCounts"
+        },
+        "attachment": {
+          "$ref": "#/$defs/kindCounts"
+        },
+        "comment": {
+          "$ref": "#/$defs/kindCounts"
+        }
+      }
+    },
+    "kindCounts": {
+      "description": "One text kind's text bodies, segments, and visible-text byte accounting. The coverage identity `segmentedByteTotal + excludedByteTotal == representationByteTotal` holds HERE as well as in aggregate: an aggregate that balances while one kind's does not is a hole hidden by another kind's surplus.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "textBodies",
+        "segments",
+        "representationByteTotal",
+        "segmentedByteTotal",
+        "excludedByteTotal"
+      ],
+      "properties": {
+        "textBodies": {
+          "$ref": "#/$defs/count"
+        },
+        "segments": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "segmentedByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedByteTotal": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "coverage": {
+      "description": "The accounting proof. Every member of U carries one disposition; every selected item became exactly one document; every visible-text byte is segmented or explicitly excluded.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accountedCount",
+        "unaccountedCount",
+        "documentsWithSegmentCount",
+        "representationByteTotal",
+        "segmentedByteTotal",
+        "excludedByteTotal"
+      ],
+      "properties": {
+        "accountedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "unaccountedCount": {
+          "$ref": "#/$defs/count"
+        },
+        "documentsWithSegmentCount": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "segmentedByteTotal": {
+          "$ref": "#/$defs/count"
+        },
+        "excludedByteTotal": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    },
+    "manifestReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifestId",
+        "scopeKind",
+        "scopeId",
+        "objectKey",
+        "byteSize",
+        "sha256"
+      ],
+      "properties": {
+        "manifestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scopeKind": {
+          "const": "global"
+        },
+        "scopeId": {
+          "const": "global"
+        },
+        "objectKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "byteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "sha256": {
+          "$ref": "#/$defs/hexDigest"
+        }
+      }
+    },
+    "schemaSet": {
+      "description": "The schema bytes this release was verified against, carried inside the release so a consumer needs no Rulespec checkout.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaSetId",
+        "schemas"
+      ],
+      "properties": {
+        "schemaSetId": {
+          "type": "string",
+          "pattern": "^urn:spicy:schema-set:v1:[0-9a-f]{64}$"
+        },
+        "schemas": {
+          "description": "EXACTLY eight, one per schema role: the six the format was minted with plus `attachments` and `comments`. Fixed rather than bounded, because a set that could be short is a set a consumer might verify half of.",
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/schemaDescriptor"
+          }
+        }
+      }
+    },
+    "schemaDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaId",
+        "schemaSha256",
+        "roles"
+      ],
+      "properties": {
+        "schemaId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemaSha256": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "roles": {
+          "description": "Schema roles, not member roles. Each role resolves to exactly one schema in the set.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "enum": [
+              "release-root",
+              "member-manifest",
+              "source-dispositions",
+              "documents",
+              "attachments",
+              "comments",
+              "structural-nodes",
+              "search-segments"
+            ]
+          }
+        }
+      }
+    },
+    "attachmentAccounting": {
+      "description": "The attachment accounting `COMPLETE-SEARCH-CORPUS` requires proving, declared so a reader recomputes it from the rows. Closed at the four dispositions plus the two row counts; every field is present even at zero, so \"none were unavailable\" and \"nobody counted\" are different readings. A declared tally that disagrees with the rows is `invalid.attachment-accounting`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attachmentRows",
+        "renditionRows",
+        "textCaptured",
+        "textExcluded",
+        "sourceUnavailable",
+        "extractionFailed"
+      ],
+      "properties": {
+        "attachmentRows": {
+          "$ref": "#/$defs/count"
+        },
+        "renditionRows": {
+          "$ref": "#/$defs/count"
+        },
+        "textCaptured": {
+          "$ref": "#/$defs/count"
+        },
+        "textExcluded": {
+          "$ref": "#/$defs/count"
+        },
+        "sourceUnavailable": {
+          "$ref": "#/$defs/count"
+        },
+        "extractionFailed": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    }
+  }
+}

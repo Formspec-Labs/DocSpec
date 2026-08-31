@@ -199,9 +199,11 @@ def test_every_docspec_fixture_bundle_is_present_and_named_by_its_sealed_corpus(
     corpus = _load(DOCSPEC_FIXTURE_DIR / "corpus.json")
     bundles = {case["bundle"] for case in corpus["cases"]}
 
-    # Twenty from the restamp, plus the four cases amendments B1, B2, and B4
-    # need for rules that did not exist then.
-    assert len(corpus["cases"]) == 24
+    # Twenty from the restamp, plus four for amendments B1/B2/B4, plus five for
+    # amendments C1/C3/C4/C6 -- four rules those turned from prose into checks,
+    # and the comment-selection case that could not be minted until C6 gave the
+    # corpus a comment.
+    assert len(corpus["cases"]) == 29
     assert bundles == {"valid"} | {
         f"invalid/{path.name}" for path in (DOCSPEC_FIXTURE_DIR / "invalid").iterdir()
     }

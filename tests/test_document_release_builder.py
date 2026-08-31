@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.document_release_verify import verify_document_release
-from docspec.document_release_support import load_strict_canonical_jsonl
+from docspec.adapters.document_release_verify import stamp_root, verify_document_release
+from docspec.document_release_support import load_strict_canonical_jsonl, write_canonical_json
 from docspec.processing.retention_floors import (
     VISIBLE_TEXT_FRACTION,
     RetentionFloor,
@@ -569,6 +569,59 @@ def test_the_comment_member_is_present_and_empty(
     assert {"attachments", "comments"} <= roles
 
 
+def test_a_policy_is_declared_for_every_media_type_the_rows_actually_carry(
+    tmp_path: Path, mini: dict[str, Any]
+) -> None:
+    """Amendment C1: the table is keyed the way the rows a consumer joins are.
+
+    The mini catalog's XML half is served as `text/xml` and its floor is
+    calibrated under the format key `application/xml`, which is exactly the pair
+    the first two real mints got wrong: they declared the key, every row said
+    `text/xml`, and the first consumer to join the two refused the bundle.
+    """
+
+    bundle = tmp_path / "release"
+    root, _ = build_release(bundle, _inputs(mini))
+    policies = root["content"]["processingPolicies"]
+    carried = {
+        (row["textKind"], row["capture"]["mediaType"]) for row in _rows(bundle, "documents")
+    }
+
+    assert carried == {(policy["textKind"], policy["mediaType"]) for policy in policies}
+    assert ("document-body", "text/xml") in carried
+    # The floor beside it is still the one calibrated under the collapsed key,
+    # which is the whole point of keeping the collapse on the lookup side alone.
+    xml = next(policy for policy in policies if policy["mediaType"] == "text/xml")
+    assert xml["retentionFloor"] == _floors().floor_for("document-body", "text/xml").to_dict()
+
+
+def test_a_policy_declared_under_the_format_key_no_longer_governs_its_rows(
+    tmp_path: Path, mini: dict[str, Any]
+) -> None:
+    """The defect itself, reconstructed: the gate used to collapse and pass it.
+
+    `application/xml` and `text/xml` are one retention population, so the check
+    that collapsed both sides before comparing could not see the difference
+    between a policy table a consumer can join and one it cannot. Matching
+    literally is what makes this a refusal.
+    """
+
+    bundle = tmp_path / "release"
+    build_release(bundle, _inputs(mini))
+    root = json.loads((bundle / "release.json").read_text(encoding="utf-8"))
+    for policy in root["content"]["processingPolicies"]:
+        if policy["mediaType"] == "text/xml":
+            policy["mediaType"] = "application/xml"
+    write_canonical_json(bundle / "release.json", stamp_root(root))
+
+    result = verify_document_release(bundle)
+    floors = [issue for issue in result.issues if issue.code == "invalid.retention-floor"]
+
+    assert floors
+    assert all(issue.path.endswith("/capture/mediaType") for issue in floors)
+    assert "'text/xml'" in floors[0].message
+
+
 def test_every_enumerated_attachment_gets_a_row_and_an_honest_disposition(
     tmp_path: Path, mini: dict[str, Any]
 ) -> None:
@@ -645,12 +698,23 @@ def test_a_sample_of_the_real_corpus_mints_and_verifies(tmp_path: Path) -> None:
     assert sum(receipt["dispositions"].values()) == 200
     assert counts["selectedCount"] == counts["documentVersionCount"] > 0
     # Both formats the pinned catalog carries reach the release, each under its
-    # own declared floor.
-    assert set(receipt["retention"]) == {"application/xml", "text/html"}
+    # own declared floor -- and each keyed by the media type its CAPTURE ROWS
+    # carry (amendment C1), not by the retention format key those collapse onto.
+    # `text/xml` here rather than `application/xml` is the whole defect: the
+    # first two mints declared the key and every Federal Register row said
+    # `text/xml`, so the first consumer to join the table found no policy.
+    assert set(receipt["retention"]) == {"text/xml", "text/html"}
     assert {policy["mediaType"] for policy in receipt["processingPolicies"]} == {
-        "application/xml",
+        "text/xml",
         "text/html",
     }
+    captured = {
+        row["capture"]["mediaType"]
+        for row in load_strict_canonical_jsonl(
+            tmp_path / "release" / "data" / "documents.jsonl"
+        )
+    }
+    assert captured == {policy["mediaType"] for policy in receipt["processingPolicies"]}
     assert receipt["maxObservedSegmentBytes"] <= 65_536
     assert receipt["corpusPin"]["catalogId"].startswith("urn:docspec:source-catalog:v1:")
     assert receipt["releaseId"] == "urn:docspec:document-release:v2:" + receipt[

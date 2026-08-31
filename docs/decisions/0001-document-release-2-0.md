@@ -1093,7 +1093,7 @@ extraction.retention-unmeasurable       retention could not be measured
 segmentation.refused             the bounded segmenter refused the text
 segmentation.no-searchable-segment      the text produced no segment
 segmentation.segment-over-declared-bound  a segment exceeded the declared bound
-structure.heading-path-disagrees the section tree and the segmenter disagree
+structure.heading-path-disagrees  the section tree and the segmenter disagree
 metadata.incomplete              the catalog item carries no required metadata
 ```
 

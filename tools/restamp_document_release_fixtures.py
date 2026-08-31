@@ -43,10 +43,10 @@ on the first pass because item 2 as written was self-contradictory, and the
   because an accounting that only appears at scale is an accounting nobody
   tested.
 
-This corpus's synthetic content carries no attachments and no comments, so both
-members are minted PRESENT AND EMPTY with a zero count, which is what the
-decision's "the first mint writes zero comment rows and a zero count" asks for:
-an absent member would make "none" and "not accounted for" the same reading.
+Every one of the three record types this decision seals is MINTED here, and none
+is left present-and-empty: amendment B4 landed the attachments and amendment C6
+the one comment. A sealed schema nothing has ever written a row against is a
+contract nobody has read, and two of the three had been in exactly that state.
 
 Usage:
   uv run python tools/restamp_document_release_fixtures.py --check
@@ -178,8 +178,33 @@ RETENTION_FLOOR_POPULATION = "document-release-v2-conformance-fixture"
 # The kinds this corpus mints text for. A policy per `(textKind, mediaType)` is
 # not decoration here: amendment B4's `invalid.retention-floor` refuses a text
 # body whose kind and media type no declared policy governs, so a corpus that
-# carries an attachment must declare the attachment's floor.
-POLICY_KINDS: tuple[str, ...] = (DOCUMENT_BODY, "attachment")
+# carries an attachment must declare the attachment's floor -- and, since
+# amendment C6, a comment's. Amendment C1: the declared `mediaType` is the one a
+# capture row carries, matched literally, so this constant is the same string
+# every capture in this corpus declares rather than its retention format key.
+POLICY_KINDS: tuple[str, ...] = (DOCUMENT_BODY, "attachment", "comment")
+POLICY_MEDIA_TYPE = "text/html"
+
+# ─── The one comment (amendment C6) ────────────────────────────────────
+#
+# Amendment B4 required the sealed valid bundle to "finally CARRY an attachment
+# and comments"; it landed the attachment and left `data/comments.jsonl` at zero
+# bytes, so one of the three record types this decision sealed had never been
+# minted by anything. It is minted here.
+#
+# `commentId` EQUALS the catalog's comment `sourceRecordId` (`/data/id`), which
+# for regulations.gov is a sixteen-hex-digit string, so the fixture's is one
+# rather than a URN this producer invented. The selection policy is projected
+# verbatim from the sealed upstream one; its digest is a constant because DocSpec
+# does not compute it -- DocSpec does not select comments.
+COMMENT_ID = "0900006481f0c3a7"
+COMMENT_OWNER_DOCUMENT_ID = "FR-2026-03227"
+COMMENT_SELECTION_POLICY_DIGEST = "sha256:" + "3c" * 32
+COMMENT_MODIFY_DATE = "2026-03-02T18:04:11Z"
+# The `invalid/comment-selection` case's second comment, and the policy nobody
+# sealed that it claims to have inherited.
+TWIN_COMMENT_ID = "0900006481f0c3b2"
+TWIN_SELECTION_POLICY_DIGEST = "sha256:" + "9d" * 32
 
 
 def _decimal_fraction(numerator: int, denominator: int, places: int = 4) -> str:
@@ -215,7 +240,7 @@ def _processing_policies(observed_minimum: str) -> list[dict[str, Any]]:
                 "extractorDigest": canonical_sha256(EXTRACTOR_BODY),
                 "extractorId": EXTRACTOR_ID,
                 "maxSegmentBytes": MAX_SEGMENT_BYTES,
-                "mediaType": "text/html",
+                "mediaType": POLICY_MEDIA_TYPE,
                 "retentionFloor": {
                     "observedMinimum": observed_minimum,
                     "population": RETENTION_FLOOR_POPULATION,
@@ -337,6 +362,19 @@ DOCUMENT_BLOCKS["FR-2026-04188-appendix"] = [
     {
         "kind": "paragraph",
         "text": "The Commonwealth operates fourteen visibility monitoring sites under the Interagency Monitoring of Protected Visual Environments network.",
+        "depth": 1,
+    },
+]
+
+
+# The one comment's own text, laid out by the same machinery again: a comment is
+# a text body under the document body's rules unchanged, so a corpus that laid it
+# out differently would be testing two pipelines and proving neither.
+DOCUMENT_BLOCKS["comment-" + COMMENT_ID] = [
+    {"kind": "heading", "text": "Comment of the National Poultry Council", "depth": 0},
+    {
+        "kind": "paragraph",
+        "text": "The proposed framework sets a performance standard our members cannot meet without capital that the compliance period does not allow them to raise.",
         "depth": 1,
     },
 ]
@@ -503,9 +541,8 @@ def _member(bundle: Path, object_key: str, *, role: str, record_count: int | Non
 DATA_MEMBERS: tuple[tuple[str, str], ...] = (
     ("source-dispositions", "dispositions"),
     ("documents", "documents"),
-    # Restamp item 2, minted present and empty: this corpus's synthetic content
-    # has no attachments and no comments, and an absent member would make "none"
-    # and "not accounted for" read the same.
+    # Restamp item 2, both now carrying rows: the attachments since amendment
+    # B4, the comment since amendment C6.
     ("attachments", "attachments"),
     ("comments", "comments"),
     ("structural-nodes", "nodes"),
@@ -1100,6 +1137,77 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
         }
     )
 
+    # ─── The one comment (amendment C6) ───────────────────────────────
+    #
+    # A comment is a text body under the document body's rules unchanged, so it
+    # is laid out, placed, structured, and segmented by the same functions the
+    # bodies above are. What is its own is the row: `commentId` EQUALS its
+    # `textBodyId`, its owner is exactly one document, and it projects the sealed
+    # upstream selection policy verbatim -- the policy DocSpec inherits and never
+    # computes. Under the fixture's pinned catalog no comment is a member of `U`,
+    # which is not an obstacle: the universe bijection binds document bodies, and
+    # a comment reaches a release as a text body of a document that is a member.
+    comment_owner = documents_by_id[COMMENT_OWNER_DOCUMENT_ID]
+    laid_out = _build_document_bytes("comment-" + COMMENT_ID)
+    comment_blob_key, comment_blob_sha = _place(
+        "blob", "blobs", COMMENT_ID, laid_out["rendition"]
+    )
+    comment_text_key, comment_text_sha = _place(
+        "text", "text", COMMENT_ID, laid_out["representation"]
+    )
+    retention_ratios.append(
+        (
+            normalized_byte_size(laid_out["representation"]),
+            normalized_byte_size(laid_out["rendition"]),
+        )
+    )
+    comment_nodes = _structural_nodes(
+        "comment-" + COMMENT_ID, COMMENT_ID, laid_out["blocks"], "comment"
+    )
+    nodes.extend(comment_nodes)
+    segments.extend(
+        _search_segments(
+            COMMENT_ID, laid_out["blocks"], comment_nodes, comment_blob_sha, "comment"
+        )
+    )
+    comments: list[dict[str, Any]] = [
+        {
+            "capture": {
+                "acquiredAt": ACQUIRED_AT,
+                "acquisitionStartedAt": None,
+                "byteSize": len(laid_out["rendition"]),
+                "candidateRenditionId": f"{COMMENT_ID}.html",
+                "catalogReleaseId": catalog["catalogId"],
+                "expectedSha256": None,
+                "mediaType": POLICY_MEDIA_TYPE,
+                "objectKey": comment_blob_key,
+                "sha256": comment_blob_sha,
+            },
+            "commentId": COMMENT_ID,
+            "commentSelection": {
+                "groupBy": "/data/id",
+                "orderBy": "/data/attributes/modifyDate DESC NULLS LAST",
+                "policyDigest": COMMENT_SELECTION_POLICY_DIGEST,
+                "selectedModifyDate": COMMENT_MODIFY_DATE,
+                "tieDisposition": "refuse-repeated-normalized-instant",
+            },
+            "documentId": comment_owner["documentId"],
+            "excludedRanges": [],
+            "representation": {
+                "byteSize": len(laid_out["representation"]),
+                "encoding": "utf-8",
+                "mediaType": REPRESENTATION_MEDIA_TYPE,
+                "objectKey": comment_text_key,
+                "representationId": f"{COMMENT_ID}#representation",
+                "sha256": comment_text_sha,
+            },
+            "sourceItemId": comment_owner["sourceItemId"],
+            "sourceIssuedVersion": comment_owner["sourceIssuedVersion"],
+            TEXT_BODY_KEY: COMMENT_ID,
+            "textKind": "comment",
+        }
+    ]
+
     for object_key, payload in sorted(partitions.items()):
         path = bundle / object_key
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1132,7 +1240,7 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
     state = {
         "attachments": attachments,
         "catalog": catalog,
-        "comments": [],
+        "comments": comments,
         "dispositions": dispositions,
         "documents": documents,
         "nodes": nodes,
@@ -1463,6 +1571,109 @@ def build_corpus(fixture_root: Path = FIXTURE_ROOT) -> list[dict[str, Any]]:
         "retention-floor",
         "invalid.retention-floor",
         "release.json/content/processingPolicies/0/retentionFloor/observedMinimum",
+        bundle,
+    )
+
+    bundle = copy_case("comment-selection")
+    state = _state(bundle)
+    # Two policy digests in one release is the release claiming a selection
+    # nobody sealed, and no schema can see it because a schema reads one row at a
+    # time. This case could not be minted until amendment C6 gave the corpus a
+    # comment; until then the rule was proved only on a grown bundle and the
+    # absence was recorded rather than closed.
+    #
+    # The twin shares the first comment's bytes: what is under test is the policy
+    # it projects, not the body it carries, and a second comment with no text of
+    # its own would break the coverage identity instead.
+    second = json.loads(json.dumps(state["comments"][0]))
+    second["commentId"] = TWIN_COMMENT_ID
+    second[TEXT_BODY_KEY] = TWIN_COMMENT_ID
+    second["commentSelection"]["policyDigest"] = TWIN_SELECTION_POLICY_DIGEST
+    state["comments"].append(second)
+    for row in [*state["nodes"], *state["segments"]]:
+        if row["textKind"] != "comment":
+            continue
+        twin = json.loads(json.dumps(row))
+        twin[TEXT_BODY_KEY] = TWIN_COMMENT_ID
+        for field in ("structuralNodeId", "segmentId", "structuralParentId"):
+            if twin.get(field):
+                twin[field] = twin[field].replace(row[TEXT_BODY_KEY], TWIN_COMMENT_ID)
+        (state["nodes"] if "structuralNodeId" in twin else state["segments"]).append(twin)
+    _restamp(bundle, state)
+    record(
+        "comment-selection",
+        "invalid.comment-selection",
+        "data/comments.jsonl/1/commentSelection/policyDigest",
+        bundle,
+    )
+
+    # ─── The four rules amendment C1/C3/C4 turned from prose into checks ───
+    bundle = copy_case("ungoverned-media-type")
+    state = _state(bundle)
+    # The document-body policy is re-declared for a media type no row carries.
+    # Amendment B4's second `invalid.retention-floor` arm -- "a text body whose
+    # `(textKind, mediaType)` has no governing policy" -- shipped with no fixture
+    # at all, and amendment C1 found it broken: it collapsed both sides onto the
+    # retention format key before comparing, which is exactly the blindness that
+    # let a release declare `application/xml` over 6,408 `text/xml` rows.
+    policy = next(
+        item for item in state["processingPolicies"] if item["textKind"] == DOCUMENT_BODY
+    )
+    policy["mediaType"] = "text/xml"
+    state["processingPolicies"] = sorted(
+        state["processingPolicies"], key=lambda item: (item["textKind"], item["mediaType"])
+    )
+    _restamp(bundle, state)
+    record(
+        "ungoverned-media-type",
+        "invalid.retention-floor",
+        "data/documents.jsonl/0/capture/mediaType",
+        bundle,
+    )
+
+    bundle = copy_case("selected-source-set-digest")
+    root = _load(bundle / "release.json")
+    # Amendment C3: the pin-derived attestation must agree with the members the
+    # release's own disposition rows denote. Before C3 this value was checked for
+    # FORM alone, so any well-formed digest passed.
+    root["content"]["selectedSourceSetDigest"] = "sha256:" + "0" * 64
+    write_canonical_json(bundle / "release.json", stamp_root(root))
+    record(
+        "selected-source-set-digest",
+        "invalid.set-digest",
+        "release.json/content/selectedSourceSetDigest",
+        bundle,
+    )
+
+    bundle = copy_case("unknown-disposition-reason-code")
+    state = _state(bundle)
+    # Well-formed under the schema's dotted pattern and outside the closed list
+    # amendment B7 wrote down and amendment C4 enforces, so the case fails for
+    # the vocabulary rather than for the pattern.
+    index = next(
+        i
+        for i, row in enumerate(state["dispositions"])
+        if row["catalogDisposition"] == "unavailable"
+    )
+    state["dispositions"][index]["reasonCode"] = "capture.invented-code"
+    _restamp(bundle, state)
+    record(
+        "unknown-disposition-reason-code",
+        "invalid.disposition",
+        f"data/source-dispositions.jsonl/{index}/reasonCode",
+        bundle,
+    )
+
+    bundle = copy_case("unknown-attachment-reason-code")
+    state = _state(bundle)
+    # Kebab-case, so the schema admits it; outside the three-code attachment
+    # list, so amendment C4 does not.
+    state["attachments"][0]["renditions"][1]["reasonCode"] = "invented-code"
+    _restamp(bundle, state)
+    record(
+        "unknown-attachment-reason-code",
+        "invalid.attachment-accounting",
+        "data/attachments.jsonl/0/renditions/1/reasonCode",
         bundle,
     )
 
