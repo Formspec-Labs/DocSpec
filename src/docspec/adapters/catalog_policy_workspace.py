@@ -96,6 +96,24 @@ class SqliteCatalogPolicyWorkspace:
                 f"catalog workspace key already exists in namespace {selected_namespace!r}"
             ) from error
 
+    def put_payload(self, namespace: str, key: tuple[str, ...], payload: bytes) -> None:
+        """Store one already-canonical payload without re-serializing it.
+
+        The caller vouches that ``payload`` is exactly ``canonical_json_bytes``
+        of the value it stands for; ``put`` remains the checked general path.
+        """
+
+        selected_namespace = require_text(namespace, "catalog workspace namespace")
+        try:
+            self._connection.execute(
+                "INSERT INTO entries(namespace, ordered_key, payload) VALUES (?, ?, ?)",
+                (selected_namespace, _ordered_key(key), payload),
+            )
+        except sqlite3.IntegrityError as error:
+            raise IntegrityError(
+                f"catalog workspace key already exists in namespace {selected_namespace!r}"
+            ) from error
+
     def get(self, namespace: str, key: tuple[str, ...]) -> Mapping[str, Any] | None:
         selected_namespace = require_text(namespace, "catalog workspace namespace")
         row = self._connection.execute(
@@ -114,6 +132,17 @@ class SqliteCatalogPolicyWorkspace:
         )
         for (payload,) in cursor:
             yield _mapping(payload, label=f"catalog workspace {selected_namespace} value")
+
+    def iter_payloads(self, namespace: str) -> Iterator[bytes]:
+        """Stream stored canonical payloads verbatim, without parse or thaw."""
+
+        selected_namespace = require_text(namespace, "catalog workspace namespace")
+        cursor = self._connection.execute(
+            "SELECT payload FROM entries WHERE namespace = ? ORDER BY ordered_key",
+            (selected_namespace,),
+        )
+        for (payload,) in cursor:
+            yield bytes(payload)
 
 
 __all__ = ["SqliteCatalogPolicyWorkspace"]

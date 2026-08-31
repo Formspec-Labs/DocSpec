@@ -904,15 +904,31 @@ class _CatalogRowPartitioner:
             if item.disposition is CatalogDisposition.SELECTED:
                 self.selected_count += 1
             selected_partition = _partition_id(item.source_item_id)
-            workspace.put(
-                _partition_namespace(selected_partition),
-                (item.source_item_id,),
-                value,
-            )
+            put_payload = getattr(workspace, "put_payload", None)
+            if put_payload is not None:
+                put_payload(
+                    _partition_namespace(selected_partition),
+                    (item.source_item_id,),
+                    payload,
+                )
+            else:
+                workspace.put(
+                    _partition_namespace(selected_partition),
+                    (item.source_item_id,),
+                    value,
+                )
             self.partition_counts[selected_partition] = self.partition_counts.get(selected_partition, 0) + 1
 
     @staticmethod
     def chunks(workspace: CatalogPolicyWorkspace, partition_id: str) -> Iterator[bytes]:
+        iter_payloads = getattr(workspace, "iter_payloads", None)
+        if iter_payloads is not None:
+            # The workspace stores exactly the canonical bytes stage() produced;
+            # streaming them verbatim avoids a parse and a re-serialization per
+            # row per read, and the artifact's own gates re-verify every row.
+            for payload in iter_payloads(_partition_namespace(partition_id)):
+                yield payload + b"\n"
+            return
         for value in workspace.iter_ordered(_partition_namespace(partition_id)):
             yield canonical_json_bytes(value) + b"\n"
 
