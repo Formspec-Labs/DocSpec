@@ -2173,3 +2173,70 @@ def test_the_logical_row_exclusion_table_is_exactly_the_amendments_two_kinds() -
         assert LOGICAL_ROW_EXCLUSIONS[record_type] == ()
         row = {"a": 1, "b": {"c": 2}}
         assert logical_row(record_type, row) == row
+
+
+def test_the_first_mints_blind_gate_attack_now_moves_the_release_name(
+    tmp_path: Path,
+) -> None:
+    """Amendment B1, end to end on a real bundle rather than on synthetic rows.
+
+    The attack the first mint's gate did not catch: change a body's
+    representation bytes WITHOUT changing their length, restamp every physical
+    digest the change invalidates -- the member digest, the manifest, the index
+    slice, the row's own `representation.sha256` -- and see whether the release
+    still calls itself the same release.
+
+    Under the `/2` domains it did, because a set digest framed each row's id
+    fields and nothing in the identity preimage had moved. Under `/3` the name
+    moves, the mutated bundle verifies clean under that different name -- it IS
+    a different corpus, and now says so -- and the id-only projection is checked
+    beside it to show the hole was real rather than imagined.
+    """
+
+    from tools.restamp_document_release_fixtures import _restamp, _state
+
+    bundle = tmp_path / "same-length-mutation"
+    shutil.copytree(DOCSPEC_VALID, bundle)
+    sealed_root = load_strict_canonical_json(bundle / "release.json")
+    sealed_documents = load_strict_canonical_jsonl(bundle / "data" / "documents.jsonl")
+
+    target = sealed_documents[0]["representation"]["objectKey"]
+    before = (bundle / target).read_bytes()
+    after = before.replace(b"Salmonella", b"SALMONELLA")
+    assert after != before and len(after) == len(before)
+    (bundle / target).write_bytes(after)
+
+    state = _state(bundle)
+    body = state["documents"][0]["textBodyId"]
+    row = next(
+        entry
+        for entry in state["textBodyIndex"]
+        if entry["family"] == "text" and entry["textBodyId"] == body
+    )
+    state["documents"][0]["representation"]["sha256"] = hashlib.sha256(
+        after[row["startByte"] : row["startByte"] + row["byteLength"]]
+    ).hexdigest()
+    _restamp(bundle, state)
+
+    mutated_root = load_strict_canonical_json(bundle / "release.json")
+    mutated_documents = load_strict_canonical_jsonl(bundle / "data" / "documents.jsonl")
+
+    def id_only(rows: list[dict[str, Any]]) -> str:
+        records = sorted(
+            ({"documentVersionId": entry["documentVersionId"]} for entry in rows),
+            key=lambda record: record["documentVersionId"].encode("utf-16-be"),
+        )
+        return framed_section_digest(
+            "docspec-document-version-set/2",
+            (FramedSection("members", len(records), iter(records)),),
+        )
+
+    # The hole, reproduced: what `/2` framed is unmoved by this mutation.
+    assert id_only(sealed_documents) == id_only(mutated_documents)
+    # And closed: what `/3` frames is not.
+    assert framed_set_digest(
+        "docspec-document-version-set/3", sealed_documents
+    ) != framed_set_digest("docspec-document-version-set/3", mutated_documents)
+    assert mutated_root["documentStateDigest"] != sealed_root["documentStateDigest"]
+    assert mutated_root["releaseId"] != sealed_root["releaseId"]
+    assert verify_document_release(bundle).valid
