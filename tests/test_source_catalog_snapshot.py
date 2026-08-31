@@ -2636,10 +2636,10 @@ def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_dom
             {"sourceItemId": item.source_item_id},
             {"sourceItemId": item.source_item_id, "disposition": item.disposition.value},
             {"sourceItemId": item.source_item_id, "reason": item.selection.reason},
-            source_catalog_artifact._rendition_choice_record(item, item_dict),
-            *source_catalog_artifact._normalized_field_records_for(item, item_dict),
-            *source_catalog_artifact._joined_field_records_for(item, item_dict),
-            *source_catalog_artifact._interpretation_records_for(item, item_dict),
+            source_catalog_artifact._rendition_choice_record(item_dict),
+            *source_catalog_artifact._normalized_field_records_for(item_dict),
+            *source_catalog_artifact._joined_field_records_for(item_dict),
+            *source_catalog_artifact._interpretation_records_for(item_dict),
         ]
         for value in records:
             assert fast(value) == canonical_json_bytes(value)
@@ -2655,3 +2655,53 @@ def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_dom
     assert not safe({"ok": 1.5})
     non_bmp_keys = {"\U0001f600": 1, "\U0001f601": 2}
     assert fast({"wrap": non_bmp_keys}) == canonical_json_bytes({"wrap": non_bmp_keys})
+
+
+def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The consumer's verify must be the producer's gate, run again, once.
+
+    A fresh reader's verify_snapshot performs the full independent derivation
+    (spied), refuses a spec whose digest its derivation contradicts, and a
+    second verify of the same digest returns the memoized verdict with no new
+    derivation.
+    """
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002")),
+        (*renditions("2026-00001"), *renditions("2026-00002")),
+    )
+    store, result = build(tmp_path, source)
+
+    calls = {"derive": 0}
+    actual = source_catalog_artifact._derive_catalog
+
+    def spy(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
+        calls["derive"] += 1
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", spy)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    summary = reader.verify_snapshot(result.reference)
+    assert summary == result.summary
+    assert calls["derive"] == 1
+    assert reader.verify_snapshot(result.reference) == summary
+    assert calls["derive"] == 1
+
+    def lying(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
+        derived = actual(*args, **kwargs)
+        return source_catalog_artifact._DerivedCatalog(
+            "sha256:" + "e" * 64,
+            derived.requested_universe_set_digest,
+            derived.selected_source_set_digest,
+            derived.disposition_counts,
+            derived.diagnostics,
+        )
+
+    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", lying)
+    fresh = SourceCatalogArtifactReader(store, producer=producer())
+    with pytest.raises(IntegrityError, match="catalogStateDigest"):
+        fresh.verify_snapshot(result.reference)
