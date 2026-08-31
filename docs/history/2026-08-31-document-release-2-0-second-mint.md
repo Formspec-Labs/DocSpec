@@ -243,6 +243,15 @@ The twenty sealed predecessor bundles verify unchanged and byte-untouched,
 20/20. The docspec conformance corpus is 24 bundles now, each sealing its whole
 diagnostic set rather than only its primary code and path.
 
+**Remint-idempotence, measured.** Two independent full runs, in separate
+processes and separate trees, with **different** `publishedAt` annotations
+(`2026-08-31T00:00:00Z` and `2026-09-01T12:34:56Z`), reach the identical
+`documentStateDigest`, `releaseId`, nine set digests, `counts`, `coverage`, and
+`attachmentAccounting`. The annotation moved and the name did not, which is the
+property B1's exclusion set exists to keep: a process fact inside a
+content-derived identity would make an honest remint of identical content a
+different release.
+
 ## Where things are
 
 ```text
