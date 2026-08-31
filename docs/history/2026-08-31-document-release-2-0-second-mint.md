@@ -1,4 +1,43 @@
-# The second real DocumentRelease 2.0, minted 2026-08-31
+# The second real DocumentRelease 2.0, minted 2026-08-31 — **SUPERSEDED**
+
+> **This mint passed its gate and is superseded anyway, by
+> `2026-08-31-document-release-2-0-third-mint.md`
+> (`urn:docspec:document-release:v2:5f2ae16e…`).** Passing a gate is not the
+> same as being right, and two defects were found after the verdict.
+>
+> **The policy table could not be joined.** This release declares its XML
+> processing policy under `mediaType: "application/xml"` — the retention
+> *format key* — while all 6,408 of its Federal Register rows carry
+> `capture.mediaType: "text/xml"`. Its first real consumer, SpicySearch's
+> document-release mapper, refused the bundle outright: *"document release
+> declares no processing policy for ('document-body', 'text/xml')"*. The gate
+> had a check for exactly this, and it collapsed both sides onto the format key
+> before comparing, so it was written to be blind to the defect it existed to
+> catch. The section *Processing policies, per (kind, format)* below is
+> therefore describing a table nothing can join; amendment C1 rules on it.
+>
+> **193 documents it reports as unavailable were never absent.** The counts
+> below — `selectedCount 8,091`, `unavailableCount 1,909`, and the sentence
+> "1,909 documents still have no bytes ... a gap in the checkpoint" — are wrong
+> about 193 of them. The pinned checkpoint held their `rendition-html` bytes
+> byte-identically the whole time; what it lacked was the record-layer rows
+> that point at them, so the builder asked the only index it had, was told
+> nothing, and refused an index gap while calling it an absent document. The
+> third mint carries all 193; amendment C2 rules on the rescue map that names
+> them.
+>
+> **And the PASS verdict's five refinements land there too**, so five smaller
+> statements below are now behind the format: `selectedSourceSetDigest` **is**
+> gate-checkable and the departure row saying otherwise is withdrawn (C3); the
+> closed reason-code vocabularies are enforced rather than conventional (C4);
+> the calibration receipt recomputes its distribution from its own rows (C5);
+> the conformance corpus finally mints a comment, which retires the
+> `invalid.comment-selection` departure row below (C6); and the floor's
+> position outside the identity preimage is recorded rather than assumed (C7).
+>
+> Everything below is left exactly as it was written, including the sentences
+> the two defects make false. A superseded record that is edited to look
+> correct is a record of nothing.
 
 The first mint (`2026-08-30-document-release-2-0-first-mint.md`) failed a
 two-reviewer blind gate on six findings. Decision 0001's **amendment B1–B7**
