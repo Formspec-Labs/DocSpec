@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import json
 import struct
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
@@ -316,7 +317,7 @@ def _iter_partition_rows(
     member = partition.member
     if member.blob_ref is None or member.record_count is None:
         raise IntegrityError("source-item partition descriptor requires blobRef and recordCount")
-    previous: str | None = None
+    previous: bytes | None = None
     count = 0
     with blob_source.open(member.blob_ref) as stream:
         while raw := stream.readline(MAX_CATALOG_ROW_BYTES + 2):
@@ -324,15 +325,22 @@ def _iter_partition_rows(
                 raise LimitExceededError("source-catalog row exceeds its byte limit")
             if not raw.endswith(b"\n"):
                 raise IntegrityError("source-catalog rows must end with a newline")
-            try:
-                value = parse_canonical_json(
-                    raw[:-1],
-                    path=f"source-items/{partition.partition_id}/{count}",
-                )
-            except ArtifactVerificationError as error:
-                raise IntegrityError(f"source-catalog row {count} is not canonical: {error}") from error
             if validate:
+                try:
+                    value = parse_canonical_json(
+                        raw[:-1],
+                        path=f"source-items/{partition.partition_id}/{count}",
+                    )
+                except ArtifactVerificationError as error:
+                    raise IntegrityError(
+                        f"source-catalog row {count} is not canonical: {error}"
+                    ) from error
                 _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {count}")
+            else:
+                # An unvalidated pass only re-reads bytes that a validated pass of
+                # the same derivation (or the producer gate) proves canonical and
+                # schema-conformant; plain parsing avoids re-serializing every row.
+                value = json.loads(raw[:-1])
             try:
                 item = SourceCatalogItem.from_dict(value)
             except (TypeError, ValueError) as error:
@@ -341,9 +349,10 @@ def _iter_partition_rows(
                 _require_interpretation_order(item)
             if _partition_id(item.source_item_id) != partition.partition_id:
                 raise IntegrityError("source-catalog row is stored in the wrong logical partition")
-            if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
+            key = _utf16_key(item.source_item_id)
+            if previous is not None and key <= previous:
                 raise IntegrityError("source-catalog partition rows must be strictly ordered and distinct")
-            previous = item.source_item_id
+            previous = key
             count += 1
             yield (item, raw[:-1]) if with_raw else item
     if count != member.record_count:
@@ -384,7 +393,7 @@ def _iter_located_catalog_rows(
         for partition in partitions
     ]
     heap: list[tuple[bytes, int, Any]] = []
-    previous: str | None = None
+    previous: bytes | None = None
     count = 0
     try:
         for index, stream in enumerate(streams):
@@ -393,11 +402,11 @@ def _iter_located_catalog_rows(
                 item = entry[0] if with_raw else entry
                 heapq.heappush(heap, (_utf16_key(item.source_item_id), index, entry))
         while heap:
-            _, index, entry = heapq.heappop(heap)
+            key, index, entry = heapq.heappop(heap)
             item = entry[0] if with_raw else entry
-            if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
+            if previous is not None and key <= previous:
                 raise IntegrityError("source-catalog rows must be globally ordered and distinct")
-            previous = item.source_item_id
+            previous = key
             blob_ref = partitions[index].member.blob_ref
             if blob_ref is None:
                 raise IntegrityError("source-item partition descriptor requires blobRef")
@@ -882,6 +891,7 @@ def _derive_catalog(
     *,
     item_count: int,
     selected_count: int,
+    validate_rows: bool = True,
 ) -> _DerivedCatalog:
     """Derive the catalog's digests and diagnostics in two streamed passes.
 
@@ -909,7 +919,10 @@ def _derive_catalog(
     normalized_count = 0
     joined_count = 0
     interpretation_count = 0
-    for item, raw in _iter_catalog_rows(blob_source, partitions, item_count, with_raw=True):
+    for item, raw in _iter_catalog_rows(
+        blob_source, partitions, item_count, validate=validate_rows, with_raw=True
+    ):
+        item_dict = item.to_dict()
         state.add_payload(raw)
         requested.add({"sourceItemId": item.source_item_id})
         disposition_counts[item.disposition.value] += 1
@@ -919,13 +932,13 @@ def _derive_catalog(
             {"sourceItemId": item.source_item_id, "disposition": item.disposition.value}
         )
         reasons.add({"sourceItemId": item.source_item_id, "reason": item.selection.reason})
-        rendition_choices.add(_rendition_choice_record(item))
-        for _record in _normalized_field_records_for(item):
+        rendition_choices.add(_rendition_choice_record(item, item_dict))
+        for _record in _normalized_field_records_for(item, item_dict):
             normalized_count += 1
-        for record in _joined_field_records_for(item):
+        for record in _joined_field_records_for(item, item_dict):
             joined_count += 1
             _accumulate_join_coverage(join_counts, record)
-        for _record in _interpretation_records_for(item):
+        for _record in _interpretation_records_for(item, item_dict):
             interpretation_count += 1
     normalized = _FramedSectionHasher(
         "docspec-catalog-normalized-fields/1", "records", normalized_count
@@ -935,11 +948,12 @@ def _derive_catalog(
         "docspec-catalog-interpretations/1", "records", interpretation_count
     )
     for item in _iter_catalog_rows(blob_source, partitions, item_count, validate=False):
-        for record in _normalized_field_records_for(item):
+        item_dict = item.to_dict()
+        for record in _normalized_field_records_for(item, item_dict):
             normalized.add(record)
-        for record in _joined_field_records_for(item):
+        for record in _joined_field_records_for(item, item_dict):
             joined.add(record)
-        for record in _interpretation_records_for(item):
+        for record in _interpretation_records_for(item, item_dict):
             interpretations.add(record)
     join_coverage = [
         {"joinId": join_id, **join_counts[join_id]}
@@ -962,17 +976,19 @@ def _derive_catalog(
     )
 
 
-def _item_interpretations(item: SourceCatalogItem, kind: str) -> tuple[Mapping[str, Any], ...]:
+def _item_interpretations(item_dict: Mapping[str, Any], kind: str) -> tuple[Mapping[str, Any], ...]:
     return tuple(
         value
-        for value in item.to_dict()["interpretations"]
+        for value in item_dict["interpretations"]
         if value["interpretationKind"] == kind
     )
 
 
-def _normalized_field_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+def _normalized_field_records_for(
+    item: SourceCatalogItem, item_dict: Mapping[str, Any]
+) -> Iterator[Mapping[str, Any]]:
     fields: list[Mapping[str, Any]] = []
-    for interpretation in _item_interpretations(item, "normalization"):
+    for interpretation in _item_interpretations(item_dict, "normalization"):
         fields.extend(interpretation["result"]["fields"])
     previous_key: tuple[bytes, int] | None = None
     for field in sorted(fields, key=lambda value: _utf16_key(value["normalizedField"])):
@@ -1003,9 +1019,11 @@ def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
     yield 0, value
 
 
-def _joined_field_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+def _joined_field_records_for(
+    item: SourceCatalogItem, item_dict: Mapping[str, Any]
+) -> Iterator[Mapping[str, Any]]:
     joins: list[Mapping[str, Any]] = []
-    for interpretation in _item_interpretations(item, "exact-join"):
+    for interpretation in _item_interpretations(item_dict, "exact-join"):
         joins.extend(interpretation["result"]["joins"])
     previous_key: tuple[bytes, bytes, int] | None = None
     for join in sorted(joins, key=lambda value: _utf16_key(value["joinId"])):
@@ -1028,9 +1046,11 @@ def _joined_field_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, 
         }
 
 
-def _interpretation_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+def _interpretation_records_for(
+    item: SourceCatalogItem, item_dict: Mapping[str, Any]
+) -> Iterator[Mapping[str, Any]]:
     by_kind: dict[str, list[Mapping[str, Any]]] = {}
-    for interpretation in item.to_dict()["interpretations"]:
+    for interpretation in item_dict["interpretations"]:
         by_kind.setdefault(interpretation["interpretationKind"], []).append(interpretation)
     for kind in sorted(by_kind, key=_utf16_key):
         for index, interpretation in enumerate(by_kind[kind]):
@@ -1048,8 +1068,10 @@ def _interpretation_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str
             }
 
 
-def _rendition_choice_record(item: SourceCatalogItem) -> Mapping[str, Any]:
-    choices = _item_interpretations(item, "rendition-preference")
+def _rendition_choice_record(
+    item: SourceCatalogItem, item_dict: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    choices = _item_interpretations(item_dict, "rendition-preference")
     if len(choices) != 1:
         raise IntegrityError("source-catalog row requires one rendition-preference interpretation")
     return {
@@ -1437,11 +1459,15 @@ class SourceCatalogBuilder:
                     )
                 )
             selected_blob_source = staging.blob_source()
+            # The builder reads back bytes it staged itself; the producer gate
+            # independently re-validates every row before publication, so this
+            # derivation skips the redundant schema pass.
             derived = _derive_catalog(
                 selected_blob_source,
                 partitions,
                 item_count=row_partitioner.item_count,
                 selected_count=row_partitioner.selected_count,
+                validate_rows=False,
             )
             state_digest = derived.catalog_state_digest
             requested_digest = derived.requested_universe_set_digest
