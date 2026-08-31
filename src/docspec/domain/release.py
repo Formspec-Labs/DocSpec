@@ -19,7 +19,18 @@ from docspec.domain.policies import RetentionPolicy
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef
 
 RELEASE_FORMAT = "docspec-document-release"
-RELEASE_FORMAT_VERSION = "1.1"
+# `docs/decisions/0001-document-release-2-0.md`, *Migration, and the builder's
+# obligations*: this stays "1.1" "until the builder lands, then becomes 2.0 in
+# one commit". The builder landed (`tools/build_document_release.py`), so
+# amendment B7 flips it.
+#
+# This is the FORMAT VERSION, and it is not the identity namespace. The portable
+# bundle's `releaseId` prefix stays `urn:docspec:document-release:v2:`
+# (`adapters/document_release_verify.py`, `RELEASE_ID_PREFIX`), which downstream
+# consumers pin: the version says which contract the bytes obey, the prefix says
+# which namespace the name lives in, and *Sealed identities* fixed the latter at
+# `v2` for the 2.0 format deliberately. Flipping one must never move the other.
+RELEASE_FORMAT_VERSION = "2.0"
 RELEASE_LOGICAL_SCHEMA = f"{RELEASE_FORMAT}/{RELEASE_FORMAT_VERSION}"
 _DERIVATION_ID = re.compile(r"urn:spicy:artifact:derivation:[0-9a-f]{64}\Z")
 
