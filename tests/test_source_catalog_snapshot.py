@@ -2602,3 +2602,56 @@ def test_the_automatic_worker_count_resolves_on_this_interpreter(
     monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_ROW_THRESHOLD", 5)
     automatic = resolve(10, None)
     assert 1 <= automatic <= source_catalog_artifact._MAX_DERIVE_WORKERS
+
+
+def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_domain(
+    tmp_path: Path,
+) -> None:
+    """The guard is the proof: ASCII keys + no floats => identical bytes.
+
+    Every projection record a real catalog produces must serialize identically
+    through the fast writer and the Rulespec writer, and the guard must route
+    out-of-domain values (non-ASCII keys, floats, non-BMP keys) to the Rulespec
+    writer rather than risk divergence. Unicode VALUES stay in-domain and must
+    still agree byte for byte.
+    """
+
+    from rulespec_artifacts import canonical_json_bytes
+
+    fast = source_catalog_artifact._canonical_record_payload
+    safe = source_catalog_artifact._payload_is_fast_safe
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002", malformed_rin=True)),
+        (*renditions("2026-00001"), *renditions("2026-00002")),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    reader.verify_snapshot(result.reference)
+    checked = 0
+    for item in reader.open_snapshot(result.reference).items:
+        item_dict = item.to_dict()
+        records: list[Mapping[str, Any]] = [
+            {"sourceItemId": item.source_item_id},
+            {"sourceItemId": item.source_item_id, "disposition": item.disposition.value},
+            {"sourceItemId": item.source_item_id, "reason": item.selection.reason},
+            source_catalog_artifact._rendition_choice_record(item, item_dict),
+            *source_catalog_artifact._normalized_field_records_for(item, item_dict),
+            *source_catalog_artifact._joined_field_records_for(item, item_dict),
+            *source_catalog_artifact._interpretation_records_for(item, item_dict),
+        ]
+        for value in records:
+            assert fast(value) == canonical_json_bytes(value)
+            checked += 1
+    assert checked > 20
+
+    unicode_value = {"text": "naïve — ünïcode ✓ \U0001f600", "nested": ["🚀", {"k": "é"}]}
+    assert safe(unicode_value)
+    assert fast(unicode_value) == canonical_json_bytes(unicode_value)
+
+    assert not safe({"naïve-key": 1})
+    assert not safe({"ok": [1, {"\U0001f600": 2}]})
+    assert not safe({"ok": 1.5})
+    non_bmp_keys = {"\U0001f600": 1, "\U0001f601": 2}
+    assert fast({"wrap": non_bmp_keys}) == canonical_json_bytes({"wrap": non_bmp_keys})

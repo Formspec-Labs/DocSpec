@@ -299,6 +299,46 @@ class _CompiledSchemaGate:
 _ITEM_VALIDATOR = _CompiledSchemaGate(_SCHEMAS["source-item.schema.json"])
 
 
+def _payload_is_fast_safe(value: object) -> bool:
+    """True when std-json canonical output provably equals Rulespec's.
+
+    With every object key ASCII and no float anywhere, ``json.dumps`` with
+    sorted keys, no-ASCII escaping disabled, and compact separators emits the
+    same bytes as the Rulespec canonical writer: string escaping is identical
+    (Rulespec delegates each string to ``json.dumps``), the separators match,
+    and for ASCII keys code-point order equals the UTF-16 order Rulespec sorts
+    by. Anything outside that domain falls back to the Rulespec writer itself.
+    """
+
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if type(current) is dict:
+            for key, item in current.items():
+                if type(key) is not str or not key.isascii():
+                    return False
+                stack.append(item)
+        elif type(current) is list:
+            stack.extend(current)
+        elif type(current) is float:
+            return False
+    return True
+
+
+def _canonical_record_payload(record: Mapping[str, object]) -> bytes:
+    """Canonical bytes for one framed record, fast where equality is proven."""
+
+    if _payload_is_fast_safe(record):
+        return json.dumps(
+            record,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    return canonical_json_bytes(record)
+
+
 class _FramedSectionHasher:
     """Incrementally reproduce ``framed_section_digest`` for one known-count section.
 
@@ -333,7 +373,7 @@ class _FramedSectionHasher:
         self._digest.update(payload)
 
     def add(self, record: Mapping[str, object]) -> None:
-        self.add_payload(canonical_json_bytes(record))
+        self.add_payload(_canonical_record_payload(record))
 
     def digest(self) -> str:
         if self._observed != self._count:
@@ -978,7 +1018,7 @@ def _row_digest_payloads(
     """
 
     selected_payload = (
-        canonical_json_bytes(
+        _canonical_record_payload(
             {"sourceItemId": item.source_item_id, "documentId": item.document_id}
         )
         if item.disposition is CatalogDisposition.SELECTED
@@ -986,21 +1026,21 @@ def _row_digest_payloads(
     )
     joined: list[tuple[bytes, str]] = []
     for record in _joined_field_records_for(item, item_dict):
-        joined.append((canonical_json_bytes(record), str(record["outcome"])))
+        joined.append((_canonical_record_payload(record), str(record["outcome"])))
     return (
         raw,
-        canonical_json_bytes({"sourceItemId": item.source_item_id}),
+        _canonical_record_payload({"sourceItemId": item.source_item_id}),
         selected_payload,
-        canonical_json_bytes(
+        _canonical_record_payload(
             {"sourceItemId": item.source_item_id, "disposition": item.disposition.value}
         ),
-        canonical_json_bytes(
+        _canonical_record_payload(
             {"sourceItemId": item.source_item_id, "reason": item.selection.reason}
         ),
-        canonical_json_bytes(_rendition_choice_record(item, item_dict)),
-        [canonical_json_bytes(r) for r in _normalized_field_records_for(item, item_dict)],
+        _canonical_record_payload(_rendition_choice_record(item, item_dict)),
+        [_canonical_record_payload(r) for r in _normalized_field_records_for(item, item_dict)],
         joined,
-        [canonical_json_bytes(r) for r in _interpretation_records_for(item, item_dict)],
+        [_canonical_record_payload(r) for r in _interpretation_records_for(item, item_dict)],
     )
 
 
