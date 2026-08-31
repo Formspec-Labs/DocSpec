@@ -117,11 +117,13 @@
           "$ref": "#/$defs/hexDigest"
         },
         "disjointness": {
+          "description": "Measured overlap with the corpus this floor gates, two ways. A digest check alone would miss the same document retrieved twice into different bytes, so the source document identifiers are intersected as well. Both must be zero, or the overlapping documents are dropped from the calibration before the floor is derived.",
           "type": "object",
           "additionalProperties": false,
           "required": [
             "against",
-            "sharedRenditionDigests"
+            "sharedRenditionDigests",
+            "sharedSourceDocuments"
           ],
           "properties": {
             "against": {
@@ -129,7 +131,9 @@
               "minLength": 1
             },
             "sharedRenditionDigests": {
-              "description": "Measured overlap. Non-zero means the floor is partly self-calibrated.",
+              "$ref": "#/$defs/count"
+            },
+            "sharedSourceDocuments": {
               "$ref": "#/$defs/count"
             }
           }
@@ -146,7 +150,9 @@
         "p05",
         "median",
         "p95",
-        "maximum"
+        "maximum",
+        "rawMinimum",
+        "rawMedian"
       ],
       "properties": {
         "count": {
@@ -169,46 +175,18 @@
         },
         "maximum": {
           "$ref": "#/$defs/fraction"
+        },
+        "rawMinimum": {
+          "$ref": "#/$defs/fraction"
+        },
+        "rawMedian": {
+          "$ref": "#/$defs/fraction"
         }
       }
     },
     "lowestDocument": {
       "description": "The one document that set `observedMinimum`, named so the margin can be re-argued.",
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "documentId",
-        "renditionSha256",
-        "renditionByteSize",
-        "normalizedRenditionByteSize",
-        "representationByteSize",
-        "normalizedRepresentationByteSize",
-        "retention"
-      ],
-      "properties": {
-        "documentId": {
-          "type": "string",
-          "minLength": 1
-        },
-        "renditionSha256": {
-          "$ref": "#/$defs/hexDigest"
-        },
-        "renditionByteSize": {
-          "$ref": "#/$defs/count"
-        },
-        "normalizedRenditionByteSize": {
-          "$ref": "#/$defs/count"
-        },
-        "representationByteSize": {
-          "$ref": "#/$defs/count"
-        },
-        "normalizedRepresentationByteSize": {
-          "$ref": "#/$defs/count"
-        },
-        "retention": {
-          "$ref": "#/$defs/fraction"
-        }
-      }
+      "$ref": "#/$defs/measuredDocument"
     },
     "retentionFloor": {
       "type": "object",
@@ -247,6 +225,7 @@
         "population",
         "distribution",
         "observedMinimum",
+        "documents",
         "lowestDocument",
         "marginRule",
         "retentionFloor"
@@ -293,6 +272,56 @@
         },
         "retentionFloor": {
           "$ref": "#/$defs/retentionFloor"
+        },
+        "documents": {
+          "description": "Every document measured, one row each -- the whole named population, never a sample. `population.measuredCount` must equal this array's length, so the full-population claim is countable from the receipt rather than trusted.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/measuredDocument"
+          }
+        }
+      }
+    },
+    "measuredDocument": {
+      "description": "One measured document, with BOTH ratios. The gate keys on `retention` alone; `rawRetention` is kept because normalization hides exactly one thin-parse mode -- content whose meaning is carried BY its whitespace, destroyed by a parse that keeps the characters and drops the layout. A cratered raw ratio under a healthy normalized one is that signature, and nothing else in this format reports it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "renditionSha256",
+        "renditionByteSize",
+        "normalizedRenditionByteSize",
+        "representationByteSize",
+        "normalizedRepresentationByteSize",
+        "retention",
+        "rawRetention"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "renditionSha256": {
+          "$ref": "#/$defs/hexDigest"
+        },
+        "renditionByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "normalizedRenditionByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "representationByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "normalizedRepresentationByteSize": {
+          "$ref": "#/$defs/count"
+        },
+        "retention": {
+          "$ref": "#/$defs/fraction"
+        },
+        "rawRetention": {
+          "$ref": "#/$defs/fraction"
         }
       }
     }

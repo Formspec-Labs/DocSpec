@@ -47,6 +47,20 @@ active   -> selected       iff its bytes were adopted, extracted above the
          -> excluded       no markup rendition to select
 ```
 
+Attachments, enumerated rather than asserted
+--------------------------------------------
+Decision 0001 L413 requires a row for every attachment the owner's source record
+enumerates. The first mint hardcoded `attachments: []` while all 1,683 selected
+Mirrulations documents enumerated a `pdf` and an `htm` in their preserved source
+records, and the mint receipt asserted compliance anyway. Amendment B4 landed
+the enumeration: `fileFormats` is the flat DOCUMENT packing, so it is a list of
+renditions of ONE attachment, and the rendition that is the owning body's own
+rendition is enumerated as `text-excluded` rather than extracted a second time.
+A rendition nobody preserved is `source-unavailable` with a reason. None of this
+can block the build -- attachments are renditions of a member of U, not members
+of it -- and the accounting is declared in `counts.attachmentAccounting`, where
+a reader recomputes it.
+
 The invariant Decision 0001 actually binds survives this intact and is checked
 before the bundle is written: a `selected` row carries a `documentVersionId` and
 a document row, any other disposition carries `null`, and no row carries a
@@ -84,6 +98,7 @@ from docspec.adapters.document_release_verify import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
+    TEXT_BODY_SET_DOMAIN,
     TABULAR_MEDIA_TYPES,
     TEXT_BODY_INDEX_ROLE,
     TEXT_BODY_KEYS,
@@ -99,6 +114,7 @@ from docspec.document_release_support import (
     write_canonical_json,
     write_canonical_jsonl,
 )
+from docspec.domain.identity import stable_urn
 from docspec.domain.storage import partition_bucket
 from docspec.processing.bounded_segmentation import (
     BOUNDED_SEGMENTER_ID,
@@ -111,6 +127,7 @@ from docspec.processing.retention_floors import (
     RetentionFloorError,
     RetentionFloorRegistry,
     format_key,
+    normalized_byte_size,
 )
 from docspec.processing.visible_text import (
     DEFAULT_VISIBLE_TEXT_EXTRACTORS,
@@ -160,6 +177,29 @@ SELECTED = "selected"
 STATE_DISPOSITIONS: Mapping[str, str] = {"deleted": DELETED, "excluded": EXCLUDED}
 
 MARKUP_MEDIA_TYPES = ("text/xml", "application/xml", "text/html")
+
+# Decision 0001 L413, landed by amendment B4: "every attachment enumerated by
+# its owner's source record gets a row". For a regulations.gov document that
+# enumeration is `fileFormats`, the FLAT packing the decision's *Per-kind
+# packing* section names -- and a flat list is a list of RENDITIONS of one
+# attachment, not a list of attachments, so one row groups them under one
+# `attachmentId` and each format becomes a sub-row.
+ATTACHMENT_MEDIA_TYPES: Mapping[str, str] = {
+    "htm": "text/html",
+    "html": "text/html",
+    "pdf": "application/pdf",
+    "rtf": "application/rtf",
+    "txt": "text/plain",
+    "xml": "text/xml",
+}
+UNKNOWN_ATTACHMENT_MEDIA_TYPE = "application/octet-stream"
+# The source supplies no per-attachment identifier for a document's own content
+# file, so the identity is the owner-scoped ordinal the decision names as the
+# fallback. One flat enumeration is one attachment, so the ordinal is zero.
+FLAT_ATTACHMENT_IDENTITY = "0"
+OWNER_BODY_RENDITION = "owner-body-rendition"
+ATTACHMENT_NOT_PRESERVED = "no-preserved-copy"
+UNMAPPED_FORMAT = "unmapped-rendition-format"
 
 
 class BuildRefusal(Exception):
@@ -395,8 +435,15 @@ def _extract(payload: bytes, media_type: str, floors: RetentionFloorRegistry) ->
     except VisibleTextError as error:
         raise BuildRefusal(FAILED, error.reason_code, error.reason) from error
     try:
+        # Amendment B5: both sides whitespace-normalized. The raw denominator
+        # counted the publisher's pretty-print indentation -- 48-60% of a
+        # Federal Register XML rendition -- as content the parser had failed to
+        # keep, and refused nine documents that extract completely.
         measured = floors.admit(
-            DOCUMENT_BODY, media_type, retained=len(visible.content), source=len(payload)
+            DOCUMENT_BODY,
+            media_type,
+            retained=normalized_byte_size(visible.content),
+            source=normalized_byte_size(payload),
         )
     except RetentionFloorError as error:
         raise BuildRefusal(FAILED, error.reason_code, error.reason) from error
@@ -564,6 +611,7 @@ class BuildInputs:
 
     catalog_id: str
     catalog_digest: str
+    selected_source_set_digest: str
     items: Sequence[Mapping[str, Any]]
     captures: Mapping[str, Mapping[str, Any]]
     floors: RetentionFloorRegistry
@@ -605,6 +653,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
     report = BuildReport()
     dispositions: list[dict[str, Any]] = []
     documents: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = []
     nodes: list[dict[str, Any]] = []
     segments: list[dict[str, Any]] = []
     policies: dict[tuple[str, str], dict[str, Any]] = {}
@@ -637,6 +686,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
                     segmenter,
                     partitions,
                     documents,
+                    attachments,
                     nodes,
                     segments,
                     policies,
@@ -662,7 +712,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
     rows_by_role = {
         "source-dispositions": dispositions,
         "documents": documents,
-        "attachments": [],
+        "attachments": attachments,
         "comments": [],
         "structural-nodes": nodes,
         "search-segments": segments,
@@ -765,8 +815,12 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
     mapping = framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined)
     selected = [row for row in dispositions if row["catalogDisposition"] == SELECTED]
     content = {
-        "attachmentSetDigest": framed_set_digest("docspec-attachment-set/2", ()),
-        "commentSetDigest": framed_set_digest("docspec-comment-set/2", ()),
+        # Amendment B1: every row-typed digest frames its members' FULL LOGICAL
+        # ROWS. The rows go in as this bundle carries them; `framed_set_digest`
+        # applies the exclusion set, so the builder and the gate cannot disagree
+        # about what a `/3` digest covers.
+        "attachmentSetDigest": framed_set_digest("docspec-attachment-set/3", attachments),
+        "commentSetDigest": framed_set_digest("docspec-comment-set/3", ()),
         "corpusId": CORPUS_ID,
         "counts": derive_counts(
             dispositions,
@@ -775,19 +829,20 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             segments,
             member_count=len(members),
             total_member_byte_size=sum(member["byteSize"] for member in members),
-            attachments=[],
+            attachments=attachments,
             comments=[],
             generation=DOCSPEC_GENERATION,
         ),
         "coverage": derive_coverage(
-            dispositions, documents, segments, key=TEXT_BODY_KEY, attachments=[], comments=[]
+            dispositions,
+            documents,
+            segments,
+            key=TEXT_BODY_KEY,
+            attachments=attachments,
+            comments=[],
         ),
         "documentVersionSetDigest": framed_set_digest(
-            "docspec-document-version-set/2",
-            _unique(
-                ({"documentVersionId": document["documentVersionId"]} for document in documents),
-                "documentVersionId",
-            ),
+            "docspec-document-version-set/3", documents
         ),
         "globalManifest": {
             "byteSize": (bundle / manifest_key).stat().st_size,
@@ -810,22 +865,28 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             "schemaSetId": f"urn:spicy:schema-set:v1:{canonical_sha256(schemas)}",
             "schemas": schemas,
         },
-        "segmentSetDigest": framed_set_digest(
-            "docspec-segment-set/2",
-            _unique(({"segmentId": segment["segmentId"]} for segment in segments), "segmentId"),
-        ),
-        "selectedSourceSetDigest": framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, joined),
+        "segmentSetDigest": framed_set_digest("docspec-segment-set/3", segments),
+        # Amendment B6: DERIVED from the pinned catalog's items, never projected
+        # from this release's own rows -- a consumer holding the pinned bytes
+        # runs the identical function over them and must get this value, which a
+        # projection of rows they do not have could never give them.
+        "selectedSourceSetDigest": inputs.selected_source_set_digest,
         "sourceCatalog": {
             "catalogDigest": inputs.catalog_digest,
             "catalogId": inputs.catalog_id,
         },
+        "sourceDispositionSetDigest": framed_set_digest(
+            "docspec-source-disposition-set/3", dispositions
+        ),
         "sourceDocumentMappingDigest": mapping,
+        "structuralNodeSetDigest": framed_set_digest("docspec-structural-node-set/3", nodes),
         "textBodySetDigest": framed_set_digest(
-            "docspec-text-body-set/2",
+            TEXT_BODY_SET_DOMAIN,
             _unique(
                 (
-                    {"textBodyId": document[TEXT_BODY_KEY], "textKind": document["textKind"]}
-                    for document in documents
+                    {"textBodyId": row[TEXT_BODY_KEY], "textKind": row["textKind"]}
+                    for row in (*documents, *attachments)
+                    if row[TEXT_BODY_KEY] is not None
                 ),
                 "textBodyId",
             ),
@@ -855,6 +916,7 @@ def _carry(
     segmenter: BoundedSegmenter,
     partitions: _Partitions,
     documents: list[dict[str, Any]],
+    attachments: list[dict[str, Any]],
     nodes: list[dict[str, Any]],
     segments: list[dict[str, Any]],
     policies: dict[tuple[str, str], dict[str, Any]],
@@ -899,19 +961,20 @@ def _carry(
     segments.extend(document_segments)
 
     row["documentVersionId"] = version_id
+    capture_record = {
+        "acquiredAt": _instant(capture.acquired_at),
+        "acquisitionStartedAt": _instant(capture.acquisition_started_at),
+        "byteSize": len(payload),
+        "candidateRenditionId": candidate["candidateId"],
+        "catalogReleaseId": inputs.catalog_id,
+        "expectedSha256": candidate.get("expectedDigest"),
+        "mediaType": media_type,
+        "objectKey": rendition_key,
+        "sha256": rendition_sha256,
+    }
     documents.append(
         {
-            "capture": {
-                "acquiredAt": _instant(capture.acquired_at),
-                "acquisitionStartedAt": _instant(capture.acquisition_started_at),
-                "byteSize": len(payload),
-                "candidateRenditionId": candidate["candidateId"],
-                "catalogReleaseId": inputs.catalog_id,
-                "expectedSha256": candidate.get("expectedDigest"),
-                "mediaType": media_type,
-                "objectKey": rendition_key,
-                "sha256": rendition_sha256,
-            },
+            "capture": capture_record,
             "documentId": document_id,
             "documentVersionId": version_id,
             "excludedRanges": [item.to_dict() for item in bounded.excluded],
@@ -930,6 +993,7 @@ def _carry(
             "textKind": DOCUMENT_BODY,
         }
     )
+    attachments.extend(_attachment_rows(attributes, body_id, capture_record))
     report.adopted_runs[capture.run] = report.adopted_runs.get(capture.run, 0) + 1
     key = format_key(media_type)
     report.retention.setdefault(key, []).append(measured)
@@ -937,6 +1001,102 @@ def _carry(
         (DOCUMENT_BODY, key),
         _policy(DOCUMENT_BODY, key, inputs, segmenter),
     )
+
+
+def _attachment_rows(
+    attributes: Mapping[str, Any] | None,
+    owner_body_id: str,
+    capture: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Enumerate one document's attachments from its preserved source record.
+
+    Decision 0001 L413 requires a row for every attachment the owner's source
+    record enumerates, and the build fails when an enumerated attachment has NO
+    row -- never when a row honestly says it could not be captured. The first
+    mint hardcoded an empty member and its manifest claimed compliance anyway;
+    this is that claim made true (amendment B4).
+
+    **The rendition that IS the owning body's rendition is enumerated and
+    `text-excluded`**, which is amendment B4's resolution of an ambiguity the
+    decision genuinely left: it says attachments are "renditions of a member"
+    and that every enumerated attachment gets a row, and never says whether the
+    rendition the release already carries as the document body counts twice.
+    Extracting it again would put the same text in the corpus twice; omitting it
+    would break the enumeration rule. It is matched by media type AND by the
+    size the source declared, so a same-typed but different file is not mistaken
+    for the body.
+
+    Nothing here can block the build. Attachments are not members of U -- they
+    are renditions of a member -- so a rendition nobody preserved gets an honest
+    row with a null capture and a reason, and the mint goes on.
+    """
+
+    formats = (attributes or {}).get("fileFormats")
+    if not isinstance(formats, list) or not formats:
+        return []
+    attachment_id = stable_urn(
+        "document-release-attachment",
+        {
+            "attachmentIdentity": FLAT_ATTACHMENT_IDENTITY,
+            "ownerKind": DOCUMENT_BODY,
+            "ownerTextBodyId": owner_body_id,
+        },
+        version=2,
+    )
+    renditions: list[dict[str, Any]] = []
+    for ordinal, published in enumerate(formats):
+        if not isinstance(published, Mapping):
+            continue
+        token = str(published.get("format") or "").strip().casefold()
+        media_type = ATTACHMENT_MEDIA_TYPES.get(token, UNKNOWN_ATTACHMENT_MEDIA_TYPE)
+        if media_type == capture["mediaType"] and published.get("size") == capture["byteSize"]:
+            renditions.append(
+                {
+                    "attachmentDisposition": "text-excluded",
+                    "capture": dict(capture),
+                    "mediaType": media_type,
+                    "reason": (
+                        "These bytes are the owning document body's own rendition; its text is "
+                        "carried once, on the document row."
+                    ),
+                    "reasonCode": OWNER_BODY_RENDITION,
+                    "renditionOrdinal": ordinal,
+                }
+            )
+            continue
+        renditions.append(
+            {
+                "attachmentDisposition": "source-unavailable",
+                "capture": None,
+                "mediaType": media_type,
+                "reason": (
+                    f"The source enumerated a {token or 'untyped'} rendition and the pinned "
+                    "checkpoint preserved no copy of it."
+                ),
+                "reasonCode": (
+                    ATTACHMENT_NOT_PRESERVED
+                    if media_type != UNKNOWN_ATTACHMENT_MEDIA_TYPE
+                    else UNMAPPED_FORMAT
+                ),
+                "renditionOrdinal": ordinal,
+            }
+        )
+    if not renditions:
+        return []
+    return [
+        {
+            "attachmentId": attachment_id,
+            "attachmentIdentity": FLAT_ATTACHMENT_IDENTITY,
+            "attachmentTitle": None,
+            "excludedRanges": [],
+            "ownerKind": DOCUMENT_BODY,
+            "ownerTextBodyId": owner_body_id,
+            "renditions": renditions,
+            "representation": None,
+            TEXT_BODY_KEY: None,
+            "textKind": "attachment",
+        }
+    ]
 
 
 def _attributes(
@@ -1094,6 +1254,37 @@ def _quantiles(values: Sequence[str]) -> dict[str, str]:
     }
 
 
+def selected_source_set_digest_from_pin(items: Iterable[Mapping[str, Any]]) -> str:
+    """Derive `selectedSourceSetDigest` from the PINNED catalog's own items.
+
+    Amendment B6. The first mint derived this from the release's own document
+    rows, so a consumer holding the pinned catalog bytes -- the one thing *The
+    catalog pin* says the value exists to let them check -- could not reproduce
+    it. This is the function that "runs the identical function over the
+    identical pinned bytes" names: one exported entry point, over the pin, under
+    the CATALOG's own `docspec-selected-source-set/1` domain and record shape.
+
+    The domain covers **every item the snapshot carries whose `state` is
+    `active`** -- the catalog's own vocabulary for what it selected. `deleted`
+    and `excluded` items are, by that vocabulary, not selected. `documentId` is
+    derived from the item exactly as a document row derives it, so the pairing
+    is a function of the pinned bytes and of this rule, and of nothing else.
+
+    It is deliberately NOT the release's own selection: a release refuses items
+    the catalog selected, and its refusals are carried by
+    `data/source-dispositions.jsonl` and named by `sourceDispositionSetDigest`.
+    """
+
+    return framed_set_digest(
+        SELECTED_SOURCE_SET_DOMAIN,
+        [
+            {"documentId": _document_id(item), "sourceItemId": item["itemId"]}
+            for item in items
+            if item.get("state") == "active"
+        ],
+    )
+
+
 def sample_universe(items: Sequence[Mapping[str, Any]], size: int) -> list[Mapping[str, Any]]:
     """A deterministic stride through the catalog, so a sample spans its sources."""
 
@@ -1131,6 +1322,10 @@ def mint(
     inputs = BuildInputs(
         catalog_id=pinned.catalog_id,
         catalog_digest=pinned.catalog_digest,
+        # Over the WHOLE pinned catalog, never over the sample: a development
+        # sample changes which documents this release carries and changes
+        # nothing about what the pinned catalog selected.
+        selected_source_set_digest=selected_source_set_digest_from_pin(catalog_items(pinned)),
         items=items,
         captures=captures,
         floors=RetentionFloorRegistry(load_floors()),
@@ -1174,6 +1369,7 @@ def mint(
         "refusals": dict(sorted(report.refusals.items())),
         "releaseId": root["releaseId"],
         "retention": {key: _quantiles(values) for key, values in sorted(report.retention.items())},
+        "attachmentAccounting": content["counts"]["attachmentAccounting"],
         "setDigests": {
             name: content[name]
             for name in sorted(
@@ -1183,7 +1379,9 @@ def mint(
                     "documentVersionSetDigest",
                     "segmentSetDigest",
                     "selectedSourceSetDigest",
+                    "sourceDispositionSetDigest",
                     "sourceDocumentMappingDigest",
+                    "structuralNodeSetDigest",
                     "textBodySetDigest",
                 )
             )

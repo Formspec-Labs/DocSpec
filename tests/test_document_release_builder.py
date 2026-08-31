@@ -33,6 +33,7 @@ from tools.build_document_release import (
     BuildInputs,
     build_release,
     sample_universe,
+    selected_source_set_digest_from_pin,
 )
 from tools.fr_mirrulations_pin import PreservedCapture, corpus_root
 
@@ -100,6 +101,13 @@ POLICIES: dict[tuple[str, str], dict[str, str]] = {
         "extractorId": "docspec.html-visible-text/v1",
     },
 }
+
+
+# The same carrier as PAGE with different text, so the `attached` item's blob is
+# a different file from the `vanished` item's -- content-addressed storage would
+# otherwise materialize one for the other and the absence under test would not
+# be an absence.
+ATTACHED_PAGE = PAGE.replace(b"Notice of a proposed", b"Order approving a proposed")
 
 
 def _item(
@@ -177,9 +185,73 @@ def _capture(
     )
 
 
+def _with_metadata_sibling(
+    item: dict[str, Any], directory: Path, body: bytes
+) -> PreservedCapture:
+    """Give one item the regulations.gov metadata rendition its body's siblings live in.
+
+    The real Mirrulations half of the pinned catalog supplies each document as a
+    markup rendition AND an `application/json` metadata rendition, and the
+    attachment enumeration Decision 0001 L413 requires is inside the latter, as
+    `fileFormats`. The mini universe carries one item of that shape so the
+    enumeration is exercised on the packing it actually reads.
+    """
+
+    item["candidates"].append(
+        {
+            "candidateId": "metadata-json",
+            "expectedDigest": None,
+            "expectedSize": None,
+            "locator": "metadata.json",
+            "mediaType": "application/json",
+            "metadata": {"publicSourceUrl": "https://example.gov/metadata.json"},
+        }
+    )
+    payload = json.dumps(
+        {
+            "data": {
+                "attributes": {
+                    "fileFormats": [
+                        {
+                            "fileUrl": "https://downloads.example.gov/content.pdf",
+                            "format": "pdf",
+                            "size": 286891,
+                        },
+                        {
+                            "fileUrl": "https://downloads.example.gov/content.htm",
+                            "format": "htm",
+                            "size": len(body),
+                        },
+                    ],
+                    "postedDate": "2020-01-02T05:00:00Z",
+                    "agencyId": "SEC",
+                    "documentType": "Notice",
+                    "title": "A document published in two formats",
+                },
+                "id": "SEC-2020-0001-0001",
+            }
+        },
+        sort_keys=True,
+    ).encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()
+    path = directory / f"{digest}.bin"
+    path.write_bytes(payload)
+    return PreservedCapture(
+        source_item_id=item["itemId"],
+        candidate_id="metadata-json",
+        media_type="application/json",
+        digest=f"sha256:{digest}",
+        byte_size=len(payload),
+        path=path,
+        acquired_at="2026-08-06T12:00:00Z",
+        acquisition_started_at=None,
+        run="full",
+    )
+
+
 @pytest.fixture
 def mini(tmp_path: Path) -> dict[str, Any]:
-    """A five-item universe: one ordinary, one starved, one gone, one multibyte, one JSON."""
+    """A six-item universe: ordinary, starved, gone, multibyte, JSON-only, attached."""
 
     blobs = tmp_path / "preserved"
     blobs.mkdir()
@@ -189,6 +261,7 @@ def mini(tmp_path: Path) -> dict[str, Any]:
         ("vanished", PAGE, "text/html", "rendition-html", False, False),
         ("multibyte", MULTIBYTE, "text/xml", "federal-register-xml", True, False),
         ("jsononly", b"{}", "application/json", "metadata-json", True, True),
+        ("attached", ATTACHED_PAGE, "text/html", "rendition-html", True, False),
     ]
     items: list[dict[str, Any]] = []
     captures: dict[str, dict[str, Any]] = {}
@@ -205,6 +278,10 @@ def mini(tmp_path: Path) -> dict[str, Any]:
         captures[item["itemId"]] = {
             candidate_id: _capture(blobs, item, payload, materialize=materialize)
         }
+        if number == "attached":
+            captures[item["itemId"]]["metadata-json"] = _with_metadata_sibling(
+                item, blobs, payload
+            )
     return {"items": items, "captures": captures}
 
 
@@ -212,6 +289,7 @@ def _inputs(mini: dict[str, Any], **overrides: Any) -> BuildInputs:
     values: dict[str, Any] = {
         "catalog_id": CATALOG_ID,
         "catalog_digest": CATALOG_DIGEST,
+        "selected_source_set_digest": selected_source_set_digest_from_pin(mini["items"]),
         "items": mini["items"],
         "captures": mini["captures"],
         "floors": _floors(),
@@ -477,19 +555,62 @@ def test_a_universe_sample_strides_the_catalog_rather_than_truncating_it() -> No
 # ─── the empty members Decision 0001 requires to be present ────────────
 
 
-def test_the_attachment_and_comment_members_are_present_and_empty(
+def test_the_comment_member_is_present_and_empty(
     tmp_path: Path, mini: dict[str, Any]
 ) -> None:
+    """No pinned catalog selects a comment into U, so a zero is written."""
+
     bundle = tmp_path / "release"
     root, _ = build_release(bundle, _inputs(mini))
-    assert (bundle / "data" / "attachments.jsonl").read_bytes() == b""
     assert (bundle / "data" / "comments.jsonl").read_bytes() == b""
-    per_kind = root["content"]["counts"]["perKind"]
-    assert per_kind["attachment"]["textBodies"] == 0
-    assert per_kind["comment"]["textBodies"] == 0
+    assert root["content"]["counts"]["perKind"]["comment"]["textBodies"] == 0
     manifest = json.loads((bundle / "manifests" / "global.json").read_text(encoding="utf-8"))
     roles = {member["role"] for member in manifest["members"]}
     assert {"attachments", "comments"} <= roles
+
+
+def test_every_enumerated_attachment_gets_a_row_and_an_honest_disposition(
+    tmp_path: Path, mini: dict[str, Any]
+) -> None:
+    """Decision 0001 L413, landed by amendment B4.
+
+    The mini universe's items enumerate a `pdf` and an `htm` in the source
+    record their preserved metadata rendition carries, exactly as the real
+    corpus's Mirrulations half does. One row groups both -- the flat packing is
+    a list of RENDITIONS, not of attachments -- and the `htm` that IS the owning
+    body's rendition is `text-excluded` rather than extracted a second time.
+    """
+
+    bundle = tmp_path / "release"
+    root, _ = build_release(bundle, _inputs(mini))
+    attachments = _rows(bundle, "attachments")
+    documents = {row["textBodyId"] for row in _rows(bundle, "documents")}
+
+    assert attachments
+    for row in attachments:
+        assert row["ownerKind"] == "document-body"
+        assert row["ownerTextBodyId"] in documents
+        assert row["attachmentTitle"] is None
+        # Enumerated, not extracted: no rendition of a document's own content
+        # file becomes a second text body.
+        assert row["textBodyId"] is None
+        assert row["representation"] is None
+        assert [rendition["renditionOrdinal"] for rendition in row["renditions"]] == list(
+            range(len(row["renditions"]))
+        )
+        for rendition in row["renditions"]:
+            assert rendition["attachmentDisposition"] in {"text-excluded", "source-unavailable"}
+            assert rendition["reasonCode"] and rendition["reason"]
+    accounting = root["content"]["counts"]["attachmentAccounting"]
+
+    assert accounting["attachmentRows"] == len(attachments)
+    assert accounting["textCaptured"] == 0
+    assert accounting["extractionFailed"] == 0
+    assert accounting["textExcluded"] + accounting["sourceUnavailable"] == accounting[
+        "renditionRows"
+    ]
+    assert root["content"]["counts"]["perKind"]["attachment"]["textBodies"] == 0
+    assert verify_document_release(bundle).valid
 
 
 # ─── the real corpus, bounded ──────────────────────────────────────────

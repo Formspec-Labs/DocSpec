@@ -15,6 +15,7 @@ from docspec.processing.retention_floors import (
     BELOW_FLOOR,
     FLOOR_UNDECLARED,
     UNMEASURABLE,
+    NORMALIZED_VISIBLE_TEXT_FRACTION,
     VISIBLE_TEXT_FRACTION,
     RetentionFloor,
     RetentionFloorError,
@@ -130,9 +131,45 @@ def test_the_committed_calibration_declares_a_floor_for_every_format_this_mint_r
     floors = load_floors()
     assert set(floors) == {(DOCUMENT_BODY, "application/xml"), (DOCUMENT_BODY, "text/html")}
     for key, declared in floors.items():
-        assert declared.unit == VISIBLE_TEXT_FRACTION
+        # Amendment B5: the markup unit is the whitespace-normalized ratio now.
+        # `visible-text-fraction` survives only in the sealed predecessor corpus
+        # and in the superseded first mint.
+        assert declared.unit == NORMALIZED_VISIBLE_TEXT_FRACTION
+        assert declared.unit != VISIBLE_TEXT_FRACTION
         assert greater(declared.observed_minimum, declared.value), key
         assert declared.population
+
+
+def test_every_committed_floor_is_measured_whole_and_off_the_corpus_it_gates() -> None:
+    """Amendment B5's three honesty rules, read off the committed receipt.
+
+    `observedMinimum` over the FULL population, the population disjoint from the
+    gated corpus both by digest and by document id, and both ratios recorded per
+    document -- the raw one because normalization hides content whose meaning is
+    carried by its whitespace.
+    """
+
+    from tools.calibrate_retention_floors import load_receipt
+
+    receipt = load_receipt()
+
+    assert receipt["metric"]["metricId"] == NORMALIZED_VISIBLE_TEXT_FRACTION
+    for measurement in receipt["measurements"]:
+        population = measurement["population"]
+        assert population["coverage"] == "full-population"
+        assert population["measuredCount"] == population["documentCount"]
+        assert len(measurement["documents"]) == population["documentCount"]
+        assert measurement["observedMinimum"] == measurement["distribution"]["minimum"]
+        assert measurement["observedMinimum"] == min(
+            row["retention"].ljust(10, "0") for row in measurement["documents"]
+        ).rstrip("0")
+        assert population["disjointness"]["sharedRenditionDigests"] == 0
+        assert population["disjointness"]["sharedSourceDocuments"] == 0
+        for row in measurement["documents"]:
+            assert row["retention"] and row["rawRetention"]
+        # The floors are calibrated where they are NOT gating: the pinned corpus
+        # contributes no document to either population.
+        assert "fr-mirrulations" not in population["populationId"]
 
 
 def test_every_committed_floor_names_the_extractor_that_measured_it() -> None:
