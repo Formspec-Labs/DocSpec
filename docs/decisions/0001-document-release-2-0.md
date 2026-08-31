@@ -1045,6 +1045,18 @@ is not thereby unchecked: it is carried by `data/source-dispositions.jsonl`,
 bound by `counts`, by the join receipt, by the bijection, and — under B1 — by
 `sourceDispositionSetDigest`.
 
+**Correction, 2026-08-31: that consequence is false for this format, and C3
+below withdraws it.** The premise — "the pinned catalog is not in the bundle" —
+is true of the catalog *bytes* and false of the *fact the digest names*.
+`data/source-dispositions.jsonl` carries one row per member of `U` with both
+fields the domain's record shape takes, so a bundle-only reader can reconstruct
+the members and reproduce the value. Measured against
+`output/document-release-10k-v2`, framing the 10,000 disposition rows as
+`{sourceItemId, documentId}` under `docspec-selected-source-set/1` reproduces the
+declared `sha256:7357b47d…b252cab` byte for byte. The derivation rule above is
+unchanged and still right; what was wrong was the claim that it left the value
+uncheckable. See **C3**.
+
 ### B7 — the standing obligations come due
 
 **`RELEASE_FORMAT_VERSION` becomes `"2.0"`** (`src/docspec/domain/release.py:22`).
@@ -1138,3 +1150,263 @@ format a bundle-only reader cannot recompute.
 | Name | `$id` / form |
 | --- | --- |
 | retention-floor calibration receipt | `urn:docspec:schema:retention-floor-calibration:2.0` |
+
+## Amendment 2026-08-31 (third): the post-gate defects and the re-gate refinements
+
+The second mint — `output/document-release-10k-v2`, releaseId
+`urn:docspec:document-release:v2:28a276a3…`, receipt
+`docs/history/2026-08-31-document-release-10k-v2-mint-receipt.json` — **passed**
+its blind re-gate. Two defects were found after it, one by its first real
+consumer, and the re-gate's PASS verdict carried five refinements. Seven
+rulings; the mint that comes out of them is a third one, and the second is
+superseded rather than patched, for the same reason the first was: the record
+changes, so the name does.
+
+*All rulings below: Accepted-by: agent (delegated scope: owner 2026-08-30
+"execute phase 1... you for human-less decision making"; post-gate findings and
+re-gate refinements, 2026-08-31).*
+
+### C1 — a processing policy is keyed by the media type the rows carry, and the gate stops collapsing
+
+**Finding, by a consumer.** SpicySearch's document-release mapper refused the v2
+bundle: *"document release declares no processing policy for
+('document-body', 'text/xml')"*. It is right. All 6,408 Federal Register rows
+carry `capture.mediaType: "text/xml"`, and the release declares its XML policy
+under `mediaType: "application/xml"` — the *format key*
+(`processing/retention_floors.py:100`), which is what a floor is looked up by, not
+what a row says. The HTML half matched only because `text/html` happens to be its
+own format key. The gate missed it because it collapsed both sides before
+comparing (`_validate_processing_policies`'s `govern`), so the one check that
+could have caught the mismatch was written to be blind to it.
+
+**Ruling, two halves.**
+
+1. **`processingPolicies[].mediaType` is the media type the capture record
+   carries, verbatim.** Not the format key. The array is a per-`(textKind,
+   mediaType)` table a consumer joins its rows against, and a table keyed on a
+   value no row holds is a table nobody can join. Where two spellings of one
+   family are both present — `text/xml` and `application/xml` — the release
+   declares **two rows** with the same extractor, the same segmenter, and the
+   same floor. That is not duplication: it is the table saying, of each media
+   type it carries, which policy governed it.
+2. **The gate matches literally.** `(textKind, capture.mediaType)` must appear in
+   the declared set as written. No collapse on either side.
+
+**One mapping, stated in one place.** A *floor* is a property of a parser and a
+document family, so it is calibrated and looked up under the collapsed **format
+key**; a *policy row* is a property of the bytes a release carries, so it is
+declared under the **media type**. The one function that relates them is
+`retention_floors.format_key`, and it is called on the lookup side only — by
+`RetentionFloorRegistry.floor_for`, and by the builder resolving which calibrated
+extractor governs a media type. The calibration receipt keeps its `formatKey`
+label and its `population` ids unchanged; a policy row simply names its own media
+type beside them. Nothing else in this format collapses a media type.
+
+**No new diagnostic code.** Amendment B4 already assigns this rule to
+`invalid.retention-floor` — "a text body whose `(textKind, mediaType)` has **no**
+governing `processingPolicies` entry" — and the code is right; what was wrong was
+that the check answered a question about format keys while the rule is about
+media types. The invalid corpus gains a fixture for that arm
+(`invalid/ungoverned-media-type`), which it never had: the sealed
+`invalid/retention-floor` case exercised the floor-invariant arm alone, so the
+governance arm shipped untested and shipped broken.
+
+### C2 — a preserved copy the checkpoint's record layer lost is still rung one
+
+**Finding.** Both mints refused 1,909 items with `capture.no-preserved-copy`. For
+**194** of them that refusal is false: the campaign's own capture stores record a
+successful capture, and for **193** of those the refused `rendition-html`
+candidate's bytes exist **byte-identically** in the pinned checkpoint's blob
+store already. What the checkpoint lacks is not the bytes; it is the *record
+layer row* that points at them — `preserved_captures` reads
+`runs/*/records/record-layers/*.json` (`tools/fr_mirrulations_pin.py:321-368`),
+and for these items no such row came across in the salvage. The builder asked the
+only index it had, was told nothing, and refused honestly. It was refusing an
+index gap and calling it an absent document.
+
+**Ruling: the supply ladder gains a rung *inside* rung one, not below it.**
+"Adopt and verify: preserved-copy is rung one" is unchanged and is not weakened.
+A **rescue map** is a second *pointer* into the same pinned blob store — a
+record-layer supplement, not a second source of bytes — and the builder consults
+it **only where the checkpoint's own records lack a pointer for that
+`(sourceItemId, candidateId)`**. Three rules make it a rescue rather than a
+fetch, and all three are mandatory:
+
+1. **The bytes must already be in the pinned checkpoint.** A map row naming a
+   blob the checkpoint does not hold supplies nothing and is ignored. The builder
+   makes no request, and a rescue that had to reach for bytes would be a fetch
+   wearing another name.
+2. **The digest check is mandatory and identical.** A rescued blob is read
+   through the same `PreservedCapture.read` every preserved copy is: size against
+   the record, sha256 against the record, and then the catalog's own
+   `expectedDigest` where it declared one. **A mismatch is a capture failure**
+   — disposition `unavailable`, reason `capture.preserved-copy-unverifiable` —
+   **never a reason to fetch.**
+3. **The map is pinned by path and digest** in the same in-repo pin machinery the
+   corpus is (`fixtures/fr-mirrulations-10k-v1/pins.json`), re-read and
+   re-digested on every load, so a mint says which map it read and a map edited
+   after the fact fails at the pin rather than changing a release downstream.
+
+**Which file is the map, and why not the one the finding names.** The finding's
+`detail-194.json` is the curated list — 194 ids, their candidates, digests, byte
+sizes, media types, and the verified `missing_in_checkpoint: []`. It carries **no
+acquisition clock**, and `captureRecord.acquiredAt` is required and non-nullable
+(restamp item 14, deviation row 10: the clock stays in the record). A rescue from
+that file would have to **invent** a wall clock for 387 captures, which is
+precisely the kind of manufactured provenance this decision refuses everywhere
+else. The pinned map is therefore
+`_rescue-2026-08-31-qualification-store-map/full-store-map-v2.jsonl.gz`, the
+complete campaign capture-disposition map extracted from the same stores, whose
+rows carry the **record layer's own shape** — `sourceItemId`, `candidateId`,
+`disposition`, `acquiredAt`, `mediaType`, and a `blob` of
+`{digest, byteSize, locator}`. Its `acquiredAt` is the campaign's recorded
+`2026-08-06T12:00:00Z`, the same value every one of the checkpoint's own 9,774
+records carries; it records no start instant, so `acquisitionStartedAt` is
+**null**, which is what a nullable field is for. Measured, the complete map under
+rules 1 and 2 reduces to **exactly** the finding's 194 items and 387 blobs and to
+nothing else — no new pointer for any already-captured item — so the broader file
+buys the clock and costs no scope.
+
+**Expected effect, recorded before the mint so the mint can be checked against
+it:** 193 items move from `unavailable` to `selected` (the 194th,
+`SEC-2020-1944-0001`, captured `metadata-json` only and stays honestly
+unavailable); selected 8,091 → **8,284**, unavailable 1,909 → **1,716**, failed
+**0**. **Floors apply to the rescued 193 exactly as to everyone else** — no
+tuning, no exemption; a rescued document that fails its floor is refused with its
+reason like any other. The 193 also carry preserved `metadata-json`, so their
+attachments are enumerated like every other Mirrulations document's and
+`counts.attachmentAccounting` grows accordingly; the accounting is **recomputed
+from the rows**, never asserted. The mint receipt records the correction — how
+many refusals from v1 and v2 it reverses — and the pinned map's digest.
+
+### C3 — the gate recomputes `selectedSourceSetDigest` from the dispositions
+
+**Finding.** B6's recorded consequence — "the gate no longer recomputes this
+digest", because "a portable verifier reads one bundle and the pinned catalog is
+not in it" — is **empirically false for this format**. The catalog's *bytes* are
+not in the bundle; the *members the domain digests* are.
+`data/source-dispositions.jsonl` carries one row per member of `U` with both
+fields `docspec-selected-source-set/1` takes, and framing those rows reproduces
+`output/document-release-10k-v2`'s declared value byte for byte. The rationale is
+corrected in place above.
+
+**Ruling.** The gate cross-checks it, under `invalid.set-digest` with the other
+set digests. The dispositions-derived member set is
+`{sourceItemId, documentId}` over **every disposition row whose `reasonCode` is
+neither `catalog.state-deleted` nor `catalog.state-excluded`** — which is exactly
+B6's "every item the pinned snapshot carries whose `state` is `active`", read off
+the two codes that mean the catalog itself did not select the item. Every other
+refusal in the vocabulary is *this producer's*, made about an item the catalog
+did select, so it stays in the set. That keying is only sound because C4 closes
+the vocabulary in the gate: an invented code could otherwise move an item in or
+out of this set silently.
+
+**What this does and does not change.** It does not change how the value is
+*derived* — B6's rule stands, the builder still derives it over the pinned
+catalog's items through one exported function, and a consumer holding the pinned
+bytes still reproduces it that way. It adds a **second, independent** route to
+the same value from bundle bytes alone, and requires the two to agree. A release
+whose declared attestation disagrees with its own membership rows is now refused
+rather than believed.
+
+### C4 — the reason-code vocabularies are enforced, not merely written down
+
+**Finding.** B7 closed two vocabularies "in this decision, not in the schemas",
+with the schemas keeping their bounded patterns as the outer bound — and nothing
+read the lists. They were a convention. The proof is
+`unmapped-rendition-format` (`tools/build_document_release.py:202`), a code the
+builder can emit that sits outside B7's two-item attachment list and that nobody
+noticed, because nothing was looking.
+
+**Ruling, three parts.**
+
+1. **`unmapped-rendition-format` joins the closed attachment list.** It is a
+   legitimate refusal — a source enumerating a rendition in a format this
+   producer maps to no media type — and it is unreachable in this corpus only
+   because every `fileFormats` entry in it is `pdf` or `htm`. A code that is
+   right and unreached is kept and declared, not deleted to make a list tidy.
+2. **The gate enforces both lists**, under the codes that already own the rows: a
+   source-disposition `reasonCode` outside its list is `invalid.disposition`, an
+   attachment rendition `reasonCode` outside its list is
+   `invalid.attachment-accounting`. The schemas' kebab-case and dotted patterns
+   stay exactly where they are, as the **outer** bound; what the gate adds is the
+   inner one. Enforcement is the **docspec generation's alone** — the twenty
+   sealed predecessor bundles were minted under no such list and are not
+   retroactively judged by it. Each list gets an invalid-corpus fixture, so "the
+   vocabulary is closed" is a thing that fails a test rather than a thing that is
+   said.
+3. **The source-disposition list gains the four codes the sealed conformance
+   corpus projects.** The 10k builder *mints* its codes and every one is B7's;
+   the conformance corpus's producer *projects* its pinned catalog's own
+   `selection.reasonCode` verbatim, and that catalog's four codes —
+   `policy.document-type-out-of-scope`, `source.withdrawn-after-publication`,
+   `source.rendition-forbidden`, `source.metadata-unparsable` — are none of
+   B7's. Both behaviours are correct for their producer, and a closed list that
+   cannot spell the only sealed corpus in existence is a list the gate cannot
+   turn on. They join as a named second group, and no real mint emits them:
+
+```text
+codes a pinned catalog projects verbatim (the conformance corpus's)
+policy.document-type-out-of-scope   the catalog's selection policy excluded it
+source.withdrawn-after-publication  the publisher withdrew it and serves a tombstone
+source.rendition-forbidden          every candidate rendition was refused by the source
+source.metadata-unparsable          the source metadata record could not be parsed
+```
+
+```text
+attachment rendition reason codes, complete (superseding B7's two)
+owner-body-rendition       these bytes are the owning body's own rendition (B4)
+no-preserved-copy          the checkpoint preserved no copy of this rendition
+unmapped-rendition-format  the source named a format this producer maps to no media type
+```
+
+B7's closing sentence is unchanged and now has teeth: **a code outside these
+lists is a code somebody has to add to this amendment first.**
+
+### C5 — the calibration receipt recomputes its distribution from its own rows
+
+**Finding.** `validate_receipt` enforced `observedMinimum ==
+distribution.minimum` and three count agreements, and never recomputed the
+minimum — or the median, the quantiles, or either raw statistic — from the
+document rows sitting beside them. A receipt whose `distribution` and
+`observedMinimum` agreed with each other and with **neither** of its 993 rows was
+expressible, and B5's whole point was that a self-consistent statistic is exactly
+what went wrong the first time.
+
+**Ruling.** `validate_receipt` recomputes, from `measurement.documents` alone:
+every row's own `retention` and `rawRetention` from its own four byte counts, the
+whole `distribution` object, `lowestDocument`, and the floor `value` the margin
+rule implies. Each must equal what the receipt declares. The receipt keeps its
+declared fields — a reader should not have to recompute to read one — but nothing
+in it is believed.
+
+### C6 — the conformance corpus finally mints a comment
+
+Amendment B4 required the sealed valid bundle to "finally **carry** an attachment
+and comments"; it landed the attachment and left `data/comments.jsonl` at zero
+bytes, so one of the three record types this decision sealed had still never been
+minted by anything. The valid bundle now carries **one comment row** with its own
+capture, representation, structural node, segment, index slices, and per-kind
+policy, and the whole corpus is resealed around it — every tree digest, every
+count, every declared diagnostic set. Nothing structural prevented it: the
+grown-bundle test had already proved a comment can live in a bundle without being
+a selected member of `U`, and what was missing was the sealing, not the
+possibility.
+
+### C7 — floors sit outside the identity preimage, and what binds them instead
+
+For the record, since nothing above says it and a reader could reasonably assume
+otherwise: **`documentStateDigest` does not bind the governing retention floor.**
+The floors ride in `processingPolicies`, and *Policy digests (avoid-lesson A7)*
+put that member "**beside** the identity preimage, not inside it" — B1's
+`logical_content` excludes it by name — so re-calibrating a floor over unchanged
+text does not rename the corpus, which is the behaviour that section chose
+deliberately. What binds a floor is therefore not the release's name: it is the
+**calibration receipt**, sealed by
+`urn:docspec:schema:retention-floor-calibration:2.0` and validated before the
+builder may read a floor from it, and the **`processingPolicies` member itself**,
+which is inside `content`, inside the global manifest, digest-pinned like every
+other member, and cross-checked row by row by the gate. A reader asking "which
+floor governed this text?" reads the member; a reader asking "is this the same
+corpus?" reads the name; the two questions are deliberately not the same
+question.
