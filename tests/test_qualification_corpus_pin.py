@@ -21,6 +21,8 @@ from tools.fr_mirrulations_pin import (
     PIN_FORMAT_VERSION,
     PIN_IDENTITY_KIND,
     PIN_PATH,
+    RESCUE_MAP_FILE,
+    RESCUE_MAP_ROLE,
     RUN_NAMES,
     QualificationCorpusError,
     corpus_root,
@@ -95,3 +97,83 @@ def test_a_member_that_differs_from_its_pin_is_refused(tmp_path: Path) -> None:
         target.write_bytes(b"{}")
     with pytest.raises(QualificationCorpusError, match="differs in size from its pin"):
         load_pin(root=tmp_path)
+
+
+# ─── Amendment C2: the rescue map is pinned like every other input ─────
+
+
+def test_the_committed_pin_carries_the_rescue_map_by_path_and_digest() -> None:
+    """A mint says which map it read, and a map edited after the fact fails here."""
+
+    rescue = _pin()["rescueMap"]
+
+    assert set(rescue) == {"byteSize", "digest", "mediaType", "path", "role"}
+    assert rescue["path"] == RESCUE_MAP_FILE
+    assert rescue["role"] == RESCUE_MAP_ROLE
+    assert rescue["digest"].startswith("sha256:")
+    assert len(rescue["digest"].removeprefix("sha256:")) == 64
+    assert rescue["byteSize"] > 0
+    # And it is inside the identity, so repointing it renames the pin.
+    content = {name: value for name, value in _pin().items() if name != "pinsId"}
+    assert "rescueMap" in content
+
+
+@corpus
+def test_a_rescue_map_that_differs_from_its_pin_is_refused(tmp_path: Path) -> None:
+    """The same refusal every other pinned byte gets, for the same reason."""
+
+    rescue = tmp_path / "rescue"
+    rescue.mkdir()
+    (rescue / _pin()["rescueMap"]["path"]).write_bytes(b"not the map")
+
+    with pytest.raises(QualificationCorpusError, match="rescue map differs"):
+        load_pin(rescue=rescue)
+
+
+@corpus
+def test_a_pin_declaring_a_rescue_map_that_is_not_here_refuses_rather_than_shrugs(
+    tmp_path: Path,
+) -> None:
+    """A mint that quietly dropped 193 documents would be a silent difference.
+
+    The corpus root is absent-tolerant because a machine without it must skip;
+    a rescue map the pin DECLARES and cannot read is different -- continuing
+    without it would mint a smaller release under the same procedure, under the
+    same pin, and say nothing.
+    """
+
+    empty = tmp_path / "rescue"
+    empty.mkdir()
+
+    with pytest.raises(QualificationCorpusError, match="rescue map .* is absent"):
+        load_pin(rescue=empty)
+
+
+@corpus
+def test_the_pinned_rescue_map_reduces_to_the_index_gap_and_nothing_more() -> None:
+    """Amendment C2's two rules, measured against the real checkpoint.
+
+    A map row is adopted only where the checkpoint's own record layer has no
+    pointer AND the blob is already in the checkpoint. Under those two rules the
+    campaign's complete store map reduces to exactly the index gap -- 194 items,
+    387 blobs, no second pointer for anything already captured -- which is what
+    makes the broader file a rescue rather than a widening.
+    """
+
+    from tools.fr_mirrulations_pin import RESCUE_MAP, preserved_captures, rescued_captures
+
+    pinned = load_pin()
+    preserved = preserved_captures(pinned)
+    rescued = rescued_captures(pinned, preserved)
+
+    assert len(rescued) == 194
+    assert sum(len(by_candidate) for by_candidate in rescued.values()) == 387
+    # Nothing the checkpoint already had.
+    assert not set(rescued) & set(preserved)
+    kinds: dict[str, int] = {}
+    for by_candidate in rescued.values():
+        for candidate_id, capture in by_candidate.items():
+            assert capture.origin == RESCUE_MAP
+            assert capture.acquisition_started_at is None
+            kinds[candidate_id] = kinds.get(candidate_id, 0) + 1
+    assert kinds == {"metadata-json": 194, "rendition-html": 193}

@@ -15,6 +15,7 @@ that runs for real.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -298,6 +299,13 @@ def _inputs(mini: dict[str, Any], **overrides: Any) -> BuildInputs:
         "published_at": "2026-08-30T00:00:00Z",
     }
     values.update(overrides)
+    # Derived from whatever universe this call actually mints over, so a test
+    # that widens `items` does not silently declare a pin digest describing a
+    # different universe -- the disagreement amendment C3's gate now refuses.
+    if "selected_source_set_digest" not in overrides:
+        values["selected_source_set_digest"] = selected_source_set_digest_from_pin(
+            values["items"]
+        )
     return BuildInputs(**values)
 
 
@@ -730,3 +738,260 @@ def test_the_real_mint_is_reproducible_from_the_same_pinned_bytes(tmp_path: Path
     second = mint(tmp_path / "two", universe_sample=40, published_at="2027-02-02T02:02:02Z")
     assert first["documentStateDigest"] == second["documentStateDigest"]
     assert first["setDigests"] == second["setDigests"]
+
+
+# ─── Amendment C2: the rescue map, hermetically ────────────────────────
+#
+# Nothing below touches the pinned checkpoint. The tree these tests write IS the
+# shape `rescued_captures` reads -- a content-addressed blob store under
+# `runs/<run>/blobs/objects/sha256/<xx>/<digest>`, and a gzipped store map whose
+# rows carry the record layer's own fields -- so the path under test is the one
+# that runs for real, over bytes this test can state exactly.
+
+
+RESCUE_NUMBER = "rescued-01"
+# The catalog's own item id, which is what a store-map row keys on.
+RESCUE_ITEM = f"urn:docspec:qualification:federal-register:{RESCUE_NUMBER}"
+
+
+def _checkpoint(tmp_path: Path, blobs: dict[str, bytes], *, run: str = "full") -> Path:
+    """A checkpoint-shaped blob store holding exactly the bytes given, by digest."""
+
+    root = tmp_path / "checkpoint"
+    for digest, payload in blobs.items():
+        path = root / "runs" / run / "blobs" / "objects" / "sha256" / digest[:2] / digest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    return root
+
+
+def _rescue_map(tmp_path: Path, rows: list[dict[str, Any]]) -> Path:
+    path = tmp_path / "store-map.jsonl.gz"
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+    return path
+
+
+def _map_row(
+    item_id: str, candidate_id: str, media_type: str, digest: str, size: int, *, run: str = "full"
+) -> dict[str, Any]:
+    return {
+        "capturedFiles": [
+            {
+                "acquiredAt": "2026-08-06T12:00:00Z",
+                "blob": {
+                    "byteSize": size,
+                    "digest": f"sha256:{digest}",
+                    "locator": f"objects/sha256/{digest[:2]}/{digest}",
+                    "mediaType": media_type,
+                },
+                "candidateId": candidate_id,
+                "disposition": "captured",
+                "mediaType": media_type,
+                "sourceItemId": item_id,
+            }
+        ],
+        "change": "added",
+        "origin": "member",
+        "run": run,
+        "sourceItemId": item_id,
+    }
+
+
+def _pinned(root: Path, rescue_map: Path) -> Any:
+    from tools.fr_mirrulations_pin import PinnedCorpus
+
+    return PinnedCorpus(
+        pins_id="urn:docspec:qualification-corpus-pin:v1:" + "0" * 64,
+        root=root,
+        campaign_id="test",
+        tier="full",
+        catalog_id=CATALOG_ID,
+        catalog_digest=CATALOG_DIGEST,
+        catalog_locator="catalog.json",
+        catalog_bytes=b"{}",
+        items_path=root / "items.jsonl",
+        draw_digests={},
+        rescue_map_path=rescue_map,
+        rescue_map_digest=hashlib.sha256(rescue_map.read_bytes()).hexdigest(),
+    )
+
+
+def _rescued_item(payload: bytes) -> dict[str, Any]:
+    """One catalog item whose only body rendition is the rescued one."""
+
+    return _item(
+        RESCUE_NUMBER,
+        media_type="text/html",
+        candidate_id="rendition-html",
+        # No expected digest, exactly as the Mirrulations half of the real
+        # catalog carries: the rescue is verified against the acquisition
+        # record's digest, which is the check that always applies.
+        digest=None,
+        size=len(payload),
+    )
+
+
+def test_the_rescue_map_names_a_preserved_copy_the_record_layer_missed(tmp_path: Path) -> None:
+    """Amendment C2's whole claim: the bytes were there and the index was not."""
+
+    from tools.fr_mirrulations_pin import RESCUE_MAP, rescued_captures
+
+    payload = PAGE
+    digest = hashlib.sha256(payload).hexdigest()
+    root = _checkpoint(tmp_path, {digest: payload})
+    pinned = _pinned(
+        root,
+        _rescue_map(
+            tmp_path,
+            [_map_row(RESCUE_ITEM, "rendition-html", "text/html", digest, len(payload))],
+        ),
+    )
+
+    found = rescued_captures(pinned, {})
+
+    assert set(found) == {RESCUE_ITEM}
+    capture = found[RESCUE_ITEM]["rendition-html"]
+    assert capture.origin == RESCUE_MAP
+    assert capture.read() == payload
+    # The map records no acquisition START, so the row says null rather than
+    # borrowing one from anywhere.
+    assert capture.acquisition_started_at is None
+    assert capture.acquired_at == "2026-08-06T12:00:00Z"
+
+
+def test_a_rescued_item_is_selected_and_carried_like_any_preserved_copy(
+    tmp_path: Path, mini: dict[str, Any]
+) -> None:
+    """The rescue is a pointer, so what it points at is carried by the ordinary path."""
+
+    from tools.fr_mirrulations_pin import rescued_captures
+
+    payload = PAGE
+    digest = hashlib.sha256(payload).hexdigest()
+    root = _checkpoint(tmp_path, {digest: payload})
+    pinned = _pinned(
+        root,
+        _rescue_map(
+            tmp_path,
+            [_map_row(RESCUE_ITEM, "rendition-html", "text/html", digest, len(payload))],
+        ),
+    )
+    item = _rescued_item(payload)
+    item_id = item["itemId"]
+    captures = dict(mini["captures"])
+    for owner, by_candidate in rescued_captures(pinned, captures).items():
+        captures.setdefault(owner, {}).update(by_candidate)
+
+    bundle = tmp_path / "release"
+    build_release(
+        bundle,
+        _inputs(mini, items=[*mini["items"], item], captures=captures),
+    )
+
+    row = next(
+        entry for entry in _rows(bundle, "source-dispositions") if entry["sourceItemId"] == item_id
+    )
+    assert row["catalogDisposition"] == "selected"
+    assert row["documentVersionId"] is not None
+    document = next(
+        entry for entry in _rows(bundle, "documents") if entry["sourceItemId"] == item_id
+    )
+    assert document["capture"]["sha256"] == digest
+    assert document["capture"]["byteSize"] == len(payload)
+    assert document["capture"]["acquisitionStartedAt"] is None
+    assert verify_document_release(bundle).valid
+
+
+def test_a_rescued_blob_that_is_not_what_the_map_records_is_a_capture_failure(
+    tmp_path: Path, mini: dict[str, Any]
+) -> None:
+    """A mismatch is a capture failure, never a reason to fetch.
+
+    The map names a digest, the store holds other bytes under that name, and the
+    ordinary adopt-and-verify check refuses them. The item is `unavailable` with
+    `capture.preserved-copy-unverifiable`; nothing reaches for the real bytes.
+    """
+
+    from tools.fr_mirrulations_pin import rescued_captures
+
+    payload = PAGE
+    claimed = hashlib.sha256(payload).hexdigest()
+    # Under the name of `payload`'s digest, different bytes.
+    root = _checkpoint(tmp_path, {claimed: ATTACHED_PAGE})
+    pinned = _pinned(
+        root,
+        _rescue_map(
+            tmp_path,
+            [_map_row(RESCUE_ITEM, "rendition-html", "text/html", claimed, len(payload))],
+        ),
+    )
+    item = _rescued_item(payload)
+    captures = dict(mini["captures"])
+    for owner, by_candidate in rescued_captures(pinned, captures).items():
+        captures.setdefault(owner, {}).update(by_candidate)
+
+    bundle = tmp_path / "release"
+    build_release(
+        bundle,
+        _inputs(mini, items=[*mini["items"], item], captures=captures),
+    )
+
+    row = next(
+        entry
+        for entry in _rows(bundle, "source-dispositions")
+        if entry["sourceItemId"] == item["itemId"]
+    )
+    assert row["catalogDisposition"] == "unavailable"
+    assert row["reasonCode"] == "capture.preserved-copy-unverifiable"
+    assert row["documentVersionId"] is None
+    assert verify_document_release(bundle).valid
+
+
+def test_the_rescue_map_never_supplies_bytes_the_checkpoint_does_not_hold(
+    tmp_path: Path,
+) -> None:
+    """Rule two: a rescue that had to reach for bytes would be a fetch."""
+
+    from tools.fr_mirrulations_pin import rescued_captures
+
+    absent = hashlib.sha256(b"never preserved").hexdigest()
+    pinned = _pinned(
+        _checkpoint(tmp_path, {}),
+        _rescue_map(tmp_path, [_map_row(RESCUE_ITEM, "rendition-html", "text/html", absent, 15)]),
+    )
+
+    assert rescued_captures(pinned, {}) == {}
+
+
+def test_the_rescue_map_never_overrides_a_pointer_the_checkpoint_already_has(
+    tmp_path: Path,
+) -> None:
+    """Rule one: it fills an index gap, it does not compete with the index."""
+
+    from tools.fr_mirrulations_pin import PreservedCapture, rescued_captures
+
+    payload = PAGE
+    digest = hashlib.sha256(payload).hexdigest()
+    root = _checkpoint(tmp_path, {digest: payload})
+    pinned = _pinned(
+        root,
+        _rescue_map(
+            tmp_path,
+            [_map_row(RESCUE_ITEM, "rendition-html", "text/html", digest, len(payload))],
+        ),
+    )
+    recorded = PreservedCapture(
+        source_item_id=RESCUE_ITEM,
+        candidate_id="rendition-html",
+        media_type="text/html",
+        digest=f"sha256:{digest}",
+        byte_size=len(payload),
+        path=root / "elsewhere",
+        acquired_at="2026-08-06T12:00:00Z",
+        acquisition_started_at="2026-08-21T17:02:39.728217Z",
+        run="full",
+    )
+
+    assert rescued_captures(pinned, {RESCUE_ITEM: {"rendition-html": recorded}}) == {}

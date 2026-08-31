@@ -29,6 +29,16 @@ failure** with a disposition and a reason -- never a reason to fetch. That is
 the whole posture: the checkpoint is the source of bytes, and the release says
 so or says why it could not.
 
+**The rescue map is a second POINTER, not a second rung** (amendment C2). The
+salvage left behind some of the record layer that names the checkpoint's own
+blobs, and the first two mints refused 194 items for `no-preserved-copy` while
+the checkpoint held 387 of their blobs all along -- an index gap reported as an
+absent document. The pinned rescue map supplies the missing rows, and is
+consulted ONLY where the checkpoint's own records have no pointer for that
+`(sourceItemId, candidateId)`. The bytes must already be in the checkpoint, the
+digest check is the same mandatory one, and a mismatch is a capture failure
+rather than a reason to fetch. Nothing about rung one moved.
+
 The disposition mapping, recorded rather than implied
 -----------------------------------------------------
 Decision 0001 says the release projects "the catalog disposition ... verbatim".
@@ -134,6 +144,7 @@ from docspec.processing.visible_text import (
     VisibleText,
     VisibleTextError,
 )
+from tools.fr_mirrulations_pin import RESCUE_MAP
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -630,6 +641,12 @@ class BuildReport:
     retention: dict[str, list[str]] = field(default_factory=dict)
     max_segment_bytes: int = 0
     adopted_runs: dict[str, int] = field(default_factory=dict)
+    # Which index named each adopted copy: the checkpoint's own record layer, or
+    # the pinned rescue map (amendment C2). Both are preserved copies in the same
+    # store; the distinction is carried so a mint can say how much of its corpus
+    # it recovered rather than leaving the correction to be inferred.
+    adopted_origins: dict[str, int] = field(default_factory=dict)
+    rescued_items: set[str] = field(default_factory=set)
 
     def record(self, disposition: str, reason_code: str | None = None) -> None:
         self.dispositions[disposition] = self.dispositions.get(disposition, 0) + 1
@@ -995,6 +1012,9 @@ def _carry(
     )
     attachments.extend(_attachment_rows(attributes, body_id, capture_record))
     report.adopted_runs[capture.run] = report.adopted_runs.get(capture.run, 0) + 1
+    report.adopted_origins[capture.origin] = report.adopted_origins.get(capture.origin, 0) + 1
+    if capture.origin == RESCUE_MAP:
+        report.rescued_items.add(item["itemId"])
     # Amendment C1: keyed by the media type the row carries, both here and in
     # the receipt's retention quantiles, so every figure a reader joins is keyed
     # the way the rows are.
@@ -1329,7 +1349,12 @@ def mint(
     """
 
     from tools.calibrate_retention_floors import load_floors, load_policies
-    from tools.fr_mirrulations_pin import catalog_items, load_pin, preserved_captures
+    from tools.fr_mirrulations_pin import (
+        catalog_items,
+        load_pin,
+        preserved_captures,
+        rescued_captures,
+    )
 
     started = time.monotonic()
     pinned = load_pin()
@@ -1339,6 +1364,14 @@ def mint(
         items = sample_universe(items, universe_sample)
         run_id = f"{run_id}-sample-{len(items)}"
     captures = preserved_captures(pinned)
+    # Amendment C2: the pinned rescue map, consulted only where the checkpoint's
+    # own record layer named nothing. `rescued_captures` never overrides a
+    # checkpoint record and never returns a blob the checkpoint does not hold, so
+    # the merge below is an index union over one store rather than a fallback to
+    # another source.
+    rescued = rescued_captures(pinned, captures)
+    for item_id, by_candidate in rescued.items():
+        captures.setdefault(item_id, {}).update(by_candidate)
     inputs = BuildInputs(
         catalog_id=pinned.catalog_id,
         catalog_digest=pinned.catalog_digest,
@@ -1368,6 +1401,7 @@ def mint(
     verified = time.monotonic()
     content = root["content"]
     receipt = {
+        "adoptedFromIndex": dict(sorted(report.adopted_origins.items())),
         "adoptedFromRun": dict(sorted(report.adopted_runs.items())),
         "bundle": {
             "memberCount": content["counts"]["memberCount"],
@@ -1395,6 +1429,16 @@ def mint(
         "processingPolicies": content["processingPolicies"],
         "refusals": dict(sorted(report.refusals.items())),
         "releaseId": root["releaseId"],
+        # Amendment C2, recorded rather than left to be inferred from a count
+        # that moved: which map was read, and how much of this corpus exists
+        # because of it. `correctedRefusals` is the number of items the first two
+        # mints refused for `capture.no-preserved-copy` and this one carries.
+        "rescueMap": {
+            "correctedRefusals": len(report.rescued_items),
+            "digest": f"sha256:{pinned.rescue_map_digest}",
+            "path": pinned.rescue_map_path.name,
+            "renditionsAdopted": report.adopted_origins.get(RESCUE_MAP, 0),
+        },
         "retention": {key: _quantiles(values) for key, values in sorted(report.retention.items())},
         "attachmentAccounting": content["counts"]["attachmentAccounting"],
         "setDigests": {
