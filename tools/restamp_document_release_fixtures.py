@@ -71,6 +71,7 @@ from docspec.adapters.document_release_verify import (
     REPRESENTATION_MEDIA_TYPE,
     SCHEMA_FILES,
     SCHEMA_IDS,
+    FRAMED_SET_DOMAINS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
     TEXT_BODY_SET_DOMAIN,
@@ -81,6 +82,7 @@ from docspec.adapters.document_release_verify import (
     derive_coverage,
     framed_set_digest,
     stamp_root,
+    verify_document_release,
 )
 from docspec.document_release_support import (
     canonical_json_bytes,
@@ -325,6 +327,21 @@ DOCUMENT_BLOCKS: dict[str, list[dict[str, Any]]] = {
 }
 
 
+# One enumerated attachment carries its own text. The blocks are the fixture's,
+# laid out by the same machinery a document body is: an attachment is a text
+# body under the document body's rules unchanged -- one text pipeline, three
+# kinds -- so a corpus that lays it out differently would be testing two
+# pipelines and proving neither.
+DOCUMENT_BLOCKS["FR-2026-04188-appendix"] = [
+    {"kind": "heading", "text": "Appendix A: Monitoring Network Summary", "depth": 0},
+    {
+        "kind": "paragraph",
+        "text": "The Commonwealth operates fourteen visibility monitoring sites under the Interagency Monitoring of Protected Visual Environments network.",
+        "depth": 1,
+    },
+]
+
+
 def _build_document_bytes(document_id: str) -> dict[str, Any]:
     """Lay out one document's representation and rendition, deriving all offsets."""
 
@@ -519,6 +536,23 @@ def _unique(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
+def _set_digest(domain: str, rows: list[dict[str, Any]]) -> str:
+    """The domain's digest over the SET these rows denote.
+
+    Amendment B1's guard: a `/3` digest refuses a repeated key rather than
+    absorbing it, so a bundle mutated to carry a duplicate identity has no
+    computable set digest at all. This builder still has to write one, and the
+    honest value is the digest of the set the rows denote -- so the duplicate
+    case reports `invalid.duplicate-identity` for the rule it breaks AND
+    `invalid.set-digest`, because a release carrying a repeated identity cannot
+    truthfully name its own members. Both are recorded in the case's expected
+    diagnostics rather than hidden by a deduplicating digest.
+    """
+
+    key = FRAMED_SET_DOMAINS[domain].key
+    return framed_set_digest(domain, _unique(list(rows), key))
+
+
 def _bucket_counts(index_rows: list[dict[str, Any]], family: str) -> dict[str, int]:
     """How many text bodies share each partition member, keyed by object key."""
 
@@ -673,7 +707,6 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         row["sourceItemId"] for row in dispositions if row["catalogDisposition"] == "selected"
     ]
     version_ids = [document["documentVersionId"] for document in documents]
-    segment_ids = [segment["segmentId"] for segment in segments]
     joined = _unique(
         [
             {
@@ -694,21 +727,26 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         TEXT_BODY_KEY,
     )
     mapping = framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined)
+    # Amendment B6: derived over the PINNED catalog's items, never projected
+    # from this release's own rows. The fixture's pinned catalog carries six
+    # items and this release selects two, so the two values differ -- which is
+    # the point: a consumer holding the pinned bytes reproduces this one, and
+    # could not reproduce a projection of rows it does not have.
+    pin_selected = framed_set_digest(
+        SELECTED_SOURCE_SET_DOMAIN,
+        [
+            {"documentId": item["documentId"], "sourceItemId": item["sourceItemId"]}
+            for item in _catalog_items()
+        ],
+    )
 
     content = {
-        # Restamp item 7's three new set digests. This corpus carries no
-        # attachment and no comment, so both stream the EMPTY set -- written,
-        # never omitted, over rows that are present and empty rather than absent.
-        "attachmentSetDigest": framed_set_digest(
-            "docspec-attachment-set/2",
-            _unique(
-                [{"attachmentId": row["attachmentId"]} for row in attachments], "attachmentId"
-            ),
-        ),
-        "commentSetDigest": framed_set_digest(
-            "docspec-comment-set/2",
-            _unique([{"commentId": row["commentId"]} for row in comments], "commentId"),
-        ),
+        # Amendment B1: every row-typed digest frames its members' FULL LOGICAL
+        # ROWS under a `/3` domain. The rows go in as this bundle carries them;
+        # `framed_set_digest` applies the exclusion set, so a fixture and the
+        # gate cannot disagree about what a `/3` digest covers.
+        "attachmentSetDigest": _set_digest("docspec-attachment-set/3", attachments),
+        "commentSetDigest": _set_digest("docspec-comment-set/3", comments),
         "corpusId": CORPUS_ID,
         "counts": derive_counts(
             dispositions,
@@ -729,12 +767,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             attachments=attachments,
             comments=comments,
         ),
-        "documentVersionSetDigest": framed_set_digest(
-            "docspec-document-version-set/2",
-            _unique(
-                [{"documentVersionId": value} for value in version_ids], "documentVersionId"
-            ),
-        ),
+        "documentVersionSetDigest": _set_digest("docspec-document-version-set/3", documents),
         "globalManifest": {
             "byteSize": (bundle / manifest_key).stat().st_size,
             "manifestId": "global:global",
@@ -754,16 +787,13 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             "schemaSetId": f"urn:spicy:schema-set:v1:{canonical_sha256(schemas)}",
             "schemas": schemas,
         },
-        "segmentSetDigest": framed_set_digest(
-            "docspec-segment-set/2",
-            _unique([{"segmentId": value} for value in segment_ids], "segmentId"),
-        ),
-        # Derived from the pin under the catalog's own domain, never projected:
-        # the pinned snapshot carries no such field (restamp item 9).
-        "selectedSourceSetDigest": framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, joined),
+        "segmentSetDigest": _set_digest("docspec-segment-set/3", segments),
+        "selectedSourceSetDigest": pin_selected,
         "sourceCatalog": dict(state["catalog"]),
+        "sourceDispositionSetDigest": _set_digest("docspec-source-disposition-set/3", dispositions),
         "sourceDocumentMappingDigest": mapping,
-        "textBodySetDigest": framed_set_digest("docspec-text-body-set/2", text_bodies),
+        "structuralNodeSetDigest": _set_digest("docspec-structural-node-set/3", nodes),
+        "textBodySetDigest": framed_set_digest(TEXT_BODY_SET_DOMAIN, text_bodies),
     }
     root = {
         "annotations": {
@@ -853,7 +883,14 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
         representation_key, representation_sha = _place(
             "text", "text", body_id, laid_out["representation"]
         )
-        retention_ratios.append((len(laid_out["representation"]), len(laid_out["rendition"])))
+        # Amendment B5: both sides whitespace-normalized, so the fixture's
+        # declared unit is true of the number beside it.
+        retention_ratios.append(
+            (
+                normalized_byte_size(laid_out["representation"]),
+                normalized_byte_size(laid_out["rendition"]),
+            )
+        )
 
         rendition = next(
             candidate
@@ -925,6 +962,144 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
             _search_segments(body_id, laid_out["blocks"], document_nodes, rendition_sha)
         )
 
+    # ─── Attachments (amendment B4) ───────────────────────────────────
+    #
+    # Decision 0001 requires a row for every attachment the owner's source
+    # record enumerates, and the pinned catalog's `candidateRenditions` are that
+    # enumeration here. Two rows, three renditions, three of the four
+    # dispositions:
+    #
+    #   FR-2026-03227  the html rendition IS the owning body's own rendition,
+    #                  so it is enumerated and `text-excluded` rather than
+    #                  extracted a second time (B4's resolution of the decision's
+    #                  own ambiguity); its pdf sibling was never fetched. The row
+    #                  carries no text and says so with a null `textBodyId`.
+    #   FR-2026-04188  an appendix published as html and as pdf; the html was
+    #                  captured and extracted, the pdf was not fetched. The row
+    #                  IS a text body, with its own representation, structure,
+    #                  and segments under the document body's rules unchanged.
+    #
+    # The first row's `text-excluded` capture names bytes that belong to ANOTHER
+    # body's slice of a shared bucket, which is exactly the case amendment B4's
+    # digest-addressed index lookup exists for. `extraction-failed` stays at
+    # zero, as it does in the real mint: a rendition that was fetched and then
+    # refused needs bytes in a bucket no text body owns, and the index has no key
+    # for one.
+    attachments: list[dict[str, Any]] = []
+    documents_by_id = {document["documentId"]: document for document in documents}
+
+    def _attachment_id(owner_body_id: str, identity: str) -> str:
+        return stable_urn(
+            "document-release-attachment",
+            {
+                "attachmentIdentity": identity,
+                "ownerKind": DOCUMENT_BODY,
+                "ownerTextBodyId": owner_body_id,
+            },
+            version=2,
+        )
+
+    def _unfetched(ordinal: int, media_type: str) -> dict[str, Any]:
+        return {
+            "attachmentDisposition": "source-unavailable",
+            "capture": None,
+            "mediaType": media_type,
+            "reason": "The source enumerated this rendition and no copy of it was preserved.",
+            "reasonCode": "no-preserved-copy",
+            "renditionOrdinal": ordinal,
+        }
+
+    owner = documents_by_id["FR-2026-03227"]
+    attachments.append(
+        {
+            "attachmentId": _attachment_id(owner[TEXT_BODY_KEY], "2026-03227.html"),
+            "attachmentIdentity": "2026-03227.html",
+            "attachmentTitle": None,
+            "excludedRanges": [],
+            "ownerKind": DOCUMENT_BODY,
+            "ownerTextBodyId": owner[TEXT_BODY_KEY],
+            "renditions": [
+                {
+                    "attachmentDisposition": "text-excluded",
+                    "capture": dict(owner["capture"]),
+                    "mediaType": "text/html",
+                    "reason": (
+                        "These bytes are the owning document body's own rendition; its text is "
+                        "carried once, on the document row."
+                    ),
+                    "reasonCode": "owner-body-rendition",
+                    "renditionOrdinal": 0,
+                },
+                _unfetched(1, "application/pdf"),
+            ],
+            "representation": None,
+            TEXT_BODY_KEY: None,
+            "textKind": "attachment",
+        }
+    )
+
+    owner = documents_by_id["FR-2026-04188"]
+    appendix_id = _attachment_id(owner[TEXT_BODY_KEY], "2026-04188-appendix")
+    laid_out = _build_document_bytes("FR-2026-04188-appendix")
+    rendition_key, rendition_sha = _place("blob", "blobs", appendix_id, laid_out["rendition"])
+    representation_key, representation_sha = _place(
+        "text", "text", appendix_id, laid_out["representation"]
+    )
+    retention_ratios.append(
+        (
+            normalized_byte_size(laid_out["representation"]),
+            normalized_byte_size(laid_out["rendition"]),
+        )
+    )
+    attachment_nodes = _structural_nodes(
+        "FR-2026-04188-appendix", appendix_id, laid_out["blocks"], "attachment"
+    )
+    nodes.extend(attachment_nodes)
+    segments.extend(
+        _search_segments(
+            appendix_id, laid_out["blocks"], attachment_nodes, rendition_sha, "attachment"
+        )
+    )
+    attachments.append(
+        {
+            "attachmentId": appendix_id,
+            "attachmentIdentity": "2026-04188-appendix",
+            "attachmentTitle": None,
+            "excludedRanges": [],
+            "ownerKind": DOCUMENT_BODY,
+            "ownerTextBodyId": owner[TEXT_BODY_KEY],
+            "renditions": [
+                {
+                    "attachmentDisposition": "text-captured",
+                    "capture": {
+                        "acquiredAt": ACQUIRED_AT,
+                        "acquisitionStartedAt": None,
+                        "byteSize": len(laid_out["rendition"]),
+                        "candidateRenditionId": "2026-04188-appendix.html",
+                        "catalogReleaseId": catalog["catalogId"],
+                        "expectedSha256": None,
+                        "mediaType": "text/html",
+                        "objectKey": rendition_key,
+                        "sha256": rendition_sha,
+                    },
+                    "mediaType": "text/html",
+                    "renditionOrdinal": 0,
+                },
+                _unfetched(1, "application/pdf"),
+            ],
+            "representation": {
+                "byteSize": len(laid_out["representation"]),
+                "encoding": "utf-8",
+                "mediaType": REPRESENTATION_MEDIA_TYPE,
+                "objectKey": representation_key,
+                "representationId": f"{appendix_id}#representation",
+                "sha256": representation_sha,
+            },
+            TEXT_BODY_KEY: appendix_id,
+            "textKind": "attachment",
+        }
+    )
+
     for object_key, payload in sorted(partitions.items()):
         path = bundle / object_key
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -955,7 +1130,7 @@ def build_valid_bundle(bundle: Path) -> dict[str, Any]:
     index_rows.sort(key=lambda row: (row["family"], row["textBodyId"]))
 
     state = {
-        "attachments": [],
+        "attachments": attachments,
         "catalog": catalog,
         "comments": [],
         "dispositions": dispositions,
@@ -990,6 +1165,21 @@ def _state(bundle: Path) -> dict[str, Any]:
     }
 
 
+def _diagnostics(bundle: Path) -> list[dict[str, Any]]:
+    """Every diagnostic one bundle produces, as this build observes it.
+
+    Regenerated from current behaviour rather than written down: a hand-written
+    expectation in a corpus about diagnostics would test the author's memory.
+    What makes it an expectation is that it is SEALED here and asserted
+    thereafter, so the next change to a rule shows up as a diff in this list.
+    """
+
+    return [
+        {"code": issue.code, "path": issue.path}
+        for issue in verify_document_release(bundle).issues
+    ]
+
+
 def build_corpus(fixture_root: Path = FIXTURE_ROOT) -> list[dict[str, Any]]:
     """Rebuild every bundle and return the sealed corpus rows."""
 
@@ -1004,6 +1194,7 @@ def build_corpus(fixture_root: Path = FIXTURE_ROOT) -> list[dict[str, Any]]:
         {
             "bundle": "valid",
             "expectedCode": "valid",
+            "expectedDiagnostics": _diagnostics(valid),
             "expectedPath": None,
             "name": "valid",
             "treeSha256": tree_digest(valid),
@@ -1020,6 +1211,12 @@ def build_corpus(fixture_root: Path = FIXTURE_ROOT) -> list[dict[str, Any]]:
             {
                 "bundle": f"invalid/{name}",
                 "expectedCode": code,
+                # Amendment B3: the WHOLE diagnostic set, not just the primary
+                # code and path. A bundle that emits its expected diagnostic
+                # plus five others used to pass; now every code and path a case
+                # produces is sealed, so a rule that starts firing where it did
+                # not is a test failure rather than a silent widening.
+                "expectedDiagnostics": _diagnostics(bundle),
                 "expectedPath": path,
                 "name": name,
                 "treeSha256": tree_digest(bundle),
@@ -1200,6 +1397,72 @@ def build_corpus(fixture_root: Path = FIXTURE_ROOT) -> list[dict[str, Any]]:
         "segment-set-digest",
         "invalid.set-digest",
         "release.json/content/segmentSetDigest",
+        bundle,
+    )
+
+    bundle = copy_case("version-binding")
+    state = _state(bundle)
+    # The source-issued version moves on BOTH rows that carry it, so the join
+    # still agrees and the only thing left broken is what the document version
+    # id embeds: `documentId@sourceIssuedVersion` (amendment B2).
+    moved = "2026-02-14T09:12:01Z"
+    document = state["documents"][0]
+    for row in state["dispositions"]:
+        if row["documentId"] == document["documentId"]:
+            row["sourceIssuedVersion"] = moved
+    document["sourceIssuedVersion"] = moved
+    _restamp(bundle, state)
+    record(
+        "version-binding",
+        "invalid.version-binding",
+        "data/documents.jsonl/0/documentVersionId",
+        bundle,
+    )
+
+    # ─── The three diagnostics Decision 0001 named and amendment B4 landed ──
+    bundle = copy_case("attachment-accounting")
+    state = _state(bundle)
+    # Sparse rendition ordinals. The schema admits any non-negative integer, so
+    # this is a rule the accounting owns and nothing else can see.
+    state["attachments"][0]["renditions"][1]["renditionOrdinal"] = 2
+    _restamp(bundle, state)
+    record(
+        "attachment-accounting",
+        "invalid.attachment-accounting",
+        "data/attachments.jsonl/0/renditions",
+        bundle,
+    )
+
+    bundle = copy_case("duplicate-attachment")
+    state = _state(bundle)
+    # Two rows, one identity. Under the `/3` domains the physical locators are
+    # excluded, so a digest that deduped would let a multiplicity change pass
+    # unnamed; the digester refuses instead, and the duplicate is reported for
+    # the rule it breaks rather than as a set-digest mismatch.
+    # The row is duplicated whole rather than renamed, so its derived id stays
+    # correct and the case fails for multiplicity alone.
+    state["attachments"].append(json.loads(json.dumps(state["attachments"][0])))
+    _restamp(bundle, state)
+    record(
+        "duplicate-attachment",
+        "invalid.duplicate-identity",
+        "data/attachments.jsonl/2/attachmentId",
+        bundle,
+    )
+
+    bundle = copy_case("retention-floor")
+    state = _state(bundle)
+    # A floor with no margin under the lowest legitimate document: the observed
+    # minimum is dropped to the floor's own value, which is the shape the
+    # superseded first mint's calibration would have had if its sample statistic
+    # had been the population's.
+    floor = state["processingPolicies"][0]["retentionFloor"]
+    floor["observedMinimum"] = floor["value"]
+    _restamp(bundle, state)
+    record(
+        "retention-floor",
+        "invalid.retention-floor",
+        "release.json/content/processingPolicies/0/retentionFloor/observedMinimum",
         bundle,
     )
 

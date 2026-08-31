@@ -231,7 +231,7 @@
       ]
     },
     "captureRecord": {
-      "description": "Links the captured bytes to the exact catalog snapshot, source item, source-issued version, and candidate rendition. Carries the acquisition wall clock, and every preimage excludes it: `documentStateDigest` is taken over `content` alone and no set digest names a capture field, so two byte-identical captures stay one release while the provenance a reader needs survives in the record.",
+      "description": "Links the captured bytes to the exact catalog snapshot, source item, source-issued version, and candidate rendition. Under amendment B1 a `/3` set digest DOES frame this record -- its digests and byte sizes are logical facts about the corpus, and leaving them out is what let a same-length mutation of a body keep its release's name. Exactly two fields stay out of every preimage: `objectKey`, which says where a byte landed and would make a repack a new release, and the acquisition wall clock, which would make two byte-identical captures two releases (deviation row 10). The clock stays in the RECORD, because the provenance a reader needs survives there.",
       "type": "object",
       "additionalProperties": false,
       "required": [

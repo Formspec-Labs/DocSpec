@@ -47,8 +47,10 @@ from docspec.adapters.document_release_verify import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
+    TABULAR_ROLES,
     TEXT_BODY_INDEX_ROLE,
     TEXT_BODY_INDEX_ROW_DEF,
+    TEXT_BODY_SET_DOMAIN,
     TEXT_KINDS,
     bundle_generation,
     canonical_schema_id,
@@ -62,14 +64,17 @@ from docspec.adapters.document_release_verify import (
     verify_document_release,
 )
 from docspec.document_release_support import (
+    LOGICAL_ROW_EXCLUSIONS,
     canonical_json_bytes,
     canonical_sha256,
     file_sha256,
     load_strict_canonical_json,
     load_strict_canonical_jsonl,
     logical_content,
+    logical_row,
     safe_object_key,
     tree_digest,
+    write_canonical_jsonl,
 )
 from docspec.domain.identity import canonical_json_bytes as identity_canonical_json_bytes
 from docspec.domain.storage import partition_bucket
@@ -154,15 +159,74 @@ def test_each_invalid_bundle_fails_with_exactly_the_diagnostic_it_is_named_for(
     assert result.path == case["expectedPath"], [str(issue) for issue in result.issues]
 
 
+# The four diagnostics only a docspec-generation bundle can produce: three are
+# amendment B4's, and the version binding is B2's. The sealed predecessor corpus
+# was minted before any of them existed and is frozen, so it cannot spend a
+# bundle on one.
+DOCSPEC_ONLY_CODES = frozenset(
+    {
+        "invalid.version-binding",
+        "invalid.comment-selection",
+        "invalid.attachment-accounting",
+        "invalid.retention-floor",
+    }
+)
+# The one diagnostic no corpus fixture can reach, recorded as an absence rather
+# than left to be noticed. `invalid.comment-selection` needs a comment, a comment
+# is a member of the requested universe U, and a member of U carries a `selected`
+# disposition row whose `documentVersionId` the sealed source-dispositions schema
+# REQUIRES to be non-null ("A selected item is a document"). Neither pinned
+# catalog -- the fixture's or D1's -- selects a comment, and Decision 0001
+# deferred the U shape for comments deliberately. Minting one here would mean
+# inventing a universe member no catalog carries, which is the class of thing
+# this gate exists to catch. The rule is proved on a grown bundle instead, by
+# `test_two_selection_policies_in_one_release_is_a_comment_selection_defect`.
+UNMINTABLE_CODES = frozenset({"invalid.comment-selection"})
+CODES_BY_GENERATION = {
+    PREDECESSOR_GENERATION: frozenset(DIAGNOSTIC_CODES) - DOCSPEC_ONLY_CODES,
+    DOCSPEC_GENERATION: frozenset(DIAGNOSTIC_CODES) - UNMINTABLE_CODES,
+}
+
+
 @BOTH
-def test_each_corpus_spends_exactly_one_bundle_on_every_diagnostic_code(corpus: Corpus) -> None:
-    """The codes and the invalid bundles are one list, so neither can grow alone."""
+def test_each_corpus_covers_every_diagnostic_code_its_generation_can_produce(
+    corpus: Corpus,
+) -> None:
+    """The codes and the invalid bundles are one list, so neither grows alone."""
 
-    cases = corpus.cases
-    invalid = [case for case in cases if case["expectedCode"] != "valid"]
+    invalid = [case for case in corpus.cases if case["expectedCode"] != "valid"]
+    covered = {case["expectedCode"] for case in invalid}
 
-    assert len(cases) == len(DIAGNOSTIC_CODES) + 1
-    assert sorted(case["expectedCode"] for case in invalid) == sorted(DIAGNOSTIC_CODES)
+    assert covered == CODES_BY_GENERATION[corpus.generation]
+    # One bundle per code, except where a second bundle proves a second rule
+    # under the same code: amendment B1's guard that a `/3` digest refuses a
+    # repeated key needs its own case, and duplicate identity is that code.
+    spent = [case["expectedCode"] for case in invalid]
+    repeated = {code for code in spent if spent.count(code) > 1}
+    assert repeated <= {"invalid.duplicate-identity"}
+
+
+@BOTH
+def test_every_case_seals_the_whole_diagnostic_set_it_produces(corpus: Corpus) -> None:
+    """Amendment B3: all codes and all paths, not just the primary pair.
+
+    A bundle that emitted its expected diagnostic PLUS five others used to pass
+    this corpus, because only the first was asserted. Sealing the whole set
+    means a rule that starts firing where it did not is a test failure rather
+    than a silent widening -- and the sealed lists were regenerated from
+    observed behaviour, then read, rather than written from memory.
+    """
+
+    for case in corpus.cases:
+        expected = case.get("expectedDiagnostics")
+        if expected is None:
+            # The frozen predecessor corpus predates this field and its bytes
+            # are sealed; its primary code and path are asserted elsewhere.
+            assert corpus.generation == PREDECESSOR_GENERATION
+            continue
+        result = verify_document_release(corpus.root / case["bundle"])
+        observed = [{"code": issue.code, "path": issue.path} for issue in result.issues]
+        assert observed == expected, case["name"]
 
 
 @BOTH
@@ -193,22 +257,34 @@ def test_every_bundle_still_digests_to_the_tree_it_was_sealed_under(
     assert tree_digest(corpus.root / case["bundle"]) == case["treeSha256"]
 
 
-def test_the_two_corpora_are_the_same_twenty_cases_under_two_generations() -> None:
+def test_the_docspec_corpus_is_the_sealed_one_restamped_and_then_extended() -> None:
     """The restamp re-minted the corpus; it did not redesign it.
 
-    Same bundle names, same expected codes. The paths differ exactly where the
-    member keys did -- `data/*.json` became `data/*.jsonl`, and one
-    file-per-document member became a partition bucket -- which is what restamp
-    item 11 changed and nothing more.
+    Every predecessor case survives, in order, under the same expected code. The
+    paths differ exactly where the member keys did -- `data/*.json` became
+    `data/*.jsonl`, and one file-per-document member became a partition bucket --
+    which is what restamp item 11 changed and nothing more. What is ADDED is the
+    four cases the amendments' new rules need, and nothing else.
     """
 
-    assert [case["name"] for case in DOCSPEC_CASES] == [case["name"] for case in CASES]
-    assert [case["expectedCode"] for case in DOCSPEC_CASES] == [
+    docspec_names = [case["name"] for case in DOCSPEC_CASES]
+    sealed_names = [case["name"] for case in CASES]
+    added = [name for name in docspec_names if name not in sealed_names]
+
+    assert [name for name in docspec_names if name in sealed_names] == sealed_names
+    assert added == [
+        "version-binding",
+        "attachment-accounting",
+        "duplicate-attachment",
+        "retention-floor",
+    ]
+    kept = [case for case in DOCSPEC_CASES if case["name"] in sealed_names]
+    assert [case["expectedCode"] for case in kept] == [
         case["expectedCode"] for case in CASES
     ]
     moved = {
         case["name"]: (case["expectedPath"], docspec["expectedPath"])
-        for case, docspec in zip(CASES, DOCSPEC_CASES, strict=True)
+        for case, docspec in zip(CASES, kept, strict=True)
         if case["expectedPath"] != docspec["expectedPath"]
     }
     assert moved == {
@@ -583,7 +659,7 @@ def test_every_declared_set_domain_streams_a_framed_members_section() -> None:
             "documentVersionId": "FR-2026-03227@2026-02-14T09:12:00Z",
         },
     ]
-    fields = FRAMED_SET_DOMAINS[SOURCE_TO_DOCUMENT_DOMAIN]
+    fields = FRAMED_SET_DOMAINS[SOURCE_TO_DOCUMENT_DOMAIN].projection
     expected = framed_section_digest(
         SOURCE_TO_DOCUMENT_DOMAIN,
         (
@@ -634,21 +710,91 @@ def test_a_framed_set_digest_refuses_an_undeclared_domain_or_an_untyped_member()
     with pytest.raises(ValueError, match="not a declared"):
         framed_set_digest("docspec-document-set/1", [{"documentId": "FR-1"}])
     with pytest.raises(ValueError, match="must be text"):
-        framed_set_digest("docspec-document-set/2", [{"documentId": None}])
+        framed_set_digest("docspec-comment-set/3", [{"commentId": None}])
 
 
 def test_the_framed_domains_are_exactly_the_ones_the_decision_declares() -> None:
+    """Amendment B1's `/3` table, and the one `/1` domain that stays where it is."""
+
     assert set(FRAMED_SET_DOMAINS) == {
         "docspec-selected-source-set/1",
-        "docspec-document-set/2",
-        "docspec-document-version-set/2",
-        "docspec-text-body-set/2",
-        "docspec-attachment-set/2",
-        "docspec-comment-set/2",
-        "docspec-representation-set/2",
-        "docspec-segment-set/2",
-        "docspec-source-to-document/2",
+        "docspec-source-disposition-set/3",
+        "docspec-document-version-set/3",
+        "docspec-attachment-set/3",
+        "docspec-comment-set/3",
+        "docspec-structural-node-set/3",
+        "docspec-segment-set/3",
+        "docspec-text-body-set/3",
+        "docspec-source-to-document/3",
     }
+    # Exactly one of the two framings, per domain, and every full-row domain
+    # names a record type the exclusion table declares.
+    for domain, spec in FRAMED_SET_DOMAINS.items():
+        assert (spec.record_type is None) != (spec.projection is None), domain
+        if spec.record_type is not None:
+            assert spec.record_type in LOGICAL_ROW_EXCLUSIONS, domain
+
+
+def test_a_three_domain_frames_the_full_logical_row_minus_locators_and_clocks() -> None:
+    """Amendment B1, by construction: the mutation the first mint's gate missed.
+
+    A same-length change to a body's bytes with the physical digest restamped
+    left `documentVersionSetDigest` unmoved under the `/2` domains. Under `/3`
+    it moves, because the row's own content digest is IN the preimage -- while a
+    repack, which changes only where the bytes landed, still leaves it alone.
+    """
+
+    row = {
+        "capture": {
+            "acquiredAt": "2026-08-10T00:00:00Z",
+            "acquisitionStartedAt": None,
+            "objectKey": "blobs/0007",
+            "sha256": "a" * 64,
+        },
+        "documentId": "FR-1",
+        "documentVersionId": "FR-1@2026-01-01T00:00:00Z",
+        "representation": {"objectKey": "text/0007", "sha256": "b" * 64},
+        "sourceMetadata": {"sourceUrl": "https://example.gov/1", "title": "One"},
+    }
+    sealed = framed_set_digest("docspec-document-version-set/3", [row])
+
+    repacked = json.loads(json.dumps(row))
+    repacked["capture"]["objectKey"] = "blobs/0042"
+    repacked["representation"]["objectKey"] = "text/0042"
+    repacked["capture"]["acquiredAt"] = "2027-01-01T00:00:00Z"
+    assert framed_set_digest("docspec-document-version-set/3", [repacked]) == sealed
+
+    for mutation in (
+        lambda value: value["representation"].__setitem__("sha256", "c" * 64),
+        lambda value: value["capture"].__setitem__("sha256", "c" * 64),
+        lambda value: value["sourceMetadata"].__setitem__("sourceUrl", "https://evil.gov/1"),
+        lambda value: value["sourceMetadata"].__setitem__("title", "Two"),
+    ):
+        moved = json.loads(json.dumps(row))
+        mutation(moved)
+        assert framed_set_digest("docspec-document-version-set/3", [moved]) != sealed
+
+
+def test_every_three_domain_refuses_a_repeated_key_rather_than_absorbing_it() -> None:
+    """The peer-review guard: multiplicity is a fact, and a set digest must not eat it."""
+
+    rows = {
+        "docspec-source-disposition-set/3": {"sourceItemId": "s1"},
+        "docspec-document-version-set/3": {"documentVersionId": "v1"},
+        "docspec-attachment-set/3": {"attachmentId": "a1"},
+        "docspec-comment-set/3": {"commentId": "c1"},
+        "docspec-structural-node-set/3": {"structuralNodeId": "n1"},
+        "docspec-segment-set/3": {"segmentId": "g1"},
+        "docspec-text-body-set/3": {"textBodyId": "b1", "textKind": "attachment"},
+        "docspec-source-to-document/3": {
+            "sourceItemId": "s1",
+            "documentId": "d1",
+            "documentVersionId": "v1",
+        },
+    }
+    for domain, row in rows.items():
+        with pytest.raises(ValueError, match="sorted and distinct"):
+            framed_set_digest(domain, [row, dict(row)])
 
 
 def test_relabelling_the_sealed_corpus_does_not_make_it_a_docspec_generation_bundle(
@@ -861,7 +1007,14 @@ def test_items_4_and_5_every_row_carries_the_text_body_key_and_kind(name: str) -
     assert rows
     for row in rows:
         assert row["textBodyId"]
-        assert row["textKind"] == "document-body"
+        # One text pipeline, three kinds: since amendment B4 the corpus carries
+        # an attachment that IS a text body, and structure and segments hang off
+        # it through the same key they hang off a document body by.
+        assert row["textKind"] in TEXT_KINDS
+    if name == "documents":
+        assert {row["textKind"] for row in rows} == {"document-body"}
+    else:
+        assert {row["textKind"] for row in rows} == {"document-body", "attachment"}
     if name != "documents":
         # Re-keyed, not merely widened: the old key is gone from these members.
         assert all("documentVersionId" not in row for row in rows)
@@ -873,6 +1026,11 @@ def test_the_text_body_id_of_a_document_body_equals_its_document_version_id() ->
     for document in _rows("documents"):
         assert document["textBodyId"] == document["documentVersionId"]
     bodies = {document["textBodyId"] for document in _rows("documents")}
+    bodies |= {
+        attachment["textBodyId"]
+        for attachment in _rows("attachments")
+        if attachment["textBodyId"] is not None
+    }
     assert {row["textBodyId"] for row in _rows("structural-nodes")} == bodies
     assert {row["textBodyId"] for row in _rows("search-segments")} == bodies
 
@@ -990,20 +1148,37 @@ def test_item_12_the_two_prose_sites_carry_their_corrections() -> None:
 
 def test_item_7_the_three_new_set_digests_are_declared_and_recomputable() -> None:
     content = DOCSPEC_ROOT["content"]
-    documents = _rows("documents")
+    attachments = _rows("attachments")
 
     assert content["textBodySetDigest"] == framed_set_digest(
-        "docspec-text-body-set/2",
+        TEXT_BODY_SET_DOMAIN,
         [
-            {"textBodyId": document["textBodyId"], "textKind": document["textKind"]}
-            for document in documents
+            {"textBodyId": row["textBodyId"], "textKind": row["textKind"]}
+            for row in [*_rows("documents"), *attachments]
+            if row["textBodyId"] is not None
         ],
     )
-    # No attachment or comment member exists, so both are the empty set's digest
-    # -- written, never omitted.
-    assert content["attachmentSetDigest"] == framed_set_digest("docspec-attachment-set/2", ())
-    assert content["commentSetDigest"] == framed_set_digest("docspec-comment-set/2", ())
+    # The attachment digest streams the FULL rows (amendment B1); the comment
+    # member is present and empty, so its digest is the empty set's -- written,
+    # never omitted.
+    assert content["attachmentSetDigest"] == framed_set_digest(
+        "docspec-attachment-set/3", attachments
+    )
+    assert content["commentSetDigest"] == framed_set_digest("docspec-comment-set/3", ())
     assert content["attachmentSetDigest"] != content["commentSetDigest"]
+
+
+def test_amendment_b1_declares_the_two_digests_that_close_the_last_uncovered_rows() -> None:
+    """Every logical row in the bundle is now inside the release's name."""
+
+    content = DOCSPEC_ROOT["content"]
+
+    assert content["sourceDispositionSetDigest"] == framed_set_digest(
+        "docspec-source-disposition-set/3", _rows("source-dispositions")
+    )
+    assert content["structuralNodeSetDigest"] == framed_set_digest(
+        "docspec-structural-node-set/3", _rows("structural-nodes")
+    )
 
 
 def test_the_docspec_corpus_uses_framed_domains_where_the_sealed_corpus_used_plain() -> None:
@@ -1023,7 +1198,20 @@ def test_the_docspec_corpus_uses_framed_domains_where_the_sealed_corpus_used_pla
     assert content["sourceDocumentMappingDigest"] == framed_set_digest(
         SOURCE_TO_DOCUMENT_DOMAIN, joined
     )
+    # Amendment B6: derived over the PINNED catalog's items, not projected from
+    # the release's rows -- so it is NOT the digest of `joined`, and a consumer
+    # holding the pinned bytes is the only one who can recompute it.
+    catalog_items = json.loads(
+        (SOURCE_CATALOG_FIXTURE / "data" / "source-items.json").read_text(encoding="utf-8")
+    )
     assert content["selectedSourceSetDigest"] == framed_set_digest(
+        SELECTED_SOURCE_SET_DOMAIN,
+        [
+            {"sourceItemId": item["sourceItemId"], "documentId": item["documentId"]}
+            for item in catalog_items
+        ],
+    )
+    assert content["selectedSourceSetDigest"] != framed_set_digest(
         SELECTED_SOURCE_SET_DOMAIN, joined
     )
     # The predecessor's list digest over pairs is a different value entirely,
@@ -1253,7 +1441,10 @@ def _extended_bundle(tmp_path: Path, comment_id: str = COMMENT_ID) -> tuple[Path
     attachment_blob_key, attachment_blob_sha = _place(
         bundle, index_rows, "blob", attachment_id, attachment_rendition
     )
-    state["attachments"] = [
+    # Appended, not replaced: the sealed corpus carries two attachments of its
+    # own since amendment B4, and dropping them here would leave their blob
+    # slices in the index with no capture naming them.
+    state["attachments"] += [
         {
             "attachmentId": attachment_id,
             "attachmentIdentity": ATTACHMENT_IDENTITY,
@@ -1308,6 +1499,16 @@ def _extended_bundle(tmp_path: Path, comment_id: str = COMMENT_ID) -> tuple[Path
 
     index_rows.sort(key=lambda row: (row["family"], row["textBodyId"]))
     state["textBodyIndex"] = index_rows
+    # Amendment B4: a text body whose `(textKind, mediaType)` no policy governs
+    # was extracted under no declared floor, and this bundle grows a kind the
+    # corpus does not carry. The policy is the document body's, re-declared for
+    # the comment kind, which is what per-kind policies are for.
+    comment_policy = json.loads(json.dumps(state["processingPolicies"][0]))
+    comment_policy["textKind"] = "comment"
+    state["processingPolicies"] = sorted(
+        [*state["processingPolicies"], comment_policy],
+        key=lambda policy: (policy["textKind"], policy["mediaType"]),
+    )
     _restamp(bundle, state)
     return bundle, state
 
@@ -1315,6 +1516,20 @@ def _extended_bundle(tmp_path: Path, comment_id: str = COMMENT_ID) -> tuple[Path
 @pytest.fixture
 def extended(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     return _extended_bundle(tmp_path)
+
+
+def _grown(rows: list[dict[str, Any]]) -> int:
+    """Where the comment-owned attachment sits among the corpus's own.
+
+    Since amendment B4 the sealed bundle carries two attachments of its own,
+    both owned by document bodies. The grown one is the comment-owned row, and
+    naming it by that rather than by a position keeps these tests reading the
+    thing they are about.
+    """
+
+    return next(
+        index for index, row in enumerate(rows) if row["ownerKind"] == "comment"
+    )
 
 
 def _restamped(bundle: Path, mutate: Any) -> Any:
@@ -1357,8 +1572,15 @@ def test_the_grown_bundle_declares_every_kind_in_its_per_kind_counts(
         "segments": 1,
         "textBodies": 1,
     }
-    assert per_kind["attachment"]["textBodies"] == 1
-    assert per_kind["attachment"]["representationByteTotal"] == len(ATTACHMENT_TEXT)
+    # Two of the corpus's own attachments, one of which carries text, plus the
+    # grown one: the kinds are counted from the rows, not from a constant.
+    attachments = load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")
+    with_text = [row for row in attachments if row["textBodyId"] is not None]
+    assert per_kind["attachment"]["textBodies"] == len(with_text)
+    assert per_kind["attachment"]["representationByteTotal"] == sum(
+        row["representation"]["byteSize"] for row in with_text
+    )
+    assert per_kind["attachment"]["representationByteTotal"] > len(ATTACHMENT_TEXT)
     assert per_kind["document-body"]["textBodies"] == 2
     for kind, totals in per_kind.items():
         assert (
@@ -1400,7 +1622,8 @@ def test_the_attachment_id_is_minted_over_the_ordinal_free_preimage(
     """Amendment A1: the id names the attachment, the ordinal names its renditions."""
 
     bundle, _ = extended
-    attachment = load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")[0]
+    rows = load_strict_canonical_jsonl(bundle / "data" / "attachments.jsonl")
+    attachment = rows[_grown(rows)]
 
     assert attachment["attachmentId"] == stable_urn(
         "document-release-attachment",
@@ -1469,7 +1692,7 @@ def test_an_attachment_that_names_its_owner_by_the_wrong_kind_is_a_join_defect(
     bundle, _ = extended
 
     def mutate(state: dict[str, Any]) -> None:
-        attachment = state["attachments"][0]
+        attachment = state["attachments"][_grown(state["attachments"])]
         attachment["ownerKind"] = "document-body"
         attachment["attachmentId"] = stable_urn(
             "document-release-attachment",
@@ -1485,25 +1708,31 @@ def test_an_attachment_that_names_its_owner_by_the_wrong_kind_is_a_join_defect(
     result = _restamped(bundle, mutate)
     joins = [issue for issue in result.issues if issue.code == "invalid.join"]
 
-    assert [issue.path for issue in joins] == ["data/attachments.jsonl/0/ownerKind"]
+    assert [issue.path for issue in joins] == ["data/attachments.jsonl/2/ownerKind"]
 
 
-def test_a_failed_rendition_without_a_reason_is_a_disposition_defect(
+def test_a_failed_rendition_without_a_reason_is_an_accounting_defect(
     extended: tuple[Path, dict[str, Any]],
 ) -> None:
-    """Loss stays visible: a row may say it could not capture, never say nothing."""
+    """Loss stays visible: a row may say it could not capture, never say nothing.
+
+    Amendment B4 moved this off `invalid.disposition`. An attachment disposition
+    is not a catalog disposition -- Decision 0001 chose the four tokens
+    specifically so a reader could not join the two vocabularies -- so the
+    diagnostic must not join them either.
+    """
 
     bundle, _ = extended
 
     def mutate(state: dict[str, Any]) -> None:
-        del state["attachments"][0]["renditions"][1]["reason"]
+        del state["attachments"][_grown(state["attachments"])]["renditions"][1]["reason"]
 
     result = _restamped(bundle, mutate)
 
     assert result.code == "invalid.schema"
     assert any(
-        issue.code == "invalid.disposition"
-        and issue.path == "data/attachments.jsonl/0/renditions/1/reason"
+        issue.code == "invalid.attachment-accounting"
+        and issue.path == "data/attachments.jsonl/2/renditions/1/reason"
         for issue in result.issues
     )
 
@@ -1603,11 +1832,10 @@ def test_the_set_digests_now_stream_the_rows_rather_than_the_empty_set(
     comments = load_strict_canonical_jsonl(bundle / "data" / "comments.jsonl")
 
     assert content["attachmentSetDigest"] == framed_set_digest(
-        "docspec-attachment-set/2",
-        [{"attachmentId": row["attachmentId"]} for row in attachments],
+        "docspec-attachment-set/3", attachments
     )
     assert content["commentSetDigest"] == framed_set_digest(
-        "docspec-comment-set/2", [{"commentId": row["commentId"]} for row in comments]
+        "docspec-comment-set/3", comments
     )
     assert content["attachmentSetDigest"] != DOCSPEC_ROOT["content"]["attachmentSetDigest"]
     assert content["commentSetDigest"] != DOCSPEC_ROOT["content"]["commentSetDigest"]
@@ -1661,12 +1889,16 @@ def test_the_index_covers_every_text_body_and_tiles_every_partition_member() -> 
     """
 
     rows = _index(DOCSPEC_VALID)
-    documents = _rows("documents")
+    bodies = [row["textBodyId"] for row in _rows("documents")]
+    # An attachment that carries text is a text body like any other, and its
+    # slices are indexed like any other's. One that carries none -- every
+    # rendition excluded or unavailable -- has no slice to index.
+    bodies += [
+        row["textBodyId"] for row in _rows("attachments") if row["textBodyId"] is not None
+    ]
 
     assert {(row["family"], row["textBodyId"]) for row in rows} == {
-        (family, document["textBodyId"])
-        for family in ("text", "blob")
-        for document in documents
+        (family, body) for family in ("text", "blob") for body in bodies
     }
     by_member: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -1794,3 +2026,150 @@ def test_the_per_kind_counts_are_exactly_what_the_members_recompute_to(
         load_strict_canonical_jsonl(bundle / "data" / "search-segments.jsonl"),
         key="textBodyId",
     )
+
+
+# ─── Amendment B2/B3/B4: the rules the first mint's gate did not have ──
+
+
+def test_two_selection_policies_in_one_release_is_a_comment_selection_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """Decision 0001's inherited refusal, given the diagnostic it named.
+
+    DocSpec does not select comments; the sealed upstream policy does, and every
+    row projects that ONE policy verbatim. Two policy digests in one release is
+    the release claiming a selection nobody sealed -- and no schema can see it,
+    because a schema reads one row at a time.
+
+    This rule has no invalid-corpus fixture and the reason is recorded at
+    `UNMINTABLE_CODES`: a comment is a member of U, and the sealed
+    source-dispositions schema requires a selected U member to be a document.
+    """
+
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        second = json.loads(json.dumps(state["comments"][0]))
+        second["commentId"] = "0900006485000001"
+        second["textBodyId"] = second["commentId"]
+        second["commentSelection"]["policyDigest"] = "sha256:" + "b" * 64
+        # A second comment with no text of its own would break the coverage
+        # identity, so it shares the first one's bytes: what is under test is
+        # the policy it projects, not the body it carries.
+        state["comments"].append(second)
+        for row in (*state["nodes"], *state["segments"]):
+            if row["textKind"] != "comment":
+                continue
+            twin = json.loads(json.dumps(row))
+            twin["textBodyId"] = second["commentId"]
+            for key in ("structuralNodeId", "segmentId"):
+                if key in twin:
+                    twin[key] = twin[key].replace(row["textBodyId"], second["commentId"])
+            if twin.get("structuralParentId"):
+                twin["structuralParentId"] = twin["structuralParentId"].replace(
+                    row["textBodyId"], second["commentId"]
+                )
+            (state["nodes"] if "structuralNodeId" in twin else state["segments"]).append(twin)
+
+    result = _restamped(bundle, mutate)
+    selection = [issue for issue in result.issues if issue.code == "invalid.comment-selection"]
+
+    assert [issue.path for issue in selection] == [
+        "data/comments.jsonl/1/commentSelection/policyDigest"
+    ]
+
+
+def test_a_text_body_no_processing_policy_governs_is_a_retention_floor_defect(
+    extended: tuple[Path, dict[str, Any]],
+) -> None:
+    """The checkable half of "an undeclared floor fails closed" (amendment B4)."""
+
+    bundle, _ = extended
+
+    def mutate(state: dict[str, Any]) -> None:
+        state["processingPolicies"] = [
+            policy for policy in state["processingPolicies"] if policy["textKind"] != "comment"
+        ]
+
+    result = _restamped(bundle, mutate)
+    floors = [issue for issue in result.issues if issue.code == "invalid.retention-floor"]
+
+    assert [issue.path for issue in floors] == ["data/comments.jsonl/0/capture/mediaType"]
+    assert "no declared floor" in floors[0].message
+
+
+def test_a_negative_index_offset_is_refused_rather_than_crashing_the_gate(
+    tmp_path: Path,
+) -> None:
+    """Amendment B3, by construction: the crash the first mint's gate regressed to.
+
+    `_read_slice` seeks to a caller-supplied offset. A negative `startByte` used
+    to reach `seek` and raise an uncaught `OSError`, because the guard above it
+    checked only the overflow end of the range -- so an untrusted bundle could
+    take the gate down instead of being refused by it.
+    """
+
+    bundle = tmp_path / "negative-offset"
+    shutil.copytree(DOCSPEC_VALID, bundle)
+    rows = load_strict_canonical_jsonl(bundle / "manifests" / "text-body-index.jsonl")
+    rows[0]["startByte"] = -8
+    write_canonical_jsonl(bundle / "manifests" / "text-body-index.jsonl", rows)
+    _reseal(bundle)
+
+    result = verify_document_release(bundle)
+
+    assert not result.valid
+    assert any(
+        issue.code == "invalid.member-digest"
+        and issue.path == "manifests/text-body-index.jsonl/0/startByte"
+        for issue in result.issues
+    ), [str(issue) for issue in result.issues]
+
+
+def test_read_slice_refuses_a_negative_range_before_it_seeks(tmp_path: Path) -> None:
+    from docspec.adapters.document_release_verify import _read_slice
+
+    path = tmp_path / "member"
+    path.write_bytes(b"0123456789")
+
+    assert _read_slice(path, 2, 3) == b"234"
+    for start, length in ((-1, 3), (2, -3)):
+        with pytest.raises(ValueError, match="non-negative"):
+            _read_slice(path, start, length)
+
+
+def test_the_gate_always_produces_a_verdict_even_when_a_rule_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A gate that can be crashed is a gate that can be skipped (amendment B3)."""
+
+    import docspec.adapters.document_release_verify as module
+
+    def explode(_bundle: Path) -> Any:
+        raise RuntimeError("a rule reached an unreachable state")
+
+    monkeypatch.setattr(module, "_verify_document_release", explode)
+    result = module.verify_document_release(tmp_path)
+
+    assert not result.valid
+    assert result.code == "invalid.root-syntax"
+    assert result.path == "release.json"
+    assert "RuntimeError" in result.issues[0].message
+
+
+def test_the_logical_row_exclusion_table_is_exactly_the_amendments_two_kinds() -> None:
+    """Physical locators and process-provenance facts, and nothing else."""
+
+    assert set(LOGICAL_ROW_EXCLUSIONS) == set(TABULAR_ROLES)
+    for record_type, paths in LOGICAL_ROW_EXCLUSIONS.items():
+        for path in paths:
+            leaf = path.rsplit(".", 1)[-1]
+            assert leaf in {"objectKey", "acquiredAt", "acquisitionStartedAt"}, (
+                record_type,
+                path,
+            )
+    # The three record types with no locator and no clock keep their whole row.
+    for record_type in ("source-dispositions", "structural-nodes", "search-segments"):
+        assert LOGICAL_ROW_EXCLUSIONS[record_type] == ()
+        row = {"a": 1, "b": {"c": 2}}
+        assert logical_row(record_type, row) == row
