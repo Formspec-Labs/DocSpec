@@ -1,4 +1,36 @@
-# The first real DocumentRelease 2.0, minted 2026-08-30
+# The first real DocumentRelease 2.0, minted 2026-08-30 — **SUPERSEDED**
+
+> **This mint failed its gate and is superseded by
+> `2026-08-31-document-release-2-0-second-mint.md`
+> (`urn:docspec:document-release:v2:28a276a3…`).** It went through a
+> two-reviewer blind gate on 2026-08-31 and failed on six findings, all
+> verified by construction rather than by reading. **Identity did not name
+> content:** the `/2` set domains projected every row onto its id fields, so a
+> same-length mutation of a body's bytes with the physical digests restamped
+> verified clean under an unchanged `documentStateDigest` — the departure this
+> document itself recorded in its own last table row, turned by the gate into a
+> defect. **The gate could be crashed:** a negative `startByte` reached an
+> unguarded `seek` and raised, and the corpus test asserted only each case's
+> primary diagnostic, so a bundle emitting five extra ones passed. **Attachment
+> accounting was never implemented:** the builder hardcoded `attachments: []`
+> while all 1,683 selected Mirrulations documents enumerated a `pdf` and an
+> `htm` in their preserved source records, and the receipt below asserts
+> compliance anyway — that sentence is false and is corrected here rather than
+> deleted. **The floors were four defects in one:** the `observedMinimum
+> 0.4777` below is a 400-document stride-sample statistic labelled as the
+> population minimum (the true population minimum was 0.1936); the nine
+> refusals were FALSE, since those documents extract completely and their ratio
+> was low only because 48–60% of their raw XML is pretty-print indentation; the
+> floors were pooled with the corpus they gate, so they could not refuse
+> anything they had not already admitted; and the `distribution-html`
+> population Decision 0001 names went unused. **`selectedSourceSetDigest` was
+> not reproducible from the pin,** being derived from the release's own rows.
+> And the standing `RELEASE_FORMAT_VERSION` and `reasonCode` obligations, whose
+> deferral the last table below records, came due. The rulings are Decision
+> 0001's amendment B1–B7; the mint they produced is the second one.
+>
+> Everything below is left exactly as it was written, because a superseded
+> record that has been edited to look better is not a record.
 
 The format sealed by `docs/decisions/0001-document-release-2-0.md` now has a
 real corpus in it. This names everything the mint read, everything it wrote,
