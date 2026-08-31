@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import heapq
+import struct
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -260,10 +261,58 @@ def _schema_error(validator: jsonschema.Draft202012Validator, value: object, lab
         raise IntegrityError(f"{label} schema failure at {path}: {error.message}") from error
 
 
+class _FramedSectionHasher:
+    """Incrementally reproduce ``framed_section_digest`` for one known-count section.
+
+    Byte-for-byte the same protocol Rulespec's batch function seals -- domain,
+    NUL, u64 name length, name, u64 count, then u64 payload length + payload per
+    record -- so many digests can share one pass over the rows instead of each
+    demanding its own. Equality with the batch function is pinned by test.
+    """
+
+    __slots__ = ("_digest", "_domain", "_name", "_count", "_observed")
+
+    def __init__(self, domain: str, name: str, count: int) -> None:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise IntegrityError(f"cannot compute {domain}: section count must be a non-negative integer")
+        self._digest = hashlib.sha256(domain.encode("utf-8") + b"\0")
+        name_bytes = name.encode("utf-8")
+        self._digest.update(struct.pack(">Q", len(name_bytes)))
+        self._digest.update(name_bytes)
+        self._digest.update(struct.pack(">Q", count))
+        self._domain = domain
+        self._name = name
+        self._count = count
+        self._observed = 0
+
+    def add_payload(self, payload: bytes) -> None:
+        self._observed += 1
+        if self._observed > self._count:
+            raise IntegrityError(
+                f"cannot compute {self._domain}: section {self._name!r} exceeds its declared count"
+            )
+        self._digest.update(struct.pack(">Q", len(payload)))
+        self._digest.update(payload)
+
+    def add(self, record: Mapping[str, object]) -> None:
+        self.add_payload(canonical_json_bytes(record))
+
+    def digest(self) -> str:
+        if self._observed != self._count:
+            raise IntegrityError(
+                f"cannot compute {self._domain}: section {self._name!r} declared "
+                f"{self._count} records but yielded {self._observed}"
+            )
+        return "sha256:" + self._digest.hexdigest()
+
+
 def _iter_partition_rows(
     blob_source: SourceCatalogBlobSource,
     partition: _CatalogPartition,
-) -> Iterator[SourceCatalogItem]:
+    *,
+    validate: bool = True,
+    with_raw: bool = False,
+) -> Iterator[Any]:
     member = partition.member
     if member.blob_ref is None or member.record_count is None:
         raise IntegrityError("source-item partition descriptor requires blobRef and recordCount")
@@ -282,19 +331,21 @@ def _iter_partition_rows(
                 )
             except ArtifactVerificationError as error:
                 raise IntegrityError(f"source-catalog row {count} is not canonical: {error}") from error
-            _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {count}")
+            if validate:
+                _schema_error(_ITEM_VALIDATOR, value, f"source-catalog row {count}")
             try:
                 item = SourceCatalogItem.from_dict(value)
             except (TypeError, ValueError) as error:
                 raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
-            _require_interpretation_order(item)
+            if validate:
+                _require_interpretation_order(item)
             if _partition_id(item.source_item_id) != partition.partition_id:
                 raise IntegrityError("source-catalog row is stored in the wrong logical partition")
             if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
                 raise IntegrityError("source-catalog partition rows must be strictly ordered and distinct")
             previous = item.source_item_id
             count += 1
-            yield item
+            yield (item, raw[:-1]) if with_raw else item
     if count != member.record_count:
         raise IntegrityError("source-catalog row count differs from its partition descriptor")
 
@@ -303,29 +354,47 @@ def _iter_catalog_rows(
     blob_source: SourceCatalogBlobSource,
     partitions: Sequence[_CatalogPartition],
     expected_count: int,
-) -> Iterator[SourceCatalogItem]:
-    for located in _iter_located_catalog_rows(blob_source, partitions, expected_count):
-        yield located.item
+    *,
+    validate: bool = True,
+    with_raw: bool = False,
+) -> Iterator[Any]:
+    rows = _iter_located_catalog_rows(
+        blob_source, partitions, expected_count, validate=validate, with_raw=with_raw
+    )
+    if with_raw:
+        for located, raw in rows:
+            yield located.item, raw
+    else:
+        for located in rows:
+            yield located.item
 
 
 def _iter_located_catalog_rows(
     blob_source: SourceCatalogBlobSource,
     partitions: Sequence[_CatalogPartition],
     expected_count: int,
-) -> Iterator[LocatedSourceCatalogItem]:
+    *,
+    validate: bool = True,
+    with_raw: bool = False,
+) -> Iterator[Any]:
     """Attach each parsed row to its supplying partition without reparsing it."""
 
-    streams = [iter(_iter_partition_rows(blob_source, partition)) for partition in partitions]
-    heap: list[tuple[bytes, int, SourceCatalogItem]] = []
+    streams = [
+        iter(_iter_partition_rows(blob_source, partition, validate=validate, with_raw=with_raw))
+        for partition in partitions
+    ]
+    heap: list[tuple[bytes, int, Any]] = []
     previous: str | None = None
     count = 0
     try:
         for index, stream in enumerate(streams):
-            item = next(stream, None)
-            if item is not None:
-                heapq.heappush(heap, (_utf16_key(item.source_item_id), index, item))
+            entry = next(stream, None)
+            if entry is not None:
+                item = entry[0] if with_raw else entry
+                heapq.heappush(heap, (_utf16_key(item.source_item_id), index, entry))
         while heap:
-            _, index, item = heapq.heappop(heap)
+            _, index, entry = heapq.heappop(heap)
+            item = entry[0] if with_raw else entry
             if previous is not None and _utf16_key(item.source_item_id) <= _utf16_key(previous):
                 raise IntegrityError("source-catalog rows must be globally ordered and distinct")
             previous = item.source_item_id
@@ -333,10 +402,14 @@ def _iter_located_catalog_rows(
             if blob_ref is None:
                 raise IntegrityError("source-item partition descriptor requires blobRef")
             count += 1
-            yield LocatedSourceCatalogItem(item, blob_ref)
+            if with_raw:
+                yield LocatedSourceCatalogItem(item, blob_ref), entry[1]
+            else:
+                yield LocatedSourceCatalogItem(item, blob_ref)
             following = next(streams[index], None)
             if following is not None:
-                heapq.heappush(heap, (_utf16_key(following.source_item_id), index, following))
+                following_item = following[0] if with_raw else following
+                heapq.heappush(heap, (_utf16_key(following_item.source_item_id), index, following))
     finally:
         for stream in streams:
             stream.close()
@@ -792,43 +865,101 @@ def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
     return "sha256:" + digest.hexdigest(), byte_size
 
 
-def _catalog_state_digests(
+@dataclass(frozen=True, slots=True)
+class _DerivedCatalog:
+    """Every digest and diagnostic one derivation pass proves about the rows."""
+
+    catalog_state_digest: str
+    requested_universe_set_digest: str
+    selected_source_set_digest: str
+    disposition_counts: dict[str, int]
+    diagnostics: dict[str, object]
+
+
+def _derive_catalog(
     blob_source: SourceCatalogBlobSource,
     partitions: Sequence[_CatalogPartition],
     *,
     item_count: int,
     selected_count: int,
-) -> tuple[str, str, str]:
-    state = _framed_digest(
-        "docspec-source-catalog-state/1",
-        "sourceItems",
-        item_count,
-        (item.to_dict() for item in _iter_catalog_rows(blob_source, partitions, item_count)),
-    )
-    requested = requested_universe_set_digest(
-        item_count,
-        (item.source_item_id for item in _iter_catalog_rows(blob_source, partitions, item_count)),
-    )
-    selected = selected_source_set_digest(
-        selected_count,
-        (
-            (item.source_item_id, item.document_id)
-            for item in _iter_catalog_rows(blob_source, partitions, item_count)
-            if item.disposition is CatalogDisposition.SELECTED
-        ),
-    )
-    return state, requested, selected
+) -> _DerivedCatalog:
+    """Derive the catalog's digests and diagnostics in two streamed passes.
 
+    Pass one validates every row exactly once and feeds each fixed-count framed
+    digest incrementally; the staged row bytes are proven canonical by the
+    parse, and item round-tripping is byte-exact (pinned by test), so the state
+    digest frames the raw row bytes instead of re-serializing. The three
+    diagnostics whose framed sections declare data-dependent counts are counted
+    in pass one and hashed in pass two, which re-reads rows without repeating
+    the schema validation pass one already performed. The per-row ordering the
+    old per-digest generators re-checked is enforced once, globally, by
+    ``_iter_located_catalog_rows``.
+    """
 
-def _catalog_disposition_counts(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> dict[str, int]:
-    counts = {value.value: 0 for value in CatalogDisposition}
-    for item in _iter_catalog_rows(blob_source, partitions, item_count):
-        counts[item.disposition.value] += 1
-    return counts
+    state = _FramedSectionHasher("docspec-source-catalog-state/1", "sourceItems", item_count)
+    requested = _FramedSectionHasher("docspec-requested-universe-set/1", "members", item_count)
+    selected = _FramedSectionHasher("docspec-selected-source-set/1", "members", selected_count)
+    dispositions = _FramedSectionHasher("docspec-catalog-dispositions/1", "records", item_count)
+    reasons = _FramedSectionHasher("docspec-catalog-reasons/1", "records", item_count)
+    rendition_choices = _FramedSectionHasher(
+        "docspec-catalog-rendition-choices/1", "records", item_count
+    )
+    disposition_counts = {value.value: 0 for value in CatalogDisposition}
+    join_counts: dict[str, dict[str, int]] = {}
+    normalized_count = 0
+    joined_count = 0
+    interpretation_count = 0
+    for item, raw in _iter_catalog_rows(blob_source, partitions, item_count, with_raw=True):
+        state.add_payload(raw)
+        requested.add({"sourceItemId": item.source_item_id})
+        disposition_counts[item.disposition.value] += 1
+        if item.disposition is CatalogDisposition.SELECTED:
+            selected.add({"sourceItemId": item.source_item_id, "documentId": item.document_id})
+        dispositions.add(
+            {"sourceItemId": item.source_item_id, "disposition": item.disposition.value}
+        )
+        reasons.add({"sourceItemId": item.source_item_id, "reason": item.selection.reason})
+        rendition_choices.add(_rendition_choice_record(item))
+        for _record in _normalized_field_records_for(item):
+            normalized_count += 1
+        for record in _joined_field_records_for(item):
+            joined_count += 1
+            _accumulate_join_coverage(join_counts, record)
+        for _record in _interpretation_records_for(item):
+            interpretation_count += 1
+    normalized = _FramedSectionHasher(
+        "docspec-catalog-normalized-fields/1", "records", normalized_count
+    )
+    joined = _FramedSectionHasher("docspec-catalog-joined-fields/1", "records", joined_count)
+    interpretations = _FramedSectionHasher(
+        "docspec-catalog-interpretations/1", "records", interpretation_count
+    )
+    for item in _iter_catalog_rows(blob_source, partitions, item_count, validate=False):
+        for record in _normalized_field_records_for(item):
+            normalized.add(record)
+        for record in _joined_field_records_for(item):
+            joined.add(record)
+        for record in _interpretation_records_for(item):
+            interpretations.add(record)
+    join_coverage = [
+        {"joinId": join_id, **join_counts[join_id]}
+        for join_id in sorted(join_counts, key=_utf16_key)
+    ]
+    return _DerivedCatalog(
+        state.digest(),
+        requested.digest(),
+        selected.digest(),
+        disposition_counts,
+        {
+            "joinCoverage": join_coverage,
+            "normalizedFieldsDigest": normalized.digest(),
+            "joinedFieldsDigest": joined.digest(),
+            "dispositionsDigest": dispositions.digest(),
+            "reasonsDigest": reasons.digest(),
+            "interpretationsDigest": interpretations.digest(),
+            "renditionChoicesDigest": rendition_choices.digest(),
+        },
+    )
 
 
 def _item_interpretations(item: SourceCatalogItem, kind: str) -> tuple[Mapping[str, Any], ...]:
@@ -839,43 +970,30 @@ def _item_interpretations(item: SourceCatalogItem, kind: str) -> tuple[Mapping[s
     )
 
 
-def _diagnostic_digest(
-    domain: str,
-    records: Callable[[], Iterator[Mapping[str, Any]]],
-) -> str:
-    count = sum(1 for _ in records())
-    return _framed_digest(domain, "records", count, records())
-
-
-def _normalized_field_records(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> Iterator[Mapping[str, Any]]:
-    for item in _iter_catalog_rows(blob_source, partitions, item_count):
-        fields: list[Mapping[str, Any]] = []
-        for interpretation in _item_interpretations(item, "normalization"):
-            fields.extend(interpretation["result"]["fields"])
-        previous_key: tuple[bytes, int] | None = None
-        for field in sorted(fields, key=lambda value: _utf16_key(value["normalizedField"])):
-            field_path = field["normalizedField"]
-            for value_index, value in _indexed_values(field["value"]):
-                key = (_utf16_key(field_path), value_index)
-                if previous_key is not None and key <= previous_key:
-                    raise IntegrityError("normalized-field diagnostic keys must be ordered and distinct")
-                previous_key = key
-                yield {
-                    "sourceItemId": item.source_item_id,
-                    "fieldPath": field_path,
-                    "valueIndex": value_index,
-                    "value": value,
-                    "diagnostics": {
-                        "outcome": field["outcome"],
-                        "sourcePaths": field["sourcePaths"],
-                        "unparseableValues": field["unparseableValues"],
-                        "valueSource": field["valueSource"],
-                    },
-                }
+def _normalized_field_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+    fields: list[Mapping[str, Any]] = []
+    for interpretation in _item_interpretations(item, "normalization"):
+        fields.extend(interpretation["result"]["fields"])
+    previous_key: tuple[bytes, int] | None = None
+    for field in sorted(fields, key=lambda value: _utf16_key(value["normalizedField"])):
+        field_path = field["normalizedField"]
+        for value_index, value in _indexed_values(field["value"]):
+            key = (_utf16_key(field_path), value_index)
+            if previous_key is not None and key <= previous_key:
+                raise IntegrityError("normalized-field diagnostic keys must be ordered and distinct")
+            previous_key = key
+            yield {
+                "sourceItemId": item.source_item_id,
+                "fieldPath": field_path,
+                "valueIndex": value_index,
+                "value": value,
+                "diagnostics": {
+                    "outcome": field["outcome"],
+                    "sourcePaths": field["sourcePaths"],
+                    "unparseableValues": field["unparseableValues"],
+                    "valueSource": field["valueSource"],
+                },
+            }
 
 
 def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
@@ -885,151 +1003,86 @@ def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
     yield 0, value
 
 
-def _joined_field_records(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> Iterator[Mapping[str, Any]]:
-    for item in _iter_catalog_rows(blob_source, partitions, item_count):
-        joins: list[Mapping[str, Any]] = []
-        for interpretation in _item_interpretations(item, "exact-join"):
-            joins.extend(interpretation["result"]["joins"])
-        previous_key: tuple[bytes, bytes, int] | None = None
-        for join in sorted(joins, key=lambda value: _utf16_key(value["joinId"])):
-            key = (_utf16_key(join["joinId"]), _utf16_key("matchedSourceRecordId"), 0)
-            if previous_key is not None and key <= previous_key:
-                raise IntegrityError("joined-field diagnostic keys must be ordered and distinct")
-            previous_key = key
+def _joined_field_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+    joins: list[Mapping[str, Any]] = []
+    for interpretation in _item_interpretations(item, "exact-join"):
+        joins.extend(interpretation["result"]["joins"])
+    previous_key: tuple[bytes, bytes, int] | None = None
+    for join in sorted(joins, key=lambda value: _utf16_key(value["joinId"])):
+        key = (_utf16_key(join["joinId"]), _utf16_key("matchedSourceRecordId"), 0)
+        if previous_key is not None and key <= previous_key:
+            raise IntegrityError("joined-field diagnostic keys must be ordered and distinct")
+        previous_key = key
+        yield {
+            "sourceItemId": item.source_item_id,
+            "joinId": join["joinId"],
+            "outputPath": "matchedSourceRecordId",
+            "valueIndex": 0,
+            "value": join["matchedSourceRecordId"],
+            "outcome": join["outcome"],
+            "evidence": {
+                "lookupScopeId": join["lookupScopeId"],
+                "sourceField": join["sourceField"],
+                "sourceValue": join["sourceValue"],
+            },
+        }
+
+
+def _interpretation_records_for(item: SourceCatalogItem) -> Iterator[Mapping[str, Any]]:
+    by_kind: dict[str, list[Mapping[str, Any]]] = {}
+    for interpretation in item.to_dict()["interpretations"]:
+        by_kind.setdefault(interpretation["interpretationKind"], []).append(interpretation)
+    for kind in sorted(by_kind, key=_utf16_key):
+        for index, interpretation in enumerate(by_kind[kind]):
             yield {
                 "sourceItemId": item.source_item_id,
-                "joinId": join["joinId"],
-                "outputPath": "matchedSourceRecordId",
-                "valueIndex": 0,
-                "value": join["matchedSourceRecordId"],
-                "outcome": join["outcome"],
-                "evidence": {
-                    "lookupScopeId": join["lookupScopeId"],
-                    "sourceField": join["sourceField"],
-                    "sourceValue": join["sourceValue"],
+                "interpretationKind": kind,
+                "interpretationId": f"{index:04d}",
+                "value": interpretation["result"],
+                "diagnostics": {
+                    "inputScopeIds": interpretation["inputScopeIds"],
+                    "policyDigest": interpretation["policyDigest"],
+                    "policyId": interpretation["policyId"],
+                    "policyVersion": interpretation["policyVersion"],
                 },
             }
 
 
-def _interpretation_records(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> Iterator[Mapping[str, Any]]:
-    for item in _iter_catalog_rows(blob_source, partitions, item_count):
-        by_kind: dict[str, list[Mapping[str, Any]]] = {}
-        for interpretation in item.to_dict()["interpretations"]:
-            by_kind.setdefault(interpretation["interpretationKind"], []).append(interpretation)
-        for kind in sorted(by_kind, key=_utf16_key):
-            for index, interpretation in enumerate(by_kind[kind]):
-                yield {
-                    "sourceItemId": item.source_item_id,
-                    "interpretationKind": kind,
-                    "interpretationId": f"{index:04d}",
-                    "value": interpretation["result"],
-                    "diagnostics": {
-                        "inputScopeIds": interpretation["inputScopeIds"],
-                        "policyDigest": interpretation["policyDigest"],
-                        "policyId": interpretation["policyId"],
-                        "policyVersion": interpretation["policyVersion"],
-                    },
-                }
-
-
-def _rendition_choice_records(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> Iterator[Mapping[str, Any]]:
-    for item in _iter_catalog_rows(blob_source, partitions, item_count):
-        choices = _item_interpretations(item, "rendition-preference")
-        if len(choices) != 1:
-            raise IntegrityError("source-catalog row requires one rendition-preference interpretation")
-        yield {
-            "sourceItemId": item.source_item_id,
-            "selectedFamilyId": choices[0]["result"]["selectedFamilyId"],
-            "candidateIds": [candidate.rendition_id for candidate in item.candidate_renditions],
-        }
-
-
-def _join_coverage(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> list[dict[str, object]]:
-    counts: dict[str, dict[str, int]] = {}
-    for record in _joined_field_records(blob_source, partitions, item_count):
-        join_id = record["joinId"]
-        if not isinstance(join_id, str):
-            raise IntegrityError("catalog join identity must be text")
-        if join_id not in counts and len(counts) >= SOURCE_CATALOG_MAX_JOIN_IDS:
-            raise LimitExceededError("catalog join coverage exceeds its distinct-identity limit")
-        selected = counts.setdefault(
-            join_id,
-            {"eligible": 0, "matched": 0, "unmatched": 0, "nullResult": 0},
-        )
-        outcome = record["outcome"]
-        if outcome == "matched":
-            selected["eligible"] += 1
-            selected["matched"] += 1
-        elif outcome == "no-match":
-            selected["eligible"] += 1
-            selected["unmatched"] += 1
-        elif outcome == "not-stated":
-            selected["nullResult"] += 1
-        else:
-            raise IntegrityError("catalog join outcome is not recognized")
-    return [
-        {"joinId": join_id, **counts[join_id]}
-        for join_id in sorted(counts, key=_utf16_key)
-    ]
-
-
-def _catalog_diagnostics(
-    blob_source: SourceCatalogBlobSource,
-    partitions: Sequence[_CatalogPartition],
-    item_count: int,
-) -> dict[str, object]:
-    def rows() -> Iterator[SourceCatalogItem]:
-        return _iter_catalog_rows(blob_source, partitions, item_count)
-
+def _rendition_choice_record(item: SourceCatalogItem) -> Mapping[str, Any]:
+    choices = _item_interpretations(item, "rendition-preference")
+    if len(choices) != 1:
+        raise IntegrityError("source-catalog row requires one rendition-preference interpretation")
     return {
-        "joinCoverage": _join_coverage(blob_source, partitions, item_count),
-        "normalizedFieldsDigest": _diagnostic_digest(
-            "docspec-catalog-normalized-fields/1",
-            lambda: _normalized_field_records(blob_source, partitions, item_count),
-        ),
-        "joinedFieldsDigest": _diagnostic_digest(
-            "docspec-catalog-joined-fields/1",
-            lambda: _joined_field_records(blob_source, partitions, item_count),
-        ),
-        "dispositionsDigest": _framed_digest(
-            "docspec-catalog-dispositions/1",
-            "records",
-            item_count,
-            ({"sourceItemId": item.source_item_id, "disposition": item.disposition.value} for item in rows()),
-        ),
-        "reasonsDigest": _framed_digest(
-            "docspec-catalog-reasons/1",
-            "records",
-            item_count,
-            ({"sourceItemId": item.source_item_id, "reason": item.selection.reason} for item in rows()),
-        ),
-        "interpretationsDigest": _diagnostic_digest(
-            "docspec-catalog-interpretations/1",
-            lambda: _interpretation_records(blob_source, partitions, item_count),
-        ),
-        "renditionChoicesDigest": _framed_digest(
-            "docspec-catalog-rendition-choices/1",
-            "records",
-            item_count,
-            _rendition_choice_records(blob_source, partitions, item_count),
-        ),
+        "sourceItemId": item.source_item_id,
+        "selectedFamilyId": choices[0]["result"]["selectedFamilyId"],
+        "candidateIds": [candidate.rendition_id for candidate in item.candidate_renditions],
     }
+
+
+def _accumulate_join_coverage(
+    counts: dict[str, dict[str, int]],
+    record: Mapping[str, Any],
+) -> None:
+    join_id = record["joinId"]
+    if not isinstance(join_id, str):
+        raise IntegrityError("catalog join identity must be text")
+    if join_id not in counts and len(counts) >= SOURCE_CATALOG_MAX_JOIN_IDS:
+        raise LimitExceededError("catalog join coverage exceeds its distinct-identity limit")
+    selected = counts.setdefault(
+        join_id,
+        {"eligible": 0, "matched": 0, "unmatched": 0, "nullResult": 0},
+    )
+    outcome = record["outcome"]
+    if outcome == "matched":
+        selected["eligible"] += 1
+        selected["matched"] += 1
+    elif outcome == "no-match":
+        selected["eligible"] += 1
+        selected["unmatched"] += 1
+    elif outcome == "not-stated":
+        selected["nullResult"] += 1
+    else:
+        raise IntegrityError("catalog join outcome is not recognized")
 
 
 def _source_catalog_succession(value: object) -> SourceCatalogSuccession:
@@ -1243,16 +1296,16 @@ class SourceCatalogBuildGateVerifier:
         if summary is None or receipt is None:
             raise RuntimeError("source catalog receipt verifier produced no summary")
 
-        state, requested, selected = _catalog_state_digests(
+        derived = _derive_catalog(
             self._blob_source,
             receipt_verifier.partitions,
             item_count=summary.item_count,
             selected_count=summary.disposition_counts[CatalogDisposition.SELECTED.value],
         )
         computed = {
-            "catalogStateDigest": state,
-            "requestedUniverseSetDigest": requested,
-            "selectedSourceSetDigest": selected,
+            "catalogStateDigest": derived.catalog_state_digest,
+            "requestedUniverseSetDigest": derived.requested_universe_set_digest,
+            "selectedSourceSetDigest": derived.selected_source_set_digest,
         }
         expected = {
             "catalogStateDigest": summary.catalog_state_digest,
@@ -1262,20 +1315,9 @@ class SourceCatalogBuildGateVerifier:
         for name, digest in computed.items():
             if digest != expected[name]:
                 raise IntegrityError(f"producer semantic gate recomputed a different {name}")
-        if _catalog_disposition_counts(
-            self._blob_source,
-            receipt_verifier.partitions,
-            summary.item_count,
-        ) != dict(
-            summary.disposition_counts
-        ):
+        if derived.disposition_counts != dict(summary.disposition_counts):
             raise IntegrityError("producer semantic gate recomputed different disposition counts")
-        diagnostics = _catalog_diagnostics(
-            self._blob_source,
-            receipt_verifier.partitions,
-            summary.item_count,
-        )
-        for name, value in diagnostics.items():
+        for name, value in derived.diagnostics.items():
             if receipt[name] != value:
                 raise IntegrityError(f"producer semantic gate recomputed a different {name}")
         self.summary = summary
@@ -1395,17 +1437,16 @@ class SourceCatalogBuilder:
                     )
                 )
             selected_blob_source = staging.blob_source()
-            state_digest, requested_digest, selected_digest = _catalog_state_digests(
+            derived = _derive_catalog(
                 selected_blob_source,
                 partitions,
                 item_count=row_partitioner.item_count,
                 selected_count=row_partitioner.selected_count,
             )
-            diagnostics = _catalog_diagnostics(
-                selected_blob_source,
-                partitions,
-                row_partitioner.item_count,
-            )
+            state_digest = derived.catalog_state_digest
+            requested_digest = derived.requested_universe_set_digest
+            selected_digest = derived.selected_source_set_digest
+            diagnostics = derived.diagnostics
             spec = {
                 "catalogId": self._request.catalog_id,
                 "catalogSchemaDigest": catalog_schema_digest,

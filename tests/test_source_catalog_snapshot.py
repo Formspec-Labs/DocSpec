@@ -1434,18 +1434,24 @@ def test_producer_gate_recomputes_state_before_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actual_digest_function = source_catalog_artifact._catalog_state_digests
+    actual_derivation = source_catalog_artifact._derive_catalog
     calls = 0
 
-    def wrong_initial_state(*args: Any, **kwargs: Any) -> tuple[str, str, str]:
+    def wrong_initial_state(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
         nonlocal calls
         calls += 1
-        state, requested, selected = actual_digest_function(*args, **kwargs)
+        derived = actual_derivation(*args, **kwargs)
         if calls == 1:
-            state = "sha256:" + "f" * 64
-        return state, requested, selected
+            derived = source_catalog_artifact._DerivedCatalog(
+                "sha256:" + "f" * 64,
+                derived.requested_universe_set_digest,
+                derived.selected_source_set_digest,
+                derived.disposition_counts,
+                derived.diagnostics,
+            )
+        return derived
 
-    monkeypatch.setattr(source_catalog_artifact, "_catalog_state_digests", wrong_initial_state)
+    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", wrong_initial_state)
     source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
 
     with pytest.raises(IntegrityError, match="catalogStateDigest"):
@@ -2406,3 +2412,65 @@ def test_cli_concurrent_publishers_leave_one_artifact_and_one_success_receipt(
     ).verify_snapshot(reference)
     assert summary.item_count == 1
     assert not tuple(tmp_path.glob(".catalog-store.*"))
+
+
+def test_the_incremental_framer_equals_rulespec_batch_framing_byte_for_byte() -> None:
+    """The one-pass derivation only holds if the incremental hasher IS the protocol.
+
+    ``_FramedSectionHasher`` re-states ``framed_section_digest``'s byte layout so
+    ten digests can share one pass over the rows. This pins the two functions to
+    each other across shapes: empty sections, one record, many records, nested
+    values, non-ASCII text, and empty payload objects.
+    """
+
+    from rulespec_artifacts import FramedSection, framed_section_digest
+
+    cases: list[tuple[str, str, list[dict[str, object]]]] = [
+        ("docspec-test-domain/1", "records", []),
+        ("docspec-test-domain/1", "records", [{"a": 1}]),
+        ("docspec-test-domain/2", "members", [{"k": v, "n": [v, {"d": v}]} for v in range(50)]),
+        ("docspec-test-domain/3", "rows", [{"text": "naïve — ünïcode ✓"}, {}]),
+    ]
+    for domain, name, records in cases:
+        expected = framed_section_digest(domain, (FramedSection(name, len(records), iter(records)),))
+        hasher = source_catalog_artifact._FramedSectionHasher(domain, name, len(records))
+        for record in records:
+            hasher.add(record)
+        assert hasher.digest() == expected
+
+    over = source_catalog_artifact._FramedSectionHasher("docspec-test-domain/1", "records", 1)
+    over.add({"a": 1})
+    with pytest.raises(IntegrityError, match="exceeds its declared count"):
+        over.add({"a": 2})
+    under = source_catalog_artifact._FramedSectionHasher("docspec-test-domain/1", "records", 2)
+    under.add({"a": 1})
+    with pytest.raises(IntegrityError, match="declared 2 records but yielded 1"):
+        under.digest()
+
+
+def test_a_stored_catalog_row_is_byte_identical_to_its_reserialized_item(tmp_path: Path) -> None:
+    """The state digest frames raw row bytes; this is the identity that permits it.
+
+    Every staged row must satisfy raw == canonical(to_dict(from_dict(parse(raw)))),
+    or framing raw bytes would diverge from framing re-serialized items. Proven
+    here on a real built catalog rather than assumed.
+    """
+
+    from rulespec_artifacts import canonical_json_bytes, parse_canonical_json
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002"), record("2026-00003")),
+        (*renditions("2026-00001"), *renditions("2026-00002"), *renditions("2026-00003")),
+    )
+    store, result = build(tmp_path, source)
+    verifier_reader = SourceCatalogArtifactReader(store, producer=producer())
+    summary = verifier_reader.verify_snapshot(result.reference)
+    checked = 0
+    snapshot = verifier_reader.open_snapshot(result.reference)
+    for item in snapshot.items:
+        raw = canonical_json_bytes(item.to_dict())
+        parsed = parse_canonical_json(raw, path="roundtrip")
+        assert canonical_json_bytes(SourceCatalogItem.from_dict(parsed).to_dict()) == raw
+        checked += 1
+    assert checked == summary.item_count == 3
