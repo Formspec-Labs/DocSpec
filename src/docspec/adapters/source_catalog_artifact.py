@@ -8,7 +8,6 @@ import io
 import json
 import os
 import pickle
-import struct
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -45,6 +44,10 @@ from rulespec_artifacts import (
 )
 
 from docspec.domain.references import SourceCatalogRef
+from docspec.adapters.framing import (
+    FramedSectionHasher as _FramedSectionHasher,
+    canonical_record_payload as _canonical_record_payload,
+)
 from docspec.domain.identity import require_sha256, require_text
 from docspec.domain.storage import partition_bucket
 from docspec.domain.source_catalog import (
@@ -297,91 +300,6 @@ class _CompiledSchemaGate:
 
 
 _ITEM_VALIDATOR = _CompiledSchemaGate(_SCHEMAS["source-item.schema.json"])
-
-
-def _payload_is_fast_safe(value: object) -> bool:
-    """True when std-json canonical output provably equals Rulespec's.
-
-    With every object key ASCII and no float anywhere, ``json.dumps`` with
-    sorted keys, no-ASCII escaping disabled, and compact separators emits the
-    same bytes as the Rulespec canonical writer: string escaping is identical
-    (Rulespec delegates each string to ``json.dumps``), the separators match,
-    and for ASCII keys code-point order equals the UTF-16 order Rulespec sorts
-    by. Anything outside that domain falls back to the Rulespec writer itself.
-    """
-
-    stack = [value]
-    while stack:
-        current = stack.pop()
-        if type(current) is dict:
-            for key, item in current.items():
-                if type(key) is not str or not key.isascii():
-                    return False
-                stack.append(item)
-        elif type(current) is list:
-            stack.extend(current)
-        elif type(current) is float:
-            return False
-    return True
-
-
-def _canonical_record_payload(record: Mapping[str, object]) -> bytes:
-    """Canonical bytes for one framed record, fast where equality is proven."""
-
-    if _payload_is_fast_safe(record):
-        return json.dumps(
-            record,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    return canonical_json_bytes(record)
-
-
-class _FramedSectionHasher:
-    """Incrementally reproduce ``framed_section_digest`` for one known-count section.
-
-    Byte-for-byte the same protocol Rulespec's batch function seals -- domain,
-    NUL, u64 name length, name, u64 count, then u64 payload length + payload per
-    record -- so many digests can share one pass over the rows instead of each
-    demanding its own. Equality with the batch function is pinned by test.
-    """
-
-    __slots__ = ("_digest", "_domain", "_name", "_count", "_observed")
-
-    def __init__(self, domain: str, name: str, count: int) -> None:
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-            raise IntegrityError(f"cannot compute {domain}: section count must be a non-negative integer")
-        self._digest = hashlib.sha256(domain.encode("utf-8") + b"\0")
-        name_bytes = name.encode("utf-8")
-        self._digest.update(struct.pack(">Q", len(name_bytes)))
-        self._digest.update(name_bytes)
-        self._digest.update(struct.pack(">Q", count))
-        self._domain = domain
-        self._name = name
-        self._count = count
-        self._observed = 0
-
-    def add_payload(self, payload: bytes) -> None:
-        self._observed += 1
-        if self._observed > self._count:
-            raise IntegrityError(
-                f"cannot compute {self._domain}: section {self._name!r} exceeds its declared count"
-            )
-        self._digest.update(struct.pack(">Q", len(payload)))
-        self._digest.update(payload)
-
-    def add(self, record: Mapping[str, object]) -> None:
-        self.add_payload(_canonical_record_payload(record))
-
-    def digest(self) -> str:
-        if self._observed != self._count:
-            raise IntegrityError(
-                f"cannot compute {self._domain}: section {self._name!r} declared "
-                f"{self._count} records but yielded {self._observed}"
-            )
-        return "sha256:" + self._digest.hexdigest()
 
 
 def _iter_partition_rows(
@@ -1807,12 +1725,18 @@ class SourceCatalogArtifactReader(ImmutableSourceCatalogReader):
             raise IntegrityError(f"source catalog artifact is invalid: {error}") from error
         if verifier.summary is None:
             raise RuntimeError("source catalog verifier produced no summary")
+        # A reader that already ran the full gate on this exact digest
+        # (verify_snapshot memoizes it) streams items without repeating the
+        # per-row schema and canonicality proofs; structural checks -- row
+        # ordering, partition placement, counts -- still run on every row.
+        already_verified = (reference.catalog_id, reference.digest) in self._verified
         return SourceCatalogSnapshot(
             verifier.summary,
             _iter_located_catalog_rows(
                 blob_source,
                 verifier.partitions,
                 verifier.summary.item_count,
+                validate=not already_verified,
             ),
         )
 

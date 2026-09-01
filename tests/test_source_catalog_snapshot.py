@@ -2619,7 +2619,7 @@ def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_dom
     from rulespec_artifacts import canonical_json_bytes
 
     fast = source_catalog_artifact._canonical_record_payload
-    safe = source_catalog_artifact._payload_is_fast_safe
+    from docspec.adapters.framing import is_fast_canonical_safe as safe
 
     source = FakeSource(
         description(),
@@ -2705,3 +2705,36 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
     fresh = SourceCatalogArtifactReader(store, producer=producer())
     with pytest.raises(IntegrityError, match="catalogStateDigest"):
         fresh.verify_snapshot(result.reference)
+
+
+def test_a_verified_reader_streams_items_without_repeating_the_row_proofs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After verify_snapshot memoizes a digest, open_snapshot's items stream skips
+    the per-row schema and canonicality proofs it already ran; a reader that
+    never verified still validates every row."""
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002")),
+        (*renditions("2026-00001"), *renditions("2026-00002")),
+    )
+    store, result = build(tmp_path, source)
+    seen: list[bool] = []
+    actual = source_catalog_artifact._iter_located_catalog_rows
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs.get("validate", True))
+        return actual(*args, **kwargs)
+
+    monkeypatch.setattr(source_catalog_artifact, "_iter_located_catalog_rows", spy)
+
+    fresh = SourceCatalogArtifactReader(store, producer=producer())
+    assert len(list(fresh.open_snapshot(result.reference).items)) == 2
+    verified = SourceCatalogArtifactReader(store, producer=producer())
+    verified.verify_snapshot(result.reference)
+    assert len(list(verified.open_snapshot(result.reference).items)) == 2
+    assert seen[0] is True, "an unverified reader must validate every row"
+    assert seen[-1] is False, "a verified reader must not repeat the proofs"
+
