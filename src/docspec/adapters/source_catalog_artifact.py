@@ -48,7 +48,7 @@ from docspec.adapters.framing import (
     FramedSectionHasher as _FramedSectionHasher,
     canonical_record_payload as _canonical_record_payload,
 )
-from docspec.domain.identity import require_sha256, require_text
+from docspec.domain.identity import require_sha256, require_text, trusted_json_input
 from docspec.domain.storage import partition_bucket
 from docspec.domain.source_catalog import (
     CatalogDisposition,
@@ -367,7 +367,13 @@ def _iter_partition_stream(
             item: Any = value
         else:
             try:
-                item = SourceCatalogItem.from_dict(value)
+                if validate:
+                    item = SourceCatalogItem.from_dict(value)
+                else:
+                    # The bytes were admitted by a verifier already (this is
+                    # the unvalidated re-stream); construct by wrapping alone.
+                    with trusted_json_input():
+                        item = SourceCatalogItem.from_dict(value)
             except (TypeError, ValueError) as error:
                 raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
             source_item_id = item.source_item_id

@@ -2738,3 +2738,33 @@ def test_a_verified_reader_streams_items_without_repeating_the_row_proofs(
     assert seen[0] is True, "an unverified reader must validate every row"
     assert seen[-1] is False, "a verified reader must not repeat the proofs"
 
+
+def test_trusted_construction_equals_validated_construction_on_real_rows(tmp_path: Path) -> None:
+    """Wrapping alone must yield the same items as full validation on admitted rows.
+
+    A verified reader re-streams its catalog under trusted_json_input; every
+    item it constructs must equal the item full validation constructs from the
+    same bytes, and trusted construction must never leak past its context.
+    """
+
+    from docspec.domain.identity import trusted_json_input
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002", malformed_rin=True)),
+        (*renditions("2026-00001"), *renditions("2026-00002")),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    reader.verify_snapshot(result.reference)
+    validated = list(SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items)
+    trusted = list(reader.open_snapshot(result.reference).items)
+    assert trusted == validated
+    assert [i.to_dict() for i in trusted] == [i.to_dict() for i in validated]
+    with pytest.raises(ValueError):
+        SourceCatalogItem.from_dict({"sourceItemId": 1.5})  # outside any trusted context
+    with trusted_json_input():
+        pass
+    with pytest.raises((ValueError, TypeError)):
+        SourceCatalogItem.from_dict({"sourceItemId": 1.5})
+

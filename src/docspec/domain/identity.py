@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import contextvars
+
+import contextlib
+
 import hashlib
 import json
 import math
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterator, Iterable, Mapping, Sequence
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 from pathlib import PurePosixPath
@@ -70,9 +74,40 @@ def closed_mapping(
     return value
 
 
+_TRUSTED_JSON_INPUT = contextvars.ContextVar("docspec_trusted_json_input", default=False)
+
+
+@contextlib.contextmanager
+def trusted_json_input() -> Iterator[None]:
+    """Freeze already-proven JSON by wrapping alone.
+
+    Inside this context ``freeze_json`` skips the checks canonical parsing has
+    already established for its input -- string keys, no duplicates, no
+    floats, keys in canonical order -- and only makes the tree immutable. It
+    is for values decoded from bytes a verifier has ALREADY admitted (a reader
+    re-streaming a catalog it verified), never for arbitrary input.
+    """
+
+    token = _TRUSTED_JSON_INPUT.set(True)
+    try:
+        yield
+    finally:
+        _TRUSTED_JSON_INPUT.reset(token)
+
+
+def _wrap_trusted(value: Any) -> JSONValue:
+    if type(value) is dict:
+        return MappingProxyType({key: _wrap_trusted(item) for key, item in value.items()})
+    if type(value) is list:
+        return tuple(_wrap_trusted(item) for item in value)
+    return value
+
+
 def freeze_json(value: Any, *, label: str = "value") -> JSONValue:
     """Return an immutable JSON value and reject ambiguous inputs."""
 
+    if _TRUSTED_JSON_INPUT.get() and type(value) in (dict, list, str, int, bool, type(None)):
+        return _wrap_trusted(value)
     if is_dataclass(value) and not isinstance(value, type):
         value = asdict(value)
     if isinstance(value, Enum):
