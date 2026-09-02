@@ -97,7 +97,7 @@ the exact failure this record documents elsewhere.
 
 | Rule | State |
 |---|---|
-| 8 — Federal Register identity | **open, and first.** Blocks the crawl restart |
+| 8 — Federal Register collapse | **diagnosed; remedy deferred to its own record.** Does not block the crawl; blocks on the census |
 | 6 — S3 retry patience | **landed**, `b13a1de`; one gap survives in `s3_client()` |
 | 9 — key/body refusal into the replay parser | open, one function call |
 | 10 — policy digest at admission | open, with two version bumps owed |
@@ -180,30 +180,34 @@ the class, not chosen (`src/docspec/domain/jobs.py:58-77`,
 `docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md`
 §10.3). SpicyDocs has one bucket, and it is pinned to zero.
 
-The conflation is visible in one docstring. `iter_source_objects` is "deliberately
-fail-fast: a missing listing ETag, changed object, failed GET, or incomplete body
-makes the enumeration unusable as complete-snapshot evidence"
-(`spicy-docs/src/spicy_docs/sources/mirrulations.py:552-560`). Three of those
-four mean the snapshot is genuinely unfaithful. "Failed GET" means the network
-was busy.
+The conflation was visible in one docstring, which described
+`iter_source_objects` as deliberately fail-fast on "a missing listing ETag,
+changed object, failed GET, or incomplete body". Three of those four mean the
+snapshot is genuinely unfaithful; "failed GET" means the network was busy.
+**Resolved upstream in `b13a1de`**, which rewrote that docstring to draw the
+line this record asked for: "A genuine transient transport failure ... is not
+one of those — the network was busy, not wrong"
+(`spicy-docs/src/spicy_docs/sources/mirrulations.py:650-652`). Quoted here in
+the past tense because the diagnosis is what justifies Rule 3, and the fix is
+what retires it.
 
-### The taxonomy is being re-derived per transport
+### The taxonomy was re-derived per transport, and then converged
 
 `spicy-docs` `168c6c4` rediscovered the transient/deterministic split inside an
 httpx retry loop — "Only 429 and 5xx are retryable now... every other 4xx fails
 on the first attempt" — four weeks after DocSpec specified it as a control-plane
-obligation. Its own message names the rest of the defect: "the crawl has no
-resume, so the whole run was lost."
+obligation, and its own message named the rest of the defect: "the crawl has no
+resume, so the whole run was lost." For a day that fix existed only in
+`source_native_cli.py` while the S3 path that lost 47 agencies kept a
+thirty-second read timeout and no per-key retry.
 
-That fix landed only in `source_native_cli.py`. The S3 path that lost the 47
-agencies still runs botocore's short standard backoff —
-`read_timeout=30, retries={"max_attempts": 5, "mode": "standard"}` at
-`spicy-docs/src/spicy_docs/sources/mirrulations.py:62-70` — which is the same
-"five attempts inside thirty seconds" shape `168c6c4` called insufficient. And
-`iter_source_objects` wraps its GETs in no retry at all: `get()` calls
-`download_object_bytes` bare inside the pool (`mirrulations.py:599-601`), while
-the whole `DownloadFailures` / `transient_retries` apparatus sits on the
-`iter_records` path beside it (`:647-677`).
+`b13a1de` closed the gap on the S3 side. **This section is retained as the
+diagnosis behind Rule 3 and nothing more**; an earlier draft asserted the gap in
+the present tense after Rule 6 had already recorded it closed, which is the
+contradiction this record exists to catch and did not catch in itself. What
+survives is the argument, not the defect: two transports each grew their own
+retry policy because no shared control plane owned the classification, and a
+third transport would grow a third.
 
 ## Obligations
 
@@ -240,9 +244,9 @@ rather than a third retry loop.
 Acquisition has two phases and the current rule treats them as one.
 `listed_entries()` establishes the complete, strictly-ordered, ETag-pinned key
 set before any object is fetched
-(`spicy-docs/src/spicy_docs/sources/mirrulations.py:576-599`); the GET fan-out
+(`spicy-docs/src/spicy_docs/sources/mirrulations.py:676-697`); the GET fan-out
 then fills it. A failure in listing is unnameable and MUST still abort — that is
-what the `processed_keys` refusal at `:568-569` is protecting, and it is right.
+what the `processed_keys` refusal at `:668-669` is protecting, and it is right.
 A failure in fetching is nameable by key, because the denominator is already
 sealed. Fetch failures become disposition rows; listing failures keep the
 current behavior.
@@ -277,36 +281,67 @@ it to `build_artifact_root`, and no caller anywhere in `src/`, `tools/`, or
 Until a writer exists there is no lineage chain, so there is nothing for a retry
 release to attach to.
 
-**Rule 8 — the Federal Register record identity is the number and the date.
-This one comes before the crawl restarts.** `federal_register_source_native.py:659`
-makes `sourceRecordId` the bare `document_number`, and
-`source_native_profiles.py:96-107` collapses a reused number to the newest
-`publication_date`. The code's own comment concedes what that discards: `00-111`
-is "a 2000-01-18 filing and an older 2000-01-14 rule", two documents, not two
-observations of one. §4's collapse rule was written for a record observed twice
-and is being applied to an identity collision, so the older document never
-becomes a record, never gets a rendition row, and never reaches a catalog —
-against this record's own Rule 5, that every member of the requested universe
-gets a row. It survives in acquisition evidence and `tools/observation_census.py`
-can recover it, but a document reachable only by a bespoke forensic tool is not
-in the corpus.
+**Rule 8 — the Federal Register collapse is a defect; the remedy is deferred to
+its own record.** `federal_register_source_native.py:659` makes `sourceRecordId`
+the bare `document_number`, and `source_native_profiles.py:96-107` collapses a
+reused number to the newest `publication_date`. The code's own comment concedes
+what that discards: `00-111` is "a 2000-01-18 filing and an older 2000-01-14
+rule", two documents, not two observations of one. §4's collapse rule was
+written for a record observed twice and is being applied to an identity
+collision, so the older document never becomes a record, never gets a rendition
+row, and never reaches a catalog — against Rule 5, that every member of the
+requested universe gets a row. That diagnosis stands.
 
-Make the identity `(document_number, publication_date)`, ship it as a new
-`federal-register-document` schema version, bump
-`FEDERAL_REGISTER_ACQUISITION_POLICY_VERSION`, and amend spec §4's Federal
-Register paragraph to say the collapse does not apply to a source that reuses
-identities. DocSpec's selector is already keyed on schema name and version
-(`application/federal_register_catalog.py:118-124`), so the seam absorbs the
-bump. The sequencing is the point: the crawl's justification is the collision
-census, and a census taken over this release shape measures its own filter.
+**An earlier draft of this rule prescribed the remedy and sequenced it first.
+Both were wrong, and the review that produced them retracted them.**
+
+The sequencing claim was that the collision census must wait because "a census
+taken over this release shape measures its own filter". That is false.
+`spicy-docs/tools/observation_census.py:2-6` replays the accepted traversal's
+**acquisition-pages evidence**, not the published records, "to recover every
+discarded observation too", and it already emits `sameNumberDifferentDateCount`
+(`:118`) and `modernFormCollisions` (`:130`) as named fields. The discarded
+document is in evidence and the tool reads evidence. The census is therefore not
+circular, it does not block on this rule, and this rule blocks on it: nobody
+currently knows whether this is two documents or twenty thousand.
+
+The prescribed remedy — making the identity `(document_number, publication_date)`
+— is also under-specified and more expensive than that draft claimed. It
+contradicts spec §8 (`:461-462`), which states the identity and the
+source-issued version as separate things and which the draft did not propose to
+amend. It moves rather than resolves the collision: with no `observation_version`
+under a composite identity, a same-date byte-identical repeat that publishes
+cleanly today would abort through `_select_observations`' `count(*) > 1` branch.
+And `sourceRecordId` is both the 64-bucket partition key and the `recordOrderKey`,
+so the change moves every bucket assignment, `sourceStateDigest`, `logicalId` and
+`artifactDigest`, and every Federal Register release published under the old
+schema becomes unreadable by the new profile. Downstream,
+`application/federal_register_catalog.py:224-227` keys `documentId` on
+`document_number` alone, so two catalog rows would share a `documentId`.
+
+**A cheaper option this record now prefers, without deciding it.** Keep
+`sourceRecordId = document_number` and stop collapsing across dates — *refuse*
+instead. Two observations of one number at different publication dates are not
+repeat observations of one record, which is what §4's rule is for. Refusing
+costs no schema version, no policy version, no partition-key move and no
+downstream shape change; it surfaces the collision loudly and matches the
+platform's refuse-or-record doctrine. Its cost is an aborted release, which is
+precisely the cost Rule 4 exists to convert into a named disposition row. The
+clean order is therefore Rule 4, then the crawl, then the census, then the
+identity decision with a number in hand.
+
+**This belongs in its own decision record, not as rule 8 of 11 here.** It
+changes a sealed identity, it contradicts two clauses of a live spec, it is
+contested between two agents, and it needs an owner's ruling rather than an
+agent's. Burying a contested identity decision inside a record about execution
+topology is how it gets executed without being decided.
 
 **Rule 9 — the key/body identity refusal moves to the shared replay parser.**
 It currently sits in `regulations_gov_source_native.py:1691`, inside
 `_iter_pages`, which is the live acquisition path only. `_parse_page_response`
 (`:1120-1198`) — the parser an independent verifier replays — never compares the
 object key to `source_record_id(record)`. So `verify` cannot detect the defect
-the refusal exists to prevent, and both `wiki/spicy-docs_source-native-release.md:276`
-and spec `:188-191` overstate what independent verification proves. A guard on
+the refusal exists to prevent, and spec `:189-191` overstate what independent verification proves. A guard on
 the acquisition path is an operational check; a guard in the shared parser is a
 release property.
 
@@ -348,15 +383,15 @@ behaviour-changing commits behind spicy-docs HEAD. Re-pin it.
   because it is a `GROUP BY ... HAVING count(*) > 1` over it
   (`spicy-docs/src/spicy_docs/source_native.py:704-709`, run at `:1199` after
   the page loop drains), which is why EPA surfaced at minute 85 rather than
-  minute 3. Listing keys are strictly ordered and `mirrulations.py:582-583`
+  minute 3. Listing keys are strictly ordered and `mirrulations.py:686-688`
   enforces that, so a per-identity streaming collapse looks tempting. **It does
   not work as the code stands.** Record identity comes from the parsed body, not
   the key: `source_record_id` returns `record["data"]["id"]`
-  (`regulations_gov_source_native.py:725-726`). Sorted key order therefore does
+  (`regulations_gov_source_native.py:733-734`). Sorted key order therefore does
   not order identities, and a streaming group could close a group early.
 
   Making it work needs an invariant that does not exist. The key admission at
-  `regulations_gov_source_native.py:1650-1660` checks ASCII, the
+  `regulations_gov_source_native.py:1672-1682` checks ASCII, the
   `raw-data/{agency}/` prefix, the `/{collection}/` segment, and global sort and
   distinctness, and then takes identity from the body without ever comparing the
   two. So the key decides agency and collection membership while the body decides
