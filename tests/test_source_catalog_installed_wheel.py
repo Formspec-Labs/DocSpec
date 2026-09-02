@@ -13,20 +13,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.9-py3-none-any.whl"
 RULESPEC_WHEEL_SHA256 = "67cb33bf63c11bc6812ad0e8f0a8b73e89501fa6d4242acf75a7cc6612f5d6c6"
-SPICY_REGS_WHEEL = (
+SPICY_DOCS_WHEEL = (
     ROOT
     / "tests"
     / "fixtures"
     / "installed_wheels"
-    / "spicy_regs-0.1.7-py3-none-any.whl"
+    / "spicy_docs-0.1.0-py3-none-any.whl"
 )
-SPICY_REGS_WHEEL_SHA256 = "b8c2f9ea3a7f44dbd1c373f4ba3902371ff1664ac55776d5f01372091f97f3ec"
+SPICY_DOCS_WHEEL_SHA256 = "6b5e87ca598bc20fd7f474d56e3324853fd7746227500b95a7a5815a45f59c7d"
 
 
-# SpicyRegs 0.1.7 is not published to a package index. This is the exact real
-# producer wheel used to publish and verify the bounded source-native fixtures.
-# It is test input, not a DocSpec dependency. Different wheel bytes require a
-# new SpicyRegs version and a new explicit digest pin; this test never rebuilds it.
+# spicy-docs is the platform's source-native producer, and 0.1.0 is not
+# published to a package index. This is the exact producer wheel built from
+# spicy-docs commit 4cf1e8231ce7b5883f3c11be65eed62593007495, used to publish
+# and verify the bounded source-native fixtures. It is test input, not a
+# DocSpec dependency. Different wheel bytes require a new spicy-docs version
+# and a new explicit digest pin; this test never rebuilds it.
 _INSTALLED_PROBE = r'''
 from __future__ import annotations
 
@@ -42,7 +44,7 @@ from pathlib import Path
 from typing import Any
 
 import docspec
-import spicy_regs
+import spicy_docs
 from docspec.adapters.source_catalog_artifact import (
     SourceCatalogArtifactReader,
     source_catalog_producer,
@@ -54,11 +56,11 @@ from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceInputSelector
 from rulespec_artifacts import Producer
-from spicy_regs.federal_register_source_native import (
+from spicy_docs.federal_register_source_native import (
     FederalRegisterPage,
     federal_register_documents_url,
 )
-from spicy_regs.regulations_gov_source_native import (
+from spicy_docs.regulations_gov_source_native import (
     COMMENT_COLLECTION,
     DOCUMENT_COLLECTION,
     DOCKET_COLLECTION,
@@ -66,19 +68,24 @@ from spicy_regs.regulations_gov_source_native import (
     iter_regulations_gov_document_pages,
     iter_regulations_gov_docket_pages,
 )
-from spicy_regs.source_native import SourceNativeReleaseBuild, SourceNativeReleasePublisher
-from spicy_regs.source_native_profiles import (
+from spicy_docs.source_native import (
+    VERIFIER_ID,
+    VERIFIER_VERSION,
+    SourceNativeReleaseBuild,
+    SourceNativeReleasePublisher,
+)
+from spicy_docs.source_native_profiles import (
     FEDERAL_REGISTER_PROFILE,
     REGULATIONS_GOV_COMMENT_PROFILE,
     REGULATIONS_GOV_DOCUMENT_PROFILE,
     REGULATIONS_GOV_DOCKET_PROFILE,
 )
-from spicy_regs.source_native_store import LocalSourceNativeBlobStore
+from spicy_docs.source_native_store import LocalSourceNativeBlobStore
 
 
 RUN_ROOT = Path(sys.argv[1]).resolve(strict=True)
 PROOF_PATH = Path(sys.argv[2])
-SPICY_IMPLEMENTATION = "git+https://example.test/spicy-regs@" + "a" * 40
+SPICY_DOCS_IMPLEMENTATION = "git+https://example.test/spicy-docs@" + "a" * 40
 DOCSPEC_IMPLEMENTATION = "git+https://example.test/docspec@" + "1" * 40
 QUERY_SCOPE = {"publishedFrom": "2026-08-25", "publishedThrough": "2026-08-25"}
 DOCUMENT_IDS = ("2026-00001", "2026-00002", "2026-00003")
@@ -163,11 +170,11 @@ def completed_at() -> datetime:
 
 def producer() -> Producer:
     return Producer(
-        "spicy-regs",
-        SPICY_IMPLEMENTATION,
-        "urn:spicy-regs:source-native-release-verifier",
-        "1.0",
-        SPICY_IMPLEMENTATION,
+        "spicy-docs",
+        SPICY_DOCS_IMPLEMENTATION,
+        VERIFIER_ID,
+        VERIFIER_VERSION,
+        SPICY_DOCS_IMPLEMENTATION,
     )
 
 
@@ -416,7 +423,7 @@ def build_catalog_arguments(
     command.extend(
         [
             "--accepted-source-verifier-implementation-id",
-            SPICY_IMPLEMENTATION,
+            SPICY_DOCS_IMPLEMENTATION,
             "--catalog-policy",
             str(policy_path),
             "--implementation-id",
@@ -503,20 +510,20 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
 assert sys.version_info[:2] == (3, 12)
 assert importlib.metadata.version("docspec") == "0.2.9"
 assert importlib.metadata.version("rulespec-artifacts") == "1.0.9"
-assert importlib.metadata.version("spicy-regs") == "0.1.7"
+assert importlib.metadata.version("spicy-docs") == "0.1.0"
 assert not any(
-    requirement.lower().startswith("spicy-regs")
+    requirement.lower().startswith("spicy-docs")
     for requirement in (importlib.metadata.requires("docspec") or ())
 )
 environment_root = Path(sys.prefix).resolve(strict=True)
 module_origins = {
     "docspec": str(Path(docspec.__file__).resolve(strict=True)),
-    "spicy_regs": str(Path(spicy_regs.__file__).resolve(strict=True)),
+    "spicy_docs": str(Path(spicy_docs.__file__).resolve(strict=True)),
 }
 assert all(Path(value).is_relative_to(environment_root) for value in module_origins.values())
 
 direct_urls: dict[str, object] = {}
-for distribution_name in ("docspec", "rulespec-artifacts", "spicy-regs"):
+for distribution_name in ("docspec", "rulespec-artifacts", "spicy-docs"):
     distribution = importlib.metadata.distribution(distribution_name)
     direct_url = json.loads(distribution.read_text("direct_url.json"))
     assert direct_url.get("dir_info", {}).get("editable") is not True
@@ -635,7 +642,7 @@ for command_receipt, expected_profiles in (
     ),
 ):
     assert command_receipt["acceptedSourceVerifierImplementationIds"] == [
-        SPICY_IMPLEMENTATION
+        SPICY_DOCS_IMPLEMENTATION
     ]
     assert [
         value["profile"] for value in command_receipt["sourceNativeInputs"]
@@ -843,7 +850,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     uv = shutil.which("uv")
     assert uv is not None, "the installed-wheel SourceCatalog proof requires uv"
     assert _sha256(RULESPEC_WHEEL) == RULESPEC_WHEEL_SHA256
-    assert _sha256(SPICY_REGS_WHEEL) == SPICY_REGS_WHEEL_SHA256
+    assert _sha256(SPICY_DOCS_WHEEL) == SPICY_DOCS_WHEEL_SHA256
 
     build_root = tmp_path / "build"
     build_root.mkdir()
@@ -858,7 +865,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     docspec_wheel = next(build_root.glob("docspec-0.2.9-*.whl"))
     with zipfile.ZipFile(docspec_wheel) as archive:
         assert not any(
-            name.endswith(".whl") or name.startswith("spicy_" + "regs/")
+            name.endswith(".whl") or name.startswith("spicy_docs/")
             for name in archive.namelist()
         )
 
@@ -866,7 +873,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     wheelhouse = runtime_root / "wheelhouse"
     wheelhouse.mkdir(parents=True)
     runtime_rulespec = shutil.copy2(RULESPEC_WHEEL, wheelhouse / RULESPEC_WHEEL.name)
-    runtime_spicy_regs = shutil.copy2(SPICY_REGS_WHEEL, wheelhouse / SPICY_REGS_WHEEL.name)
+    runtime_spicy_docs = shutil.copy2(SPICY_DOCS_WHEEL, wheelhouse / SPICY_DOCS_WHEEL.name)
     runtime_docspec = shutil.copy2(docspec_wheel, wheelhouse / docspec_wheel.name)
     environment = runtime_root / "environment"
     create = subprocess.run(
@@ -902,7 +909,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             "--python",
             str(environment_python),
             "--no-deps",
-            str(runtime_spicy_regs),
+            str(runtime_spicy_docs),
         ],
         cwd=tmp_path,
         capture_output=True,
@@ -969,7 +976,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             "-c",
             (
                 "import importlib.util; "
-                "assert importlib.util.find_spec('spicy_regs') is None"
+                "assert importlib.util.find_spec('spicy_docs') is None"
             ),
         ],
         cwd=tmp_path,
