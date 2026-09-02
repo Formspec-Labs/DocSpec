@@ -194,8 +194,13 @@ class MemoryCatalogReader:
 
     def scan(self, *, layer_kind: str) -> Iterator[dict]:
         self.owner.scan_calls += 1
-        assert layer_kind == "source-items"
-        yield from self.owner.rows()
+        if layer_kind == "source-items":
+            yield from self.owner.rows()
+            return
+        if layer_kind == "failures":
+            yield from self.owner.failure_rows()
+            return
+        raise AssertionError(f"unexpected layer_kind {layer_kind!r}")
 
 
 @dataclass
@@ -203,6 +208,7 @@ class MemoryDocumentCatalog:
     reference: DocumentReleaseRef
     release: DocumentRelease
     items: tuple[SourceItem, ...]
+    failed_item_ids: tuple[str, ...] = ()
     reader_calls: int = 0
     scan_calls: int = 0
     lookup_calls: int = 0
@@ -221,6 +227,25 @@ class MemoryDocumentCatalog:
                 "idempotencyKey": f"memory:{item.item_id}",
                 "deleted": item.state == SourceItemState.DELETED,
                 "payload": item.to_dict(),
+            }
+
+    def failure_rows(self) -> Iterator[dict]:
+        """The bounded failures layer: one row per failed source item, id only."""
+
+        for item_id in self.failed_item_ids:
+            yield {
+                "recordId": f"urn:test:failure:{item_id}",
+                "sourceItemId": item_id,
+                "idempotencyKey": f"memory:failure:{item_id}",
+                "deleted": False,
+                "payload": {
+                    "entryId": f"urn:test:entry:{item_id}",
+                    "failureClass": "deterministic-input",
+                    "diagnosticCode": "test.synthetic-failure",
+                    "detail": "synthetic fixture failure",
+                    "attempt": 1,
+                    "retryable": False,
+                },
             }
 
 
@@ -294,6 +319,7 @@ def _planned_update(
     selection: dict | None = None,
     previous_selection: dict | None = None,
     partitions: tuple[str, ...] = (),
+    failed_item_ids: tuple[str, ...] = (),
 ) -> tuple[tuple, MemoryDocumentCatalog]:
     controls = MemoryControls()
     stores = MemoryStores()
@@ -329,6 +355,7 @@ def _planned_update(
         release_ref,
         release,
         previous_items,
+        failed_item_ids,
     )
     source_catalog = MemorySourceCatalog(
         current_source,
@@ -595,7 +622,8 @@ def test_same_version_complete_source_item_changes_are_scheduled(
 
     assert [(entry.source_item, entry.change) for entry in entries] == [(current, expected_change)]
     assert catalog.reader_calls == 1
-    assert catalog.scan_calls == 1
+    # One scan of "source-items" plus one bounded scan of "failures" to find repairable work.
+    assert catalog.scan_calls == 2
     assert catalog.lookup_calls == 0
 
 
@@ -620,4 +648,5 @@ def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> N
     assert deletion.change == ChangeKind.DELETED
     assert deletion.terminal
     assert catalog.reader_calls == 1
-    assert catalog.scan_calls == 1
+    # One scan of "source-items" plus one bounded scan of "failures" to find repairable work.
+    assert catalog.scan_calls == 2

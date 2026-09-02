@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.source_catalog_artifact import SourceCatalogArtifactReader
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
@@ -15,9 +16,10 @@ from docspec.adapters.storage import (
     LocalManifestDocumentCatalog,
 )
 from docspec.application.maintenance import ReleaseCompactionService, logical_release_state_digest
-from docspec.domain.content import SourceItem
+from docspec.application.planner import RunPlanner
+from docspec.domain.content import AcquisitionDisposition, SourceItem
 from docspec.domain.identity import canonical_json_bytes
-from docspec.domain.jobs import ChangeKind, EntryExecutionMode
+from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass
 from docspec.domain.maintenance import ReleaseCompactionReceipt
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.references import DocumentReleaseRef
@@ -41,6 +43,9 @@ _CountingProcessor = _processor_helpers._CountingProcessor
 _CountingSegmenter = _processor_helpers._CountingSegmenter
 _description = _processor_helpers._description
 _plan = _processor_helpers._plan
+# tests.conformance.test_document_store imports this module at collection time
+# (for _platform and friends), so importing it back at module level here would
+# be circular; import it lazily inside the test that needs _FailingProcessor.
 
 _CORE_STATE_LAYERS = ("source-items", "files", "representations", "segments")
 
@@ -423,3 +428,162 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
         list(compacting_catalog.compare(targeted_release, compacted_release, layer_kind=layer.layer_kind)) == []
         for layer in targeted.active_layers
     )
+
+
+def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay_dropped(
+    tmp_path: Path,
+) -> None:
+    """A document that ends one run with an accepted-failure disposition must
+    be replanned as repairable work on the next run, even when neither the
+    source catalog nor the governing plan changed in between — otherwise it
+    is stuck forever. An item that succeeded must still classify as
+    UNCHANGED and drop out of the plan entirely, so one unrelated failure
+    does not turn every incremental run into a full rebuild."""
+
+    _FailingProcessor = importlib.import_module("tests.conformance.test_document_store")._FailingProcessor
+
+    retry = RetryPolicy(base_delay_milliseconds=0)
+    accepted = AcceptedFailurePolicy((FailureClass.DETERMINISTIC_INPUT,))
+    platform = _platform(tmp_path / "repair", member_bytes=1024 * 1024)
+
+    steady_a = _write_source(
+        platform.sources / "steady-a.txt",
+        "Steady A never changes across either run.",
+    )
+    steady_b = _write_source(
+        platform.sources / "steady-b.txt",
+        "Steady B never changes across either run either.",
+    )
+    broken = _write_source(
+        platform.sources / "broken.txt",
+        "Broken starts out failing its processor.",
+    )
+    # source-native records must be strictly ordered by item id.
+    items = (
+        SourceItem("document-broken", "v1", (broken,), metadata={"expectedSegments": 1}),
+        SourceItem("document-steady-a", "v1", (steady_a,), metadata={"expectedSegments": 1}),
+        SourceItem("document-steady-b", "v1", (steady_b,), metadata={"expectedSegments": 1}),
+    )
+    description = _description("repair-failed-item", "1", retry)
+
+    # First run: "document-broken" fails its processor deterministically and
+    # is accepted as a failure rather than blocking the release.
+    first_source = platform.publish_source(items, name="first")
+    failing_processor = _FailingProcessor(
+        description,
+        fail_item_id="document-broken",
+        error=ValueError("declared deterministic fixture failure"),
+    )
+    first_plan = _plan(first_source, None, (failing_processor,), retry, accepted)
+    first_planned, _, first_sealed, _, first_release = _run(
+        plan=first_plan,
+        source_catalog=platform.source_catalog,
+        controls=platform.controls,
+        stores=platform.stores,
+        blobs=platform.blobs,
+        records=platform.records,
+        catalog=platform.catalog,
+        fetcher=SharedFixtureContentFetcher(platform.sources),
+        processors=(failing_processor,),
+        partition_policy=platform.partition_policy,
+        accepted_failure_policy=accepted,
+    )
+
+    first_planned_entries = {
+        entry.source_item.item_id: entry
+        for reference in first_planned
+        for entry in platform.stores.load(reference).entries
+    }
+    assert set(first_planned_entries) == {"document-steady-a", "document-steady-b", "document-broken"}
+    assert {entry.change for entry in first_planned_entries.values()} == {ChangeKind.ADDED}
+
+    first_sealed_entries = {
+        entry.source_item.item_id: entry
+        for reference in first_sealed
+        for entry in platform.stores.load(reference).entries
+    }
+    assert first_sealed_entries["document-broken"].disposition == AcquisitionDisposition.ACCEPTED_FAILURE
+    assert first_sealed_entries["document-steady-a"].disposition == AcquisitionDisposition.CAPTURED
+    assert first_sealed_entries["document-steady-b"].disposition == AcquisitionDisposition.CAPTURED
+
+    # Second run: an unchanged source catalog (identical items, identical
+    # digests) over an unchanged governing plan (same processor description,
+    # limits, stages, retry and accepted-failure policies) — only the base
+    # release and the source-catalog reference legitimately differ.
+    second_source = platform.publish_source(items, name="second")
+    second_plan = _plan(second_source, first_release, (failing_processor,), retry, accepted)
+    assert second_plan.governing_content() == first_plan.governing_content(), (
+        "the scenario requires an unchanged plan; only the base release and "
+        "source-catalog reference may legitimately differ"
+    )
+
+    # Plan the second run directly, against the real committed first release,
+    # without executing it. The property under test is a planning-time one —
+    # "re-plans exactly that item and no others" — so proving it does not
+    # need a second full capture/process/deliver/commit pass.
+    second_plan_ref = platform.controls.put(
+        kind="plans",
+        artifact_id=second_plan.plan_id,
+        value=second_plan.to_dict(),
+    )
+    second_planned = tuple(
+        RunPlanner(
+            source_catalog=platform.source_catalog,
+            document_catalog=platform.catalog,
+            stores=platform.stores,
+            controls=platform.controls,
+            workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+                platform.records.root / ".planning-second",
+                read_batch_size=1,
+            ),
+        ).plan_run(second_source, first_release, second_plan_ref)
+    )
+    second_planned_entries = tuple(
+        entry
+        for reference in second_planned
+        for entry in platform.stores.load(reference).entries
+    )
+    # The property under test: the plan touches exactly the one previously
+    # failed item and nothing else — asserted on the touched-item count, not
+    # merely its classification.
+    assert len(second_planned_entries) == 1
+    (repaired,) = second_planned_entries
+    assert repaired.source_item.item_id == "document-broken"
+    assert repaired.change == ChangeKind.REPAIR
+    assert repaired.execution_mode == EntryExecutionMode.FULL
+
+    # The negative: the two items that succeeded the first time are still
+    # UNCHANGED and still dropped from the plan.
+    assert {entry.source_item.item_id for entry in second_planned_entries} == {"document-broken"}
+
+    # End-to-end confirmation: the repaired item now actually captures and
+    # completes, and the resulting release still carries every item's
+    # complete active state, not only the one item this run touched.
+    healed_processor = _CountingProcessor(description)
+    _, _, second_sealed, _, second_release = _run(
+        plan=second_plan,
+        source_catalog=platform.source_catalog,
+        controls=platform.controls,
+        stores=platform.stores,
+        blobs=platform.blobs,
+        records=platform.records,
+        catalog=platform.catalog,
+        fetcher=SharedFixtureContentFetcher(platform.sources),
+        processors=(healed_processor,),
+        partition_policy=platform.partition_policy,
+        accepted_failure_policy=accepted,
+    )
+    second_sealed_entries = {
+        entry.source_item.item_id: entry
+        for reference in second_sealed
+        for entry in platform.stores.load(reference).entries
+    }
+    assert set(second_sealed_entries) == {"document-broken"}
+    assert second_sealed_entries["document-broken"].disposition == AcquisitionDisposition.CAPTURED
+
+    second_state = _active_document_state(platform.catalog, second_release)
+    assert {row["sourceItemId"] for row in second_state["source-items"]} == {
+        "document-steady-a",
+        "document-steady-b",
+        "document-broken",
+    }

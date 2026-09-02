@@ -93,6 +93,7 @@ _ZERO_ESTIMATE = WorkEstimate(0, 0, 0, 0, 0, 0)
 class _PriorSourceItem:
     item: SourceItem
     deleted: bool
+    failed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +313,7 @@ class RunPlanner:
         base_reader = self._open_base_reader(base_document_release_ref)
         base = None if base_reader is None else base_reader.release
         plan_impact = self._plan_impact(base, plan)
+        failed_item_ids = frozenset() if base_reader is None else self._failed_item_ids(base_reader)
         with self._workspace_factory.create() as workspace:
             ledger = self._stores.seal_planned_stores(
                 plan.plan_id,
@@ -322,6 +324,7 @@ class RunPlanner:
                     plan_impact,
                     selection,
                     workspace,
+                    failed_item_ids,
                 ),
             )
         yield from self._stores.stream_planned_stores(ledger)
@@ -334,6 +337,7 @@ class RunPlanner:
         plan_impact: _PlanImpact,
         selection: _CompiledSelection,
         workspace: RecordWorkspace,
+        failed_item_ids: frozenset[str],
     ) -> Iterator[StoreRef]:
         """Spool selected entries, then build one bounded partition buffer at a time."""
 
@@ -343,13 +347,25 @@ class RunPlanner:
             source_items,
             base_reader,
             plan_impact.change_kind,
+            failed_item_ids,
         ):
             bucket = logical_partition(item.item_id, plan.partition_count)
             if not selection.matches(item, logical_bucket=bucket):
                 continue
             if change == ChangeKind.UNCHANGED:
                 continue
-            if change == ChangeKind.REPAIR and plan_impact.processor_only:
+            # A previously failed item may be missing captured files, representations,
+            # or segments (a capture-stage failure leaves nothing for the processors to
+            # reuse), so it always gets a full redo rather than the plan-driven
+            # processors-only path, even when the plan-level impact would otherwise
+            # allow one. failure_class alone cannot safely tell a capture failure
+            # from a processing failure, so this deliberately does not try.
+            processors_only = (
+                change == ChangeKind.REPAIR
+                and plan_impact.processor_only
+                and item.item_id not in failed_item_ids
+            )
+            if processors_only:
                 estimate = estimate_processor_reprocessing(
                     item,
                     plan.limits,
@@ -363,13 +379,9 @@ class RunPlanner:
             entry = DocumentEntry.create(
                 item,
                 change,
-                plan_impact.requested_stages(plan)
-                if change == ChangeKind.REPAIR and plan_impact.processor_only
-                else plan.stages,
+                plan_impact.requested_stages(plan) if processors_only else plan.stages,
                 execution_mode=(
-                    EntryExecutionMode.PROCESSORS_ONLY
-                    if change == ChangeKind.REPAIR and plan_impact.processor_only
-                    else EntryExecutionMode.FULL
+                    EntryExecutionMode.PROCESSORS_ONLY if processors_only else EntryExecutionMode.FULL
                 ),
             )
             workspace.add_record(
@@ -514,6 +526,7 @@ class RunPlanner:
         current_items: Iterator[SourceItem],
         base_reader: DocumentCatalogReader | None,
         unchanged_change: ChangeKind | None,
+        failed_item_ids: frozenset[str],
     ) -> Iterator[tuple[SourceItem, ChangeKind]]:
         if base_reader is None:
             for item in current_items:
@@ -522,12 +535,12 @@ class RunPlanner:
 
         yield from self._merge_snapshot(
             current_items,
-            self._previous_source_items(base_reader),
+            self._previous_source_items(base_reader, failed_item_ids),
             unchanged_change,
         )
 
     @staticmethod
-    def _prior_source_item(record: dict[str, Any]) -> _PriorSourceItem:
+    def _prior_source_item(record: dict[str, Any], failed_item_ids: frozenset[str]) -> _PriorSourceItem:
         """Validate one source-item record returned by a verified release reader."""
 
         expected = {"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"}
@@ -542,13 +555,49 @@ class RunPlanner:
         deleted = record["deleted"]
         if not isinstance(deleted, bool) or deleted != (item.state == SourceItemState.DELETED):
             raise IntegrityError("base source-item deletion marker differs from its payload")
-        return _PriorSourceItem(item, deleted)
+        return _PriorSourceItem(item, deleted, item.item_id in failed_item_ids)
 
-    def _previous_source_items(self, base_reader: DocumentCatalogReader) -> Iterator[_PriorSourceItem]:
+    def _previous_source_items(
+        self,
+        base_reader: DocumentCatalogReader,
+        failed_item_ids: frozenset[str],
+    ) -> Iterator[_PriorSourceItem]:
         """Read the verified base source layer once for the whole planning run."""
 
         for record in base_reader.scan(layer_kind="source-items"):
-            yield self._prior_source_item(record)
+            yield self._prior_source_item(record, failed_item_ids)
+
+    @staticmethod
+    def _failed_item_ids(base_reader: DocumentCatalogReader) -> frozenset[str]:
+        """Collect the ids of source items with a recorded failure in the base release.
+
+        This is a second bounded streaming pass over the base release, over the
+        `failures` layer rather than `source-items`. Only the `sourceItemId` of
+        each row is kept — the failure class, diagnostic code, detail, and retry
+        count are never loaded — and duplicate ids collapse into the same set
+        entry, so the retained memory is O(K), where K is the number of
+        *distinct* failed items, not the failures layer's row count and not the
+        whole failure-record graph. K <= N (N = the release's total item
+        population) always, since every failed item is still one item. The row
+        count itself, F, can exceed N by a small constant factor — one row per
+        retry attempt rather than one per item — but that factor is the plan's
+        bounded `maxAttempts` ceiling, so streaming through F rows is still
+        O(N) time, not superlinear. In the degenerate case where every item
+        failed, K coincides with N; that is an inherent lower bound for this
+        operation (a targeted replan of a failed population must know at least
+        the identity of every failed item), not an unbounded blow-up.
+        """
+
+        expected = {"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"}
+        failed: set[str] = set()
+        for record in base_reader.scan(layer_kind="failures"):
+            if set(record) != expected:
+                raise IntegrityError("base failure record has an invalid closed shape")
+            source_item_id = record["sourceItemId"]
+            if not isinstance(source_item_id, str) or not source_item_id:
+                raise IntegrityError("base failure record has an invalid sourceItemId")
+            failed.add(source_item_id)
+        return frozenset(failed)
 
     def _merge_snapshot(
         self,
@@ -595,8 +644,12 @@ class RunPlanner:
                 return ChangeKind.EXCLUDED
             return ChangeKind.ADDED
         if _source_item_digest(previous.item) == _source_item_digest(item):
-            if unchanged_change is not None and item.state == SourceItemState.ACTIVE:
-                return unchanged_change
+            if item.state == SourceItemState.ACTIVE and (unchanged_change is not None or previous.failed):
+                # A previously failed item is repairable work even when nothing else
+                # about the plan or the source changed (see _PlanImpact, whose REPAIR
+                # this reuses for the plan-changed case). An unfailed, unchanged item
+                # still drops out of the plan entirely.
+                return ChangeKind.REPAIR
             return ChangeKind.UNCHANGED
         if item.state == SourceItemState.DELETED:
             return ChangeKind.DELETED
