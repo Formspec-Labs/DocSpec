@@ -1,0 +1,46 @@
+{
+    "generation_info": {
+        "timestamp": "2026-09-03T00:26:53.219277+00:00",
+        "main_model": "gpt-5.6-sol",
+        "generator_version": "1.0.1",
+        "repo_path": "/Users/mikewolfd/Work/DocSpec",
+        "commit_id": "0a41ac7fb50f0f0044738b4d7fdf2f2e1b8b5cf7"
+    },
+    "statistics": {
+        "total_components": 1886,
+        "leaf_nodes": 288,
+        "max_depth": 5
+    },
+    "files_generated": [
+        "overview.md",
+        "module_tree.json",
+        "first_module_tree.json",
+        "document_run_application_delivery_and_release.md",
+        "storage_and_shared_references_control_and_document_stores.md",
+        "processor_extension_model.md",
+        "document_run_application_execution.md",
+        "source_catalog_pipeline.md",
+        "document_release_artifacts.md",
+        "document_run_application.md",
+        "content_acquisition_and_processing_acquisition.md",
+        "storage_and_shared_references_reference_model.md",
+        "storage_and_shared_references.md",
+        "source_catalog_pipeline_artifacts_and_storage.md",
+        "processing_plan_and_job_model.md",
+        "release_maintenance.md",
+        "result_delivery_and_reconciliation.md",
+        "content_acquisition_and_processing_extraction.md",
+        "governed_processing_execution_and_qualification.md",
+        "content_acquisition_and_processing_segmentation.md",
+        "storage_and_shared_references_record_layers.md",
+        "scale_acceptance.md",
+        "source_catalog_pipeline_policy_execution.md",
+        "source_catalog_pipeline_model_and_ports.md",
+        "storage_and_shared_references_blob_storage.md",
+        "document_run_application_planning.md",
+        "source_intake_and_document_preparation.md",
+        "portable_task_execution.md",
+        "durable_results_and_release_lifecycle.md",
+        "content_acquisition_and_processing.md"
+    ]
+}
