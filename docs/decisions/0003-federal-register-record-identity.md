@@ -237,6 +237,36 @@ date 2010-01-06 and reappear across one week that December, which is a single
 publisher reusing a block of numbers. The real population is one 2010 batch
 artifact, one 2010 pair, and two 2015 self-corrections.
 
-That sharpens the trigger. What reopens this question is **a new first-date
-cluster**, not the count moving from seven to eight. A count that grows because
-somebody re-crawls 2010 carries no new information.
+**Measured, 2026-09-03, replacing both earlier triggers.** The shared-first-date
+story was an inference and I adopted it as though it were a measurement. RefSpec
+then measured it, and the cause is better than either of us guessed. Evidence:
+`~/Work/RefSpec/research/evidence/fr-collision-census-2026-09-02/addendum/`,
+committed `24357cbc`. Re-derived here from the day listings rather than accepted.
+
+2010-01-06 is the first day the modern form exists, and that issue carries three
+spellings at once: 52 `E9-`, one `E10-`, and seven `2010-`, over 60 documents.
+Three of the seven are the fresh sequence — tails 8, 20 and 38. The other four
+are the collision members, tails 31094, 31384, 31396 and 31415, and every one of
+them falls inside that day's legacy range of 30292 to 31430 while appearing
+nowhere in the legacy numbers themselves. They are the legacy counter's values
+wearing the year prefix. Their December halves are the fresh counter reaching
+those values honestly.
+
+So the cause is **two counters sharing one namespace for one transition year**,
+and it cannot recur, because after 2010 there is no second counter.
+
+**The trigger that follows is neither a count nor a date.** Reopen when a
+collision appears whose two observations are **both explainable by the single
+modern counter**. The four transition collisions fail that test by roughly 31,000
+against their own day's range of 8 to 38. The other three pass it, which is what
+makes them the interesting ones. A count moving from seven to eight because
+somebody re-crawled 2010 is not signal, and neither is a shared first date, which
+would let three genuinely new collisions hide behind an old one.
+
+**And the seven are not seven of a kind, which strengthens the proportionality
+argument above.** For the four transition collisions the discarded observation is
+the transitional *spelling* of a document the legacy run already accounts for,
+not a distinct rule lost. `2010-517` is the one where the discarded observation
+is genuinely a different document from a different agency. If this record wants
+to say the loss is small, it can now say so about a named case rather than about
+seven averaged together.
