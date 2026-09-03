@@ -215,6 +215,26 @@ not close in blast radius — a field addition leaves every existing release
 readable and every partition where it is, while the composite does not — but this
 record previously overstated the gap by claiming one side was free.
 
+**Selecting is not normalizing, and the difference is load-bearing.** Whenever
+two observations of one document disagree on text, something has to choose which
+one the catalog item surfaces. That choice selects a filing; it does not rewrite
+either filing's bytes. Both observations — the surviving one and the recorded
+discard — keep their exact source text verbatim.
+
+Implemented as a text normalization instead, the same rule would mutate source
+and break exact-evidence resolution: a served match would stop resolving to its
+pinned source bytes, which is the property this whole format exists to preserve.
+So the remedy chooses a representative and never edits a record.
+
+This arrived from the regulations.gov ruling on 2026-09-03, where two filings of
+one document differed only in dash typography and the owner ruled the ASCII
+hyphen wins because it is what users type. That case is easy because the two
+texts mean the same thing. **The Federal Register case is harder and the same
+distinction still holds**: there the two observations are genuinely different
+documents, so choosing which one the number surfaces is a substantive loss rather
+than a typographic preference, and it is exactly why the discarded observation
+has to be recorded rather than merely deselected.
+
 **The condition that decides whether this works, and it is not optional.** The
 loss still happens under this remedy: the 2000-01-14 rule still never becomes a
 record. The only thing separating "counted" from "silently lost" is whether a
