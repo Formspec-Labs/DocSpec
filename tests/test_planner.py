@@ -11,7 +11,7 @@ from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFa
 from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.jobs import ChangeKind, DocumentStore
+from docspec.domain.jobs import ChangeKind, DocumentStore, EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
@@ -194,11 +194,12 @@ class MemoryCatalogReader:
 
     def scan(self, *, layer_kind: str) -> Iterator[dict]:
         self.owner.scan_calls += 1
+        self.owner.scanned_layers.append(layer_kind)
         if layer_kind == "source-items":
             yield from self.owner.rows()
             return
-        if layer_kind == "failures":
-            yield from self.owner.failure_rows()
+        if layer_kind == "dispositions":
+            yield from self.owner.disposition_rows()
             return
         raise AssertionError(f"unexpected layer_kind {layer_kind!r}")
 
@@ -213,6 +214,7 @@ class MemoryDocumentCatalog:
     scan_calls: int = 0
     lookup_calls: int = 0
     lookup_ids: list[str] = field(default_factory=list)
+    scanned_layers: list[str] = field(default_factory=list)
 
     def open_reader(self, reference: DocumentReleaseRef) -> MemoryCatalogReader:
         assert reference == self.reference
@@ -229,22 +231,30 @@ class MemoryDocumentCatalog:
                 "payload": item.to_dict(),
             }
 
-    def failure_rows(self) -> Iterator[dict]:
-        """The bounded failures layer: one row per failed source item, id only."""
+    def disposition_rows(self) -> Iterator[dict]:
+        """The dispositions layer: exactly one terminal verdict per source item.
 
-        for item_id in self.failed_item_ids:
+        A released item always carries one, so an item named in
+        ``failed_item_ids`` differs from the rest only in that verdict --
+        matching the release invariant the planner joins against, rather than
+        a layer that exists only for the failed ones.
+        """
+
+        known = {item.item_id for item in self.items}
+        # An id named only in failed_item_ids has no source item, which is the
+        # corrupt base the planner's join has to refuse.
+        for item_id in sorted(known | set(self.failed_item_ids)):
+            disposition = "accepted-failure" if item_id in self.failed_item_ids else "captured"
             yield {
-                "recordId": f"urn:test:failure:{item_id}",
+                "recordId": f"urn:test:disposition:{item_id}:{disposition}",
                 "sourceItemId": item_id,
-                "idempotencyKey": f"memory:failure:{item_id}",
+                "idempotencyKey": f"memory:disposition:{item_id}",
                 "deleted": False,
                 "payload": {
                     "entryId": f"urn:test:entry:{item_id}",
-                    "failureClass": "deterministic-input",
-                    "diagnosticCode": "test.synthetic-failure",
-                    "detail": "synthetic fixture failure",
-                    "attempt": 1,
-                    "retryable": False,
+                    "change": "added",
+                    "disposition": disposition,
+                    "warnings": [],
                 },
             }
 
@@ -622,9 +632,69 @@ def test_same_version_complete_source_item_changes_are_scheduled(
 
     assert [(entry.source_item, entry.change) for entry in entries] == [(current, expected_change)]
     assert catalog.reader_calls == 1
-    # One scan of "source-items" plus one bounded scan of "failures" to find repairable work.
+    # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
     assert catalog.lookup_calls == 0
+
+
+def test_an_item_the_base_release_failed_is_repaired_while_its_neighbours_are_dropped() -> None:
+    """A failed item is repairable work on its own: with no plan change and no
+    source change, it is the only entry the next run plans, and it always gets
+    a full redo because a capture-stage failure leaves nothing to reuse."""
+
+    items = (_source_item("failed"), _source_item("succeeded"))
+
+    entries, catalog = _planned_update(items, items, failed_item_ids=("failed",))
+
+    assert [(entry.source_item.item_id, entry.change, entry.execution_mode) for entry in entries] == [
+        ("failed", ChangeKind.REPAIR, EntryExecutionMode.FULL)
+    ]
+    assert catalog.reader_calls == 1
+    # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
+    assert catalog.scan_calls == 2
+
+
+def test_planning_reads_terminal_dispositions_and_never_the_failure_evidence() -> None:
+    """Failure evidence is not a terminal verdict. A capture that loses one
+    transport, retries and succeeds is published `captured` and still keeps
+    its failure rows, so keying on the `failures` layer would re-admit every
+    item that ever hiccupped and refetch bytes the release already holds. Pin
+    the source of truth: the reader refuses any layer but these two."""
+
+    items = (_source_item("captured-a"), _source_item("captured-b"))
+
+    entries, catalog = _planned_update(items, items)
+
+    assert entries == ()
+    assert catalog.scanned_layers == ["dispositions", "source-items"]
+
+
+def test_a_failed_item_outside_the_selection_is_still_not_planned() -> None:
+    """Repairing a failed item does not override the plan's selection."""
+
+    items = (_source_item("failed"), _source_item("other"))
+
+    entries, _ = _planned_update(
+        items,
+        items,
+        selection={"includeItemIds": ["other"]},
+        previous_selection={"includeItemIds": ["other"]},
+        failed_item_ids=("failed",),
+    )
+
+    assert entries == ()
+
+
+@pytest.mark.parametrize("ghost", ("aaa-before-every-item", "zzz-after-every-item"), ids=("before", "after"))
+def test_a_failed_disposition_naming_no_source_item_is_refused(ghost: str) -> None:
+    """The join runs against a verified release, whose dispositions layer
+    cannot name an item its source-items layer omits. If one does, the base is
+    corrupt and planning must refuse rather than silently ignore the row."""
+
+    items = (_source_item("item"),)
+
+    with pytest.raises(IntegrityError, match="failed item that has no source item"):
+        _planned_update(items, items, failed_item_ids=(ghost,))
 
 
 def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> None:
@@ -648,5 +718,5 @@ def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> N
     assert deletion.change == ChangeKind.DELETED
     assert deletion.terminal
     assert catalog.reader_calls == 1
-    # One scan of "source-items" plus one bounded scan of "failures" to find repairable work.
+    # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2

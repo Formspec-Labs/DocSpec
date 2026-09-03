@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Iterator, cast
 
-from docspec.domain.content import SourceItem, SourceItemState
+from docspec.domain.content import AcquisitionDisposition, SourceItem, SourceItemState
 from docspec.domain.identity import identity_digest, require_text
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
@@ -39,6 +39,14 @@ _ESTIMATE_FIELDS = (
     "estimatedDurationSeconds",
 )
 _PLANNING_STORE_ORDER_COLLECTION = "planner:store-order"
+_PLANNING_FAILED_ITEM_COLLECTION = "planner:failed-items"
+_DELIVERY_RECORD_FIELDS = frozenset({"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"})
+_DISPOSITION_PAYLOAD_FIELDS = frozenset({"entryId", "change", "disposition", "warnings"})
+_ACQUISITION_DISPOSITIONS = frozenset(item.value for item in AcquisitionDisposition)
+# The two terminal verdicts that mean "this item ended the release in failure".
+_FAILED_DISPOSITIONS = frozenset(
+    {AcquisitionDisposition.ACCEPTED_FAILURE.value, AcquisitionDisposition.REJECTED_RUN.value}
+)
 _SOURCE_PARTITION_METADATA_FIELD = "sourcePartition"
 
 
@@ -313,8 +321,9 @@ class RunPlanner:
         base_reader = self._open_base_reader(base_document_release_ref)
         base = None if base_reader is None else base_reader.release
         plan_impact = self._plan_impact(base, plan)
-        failed_item_ids = frozenset() if base_reader is None else self._failed_item_ids(base_reader)
         with self._workspace_factory.create() as workspace:
+            if base_reader is not None:
+                self._spool_failed_items(base_reader, workspace)
             ledger = self._stores.seal_planned_stores(
                 plan.plan_id,
                 self._plan_store_references(
@@ -324,7 +333,6 @@ class RunPlanner:
                     plan_impact,
                     selection,
                     workspace,
-                    failed_item_ids,
                 ),
             )
         yield from self._stores.stream_planned_stores(ledger)
@@ -337,17 +345,16 @@ class RunPlanner:
         plan_impact: _PlanImpact,
         selection: _CompiledSelection,
         workspace: RecordWorkspace,
-        failed_item_ids: frozenset[str],
     ) -> Iterator[StoreRef]:
         """Spool selected entries, then build one bounded partition buffer at a time."""
 
         touched_partitions: set[int] = set()
         ordinal = 0
-        for item, change in self._planned_changes(
+        for item, change, failed in self._planned_changes(
             source_items,
             base_reader,
             plan_impact.change_kind,
-            failed_item_ids,
+            workspace,
         ):
             bucket = logical_partition(item.item_id, plan.partition_count)
             if not selection.matches(item, logical_bucket=bucket):
@@ -360,11 +367,7 @@ class RunPlanner:
             # processors-only path, even when the plan-level impact would otherwise
             # allow one. failure_class alone cannot safely tell a capture failure
             # from a processing failure, so this deliberately does not try.
-            processors_only = (
-                change == ChangeKind.REPAIR
-                and plan_impact.processor_only
-                and item.item_id not in failed_item_ids
-            )
+            processors_only = change == ChangeKind.REPAIR and plan_impact.processor_only and not failed
             if processors_only:
                 estimate = estimate_processor_reprocessing(
                     item,
@@ -526,25 +529,24 @@ class RunPlanner:
         current_items: Iterator[SourceItem],
         base_reader: DocumentCatalogReader | None,
         unchanged_change: ChangeKind | None,
-        failed_item_ids: frozenset[str],
-    ) -> Iterator[tuple[SourceItem, ChangeKind]]:
+        workspace: RecordWorkspace,
+    ) -> Iterator[tuple[SourceItem, ChangeKind, bool]]:
         if base_reader is None:
             for item in current_items:
-                yield item, self._classify(item, None, unchanged_change)
+                yield item, self._classify(item, None, unchanged_change), False
             return
 
         yield from self._merge_snapshot(
             current_items,
-            self._previous_source_items(base_reader, failed_item_ids),
+            self._previous_source_items(base_reader, self._spooled_failed_item_ids(workspace)),
             unchanged_change,
         )
 
     @staticmethod
-    def _prior_source_item(record: dict[str, Any], failed_item_ids: frozenset[str]) -> _PriorSourceItem:
+    def _prior_source_item(record: dict[str, Any]) -> _PriorSourceItem:
         """Validate one source-item record returned by a verified release reader."""
 
-        expected = {"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"}
-        if set(record) != expected or not isinstance(record["payload"], dict):
+        if set(record) != _DELIVERY_RECORD_FIELDS or not isinstance(record["payload"], dict):
             raise IntegrityError("base source-item record has an invalid closed shape")
         try:
             item = SourceItem.from_dict(record["payload"])
@@ -555,64 +557,110 @@ class RunPlanner:
         deleted = record["deleted"]
         if not isinstance(deleted, bool) or deleted != (item.state == SourceItemState.DELETED):
             raise IntegrityError("base source-item deletion marker differs from its payload")
-        return _PriorSourceItem(item, deleted, item.item_id in failed_item_ids)
+        return _PriorSourceItem(item, deleted)
 
     def _previous_source_items(
         self,
         base_reader: DocumentCatalogReader,
-        failed_item_ids: frozenset[str],
+        failed_item_ids: Iterator[str],
     ) -> Iterator[_PriorSourceItem]:
-        """Read the verified base source layer once for the whole planning run."""
+        """Read the verified base source layer once, joined to its failed items.
 
-        for record in base_reader.scan(layer_kind="source-items"):
-            yield self._prior_source_item(record, failed_item_ids)
-
-    @staticmethod
-    def _failed_item_ids(base_reader: DocumentCatalogReader) -> frozenset[str]:
-        """Collect the ids of source items with a recorded failure in the base release.
-
-        This is a second bounded streaming pass over the base release, over the
-        `failures` layer rather than `source-items`. Only the `sourceItemId` of
-        each row is kept — the failure class, diagnostic code, detail, and retry
-        count are never loaded — and duplicate ids collapse into the same set
-        entry, so the retained memory is O(K), where K is the number of
-        *distinct* failed items, not the failures layer's row count and not the
-        whole failure-record graph. K <= N (N = the release's total item
-        population) always, since every failed item is still one item. The row
-        count itself, F, can exceed N by a small constant factor — one row per
-        retry attempt rather than one per item — but that factor is the plan's
-        bounded `maxAttempts` ceiling, so streaming through F rows is still
-        O(N) time, not superlinear. In the degenerate case where every item
-        failed, K coincides with N; that is an inherent lower bound for this
-        operation (a targeted replan of a failed population must know at least
-        the identity of every failed item), not an unbounded blow-up.
+        Both inputs are ordered by source-item id — the `source-items` layer
+        because its record identity *is* the item id, the spool because it is
+        read back in identity order — so this is a merge join that advances
+        one cursor and holds one id, never a lookup table of every failed id.
         """
 
-        expected = {"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"}
-        failed: set[str] = set()
-        for record in base_reader.scan(layer_kind="failures"):
-            if set(record) != expected:
-                raise IntegrityError("base failure record has an invalid closed shape")
+        failed = next(failed_item_ids, None)
+        for record in base_reader.scan(layer_kind="source-items"):
+            prior = self._prior_source_item(record)
+            item_id = prior.item.item_id
+            if failed is not None and failed < item_id:
+                raise IntegrityError("base release records a failed item that has no source item")
+            if failed != item_id:
+                yield prior
+                continue
+            failed = next(failed_item_ids, None)
+            yield _PriorSourceItem(prior.item, prior.deleted, failed=True)
+        if failed is not None:
+            raise IntegrityError("base release records a failed item that has no source item")
+
+    @staticmethod
+    def _spool_failed_items(base_reader: DocumentCatalogReader, workspace: RecordWorkspace) -> None:
+        """Spool the ids of items that ended the base release in failure.
+
+        The question a replan must answer is "did this item end the release in
+        failure", not "does this item carry failure evidence": a capture that
+        loses one transport, retries, and succeeds is published CAPTURED and
+        still keeps its retry evidence in the `failures` layer, so keying on
+        that layer would re-admit at FULL execution every item that ever
+        hiccupped and refetch bytes the release already holds. The
+        `dispositions` layer answers the real question directly — the release
+        verifier admits exactly one row per source item (its integrity index
+        keys dispositions by `sourceItemId`) carrying the terminal disposition
+        from the closed `AcquisitionDisposition` vocabulary — so this is one
+        bounded streaming pass over it, keeping only the ids whose disposition
+        is terminal failure.
+
+        Nothing is retained in coordinator memory: matching ids go straight to
+        the run's existing bounded spool, and `_previous_source_items` reads
+        them back as a sorted stream to merge-join against the base
+        `source-items` layer. Time is O(N) in the base release's item
+        population — the same shape as the `source-items` pass the planner
+        already makes, and independent of the selection, which cannot narrow
+        it because an unselected item's classification still has to be
+        correct. Space is O(1) memory and O(K) spool, K being the count of
+        items that actually failed.
+        """
+
+        for record in base_reader.scan(layer_kind="dispositions"):
+            if set(record) != _DELIVERY_RECORD_FIELDS or not isinstance(record["payload"], dict):
+                raise IntegrityError("base disposition record has an invalid closed shape")
             source_item_id = record["sourceItemId"]
             if not isinstance(source_item_id, str) or not source_item_id:
-                raise IntegrityError("base failure record has an invalid sourceItemId")
-            failed.add(source_item_id)
-        return frozenset(failed)
+                raise IntegrityError("base disposition record has an invalid sourceItemId")
+            if set(record["payload"]) != _DISPOSITION_PAYLOAD_FIELDS:
+                raise IntegrityError("base disposition record has an invalid closed payload")
+            disposition = record["payload"]["disposition"]
+            if disposition is not None and disposition not in _ACQUISITION_DISPOSITIONS:
+                raise IntegrityError("base disposition record names an unregistered disposition")
+            if disposition in _FAILED_DISPOSITIONS:
+                workspace.add_record(
+                    _PLANNING_FAILED_ITEM_COLLECTION,
+                    identity=source_item_id,
+                    source_item_id=source_item_id,
+                    record={"sourceItemId": source_item_id},
+                )
+
+    @staticmethod
+    def _spooled_failed_item_ids(workspace: RecordWorkspace) -> Iterator[str]:
+        """Read the spooled failed-item ids back in source-item-id order."""
+
+        for row in workspace.stream_records(_PLANNING_FAILED_ITEM_COLLECTION):
+            if set(row) != {"sourceItemId"} or not isinstance(row["sourceItemId"], str):
+                raise IntegrityError("spooled failed-item record has an invalid closed shape")
+            yield row["sourceItemId"]
 
     def _merge_snapshot(
         self,
         current_items: Iterator[SourceItem],
         previous_items: Iterator[_PriorSourceItem],
         unchanged_change: ChangeKind | None,
-    ) -> Iterator[tuple[SourceItem, ChangeKind]]:
-        """Merge one complete snapshot with prior state using bounded memory."""
+    ) -> Iterator[tuple[SourceItem, ChangeKind, bool]]:
+        """Merge one complete snapshot with prior state using bounded memory.
+
+        The third element of each triple says whether the base release ended
+        this item in failure, which decides its execution mode independently
+        of how it classified.
+        """
 
         current = next(current_items, None)
         previous = next(previous_items, None)
         while current is not None or previous is not None:
             if previous is None or (current is not None and current.item_id < previous.item.item_id):
                 assert current is not None
-                yield current, self._classify(current, None, unchanged_change)
+                yield current, self._classify(current, None, unchanged_change), False
                 current = next(current_items, None)
                 continue
             if current is None or previous.item.item_id < current.item_id:
@@ -624,10 +672,10 @@ class RunPlanner:
                         state=SourceItemState.DELETED,
                         metadata=previous.item.metadata,
                     )
-                    yield tombstone, ChangeKind.DELETED
+                    yield tombstone, ChangeKind.DELETED, previous.failed
                 previous = next(previous_items, None)
                 continue
-            yield current, self._classify(current, previous, unchanged_change)
+            yield current, self._classify(current, previous, unchanged_change), previous.failed
             current = next(current_items, None)
             previous = next(previous_items, None)
 
@@ -645,10 +693,11 @@ class RunPlanner:
             return ChangeKind.ADDED
         if _source_item_digest(previous.item) == _source_item_digest(item):
             if item.state == SourceItemState.ACTIVE and (unchanged_change is not None or previous.failed):
-                # A previously failed item is repairable work even when nothing else
-                # about the plan or the source changed (see _PlanImpact, whose REPAIR
-                # this reuses for the plan-changed case). An unfailed, unchanged item
-                # still drops out of the plan entirely.
+                # An item the base release ended in failure is repairable work even
+                # when nothing else about the plan or the source changed (see
+                # _PlanImpact, whose REPAIR this reuses for the plan-changed case).
+                # An item that ended it captured still drops out of the plan
+                # entirely, however many transports it lost and retried past.
                 return ChangeKind.REPAIR
             return ChangeKind.UNCHANGED
         if item.state == SourceItemState.DELETED:

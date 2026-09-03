@@ -140,16 +140,16 @@ written as a literal. SpicyDocs adopts that shape and deletes
 `failure.schema.json`. Adopting it moves `releaseSchemaDigest`; say so in the
 commit.
 
-**Rule 12 — the planner reads the prior release's failures and admits them as
-repairable.** This is the defect that breaks piecemeal work, and it is entirely
-inside DocSpec. Every entry emits a live `source-items` row regardless of its
-disposition (`src/docspec/domain/delivery.py:163-172`), the planner scans that
-one layer and no other (`src/docspec/application/planner.py:550`), and
-classification compares only the source digest
-(`src/docspec/application/planner.py:597-600`), so an item that failed last run
-returns as `UNCHANGED` and is dropped from the plan. The `failures` layer is
-written on every release and read exactly once, at commit, to build a summary
-(`src/docspec/application/commit.py:135`). Nothing consumes it.
+**Rule 12 — the planner reads the prior release's terminal dispositions and
+admits the failed ones as repairable.** This is the defect that breaks piecemeal
+work, and it is entirely inside DocSpec. Every entry emits a live `source-items`
+row regardless of its disposition (`iter_delivery_records`,
+`src/docspec/domain/delivery.py`), the planner scanned that one layer and no
+other, and classification compares only the source digest (`RunPlanner._classify`),
+so an item that failed last run returned as `UNCHANGED` and was dropped from the
+plan. Both the `failures` and `dispositions` layers were written on every
+release and read exactly once, at commit, to build a summary and verify lineage.
+Neither told the planner anything.
 
 The platform spec already requires the capability: an operator "MUST be able to
 create targeted `DocumentStore` jobs for one extractor, segmenter, processor,
@@ -157,6 +157,22 @@ create targeted `DocumentStore` jobs for one extractor, segmenter, processor,
 unrelated files" (§11.3). The failures are recorded, the selection field is open
 enough to name them, and the three are not connected. Connect them, and a run
 that ended with five hundred failures becomes a run you can finish.
+
+**Landed.** `RunPlanner._spool_failed_items` makes one bounded streaming pass
+over the base release's `dispositions` layer and spools the ids that ended it in
+failure; `_previous_source_items` merge-joins that sorted stream into the
+`source-items` pass the planner already makes, so nothing is held in coordinator
+memory. `_classify` returns `REPAIR` for an otherwise-unchanged active item the
+base release ended in failure, and such an item is always rebuilt at
+`EntryExecutionMode.FULL` rather than processors-only: `FailureClass` describes
+the error's nature, not the stage that produced it, so a capture failure — which
+leaves no files, representations or segments to reuse — cannot be told from a
+processing failure without parsing a free-text diagnostic code that is not part
+of the contract.
+
+The rule as first written named the `failures` layer, and the first
+implementation read it. That was the wrong source of truth; see the corrections
+below.
 
 ### Second, and deliberately deferred: who runs which half
 
@@ -288,6 +304,18 @@ reversals teaches the next reader to trust it more than it deserves.
   records. The remedy was withdrawn and the question moved to 0003.
 - This record was untracked until `d1b556b`, having governed the acquisition
   topology for a day as an unstaged file.
+- Rule 12 named the `failures` layer as the thing to read, and the first
+  implementation did. That layer is evidence, not a verdict. A capture that
+  loses one transport, retries, and succeeds is published `captured` and still
+  keeps its retry row — `tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture`
+  requires exactly that, so the trap was already pinned by a passing test.
+  Keying on the layer therefore re-admitted every item that ever hiccupped, at
+  full execution, refetching bytes the release already held: with transient S3
+  loss common in this platform, a near-full rebuild wearing an incremental run's
+  clothes. The rule and the code now read `dispositions`, which the release
+  verifier holds to exactly one terminal row per source item (its integrity
+  index keys dispositions by `sourceItemId`, and `commit.py` requires the layer
+  on every release).
 
 ## What this does not decide
 
@@ -330,9 +358,31 @@ reversals teaches the next reader to trust it more than it deserves.
   (`src/docspec/domain/maintenance.py:191-192`) and takes one release in, one
   out. It cannot add a row. §11.4 says so directly: "a new physical publication
   of the same logical release, not a new logical release."
-- **`ChangeKind.REPAIR` is not the retry kind.** It means the source item did not
-  change but the plan did (`src/docspec/application/planner.py:480`, `:495-500`).
-  It is not a failure-recovery path.
+- **`ChangeKind.REPAIR` now carries two meanings, and this record does not split
+  them.** It was minted for "the source item did not change but the plan did"
+  (`RunPlanner._plan_impact`). Rule 12 deliberately reused it for "the base
+  release ended this item in failure" rather than minting a parallel kind, which
+  would have doubled every downstream branch on the enum. The two are told apart
+  where it matters — an item that failed is always rebuilt `FULL`, a plan-impact
+  repair may be processors-only — but the released `ChangeKind` vocabulary does
+  not name which of the two a given entry is. Splitting it would move a sealed
+  public enumeration for a distinction only the planner presently needs. If a
+  consumer ever needs to tell them apart, that is the moment, not this one.
+- **How many times a deterministic failure is retried across releases.** Rule 12
+  makes a failed item repairable; nothing bounds how often. §10.3's "retries MUST
+  have finite limits" governs semantic *stage attempts* within a run, which
+  `RetryPolicy.max_attempts` bounds and which reset with the run — so the letter
+  of the spec is met and the cross-release question is simply not one it asks. An
+  item whose input is deterministically bad, a malformed PDF or a locator that
+  always 404s, is therefore re-planned on every subsequent release, forever,
+  spending a full capture each time and never converging. Bounding it is a
+  quarantine policy and nobody has stated one: how many releases, what an
+  operator sees, whether a quarantined item still counts against coverage, and
+  what releases it again. The shape it would take is a cross-release attempt
+  count carried on the disposition row, which moves the release schema — a
+  decision with a downstream cost, like the `sourceStateScope` question above.
+  Recorded as open. Inventing the ceiling inside a planner fix would have
+  smuggled a product decision in as an implementation detail.
 - **Which scheduler runs the acquisition backend.** `LocalExecutionBackend`
   suffices for the current wave. The Dagster path is a separate composition and
   is not itself an `ExecutionBackend`; its `RetryPolicy` is injected by hand and

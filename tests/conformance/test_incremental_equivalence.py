@@ -169,6 +169,85 @@ def _active_document_state(
     return state
 
 
+_REPAIR_FIXTURE = (
+    # Strictly ordered by item id: source-native records require it.
+    ("document-broken", "broken.txt", "Broken starts out failing its processor."),
+    ("document-steady-a", "steady-a.txt", "Steady A never changes across either run."),
+    ("document-steady-b", "steady-b.txt", "Steady B never changes across either run either."),
+)
+
+
+def _repair_items(sources: Path) -> tuple[SourceItem, ...]:
+    """Write the shared repair fixture below one platform and name its items.
+
+    The locator a candidate carries is its file name, not its absolute path,
+    so the same population written below two different roots produces
+    byte-identical source-item records and its releases stay comparable.
+    """
+
+    return tuple(
+        SourceItem(item_id, "v1", (_write_source(sources / name, text),), metadata={"expectedSegments": 1})
+        for item_id, name, text in _REPAIR_FIXTURE
+    )
+
+
+def _terminal_dispositions(
+    catalog: LocalManifestDocumentCatalog,
+    release_ref: DocumentReleaseRef,
+) -> dict[str, str | None]:
+    """Project the one terminal disposition each source item ended a release with."""
+
+    projected: dict[str, str | None] = {}
+    for row in catalog.scan(release_ref, layer_kind="dispositions"):
+        # A release carries exactly one disposition row per item; a second one
+        # would mean a superseded verdict survived, so refuse rather than
+        # silently keep whichever came last.
+        assert row["sourceItemId"] not in projected, "release repeats a terminal disposition"
+        projected[row["sourceItemId"]] = row["payload"]["disposition"]
+    return projected
+
+
+def _failed_item_ids(
+    catalog: LocalManifestDocumentCatalog,
+    release_ref: DocumentReleaseRef,
+) -> set[str]:
+    """Name every source item carrying failure evidence, terminal or retried-past."""
+
+    return {row["sourceItemId"] for row in catalog.scan(release_ref, layer_kind="failures")}
+
+
+def _planned_entries(platform, plan, source_reference, base_release, *, name: str) -> tuple:
+    """Plan one run against a committed base release without executing it.
+
+    Planning-time properties -- which items a second run re-admits and which
+    it drops -- are provable without a second capture/process/deliver/commit
+    pass, so these tests exercise ``RunPlanner`` directly.
+    """
+
+    plan_reference = platform.controls.put(
+        kind="plans",
+        artifact_id=plan.plan_id,
+        value=plan.to_dict(),
+    )
+    planned = tuple(
+        RunPlanner(
+            source_catalog=platform.source_catalog,
+            document_catalog=platform.catalog,
+            stores=platform.stores,
+            controls=platform.controls,
+            workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
+                platform.records.root / f".planning-{name}",
+                read_batch_size=1,
+            ),
+        ).plan_run(source_reference, base_release, plan_reference)
+    )
+    return tuple(
+        entry
+        for reference in planned
+        for entry in platform.stores.load(reference).entries
+    )
+
+
 def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_document_state(
     tmp_path: Path,
 ) -> None:
@@ -446,24 +525,7 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     accepted = AcceptedFailurePolicy((FailureClass.DETERMINISTIC_INPUT,))
     platform = _platform(tmp_path / "repair", member_bytes=1024 * 1024)
 
-    steady_a = _write_source(
-        platform.sources / "steady-a.txt",
-        "Steady A never changes across either run.",
-    )
-    steady_b = _write_source(
-        platform.sources / "steady-b.txt",
-        "Steady B never changes across either run either.",
-    )
-    broken = _write_source(
-        platform.sources / "broken.txt",
-        "Broken starts out failing its processor.",
-    )
-    # source-native records must be strictly ordered by item id.
-    items = (
-        SourceItem("document-broken", "v1", (broken,), metadata={"expectedSegments": 1}),
-        SourceItem("document-steady-a", "v1", (steady_a,), metadata={"expectedSegments": 1}),
-        SourceItem("document-steady-b", "v1", (steady_b,), metadata={"expectedSegments": 1}),
-    )
+    items = _repair_items(platform.sources)
     description = _description("repair-failed-item", "1", retry)
 
     # First run: "document-broken" fails its processor deterministically and
@@ -517,31 +579,13 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
         "source-catalog reference may legitimately differ"
     )
 
-    # Plan the second run directly, against the real committed first release,
-    # without executing it. The property under test is a planning-time one —
-    # "re-plans exactly that item and no others" — so proving it does not
-    # need a second full capture/process/deliver/commit pass.
-    second_plan_ref = platform.controls.put(
-        kind="plans",
-        artifact_id=second_plan.plan_id,
-        value=second_plan.to_dict(),
-    )
-    second_planned = tuple(
-        RunPlanner(
-            source_catalog=platform.source_catalog,
-            document_catalog=platform.catalog,
-            stores=platform.stores,
-            controls=platform.controls,
-            workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
-                platform.records.root / ".planning-second",
-                read_batch_size=1,
-            ),
-        ).plan_run(second_source, first_release, second_plan_ref)
-    )
-    second_planned_entries = tuple(
-        entry
-        for reference in second_planned
-        for entry in platform.stores.load(reference).entries
+    # Plan the second run directly, against the real committed first release.
+    second_planned_entries = _planned_entries(
+        platform,
+        second_plan,
+        second_source,
+        first_release,
+        name="second",
     )
     # The property under test: the plan touches exactly the one previously
     # failed item and nothing else — asserted on the touched-item count, not
@@ -555,6 +599,22 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     # The negative: the two items that succeeded the first time are still
     # UNCHANGED and still dropped from the plan.
     assert {entry.source_item.item_id for entry in second_planned_entries} == {"document-broken"}
+
+    # The same base release under a plan whose only change is a processor
+    # version: the plan impact is processor-only, so an unchanged item is
+    # reprocessed from the representations the release already holds. The item
+    # that failed has none to reuse -- a capture-stage failure leaves nothing
+    # behind -- so it must still get a full redo.
+    bumped_processor = _CountingProcessor(_description("repair-failed-item", "2", retry))
+    bumped_plan = _plan(second_source, first_release, (bumped_processor,), retry, accepted)
+    assert {
+        entry.source_item.item_id: (entry.change, entry.execution_mode)
+        for entry in _planned_entries(platform, bumped_plan, second_source, first_release, name="bumped")
+    } == {
+        "document-broken": (ChangeKind.REPAIR, EntryExecutionMode.FULL),
+        "document-steady-a": (ChangeKind.REPAIR, EntryExecutionMode.PROCESSORS_ONLY),
+        "document-steady-b": (ChangeKind.REPAIR, EntryExecutionMode.PROCESSORS_ONLY),
+    }
 
     # End-to-end confirmation: the repaired item now actually captures and
     # completes, and the resulting release still carries every item's
@@ -581,9 +641,119 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     assert set(second_sealed_entries) == {"document-broken"}
     assert second_sealed_entries["document-broken"].disposition == AcquisitionDisposition.CAPTURED
 
-    second_state = _active_document_state(platform.catalog, second_release)
-    assert {row["sourceItemId"] for row in second_state["source-items"]} == {
-        "document-steady-a",
-        "document-steady-b",
-        "document-broken",
+    # The repaired release must equal a clean build over the same population,
+    # not merely mention the same three ids: every file, representation,
+    # segment and derived record has to match, or the repair left partial
+    # state behind from the run that failed.
+    clean = _platform(tmp_path / "clean-repair", member_bytes=1024 * 1024)
+    clean_processor = _CountingProcessor(description)
+    clean_source = clean.publish_source(_repair_items(clean.sources))
+    _, _, _, _, clean_release = _run(
+        plan=_plan(clean_source, None, (clean_processor,), retry, accepted),
+        source_catalog=clean.source_catalog,
+        controls=clean.controls,
+        stores=clean.stores,
+        blobs=clean.blobs,
+        records=clean.records,
+        catalog=clean.catalog,
+        fetcher=SharedFixtureContentFetcher(clean.sources),
+        processors=(clean_processor,),
+        partition_policy=clean.partition_policy,
+        accepted_failure_policy=accepted,
+    )
+    assert _active_document_state(platform.catalog, second_release) == _active_document_state(
+        clean.catalog,
+        clean_release,
+    )
+    # _active_document_state deliberately omits the two execution-evidence
+    # layers, so compare those separately in the only form in which a
+    # repaired release and a clean one are comparable: the disposition each
+    # item ended with, and the fact that repairing cleared the stale failure
+    # evidence rather than accumulating it.
+    assert _terminal_dispositions(platform.catalog, second_release) == _terminal_dispositions(
+        clean.catalog,
+        clean_release,
+    ) == {
+        "document-broken": AcquisitionDisposition.CAPTURED.value,
+        "document-steady-a": AcquisitionDisposition.CAPTURED.value,
+        "document-steady-b": AcquisitionDisposition.CAPTURED.value,
     }
+    assert _failed_item_ids(platform.catalog, first_release) == {"document-broken"}
+    assert _failed_item_ids(platform.catalog, second_release) == set()
+
+    # And it converges: with the repair captured, a third run over the same
+    # unchanged catalog and plan plans nothing at all. A repair that kept
+    # re-admitting its own item would loop here instead.
+    third_source = platform.publish_source(items, name="third")
+    third_plan = _plan(third_source, second_release, (healed_processor,), retry, accepted)
+    assert _planned_entries(platform, third_plan, third_source, second_release, name="third") == ()
+
+
+def test_an_item_that_failed_once_and_then_succeeded_is_not_replanned(tmp_path: Path) -> None:
+    """Failure evidence is not a terminal verdict. A capture that loses its
+    first transport, retries, and succeeds publishes a `failures` row beside a
+    `captured` disposition -- see
+    tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture,
+    which requires that evidence to survive into the release. Planning off the
+    presence of a failure row would therefore re-admit every item that ever
+    hiccupped, at FULL execution, refetching bytes the release already holds;
+    with transient transport loss common, that silently turns an incremental
+    run into a near-full rebuild. The next run must classify such an item
+    UNCHANGED and drop it."""
+
+    _FailFirstFetchFetcher = importlib.import_module(
+        "tests.conformance.test_acquisition"
+    )._FailFirstFetchFetcher
+
+    retry = RetryPolicy(base_delay_milliseconds=0)
+    accepted = AcceptedFailurePolicy()
+    platform = _platform(tmp_path / "retried", member_bytes=1024 * 1024)
+    flaky = _write_source(platform.sources / "flaky.txt", "Flaky loses its first transport, then arrives.")
+    steady = _write_source(platform.sources / "steady.txt", "Steady arrives the first time.")
+    items = (
+        SourceItem("document-flaky", "v1", (flaky,), metadata={"expectedSegments": 1}),
+        SourceItem("document-steady", "v1", (steady,), metadata={"expectedSegments": 1}),
+    )
+    description = _description("retried-then-succeeded", "1", retry)
+
+    first_processor = _CountingProcessor(description)
+    first_source = platform.publish_source(items, name="first")
+    first_plan = _plan(first_source, None, (first_processor,), retry, accepted)
+    _, _, first_sealed, _, first_release = _run(
+        plan=first_plan,
+        source_catalog=platform.source_catalog,
+        controls=platform.controls,
+        stores=platform.stores,
+        blobs=platform.blobs,
+        records=platform.records,
+        catalog=platform.catalog,
+        fetcher=_FailFirstFetchFetcher(
+            SharedFixtureContentFetcher(platform.sources),
+            flaky_locator="flaky.txt",
+        ),
+        processors=(first_processor,),
+        partition_policy=platform.partition_policy,
+        accepted_failure_policy=accepted,
+    )
+
+    # The premise: the flaky item both succeeded and left failure evidence.
+    first_entries = {
+        entry.source_item.item_id: entry
+        for reference in first_sealed
+        for entry in platform.stores.load(reference).entries
+    }
+    assert first_entries["document-flaky"].disposition == AcquisitionDisposition.CAPTURED
+    assert [failure.failure_class for failure in first_entries["document-flaky"].failures] == [
+        FailureClass.TRANSIENT_EXTERNAL
+    ]
+    assert _failed_item_ids(platform.catalog, first_release) == {"document-flaky"}
+    assert _terminal_dispositions(platform.catalog, first_release) == {
+        "document-flaky": AcquisitionDisposition.CAPTURED.value,
+        "document-steady": AcquisitionDisposition.CAPTURED.value,
+    }
+
+    # The property: nothing is repairable, so the second run plans nothing.
+    second_source = platform.publish_source(items, name="second")
+    second_plan = _plan(second_source, first_release, (first_processor,), retry, accepted)
+    assert second_plan.governing_content() == first_plan.governing_content()
+    assert _planned_entries(platform, second_plan, second_source, first_release, name="second") == ()
