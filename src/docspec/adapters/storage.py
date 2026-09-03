@@ -745,7 +745,7 @@ class LocalDocumentStoreRepository:
             references.append(reference)
         return tuple(references)
 
-    def latest(self, store_id: str) -> StoreRef | None:
+    def _latest_revision_path(self, store_id: str) -> Path | None:
         key = self._store_key(store_id)
         directory = _contained(self.root, f"document-stores/{key}/revisions/placeholder").parent
         if not directory.exists():
@@ -758,6 +758,26 @@ class LocalDocumentStoreRepository:
                 raise IntegrityError("document store revision directory contains an undeclared member")
             if latest_path is None or path.name > latest_path.name:
                 latest_path = path
+        return latest_path
+
+    def latest_with_observed_at(self, store_id: str) -> tuple[StoreRef, float] | None:
+        """Return a store's latest saved revision and its filesystem write time.
+
+        The write time is a liveness read only: the local clock's epoch-second
+        reading of when this repository last wrote a checkpoint or seal for the
+        store. No domain object carries a comparable field -- every timestamp a
+        run persists (``CapturedFile.acquired_at``, a ``DeliveryReceipt``'s
+        ``completed_at``) is the run request's single fixed ``completedAt``
+        value, held constant across an entire run for reproducibility, so it
+        cannot answer "how long has this store gone untouched". Filesystem
+        mtime is the only wall-clock signal this repository actually has, and
+        it is read here, not written or sealed anywhere.
+
+        Bounded by one directory listing over that one store's own revision
+        count; independent of how many other stores this repository holds.
+        """
+
+        latest_path = self._latest_revision_path(store_id)
         if latest_path is None:
             return None
         payload = latest_path.read_bytes()
@@ -768,7 +788,11 @@ class LocalDocumentStoreRepository:
             sha256_digest(payload),
         )
         self.load(reference)
-        return reference
+        return reference, latest_path.stat().st_mtime
+
+    def latest(self, store_id: str) -> StoreRef | None:
+        resolved = self.latest_with_observed_at(store_id)
+        return None if resolved is None else resolved[0]
 
     def has_planned_store_ledger(self, plan_id: str) -> bool:
         """Detect durable planning state without treating corruption as absence."""
