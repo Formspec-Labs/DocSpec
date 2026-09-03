@@ -133,6 +133,36 @@ schema version changes, and it is exactly the machinery
 and 5 exist to build. The corpus then says "these 483 observations were
 discarded, here is each one and why" instead of saying nothing.
 
+## Where document identity should be decided, and where it should not
+
+An earlier draft of my thinking proposed that DocSpec consult RefSpec's qualified
+identity space, on the reasoning that both of this week's incidents are one field
+doing two jobs and RefSpec already carries a space where a composite is cheap.
+**RefSpec refused it, and the refusal is right.**
+
+Two reasons. It is the edge the product topology forbids: SpicySearch is the only
+junction between DocSpec's documents and RefSpec's vocabulary, and there is
+deliberately no DocSpec-to-RefSpec edge. And practically, RefSpec's spaces are
+versioned and moving — three release candidates inside two days — so binding a
+**partition key** to a vocabulary that bumps weekly means a third-party release
+could move DocSpec's sealed identities with no DocSpec diff. That is the same
+defect the platform closed in a receipt yesterday, reintroduced with far more
+blast radius.
+
+The shape instead: **DocSpec emits what document identity needs; it never
+consumes a vocabulary to compute it.** Filing identity stays here, keyed as the
+publisher keys it, because that is this layer's job and no other layer can do it.
+Document identity is derived downstream, where a composite is cheap and a wrong
+answer costs a re-derivation rather than a re-partition. The two are related by a
+mapping someone else owns, not by an ingest-time lookup.
+
+The remedy above is already the first instalment of that. A disposition row
+carrying the number and the date emits exactly what a downstream needs to derive
+document identity, without this layer ever deciding what a document is. That is
+the whole reason the trade is acceptable even though the loss remains: it moves
+DocSpec from silently choosing to explicitly reporting, which is the only role in
+this that belongs to an ingest layer.
+
 ## What an owner needs to rule on
 
 1. Whether the Federal Register profile keeps `document_number` as its record
@@ -152,14 +182,43 @@ collapse, and make every discarded observation a named disposition row. It costs
 no schema version, no policy version, no partition move and no consumer re-pin,
 and it converts a silent loss of 483 observations into 483 counted facts.
 
+**The condition that decides whether this works, and it is not optional.** The
+loss still happens under this remedy: the 2000-01-14 rule still never becomes a
+record. The only thing separating "counted" from "silently lost" is whether a
+consumer holding `00-111` can discover that a second document wore that number.
+So the disposition row MUST be reachable **from the number**, not only from a run
+receipt or a build log. A row that can be found solely by whoever reads the
+output of the run that wrote it is a counted fact in a place nobody looks, which
+is the exact failure mode this record's sibling catalogues seven times over. If
+the row is queryable by number, the trade is clean. If it is not, this remedy is
+the status quo with better paperwork.
+
+**Recorded for whoever faces this next: the composite key would have worked.**
+`numberAndDateUniquelyIdentify` is true and `sameNumberSameDateDifferingDigestCount`
+is 0, so `(document_number, publication_date)` is a clean key over this corpus.
+It is the cost that rules it out here, not the design. An owner facing different
+costs — a consumer that must address one of the 474 directly, or a corpus where
+the count is not 0.048% — should find that distinction in this record rather than
+concluding the idea was unsound.
+
 Reconsider the composite identity only if a consumer appears that must address
 one of those 474 documents directly. At 0.047% that is a real possibility rather
 than a certainty, and it is cheaper to answer it then, for the documents that
 actually matter, than to move a sealed identity for all of them now.
 
-The seven modern-form collisions are the exception worth watching. RefSpec has
-adjudicated them from the document bodies — five refusals, two genuine single
-identities — because federalregister.gov's own `correction_of` field answers null
-for all seven, including the two that really are self-corrections. Metadata
-cannot make that call. If modern-form collisions start accumulating rather than
-staying at seven, the identity question reopens on its own terms.
+The seven modern-form collisions are the exception worth watching. RefSpec
+adjudicated them from the document bodies, because federalregister.gov's own
+`correction_of` field answers null for all seven, including the two that really
+are self-corrections. Metadata cannot make that call.
+
+Two corrections to an earlier draft of this paragraph, both from RefSpec. The
+five are refusals **to mint an identity**, not findings that the documents do not
+exist; the shape layer still reads all five, and only the minter refuses. And the
+seven are not seven independent events: four of them share the first publication
+date 2010-01-06 and reappear across one week that December, which is a single
+publisher reusing a block of numbers. The real population is one 2010 batch
+artifact, one 2010 pair, and two 2015 self-corrections.
+
+That sharpens the trigger. What reopens this question is **a new first-date
+cluster**, not the count moving from seven to eight. A count that grows because
+somebody re-crawls 2010 carries no new information.
