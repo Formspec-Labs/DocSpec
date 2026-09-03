@@ -246,11 +246,22 @@ committed `24357cbc`. Re-derived here from the day listings rather than accepted
 2010-01-06 is the first day the modern form exists, and that issue carries three
 spellings at once: 52 `E9-`, one `E10-`, and seven `2010-`, over 60 documents.
 Three of the seven are the fresh sequence — tails 8, 20 and 38. The other four
-are the collision members, tails 31094, 31384, 31396 and 31415, and every one of
-them falls inside that day's legacy range of 30292 to 31430 while appearing
-nowhere in the legacy numbers themselves. They are the legacy counter's values
-wearing the year prefix. Their December halves are the fresh counter reaching
-those values honestly.
+are the collision members, tails 31094, 31384, 31396 and 31415.
+
+**The argument that settles all four is counter position.** The fresh `2010-`
+counter stood at 8, 20 and 38 that day, so no document published 2010-01-06 can
+carry a fresh-counter value of 31094. Those four values have to come from the
+other counter, and their December halves are the fresh counter reaching the same
+values honestly months later. This holds for all four and needs nothing beyond
+the day's three fresh tails.
+
+Neighbour density corroborates three of the four and should not be leaned on for
+the fourth. `31384`, `31396` and `31415` are wedged into gaps of 4, 2 and 2 in a
+dense contiguous legacy run, where the reading is close to forced. `31094` sits
+in the sparse straggler tail with neighbours at 31004 and 31150, a gap of 146,
+which is descriptively a gap and evidentially very little. An earlier draft of
+this paragraph rested on range and absence rather than on counter position, which
+made a 3-of-4 argument look like a 4-of-4 one.
 
 So the cause is **two counters sharing one namespace for one transition year**,
 and it cannot recur, because after 2010 there is no second counter.
