@@ -2774,3 +2774,122 @@ def test_trusted_construction_equals_validated_construction_on_real_rows(tmp_pat
     with pytest.raises((ValueError, TypeError)):
         SourceCatalogItem.from_dict({"sourceItemId": 1.5})
 
+
+
+def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path) -> None:
+    """What crosses the process boundary must not grow with the partition.
+
+    The parallel derivation once read each partition whole and pickled the
+    bytes to a worker. Because the bucket count is fixed, a partition is always
+    1/64th of the catalog, so that made peak memory a fixed fraction of the
+    corpus -- measured at 2.78 GB for a real 7.61 GB catalog -- rather than a
+    bound on it.
+
+    The equivalence test above cannot see this: it passes byte-identically
+    whether the payload is streamed or copied. So assert the property directly.
+    Every task argument, with the descriptor handle scrubbed out, must be
+    smaller than the smallest partition it stands for; that can only hold while
+    the payload is absent from the arguments. The partition sizes and count are
+    asserted too, so the test cannot pass by deriving nothing.
+    """
+
+    import pickle
+
+    from rulespec_artifacts import LocalMemberSource, admit_artifact
+
+    identities = [f"2026-0000{i}" for i in range(1, 8)]
+    source = FakeSource(
+        description(),
+        tuple(record(identity) for identity in identities),
+        tuple(r for identity in identities for r in renditions(identity)),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    summary = reader.verify_snapshot(result.reference)
+    blob_source = store.blob_source()
+    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
+    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    admit_artifact(
+        LocalMemberSource(artifact_root),
+        blob_source=blob_source,
+        expected_pin=None,
+        scratch_directory=tmp_path / "admit-scratch",
+        semantic_verifier=verifier,
+    )
+    partitions = verifier.partitions
+    assert len(partitions) > 1, "test needs a multi-partition catalog"
+    partition_sizes = [value.member.byte_size or 0 for value in partitions]
+    assert min(partition_sizes) > 512, "test needs partitions with real bytes in them"
+
+    recorded: list[int] = []
+
+    def scrubbed_size(arguments: tuple[Any, ...]) -> int:
+        # Measure the data an argument carries, standing in for anything that
+        # is not plain data. Pickling the live descriptor handle would register
+        # a second descriptor with the resource sharer that nothing collects,
+        # and its size says nothing about the payload either way. A payload
+        # smuggled back in as bytes or text is still measured.
+        return len(
+            pickle.dumps(
+                tuple(
+                    value
+                    if isinstance(value, (str, int, bool, bytes, bytearray))
+                    else "<handle>"
+                    for value in arguments
+                )
+            )
+        )
+
+    class RecordingPool:
+        def __init__(self, pool: Any) -> None:
+            self._pool = pool
+
+        def __enter__(self) -> RecordingPool:
+            self._pool.__enter__()
+            return self
+
+        def __exit__(self, *details: object) -> Any:
+            return self._pool.__exit__(*details)
+
+        def apply(self, function: Any, *args: Any, **kwargs: Any) -> Any:
+            return self._pool.apply(function, *args, **kwargs)
+
+        def apply_async(self, function: Any, args: tuple[Any, ...] = (), **kwargs: Any) -> Any:
+            recorded.append(scrubbed_size(args[0]))
+            return self._pool.apply_async(function, args, **kwargs)
+
+    inner = source_catalog_artifact._derive_pool_context()
+
+    class RecordingContext:
+        def Pool(self, *args: Any, **kwargs: Any) -> RecordingPool:
+            return RecordingPool(inner.Pool(*args, **kwargs))
+
+    selected_count = summary.disposition_counts[
+        source_catalog_artifact.CatalogDisposition.SELECTED.value
+    ]
+    serial = source_catalog_artifact._derive_catalog(
+        blob_source,
+        partitions,
+        item_count=summary.item_count,
+        selected_count=selected_count,
+        workers=1,
+    )
+    original = source_catalog_artifact._derive_pool_context
+    source_catalog_artifact._derive_pool_context = RecordingContext  # type: ignore[assignment]
+    try:
+        parallel = source_catalog_artifact._derive_catalog(
+            blob_source,
+            partitions,
+            item_count=summary.item_count,
+            selected_count=selected_count,
+            workers=2,
+        )
+    finally:
+        source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
+
+    assert parallel == serial, "streaming must not change a single derived value"
+    assert len(recorded) == len(partitions), "every partition must be submitted once"
+    assert max(recorded) < min(partition_sizes), (
+        f"task arguments carry the partition payload: largest argument "
+        f"{max(recorded)} B against smallest partition {min(partition_sizes)} B"
+    )

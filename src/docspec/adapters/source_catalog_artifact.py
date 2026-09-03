@@ -1003,6 +1003,19 @@ def _parallel_probe() -> bool:
     return True
 
 
+def _derive_pool_context() -> Any:
+    """The spawn context derive pools start from; a seam for tests.
+
+    Named the way SpicySearch names the same seam in its snapshot build, so a
+    test can observe what crosses the process boundary without reaching into
+    :mod:`multiprocessing`.
+    """
+
+    import multiprocessing
+
+    return multiprocessing.get_context("spawn")
+
+
 def _derive_partition_worker(
     args: tuple[str, Any, int, bool, str],
 ) -> tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]:
@@ -1244,11 +1257,10 @@ def _derive_catalog_parallel(
     the partition whole keeps those checks exactly as they were.
     """
 
-    import multiprocessing
     import tempfile
     from multiprocessing import reduction
 
-    context = multiprocessing.get_context("spawn")
+    context = _derive_pool_context()
     ordered = sorted(partitions, key=lambda value: _utf16_key(value.partition_id))
     with tempfile.TemporaryDirectory(prefix="docspec-catalog-derive-") as spill_dir:
 
