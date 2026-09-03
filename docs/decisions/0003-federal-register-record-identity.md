@@ -3,8 +3,8 @@
 - Date: 2026-09-02
 - Status: **open — needs an owner's ruling.** Nothing here is accepted.
 - Raised-by: agent, from a code review of spicy-docs against the source-native spec
-- Blocks on: a measured collision count from `fr-full-collision-census.json`,
-  which the Federal Register full-history crawl has not yet produced
+- Was blocked on a measured collision count. **Unblocked 2026-09-03**: the census
+  exists, and the numbers are in "What the census measured" below.
 - Split from: `docs/decisions/0002-shared-execution-and-the-acquisition-gap-ledger.md`,
   where this was rule 8 of 11 and did not belong
 
@@ -77,6 +77,62 @@ contested between two agents, and it needs an owner's ruling rather than an
 agent's. Burying a contested identity decision inside a record about execution
 topology is how it gets executed without being decided.
 
+## What the census measured
+
+`~/Work/RefSpec/research/evidence/fr-collision-census-2026-09-02/fr-full-collision-census.json`,
+112,263 bytes, `sha256:427a68272f87225e45c7bc25376c73c2761e07a613c7d87a8a6cdaa73c73356c`.
+Produced by the full-history crawl on 2026-09-02 and brought into RefSpec at
+`d8a9d70f`. Digest and every field below re-verified from the file on 2026-09-03,
+not accepted from a report.
+
+| field | value |
+|---|---|
+| `coverage.distinctNumberCount` | 1,007,156 |
+| `coverage.queryScope` | 1994-01-01 through 2026-09-02 |
+| `sameNumberDifferentDateCount` | **474** |
+| `modernFormCollisionCount` | 7 |
+| `sameNumberSameDateDifferingDigestCount` | 0 |
+| `sameNumberSameDateIdenticalDigestCount` | 0 |
+| `totals.multiObservationIds` | 474 |
+| `totals.discardedObservations` | 483 |
+| `numberAndDateUniquelyIdentify` | true |
+| `legacyFormAlsoParsesAsModernCount` | 29,148 |
+
+So the answer to "two documents or twenty thousand" is **474 numbers covering 483
+discarded observations, out of 1,007,156** — 0.047%. Seven are modern-form; the
+rest are legacy. Zero same-date conflicts of either kind.
+
+Three riders the file states about itself and this record inherits. The census
+covers the **crawled** Register from 1994 and its own `coverage.caveat` says it
+is not evidence about the printed Register before that. The
+`numberAndDateUniquelyIdentify` warrant is stated rather than assumed — the
+collapse refuses to publish a same-instant pair whose canonical digests differ,
+so a release that published is the proof, and the file scopes that to "every pair
+it covers". And `letterPrefixStripCollisions` records 2,382 further collisions
+that appear **only if someone normalizes** by stripping a legacy number's letter
+prefix; raw values are disjoint. Anyone adopting a qualified identity needs that
+last one, and the 29,148 legacy numbers that also parse as modern, before
+choosing a parser.
+
+## What the number changes
+
+It makes the composite identity disproportionate and it makes a fourth option
+obvious.
+
+Recovering 474 documents out of a million does not justify contradicting spec §8,
+moving the 64-bucket partition key and the `recordOrderKey`, and rendering every
+already-published Federal Register release unreadable. Refusing the collapse
+instead, which this record previously preferred, means 474 build aborts spread
+across the history — correct in principle and unusable in practice as an abort.
+
+**The option this record did not previously consider: keep the collapse and record
+each discarded observation as a named disposition row.** At 474 rows the
+accounting is trivial, the documents stop being invisible, no identity moves, no
+schema version changes, and it is exactly the machinery
+`docs/decisions/0002-shared-execution-and-the-acquisition-gap-ledger.md` Rules 4
+and 5 exist to build. The corpus then says "these 483 observations were
+discarded, here is each one and why" instead of saying nothing.
+
 ## What an owner needs to rule on
 
 1. Whether the Federal Register profile keeps `document_number` as its record
@@ -89,12 +145,21 @@ topology is how it gets executed without being decided.
    is amended, if a composite is chosen. The first draft proposed to amend §4
    only, which would have left §8 contradicting the code.
 
-## What has to happen before that ruling is proportionate
+## Recommendation, now that the number exists
 
-Restart the Federal Register full-history crawl and run
-`spicy-docs/tools/observation_census.py` over the result. It replays
-acquisition-pages evidence rather than published records, so it recovers the
-discarded observations, and it already emits `sameNumberDifferentDateCount` and
-`modernFormCollisions` as named fields. Nobody currently knows whether this is
-two documents or twenty thousand, and every option above prices differently at
-those two ends.
+Take the fourth option: keep `document_number` as the record identity, keep the
+collapse, and make every discarded observation a named disposition row. It costs
+no schema version, no policy version, no partition move and no consumer re-pin,
+and it converts a silent loss of 483 observations into 483 counted facts.
+
+Reconsider the composite identity only if a consumer appears that must address
+one of those 474 documents directly. At 0.047% that is a real possibility rather
+than a certainty, and it is cheaper to answer it then, for the documents that
+actually matter, than to move a sealed identity for all of them now.
+
+The seven modern-form collisions are the exception worth watching. RefSpec has
+adjudicated them from the document bodies — five refusals, two genuine single
+identities — because federalregister.gov's own `correction_of` field answers null
+for all seven, including the two that really are self-corrections. Metadata
+cannot make that call. If modern-form collisions start accumulating rather than
+staying at seven, the identity question reopens on its own terms.
