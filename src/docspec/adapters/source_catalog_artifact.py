@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import heapq
-import io
 import json
 import os
 import pickle
@@ -1005,7 +1004,7 @@ def _parallel_probe() -> bool:
 
 
 def _derive_partition_worker(
-    args: tuple[str, bytes, int, bool, str],
+    args: tuple[str, Any, int, bool, str],
 ) -> tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]:
     """Process one partition's rows in a subprocess and spill ordered payloads.
 
@@ -1013,9 +1012,14 @@ def _derive_partition_worker(
     join_counts, normalized_count, joined_count, interpretation_count). The
     spill holds one pickled payload tuple per row, in partition order; global
     ordering across partitions is enforced by the parent's merge.
+
+    ``args[1]`` is a duplicated descriptor for the partition blob, already
+    opened through the parent's pinned blob source, so the rows arrive as a
+    stream this worker reads at its own pace rather than as a bytes copy of the
+    whole partition. See :func:`_derive_catalog_parallel` for why.
     """
 
-    partition_id, payload, record_count, validate, spill_dir = args
+    partition_id, blob, record_count, validate, spill_dir = args
     spill_path = os.path.join(spill_dir, f"{partition_id}.rows")
     disposition_counts = {value.value: 0 for value in CatalogDisposition}
     join_counts: dict[str, dict[str, int]] = {}
@@ -1023,9 +1027,13 @@ def _derive_partition_worker(
     joined_count = 0
     interpretation_count = 0
     rows = 0
-    with open(spill_path, "wb") as spill:
+    descriptor = blob.detach()
+    # A duplicated descriptor shares its file offset with the one it came from,
+    # so start from the beginning rather than from wherever the parent left it.
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    with open(spill_path, "wb") as spill, os.fdopen(descriptor, "rb") as payload:
         for row, raw in _iter_partition_stream(
-            io.BytesIO(payload),
+            payload,
             partition_id=partition_id,
             record_count=record_count,
             validate=validate,
@@ -1211,20 +1219,40 @@ def _derive_catalog_parallel(
     payloads built by the same helpers the serial engine uses. The parent sums
     the counters, initializes every framed hasher with known counts, and feeds
     them from one heap-merge of the ordered spills, so the byte stream each
-    digest consumes is identical to the serial derivation's. Task submission is
-    windowed so partition bytes never pile up in the pool's queue. When several
+    digest consumes is identical to the serial derivation's. When several
     partitions carry defects, which partition's refusal surfaces first may
     differ from the serial order; the refusals themselves are identical.
+
+    Each task carries a *descriptor* for its partition blob, not the blob. The
+    parent once read each partition whole and pickled those bytes to a worker,
+    which windowed the number of partitions in flight but not their size:
+    ``CATALOG_PARTITION_BUCKET_COUNT`` is a fixed 64, so a partition is always
+    1/64th of the catalog and peak memory was a fixed *fraction* of the corpus
+    rather than a bound on it -- 16 in the parent's queue plus one per worker.
+    Measured, that put a 1.17 GB catalog's derivation at 1,956 MB across the
+    process tree and a real 7.61 GB catalog's build at 2.78 GB, growing without
+    limit. Streaming makes both ends O(one buffered read) instead.
+
+    The descriptor is duplicated from an open the parent performed through its
+    pinned blob source, so a worker inherits exactly the file the parent
+    resolved and verified; handing over a path instead would reintroduce the
+    re-resolution that :mod:`docspec.adapters.source_catalog_store` pins
+    against. A sibling with the same problem, SpicySearch's snapshot build,
+    bounds its worker arguments by shipping fixed-size row chunks instead;
+    that also works, but DocSpec checks record count, strict ordering and
+    bucket membership per partition in ``_iter_partition_stream``, and keeping
+    the partition whole keeps those checks exactly as they were.
     """
 
     import multiprocessing
     import tempfile
+    from multiprocessing import reduction
 
     context = multiprocessing.get_context("spawn")
     ordered = sorted(partitions, key=lambda value: _utf16_key(value.partition_id))
     with tempfile.TemporaryDirectory(prefix="docspec-catalog-derive-") as spill_dir:
 
-        def task_arguments() -> Iterator[tuple[str, bytes, int, bool, str]]:
+        def task_arguments() -> Iterator[tuple[str, Any, int, bool, str]]:
             for partition in ordered:
                 member = partition.member
                 if member.blob_ref is None or member.record_count is None:
@@ -1232,10 +1260,13 @@ def _derive_catalog_parallel(
                         "source-item partition descriptor requires blobRef and recordCount"
                     )
                 with blob_source.open(member.blob_ref) as stream:
-                    payload = stream.read()
+                    # DupFd duplicates the descriptor as it is constructed, so
+                    # the pinned open can close here and the worker still holds
+                    # the same file.
+                    blob = reduction.DupFd(stream.fileno())
                 yield (
                     partition.partition_id,
-                    payload,
+                    blob,
                     member.record_count,
                     validate_rows,
                     spill_dir,
