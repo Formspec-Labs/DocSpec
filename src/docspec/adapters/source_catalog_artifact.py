@@ -954,6 +954,12 @@ def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
 _SELECTED_DISPOSITION = CatalogDisposition.SELECTED.value
 _PARALLEL_ROW_THRESHOLD = 5_000
 _MAX_DERIVE_WORKERS = 8
+#: How long the worker probe waits before the derivation gives up on workers.
+#: A healthy pool answers in 0.13 s with eight workers, since Pool starts them
+#: lazily and the first one to come up replies, so this is ~460x headroom. It
+#: is not a performance knob: it only elapses when workers cannot run at all,
+#: and then the serial derivation still produces the identical result.
+_PARALLEL_PROBE_TIMEOUT_SECONDS = 60.0
 
 
 def _derive_worker_count(item_count: int, workers: int | None) -> int:
@@ -1294,10 +1300,20 @@ def _derive_catalog_parallel(
         arguments = task_arguments()
         with context.Pool(worker_count) as pool:
             try:
-                pool.apply(_parallel_probe)
-            except Exception:  # noqa: BLE001 - an interpreter whose __main__ cannot
-                # be re-imported (frozen, embedded, stdin) cannot host spawned
-                # workers; the serial derivation is always available and identical.
+                # Must be the timed asynchronous form. An interpreter whose
+                # __main__ cannot be re-imported (frozen, embedded, stdin)
+                # cannot host spawned workers -- but the child fails during its
+                # own bootstrap, and Pool answers a dead worker by starting
+                # another one, forever. The blocking pool.apply() therefore
+                # never returns and never raises for exactly the case this
+                # fallback exists to handle: measured, a derivation driven from
+                # a stdin script span workers until it was killed. Only a
+                # timeout can observe it.
+                pool.apply_async(_parallel_probe).get(
+                    timeout=_PARALLEL_PROBE_TIMEOUT_SECONDS
+                )
+            except Exception:  # noqa: BLE001 - workers are unavailable here;
+                # the serial derivation is always available and identical.
                 return _derive_catalog(
                     blob_source,
                     partitions,

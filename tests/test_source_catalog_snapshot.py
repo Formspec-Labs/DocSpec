@@ -2855,7 +2855,8 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
             return self._pool.apply(function, *args, **kwargs)
 
         def apply_async(self, function: Any, args: tuple[Any, ...] = (), **kwargs: Any) -> Any:
-            recorded.append(scrubbed_size(args[0]))
+            if args:  # the worker probe carries none; only real tasks are measured
+                recorded.append(scrubbed_size(args[0]))
             return self._pool.apply_async(function, args, **kwargs)
 
     inner = source_catalog_artifact._derive_pool_context()
@@ -2893,3 +2894,99 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
         f"task arguments carry the partition payload: largest argument "
         f"{max(recorded)} B against smallest partition {min(partition_sizes)} B"
     )
+
+
+def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path: Path) -> None:
+    """The probe must time out, because a dead worker never raises.
+
+    _derive_catalog_parallel guards itself with a no-op probe so that an
+    interpreter whose __main__ cannot be re-imported -- frozen, embedded, or a
+    script fed on stdin -- falls back to the serial derivation. The blocking
+    pool.apply() could not do that: the child fails inside its own bootstrap,
+    and Pool responds to a dead worker by starting another, forever. Measured,
+    a derivation driven from a stdin script spawned workers until it was
+    killed, so the guard never fired for the exact case it names.
+
+    Assert the shape that makes the guard work: the probe goes through the
+    timed asynchronous form, and a probe that does not answer falls back to a
+    serial derivation whose result is identical.
+    """
+
+    import multiprocessing
+
+    from rulespec_artifacts import LocalMemberSource, admit_artifact
+
+    identities = [f"2026-0000{i}" for i in range(1, 8)]
+    source = FakeSource(
+        description(),
+        tuple(record(identity) for identity in identities),
+        tuple(r for identity in identities for r in renditions(identity)),
+    )
+    store, result = build(tmp_path, source)
+    reader = SourceCatalogArtifactReader(store, producer=producer())
+    summary = reader.verify_snapshot(result.reference)
+    blob_source = store.blob_source()
+    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
+    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    admit_artifact(
+        LocalMemberSource(artifact_root),
+        blob_source=blob_source,
+        expected_pin=None,
+        scratch_directory=tmp_path / "admit-scratch",
+        semantic_verifier=verifier,
+    )
+    assert len(verifier.partitions) > 1, "test needs a multi-partition catalog"
+
+    class NeverAnswers:
+        def get(self, timeout: float | None = None) -> Any:
+            assert timeout is not None, (
+                "the probe must pass a timeout: a worker that dies during "
+                "bootstrap makes Pool respawn it forever, so an untimed wait "
+                "never returns and never raises"
+            )
+            raise multiprocessing.TimeoutError
+
+    class DeadPool:
+        def __enter__(self) -> DeadPool:
+            return self
+
+        def __exit__(self, *details: object) -> bool:
+            return False
+
+        def apply(self, *args: Any, **kwargs: Any) -> Any:
+            raise AssertionError(
+                "the probe must not use the blocking apply(); see NeverAnswers"
+            )
+
+        def apply_async(self, *args: Any, **kwargs: Any) -> NeverAnswers:
+            return NeverAnswers()
+
+    class DeadContext:
+        def Pool(self, *args: Any, **kwargs: Any) -> DeadPool:
+            return DeadPool()
+
+    selected_count = summary.disposition_counts[
+        source_catalog_artifact.CatalogDisposition.SELECTED.value
+    ]
+    serial = source_catalog_artifact._derive_catalog(
+        blob_source,
+        verifier.partitions,
+        item_count=summary.item_count,
+        selected_count=selected_count,
+        workers=1,
+    )
+    original = source_catalog_artifact._derive_pool_context
+    source_catalog_artifact._derive_pool_context = DeadContext  # type: ignore[assignment]
+    try:
+        fell_back = source_catalog_artifact._derive_catalog(
+            blob_source,
+            verifier.partitions,
+            item_count=summary.item_count,
+            selected_count=selected_count,
+            workers=2,
+        )
+    finally:
+        source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
+
+    assert fell_back == serial
+    assert fell_back.catalog_state_digest == summary.catalog_state_digest
