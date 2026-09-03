@@ -183,10 +183,10 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
-        "rulespec-artifacts==1.0.9",
+        "rulespec-artifacts==1.0.10",
     ]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
-        "path": "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl"
+        "path": "vendor/rulespec_artifacts-1.0.10-py3-none-any.whl"
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
@@ -441,7 +441,7 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_artifacts-1.0.9-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_artifacts-1.0.10-py3-none-any.whl"),
             str(wheel),
         ],
         cwd=ROOT,

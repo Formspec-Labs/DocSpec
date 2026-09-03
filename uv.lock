@@ -262,7 +262,7 @@ requires-dist = [
     { name = "jsonschema-rs", marker = "extra == 'fast'", specifier = ">=0.52,<1" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24,<2" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5,<7" },
-    { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" },
+    { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.10-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
 provides-extras = ["fast", "http", "s3", "tokens", "pdf", "dagster"]
@@ -900,10 +900,10 @@ wheels = [
 
 [[package]]
 name = "rulespec-artifacts"
-version = "1.0.9"
-source = { path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" }
+version = "1.0.10"
+source = { path = "vendor/rulespec_artifacts-1.0.10-py3-none-any.whl" }
 wheels = [
-    { filename = "rulespec_artifacts-1.0.9-py3-none-any.whl", hash = "sha256:67cb33bf63c11bc6812ad0e8f0a8b73e89501fa6d4242acf75a7cc6612f5d6c6" },
+    { filename = "rulespec_artifacts-1.0.10-py3-none-any.whl", hash = "sha256:b09be0b2e9ca1700e55ebbbf9374402c9345a7b50a130d0f7f04814c7222856e" },
 ]
 
 [[package]]
