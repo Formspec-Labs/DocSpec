@@ -178,9 +178,27 @@ this that belongs to an ingest layer.
 ## Recommendation, now that the number exists
 
 Take the fourth option: keep `document_number` as the record identity, keep the
-collapse, and make every discarded observation a named disposition row. It costs
+collapse, and record every discarded observation on the surviving number's
+disposition row. It costs
 no schema version, no policy version, no partition move and no consumer re-pin,
 and it converts a silent loss of 483 observations into 483 counted facts.
+
+**Correction, same day: the remedy as first written is impossible.** "A named
+disposition row per discarded observation" cannot be built. The disposition
+ledger is one row per source item — `adapters/document_release_verify.py:1898`
+refuses a `duplicate sourceItemId` — and for Federal Register the source item id
+*is* the document number (`application/federal_register_catalog.py:224-227` over
+`federal_register_source_native.py:659`). So `00-111` gets exactly one row, and
+the discarded sibling has nowhere to be. Two rows per number would require a
+composite disposition key, which is the composite identity arriving through the
+back door with none of its honesty.
+
+What is actually buildable, and it satisfies the condition below: **the surviving
+row carries its discarded siblings.** One row per number, as the ledger requires,
+with a field naming the observations that number also covered and why each lost.
+That is reachable from the number by construction, costs no key change, and does
+not smuggle in the identity move. The obligation is a field on an existing row,
+not a new row.
 
 **The condition that decides whether this works, and it is not optional.** The
 loss still happens under this remedy: the 2000-01-14 rule still never becomes a
