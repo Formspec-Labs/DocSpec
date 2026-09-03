@@ -287,17 +287,25 @@ class _CompiledSchemaGate:
     to each other on this schema's shapes.
     """
 
-    __slots__ = ("_authority", "_fast")
+    __slots__ = ("_authority", "_fast", "implementation_id")
 
     def __init__(self, schema: Mapping[str, Any]) -> None:
         self._authority = jsonschema.Draft202012Validator(schema)
+        #: Which engine decides acceptance here. ``jsonschema-rs`` is a declared
+        #: dependency, so the pure-Python value should never be seen in a
+        #: released build -- and that is the point of naming it. Falling back
+        #: costs ~116x on this schema (1,993 us/row against 17.1 us/row), which
+        #: used to happen silently.
+        self.implementation_id = "jsonschema-rs"
         if jsonschema_rs is None:
             self._fast = None
+            self.implementation_id = "jsonschema"
             return
         try:
             self._fast = jsonschema_rs.validator_for(dict(schema))
         except Exception:  # noqa: BLE001 - an uncompilable schema falls back to the authority
             self._fast = None
+            self.implementation_id = "jsonschema"
 
     def error(self, value: object, label: str) -> None:
         if self._fast is not None and self._fast.is_valid(value):
@@ -306,6 +314,12 @@ class _CompiledSchemaGate:
 
 
 _ITEM_VALIDATOR = _CompiledSchemaGate(_SCHEMAS["source-item.schema.json"])
+
+
+def source_item_validator_implementation() -> str:
+    """Name the schema engine deciding acceptance for source-item rows."""
+
+    return _ITEM_VALIDATOR.implementation_id
 
 
 def _iter_partition_rows(
@@ -2073,4 +2087,5 @@ __all__ = [
     "requested_universe_set_digest",
     "selected_source_set_digest",
     "source_catalog_producer",
+    "source_item_validator_implementation",
 ]

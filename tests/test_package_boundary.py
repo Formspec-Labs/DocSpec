@@ -183,6 +183,10 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
+        # Deliberately not optional: it is the engine every source-item row is
+        # actually checked by, and jsonschema alone is ~116x slower on that
+        # schema. See the comment beside it in pyproject.toml.
+        "jsonschema-rs>=0.52,<1",
         "rulespec-artifacts==1.0.11",
     ]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
@@ -190,9 +194,9 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
+    # No "fast" extra: it advertised jsonschema-rs as optional, and it is not.
     assert set(project["project"]["optional-dependencies"]) == {
         "dagster",
-        "fast",
         "http",
         "pdf",
         "s3",
