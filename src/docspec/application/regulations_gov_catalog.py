@@ -6,7 +6,7 @@ import bisect
 import hashlib
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
@@ -385,6 +385,9 @@ class RegulationsGovCatalogPolicy:
     sample: RegulationsGovSamplePolicy | None = None
     max_selected_items: int | None = None
     comment_input: SourceInputSelector | None = None
+    #: Filled on first use by :attr:`policy_digest`; never an input or an
+    #: identity, so it stays out of ``__init__``, ``__eq__`` and ``__repr__``.
+    _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:regulations-gov:1"
     policy_version = "1.1.0"
@@ -562,7 +565,28 @@ class RegulationsGovCatalogPolicy:
 
     @property
     def policy_digest(self) -> str:
-        return sha256_digest(canonical_json_bytes(self.to_member()))
+        """Return this policy's digest, canonicalizing the member at most once.
+
+        The digest is a pure function of the fields, but every interpretation of
+        every catalog row stamps it, so the uncached property canonicalized the
+        whole policy member once per item. That member is 17,880 bytes here --
+        ``configuration`` embeds a 314-entry agency map -- and measured 166.5 us
+        per call, so a 49,884-item build spent 8.3 s of its 82.9 s wall clock,
+        and a profiled run 26.9 s of 218 s, rebuilding one constant. Worse, the
+        cost is O(items x policy size): every agency added to ``agencyNames``
+        slowed down every row.
+
+        Filling the cache lazily rather than in ``__post_init__`` keeps
+        construction -- and the errors a malformed configuration raises -- exactly
+        where they were.
+        """
+
+        cached = self._policy_digest
+        if cached is not None:
+            return cached
+        digest = sha256_digest(canonical_json_bytes(self.to_member()))
+        object.__setattr__(self, "_policy_digest", digest)
+        return digest
 
     @classmethod
     def from_member(cls, value: object) -> RegulationsGovCatalogPolicy:
