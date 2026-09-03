@@ -14,7 +14,7 @@ ninety seconds with
 
 > source-native inputs repeat a sourceRecordId for one policy selector
 
-raised at `adapters/source_catalog_artifact.py:726`. Two records, out of
+raised from the duplicate-key load at `adapters/source_catalog_artifact.py:700`. Two records, out of
 2,221,713 scanned across the 670 non-Federal-Register releases:
 
 | sourceRecordId | appears in |
@@ -166,28 +166,76 @@ spicy9's census over 1,943,108 documents, grouping by `objectId`:
 | — cross-agency, single real docket (parent/child) | 293 |
 | — genuine co-issued rules | 3 |
 
-This decision collapses on **`sourceRecordId`**. It fixes 2 records. The other
-**~16,650 duplicate pairs remain in the catalog**: the same rule findable twice
-as unrelated items. That is a real product defect, it is **known**, and it is
-**out of scope here**.
+This decision collapses on **`sourceRecordId`**. It fixes 2 records. **It
+reduces the duplicate-pair count by zero** — see the correction below.
 
-**Why not widen it to `objectId`.** The owner rule this decision rests on —
-prefix containment, with its tiebreak — was validated against *four exceptions
-in 1,797,201 records*, all of them `sourceRecordId` collisions. It answers "when
-one document id appears under two mirrors, which mirror owns it". It does **not**
-answer "when one `objectId` carries two *different* document ids, which id is
-canonical", which is the question all 16,650 of the others pose. Applying a rule
-validated on one population to a population 8,000 times larger is the error this
-project has made repeatedly and caught late; the check over those 16,652 groups
-would be the work, not the collapse.
+**Why not widen it to `objectId`: measured, the owner rule resolves none of
+them.** The narrow-versus-wide question was settled empirically rather than by
+argument. Replaying the rule against all 16,652 groups, per family:
+
+| family | groups | resolve cleanly | ambiguous |
+| --- | --- | --- | --- |
+| same-agency catch-all | 16,356 | **0** | 16,356 |
+| parent/child | 293 | **0** | 293 |
+| co-issued | 3 | **0** | 3 |
+| **total** | **16,652** | **0** | **16,652** |
+
+Every group returns multiple owner candidates. The honest statement is **100%
+non-resolution, not 0% error** — there are no independent canonical-ID labels to
+score against, and the rule makes no unique choice to be wrong about. The same
+rule resolves both narrow cases cleanly: -2737 because CISA fails
+docket-to-agency, -2740 because USCIS fails document-to-docket.
+
+So the objection was never that a rule validated on 4 records is
+under-validated for 16,652. It is that **it does not function on them at all**.
+It answers "one document id under two mirrors, which mirror owns it"; those
+groups ask "one `objectId` carrying two *different* document ids, which id is
+canonical", and it has no mechanism for that question. A family-specific rule
+must be validated before any of them are collapsed, and that validation is the
+work.
+
+### Correction: the narrow fix removes no duplicates
+
+An earlier draft of this section said "~16,650 duplicate pairs remain". That was
+arithmetic, and it was wrong. The two censuses **overlap rather than
+partition**: one of the two repeated `sourceRecordId` values sits inside a
+different-ID group, the other's group carries only one document id. After this
+collapse, **all 16,652 different-ID groups are still different-ID groups.**
+
+### The duplicate defect is real as items, not only as input records
+
+Replaying the catalog policy and Federal Register rendition joins over the
+33,362 raw records in those groups: 33,184 selected, 139 deleted, 39
+unavailable, 0 failed. **16,510 groups contain at least two distinct *selected*
+document ids.** So the duplicate-search-result defect is not a property of the
+input that a build might absorb — it materialises in the catalog, for 16,510
+groups.
+
+Two further measurements bound the alternative: a wide collapse would discard
+**16,709 item identities**, and **every one of the 16,652 groups differs in at
+least one non-identity top-level attribute**, so wide would not be collapsing
+identical things. Catalog-local recoverability of the discarded side is not
+established, because the retained-filing schema is unimplemented.
+
+### The limit, exactly
+
+> This decision groups only input records that share the exact `sourceRecordId`
+> within the same `SourceInputSelector`. Prefix containment may select the
+> owning filing only among records sharing that exact `sourceRecordId`.
+> `objectId` must not be used here either as a grouping key or to select a
+> canonical document ID. Every different-`sourceRecordId` group remains outside
+> this decision, including all 16,356 same-agency catch-all groups, all 293
+> parent/child groups, and all three co-issued groups. A later decision must
+> validate a family-specific canonical-ID rule before collapsing any of those
+> 16,652 groups.
 
 **The trap this section exists to close.** The 2 records are the symptom and the
-16,650 are the condition, so a fix sized to the symptom looks like a success:
+16,652 are the condition, so a fix sized to the symptom looks like a success:
 catalog-A's first clean build becomes the evidence that the collapse works, and
 whatever it does not cover gets asserted by omission. It is asserted here
 instead.
 
-**Escalated.** Whether to address the 16,650 is a product decision on a
+**Escalated.** Whether to address the 16,652 is a product decision on a
 population the owner has not been shown, and it is not settled by this record.
 
 ## What this does not do
