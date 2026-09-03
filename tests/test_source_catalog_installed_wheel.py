@@ -11,8 +11,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.10-py3-none-any.whl"
-RULESPEC_WHEEL_SHA256 = "b09be0b2e9ca1700e55ebbbf9374402c9345a7b50a130d0f7f04814c7222856e"
+RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.11-py3-none-any.whl"
+RULESPEC_WHEEL_SHA256 = "bedd8ee4799d9633963272714a30258f505404155732480ad5cb1dde2d7cbf4f"
 SPICY_DOCS_WHEEL = (
     ROOT
     / "tests"
@@ -509,7 +509,7 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
 
 assert sys.version_info[:2] == (3, 12)
 assert importlib.metadata.version("docspec") == "0.2.9"
-assert importlib.metadata.version("rulespec-artifacts") == "1.0.10"
+assert importlib.metadata.version("rulespec-artifacts") == "1.0.11"
 assert importlib.metadata.version("spicy-docs") == "0.1.0"
 assert not any(
     requirement.lower().startswith("spicy-docs")
