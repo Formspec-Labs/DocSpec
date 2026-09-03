@@ -14,7 +14,7 @@ ninety seconds with
 
 > source-native inputs repeat a sourceRecordId for one policy selector
 
-raised from the duplicate-key load at `adapters/source_catalog_artifact.py:700`. Two records, out of
+raised from the duplicate-key load at `adapters/source_catalog_artifact.py:718`. Two records, out of
 2,221,713 scanned across the 670 non-Federal-Register releases:
 
 | sourceRecordId | appears in |
