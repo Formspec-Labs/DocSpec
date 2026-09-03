@@ -5,11 +5,11 @@ description = "Format-neutral bulk document acquisition, processing, segmentatio
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
-    "rulespec-artifacts==1.0.9",
+    "rulespec-artifacts==1.0.10",
 ]
 
 [tool.uv.sources]
-rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.9-py3-none-any.whl" }
+rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.10-py3-none-any.whl" }
 
 [project.optional-dependencies]
 fast = [
