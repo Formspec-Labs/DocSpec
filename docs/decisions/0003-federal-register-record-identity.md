@@ -175,6 +175,25 @@ this that belongs to an ingest layer.
    is amended, if a composite is chosen. The first draft proposed to amend §4
    only, which would have left §8 contradicting the code.
 
+## What was removed from this record, and why
+
+Recorded so nobody restores it by reflex. Two things present in the first version
+of this record are deliberately gone, both superseded by the census arriving on
+2026-09-03:
+
+- The `Blocks on:` line naming a collision count the crawl had not yet produced.
+  It has been produced; the numbers are above.
+- A section headed "What has to happen before that ruling is proportionate",
+  which said to restart the full-history crawl and run `observation_census.py`
+  over the result. That happened, and its output is the census cited above.
+
+**Nothing else has been dropped.** In particular the paragraph on the seven
+modern-form collisions — that `correction_of` answers null for all seven,
+including the two that genuinely are self-corrections, so only the document
+bodies could adjudicate them — is present and current, together with the later
+measurement that four of the seven share one first publication date and are a
+transition artifact rather than four independent events.
+
 ## Recommendation, now that the number exists
 
 Take the fourth option: keep `document_number` as the record identity, keep the
