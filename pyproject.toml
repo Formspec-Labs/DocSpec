@@ -5,11 +5,11 @@ description = "Format-neutral bulk document acquisition, processing, segmentatio
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
-    "rulespec-artifacts==1.0.10",
+    "rulespec-artifacts==1.0.11",
 ]
 
 [tool.uv.sources]
-rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.10-py3-none-any.whl" }
+rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl" }
 
 [project.optional-dependencies]
 fast = [
@@ -37,6 +37,12 @@ dev = [
     "ijson>=3.3,<4",
     "jsonschema>=4.23,<5",
     "jsonschema-rs>=0.52,<1",
+    # Optional accelerator for rulespec-artifacts' canonical encoder, which
+    # imports it defensively and falls back to json.dumps when it is absent.
+    # It sits in the group `uv run` already keeps self-consistent because a
+    # build wants it; the artifacts wheel deliberately declares no extra for
+    # it, so a consumer that wants the acceleration installs it here.
+    "msgspec>=0.18,<1",
     "pytest",
     "ruff>=0.12,<0.13",
 ]
