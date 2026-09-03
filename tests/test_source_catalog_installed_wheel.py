@@ -1046,3 +1046,31 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     for path in runtime_root.rglob("*"):
         if path.is_file() and path.suffix in {".json", ".jsonl", ".txt"}:
             assert workspace.encode() not in path.read_bytes()
+
+
+def test_the_vendored_wheel_is_tracked_by_git() -> None:
+    """A bumped wheel that git ignores is invisible until someone clones.
+
+    ``vendor/.gitignore`` ignores everything and re-admits exactly one wheel by
+    name, so bumping the vendored version silently requires moving that
+    allowlist line too. Miss it and ``git add`` stages the deletion of the old
+    wheel and nothing else: the working tree still has the file, every local
+    check passes, and only a fresh checkout -- a worktree, a clone, CI -- gets
+    an empty vendor directory that cannot install. That failure has happened
+    three times on this dependency, so it is checked here rather than
+    remembered.
+
+    The pin tests above read the wheel from the working tree, which is exactly
+    what cannot see this; this one asks git what it would hand a new checkout.
+    """
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", str(RULESPEC_WHEEL.relative_to(ROOT))],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert tracked.returncode == 0, (
+        f"{RULESPEC_WHEEL.name} exists but git does not track it; "
+        f"add it to vendor/.gitignore's allowlist. {tracked.stderr.strip()}"
+    )
