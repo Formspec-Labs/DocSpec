@@ -100,6 +100,13 @@ _UNIVERSE_ACCOUNTING_NAMESPACE = "docspec-internal/universe"
 _OUTPUT_ACCOUNTING_NAMESPACE = "docspec-internal/output"
 _OUTPUT_PARTITION_NAMESPACE_PREFIX = "docspec-internal/output-partition/"
 _SOURCE_ROW_NAMESPACE_PREFIX = "docspec-internal/source-rows/"
+# Each of these is an integrity fingerprint over a derived, in-memory per-row
+# projection (see `_derive_catalog`'s and `_derive_catalog_parallel`'s
+# `diagnostics` dict below) -- not a reference to a published member. No
+# member with this content is declared anywhere in the distribution; verifying
+# one means recomputing it from the published `source-items` partitions, not
+# dereferencing a blob. Full rationale is on the matching properties in
+# `source_catalog.py`'s `source_catalog_schemas()` receipt schema.
 _DIAGNOSTIC_DIGEST_FIELDS = (
     "normalizedFieldsDigest",
     "joinedFieldsDigest",
@@ -1072,7 +1079,12 @@ def _iter_spill(spill_path: str) -> Iterator[tuple[bytes, tuple[Any, ...]]]:
 
 @dataclass(frozen=True, slots=True)
 class _DerivedCatalog:
-    """Every digest and diagnostic one derivation pass proves about the rows."""
+    """Every digest and diagnostic one derivation pass proves about the rows.
+
+    ``diagnostics`` holds ``joinCoverage`` plus the six
+    ``_DIAGNOSTIC_DIGEST_FIELDS`` fingerprints; see that tuple's comment for
+    why those six are not published-member references.
+    """
 
     catalog_state_digest: str
     requested_universe_set_digest: str
