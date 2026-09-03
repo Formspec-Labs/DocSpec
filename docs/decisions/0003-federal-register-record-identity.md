@@ -226,6 +226,13 @@ and break exact-evidence resolution: a served match would stop resolving to its
 pinned source bytes, which is the property this whole format exists to preserve.
 So the remedy chooses a representative and never edits a record.
 
+**The test that pins it, and it is not the obvious one.** Asserting that the
+item's title is the ASCII spelling proves only that selection picked the right
+candidate. The assertion that actually guarantees exact evidence is that **the
+retained observation's title bytes are unchanged** — that the loser kept its own
+spelling verbatim. Those are different claims, and a normalization implemented by
+mistake would pass the first and fail the second. Write the second.
+
 This arrived from the regulations.gov ruling on 2026-09-03, where two filings of
 one document differed only in dash typography and the owner ruled the ASCII
 hyphen wins because it is what users type. That case is easy because the two
