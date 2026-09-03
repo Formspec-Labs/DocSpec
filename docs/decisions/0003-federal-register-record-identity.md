@@ -179,8 +179,8 @@ this that belongs to an ingest layer.
 
 Take the fourth option: keep `document_number` as the record identity, keep the
 collapse, and record every discarded observation on the surviving number's
-disposition row. It costs
-no schema version, no policy version, no partition move and no consumer re-pin,
+disposition row. It costs one schema version and no policy version, no partition
+move and no consumer re-pin,
 and it converts a silent loss of 483 observations into 483 counted facts.
 
 **Correction, same day: the remedy as first written is impossible.** "A named
@@ -196,9 +196,24 @@ back door with none of its honesty.
 What is actually buildable, and it satisfies the condition below: **the surviving
 row carries its discarded siblings.** One row per number, as the ledger requires,
 with a field naming the observations that number also covered and why each lost.
-That is reachable from the number by construction, costs no key change, and does
-not smuggle in the identity move. The obligation is a field on an existing row,
-not a new row.
+That is reachable from the number by construction and does not smuggle in the
+identity move.
+
+**Second correction, 2026-09-03: it costs a schema version after all.** An
+earlier draft of this paragraph claimed the remedy needed "no schema version, no
+policy version, no partition move and no consumer re-pin". The last three hold;
+the first does not. `schemas/document_release/2.0/source-dispositions.schema.json`
+declares `additionalProperties: false` over exactly eight properties, none of
+which can carry a sibling list, so adding one moves `releaseSchemaDigest` and
+therefore the release identity. Reusing `reason` as free text would avoid that
+and would be an abuse of a closed 21-code vocabulary on a row whose disposition
+is `selected`, which is worse than paying the version.
+
+So the honest comparison is a **field addition to a closed row schema** against a
+**partition-key and record-order-key move**. Both move a sealed digest. They are
+not close in blast radius — a field addition leaves every existing release
+readable and every partition where it is, while the composite does not — but this
+record previously overstated the gap by claiming one side was free.
 
 **The condition that decides whether this works, and it is not optional.** The
 loss still happens under this remedy: the 2000-01-14 rule still never becomes a
