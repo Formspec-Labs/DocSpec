@@ -117,7 +117,26 @@ stable because they have been cited elsewhere.
 
 ### First: what lets a long run finish
 
-**Rule 4 — `failedRecordCount` becomes phase-conditional, not absolute.**
+**Rule 4 — `failedRecordCount` becomes phase-conditional where a profile has
+phases, and stays absolute where it does not.**
+
+**Scoped 2026-09-03, after spicy-docs falsified the general form.** An earlier
+draft of this rule stated the two-phase split as a property of acquisition. It is
+a property of a *profile*. For Mirrulations it holds and could not be broken:
+`listed_entries()` seals the complete, strictly-ordered, ETag-pinned key set
+before any GET runs, the ordering assert enforces it, and `processed_keys` is
+refused outright on that path, so the denominator genuinely exists before the
+fan-out. For Federal Register it is simply false: the strategy is cursor
+traversal with recursive window bisection, pages are discovered as they are
+fetched, and there is no listing phase distinct from the fetching phase. A
+failure at page 400 of 1,072 leaves no sealed denominator at all, so a fetch
+failure there is exactly as unnameable as a listing failure is elsewhere.
+
+The rule therefore belongs to the profile, not to the release format. A profile
+may admit fetch failures as named gaps **only if it can show a sealed
+denominator before its fan-out begins**; a profile that discovers its universe as
+it traverses keeps the absolute rule. Making this the format's rule would license
+a gap ledger on Federal Register that could not honestly be filled.
 Acquisition has two phases and the current rule treats them as one.
 `listed_entries()` establishes the complete, strictly-ordered, ETag-pinned key
 set before any object is fetched
