@@ -595,7 +595,9 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
     renditions = iter(source.iter_renditions())
     next_rendition = next(renditions, None)
     previous_record_id: str | None = None
-    previous_rendition_key: tuple[str, str] | None = None
+    # Ordering keys, not the text: renditions are ordered across the whole
+    # stream, so the previous key's encoding outlives the record it belonged to.
+    previous_rendition_order: tuple[bytes, bytes] | None = None
 
     def checked_rendition(value: object) -> tuple[Mapping[str, Any], tuple[str, str]]:
         item = _mapping(value, "source-native rendition")
@@ -641,26 +643,22 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
         _mapping(record["record"], "source-native record payload")
         if not isinstance(record["fieldDiagnostics"], list):
             raise IntegrityError("source-native fieldDiagnostics must be an array")
-        if previous_record_id is not None and _utf16_key(record_id) <= _utf16_key(previous_record_id):
+        record_order = _utf16_key(record_id)
+        if previous_record_id is not None and record_order <= _utf16_key(previous_record_id):
             raise IntegrityError("source-native records must be strictly ordered by sourceRecordId")
         previous_record_id = record_id
         selected: list[Mapping[str, Any]] = []
         selected_bytes = 0
         while next_rendition is not None:
             rendition, key = checked_rendition(next_rendition)
-            key_order = tuple(_utf16_key(part) for part in key)
-            previous_order = (
-                tuple(_utf16_key(part) for part in previous_rendition_key)
-                if previous_rendition_key is not None
-                else None
-            )
-            if previous_order is not None and key_order <= previous_order:
+            key_order = (_utf16_key(key[0]), _utf16_key(key[1]))
+            if previous_rendition_order is not None and key_order <= previous_rendition_order:
                 raise IntegrityError("source-native renditions must be strictly ordered")
-            if _utf16_key(key[0]) < _utf16_key(record_id):
+            if key_order[0] < record_order:
                 raise IntegrityError("source-native rendition has no matching record")
-            if _utf16_key(key[0]) > _utf16_key(record_id):
+            if key_order[0] > record_order:
                 break
-            previous_rendition_key = key
+            previous_rendition_order = key_order
             if len(selected) >= MAX_SOURCE_RENDITIONS_PER_RECORD:
                 raise LimitExceededError(
                     "source-native rendition count exceeds its per-record limit"
@@ -977,7 +975,7 @@ def _row_digest_payloads(
     bytes,
     bytes,
     list[bytes],
-    list[tuple[bytes, str]],
+    list[tuple[bytes, str, str]],
     list[bytes],
 ]:
     """Build every framed payload one row contributes, in one place.
@@ -993,9 +991,14 @@ def _row_digest_payloads(
         if disposition == _SELECTED_DISPOSITION
         else None
     )
-    joined: list[tuple[bytes, str]] = []
+    joined: list[tuple[bytes, str, str]] = []
     for record in _joined_field_records_for(row):
-        joined.append((_canonical_record_payload(record), str(record["outcome"])))
+        # Carry the identity and outcome out with the payload. The worker used
+        # to recover joinId by json.loads-ing bytes it had just serialized from
+        # a record that held it.
+        joined.append(
+            (_canonical_record_payload(record), str(record["outcome"]), str(record["joinId"]))
+        )
     return (
         raw,
         _canonical_record_payload({"sourceItemId": source_item_id}),
@@ -1070,12 +1073,9 @@ def _derive_partition_worker(
             payloads = _row_digest_payloads(row, raw)
             disposition_counts[row["selection"]["disposition"]] += 1
             normalized_count += len(payloads[6])
-            for record_bytes, outcome in payloads[7]:
+            for _record_bytes, outcome, join_id in payloads[7]:
                 joined_count += 1
-                _accumulate_join_coverage(
-                    join_counts,
-                    {"joinId": _join_id_of(record_bytes), "outcome": outcome},
-                )
+                _accumulate_join_coverage(join_counts, {"joinId": join_id, "outcome": outcome})
             interpretation_count += len(payloads[8])
             pickle.dump(
                 (_utf16_key(row["sourceItemId"]), payloads),
@@ -1093,14 +1093,6 @@ def _derive_partition_worker(
         joined_count,
         interpretation_count,
     )
-
-
-def _join_id_of(record_bytes: bytes) -> str:
-    value = json.loads(record_bytes)
-    join_id = value["joinId"]
-    if not isinstance(join_id, str):
-        raise IntegrityError("catalog join identity must be text")
-    return join_id
 
 
 def _iter_spill(spill_path: str) -> Iterator[tuple[bytes, tuple[Any, ...]]]:
@@ -1391,7 +1383,7 @@ def _derive_catalog_parallel(
             rendition_choices.add_payload(payloads[5])
             for record_bytes in payloads[6]:
                 normalized.add_payload(record_bytes)
-            for record_bytes, _outcome in payloads[7]:
+            for record_bytes, _outcome, _join_id in payloads[7]:
                 joined.add_payload(record_bytes)
             for record_bytes in payloads[8]:
                 interpretations.add_payload(record_bytes)
