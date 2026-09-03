@@ -5,6 +5,13 @@ description = "Format-neutral bulk document acquisition, processing, segmentatio
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
+    # Not an accelerator: the sole schema engine every catalog row passes
+    # through in practice. jsonschema alone is ~116x slower on the source-item
+    # schema (1,993 us/row against 17.1 us/row), which is the difference
+    # between minutes and hours over a full corpus, and nothing announced which
+    # engine a build had resolved. jsonschema stays as the refusal authority.
+    # Same spelling and bound SpicySearch already declares.
+    "jsonschema-rs>=0.52,<1",
     "rulespec-artifacts==1.0.11",
 ]
 
@@ -12,9 +19,6 @@ dependencies = [
 rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl" }
 
 [project.optional-dependencies]
-fast = [
-    "jsonschema-rs>=0.52,<1",
-]
 http = [
     "httpx>=0.27,<1",
 ]
@@ -36,7 +40,6 @@ dev = [
     "httpx>=0.27,<1",
     "ijson>=3.3,<4",
     "jsonschema>=4.23,<5",
-    "jsonschema-rs>=0.52,<1",
     # Optional accelerator for rulespec-artifacts' canonical encoder, which
     # imports it defensively and falls back to json.dumps when it is absent.
     # It sits in the group `uv run` already keeps self-consistent because a

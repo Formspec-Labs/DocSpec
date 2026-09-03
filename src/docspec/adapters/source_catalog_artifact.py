@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import heapq
-import io
 import json
 import os
 import pickle
@@ -100,6 +99,13 @@ _UNIVERSE_ACCOUNTING_NAMESPACE = "docspec-internal/universe"
 _OUTPUT_ACCOUNTING_NAMESPACE = "docspec-internal/output"
 _OUTPUT_PARTITION_NAMESPACE_PREFIX = "docspec-internal/output-partition/"
 _SOURCE_ROW_NAMESPACE_PREFIX = "docspec-internal/source-rows/"
+# Each of these is an integrity fingerprint over a derived, in-memory per-row
+# projection (see `_derive_catalog`'s and `_derive_catalog_parallel`'s
+# `diagnostics` dict below) -- not a reference to a published member. No
+# member with this content is declared anywhere in the distribution; verifying
+# one means recomputing it from the published `source-items` partitions, not
+# dereferencing a blob. Full rationale is on the matching properties in
+# `source_catalog.py`'s `source_catalog_schemas()` receipt schema.
 _DIAGNOSTIC_DIGEST_FIELDS = (
     "normalizedFieldsDigest",
     "joinedFieldsDigest",
@@ -281,17 +287,25 @@ class _CompiledSchemaGate:
     to each other on this schema's shapes.
     """
 
-    __slots__ = ("_authority", "_fast")
+    __slots__ = ("_authority", "_fast", "implementation_id")
 
     def __init__(self, schema: Mapping[str, Any]) -> None:
         self._authority = jsonschema.Draft202012Validator(schema)
+        #: Which engine decides acceptance here. ``jsonschema-rs`` is a declared
+        #: dependency, so the pure-Python value should never be seen in a
+        #: released build -- and that is the point of naming it. Falling back
+        #: costs ~116x on this schema (1,993 us/row against 17.1 us/row), which
+        #: used to happen silently.
+        self.implementation_id = "jsonschema-rs"
         if jsonschema_rs is None:
             self._fast = None
+            self.implementation_id = "jsonschema"
             return
         try:
             self._fast = jsonschema_rs.validator_for(dict(schema))
         except Exception:  # noqa: BLE001 - an uncompilable schema falls back to the authority
             self._fast = None
+            self.implementation_id = "jsonschema"
 
     def error(self, value: object, label: str) -> None:
         if self._fast is not None and self._fast.is_valid(value):
@@ -300,6 +314,12 @@ class _CompiledSchemaGate:
 
 
 _ITEM_VALIDATOR = _CompiledSchemaGate(_SCHEMAS["source-item.schema.json"])
+
+
+def source_item_validator_implementation() -> str:
+    """Name the schema engine deciding acceptance for source-item rows."""
+
+    return _ITEM_VALIDATOR.implementation_id
 
 
 def _iter_partition_rows(
@@ -575,7 +595,9 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
     renditions = iter(source.iter_renditions())
     next_rendition = next(renditions, None)
     previous_record_id: str | None = None
-    previous_rendition_key: tuple[str, str] | None = None
+    # Ordering keys, not the text: renditions are ordered across the whole
+    # stream, so the previous key's encoding outlives the record it belonged to.
+    previous_rendition_order: tuple[bytes, bytes] | None = None
 
     def checked_rendition(value: object) -> tuple[Mapping[str, Any], tuple[str, str]]:
         item = _mapping(value, "source-native rendition")
@@ -621,26 +643,22 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
         _mapping(record["record"], "source-native record payload")
         if not isinstance(record["fieldDiagnostics"], list):
             raise IntegrityError("source-native fieldDiagnostics must be an array")
-        if previous_record_id is not None and _utf16_key(record_id) <= _utf16_key(previous_record_id):
+        record_order = _utf16_key(record_id)
+        if previous_record_id is not None and record_order <= _utf16_key(previous_record_id):
             raise IntegrityError("source-native records must be strictly ordered by sourceRecordId")
         previous_record_id = record_id
         selected: list[Mapping[str, Any]] = []
         selected_bytes = 0
         while next_rendition is not None:
             rendition, key = checked_rendition(next_rendition)
-            key_order = tuple(_utf16_key(part) for part in key)
-            previous_order = (
-                tuple(_utf16_key(part) for part in previous_rendition_key)
-                if previous_rendition_key is not None
-                else None
-            )
-            if previous_order is not None and key_order <= previous_order:
+            key_order = (_utf16_key(key[0]), _utf16_key(key[1]))
+            if previous_rendition_order is not None and key_order <= previous_rendition_order:
                 raise IntegrityError("source-native renditions must be strictly ordered")
-            if _utf16_key(key[0]) < _utf16_key(record_id):
+            if key_order[0] < record_order:
                 raise IntegrityError("source-native rendition has no matching record")
-            if _utf16_key(key[0]) > _utf16_key(record_id):
+            if key_order[0] > record_order:
                 break
-            previous_rendition_key = key
+            previous_rendition_order = key_order
             if len(selected) >= MAX_SOURCE_RENDITIONS_PER_RECORD:
                 raise LimitExceededError(
                     "source-native rendition count exceeds its per-record limit"
@@ -936,6 +954,12 @@ def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
 _SELECTED_DISPOSITION = CatalogDisposition.SELECTED.value
 _PARALLEL_ROW_THRESHOLD = 5_000
 _MAX_DERIVE_WORKERS = 8
+#: How long the worker probe waits before the derivation gives up on workers.
+#: A healthy pool answers in 0.13 s with eight workers, since Pool starts them
+#: lazily and the first one to come up replies, so this is ~460x headroom. It
+#: is not a performance knob: it only elapses when workers cannot run at all,
+#: and then the serial derivation still produces the identical result.
+_PARALLEL_PROBE_TIMEOUT_SECONDS = 60.0
 
 
 def _derive_worker_count(item_count: int, workers: int | None) -> int:
@@ -957,7 +981,7 @@ def _row_digest_payloads(
     bytes,
     bytes,
     list[bytes],
-    list[tuple[bytes, str]],
+    list[tuple[bytes, str, str]],
     list[bytes],
 ]:
     """Build every framed payload one row contributes, in one place.
@@ -973,9 +997,14 @@ def _row_digest_payloads(
         if disposition == _SELECTED_DISPOSITION
         else None
     )
-    joined: list[tuple[bytes, str]] = []
+    joined: list[tuple[bytes, str, str]] = []
     for record in _joined_field_records_for(row):
-        joined.append((_canonical_record_payload(record), str(record["outcome"])))
+        # Carry the identity and outcome out with the payload. The worker used
+        # to recover joinId by json.loads-ing bytes it had just serialized from
+        # a record that held it.
+        joined.append(
+            (_canonical_record_payload(record), str(record["outcome"]), str(record["joinId"]))
+        )
     return (
         raw,
         _canonical_record_payload({"sourceItemId": source_item_id}),
@@ -997,8 +1026,21 @@ def _parallel_probe() -> bool:
     return True
 
 
+def _derive_pool_context() -> Any:
+    """The spawn context derive pools start from; a seam for tests.
+
+    Named the way SpicySearch names the same seam in its snapshot build, so a
+    test can observe what crosses the process boundary without reaching into
+    :mod:`multiprocessing`.
+    """
+
+    import multiprocessing
+
+    return multiprocessing.get_context("spawn")
+
+
 def _derive_partition_worker(
-    args: tuple[str, bytes, int, bool, str],
+    args: tuple[str, Any, int, bool, str],
 ) -> tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]:
     """Process one partition's rows in a subprocess and spill ordered payloads.
 
@@ -1006,9 +1048,14 @@ def _derive_partition_worker(
     join_counts, normalized_count, joined_count, interpretation_count). The
     spill holds one pickled payload tuple per row, in partition order; global
     ordering across partitions is enforced by the parent's merge.
+
+    ``args[1]`` is a duplicated descriptor for the partition blob, already
+    opened through the parent's pinned blob source, so the rows arrive as a
+    stream this worker reads at its own pace rather than as a bytes copy of the
+    whole partition. See :func:`_derive_catalog_parallel` for why.
     """
 
-    partition_id, payload, record_count, validate, spill_dir = args
+    partition_id, blob, record_count, validate, spill_dir = args
     spill_path = os.path.join(spill_dir, f"{partition_id}.rows")
     disposition_counts = {value.value: 0 for value in CatalogDisposition}
     join_counts: dict[str, dict[str, int]] = {}
@@ -1016,9 +1063,13 @@ def _derive_partition_worker(
     joined_count = 0
     interpretation_count = 0
     rows = 0
-    with open(spill_path, "wb") as spill:
+    descriptor = blob.detach()
+    # A duplicated descriptor shares its file offset with the one it came from,
+    # so start from the beginning rather than from wherever the parent left it.
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    with open(spill_path, "wb") as spill, os.fdopen(descriptor, "rb") as payload:
         for row, raw in _iter_partition_stream(
-            io.BytesIO(payload),
+            payload,
             partition_id=partition_id,
             record_count=record_count,
             validate=validate,
@@ -1028,12 +1079,9 @@ def _derive_partition_worker(
             payloads = _row_digest_payloads(row, raw)
             disposition_counts[row["selection"]["disposition"]] += 1
             normalized_count += len(payloads[6])
-            for record_bytes, outcome in payloads[7]:
+            for _record_bytes, outcome, join_id in payloads[7]:
                 joined_count += 1
-                _accumulate_join_coverage(
-                    join_counts,
-                    {"joinId": _join_id_of(record_bytes), "outcome": outcome},
-                )
+                _accumulate_join_coverage(join_counts, {"joinId": join_id, "outcome": outcome})
             interpretation_count += len(payloads[8])
             pickle.dump(
                 (_utf16_key(row["sourceItemId"]), payloads),
@@ -1053,14 +1101,6 @@ def _derive_partition_worker(
     )
 
 
-def _join_id_of(record_bytes: bytes) -> str:
-    value = json.loads(record_bytes)
-    join_id = value["joinId"]
-    if not isinstance(join_id, str):
-        raise IntegrityError("catalog join identity must be text")
-    return join_id
-
-
 def _iter_spill(spill_path: str) -> Iterator[tuple[bytes, tuple[Any, ...]]]:
     with open(spill_path, "rb") as spill:
         while True:
@@ -1072,7 +1112,12 @@ def _iter_spill(spill_path: str) -> Iterator[tuple[bytes, tuple[Any, ...]]]:
 
 @dataclass(frozen=True, slots=True)
 class _DerivedCatalog:
-    """Every digest and diagnostic one derivation pass proves about the rows."""
+    """Every digest and diagnostic one derivation pass proves about the rows.
+
+    ``diagnostics`` holds ``joinCoverage`` plus the six
+    ``_DIAGNOSTIC_DIGEST_FIELDS`` fingerprints; see that tuple's comment for
+    why those six are not published-member references.
+    """
 
     catalog_state_digest: str
     requested_universe_set_digest: str
@@ -1199,20 +1244,39 @@ def _derive_catalog_parallel(
     payloads built by the same helpers the serial engine uses. The parent sums
     the counters, initializes every framed hasher with known counts, and feeds
     them from one heap-merge of the ordered spills, so the byte stream each
-    digest consumes is identical to the serial derivation's. Task submission is
-    windowed so partition bytes never pile up in the pool's queue. When several
+    digest consumes is identical to the serial derivation's. When several
     partitions carry defects, which partition's refusal surfaces first may
     differ from the serial order; the refusals themselves are identical.
+
+    Each task carries a *descriptor* for its partition blob, not the blob. The
+    parent once read each partition whole and pickled those bytes to a worker,
+    which windowed the number of partitions in flight but not their size:
+    ``CATALOG_PARTITION_BUCKET_COUNT`` is a fixed 64, so a partition is always
+    1/64th of the catalog and peak memory was a fixed *fraction* of the corpus
+    rather than a bound on it -- 16 in the parent's queue plus one per worker.
+    Measured, that put a 1.17 GB catalog's derivation at 1,956 MB across the
+    process tree and a real 7.61 GB catalog's build at 2.78 GB, growing without
+    limit. Streaming makes both ends O(one buffered read) instead.
+
+    The descriptor is duplicated from an open the parent performed through its
+    pinned blob source, so a worker inherits exactly the file the parent
+    resolved and verified; handing over a path instead would reintroduce the
+    re-resolution that :mod:`docspec.adapters.source_catalog_store` pins
+    against. A sibling with the same problem, SpicySearch's snapshot build,
+    bounds its worker arguments by shipping fixed-size row chunks instead;
+    that also works, but DocSpec checks record count, strict ordering and
+    bucket membership per partition in ``_iter_partition_stream``, and keeping
+    the partition whole keeps those checks exactly as they were.
     """
 
-    import multiprocessing
     import tempfile
+    from multiprocessing import reduction
 
-    context = multiprocessing.get_context("spawn")
+    context = _derive_pool_context()
     ordered = sorted(partitions, key=lambda value: _utf16_key(value.partition_id))
     with tempfile.TemporaryDirectory(prefix="docspec-catalog-derive-") as spill_dir:
 
-        def task_arguments() -> Iterator[tuple[str, bytes, int, bool, str]]:
+        def task_arguments() -> Iterator[tuple[str, Any, int, bool, str]]:
             for partition in ordered:
                 member = partition.member
                 if member.blob_ref is None or member.record_count is None:
@@ -1220,10 +1284,13 @@ def _derive_catalog_parallel(
                         "source-item partition descriptor requires blobRef and recordCount"
                     )
                 with blob_source.open(member.blob_ref) as stream:
-                    payload = stream.read()
+                    # DupFd duplicates the descriptor as it is constructed, so
+                    # the pinned open can close here and the worker still holds
+                    # the same file.
+                    blob = reduction.DupFd(stream.fileno())
                 yield (
                     partition.partition_id,
-                    payload,
+                    blob,
                     member.record_count,
                     validate_rows,
                     spill_dir,
@@ -1233,10 +1300,20 @@ def _derive_catalog_parallel(
         arguments = task_arguments()
         with context.Pool(worker_count) as pool:
             try:
-                pool.apply(_parallel_probe)
-            except Exception:  # noqa: BLE001 - an interpreter whose __main__ cannot
-                # be re-imported (frozen, embedded, stdin) cannot host spawned
-                # workers; the serial derivation is always available and identical.
+                # Must be the timed asynchronous form. An interpreter whose
+                # __main__ cannot be re-imported (frozen, embedded, stdin)
+                # cannot host spawned workers -- but the child fails during its
+                # own bootstrap, and Pool answers a dead worker by starting
+                # another one, forever. The blocking pool.apply() therefore
+                # never returns and never raises for exactly the case this
+                # fallback exists to handle: measured, a derivation driven from
+                # a stdin script span workers until it was killed. Only a
+                # timeout can observe it.
+                pool.apply_async(_parallel_probe).get(
+                    timeout=_PARALLEL_PROBE_TIMEOUT_SECONDS
+                )
+            except Exception:  # noqa: BLE001 - workers are unavailable here;
+                # the serial derivation is always available and identical.
                 return _derive_catalog(
                     blob_source,
                     partitions,
@@ -1322,7 +1399,7 @@ def _derive_catalog_parallel(
             rendition_choices.add_payload(payloads[5])
             for record_bytes in payloads[6]:
                 normalized.add_payload(record_bytes)
-            for record_bytes, _outcome in payloads[7]:
+            for record_bytes, _outcome, _join_id in payloads[7]:
                 joined.add_payload(record_bytes)
             for record_bytes in payloads[8]:
                 interpretations.add_payload(record_bytes)
@@ -2018,4 +2095,5 @@ __all__ = [
     "requested_universe_set_digest",
     "selected_source_set_digest",
     "source_catalog_producer",
+    "source_item_validator_implementation",
 ]

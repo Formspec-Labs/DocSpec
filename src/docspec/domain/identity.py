@@ -144,10 +144,58 @@ def thaw_json(value: JSONValue) -> Any:
     return value
 
 
+def _canonical_plain(value: Any, *, label: str = "value") -> Any:
+    """Validate one value against the identity rules, returning plain JSON types.
+
+    Same rules and same refusals as :func:`freeze_json`, but it builds ordinary
+    dicts and lists instead of ``MappingProxyType`` and tuples, because the one
+    caller that needs them -- :func:`canonical_json_bytes` -- immediately threw
+    the immutable copy away through :func:`thaw_json`. That pair walked every
+    record twice and allocated two complete throwaway trees before the encoder
+    walked it a third time; a profiled real-corpus catalog build spent about a
+    quarter of its time here (24.8M calls each way, 355M ``isinstance`` calls
+    across the walkers). Freezing is still what callers holding a value want --
+    :func:`freeze_json` keeps them -- but encoding never did.
+
+    Key order is left to ``json.dumps(sort_keys=True)``, which sorts by the same
+    string comparison ``freeze_json`` used, so dropping the redundant sort here
+    cannot move a byte.
+    """
+
+    if _TRUSTED_JSON_INPUT.get() and type(value) in (dict, list, str, int, bool, type(None)):
+        # Canonical parsing already established string keys, no duplicates, no
+        # floats and canonical order. Nothing is left to check or to copy.
+        return value
+    if is_dataclass(value) and not isinstance(value, type):
+        value = asdict(value)
+    if isinstance(value, Enum):
+        return _canonical_plain(value.value, label=label)
+    if value is None or isinstance(value, (bool, str)):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{label} contains a non-finite number")
+        raise ValueError(f"{label} contains a floating-point number; use an integer unit or decimal string")
+    if isinstance(value, Mapping):
+        plain: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{label} contains a non-string object key")
+            if key in plain:
+                raise ValueError(f"{label} contains a duplicate key: {key}")
+            plain[key] = _canonical_plain(item, label=f"{label}.{key}")
+        return plain
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray, memoryview)):
+        return [_canonical_plain(item, label=f"{label}[]") for item in value]
+    raise ValueError(f"{label} contains unsupported type {type(value).__name__}")
+
+
 def canonical_json_bytes(value: Any) -> bytes:
     """Encode one value with DocSpec's identity-bearing JSON rules."""
 
-    plain = thaw_json(freeze_json(value))
+    plain = _canonical_plain(value)
     return json.dumps(plain, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
 
 

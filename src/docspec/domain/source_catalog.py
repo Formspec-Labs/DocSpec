@@ -984,6 +984,22 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
                     },
                 },
             },
+            # These six are integrity fingerprints over a derived, in-memory
+            # per-row projection (built by `_FramedSectionHasher` from the
+            # domain string named in each field's derivation code, e.g.
+            # `docspec-catalog-reasons/1` for `reasonsDigest`) -- they are NOT
+            # references to a published member. The distribution declares no
+            # "reasons", "dispositions", "interpretations", "rendition-choices",
+            # "normalized-fields", or "joined-fields" blob; an auditor cannot
+            # open one and re-hash it. Each digest is still fully
+            # reconstructable, by recomputing the same closed projection and
+            # total order from the published `source-items` partitions (see
+            # the platform implementation spec's "diagnostic result digest"
+            # section for the exact projections and orderings), which is what
+            # the producer's build-gate semantic pass and this module's derive
+            # functions do. Contrast `catalogStateDigest`, which frames the
+            # exact published row bytes and is this artifact's digest over
+            # member content.
             "normalizedFieldsDigest": digest,
             "joinedFieldsDigest": digest,
             "dispositionsDigest": digest,

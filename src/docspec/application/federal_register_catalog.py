@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from docspec.application.catalog_policy import (
@@ -108,6 +108,9 @@ class FederalRegisterCatalogPolicy:
     """Map faithful Federal Register rows into complete DocSpec catalog rows."""
 
     expected_source_system_id: str
+    #: Filled on first use by :attr:`policy_digest`; never an input or an
+    #: identity, so it stays out of ``__init__``, ``__eq__`` and ``__repr__``.
+    _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:federal-register:1"
     policy_version = "1.0.0"
@@ -163,7 +166,22 @@ class FederalRegisterCatalogPolicy:
 
     @property
     def policy_digest(self) -> str:
-        return sha256_digest(canonical_json_bytes(self.to_member()))
+        """Return this policy's digest, canonicalizing the member at most once.
+
+        Same reason as
+        :attr:`~docspec.application.regulations_gov_catalog.RegulationsGovCatalogPolicy.policy_digest`:
+        every interpretation of every row stamps this, so the uncached property
+        recanonicalized the whole policy member per item. This member is far
+        smaller (1,191 bytes against 17,880), so the saving is proportionally
+        smaller, but it is the same defect and the same fix.
+        """
+
+        cached = self._policy_digest
+        if cached is not None:
+            return cached
+        digest = sha256_digest(canonical_json_bytes(self.to_member()))
+        object.__setattr__(self, "_policy_digest", digest)
+        return digest
 
     @classmethod
     def from_member(cls, value: object) -> FederalRegisterCatalogPolicy:
