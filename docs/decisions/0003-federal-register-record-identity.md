@@ -2,6 +2,9 @@
 
 - Date: 2026-09-02
 - Status: **open — needs an owner's ruling.** Nothing here is accepted.
+- Evidence strengthened 2026-09-03: the loss is now demonstrated in a built
+  release, not inferred from a comment. One measurement is still owed — see
+  "The measurement this record still owes".
 - Raised-by: agent, from a code review of spicy-docs against the source-native spec
 - Was blocked on a measured collision count. **Unblocked 2026-09-03**: the census
   exists, and the numbers are in "What the census measured" below.
@@ -133,6 +136,88 @@ schema version changes, and it is exactly the machinery
 and 5 exist to build. The corpus then says "these 483 observations were
 discarded, here is each one and why" instead of saying nothing.
 
+## The loss is proven, not inferred — and two relayed claims about it are wrong
+
+Added 2026-09-03, after spicy9 traced the mechanism end to end. The diagnosis
+above was argued from the code's own comment; it is now argued from the built
+release.
+
+**The specimen.** The release keeps the 2000-01-18 Notice "Filing of Plat of an
+Island; Minnesota" under `00-111`. The 2000-01-14 rule filed under the same
+number — a genuinely different document, named in
+`federal_register_observation_version`'s own docstring — is **not in the
+release**. It was fetched and then discarded as a stale observation. So the loss
+is not a hazard this record anticipates; it is a document that a build already
+dropped.
+
+**The eviction happens in spicy-docs, not here.** `federal_register_acquisition_policy`
+returns an `observationSelection` of `groupBy: /document_number`,
+`orderBy: /publication_date DESC NULLS LAST`, wired into `FEDERAL_REGISTER_PROFILE`
+as `observation_version=federal_register_observation_version`. By the time
+DocSpec sees a release the older document is already gone. DocSpec's own
+`_item_from_row` sets `issued_version = publication_date`, which is a faithful
+reading of identity-versus-version and is **not** the eviction site. Citing it as
+the mechanism would send a reader to the wrong layer — the same miscitation
+decision 0004 had to correct in its own constraint section.
+
+**It was deliberate, and it mirrors the publisher.** The comment states the
+intent: keep the newest `publication_date` "exactly as the API's own
+`/documents/<number>` resolution does". Whoever wrote it knew `00-111` resolves
+to two documents — they named both. What appears not to have been weighed is
+that mirroring the publisher's *resolution* endpoint also inherits its inability
+to represent the older document at all. That is a defensible ingest choice and an
+indefensible corpus property, and those are different questions.
+
+**The exposure is bounded to cross-date reuse.** A same-day collision under one
+number does not collapse: `tieDisposition` is
+`refuse-differing-record-digest-at-normalized-instant`, with
+`refuse_equal_observation_versions=False`, so two same-instant records whose
+digests differ refuse the release rather than picking one. This matters for the
+ruling below — the refusal machinery option 2 asks for **already exists** and
+already runs; extending it from same-day to cross-date is a narrower change than
+this record previously implied.
+
+### Two claims relayed with this finding that do not survive checking
+
+**"The release is labelled complete-snapshot and silently is not."** False for
+this profile. `FEDERAL_REGISTER_PROFILE` sets
+`source_state_scope="observed-crawl"`. Five sibling profiles are
+`complete-snapshot`; the Federal Register one is not, and observed-crawl is the
+honest label for what it does. The labelling defect this finding needs is not
+there, and asserting it would put a wrong claim in front of the owner alongside
+the right ones.
+
+**The census's `numberAndDateUniquelyIdentify = True` proves nothing.** It was
+justified on the grounds that "the collapse groups observations by
+(number, date)". The code groups by `/document_number` alone and orders by date;
+date is the tiebreak, not part of the key. So the check ran over a release
+already reduced to one record per number and reported that numbers are unique —
+which is true by construction and would have been true no matter how much was
+discarded. Re-deriving from the raw release blobs gives 1,007,156 records and
+1,007,156 distinct numbers for the same reason. This is the day's recurring
+shape: a measurement over a population that cannot contain the thing being
+measured, internally consistent and therefore indistinguishable from a clean
+result.
+
+### The measurement this record still owes
+
+Up to 483 observations across 474 numbers were discarded. **How many are
+distinct documents and how many are true re-observations of one document is
+unmeasured**, and it is the number an owner needs, because it is the difference
+between "474 documents are missing" and "474 numbers were re-observed and one of
+them, `00-111`, hid a second document".
+
+It cannot come from the release: the release is the thing that already did the
+reducing. It has to come from the discarded observations themselves — comparing
+each discarded record against the one that survived under the same number, on
+fields that distinguish a different document from a later look at the same one
+(`type`, `title`, `agencies`, `abstract`), not on the two fields the collapse
+already keyed on. Sizing it needs no fetch: the crawl observed these records, and
+the question is only whether the pipeline still holds them.
+
+Until that exists, the honest statement of cost is: **at least one** real
+document is absent from a published release, and at most 474 are.
+
 ## Where document identity should be decided, and where it should not
 
 An earlier draft of my thinking proposed that DocSpec consult RefSpec's qualified
@@ -169,7 +254,10 @@ this that belongs to an ingest layer.
    identity, or moves to a composite with `publication_date`.
 2. If it keeps the bare number, whether a cross-date collision **refuses** the
    release rather than silently collapsing to the newest. This is the cheaper
-   option named above and it costs no schema move.
+   option named above and it costs no schema move — and it is cheaper again than
+   this record first said, because the same-day refusal path already exists and
+   runs (`tieDisposition`), so this extends a live mechanism rather than
+   introducing one.
 3. Whether spec §8's separation of identity from source-issued version
    (`docs/superpowers/specs/2026-08-25-source-native-release-spec.md:461-462`)
    is amended, if a composite is chosen. The first draft proposed to amend §4
