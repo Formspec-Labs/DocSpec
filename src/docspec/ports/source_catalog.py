@@ -98,6 +98,11 @@ class SourceNativeRow:
     description: SourceNativeDescription
     record: Mapping[str, Any]
     renditions: tuple[Mapping[str, Any], ...]
+    #: Filings this run collapsed into ``record`` under DocSpec decision 0004,
+    #: each ``{reasonCode, reason, record, renditions}``. Empty for every row
+    #: that was never part of a collision, which is all but two of the
+    #: 2,221,713 records in the 671 catalog-A inputs.
+    discarded_filings: tuple[Mapping[str, Any], ...] = ()
 
 
 class CatalogPolicyWorkspace(Protocol):

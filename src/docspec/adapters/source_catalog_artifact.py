@@ -773,7 +773,7 @@ class _CatalogPolicyInputs:
             raise IntegrityError("catalog policy source input selector matched no source-native input")
 
     def _row(self, value: Mapping[str, Any]) -> SourceNativeRow:
-        if set(value) != {"sourceIndex", "record", "renditions"}:
+        if set(value) - {"discardedFilings"} != {"sourceIndex", "record", "renditions"}:
             raise IntegrityError("catalog policy workspace source row has an invalid closed shape")
         source_index = value["sourceIndex"]
         if (
@@ -790,7 +790,21 @@ class _CatalogPolicyInputs:
         renditions = tuple(
             _mapping(raw, "catalog policy workspace rendition") for raw in raw_renditions
         )
-        return SourceNativeRow(self._descriptions[source_index], record, renditions)
+        # Absent is the overwhelming case -- all but two of 2,221,713 records in
+        # the 671 catalog-A inputs -- so the default has to satisfy the same
+        # check a present value does, not merely be falsy.
+        discarded = value.get("discardedFilings", [])
+        if not isinstance(discarded, list):
+            raise IntegrityError("catalog policy workspace discarded filings must be an array")
+        return SourceNativeRow(
+            self._descriptions[source_index],
+            record,
+            renditions,
+            tuple(
+                _mapping(item, "catalog policy workspace discarded filing")
+                for item in discarded
+            ),
+        )
 
     def _rows(
         self,
