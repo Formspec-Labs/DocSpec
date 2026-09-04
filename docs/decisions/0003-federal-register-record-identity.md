@@ -177,10 +177,12 @@ ruling below — the refusal machinery option 2 asks for **already exists** and
 already runs; extending it from same-day to cross-date is a narrower change than
 this record previously implied.
 
-### Two claims relayed with this finding that do not survive checking
+### Two claims that came with this finding and do not survive checking
 
-**"The release is labelled complete-snapshot and silently is not."** False for
-this profile. `FEDERAL_REGISTER_PROFILE` sets
+**"The release is labelled complete-snapshot and silently is not."** Made by
+spicy9, who asked that it be recorded against them by name rather than as an
+ownerless relay artifact, on the grounds that a failed claim without an author
+teaches nobody which reader to distrust. False for this profile. `FEDERAL_REGISTER_PROFILE` sets
 `source_state_scope="observed-crawl"`. Five sibling profiles are
 `complete-snapshot`; the Federal Register one is not, and observed-crawl is the
 honest label for what it does. The labelling defect this finding needs is not
@@ -359,6 +361,50 @@ distinction still holds**: there the two observations are genuinely different
 documents, so choosing which one the number surfaces is a substantive loss rather
 than a typographic preference, and it is exactly why the discarded observation
 has to be recorded rather than merely deselected.
+
+**Visibility is not availability, and the ruling must say which it buys.**
+Recorded 2026-09-03 at spicy9's argument, which is right and was not stated
+plainly enough above. Option 4 makes the loss *auditable*: a reader holding
+`00-111` learns that a second document wore that number. It does not make the
+2000-01-14 rule *retrievable* — its title, abstract and text are still outside
+the corpus, so it cannot be searched, ranked or cited. For a product whose
+purpose is search over these documents that distinction is the whole question,
+and "recorded as a disposition" reads as "handled" to anyone who has not traced
+what the row contains. Ruling for option 4 is ruling that **these documents stay
+unfindable and we can now prove which ones**. That may well be right at this
+scale; it should be chosen, not inherited.
+
+Two things narrow the gap and belong in the same breath.
+
+*The discard is already counted, so the remedy is smaller than a new concept.*
+The source-native receipt carries `discardedObservationCount`, computed as
+`inputObservationCount - publishedRecordCount`, and the release refuses unless
+`inputObservationCount == publishedRecordCount + discardedObservationCount`.
+That conservation check is why 483 is knowable at all. The increment option 4
+asks for is not "start accounting for discards" but "give an already-counted
+quantity its members" — and the existing equation is a non-tautological check on
+any list produced, because it compares two independently computed quantities
+rather than a filter against itself.
+
+*A named discard and a carried discard are different remedies.* 0004 settled the
+adjacent case by carrying the whole discarded record and its renditions into the
+surviving row's `sourceObservations`, whose values are unconstrained — and the
+Federal Register policy already writes that slot (`field-diagnostic/{index}`).
+Carrying rather than naming would put the discarded title and abstract inside the
+corpus, which converts spicy9's objection from "absent" to "present but not
+independently indexed". That is a materially better position and it is not free:
+the catalog item is downstream of the release, and the release is the layer that
+drops the record, so the content has to survive the release first. Whether the
+release can carry it without opening a closed schema is **unanswered here** and
+is the first thing to establish if an owner leans toward option 4 — it decides
+whether the remedy costs a field on a closed row or nothing at all.
+
+**The scan's result is an input to this ruling, not a footnote to it.** If most
+of the 483 are true re-observations, option 4 is plainly proportionate. If most
+are distinct documents, the population of permanently unfindable rules is larger
+than "474" sounds and the trade needs re-pricing. So "nobody should act on this
+yet" holds for a reason beyond authority: the number that decides it does not
+exist.
 
 **The condition that decides whether this works, and it is not optional.** The
 loss still happens under this remedy: the 2000-01-14 rule still never becomes a
