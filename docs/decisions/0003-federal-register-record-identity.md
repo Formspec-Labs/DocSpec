@@ -285,8 +285,66 @@ is wrong, and the distinctness split — computed over the same enumeration —
 must not be reported at all when it does not, because a wrong enumeration
 yields a confidently wrong ratio rather than a visible failure.
 
-Until that exists, the honest statement of cost is: **at least one** real
-document is absent from a published release, and at most 474 are.
+## The scan ran, and the loss is large
+
+Measured 2026-09-03 by spicy9. Receipt:
+`~/Work/corpora/supply-2026-09-02/receipts/fr-discarded-distinctness-2026-09-03.md`,
+data alongside it. Method: stream all 1,072 acquisition-evidence members and
+compare each discarded observation against the survivor under the same number on
+`type`, `title`, `agencies`, `abstract` — deliberately not on number or date.
+
+**The gate passed, so the split is reportable.** An independent enumeration of
+the evidence produced 1,007,639 input observations and 483 discards; the
+release receipt's equation gives the same 483 from
+`inputObservationCount − publishedRecordCount`. Two separately computed
+quantities agreeing. Of 483 discarded observations across 474 numbers:
+
+| | count |
+| --- | --- |
+| differ from the survivor on at least one of the four fields | **415** |
+| identical on all four | **68** |
+| of the 415, one title is a prefix of the other | 56 |
+
+Differing fields among the 415: title 373, agencies 364, abstract 264, type 167.
+
+**State the number with what bounds it, because the receipt's own summary does
+not.** The receipt says the range "is now roughly 359–415", three paragraphs
+after establishing that 359 "is an estimate, not a floor". Both cannot hold. The
+defensible statement is:
+
+- **at most 415**, and that ceiling itself assumes the 68 identical-on-four
+  records are re-observations rather than distinct documents that happen to
+  match on all four captured fields — an assumption spicy9 flagged and the
+  evidence cannot test. Without it the ceiling is 483.
+- **roughly 359** as a heuristic mid-estimate, from subtracting the 56
+  title-prefix pairs that look like republications (`00-12867` differs only by a
+  trailing "; Republication"). A heuristic, not a bound: a genuinely different
+  document can share a title prefix with the survivor.
+- **at least one** proven — `00-111`, differing on all four, a rule and a notice
+  under one number.
+
+So: a proven floor of one, a heuristic centre near 359, a ceiling of 415 under a
+stated assumption. Not a 359–415 interval. The distinction matters because the
+loose end is the *bottom*, and the bottom is what a proportionality argument
+leans on.
+
+**What it means for the ruling.** This record said that if the number came back
+near 474 the trade would need re-pricing. It came back near 474. The cost
+arithmetic against composite identity does not change — several hundred of
+1,007,156 still does not justify moving the partition key, the `recordOrderKey`
+and spec §8, and stranding every published release. What changes is how option 4
+*reads*: "we can prove which ones" is a different sentence at 359 than at 5.
+Ruling for option 4 at this scale is ruling that several hundred real Federal
+Register documents stay unfindable, with an auditable list of them. That is a
+defensible call at 0.036% of the corpus and it should be made in those words.
+
+The residual is body-level work regardless of which remedy is chosen, because
+`correction_of` is absent here rather than null. Nothing we hold converts 415
+into a hard count.
+
+Until that adjudication happens, the honest statement of cost is: **at least one**
+real document is absent from a published release, at most 415 are under a stated
+assumption, and the best available estimate is several hundred.
 
 ## Where document identity should be decided, and where it should not
 
