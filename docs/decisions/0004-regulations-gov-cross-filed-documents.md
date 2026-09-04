@@ -2,8 +2,9 @@
 
 - Date: 2026-09-03
 - Status: **accepted and implemented**, 2026-09-03. Ruled by the product owner;
-  landed on main as `cc3336e`. Untested against production data — see the
-  closing note.
+  landed on main as `cc3336e`, fixed at `45751e1`, and **measured against the
+  full 671-input catalog-A build on 2026-09-04** — see "What the build
+  measured".
 - Raised-by: the full 671-input catalog-A build, which refused and could not
   complete until this landed
 - Beside, not inside, `0003-federal-register-record-identity.md`: doc1 ruled that a
@@ -244,6 +245,36 @@ the receipt reports `failed: 5678` with no reason anywhere, and a `reasonsDigest
 that pins content which is **not a member of the distribution** — catalog-B's
 manifest declares 66 members and none is a reasons file. But it is now a
 separate decision with its own cost, and it does not block catalog-A.
+
+## What the build measured
+
+catalog-A completed 2026-09-04 from `5f7e26b`: `buildExit=0`, verdict `pass`,
+55 m 14 s, 2,221,713 items.
+
+**Collapsed 2 of 2** — `DHS_FRDOC_0001-2737` and `DHS_FRDOC_0001-2740`, the two
+this record names. **State the dependency rather than call it confirmation:**
+the projection took spicy9's census as its input, so this is one measurement
+agreeing with a projection derived from it, not two independent findings. What
+it establishes is that the build did not contradict the census — which is worth
+having, and is less than it looks.
+
+**Zero `cross-file-discard/*` on the lookup path**, as predicted here and by
+spicy9 independently — this record's reason being that a Federal Register
+record is flat and `_record_data(expected_type="documents")` refuses it, and
+spicy9's being that the upstream eviction leaves nothing to collide. Both
+discards are on the regulations.gov universe path.
+
+**The retained filing survives into the artifact.** The surviving item carries
+`sourceObservations[0]` keyed `cross-file-discard/0` holding the *whole*
+discarded record — `data.attributes` with `agencyId: USCIS` intact — and its
+renditions. Not a reference to it, the record. That is the byte-level property
+this decision was written around, now observable in a real artifact rather than
+in a fixture, and it is a working precedent for the "carry rather than name"
+option 0003 still has open for the Federal Register case.
+
+**The build is a measurement vehicle, not a publishable artifact.** It pins a
+Federal Register release missing roughly 359–415 real documents to the identity
+defect 0003 describes. Its pins are not to be handed to a serving path.
 
 ## What this does not do
 
