@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import collections
 import heapq
 import json
 import os
@@ -697,9 +698,10 @@ class _CatalogPolicyInputs:
             raise ValueError("catalog policy universe inputs must be distinct")
         self._workspace = workspace
         self._loaded = False
-        self._opened: set[SourceInputSelector] = set()
+        self._opened: collections.Counter[SourceInputSelector] = collections.Counter()
+        self._universe_passes = 0
         self._completed: set[SourceInputSelector] = set()
-        self._universe_opened = False
+
 
     @property
     def descriptions(self) -> tuple[SourceNativeDescription, ...]:
@@ -830,9 +832,11 @@ class _CatalogPolicyInputs:
         selector: SourceInputSelector,
     ) -> Iterator[SourceNativeRow]:
         self._ensure_available(selector)
-        if selector in self._opened:
-            raise IntegrityError("catalog policy attempted to open one selected input more than once")
-        self._opened.add(selector)
+        if self._opened[selector] >= MAX_ORDERED_PASSES:
+            raise IntegrityError(
+                "catalog policy attempted to read one selected input more than twice"
+            )
+        self._opened[selector] += 1
         self._load()
         previous: str | None = None
         for value in self._workspace.iter_ordered(self._namespace(selector)):
@@ -853,9 +857,10 @@ class _CatalogPolicyInputs:
         self._completed.add(selector)
 
     def iter_universe_rows(self) -> Iterator[SourceNativeRow]:
-        if self._universe_opened:
-            raise IntegrityError("catalog policy attempted to open the universe more than once")
-        self._universe_opened = True
+        if self._universe_passes >= MAX_ORDERED_PASSES:
+            raise IntegrityError("catalog policy attempted to read the universe more than twice")
+        self._universe_passes += 1
+        first_pass = self._universe_passes == 1
         streams = [
             iter(self._rows(selector))
             for selector in self._universe_inputs
@@ -878,11 +883,17 @@ class _CatalogPolicyInputs:
                         "catalog policy universe sourceItemId values are not globally distinct"
                     )
                 previous = source_item_id
-                self._workspace.put(
-                    _UNIVERSE_ACCOUNTING_NAMESPACE,
-                    (source_item_id,),
-                    {"sourceItemId": source_item_id},
-                )
+                # Accounting records which ids the universe contained, which is
+                # a property of the universe rather than of a pass over it. The
+                # first pass establishes it; a later ordered read must not
+                # write it again, and re-deriving the same rows is exactly what
+                # the duplicate-key refusal is for.
+                if first_pass:
+                    self._workspace.put(
+                        _UNIVERSE_ACCOUNTING_NAMESPACE,
+                        (source_item_id,),
+                        {"sourceItemId": source_item_id},
+                    )
                 yield row
                 following = next(streams[index], None)
                 if following is not None:
@@ -904,9 +915,13 @@ class _CatalogPolicyInputs:
         yield from self._rows(selector)
 
     def finish(self) -> None:
-        if not self._universe_opened or not set(self._universe_inputs).issubset(self._completed):
+        if not self._universe_passes or not set(self._universe_inputs).issubset(self._completed):
             raise IntegrityError("catalog policy did not read every declared universe input")
-        if self._opened != self._completed:
+        # Compares which inputs were opened against which were drained, not how
+        # many times each was read: `_opened` counts passes now, and a second
+        # ordered pass is permitted. An input opened and abandoned partway is
+        # still the defect this catches.
+        if set(self._opened) != self._completed:
             raise IntegrityError("catalog policy did not fully consume every selected source input")
 
 
@@ -1012,6 +1027,13 @@ def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
 
 
 _SELECTED_DISPOSITION = CatalogDisposition.SELECTED.value
+#: Ordered reads one policy may make of the rows the loader staged. Source
+#: artifacts are still read exactly once -- ``_load`` guarantees that
+#: independently -- and this bounds only re-reads of builder-owned SQLite,
+#: which cannot go stale under us. Two: one pass to build lookup indexes, one
+#: to emit items.
+MAX_ORDERED_PASSES = 2
+
 _PARALLEL_ROW_THRESHOLD = 5_000
 _MAX_DERIVE_WORKERS = 8
 #: How long the worker probe waits before the derivation gives up on workers.

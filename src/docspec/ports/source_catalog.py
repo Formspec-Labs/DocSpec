@@ -136,7 +136,25 @@ class CatalogPolicyWorkspace(Protocol):
 
 
 class CatalogPolicyInputs(Protocol):
-    """Builder-owned one-pass access to admitted source-native inputs."""
+    """Builder-owned access to admitted source-native inputs.
+
+    **Source artifacts are read exactly once.** A second read could see
+    different bytes than admission checked, because a file-state comparison
+    authenticates what was present when it ran and not what is there later.
+    That is the hazard the one-pass rule was written for and it still holds.
+
+    **Staged rows may be read in order up to twice.** Once the loader has
+    materialised them they are builder-owned SQLite this run wrote itself, and
+    a second ordered read cannot see anything the first did not put there --
+    the staleness hazard does not reach them. Two is the bound because a policy
+    needs one pass to build the lookup indexes its joins require and one to
+    emit items; a policy wanting a third is doing something this design did not
+    anticipate and should be examined rather than accommodated.
+
+    The distinction matters because the contract as previously written was
+    stricter than its own reason, and that cost a byte-for-byte duplicate of
+    every staged row.
+    """
 
     @property
     def descriptions(self) -> tuple[SourceNativeDescription, ...]: ...

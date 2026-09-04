@@ -774,8 +774,9 @@ class RegulationsGovCatalogPolicy:
         selected_count = 0
         if self.sample is not None:
             self._draw_document_sample(workspace)
-        for value in workspace.iter_ordered(_UNIVERSE_ROWS):
-            record, renditions = _stored_row(value)
+        for row in inputs.iter_universe_rows():
+            record = row.record
+            renditions = row.renditions
             source_item_id = str(record["sourceRecordId"])
             budget_available = (
                 self.max_selected_items is None
@@ -786,7 +787,7 @@ class RegulationsGovCatalogPolicy:
                     record,
                     renditions,
                     workspace,
-                    discarded_filings=_stored_discards(value),
+                    discarded_filings=row.discarded_filings,
                     sample_drawn=(
                         workspace.get(_SAMPLE_DRAWN, (source_item_id,)) is not None
                         if self.sample is not None
@@ -848,7 +849,6 @@ class RegulationsGovCatalogPolicy:
                 **_carried_discards(row),
             }
             source_item_id = str(row.record["sourceRecordId"])
-            workspace.put(_UNIVERSE_ROWS, (source_item_id,), stored)
             if row.record["scopeId"] == _DOCUMENT_SCOPE:
                 if index_documents:
                     workspace.put(_DOCUMENT_INDEX, (source_item_id,), stored)
