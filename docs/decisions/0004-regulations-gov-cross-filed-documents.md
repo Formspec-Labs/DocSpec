@@ -250,6 +250,8 @@ the receipt reports `failed: 5678` with no reason anywhere, and a `reasonsDigest
 that pins content which is **not a member of the distribution** — catalog-B's
 manifest declares 66 members and none is a reasons file. But it is now a
 separate decision with its own cost, and it does not block catalog-A.
+Executed 2026-09-04 as [0005](0005-publisher-declared-withholding.md), once
+the campaign gave it a measured population to label.
 
 ## What the build measured
 

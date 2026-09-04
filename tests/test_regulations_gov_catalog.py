@@ -1109,3 +1109,136 @@ def test_source_catalog_cli_accepts_the_comment_profile_choice() -> None:
     )
     assert args.source_native_profile == ["regulations-gov-comments"]
     assert args.source_native_blob_store == [Path("blobs")]
+
+
+def test_publisher_declared_withholding_is_read_verbatim_and_never_inferred(
+    tmp_path: Path,
+) -> None:
+    """``restrictReasonType`` is the publisher's own statement that it withholds
+    the content (decision 0005). Each of its four values maps to exactly one
+    reason code; a value the policy does not know fails loudly instead of
+    landing in a bucket; a record with no value keeps the acquired-source
+    reason; and a record carrying the field alongside a real rendition stays
+    selected, because the field labels an absence rather than creating one.
+    """
+
+    def without_rendition(name: str, **attributes: object) -> SourceCatalogItem:
+        return _build(
+            tmp_path / name,
+            _document(frDocNum=None, **attributes),
+            federal_register_records=(),
+            federal_register_renditions=(),
+        )
+
+    copyrighted = without_rendition(
+        "copyrighted",
+        restrictReasonType="Copyrighted",
+        subtype="Publication - Copyrighted Materials",
+    )
+    assert copyrighted.disposition is CatalogDisposition.UNAVAILABLE
+    assert copyrighted.selection.reason_code == "source.publisher-withheld.copyrighted"
+    assert copyrighted.selection.reason == (
+        "The publisher withholds this record's content; restrictReasonType is"
+        " 'Copyrighted' and subtype is 'Publication - Copyrighted Materials'."
+    )
+    for value, slug in (
+        ("Confidential Business Information", "confidential-business-information"),
+        ("Personally Identifiable Information", "personally-identifiable-information"),
+        ("Other", "other"),
+    ):
+        item = without_rendition(slug, restrictReasonType=value)
+        assert item.disposition is CatalogDisposition.UNAVAILABLE
+        assert item.selection.reason_code == f"source.publisher-withheld.{slug}"
+        assert f"restrictReasonType is {value!r}." in item.selection.reason
+
+    unread = without_rendition("unread", restrictReasonType="Embargoed")
+    assert unread.disposition is CatalogDisposition.FAILED
+    assert unread.selection.reason_code == "source.restrict-reason-unread"
+    assert "'Embargoed'" in unread.selection.reason
+
+    undeclared = without_rendition("undeclared", restrictReasonType=None)
+    assert undeclared.disposition is CatalogDisposition.UNAVAILABLE
+    assert undeclared.selection.reason_code == "source.no-candidate-rendition"
+
+    offered = _build(tmp_path / "offered", _document(restrictReasonType="Copyrighted"))
+    assert offered.disposition is CatalogDisposition.SELECTED
+
+    configuration = _policy().configuration
+    declared = {
+        (failure["disposition"], failure["reasonCode"])
+        for failure in configuration["selectionFailures"]
+    }
+    assert {
+        ("unavailable", "source.publisher-withheld.copyrighted"),
+        ("unavailable", "source.publisher-withheld.confidential-business-information"),
+        ("unavailable", "source.publisher-withheld.personally-identifiable-information"),
+        ("unavailable", "source.publisher-withheld.other"),
+        ("failed", "source.restrict-reason-unread"),
+    } <= declared
+    assert configuration["publisherWithholding"] == {
+        "sourceField": "data.attributes.restrictReasonType",
+        "reasonCodes": {
+            "Copyrighted": "source.publisher-withheld.copyrighted",
+            "Confidential Business Information": (
+                "source.publisher-withheld.confidential-business-information"
+            ),
+            "Personally Identifiable Information": (
+                "source.publisher-withheld.personally-identifiable-information"
+            ),
+            "Other": "source.publisher-withheld.other",
+        },
+        "unreadReasonCode": "source.restrict-reason-unread",
+    }
+
+
+def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
+    tmp_path: Path,
+) -> None:
+    """The receipt's ``reasonCounts`` rows say why rows were not selected, in
+    sealed UTF-16 order, and sum to each ``dispositionCounts`` bucket -- here
+    including ``excluded``, a disposition no built catalog had carried before
+    this section existed.
+    """
+
+    base = _policy(include_comments=True)
+    policy = RegulationsGovCatalogPolicy(
+        document_input=base.document_input,
+        docket_input=base.docket_input,
+        federal_register_input=base.federal_register_input,
+        agency_names=base.agency_names,
+        max_selected_items=1,
+        comment_input=base.comment_input,
+    )
+    _build_items(
+        tmp_path,
+        (
+            _document("EPA-2026-0001-0002", frDocNum=None, restrictReasonType="Copyrighted"),
+            _document("EPA-2026-0001-0003", frDocNum=None, restrictReasonType="Copyrighted"),
+            _document("EPA-2026-0001-0004", frDocNum=None, restrictReasonType="Other"),
+            _document("EPA-2026-0001-0005", frDocNum=None),
+            _document("EPA-2026-0001-0006", frDocNum=None, restrictReasonType="Embargoed"),
+            _document("EPA-2026-0001-0007", withdrawn=True),
+        ),
+        policy=policy,
+        docket_records=(),
+        comment_records=(_comment("EPA-2026-0001-9201"), _comment("EPA-2026-0001-9202")),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    receipt = json.loads(next(tmp_path.rglob("catalog-build-receipt.json")).read_text())
+
+    assert receipt["dispositionCounts"] == {
+        "selected": 1,
+        "excluded": 1,
+        "deleted": 1,
+        "unavailable": 4,
+        "failed": 1,
+    }
+    assert receipt["reasonCounts"] == [
+        {"disposition": "deleted", "reasonCode": "source.withdrawn-after-publication", "count": 1},
+        {"disposition": "excluded", "reasonCode": "policy.item-budget-exhausted", "count": 1},
+        {"disposition": "failed", "reasonCode": "source.restrict-reason-unread", "count": 1},
+        {"disposition": "unavailable", "reasonCode": "source.no-candidate-rendition", "count": 1},
+        {"disposition": "unavailable", "reasonCode": "source.publisher-withheld.copyrighted", "count": 2},
+        {"disposition": "unavailable", "reasonCode": "source.publisher-withheld.other", "count": 1},
+    ]

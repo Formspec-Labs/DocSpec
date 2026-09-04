@@ -1447,6 +1447,7 @@ def test_producer_gate_recomputes_state_before_publication(
                 derived.requested_universe_set_digest,
                 derived.selected_source_set_digest,
                 derived.disposition_counts,
+                derived.reason_counts,
                 derived.diagnostics,
             )
         return derived
@@ -2704,6 +2705,7 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
             derived.requested_universe_set_digest,
             derived.selected_source_set_digest,
             derived.disposition_counts,
+            derived.reason_counts,
             derived.diagnostics,
         )
 
@@ -2990,3 +2992,27 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
 
     assert fell_back == serial
     assert fell_back.catalog_state_digest == summary.catalog_state_digest
+
+
+def test_receipt_reason_counts_must_be_ordered_distinct_and_reconciled() -> None:
+    """The schema closes each row; this is the cross-section arithmetic it cannot
+    express: sealed order, no repeats, and every non-selected bucket accounted for.
+    """
+
+    reconcile = source_catalog_artifact._reconcile_reason_counts
+    counts = {"selected": 3, "excluded": 0, "deleted": 1, "unavailable": 2, "failed": 0}
+    good = [
+        {"disposition": "deleted", "reasonCode": "source.withdrawn-after-publication", "count": 1},
+        {"disposition": "unavailable", "reasonCode": "source.no-candidate-rendition", "count": 1},
+        {"disposition": "unavailable", "reasonCode": "source.publisher-withheld.other", "count": 1},
+    ]
+
+    reconcile(good, counts)
+    with pytest.raises(IntegrityError, match="ordered and distinct"):
+        reconcile(list(reversed(good)), counts)
+    with pytest.raises(IntegrityError, match="ordered and distinct"):
+        reconcile([good[0], good[0]], {**counts, "deleted": 2, "unavailable": 0})
+    with pytest.raises(IntegrityError, match="do not account for every non-selected row"):
+        reconcile(good[:2], counts)
+    with pytest.raises(IntegrityError, match="do not account for every non-selected row"):
+        reconcile(good, {**counts, "excluded": 1})

@@ -893,6 +893,7 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             "selectedSourceSetDigest",
             "itemCount",
             "dispositionCounts",
+            "reasonCounts",
             "partitionPolicy",
             "partitions",
             "joinCoverage",
@@ -939,6 +940,31 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
                 "required": [value.value for value in CatalogDisposition],
                 "properties": {
                     value.value: {"type": "integer", "minimum": 0} for value in CatalogDisposition
+                },
+            },
+            # One row per (disposition, reasonCode) that occurs, ordered by
+            # UTF-16 key, so a reader sees *why* rows were not selected without
+            # opening a partition. Selected rows carry no reason and no row
+            # here; the verifier reconciles each disposition's rows to its
+            # `dispositionCounts` bucket. Added 2026-09-04 (decision 0005).
+            "reasonCounts": {
+                "type": "array",
+                "uniqueItems": True,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["disposition", "reasonCode", "count"],
+                    "properties": {
+                        "disposition": {
+                            "enum": [
+                                value.value
+                                for value in CatalogDisposition
+                                if value is not CatalogDisposition.SELECTED
+                            ]
+                        },
+                        "reasonCode": text,
+                        "count": {"type": "integer", "minimum": 1},
+                    },
                 },
             },
             "partitionPolicy": {

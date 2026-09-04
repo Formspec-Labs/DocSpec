@@ -961,11 +961,71 @@ def _policy_rows(
             raise IntegrityError("catalog policy output does not account for its complete universe")
 
 
+class _DispositionTally:
+    """Count rows by disposition and by (disposition, reasonCode).
+
+    One tally serves the build, both derivations and their merge, so the two
+    count sections a receipt reconciles come from one rule. It pickles across
+    the parallel derivation's worker boundary as a plain object.
+    """
+
+    def __init__(self) -> None:
+        self.dispositions = {value.value: 0 for value in CatalogDisposition}
+        self.reasons: dict[tuple[str, str], int] = {}
+
+    def add(self, disposition: str, reason_code: str | None) -> None:
+        self.dispositions[disposition] += 1
+        if reason_code is not None:
+            key = (disposition, reason_code)
+            self.reasons[key] = self.reasons.get(key, 0) + 1
+
+    def merge(self, other: _DispositionTally) -> None:
+        for name, value in other.dispositions.items():
+            self.dispositions[name] += value
+        for key, value in other.reasons.items():
+            self.reasons[key] = self.reasons.get(key, 0) + value
+
+    def reason_counts(self) -> list[dict[str, object]]:
+        """Return the receipt's ``reasonCounts`` rows in their sealed order."""
+
+        return [
+            {"disposition": disposition, "reasonCode": reason_code, "count": count}
+            for (disposition, reason_code), count in sorted(
+                self.reasons.items(),
+                key=lambda item: (_utf16_key(item[0][0]), _utf16_key(item[0][1])),
+            )
+        ]
+
+
+def _reconcile_reason_counts(rows: Sequence[Mapping[str, Any]], counts: Mapping[str, int]) -> None:
+    """Require ordered, distinct reason rows that sum to every non-selected bucket.
+
+    The schema already closes each row's shape, keeps ``selected`` out of the
+    enum and requires a positive count; this is the cross-section arithmetic
+    the schema cannot express.
+    """
+
+    previous: tuple[bytes, bytes] | None = None
+    totals = {name: 0 for name in counts}
+    for row in rows:
+        key = (_utf16_key(row["disposition"]), _utf16_key(row["reasonCode"]))
+        if previous is not None and key <= previous:
+            raise IntegrityError("catalog build receipt reason counts must be ordered and distinct")
+        previous = key
+        totals[row["disposition"]] += row["count"]
+    for name, total in totals.items():
+        if name != _SELECTED_DISPOSITION and total != counts[name]:
+            raise IntegrityError(
+                "catalog build receipt reason counts do not account for every non-selected row"
+            )
+
+
 class _CatalogRowPartitioner:
     def __init__(self, rows: Iterable[SourceCatalogItem]) -> None:
         self._rows = rows
         self.item_count = 0
-        self.disposition_counts = {value.value: 0 for value in CatalogDisposition}
+        self.tally = _DispositionTally()
+        self.disposition_counts = self.tally.dispositions
         self.selected_count = 0
         self.partition_counts: dict[str, int] = {}
 
@@ -982,7 +1042,7 @@ class _CatalogRowPartitioner:
             if len(payload) > MAX_CATALOG_ROW_BYTES:
                 raise LimitExceededError("source-catalog row exceeds its byte limit")
             self.item_count += 1
-            self.disposition_counts[item.disposition.value] += 1
+            self.tally.add(item.disposition.value, item.selection.reason_code)
             if item.disposition is CatalogDisposition.SELECTED:
                 self.selected_count += 1
             selected_partition = _partition_id(item.source_item_id)
@@ -1123,10 +1183,10 @@ def _derive_pool_context() -> Any:
 
 def _derive_partition_worker(
     args: tuple[str, Any, int, bool, str],
-) -> tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]:
+) -> tuple[str, str, int, _DispositionTally, dict[str, dict[str, int]], int, int, int]:
     """Process one partition's rows in a subprocess and spill ordered payloads.
 
-    Returns (partition_id, spill_path, row_count, disposition_counts,
+    Returns (partition_id, spill_path, row_count, tally,
     join_counts, normalized_count, joined_count, interpretation_count). The
     spill holds one pickled payload tuple per row, in partition order; global
     ordering across partitions is enforced by the parent's merge.
@@ -1139,7 +1199,7 @@ def _derive_partition_worker(
 
     partition_id, blob, record_count, validate, spill_dir = args
     spill_path = os.path.join(spill_dir, f"{partition_id}.rows")
-    disposition_counts = {value.value: 0 for value in CatalogDisposition}
+    tally = _DispositionTally()
     join_counts: dict[str, dict[str, int]] = {}
     normalized_count = 0
     joined_count = 0
@@ -1159,7 +1219,7 @@ def _derive_partition_worker(
             as_dict=True,
         ):
             payloads = _row_digest_payloads(row, raw)
-            disposition_counts[row["selection"]["disposition"]] += 1
+            tally.add(row["selection"]["disposition"], row["selection"]["reasonCode"])
             normalized_count += len(payloads[6])
             for _record_bytes, outcome, join_id in payloads[7]:
                 joined_count += 1
@@ -1175,7 +1235,7 @@ def _derive_partition_worker(
         partition_id,
         spill_path,
         rows,
-        disposition_counts,
+        tally,
         join_counts,
         normalized_count,
         joined_count,
@@ -1205,6 +1265,7 @@ class _DerivedCatalog:
     requested_universe_set_digest: str
     selected_source_set_digest: str
     disposition_counts: dict[str, int]
+    reason_counts: list[dict[str, object]]
     diagnostics: dict[str, object]
 
 
@@ -1248,7 +1309,7 @@ def _derive_catalog(
     rendition_choices = _FramedSectionHasher(
         "docspec-catalog-rendition-choices/1", "records", item_count
     )
-    disposition_counts = {value.value: 0 for value in CatalogDisposition}
+    tally = _DispositionTally()
     join_counts: dict[str, dict[str, int]] = {}
     normalized_count = 0
     joined_count = 0
@@ -1260,7 +1321,7 @@ def _derive_catalog(
         disposition = row["selection"]["disposition"]
         state.add_payload(raw)
         requested.add({"sourceItemId": source_item_id})
-        disposition_counts[disposition] += 1
+        tally.add(disposition, row["selection"]["reasonCode"])
         if disposition == _SELECTED_DISPOSITION:
             selected.add({"sourceItemId": source_item_id, "documentId": row["documentId"]})
         dispositions.add({"sourceItemId": source_item_id, "disposition": disposition})
@@ -1297,7 +1358,8 @@ def _derive_catalog(
         state.digest(),
         requested.digest(),
         selected.digest(),
-        disposition_counts,
+        tally.dispositions,
+        tally.reason_counts(),
         {
             "joinCoverage": join_coverage,
             "normalizedFieldsDigest": normalized.digest(),
@@ -1421,17 +1483,16 @@ def _derive_catalog_parallel(
                 summaries.append(pending.pop(0).get())
                 submit_next()
 
-        disposition_counts = {value.value: 0 for value in CatalogDisposition}
+        tally = _DispositionTally()
         join_counts: dict[str, dict[str, int]] = {}
         normalized_count = 0
         joined_count = 0
         interpretation_count = 0
         total_rows = 0
         for summary in sorted(summaries, key=lambda value: _utf16_key(value[0])):
-            _, _, rows, partition_dispositions, partition_joins, n_count, j_count, i_count = summary
+            _, _, rows, partition_tally, partition_joins, n_count, j_count, i_count = summary
             total_rows += rows
-            for name, value in partition_dispositions.items():
-                disposition_counts[name] += value
+            tally.merge(partition_tally)
             for join_id in sorted(partition_joins, key=_utf16_key):
                 if join_id not in join_counts and len(join_counts) >= SOURCE_CATALOG_MAX_JOIN_IDS:
                     raise LimitExceededError(
@@ -1493,7 +1554,8 @@ def _derive_catalog_parallel(
             state.digest(),
             requested.digest(),
             selected.digest(),
-            disposition_counts,
+            tally.dispositions,
+            tally.reason_counts(),
             {
                 "joinCoverage": join_coverage,
                 "normalizedFieldsDigest": normalized.digest(),
@@ -1768,6 +1830,7 @@ class SourceCatalogArtifactVerifier:
         counts = receipt["dispositionCounts"]
         if sum(counts.values()) != receipt["itemCount"]:
             raise IntegrityError("catalog build receipt dispositions do not account for every row")
+        _reconcile_reason_counts(receipt["reasonCounts"], counts)
         measurements = receipt["byteMeasurements"]
         payload_bytes = sum(value.member.byte_size for value in partitions)
         if (
@@ -1805,6 +1868,7 @@ class SourceCatalogArtifactVerifier:
             selected_source_set_digest=spec["selectedSourceSetDigest"],
             item_count=receipt["itemCount"],
             disposition_counts=dict(counts),
+            reason_counts=tuple(dict(value) for value in receipt["reasonCounts"]),
             partitions=tuple(value.partition_id for value in partitions),
             selection_policy={
                 "policyId": spec["selectionPolicyId"],
@@ -1861,6 +1925,8 @@ class SourceCatalogBuildGateVerifier:
                 raise IntegrityError(f"producer semantic gate recomputed a different {name}")
         if derived.disposition_counts != dict(summary.disposition_counts):
             raise IntegrityError("producer semantic gate recomputed different disposition counts")
+        if derived.reason_counts != [dict(value) for value in summary.reason_counts]:
+            raise IntegrityError("producer semantic gate recomputed different reason counts")
         for name, value in derived.diagnostics.items():
             if receipt[name] != value:
                 raise IntegrityError(f"producer semantic gate recomputed a different {name}")
@@ -2076,6 +2142,7 @@ class SourceCatalogBuilder:
                 "selectedSourceSetDigest": selected_digest,
                 "itemCount": row_partitioner.item_count,
                 "dispositionCounts": row_partitioner.disposition_counts,
+                "reasonCounts": row_partitioner.tally.reason_counts(),
                 "partitionPolicy": _partition_policy(),
                 "partitions": [value.to_receipt() for value in partitions],
                 **diagnostics,

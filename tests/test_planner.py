@@ -79,6 +79,11 @@ class MemorySourceCatalog:
             selected_source_set_digest=reference.digest,
             item_count=len(self.items),
             disposition_counts=disposition_counts,
+            reason_counts=tuple(
+                {"disposition": name, "reasonCode": "test.fixture", "count": value}
+                for name, value in disposition_counts.items()
+                if name != "selected" and value
+            ),
             partitions=self.partitions,
             selection_policy={
                 "policyId": "urn:test:selection-policy",

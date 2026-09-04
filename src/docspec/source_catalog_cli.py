@@ -195,6 +195,7 @@ def _load_build_command_receipt(
             "operation",
             "partitionPolicy",
             "producer",
+            "reasonCounts",
             "receiptId",
             "requestedUniverseSetDigest",
             "selectedSourceSetDigest",
@@ -314,6 +315,18 @@ def _load_build_command_receipt(
     )
     for name, value in dispositions.items():
         count(value, nested_label=f"{label} dispositionCounts.{name}")
+    reason_counts = receipt["reasonCounts"]
+    if not isinstance(reason_counts, list):
+        raise SourceCatalogCliError(f"{label} reasonCounts must be an array")
+    for index, raw_row in enumerate(reason_counts):
+        row = closed(
+            raw_row,
+            {"count", "disposition", "reasonCode"},
+            nested_label=f"{label} reasonCounts[{index}]",
+        )
+        text(row["disposition"], nested_label=f"{label} reasonCounts[{index}].disposition")
+        text(row["reasonCode"], nested_label=f"{label} reasonCounts[{index}].reasonCode")
+        count(row["count"], nested_label=f"{label} reasonCounts[{index}].count")
     partition_policy = closed(
         receipt["partitionPolicy"],
         {"bucketCount", "policyDigest", "policyId", "policyVersion"},
@@ -461,6 +474,7 @@ def _verify(args: argparse.Namespace) -> int:
         "catalogStateDigest": (summary.catalog_state_digest, receipt["catalogStateDigest"]),
         "diagnosticDigests": (dict(summary.diagnostic_digests), receipt["diagnosticDigests"]),
         "dispositionCounts": (dict(summary.disposition_counts), receipt["dispositionCounts"]),
+        "reasonCounts": ([dict(value) for value in summary.reason_counts], receipt["reasonCounts"]),
         "itemCount": (summary.item_count, receipt["itemCount"]),
         "joinCoverage": (
             [dict(value) for value in summary.join_coverage],
@@ -507,6 +521,7 @@ def _verify(args: argparse.Namespace) -> int:
             "itemCount": summary.item_count,
             "partitions": list(summary.partitions),
             "dispositionCounts": dict(summary.disposition_counts),
+            "reasonCounts": [dict(value) for value in summary.reason_counts],
             "selectionPolicy": dict(summary.selection_policy),
             "partitionPolicy": dict(summary.partition_policy),
             "joinCoverage": [dict(value) for value in summary.join_coverage],
@@ -651,6 +666,7 @@ def _build(args: argparse.Namespace) -> int:
             "selectedSourceSetDigest": result.summary.selected_source_set_digest,
             "itemCount": result.summary.item_count,
             "dispositionCounts": dict(result.summary.disposition_counts),
+            "reasonCounts": [dict(value) for value in result.summary.reason_counts],
             "partitionPolicy": dict(result.summary.partition_policy),
             "joinCoverage": [dict(value) for value in result.summary.join_coverage],
             "diagnosticDigests": dict(result.summary.diagnostic_digests),

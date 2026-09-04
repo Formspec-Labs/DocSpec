@@ -303,6 +303,10 @@ class SourceCatalogSnapshotSummary:
     selected_source_set_digest: str
     item_count: int
     disposition_counts: Mapping[str, int]
+    #: One row per (disposition, reasonCode) that occurred, as the receipt
+    #: carries them; reconciled here so no consumer trusts a count the rows
+    #: do not support. Selected rows carry no reason and never appear.
+    reason_counts: tuple[Mapping[str, Any], ...]
     partitions: tuple[str, ...]
     selection_policy: Mapping[str, str]
     partition_policy: Mapping[str, Any]
@@ -327,6 +331,31 @@ class SourceCatalogSnapshotSummary:
             self,
             "disposition_counts",
             MappingProxyType(dict(self.disposition_counts)),
+        )
+        reason_rows = tuple(dict(value) for value in self.reason_counts)
+        seen: set[tuple[str, str]] = set()
+        reason_totals = {name: 0 for name in self.disposition_counts}
+        for row in reason_rows:
+            if set(row) != {"disposition", "reasonCode", "count"}:
+                raise ValueError("source catalog reason counts must have a closed shape")
+            disposition = require_text(row["disposition"], "source catalog reason count disposition")
+            reason_code = require_text(row["reasonCode"], "source catalog reason count reasonCode")
+            if disposition == "selected" or disposition not in reason_totals:
+                raise ValueError("source catalog reason counts name a disposition that carries no reason")
+            count = row["count"]
+            if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+                raise ValueError("source catalog reason counts must be positive integers")
+            if (disposition, reason_code) in seen:
+                raise ValueError("source catalog reason counts must be distinct")
+            seen.add((disposition, reason_code))
+            reason_totals[disposition] += count
+        for name, total in reason_totals.items():
+            if name != "selected" and total != self.disposition_counts[name]:
+                raise ValueError("source catalog reason counts must account for every non-selected row")
+        object.__setattr__(
+            self,
+            "reason_counts",
+            tuple(MappingProxyType(row) for row in reason_rows),
         )
         selection_policy = dict(self.selection_policy)
         if set(selection_policy) != {"policyId", "policyVersion", "policyDigest"}:

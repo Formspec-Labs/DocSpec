@@ -81,6 +81,24 @@ _ACQUIRED_SOURCE_SCOPE = (
     " This states what the acquired source contains, not whether the publisher"
     " holds content for it."
 )
+#: The publisher's ``restrictReasonType`` values, each mapped to one reason
+#: code, verbatim. Measured on catalog-A 2026-09-04: Copyrighted 53,580,
+#: Other 19,965, Confidential Business Information 1,179, Personally
+#: Identifiable Information 252 -- 74,976 of the 865,206 unavailable rows
+#: carry one, and no sampled row carrying one had a file at the publisher
+#: (decision 0005). A value outside this map is never inferred into a bucket:
+#: the row fails with :data:`_RESTRICT_REASON_UNREAD` so the receipt shows it.
+_PUBLISHER_WITHHOLDING_CODES: Mapping[str, str] = {
+    "Copyrighted": "source.publisher-withheld.copyrighted",
+    "Confidential Business Information": (
+        "source.publisher-withheld.confidential-business-information"
+    ),
+    "Personally Identifiable Information": (
+        "source.publisher-withheld.personally-identifiable-information"
+    ),
+    "Other": "source.publisher-withheld.other",
+}
+_RESTRICT_REASON_UNREAD = "source.restrict-reason-unread"
 _SAMPLE_ORDER = "regulations-gov-catalog/sample-order"
 _SAMPLE_COUNTS = "regulations-gov-catalog/sample-counts"
 _SAMPLE_DRAWN = "regulations-gov-catalog/sample-drawn"
@@ -332,8 +350,39 @@ def _candidate_from_rendition(
     )
 
 
+def _no_rendition_selection(
+    attributes: Mapping[str, Any], acquired_reason: str
+) -> SourceCatalogSelection:
+    """Disposition a record with no usable rendition by what the publisher declared.
+
+    ``restrictReasonType`` is the publisher's own statement that it withholds
+    the content, so a row carrying one is unavailable for that declared reason.
+    A row without one is unavailable for ``acquired_reason``, which says only
+    what the acquired source contains. Nothing is inferred in either direction.
+    """
+
+    declared = attributes.get("restrictReasonType")
+    if declared is None:
+        return SourceCatalogSelection(
+            CatalogDisposition.UNAVAILABLE, "source.no-candidate-rendition", acquired_reason
+        )
+    code = _PUBLISHER_WITHHOLDING_CODES.get(declared) if isinstance(declared, str) else None
+    if code is None:
+        return SourceCatalogSelection(
+            CatalogDisposition.FAILED,
+            _RESTRICT_REASON_UNREAD,
+            f"The publisher declares a restrictReasonType this policy does not read: {declared!r}.",
+        )
+    reason = f"The publisher withholds this record's content; restrictReasonType is {declared!r}"
+    subtype = attributes.get("subtype")
+    if isinstance(subtype, str) and subtype:
+        reason += f" and subtype is {subtype!r}"
+    return SourceCatalogSelection(CatalogDisposition.UNAVAILABLE, code, reason + ".")
+
+
 def _selection_result(
     *,
+    attributes: Mapping[str, Any],
     withdrawn: bool,
     withdrawal_reason: str | None,
     missing_fields: Sequence[str],
@@ -382,13 +431,9 @@ def _selection_result(
         return selection, tuple(decisions)
     decisions.append(CatalogSelectionDecision("required-metadata", True))
     if not candidates:
-        selection = SourceCatalogSelection(
-            CatalogDisposition.UNAVAILABLE,
-            "source.no-candidate-rendition",
-            (
-                "The acquired source record offers no usable rendition."
-                " This states what the acquired source contains, not whether the publisher holds content for it."
-            ),
+        selection = _no_rendition_selection(
+            attributes,
+            "The acquired source record offers no usable rendition." + _ACQUIRED_SOURCE_SCOPE,
         )
         decisions.append(
             CatalogSelectionDecision(
@@ -574,6 +619,11 @@ class RegulationsGovCatalogPolicy:
                 "emptyOutcome": "not-recovered",
                 "publisherDeclaredEmptyEvidenceDigest": None,
             },
+            "publisherWithholding": {
+                "sourceField": "data.attributes.restrictReasonType",
+                "reasonCodes": dict(_PUBLISHER_WITHHOLDING_CODES),
+                "unreadReasonCode": _RESTRICT_REASON_UNREAD,
+            },
             "selectionFailures": [
                 {
                     "decisionId": "source-withdrawal",
@@ -594,6 +644,19 @@ class RegulationsGovCatalogPolicy:
                     "decisionId": "candidate-rendition",
                     "disposition": "unavailable",
                     "reasonCode": "source.no-candidate-rendition",
+                },
+                *(
+                    {
+                        "decisionId": "candidate-rendition",
+                        "disposition": "unavailable",
+                        "reasonCode": code,
+                    }
+                    for code in _PUBLISHER_WITHHOLDING_CODES.values()
+                ),
+                {
+                    "decisionId": "candidate-rendition",
+                    "disposition": "failed",
+                    "reasonCode": _RESTRICT_REASON_UNREAD,
                 },
                 {
                     "decisionId": "selected-item-budget",
@@ -669,6 +732,7 @@ class RegulationsGovCatalogPolicy:
                 "samplingSourceKinds",
                 "sourceIssuedVersionPolicy",
                 "topicRecovery",
+                "publisherWithholding",
                 "selectionFailures",
             },
             "Regulations.gov catalog policy configuration",
@@ -1281,6 +1345,7 @@ class RegulationsGovCatalogPolicy:
             if not normalized[name]
         ]
         selection, decisions = _selection_result(
+            attributes=attributes,
             withdrawn=False,
             withdrawal_reason=None,
             missing_fields=missing,
@@ -1444,6 +1509,7 @@ class RegulationsGovCatalogPolicy:
             if not normalized[name]
         ]
         selection, decisions = _selection_result(
+            attributes=attributes,
             withdrawn=withdrawn,
             withdrawal_reason=withdrawal_reason,
             missing_fields=missing,
@@ -1749,16 +1815,12 @@ class RegulationsGovCatalogPolicy:
                             "Federal Register match offers a usable rendition."
                             + _ACQUIRED_SOURCE_SCOPE
                         )
-                        selection = SourceCatalogSelection(
-                            CatalogDisposition.UNAVAILABLE,
-                            "source.no-candidate-rendition",
-                            reason,
-                        )
+                        selection = _no_rendition_selection(attributes, reason)
                         decisions.append(
                             CatalogSelectionDecision(
                                 "candidate-rendition",
                                 False,
-                                CatalogDisposition.UNAVAILABLE,
+                                selection.disposition,
                                 selection.reason_code,
                                 selection.reason,
                             )
