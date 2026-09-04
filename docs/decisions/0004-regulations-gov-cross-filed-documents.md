@@ -125,7 +125,12 @@ redundant, because they are not.
 duplicate groups was measured over four fields (title, posted date, Federal
 Register number, page count) out of roughly eighty-five. Both pairs above agree
 on all four and still differ elsewhere. That number means "agree on four
-fields", not "are identical".
+fields", not "are identical". The opposite failure exists one level down: the
+2026-09-04 web-search campaign found more than fifty documents in
+`BIS-2018-0006` sharing one exact title, with identity living only in the
+attachment's product specification, so a title-keyed comparison there
+manufactures duplicates instead of missing them (receipt:
+`corpora/supply-2026-09-02/receipts/unavailable-web-search-campaign-2026-09-04.json`).
 
 ## What was ruled
 
