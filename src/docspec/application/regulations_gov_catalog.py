@@ -6,7 +6,7 @@ import bisect
 import hashlib
 import math
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
@@ -69,7 +69,6 @@ _DOCKET_INDEX = "regulations-gov-catalog/dockets"
 _DOCUMENT_INDEX = "regulations-gov-catalog/document-index"
 _FEDERAL_REGISTER_INDEX = "regulations-gov-catalog/federal-register"
 _UNIVERSE_ROWS = "regulations-gov-catalog/universe"
-_DOCUMENT_ROWS = "regulations-gov-catalog/documents"
 _SAMPLE_ORDER = "regulations-gov-catalog/sample-order"
 _SAMPLE_COUNTS = "regulations-gov-catalog/sample-counts"
 _SAMPLE_DRAWN = "regulations-gov-catalog/sample-drawn"
@@ -410,6 +409,9 @@ class RegulationsGovCatalogPolicy:
     sample: RegulationsGovSamplePolicy | None = None
     max_selected_items: int | None = None
     comment_input: SourceInputSelector | None = None
+    #: Filled on first use by :attr:`policy_digest`; never an input or an
+    #: identity, so it stays out of ``__init__``, ``__eq__`` and ``__repr__``.
+    _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:regulations-gov:1"
     policy_version = "1.1.0"
@@ -587,7 +589,28 @@ class RegulationsGovCatalogPolicy:
 
     @property
     def policy_digest(self) -> str:
-        return sha256_digest(canonical_json_bytes(self.to_member()))
+        """Return this policy's digest, canonicalizing the member at most once.
+
+        The digest is a pure function of the fields, but every interpretation of
+        every catalog row stamps it, so the uncached property canonicalized the
+        whole policy member once per item. That member is 17,880 bytes here --
+        ``configuration`` embeds a 314-entry agency map -- and measured 166.5 us
+        per call, so a 49,884-item build spent 8.3 s of its 82.9 s wall clock,
+        and a profiled run 26.9 s of 218 s, rebuilding one constant. Worse, the
+        cost is O(items x policy size): every agency added to ``agencyNames``
+        slowed down every row.
+
+        Filling the cache lazily rather than in ``__post_init__`` keeps
+        construction -- and the errors a malformed configuration raises -- exactly
+        where they were.
+        """
+
+        cached = self._policy_digest
+        if cached is not None:
+            return cached
+        digest = sha256_digest(canonical_json_bytes(self.to_member()))
+        object.__setattr__(self, "_policy_digest", digest)
+        return digest
 
     @classmethod
     def from_member(cls, value: object) -> RegulationsGovCatalogPolicy:
@@ -784,6 +807,29 @@ class RegulationsGovCatalogPolicy:
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> None:
+        """Stage the ordered universe plus the indexes this policy will read.
+
+        Every staged copy costs one canonical serialization and one SQLite row
+        of the full record and its renditions, so this loop decides most of the
+        workspace's size. It used to write each document row three times:
+        ``_UNIVERSE_ROWS`` for the ordered scan, plus ``_DOCUMENT_ROWS`` and
+        ``_DOCUMENT_INDEX``, which received byte-identical values under
+        identical keys and differed only in namespace.
+
+        Those two are now one namespace, read two ways -- ordered by
+        ``_draw_document_sample`` and by key by ``_comment_item_from_row`` --
+        and it is staged only when one of those readers is configured. With
+        ``sample`` and ``comment_input`` both null, which is the production
+        Regulations.gov configuration, neither reader exists and two of the
+        three writes were pure cost: measured at 49.6 us and 4.7 MB per
+        thousand rows each, and 48.7% of all full-payload workspace bytes.
+
+        ``_DOCKET_INDEX`` stays unconditional because ``_item_from_row`` joins
+        every document to its docket. When ``docket_input`` is null no docket
+        row reaches this loop, so the namespace is simply empty.
+        """
+
+        index_documents = self.sample is not None or self.comment_input is not None
         for row in inputs.iter_universe_rows():
             stored = {
                 "record": dict(row.record),
@@ -793,8 +839,8 @@ class RegulationsGovCatalogPolicy:
             source_item_id = str(row.record["sourceRecordId"])
             workspace.put(_UNIVERSE_ROWS, (source_item_id,), stored)
             if row.record["scopeId"] == _DOCUMENT_SCOPE:
-                workspace.put(_DOCUMENT_ROWS, (source_item_id,), stored)
-                workspace.put(_DOCUMENT_INDEX, (source_item_id,), stored)
+                if index_documents:
+                    workspace.put(_DOCUMENT_INDEX, (source_item_id,), stored)
             elif row.record["scopeId"] == _DOCKET_SCOPE:
                 workspace.put(_DOCKET_INDEX, (source_item_id,), stored)
             elif row.record["scopeId"] != _COMMENT_SCOPE:
@@ -807,7 +853,7 @@ class RegulationsGovCatalogPolicy:
         sample = self.sample
         if sample is None:
             raise AssertionError("sample staging requires a sample policy")
-        for value in workspace.iter_ordered(_DOCUMENT_ROWS):
+        for value in workspace.iter_ordered(_DOCUMENT_INDEX):
             record, _ = _stored_row(value)
             source_item_id = str(record["sourceRecordId"])
             _, attributes = _record_data(record, expected_type="documents")

@@ -219,15 +219,13 @@ version = "0.2.9"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
+    { name = "jsonschema-rs" },
     { name = "rulespec-artifacts" },
 ]
 
 [package.optional-dependencies]
 dagster = [
     { name = "dagster" },
-]
-fast = [
-    { name = "jsonschema-rs" },
 ]
 http = [
     { name = "httpx" },
@@ -248,7 +246,6 @@ dev = [
     { name = "httpx" },
     { name = "ijson" },
     { name = "jsonschema" },
-    { name = "jsonschema-rs" },
     { name = "msgspec" },
     { name = "pytest" },
     { name = "ruff" },
@@ -260,20 +257,19 @@ requires-dist = [
     { name = "dagster", marker = "extra == 'dagster'", specifier = ">=1.13,<2" },
     { name = "httpx", marker = "extra == 'http'", specifier = ">=0.27,<1" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
-    { name = "jsonschema-rs", marker = "extra == 'fast'", specifier = ">=0.52,<1" },
+    { name = "jsonschema-rs", specifier = ">=0.52,<1" },
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24,<2" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5,<7" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
-provides-extras = ["fast", "http", "s3", "tokens", "pdf", "dagster"]
+provides-extras = ["http", "s3", "tokens", "pdf", "dagster"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27,<1" },
     { name = "ijson", specifier = ">=3.3,<4" },
     { name = "jsonschema", specifier = ">=4.23,<5" },
-    { name = "jsonschema-rs", specifier = ">=0.52,<1" },
     { name = "msgspec", specifier = ">=0.18,<1" },
     { name = "pytest" },
     { name = "ruff", specifier = ">=0.12,<0.13" },
