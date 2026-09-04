@@ -270,13 +270,28 @@ a small number of *body fetches*, not a cheap metadata pass. Much cheaper than
 474, and a different kind of work than "narrows the range and hands back a
 smaller set" implied.
 
-**A forward-looking fix worth ruling on separately.** Adding `correction_of` to
-the Federal Register acquisition field list closes this for every future reuse.
-It does not touch the identity question, moves no schema, and is orthogonal to
-which of the four options is chosen; it costs an acquisition policy version and
-applies from the next crawl forward. It should be decided on its own merits
-rather than bundled — this record has already had one bundle unbundled for
-exactly that reason.
+**The recommended companion change, to be decided with the ruling rather than
+discovered after it.** Add `correction_of` to the Federal Register acquisition
+field list. It does not touch the identity question, moves no schema, and is
+orthogonal to which of the four options is chosen; it costs an acquisition policy
+version and applies from the next crawl forward.
+
+It is a companion rather than a rider, and the difference matters given what this
+record has already unbundled: nothing about it depends on another change
+happening, and it is not being priced off one. It is recommended alongside the
+ruling for a specific reason — if the eventual rebuild refetches rather than
+replaying retained evidence, `correction_of` would be present, and the residual
+this record cannot settle becomes **adjudicable instead of estimated**. The
+415/359 heuristic would become a count at the moment it is finally acted on.
+Decided now it improves the deferred work; discovered later it does not, because
+by then the fetch has happened without it.
+
+It recovers none of the 483 without a refetch, so it is not mitigation for this
+loss and must not be presented as any part of the answer to the current question.
+
+**Not authorized as of 2026-09-03.** It changes what the next crawl fetches,
+which is an acquisition policy change and therefore the owner's call, not a
+reversible tidy-up.
 
 The gate that makes the scan trustworthy is the receipt equation above:
 `inputObservationCount` 1,007,639 − `publishedRecordCount` 1,007,156 = 483, and
@@ -534,6 +549,17 @@ row carries its discarded siblings.** One row per number, as the ledger requires
 with a field naming the observations that number also covered and why each lost.
 That is reachable from the number by construction and does not smuggle in the
 identity move.
+
+**The carried field means "what this release collapsed", not "what this document
+is".** This is part of option 4's specification, not a note on it, because it is
+the clause that makes option 4 and a later composite compatible instead of
+contradictory. Read as a standing claim about the document, the field survives a
+composite rebuild and the corpus then asserts the same document twice — as its
+own item, and as a discard recorded against the row that used to absorb it. Read
+as a record of one release's collapse, it is simply absent from a release that
+did not collapse anything, and the rebuild needs no cleanup step and no memory of
+why. Define it this way now: it costs nothing today and is expensive to retrofit
+once written the other way.
 
 **Second correction, 2026-09-03: it costs a schema version after all.** An
 earlier draft of this paragraph claimed the remedy needed "no schema version, no
