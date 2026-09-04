@@ -404,11 +404,48 @@ defensible, and it should be said in those words rather than reached by default.
 
 **The dissent, recorded so the owner sees both.** The overseer recommends the
 composite, on the grounds that our identity should match the source's actual
-uniqueness and that several hundred real documents is not a rounding error. That
-argument is strongest if a sealed move is already scheduled and if a consumer
-ever needs to address one of these documents directly. It is weakest against the
-1,007,156-to-359 cost ratio above. Both positions are in front of the owner; the
-count does not settle between them, and neither of us should pretend it does.
+uniqueness, that several hundred real documents is not a rounding error, and that
+rebuilding immutable releases is the platform's ordinary work rather than an
+exceptional cost. Both positions are in front of the owner; the count does not
+settle between them, and neither of us should pretend it does.
+
+### The revised proposal, and why it is not the bundle this record rejected
+
+The overseer withdrew "composite because it is cheap when bundled" and proposes
+instead: **option 4 now with the discard carried, and 0003 rules that composite
+is the correct identity, adopted at the next Federal Register release rebuild,
+whatever triggers it.** If no rebuild comes, option 4 stands.
+
+That is not a bundle and this record should not call it one. The objection above
+is to choosing an option at a discounted price that depends on a future event.
+Here option 4 is paid in full today and composite is paid in full whenever it
+runs; no cost is being shared, so none can evaporate. The ruling is made
+unconditionally and only execution is deferred.
+
+Two things it does create, and the ruling has to say what happens to them.
+
+**A double representation.** Under option 4 the discarded record is carried on
+the surviving row. After a composite rebuild the same document is also its own
+item. Unresolved, the corpus then asserts both — `00-111`'s 2000-01-14 rule
+exists as an item *and* as a discard recorded against the 2000-01-18 notice. The
+rebuild must either drop the carried discards it has promoted, or the carried
+field must be defined as a record of what *this release* collapsed rather than a
+standing claim about the document. The second is cheaper and more honest, and it
+wants deciding now, while both halves are in one person's head.
+
+**A standing obligation on someone not in this conversation.** A ruling executed
+months later is executed by whoever runs the rebuild, from this record alone. So
+this record must carry the conditions of its own basis: that ~359 is a heuristic
+centre and not a floor, that 415 assumes the 68 identical-on-four records are
+re-observations, and that both were measured over four captured fields. Whoever
+executes should re-derive before acting, not inherit.
+
+**One synergy worth taking now.** Adding `correction_of` to the acquisition field
+list is orthogonal to this ruling and helps it: if the eventual rebuild refetches
+rather than replaying retained evidence, the field would be present and the
+residual could be *adjudicated* instead of estimated — converting the 415/359
+heuristic into a count at the moment it is finally acted on. That is an argument
+for doing the cheap forward-looking fix now rather than alongside the rebuild.
 
 ## Where document identity should be decided, and where it should not
 
