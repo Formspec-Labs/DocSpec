@@ -266,13 +266,28 @@ The source-native acquisition ledger cannot record a failure at all:
   raises "source-native receipt is not publishable".
 
 So a release carrying failures is both unwritable and unreadable, and the third
-lock matters most: an existing reader would **reject** a release that recorded
-one. Fixing this is a spicy-docs schema change with a compatibility consequence,
-and it is a prerequisite of the ruling rather than a detail of it. Until it
-lands, a failure has nowhere to be recorded and therefore no class to be sorted
-into — which is the same defect this record opened with, one layer down.
+lock has a compatibility consequence: an existing reader would **reject** a
+release that recorded one, so **readers must ship before writers** or the first
+honest release is unloadable.
 
-*Found by spicyregZ2; the three locks verified here against the tree.*
+**And there is a fourth, which spicy9 found and which is the one that decides
+scope.** The reader refuses a non-zero `failedRecordCount` *in the same condition
+as a failed semantic verdict* — `semanticVerdict != "pass" or failedRecordCount
+!= 0` raises the single error "source-native receipt is not publishable". So a
+release with recorded failures is not merely unrepresentable; it is **defined as
+unpublishable**. Lifting that is a policy decision about what a release means,
+and it is the owner's, not a schema detail.
+
+**Which is why this does not ride the Federal Register rebuild.** The FR changes
+alter what a release *contains*; this alters what a release *means*. Shipped
+together, the first downstream refusal has two suspects and neither can be
+cleared without unpicking the other. spicy9 argued this and it is right.
+
+Until it lands, a failure has nowhere to be recorded and therefore no class to be
+sorted into — which is the same defect this record opened with, one layer down.
+
+*Found by spicyregZ2, the fourth lock by spicy9; all four verified here against
+the tree.*
 
 ### Elsewhere
 

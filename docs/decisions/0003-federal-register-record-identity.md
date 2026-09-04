@@ -67,7 +67,52 @@ The release-scoped reading of the carried field, specified above, governs the
 transition: a rebuilt release under composite identity collapses nothing, so it
 carries nothing, and no cleanup step is needed.
 
-**Sequencing.** Acquisition change first (spicy-docs, spicy9's lane), then the
+**A prerequisite the ruling did not know about: adding a field breaks replay of
+the evidence the rebuild depends on.** Found while preparing the change, verified
+by spicy9, and it must land before anything else moves.
+
+`federal_register_request_window` validates a stored acquisition page against
+*current* code, in two places, and both fail once `DOCUMENT_FIELDS` gains a
+member:
+
+- `:234` compares the stored request's `fields[]` against `sorted(DOCUMENT_FIELDS)`.
+- `:237` regenerates the canonical URL with `federal_register_documents_url` and
+  demands **exact string equality** with the stored one — and that function takes
+  only `query_scope` and `per_page`, reading the field list from the module
+  constant at `:192`. The field list is baked into the regenerated URL too.
+
+Fixing the first alone leaves the second failing on every page. The path is
+`publish` → `_index_pages` → `profile.page_window(page.request_key)` over stored
+evidence, with the profile wiring `page_window=federal_register_request_window`.
+So the 1.76 GB stops being publishable by the code meant to consume it, the
+moment the field is added.
+
+**The obvious fix does not work and the reason is worth recording.** Keying the
+expected field set to `acquisitionPolicyVersion` needs the *evidence* to declare
+which version recorded it. It does not: `acquisitionPolicyVersion` lives in the
+release **spec**, while acquisition ledger rows carry only `evidenceBlobRef`,
+`failure`, `observationRef` and `sourceRecordId`. On a rebuild the evidence is
+republished under the *new* policy, so there is no stamp to key from.
+
+**What is buildable, because the field list is recoverable from the evidence
+itself — it is in the stored request URL:**
+
+1. Parse `fields[]` out of the stored request rather than assuming it.
+2. Validate that parsed set against a small set of **accepted historical field
+   sets** keyed by policy version — 1.0 the 22, 1.1 the 23. Unknown drift is
+   still refused; only *known* drift is admitted.
+3. Give `federal_register_documents_url` an explicit `fields` argument and pass
+   the parsed set, so canonicality is checked **for the field list the evidence
+   declares** rather than for today's constant.
+
+Replay then becomes a function of what the evidence says instead of what the code
+currently wants, and any future field addition works the same way. **It should be
+proven against real stored evidence before `correction_of` moves anything** —
+replay one retained window end-to-end under the current 22-field policy first, so
+the path is known good before what it validates changes.
+
+**Sequencing.** The prerequisite above first, then the acquisition change
+(spicy-docs, spicy9's lane), then the
 release build, then DocSpec consumes. If the carried discard requires a DocSpec
 evidence-reading path — `adapters/spicyregs_source_native.py` exposes only
 `iter_records` and `iter_renditions` today — that path is DocSpec-side work and
