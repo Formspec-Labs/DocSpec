@@ -682,6 +682,36 @@ in the directory, no version suffix in the filename, `$id` a
 | catalog pin `catalogDigest` | `<64 hex>` | byte sha256 of the pinned `catalog.json`, verified against those bytes |
 | `selectedSourceSetDigest` | `sha256:<64 hex>` | derived from the pin under `docspec-selected-source-set/1` (*The catalog pin*) |
 
+**On `urn:spicy-regs:source-catalog-release:v1:`, which 83 files in this repo
+contain and which this decision does *not* seal.** Recorded 2026-09-04 because a
+triage read the file count as evidence that DocSpec had taken the namespace over,
+and the opposite is closer to true.
+
+The split is 82 to 1. Eighty-two are `tests/fixtures/document_release_v2/…`,
+where the string is **data under test** — a pinned example of the foreign id a
+release's catalog pin carries — not an assertion by DocSpec about its own names.
+The one non-fixture occurrence is `adapters/document_release_verify.py:138`,
+`SOURCE_CATALOG_ID_PREFIX`, which is defined, listed in `__all__` at :3284, and
+**used by nothing**: no comparison in that file, and no reference in spicysearch,
+spicy-docs or RefSpec. It validates nothing today.
+
+DocSpec's own sealed name for the catalog pin is the row above —
+`urn:docspec:source-catalog:v1:<64 hex>` — a different prefix, and it is what the
+2.0 schemas carry. So the two are not the same identifier wearing two names.
+
+**DocSpec does not own the `spicy-regs` prefix and should not claim it.** That
+URN names artifacts the acquisition side produces, and real ones are cited in
+`spicysearch/docs/history/` from live builds (`db76c443…`, `796c4c49…`,
+`3414d0a5…`). Asserting ownership here would be this platform's 0001 violation in
+reverse — one product declaring authority over another's namespace.
+
+What actually follows for a reader who sees the 83 and reaches for a rename:
+**the fixtures must not churn.** They pin ids that were minted under that
+namespace at a point in time; a later rename upstream does not retroactively
+change what those artifacts were called, so rewriting the fixtures would falsify
+test data rather than update it. The dead constant is the only thing here worth
+touching, and it is a code question, not an identity one.
+
 **The `releaseId` wire key changes meaning between 1.1-wire and 2.0-wire, and
 that is recorded rather than glossed.** In 1.1 and in the derivation envelope,
 `releaseId` is the plan-derived artifact name matching
