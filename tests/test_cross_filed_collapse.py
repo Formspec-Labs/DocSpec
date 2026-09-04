@@ -14,6 +14,7 @@ import pytest
 
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
 from docspec.domain.identity import canonical_json_bytes
+from docspec.errors import IntegrityError
 from docspec.ports.source_catalog import SourceInputSelector
 
 SELECTOR = SourceInputSelector(
@@ -304,3 +305,51 @@ def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:
     assert set(observation["properties"]) == {"observationKey", "observationValue"}
     # An unconstrained value is what lets a whole discarded filing live here.
     assert observation["properties"]["observationValue"] == {}
+
+
+def test_a_row_carrying_a_discard_survives_the_join_index_round_trip() -> None:
+    """The write side and the read side of the join index must agree on the shape.
+
+    Found by a real build, not by this suite: the collapse fired correctly on
+    the first colliding record after fourteen minutes and then could not be read
+    back, because `_carried_discards` began writing a third key that
+    `_stored_row`'s closed-shape guard still refused.
+
+    Every ordinary row round-trips cleanly -- `_carried_discards` returns `{}`
+    when there is nothing to carry, which is ~1.94M of 1.94M rows -- so nothing
+    smaller than a real collision could expose it. That is why this asserts the
+    three-key shape directly rather than relying on a fixture that happens to
+    collide.
+    """
+
+    from docspec.application.regulations_gov_catalog import (
+        _carried_discards,
+        _stored_discards,
+        _stored_row,
+    )
+
+    class _Row:
+        record = {"sourceRecordId": "DHS_FRDOC_0001-2740"}
+        renditions = ()
+        discarded_filings = ({"reasonCode": "source.cross-filed-under-another-agency"},)
+
+    stored = {
+        "record": dict(_Row.record),
+        "renditions": [],
+        **_carried_discards(_Row()),
+    }
+    assert set(stored) == {"record", "renditions", "discardedFilings"}
+
+    record, renditions = _stored_row(stored)
+    assert record == _Row.record
+    assert renditions == ()
+    assert _stored_discards(stored) == _Row.discarded_filings
+
+
+def test_a_row_without_discards_still_refuses_an_unknown_key() -> None:
+    """Widening for one optional key must not open the shape generally."""
+
+    from docspec.application.regulations_gov_catalog import _stored_row
+
+    with pytest.raises(IntegrityError):
+        _stored_row({"record": {}, "renditions": [], "somethingElse": 1})

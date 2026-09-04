@@ -212,7 +212,14 @@ def _stored_discards(value: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
 def _stored_row(
     value: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]]:
-    if set(value) != {"record", "renditions"} or not isinstance(value["record"], Mapping):
+    # Subtracting the one optional key keeps the shape closed against every
+    # other: a row may carry filings the loader collapsed into it, and nothing
+    # else. `_carried_discards` writes it and `_stored_discards` reads it, and
+    # this guard sits between them -- widened together with them rather than
+    # left refusing what its own module had started writing.
+    if set(value) - {"discardedFilings"} != {"record", "renditions"} or not isinstance(
+        value["record"], Mapping
+    ):
         raise IntegrityError("catalog join index row has an invalid closed shape")
     raw_renditions = value["renditions"]
     if not isinstance(raw_renditions, Sequence) or isinstance(
