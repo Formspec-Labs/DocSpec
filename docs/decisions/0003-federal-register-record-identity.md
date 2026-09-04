@@ -228,6 +228,29 @@ A trap to carry into that scan: `E8-30793` is year-coded `E8` and published
 be minted from the year code alone, and a scan that treats a code/date mismatch
 as evidence of two documents will manufacture collisions.
 
+**What the scan can and cannot settle, recorded before it runs so its result is
+not overread.** Comparing a discarded record against the survivor on `type`,
+`title`, `agencies` and `abstract` establishes that the two records *differ*. It
+does not establish that the discarded one is a *different document*: a corrected
+title or a revised abstract on the same document differs too. So the scan's N is
+an **upper bound on distinct documents, not a count of them**, and it has to be
+reported in that form.
+
+This record already knows what settles the residual, because it faced it once.
+The seven modern-form collisions could not be adjudicated from metadata —
+federalregister.gov's own `correction_of` answers null for all seven, including
+the two that genuinely are self-corrections — and RefSpec resolved them from the
+document bodies. The scan is metadata, so it inherits that limit exactly. It
+narrows the range and hands back a smaller set to adjudicate; it does not close
+the question.
+
+The gate that makes the scan trustworthy is the receipt equation above:
+`inputObservationCount` 1,007,639 − `publishedRecordCount` 1,007,156 = 483, and
+publication refuses unless it balances. An enumeration that does not land on 483
+is wrong, and the distinctness split — computed over the same enumeration —
+must not be reported at all when it does not, because a wrong enumeration
+yields a confidently wrong ratio rather than a visible failure.
+
 Until that exists, the honest statement of cost is: **at least one** real
 document is absent from a published release, and at most 474 are.
 
