@@ -1,10 +1,71 @@
-# Decision 0003: the Federal Register record identity is undecided, and the collapse is a defect
+# Decision 0003: the Federal Register identity becomes composite, and the collapse is recorded until it does
 
 - Date: 2026-09-02
-- Status: **open — needs an owner's ruling.** Nothing here is accepted.
-- Evidence strengthened 2026-09-03: the loss is now demonstrated in a built
-  release, not inferred from a comment. One measurement is still owed — see
-  "The measurement this record still owes".
+- Status: **accepted 2026-09-04**, ruled by the product owner. See "The ruling"
+  immediately below. Everything after it is the record that produced it, kept
+  including the parts it corrected and the dissent it ruled against.
+- Evidence: the loss is demonstrated in a built release, not inferred from a
+  comment, and the owed measurement was taken on 2026-09-03.
+
+## The ruling
+
+**Ruled 2026-09-04 by the product owner**, accepting the overseer's revised
+recommendation with this record's corrections folded in.
+
+**1. Option 4 now: the discarded observation is *carried* on the surviving row,
+not merely named, and scoped to what this release collapsed.** The mechanism
+exists and has run. Catalog-A's build of 2026-09-03 emitted the surviving
+Regulations.gov item with `sourceObservations[0]` at
+`observationKey: cross-file-discard/0`, `reasonCode:
+source.cross-filed-under-another-agency`, carrying the **whole** discarded
+record including its `data.attributes` and its renditions — receipt
+`~/Work/corpora/supply-2026-09-02/receipts/catalog-A-build-2026-09-04.md`. That
+is decision 0004's remedy in production and it is the working precedent for this
+one.
+
+**2. Composite identity — `(document_number, publication_date)` — is the correct
+Federal Register identity, to be adopted at the next release rebuild, whatever
+triggers it.** The ruling is unconditional; only execution defers. If no rebuild
+ever comes, option 4 stands and the ~359 remain unfindable-and-named. The
+release-scoped reading of the carried field, specified below, governs the
+transition: a rebuilt release collapses nothing, so it carries nothing, and no
+cleanup step is needed.
+
+**3. `correction_of` is authorized** as the companion addition to the Federal
+Register acquisition field list, decided with the ruling rather than after it,
+for the asymmetry this record states: decided now it makes the residual countable
+at the rebuild; decided later the fetch has already happened without it.
+
+**4. The basis conditions travel with the ruling.** A proven floor of **one**, a
+heuristic centre near **359**, a ceiling of **415** under the assumption that the
+68 identical-on-four records are re-observations — **483** without it — all
+measured over four captured fields. **Re-derive before acting; do not inherit.**
+The scan is re-runnable: `tools/fr_discarded_distinctness.py` in spicy-docs,
+committed `9f8c7ee`, takes `--release-root` and `--blob-store`.
+
+### What the ruling does not do
+
+**It does not lift catalog-A's not-publishable mark.** That catalog pins the
+Federal Register release that loses these documents, and it stays not publishable
+until a release exists under composite identity. "Ruled" is not "resolved": the
+decision is made, the loss is still in the artifact.
+
+**It does not recover anything yet.** Option 4 makes the loss auditable, not the
+documents retrievable. Until the rebuild, a query that should return the
+2000-01-14 rule returns the 2000-01-18 notice.
+
+**It does not settle the residual.** How many of the 415 are genuinely distinct
+documents needs the bodies, because `correction_of` is absent from this corpus
+rather than null. Authorizing it fixes that forward, not backward.
+
+### The dissent, which was ruled against and stays
+
+This record recommended option 4 alone, on the ground that the composite's cost
+scales with all 1,007,156 records while its benefit scales with ~359 — a 0.036%
+benefit against a re-partitioning of the whole corpus. That argument was not
+accepted and is not withdrawn. It is kept because whoever executes the rebuild
+should meet the strongest case against it before paying its cost, and because if
+the rebuild never happens this is the position the record falls back to.
 - Raised-by: agent, from a code review of spicy-docs against the source-native spec
 - Was blocked on a measured collision count. **Unblocked 2026-09-03**: the census
   exists, and the numbers are in "What the census measured" below.
