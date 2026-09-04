@@ -9,23 +9,40 @@
 
 ## The failure
 
-`docspec source-catalog build` over the 671 catalog-A inputs aborts in about
+`docspec source-catalog build` over the 671 catalog-A inputs aborted in about
 ninety seconds with
 
 > source-native inputs repeat a sourceRecordId for one policy selector
 
-raised from the duplicate-key load at `adapters/source_catalog_artifact.py:718`. Two records, out of
-2,221,713 scanned across the 670 non-Federal-Register releases:
+raised when `_CatalogPolicyInputs._load` stores a repeated key. **Since the
+collapse landed, that message means something narrower**: the loader now asks
+the policy to resolve a repeat, and refuses only when the policy cannot — an
+unresolvable repeat, not any repeat. The string is deliberately unchanged, so
+it stays greppable and this record stays citable.
+
+Cited by symbol and by the quoted string rather than by line number: three
+citations in this record have gone stale already, two of them within an hour,
+because the file is under active change. `_load` predates the collapse and is
+what actually aborts; the message is what a reader greps for.
+
+Two records, out of 2,221,713:
 
 | sourceRecordId | appears in |
 | --- | --- |
 | `DHS_FRDOC_0001-2737` | `regs-documents-CISA`, `regs-documents-DHS` |
 | `DHS_FRDOC_0001-2740` | `regs-documents-DHS`, `regs-documents-USCIS` |
 
-Measured independently three times — by spicy9, by a blind auditor scanning all
-2,221,713 records, and by a full scan of the 335 document releases here, which
-found these are the **only** two documentIds appearing in more than one release
-corpus-wide.
+Measured independently three times, and the populations differ — name the one
+you mean, because three counts circulate:
+
+| count | population |
+| --- | --- |
+| **2,221,713** | every record in the 670 non-Federal-Register releases, documents and dockets alike |
+| **1,943,108** | document records only |
+| **1,797,201** | document records carrying both a `documentId` and a `docketId`, which is what the owner rule can be evaluated over |
+
+The two above are the **only** two documentIds appearing in more than one
+release corpus-wide.
 
 ## This is not 0003's problem, and it is nearly its inverse
 
@@ -152,6 +169,22 @@ So the collapse:
 - moves **no** schema version,
 - moves **no** `catalogSchemaDigest`,
 - leaves every existing catalog openable.
+
+### The retained filing rides on the surviving row, and that is forced
+
+Stated as a constraint rather than a preference, because written as a
+preference a future reader proposes the alternative again — doc1 did, and found
+it unbuildable.
+
+A sibling row carrying the discarded filing *cannot* be written: catalog items
+are keyed by `sourceItemId`, and a second row for the same document is exactly
+the duplicate the loader refuses. The dispositions schema is closed, so a new
+top-level disposition kind is not available either. `sourceObservations` on the
+surviving row is what remains.
+
+Two things would have to change together before the sibling shape is even
+discussable: the item key would have to admit more than `sourceItemId`, and the
+dispositions schema would have to open. Either alone leaves it unbuildable.
 
 ### Which unbundles the reason-code labelling
 
