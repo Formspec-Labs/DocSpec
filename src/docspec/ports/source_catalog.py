@@ -98,6 +98,11 @@ class SourceNativeRow:
     description: SourceNativeDescription
     record: Mapping[str, Any]
     renditions: tuple[Mapping[str, Any], ...]
+    #: Filings this run collapsed into ``record`` under DocSpec decision 0004,
+    #: each ``{reasonCode, reason, record, renditions}``. Empty for every row
+    #: that was never part of a collision, which is all but two of the
+    #: 2,221,713 records in the 671 catalog-A inputs.
+    discarded_filings: tuple[Mapping[str, Any], ...] = ()
 
 
 class CatalogPolicyWorkspace(Protocol):
@@ -111,6 +116,21 @@ class CatalogPolicyWorkspace(Protocol):
     ) -> None: ...
 
     def get(self, namespace: str, key: tuple[str, ...]) -> Mapping[str, Any] | None: ...
+
+    def replace(
+        self,
+        namespace: str,
+        key: tuple[str, ...],
+        value: Mapping[str, Any],
+    ) -> None:
+        """Overwrite one row this run already wrote, and refuse if none exists.
+
+        ``put`` keeps refusing a repeated key, because a repeat is a defect
+        almost everywhere and the refusal is how it is found. A caller that
+        genuinely means to supersede a row it wrote itself says so here instead
+        of making ``put`` lenient for everyone.
+        """
+        ...
 
     def iter_ordered(self, namespace: str) -> Iterator[Mapping[str, Any]]: ...
 
@@ -187,6 +207,24 @@ class SourceCatalogStore(Protocol):
     def blob_source(self) -> SourceCatalogBlobSource: ...
 
 
+@dataclass(frozen=True, slots=True)
+class SourceRecordCollisionResolution:
+    """Which filing owns a repeated sourceRecordId, and what is kept from the other.
+
+    ``owner`` and ``discarded`` are both rows the loader built, so a policy
+    chooses between them rather than constructing one. ``discarded`` is
+    retained rather than dropped: see DocSpec decision 0004, where the two
+    filings of one cross-filed document were measured to differ in 8 of 84 and
+    6 of 90 leaf fields, including a docket association and a Federal Register
+    volume citation carried by only one side.
+    """
+
+    owner: Mapping[str, Any]
+    discarded: Mapping[str, Any]
+    reason_code: str
+    reason: str
+
+
 class SourceCatalogPolicy(Protocol):
     """Apply one DocSpec-owned interpretation policy to neutral source rows."""
 
@@ -207,6 +245,18 @@ class SourceCatalogPolicy(Protocol):
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> Iterator[SourceCatalogItem]: ...
+
+    # Optional. A policy that omits it keeps the loader's refusal on a repeated
+    # sourceRecordId, which is the right answer wherever a repeat is a defect.
+    # Read structurally by the loader rather than declared here with a default,
+    # so omission stays an explicit "refuse" instead of a silent opt-in.
+    #
+    # def resolve_source_record_collision(
+    #     self,
+    #     selector: SourceInputSelector,
+    #     stored: Mapping[str, Any],
+    #     incoming: Mapping[str, Any],
+    # ) -> SourceRecordCollisionResolution | None: ...
 
 
 @dataclass(frozen=True, slots=True)

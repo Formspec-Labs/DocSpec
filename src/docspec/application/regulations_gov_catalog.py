@@ -33,6 +33,7 @@ from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
     CatalogPolicyWorkspace,
     SourceInputSelector,
+    SourceRecordCollisionResolution,
 )
 
 _DOCUMENT_SCOPE = "regulations-gov-documents"
@@ -165,6 +166,7 @@ def _index_rows(
             {
                 "record": dict(row.record),
                 "renditions": [dict(value) for value in row.renditions],
+                **_carried_discards(row),
             },
         )
 
@@ -180,6 +182,29 @@ def _indexed_row(
     if value is None:
         return None
     return _stored_row(value)
+
+
+def _carried_discards(row: Any) -> dict[str, Any]:
+    """Stage filings the loader collapsed into this row, and nothing when there are none.
+
+    Written for both staging paths rather than the universe one alone: a
+    collision on a lookup input would otherwise be resolved by the loader and
+    then silently dropped on the way to the join index, which is the loss this
+    whole decision exists to prevent.
+    """
+
+    if not row.discarded_filings:
+        return {}
+    return {"discardedFilings": [dict(value) for value in row.discarded_filings]}
+
+
+def _stored_discards(value: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    """Read back what `_carried_discards` staged, refusing a shape it did not write."""
+
+    raw = value.get("discardedFilings", [])
+    if not isinstance(raw, list) or not all(isinstance(item, Mapping) for item in raw):
+        raise IntegrityError("catalog join index discarded filings must be an array of objects")
+    return tuple(raw)
 
 
 def _stored_row(
@@ -632,6 +657,79 @@ class RegulationsGovCatalogPolicy:
             raise ValueError("Regulations.gov catalog policy differs from the installed policy version")
         return policy
 
+    def resolve_source_record_collision(
+        self,
+        selector: SourceInputSelector,
+        stored: Mapping[str, Any],
+        incoming: Mapping[str, Any],
+    ) -> SourceRecordCollisionResolution | None:
+        """Pick the owning filing when one document is mirrored under two agencies.
+
+        Regulations.gov publishes a Federal Register document under each agency
+        that filed it, so the same ``documentId`` can arrive from two releases.
+        DocSpec decision 0004 rules that this is one item with the non-owning
+        filing recorded rather than dropped.
+
+        The owner is decided by measurement, not preference. Two tests over all
+        1,797,201 document records in the 671 catalog-A inputs produce four
+        exceptions between them:
+
+        * ``documentId`` starts with ``docketId + "-"`` -- three exceptions.
+        * ``docketId`` starts with ``agencyId`` -- one exception.
+
+        A filing that fails either test is the cross-file; the one that passes
+        both owns the document. Both blocking records are resolved this way and
+        neither is caught by both tests, so the rules are not redundant.
+
+        Prefix *containment* is deliberate, not "docket plus one trailing
+        segment": 40,485 of those records carry two-segment sequences such as
+        ``DOT-OST-1995-125-0050-0001`` in docket ``DOT-OST-1995-125``, and the
+        narrower reading reports every one of them as a violation.
+
+        Returns ``None`` when neither filing can be distinguished, which keeps
+        the loader's refusal rather than guessing. This rule answers "which
+        mirror owns one document id"; it does not answer "which of two
+        differing document ids is canonical", and 0004 measures that it
+        resolves none of the 16,652 groups posing that second question.
+        """
+
+        candidates = [stored, incoming]
+        owners = [row for row in candidates if self._owns_its_filing(row)]
+        if len(owners) != 1:
+            return None
+        owner = owners[0]
+        discarded = incoming if owner is stored else stored
+        return SourceRecordCollisionResolution(
+            owner=owner,
+            discarded=discarded,
+            reason_code="source.cross-filed-under-another-agency",
+            reason=(
+                "the same document is mirrored under another agency, whose filing "
+                "does not reconstruct its own document id"
+            ),
+        )
+
+    @staticmethod
+    def _owns_its_filing(row: Mapping[str, Any]) -> bool:
+        """Both measured tests, which a filing must pass to own its document.
+
+        Reuses ``_record_data`` rather than reaching through the payload here,
+        so a shape this policy cannot read is refused in one place. A row whose
+        payload is not a readable document simply does not own it, which leaves
+        the loader's refusal in charge rather than resolving on a guess.
+        """
+
+        try:
+            _, attributes = _record_data(row["record"], expected_type="documents")
+        except (IntegrityError, KeyError, TypeError):
+            return False
+        document_id = row["record"].get("sourceRecordId") or ""
+        docket_id = attributes.get("docketId") or ""
+        agency_id = attributes.get("agencyId") or ""
+        if not document_id or not docket_id or not agency_id:
+            return False
+        return document_id.startswith(f"{docket_id}-") and docket_id.startswith(agency_id)
+
     def iter_items(
         self,
         inputs: CatalogPolicyInputs,
@@ -654,6 +752,7 @@ class RegulationsGovCatalogPolicy:
                     record,
                     renditions,
                     workspace,
+                    discarded_filings=_stored_discards(value),
                     sample_drawn=(
                         workspace.get(_SAMPLE_DRAWN, (source_item_id,)) is not None
                         if self.sample is not None
@@ -689,6 +788,7 @@ class RegulationsGovCatalogPolicy:
             stored = {
                 "record": dict(row.record),
                 "renditions": [dict(value) for value in row.renditions],
+                **_carried_discards(row),
             }
             source_item_id = str(row.record["sourceRecordId"])
             workspace.put(_UNIVERSE_ROWS, (source_item_id,), stored)
@@ -1392,6 +1492,7 @@ class RegulationsGovCatalogPolicy:
         *,
         sample_drawn: bool | None,
         budget_available: bool,
+        discarded_filings: tuple[Mapping[str, Any], ...] = (),
     ) -> SourceCatalogItem:
         native, attributes = _record_data(record, expected_type="documents")
         source_item_id = str(record["sourceRecordId"])
@@ -1653,6 +1754,20 @@ class RegulationsGovCatalogPolicy:
                     "observationValue": malformed_fr_doc_num[0],
                 }
             )
+        # A filing this document was cross-filed under, collapsed by the loader
+        # and kept here rather than dropped. Decision 0004: the two filings of a
+        # real cross-filed document were measured to differ in 8 of 84 and 6 of
+        # 90 leaf fields, so the discarded side carries evidence -- a docket
+        # association and a Federal Register volume citation that exist on one
+        # side only. sourceObservations already takes a free-form key and an
+        # unconstrained value, so this needs no schema version.
+        observations.extend(
+            {
+                "observationKey": f"cross-file-discard/{index}",
+                "observationValue": dict(filing),
+            }
+            for index, filing in enumerate(discarded_filings)
+        )
         input_scope_ids = self._input_scope_ids()
         pin = {
             "policyId": self.policy_id,
