@@ -526,7 +526,7 @@ class RegulationsGovCatalogPolicy:
     _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:regulations-gov:1"
-    policy_version = "1.1.0"
+    policy_version = "1.2.0"
 
     def __post_init__(self) -> None:
         expected = (

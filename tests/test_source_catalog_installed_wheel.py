@@ -508,7 +508,7 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
 
 
 assert sys.version_info[:2] == (3, 12)
-assert importlib.metadata.version("docspec") == "0.2.9"
+assert importlib.metadata.version("docspec") == "0.2.10"
 assert importlib.metadata.version("rulespec-artifacts") == "1.0.11"
 assert importlib.metadata.version("spicy-docs") == "0.1.0"
 assert not any(
@@ -862,7 +862,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert build.returncode == 0, build.stderr
-    docspec_wheel = next(build_root.glob("docspec-0.2.9-*.whl"))
+    docspec_wheel = next(build_root.glob("docspec-0.2.10-*.whl"))
     with zipfile.ZipFile(docspec_wheel) as archive:
         assert not any(
             name.endswith(".whl") or name.startswith("spicy_docs/")
