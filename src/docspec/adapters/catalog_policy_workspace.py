@@ -114,6 +114,30 @@ class SqliteCatalogPolicyWorkspace:
                 f"catalog workspace key already exists in namespace {selected_namespace!r}"
             ) from error
 
+    def replace(
+        self,
+        namespace: str,
+        key: tuple[str, ...],
+        value: Mapping[str, Any],
+    ) -> None:
+        """Supersede one existing row, refusing when the key is absent.
+
+        An UPDATE that matches nothing would otherwise be a silent no-op, and a
+        caller replacing a row it believes it wrote has a defect worth raising
+        rather than absorbing.
+        """
+
+        selected_namespace = require_text(namespace, "catalog workspace namespace")
+        payload = canonical_json_bytes(value)
+        cursor = self._connection.execute(
+            "UPDATE entries SET payload = ? WHERE namespace = ? AND ordered_key = ?",
+            (payload, selected_namespace, _ordered_key(key)),
+        )
+        if cursor.rowcount != 1:
+            raise IntegrityError(
+                f"catalog workspace key is absent in namespace {selected_namespace!r}"
+            )
+
     def get(self, namespace: str, key: tuple[str, ...]) -> Mapping[str, Any] | None:
         selected_namespace = require_text(namespace, "catalog workspace namespace")
         row = self._connection.execute(

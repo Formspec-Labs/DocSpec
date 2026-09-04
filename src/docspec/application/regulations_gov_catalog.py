@@ -33,6 +33,7 @@ from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
     CatalogPolicyWorkspace,
     SourceInputSelector,
+    SourceRecordCollisionResolution,
 )
 
 _DOCUMENT_SCOPE = "regulations-gov-documents"
@@ -631,6 +632,79 @@ class RegulationsGovCatalogPolicy:
         if member != policy.to_member():
             raise ValueError("Regulations.gov catalog policy differs from the installed policy version")
         return policy
+
+    def resolve_source_record_collision(
+        self,
+        selector: SourceInputSelector,
+        stored: Mapping[str, Any],
+        incoming: Mapping[str, Any],
+    ) -> SourceRecordCollisionResolution | None:
+        """Pick the owning filing when one document is mirrored under two agencies.
+
+        Regulations.gov publishes a Federal Register document under each agency
+        that filed it, so the same ``documentId`` can arrive from two releases.
+        DocSpec decision 0004 rules that this is one item with the non-owning
+        filing recorded rather than dropped.
+
+        The owner is decided by measurement, not preference. Two tests over all
+        1,797,201 document records in the 671 catalog-A inputs produce four
+        exceptions between them:
+
+        * ``documentId`` starts with ``docketId + "-"`` -- three exceptions.
+        * ``docketId`` starts with ``agencyId`` -- one exception.
+
+        A filing that fails either test is the cross-file; the one that passes
+        both owns the document. Both blocking records are resolved this way and
+        neither is caught by both tests, so the rules are not redundant.
+
+        Prefix *containment* is deliberate, not "docket plus one trailing
+        segment": 40,485 of those records carry two-segment sequences such as
+        ``DOT-OST-1995-125-0050-0001`` in docket ``DOT-OST-1995-125``, and the
+        narrower reading reports every one of them as a violation.
+
+        Returns ``None`` when neither filing can be distinguished, which keeps
+        the loader's refusal rather than guessing. This rule answers "which
+        mirror owns one document id"; it does not answer "which of two
+        differing document ids is canonical", and 0004 measures that it
+        resolves none of the 16,652 groups posing that second question.
+        """
+
+        candidates = [stored, incoming]
+        owners = [row for row in candidates if self._owns_its_filing(row)]
+        if len(owners) != 1:
+            return None
+        owner = owners[0]
+        discarded = incoming if owner is stored else stored
+        return SourceRecordCollisionResolution(
+            owner=owner,
+            discarded=discarded,
+            reason_code="source.cross-filed-under-another-agency",
+            reason=(
+                "the same document is mirrored under another agency, whose filing "
+                "does not reconstruct its own document id"
+            ),
+        )
+
+    @staticmethod
+    def _owns_its_filing(row: Mapping[str, Any]) -> bool:
+        """Both measured tests, which a filing must pass to own its document.
+
+        Reuses ``_record_data`` rather than reaching through the payload here,
+        so a shape this policy cannot read is refused in one place. A row whose
+        payload is not a readable document simply does not own it, which leaves
+        the loader's refusal in charge rather than resolving on a guess.
+        """
+
+        try:
+            _, attributes = _record_data(row["record"], expected_type="documents")
+        except (IntegrityError, KeyError, TypeError):
+            return False
+        document_id = row["record"].get("sourceRecordId") or ""
+        docket_id = attributes.get("docketId") or ""
+        agency_id = attributes.get("agencyId") or ""
+        if not document_id or not docket_id or not agency_id:
+            return False
+        return document_id.startswith(f"{docket_id}-") and docket_id.startswith(agency_id)
 
     def iter_items(
         self,

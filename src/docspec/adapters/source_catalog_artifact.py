@@ -667,7 +667,9 @@ class _CatalogPolicyInputs:
         descriptions: Sequence[SourceNativeDescription],
         universe_inputs: Sequence[SourceInputSelector],
         workspace: CatalogPolicyWorkspace,
+        policy: SourceCatalogPolicy | None = None,
     ) -> None:
+        self._policy = policy
         self._sources = tuple(sources)
         self._descriptions = tuple(descriptions)
         self._universe_inputs = tuple(universe_inputs)
@@ -704,21 +706,63 @@ class _CatalogPolicyInputs:
                     record["schemaName"],
                     record["schemaVersion"],
                 )
+                namespace = self._namespace(selector)
+                incoming = {
+                    "sourceIndex": source_index,
+                    "record": dict(record),
+                    "renditions": [dict(value) for value in renditions],
+                }
                 try:
-                    self._workspace.put(
-                        self._namespace(selector),
-                        (record["sourceRecordId"],),
-                        {
-                            "sourceIndex": source_index,
-                            "record": dict(record),
-                            "renditions": [dict(value) for value in renditions],
-                        },
-                    )
+                    self._workspace.put(namespace, (record["sourceRecordId"],), incoming)
                 except IntegrityError as error:
-                    raise IntegrityError(
-                        "source-native inputs repeat a sourceRecordId for one policy selector"
-                    ) from error
+                    self._resolve_repeat(namespace, selector, incoming, error)
         self._loaded = True
+
+    def _resolve_repeat(
+        self,
+        namespace: str,
+        selector: SourceInputSelector,
+        incoming: Mapping[str, Any],
+        error: IntegrityError,
+    ) -> None:
+        """Let the policy own a repeated sourceRecordId, or keep the refusal.
+
+        Reached only when ``put`` has already refused, so a corpus with no
+        repeats pays nothing for this: the lookup and the resolution are on the
+        exception path, not per row. Measured over the 671 catalog-A inputs,
+        exactly two of 2,221,713 records reach it.
+
+        A policy that does not implement ``resolve_source_record_collision``
+        keeps the refusal it has today, unchanged and with the same message.
+        The capability is read structurally rather than declared on the
+        protocol because absence has to mean "refuse as before" for every
+        policy that has not thought about it -- a default on the protocol would
+        silently opt them all in.
+        """
+
+        resolver = getattr(self._policy, "resolve_source_record_collision", None)
+        stored = self._workspace.get(namespace, (incoming["record"]["sourceRecordId"],))
+        resolution = (
+            None
+            if resolver is None or stored is None
+            else resolver(selector, stored, incoming)
+        )
+        if resolution is None:
+            raise IntegrityError(
+                "source-native inputs repeat a sourceRecordId for one policy selector"
+            ) from error
+        owner = dict(resolution.owner)
+        discarded = dict(resolution.discarded)
+        owner["discardedFilings"] = [
+            *owner.get("discardedFilings", ()),
+            {
+                "reasonCode": resolution.reason_code,
+                "reason": resolution.reason,
+                "record": discarded["record"],
+                "renditions": discarded["renditions"],
+            },
+        ]
+        self._workspace.replace(namespace, (owner["record"]["sourceRecordId"],), owner)
 
     def _ensure_available(self, selector: SourceInputSelector) -> None:
         if not any(
@@ -845,6 +889,7 @@ def _policy_rows(
         descriptions,
         policy.universe_inputs,
         workspace,
+        policy,
     )
     for item in policy.iter_items(inputs, workspace):
         for interpretation in item.interpretations:
