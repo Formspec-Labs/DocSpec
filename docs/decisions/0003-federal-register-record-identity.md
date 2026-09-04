@@ -43,6 +43,64 @@ measured over four captured fields. **Re-derive before acting; do not inherit.**
 The scan is re-runnable: `tools/fr_discarded_distinctness.py` in spicy-docs,
 committed `9f8c7ee`, takes `--release-root` and `--blob-store`.
 
+### Execution note, 2026-09-04: option 4 does not decompose for this profile
+
+Written after the ruling, from the code, because the ruling's shape — "option 4
+now, composite at the next rebuild" — reads as two separable steps and for the
+Federal Register it is not two steps.
+
+**Why 0004's remedy was cheap and this one is not.** On the Regulations.gov side
+the collapse happens *inside DocSpec's catalog build*: `_CatalogPolicyInputs._load`
+hits the repeat, asks the policy, and the discarded filing is in hand at catalog
+time. It therefore rides `sourceObservations` on the catalog item, whose
+`observationValue` is schema-unconstrained, and costs no version move. That is
+the precedent the ruling cites.
+
+The Federal Register collapse happens **at acquisition, in spicy-docs, before the
+release exists**. The discarded record is written only to acquisition evidence.
+And DocSpec cannot see it: `adapters/spicyregs_source_native.py` exposes
+`iter_records` and `iter_renditions` and has no evidence path at all. **DocSpec
+cannot carry what it never receives.**
+
+So carrying a discarded Federal Register observation requires one of two things,
+and both are release-level:
+
+1. **The release carries it.** `source-native-record.schema.json` is built by
+   `_closed_schema` over exactly seven properties — `fieldDiagnostics`, `record`,
+   `schemaDigest`, `schemaName`, `schemaVersion`, `scopeId`, `sourceRecordId` —
+   with `additionalProperties: false`, and every shape in that format is closed
+   by construction through `_ClosedObjectShape`. There is no free-form slot. So
+   this moves `sourceNativeSchemaSetDigest`, which sits in `SPEC_FIELDS`, the
+   derivation spec that mints the release's logical id. New schema, new release
+   identity, and the release must be republished to contain the records.
+2. **DocSpec grows an evidence-reading path.** A new input the adapter does not
+   have, reading the pre-collapse population directly.
+
+Either way there is no version of option 4 for this profile that runs against the
+release we already hold. **Option 4 here is itself a rebuild**, which is the thing
+the ruling deferred.
+
+**The same is true of the authorized companion.** Adding `correction_of` changes
+the acquisition policy, and `acquisitionPolicyDigest` and
+`acquisitionPolicyVersion` are also in `SPEC_FIELDS`. It too mints a new release
+identity on the next build.
+
+**What this does and does not change.** It does not reverse the ruling: option 4
+may still be the right destination, and no existing artifact is invalidated —
+published releases keep their ids and stay readable. What it changes is the
+sequencing the ruling assumed. There is no cheap interim state for the Federal
+Register in which the discards become auditable before a rebuild happens. The
+honest statement is that **for this profile the whole ruling lands at the
+rebuild**, and until then the ~359 stay both unfindable and unnamed.
+
+**And this record should not talk itself into liking that.** It is uncomfortably
+close to the bundling argument this record rejected two sections above: several
+changes riding one identity move because the move is happening anyway. The
+distinction is real but narrow — these are not being *priced off* each other,
+they are each independently forced into the same event by the format — and a
+reader should check that distinction rather than accept it because this record
+asserts it.
+
 ### What the ruling does not do
 
 **It does not lift catalog-A's not-publishable mark.** That catalog pins the
