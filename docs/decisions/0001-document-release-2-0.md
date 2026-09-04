@@ -1,7 +1,16 @@
 # Decision 0001: DocumentRelease 2.0 — reconciliation and the text-member extension
 
 - Date: 2026-08-30
-- Status: accepted for local implementation; nothing minted, nothing published
+- Status: accepted for local implementation. **Three releases have since been
+  minted locally** under this decision's own identity scheme — receipts at
+  `docs/history/2026-08-30-document-release-10k-v1-mint-receipt.json`,
+  `2026-08-31-document-release-10k-v2-mint-receipt.json` and
+  `2026-08-31-document-release-10k-v3-mint-receipt.json`, carrying
+  `urn:docspec:document-release:v2:` ids `eb3d0e7e`, `28a276a3` and `5f2ae16e`.
+  Nothing is published outside this machine. The header previously read "nothing
+  minted, nothing published", which was true when written on 2026-08-30 and
+  stopped being true the same day the first receipt landed; corrected 2026-09-04.
+  The v3 receipt is on disk but uncited in the body below.
 - Accepted-by: agent (delegated scope: owner 2026-08-30 "execute phase 1... you for human-less decision making"; D1/D2 choices were made by the lead agent and NOT individually shown to the owner)
 - Supersedes: the `docspec-document-release` `1.1` root shape (`src/docspec/domain/release.py:21-22`) as DocSpec's publication surface; the nineteen-field `release.json` shape at `docs/superpowers/specs/2026-08-05-docspec-standalone-platform-implementation-spec.md:1439-1444`; and **that spec's `documentStateDigest` definition at `:1507-1533`** — the `framedSectionDigest` call with domain `docspec-document-state/2` over eight ordered sections, four of which (`processingPlan`, `activeLayers`, `retentionDispositions`, `partitionPolicy`) have no counterpart at all in a 2.0 bundle, and a fifth (`sourceCatalog`) survives only in part: its store-addressed half — `catalogStateDigest`, the catalog schema digest, the catalog-policy digest — does not exist here. Only `counts` and `coverage` come across whole; `failures` leaves with the rest. That block is dead for this format; the preimage below replaces it. It does not supersede §7.5; it implements it.
 - Decides the question left open by `docs/superpowers/specs/2026-08-30-document-release-2.0-adoption.md` §9.
