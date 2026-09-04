@@ -69,6 +69,18 @@ _DOCKET_INDEX = "regulations-gov-catalog/dockets"
 _DOCUMENT_INDEX = "regulations-gov-catalog/document-index"
 _FEDERAL_REGISTER_INDEX = "regulations-gov-catalog/federal-register"
 _UNIVERSE_ROWS = "regulations-gov-catalog/universe"
+
+#: Appended to every "no rendition" reason. The disposition is a statement about
+#: the records this build acquired, and a reader reasonably hears it as a
+#: statement about the document. Measured 2026-09-04: of 13 catalog-A items
+#: randomly sampled from the 865,206 carrying this reason, 13 had downloadable
+#: files at regulations.gov, in the `attachments` relationship that Mirrulations
+#: -- the acquired source -- does not mirror. The disposition was accurate about
+#: its input and read as a claim about the world.
+_ACQUIRED_SOURCE_SCOPE = (
+    " This states what the acquired source contains, not whether the publisher"
+    " holds content for it."
+)
 _SAMPLE_ORDER = "regulations-gov-catalog/sample-order"
 _SAMPLE_COUNTS = "regulations-gov-catalog/sample-counts"
 _SAMPLE_DRAWN = "regulations-gov-catalog/sample-drawn"
@@ -373,7 +385,10 @@ def _selection_result(
         selection = SourceCatalogSelection(
             CatalogDisposition.UNAVAILABLE,
             "source.no-candidate-rendition",
-            "The source item offers no usable rendition.",
+            (
+                "The acquired source record offers no usable rendition."
+                " This states what the acquired source contains, not whether the publisher holds content for it."
+            ),
         )
         decisions.append(
             CatalogSelectionDecision(
@@ -1729,7 +1744,11 @@ class RegulationsGovCatalogPolicy:
                 else:
                     decisions.append(CatalogSelectionDecision("required-metadata", True))
                     if not candidates:
-                        reason = "The source and its exact Federal Register match offer no usable rendition."
+                        reason = (
+                            "Neither the acquired source record nor its exact "
+                            "Federal Register match offers a usable rendition."
+                            + _ACQUIRED_SOURCE_SCOPE
+                        )
                         selection = SourceCatalogSelection(
                             CatalogDisposition.UNAVAILABLE,
                             "source.no-candidate-rendition",

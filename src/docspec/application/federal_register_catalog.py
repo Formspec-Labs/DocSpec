@@ -358,7 +358,11 @@ class FederalRegisterCatalogPolicy:
                 decisions.append(CatalogSelectionDecision(rendition_decision_id, True))
                 selection = SourceCatalogSelection(CatalogDisposition.SELECTED)
             else:
-                reason = "The source offers no usable rendition to capture."
+                reason = (
+                    "The acquired source record offers no usable rendition to"
+                    " capture. This states what the acquired source contains,"
+                    " not whether the publisher holds content for it."
+                )
                 decisions.append(
                     CatalogSelectionDecision(
                         rendition_decision_id,
