@@ -232,6 +232,48 @@ decides whether an attempt is owed. This makes the S3 retry finding (rule 6, now
 `docs/history/2026-09-02-source-native-seam-findings.md`) a configuration change
 rather than a third retry loop.
 
+### The retry default, ruled 2026-09-04
+
+**Transient-class failures are repaired automatically. Deterministic-class
+failures are repaired only when explicitly targeted.** This is the question Rule
+12 left open: the planner now re-admits genuinely failed items as repairable
+work, and this says which of them a run may retry without being asked.
+
+**The class boundary is a rule, not a per-case judgement**, because a judgement
+made per item is not reproducible across runs and would make two builds of one
+population disagree about what was attempted.
+
+- **Transient** — the failure is a property of *this attempt*: a timeout, a
+  connection reset, a 5xx, a rate-limit rejection, an interrupted read. Re-issuing
+  the identical request could plausibly succeed with nothing else changed.
+- **Deterministic** — the failure is a property of *the item or the request*: a
+  404, a 403, a payload that fails schema validation, a digest mismatch, an
+  unparseable body. Re-issuing the identical request produces the identical
+  failure, so an automatic retry is a loop that bills for nothing.
+
+The dividing question is therefore **"would the identical request, unchanged,
+plausibly succeed?"** — not how severe the failure was, and not how many times it
+has been seen.
+
+**This ruling cannot be executed today, and the blocker is a schema, not code.**
+The source-native acquisition ledger cannot record a failure at all:
+
+- `acquisition-ledger.schema.json` declares `"failure": {"type": "null"}` —
+  failure is *structurally* null, not merely null so far;
+- both receipt writers hard-code `"failedRecordCount": 0`;
+- and the reader refuses a release whose `failedRecordCount` is non-zero:
+  `if receipt.get("semanticVerdict") != "pass" or receipt.get("failedRecordCount") != 0`
+  raises "source-native receipt is not publishable".
+
+So a release carrying failures is both unwritable and unreadable, and the third
+lock matters most: an existing reader would **reject** a release that recorded
+one. Fixing this is a spicy-docs schema change with a compatibility consequence,
+and it is a prerequisite of the ruling rather than a detail of it. Until it
+lands, a failure has nowhere to be recorded and therefore no class to be sorted
+into — which is the same defect this record opened with, one layer down.
+
+*Found by spicyregZ2; the three locks verified here against the tree.*
+
 ### Elsewhere
 
 Rules 6, 7, 9, 10 and 11 are bounded defects with fixes attached rather than

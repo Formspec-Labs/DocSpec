@@ -43,6 +43,46 @@ measured over four captured fields. **Re-derive before acting; do not inherit.**
 The scan is re-runnable: `tools/fr_discarded_distinctness.py` in spicy-docs,
 committed `9f8c7ee`, takes `--release-root` and `--blob-store`.
 
+### The rebuild is happening, so the three changes land as one release
+
+**Ruled 2026-09-04, after the execution note below.** The Federal Register
+release will be rebuilt. That resolves the sequencing problem rather than
+working around it: **composite identity, `correction_of`, and the carried
+discard all land in one release**, one acquisition policy version move, rebuilt
+from the retained 1.76 GB of acquisition evidence with **no refetch**.
+
+**This is not the bundling this record rejected, and the reason is checkable
+rather than asserted.** A bundle prices one change off another's cost, so it
+collapses if the other change does not happen. These three are *each
+independently forced into the same event by the format*: `correction_of` moves
+`acquisitionPolicyDigest`, the carried discard moves
+`sourceNativeSchemaSetDigest`, and composite identity moves `sourceRecordId`
+itself — all three sit in or under `SPEC_FIELDS`, the derivation spec that mints
+the release logical id, and each alone requires a republish. There is no version
+of this where one rides free on another. The test to apply, if this is ever
+questioned: remove any two and ask whether the third still needs a rebuild. It
+does.
+
+The release-scoped reading of the carried field, specified above, governs the
+transition: a rebuilt release under composite identity collapses nothing, so it
+carries nothing, and no cleanup step is needed.
+
+**Sequencing.** Acquisition change first (spicy-docs, spicy9's lane), then the
+release build, then DocSpec consumes. If the carried discard requires a DocSpec
+evidence-reading path — `adapters/spicyregs_source_native.py` exposes only
+`iter_records` and `iter_renditions` today — that path is DocSpec-side work and
+comes last. Sequenced after the in-flight 1.2.0 catalog-A rebuild.
+
+**What still does not lift on the day the ruling was made.** catalog-A stays
+**not publishable** until the new Federal Register release exists *and* catalog-A
+is rebuilt pinning it. Both, not either. Until then the ~359 remain unfindable
+and unnamed, exactly as the execution note says. "Ruled" is still not "resolved".
+
+**Not in scope, recorded so it is not re-proposed.** Inline comment bodies —
+submissions whose whole content sits in a metadata field with no file — are a
+search-side concern. Neither this record nor 0004 should propose a rendition for
+them.
+
 ### Execution note, 2026-09-04: option 4 does not decompose for this profile
 
 Written after the ruling, from the code, because the ruling's shape — "option 4
