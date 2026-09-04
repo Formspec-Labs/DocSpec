@@ -212,8 +212,19 @@ reducing. It has to come from the discarded observations themselves — comparin
 each discarded record against the one that survived under the same number, on
 fields that distinguish a different document from a later look at the same one
 (`type`, `title`, `agencies`, `abstract`), not on the two fields the collapse
-already keyed on. Sizing it needs no fetch: the crawl observed these records, and
-the question is only whether the pipeline still holds them.
+already keyed on.
+
+**It needs no fetch, and the inputs are known to exist.** spicy9 confirms the
+acquisition evidence is retained — 1,072 members, 1.76 GB, raw API page
+responses under a `results` key — which is the pre-collapse population and the
+only place the discarded records still are. So this is a bounded local scan, not
+a re-crawl, and the reason it has not run is scheduling against a live build
+rather than missing data.
+
+A trap to carry into that scan: `E8-30793` is year-coded `E8` and published
+2009-01-02. A year-family spilling into January is legitimate, so no identity may
+be minted from the year code alone, and a scan that treats a code/date mismatch
+as evidence of two documents will manufacture collisions.
 
 Until that exists, the honest statement of cost is: **at least one** real
 document is absent from a published release, and at most 474 are.
