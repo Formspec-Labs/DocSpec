@@ -99,6 +99,16 @@ _PUBLISHER_WITHHOLDING_CODES: Mapping[str, str] = {
     "Other": "source.publisher-withheld.other",
 }
 _RESTRICT_REASON_UNREAD = "source.restrict-reason-unread"
+#: Regulations.gov publishes its own internal test fixtures through the same
+#: public API as real filings, under one of these three source item id
+#: prefixes -- anchored at the start, case-sensitive as the publisher writes
+#: them. They 404 at both document and docket level on the public API, so
+#: they carry no evidence a build could acquire. Measured independently twice
+#: over catalog-A 2026-09-04: 41 items total (37 ``failed``, 4 ``deleted``).
+#: Left alone they read as real acquisition failures and real withdrawals;
+#: neither is true, so they are excluded under their own reason code instead.
+_TEST_FIXTURE_ID_PREFIXES: tuple[str, ...] = ("TRAIN-", "ERULE-", "TEST-")
+_TEST_FIXTURE_REASON_CODE = "source.publisher-test-fixture"
 _SAMPLE_ORDER = "regulations-gov-catalog/sample-order"
 _SAMPLE_COUNTS = "regulations-gov-catalog/sample-counts"
 _SAMPLE_DRAWN = "regulations-gov-catalog/sample-drawn"
@@ -380,8 +390,27 @@ def _no_rendition_selection(
     return SourceCatalogSelection(CatalogDisposition.UNAVAILABLE, code, reason + ".")
 
 
+def _test_fixture_selection(source_item_id: str) -> SourceCatalogSelection | None:
+    """Exclude a Regulations.gov internal test fixture, or defer with ``None``.
+
+    Matches only at the start of the source item id, case-sensitive, against
+    :data:`_TEST_FIXTURE_ID_PREFIXES`. A real filing merely containing one of
+    these letter groups (``EPA-TRAIN-2020-0001``, ``PRETEST-1``) is untouched.
+    """
+
+    if not source_item_id.startswith(_TEST_FIXTURE_ID_PREFIXES):
+        return None
+    return SourceCatalogSelection(
+        CatalogDisposition.EXCLUDED,
+        _TEST_FIXTURE_REASON_CODE,
+        f"The source item id {source_item_id!r} carries a Regulations.gov"
+        " internal test-fixture prefix (TRAIN-, ERULE- or TEST-).",
+    )
+
+
 def _selection_result(
     *,
+    source_item_id: str,
     attributes: Mapping[str, Any],
     withdrawn: bool,
     withdrawal_reason: str | None,
@@ -390,6 +419,19 @@ def _selection_result(
     budget_available: bool,
 ) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
     decisions: list[CatalogSelectionDecision] = []
+    fixture_selection = _test_fixture_selection(source_item_id)
+    if fixture_selection is not None:
+        decisions.append(
+            CatalogSelectionDecision(
+                "publisher-test-fixture",
+                False,
+                fixture_selection.disposition,
+                fixture_selection.reason_code,
+                fixture_selection.reason,
+            )
+        )
+        return fixture_selection, tuple(decisions)
+    decisions.append(CatalogSelectionDecision("publisher-test-fixture", True))
     if withdrawn:
         reason = "The source marks this item withdrawn."
         if withdrawal_reason is not None:
@@ -624,7 +666,17 @@ class RegulationsGovCatalogPolicy:
                 "reasonCodes": dict(_PUBLISHER_WITHHOLDING_CODES),
                 "unreadReasonCode": _RESTRICT_REASON_UNREAD,
             },
+            "testFixtures": {
+                "sourceField": "sourceItemId",
+                "idPrefixes": list(_TEST_FIXTURE_ID_PREFIXES),
+                "reasonCode": _TEST_FIXTURE_REASON_CODE,
+            },
             "selectionFailures": [
+                {
+                    "decisionId": "publisher-test-fixture",
+                    "disposition": "excluded",
+                    "reasonCode": _TEST_FIXTURE_REASON_CODE,
+                },
                 {
                     "decisionId": "source-withdrawal",
                     "disposition": "deleted",
@@ -733,6 +785,7 @@ class RegulationsGovCatalogPolicy:
                 "sourceIssuedVersionPolicy",
                 "topicRecovery",
                 "publisherWithholding",
+                "testFixtures",
                 "selectionFailures",
             },
             "Regulations.gov catalog policy configuration",
@@ -1345,6 +1398,7 @@ class RegulationsGovCatalogPolicy:
             if not normalized[name]
         ]
         selection, decisions = _selection_result(
+            source_item_id=source_item_id,
             attributes=attributes,
             withdrawn=False,
             withdrawal_reason=None,
@@ -1509,6 +1563,7 @@ class RegulationsGovCatalogPolicy:
             if not normalized[name]
         ]
         selection, decisions = _selection_result(
+            source_item_id=source_item_id,
             attributes=attributes,
             withdrawn=withdrawn,
             withdrawal_reason=withdrawal_reason,
@@ -1746,116 +1801,130 @@ class RegulationsGovCatalogPolicy:
         candidates = () if withdrawn else offers
         selected_family_id = None if withdrawn else selected_family
         decisions: list[CatalogSelectionDecision] = []
-        if withdrawn:
-            reason_withdrawn, _ = _text(attributes.get("reasonWithdrawn"))
-            reason = "The source marks this document withdrawn."
-            if reason_withdrawn is not None:
-                reason = f"The source marks this document withdrawn: {reason_withdrawn}"
-            selection = SourceCatalogSelection(
-                CatalogDisposition.DELETED,
-                "source.withdrawn-after-publication",
-                reason,
-            )
+        fixture_selection = _test_fixture_selection(source_item_id)
+        if fixture_selection is not None:
+            selection = fixture_selection
             decisions.append(
                 CatalogSelectionDecision(
-                    "source-withdrawal",
+                    "publisher-test-fixture",
                     False,
-                    CatalogDisposition.DELETED,
+                    selection.disposition,
                     selection.reason_code,
                     selection.reason,
                 )
             )
         else:
-            decisions.append(CatalogSelectionDecision("source-withdrawal", True))
-            if sample_drawn is False:
-                limit = self.sample.per_partition_limit if self.sample is not None else 0
-                reason = (
-                    "The deterministic stratified sample takes at most "
-                    f"{limit} items per document type; this item was not drawn."
-                )
+            decisions.append(CatalogSelectionDecision("publisher-test-fixture", True))
+            if withdrawn:
+                reason_withdrawn, _ = _text(attributes.get("reasonWithdrawn"))
+                reason = "The source marks this document withdrawn."
+                if reason_withdrawn is not None:
+                    reason = f"The source marks this document withdrawn: {reason_withdrawn}"
                 selection = SourceCatalogSelection(
-                    CatalogDisposition.EXCLUDED,
-                    "policy.sample-not-drawn",
+                    CatalogDisposition.DELETED,
+                    "source.withdrawn-after-publication",
                     reason,
                 )
                 decisions.append(
                     CatalogSelectionDecision(
-                        "sample-draw",
+                        "source-withdrawal",
                         False,
-                        CatalogDisposition.EXCLUDED,
+                        CatalogDisposition.DELETED,
                         selection.reason_code,
                         selection.reason,
                     )
                 )
             else:
-                if sample_drawn is True:
-                    decisions.append(CatalogSelectionDecision("sample-draw", True))
-                missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
-                if missing:
-                    reason = "Required normalized catalog values are unusable: " + ", ".join(missing)
+                decisions.append(CatalogSelectionDecision("source-withdrawal", True))
+                if sample_drawn is False:
+                    limit = self.sample.per_partition_limit if self.sample is not None else 0
+                    reason = (
+                        "The deterministic stratified sample takes at most "
+                        f"{limit} items per document type; this item was not drawn."
+                    )
                     selection = SourceCatalogSelection(
-                        CatalogDisposition.FAILED,
-                        "source.normalized-field-missing",
+                        CatalogDisposition.EXCLUDED,
+                        "policy.sample-not-drawn",
                         reason,
                     )
                     decisions.append(
                         CatalogSelectionDecision(
-                            "required-metadata",
+                            "sample-draw",
                             False,
-                            CatalogDisposition.FAILED,
+                            CatalogDisposition.EXCLUDED,
                             selection.reason_code,
                             selection.reason,
                         )
                     )
                 else:
-                    decisions.append(CatalogSelectionDecision("required-metadata", True))
-                    if not candidates:
-                        reason = (
-                            "Neither the acquired source record nor its exact "
-                            "Federal Register match offers a usable rendition."
-                            + _ACQUIRED_SOURCE_SCOPE
+                    if sample_drawn is True:
+                        decisions.append(CatalogSelectionDecision("sample-draw", True))
+                    missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
+                    if missing:
+                        reason = "Required normalized catalog values are unusable: " + ", ".join(missing)
+                        selection = SourceCatalogSelection(
+                            CatalogDisposition.FAILED,
+                            "source.normalized-field-missing",
+                            reason,
                         )
-                        selection = _no_rendition_selection(attributes, reason)
                         decisions.append(
                             CatalogSelectionDecision(
-                                "candidate-rendition",
+                                "required-metadata",
                                 False,
-                                selection.disposition,
+                                CatalogDisposition.FAILED,
                                 selection.reason_code,
                                 selection.reason,
                             )
                         )
                     else:
-                        decisions.append(CatalogSelectionDecision("candidate-rendition", True))
-                        if not budget_available:
+                        decisions.append(CatalogSelectionDecision("required-metadata", True))
+                        if not candidates:
                             reason = (
-                                "The catalog selected-item budget is already exhausted."
+                                "Neither the acquired source record nor its exact "
+                                "Federal Register match offers a usable rendition."
+                                + _ACQUIRED_SOURCE_SCOPE
                             )
-                            selection = SourceCatalogSelection(
-                                CatalogDisposition.EXCLUDED,
-                                "policy.item-budget-exhausted",
-                                reason,
-                            )
+                            selection = _no_rendition_selection(attributes, reason)
                             decisions.append(
                                 CatalogSelectionDecision(
-                                    "selected-item-budget",
+                                    "candidate-rendition",
                                     False,
-                                    CatalogDisposition.EXCLUDED,
+                                    selection.disposition,
                                     selection.reason_code,
                                     selection.reason,
                                 )
                             )
                         else:
-                            if self.max_selected_items is not None:
+                            decisions.append(CatalogSelectionDecision("candidate-rendition", True))
+                            if not budget_available:
+                                reason = (
+                                    "The catalog selected-item budget is already exhausted."
+                                )
+                                selection = SourceCatalogSelection(
+                                    CatalogDisposition.EXCLUDED,
+                                    "policy.item-budget-exhausted",
+                                    reason,
+                                )
                                 decisions.append(
                                     CatalogSelectionDecision(
                                         "selected-item-budget",
-                                        True,
+                                        False,
+                                        CatalogDisposition.EXCLUDED,
+                                        selection.reason_code,
+                                        selection.reason,
                                     )
                                 )
-                            selection = SourceCatalogSelection(
-                                CatalogDisposition.SELECTED
-                            )
+                            else:
+                                if self.max_selected_items is not None:
+                                    decisions.append(
+                                        CatalogSelectionDecision(
+                                            "selected-item-budget",
+                                            True,
+                                        )
+                                    )
+                                selection = SourceCatalogSelection(
+                                    CatalogDisposition.SELECTED
+                                )
 
         topics = observed_topics(
             attributes.get("topics"),

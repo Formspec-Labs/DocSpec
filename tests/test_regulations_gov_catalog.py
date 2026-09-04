@@ -763,6 +763,7 @@ def test_selected_item_budget_runs_after_source_and_rendition_checks(
     assert document_items[1].selection.reason_code == "policy.item-budget-exhausted"
     decisions = _interpretation(document_items[1], "selection")["decisions"]
     assert [value["decisionId"] for value in decisions] == [
+        "publisher-test-fixture",
         "source-withdrawal",
         "required-metadata",
         "candidate-rendition",
@@ -1191,6 +1192,125 @@ def test_publisher_declared_withholding_is_read_verbatim_and_never_inferred(
     }
 
 
+def test_publisher_test_fixture_ids_are_excluded_for_documents_and_dockets(
+    tmp_path: Path,
+) -> None:
+    """Regulations.gov publishes its own internal test fixtures through the
+    same public API as real filings, under a ``TRAIN-``/``ERULE-``/``TEST-``
+    source item id prefix. They 404 at both document and docket level on the
+    public API, so a build must not read them as a real acquisition failure
+    or a real withdrawal; they are excluded under their own reason code and
+    the fixture decision is the only decision recorded.
+    """
+
+    items = _build_items(
+        tmp_path,
+        (_document("TRAIN-2025-0010-0002", frDocNum=None),),
+        docket_records=(_docket("TRAIN-2022-0001"),),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    document = next(item for item in items if item.source_item_id == "TRAIN-2025-0010-0002")
+    docket = next(item for item in items if item.source_item_id == "TRAIN-2022-0001")
+    for item in (document, docket):
+        assert item.disposition is CatalogDisposition.EXCLUDED
+        assert item.selection.reason_code == "source.publisher-test-fixture"
+        decisions = _interpretation(item, "selection")["decisions"]
+        assert [value["decisionId"] for value in decisions] == ["publisher-test-fixture"]
+
+
+def test_publisher_test_fixture_excludes_rather_than_deletes_when_also_withdrawn(
+    tmp_path: Path,
+) -> None:
+    """The ordering property: measured 2026-09-04, 4 of catalog-A's 41 test
+    fixtures are also marked withdrawn. If the fixture check ran after
+    ``source-withdrawal`` instead of before it, these would come out
+    ``deleted`` at ``source.withdrawn-after-publication`` instead of
+    ``excluded`` at ``source.publisher-test-fixture`` -- this test fails if
+    the check is moved after withdrawal. Covers both the document path
+    (its own inline cascade) and the comment path (the shared
+    ``_selection_result`` cascade), which are two different call sites.
+    """
+
+    document = _build(
+        tmp_path / "document",
+        _document(
+            "TRAIN-2025-0099-0001",
+            frDocNum=None,
+            withdrawn=True,
+            reasonWithdrawn="Test artifact",
+        ),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    assert document.disposition is CatalogDisposition.EXCLUDED
+    assert document.selection.reason_code == "source.publisher-test-fixture"
+
+    comment_items = _build_items(
+        tmp_path / "comment",
+        (),
+        policy=_policy(include_comments=True),
+        docket_records=(),
+        comment_records=(
+            _comment(
+                "TRAIN-2025-0099-9001",
+                withdrawn=True,
+                reasonWithdrawn="Test artifact",
+            ),
+        ),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    comment = next(
+        item for item in comment_items if item.source_item_id == "TRAIN-2025-0099-9001"
+    )
+    assert comment.disposition is CatalogDisposition.EXCLUDED
+    assert comment.selection.reason_code == "source.publisher-test-fixture"
+
+
+def test_ids_merely_containing_fixture_letters_are_unaffected(tmp_path: Path) -> None:
+    """The match is anchored at the start of the source item id; a real
+    filing that only contains ``TRAIN``/``TEST`` elsewhere in its id must not
+    be caught.
+    """
+
+    contains = _build(
+        tmp_path / "contains",
+        _document("EPA-TRAIN-2020-0001", frDocNum=None),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    prefixed_word = _build(
+        tmp_path / "prefixed-word",
+        _document("PRETEST-1", frDocNum=None),
+        federal_register_records=(),
+        federal_register_renditions=(),
+    )
+    for item in (contains, prefixed_word):
+        assert item.disposition is CatalogDisposition.UNAVAILABLE
+        assert item.selection.reason_code == "source.no-candidate-rendition"
+
+
+def test_test_fixture_pattern_and_reason_code_are_sealed_and_round_trip(
+    tmp_path: Path,
+) -> None:
+    policy = _policy()
+    configuration = policy.configuration
+    assert configuration["testFixtures"] == {
+        "sourceField": "sourceItemId",
+        "idPrefixes": ["TRAIN-", "ERULE-", "TEST-"],
+        "reasonCode": "source.publisher-test-fixture",
+    }
+    assert {
+        "decisionId": "publisher-test-fixture",
+        "disposition": "excluded",
+        "reasonCode": "source.publisher-test-fixture",
+    } in configuration["selectionFailures"]
+    assert RegulationsGovCatalogPolicy.from_member(policy.to_member()).to_member() == (
+        policy.to_member()
+    )
+
+
 def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
     tmp_path: Path,
 ) -> None:
@@ -1218,6 +1338,7 @@ def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
             _document("EPA-2026-0001-0005", frDocNum=None),
             _document("EPA-2026-0001-0006", frDocNum=None, restrictReasonType="Embargoed"),
             _document("EPA-2026-0001-0007", withdrawn=True),
+            _document("TRAIN-2026-0001-0001", frDocNum=None),
         ),
         policy=policy,
         docket_records=(),
@@ -1229,7 +1350,7 @@ def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
 
     assert receipt["dispositionCounts"] == {
         "selected": 1,
-        "excluded": 1,
+        "excluded": 2,
         "deleted": 1,
         "unavailable": 4,
         "failed": 1,
@@ -1237,6 +1358,7 @@ def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
     assert receipt["reasonCounts"] == [
         {"disposition": "deleted", "reasonCode": "source.withdrawn-after-publication", "count": 1},
         {"disposition": "excluded", "reasonCode": "policy.item-budget-exhausted", "count": 1},
+        {"disposition": "excluded", "reasonCode": "source.publisher-test-fixture", "count": 1},
         {"disposition": "failed", "reasonCode": "source.restrict-reason-unread", "count": 1},
         {"disposition": "unavailable", "reasonCode": "source.no-candidate-rendition", "count": 1},
         {"disposition": "unavailable", "reasonCode": "source.publisher-withheld.copyrighted", "count": 2},
