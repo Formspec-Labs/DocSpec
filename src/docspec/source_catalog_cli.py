@@ -10,6 +10,7 @@ from typing import Any
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.source_catalog_artifact import (
+    DERIVATION_PATHS,
     SourceCatalogArtifactReader,
     SourceCatalogBuildRequest,
     SourceCatalogBuilder,
@@ -185,6 +186,7 @@ def _load_build_command_receipt(
             "catalog",
             "catalogPolicy",
             "catalogStateDigest",
+            "derivation",
             "destination",
             "diagnosticDigests",
             "dispositionCounts",
@@ -327,6 +329,14 @@ def _load_build_command_receipt(
         text(row["disposition"], nested_label=f"{label} reasonCounts[{index}].disposition")
         text(row["reasonCode"], nested_label=f"{label} reasonCounts[{index}].reasonCode")
         count(row["count"], nested_label=f"{label} reasonCounts[{index}].count")
+    derivation = closed(receipt["derivation"], {"build", "gate"}, nested_label=f"{label} derivation")
+    for stage, raw_engine in derivation.items():
+        engine = closed(raw_engine, {"path", "workers"}, nested_label=f"{label} derivation.{stage}")
+        if engine["path"] not in DERIVATION_PATHS:
+            raise SourceCatalogCliError(f"{label} derivation.{stage}.path is not a known derivation path")
+        count(engine["workers"], nested_label=f"{label} derivation.{stage}.workers")
+        if engine["workers"] < 1:
+            raise SourceCatalogCliError(f"{label} derivation.{stage}.workers must be at least one")
     partition_policy = closed(
         receipt["partitionPolicy"],
         {"bucketCount", "policyDigest", "policyId", "policyVersion"},
@@ -637,6 +647,17 @@ def _build(args: argparse.Namespace) -> int:
                 else SqliteCatalogPolicyWorkspace(directory=publication.root)
             ),
         ).build(sources)
+        # Which engine derived the digests. The parallel engine falls back to
+        # serial silently when its workers cannot start, and a run that does
+        # not know which path it took cannot scope its timing or memory.
+        _emit(
+            {
+                "format": "docspec-source-catalog-build-diagnostic",
+                "formatVersion": "1.0",
+                "derivation": {stage: dict(engine) for stage, engine in result.derivation.items()},
+            },
+            error=True,
+        )
         if args.resume_workspace is not None:
             # Published, so the workspace is now tens of gigabytes of nothing.
             for suffix in ("", "-journal"):
@@ -676,6 +697,7 @@ def _build(args: argparse.Namespace) -> int:
             "partitionPolicy": dict(result.summary.partition_policy),
             "joinCoverage": [dict(value) for value in result.summary.join_coverage],
             "diagnosticDigests": dict(result.summary.diagnostic_digests),
+            "derivation": {stage: dict(engine) for stage, engine in result.derivation.items()},
             "byteMeasurements": dict(result.byte_measurements),
             "blobStore": _blob_store_evidence(args, result.byte_measurements),
             "verdict": "pass",

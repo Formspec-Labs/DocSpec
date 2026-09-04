@@ -2589,7 +2589,10 @@ def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: P
         selected_count=selected_count,
         workers=2,
     )
-    assert parallel == serial
+    # Everything but the engine's own name must agree; the name must not.
+    assert replace(parallel, derivation={}) == replace(serial, derivation={})
+    assert serial.derivation == {"path": "serial", "workers": 1}
+    assert parallel.derivation == {"path": "parallel", "workers": 2}
     assert serial.catalog_state_digest == summary.catalog_state_digest
 
 
@@ -2891,7 +2894,10 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
     finally:
         source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
 
-    assert parallel == serial, "streaming must not change a single derived value"
+    assert replace(parallel, derivation={}) == replace(serial, derivation={}), (
+        "streaming must not change a single derived value"
+    )
+    assert parallel.derivation["path"] == "parallel"
     assert len(recorded) == len(partitions), "every partition must be submitted once"
     assert max(recorded) < min(partition_sizes), (
         f"task arguments carry the partition payload: largest argument "
@@ -2991,7 +2997,8 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
     finally:
         source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
 
-    assert fell_back == serial
+    assert replace(fell_back, derivation={}) == replace(serial, derivation={})
+    assert fell_back.derivation == {"path": "serial-fallback", "workers": 1}
     assert fell_back.catalog_state_digest == summary.catalog_state_digest
 
 
@@ -3109,3 +3116,51 @@ def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifac
             lambda: SqliteCatalogPolicyWorkspace(path=other_path),
             build_producer=other_producer,
         ).build((source(),))
+
+
+def test_derivation_names_the_engine_that_produced_the_digests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The parallel engine falls back to the serial one silently when its
+    workers cannot start, and nothing recorded which path a receipt's digests
+    came from -- so a week of timing numbers were unscoped. Now the result says,
+    for the build and for the gate, and the reference is identical on all three
+    paths, which is what makes the fallback safe and the timing scopable.
+    """
+
+    identities_by_partition: dict[str, str] = {}
+    for index in range(1, 200):
+        identity = f"2026-{index:05d}"
+        identities_by_partition.setdefault(source_catalog_artifact._partition_id(identity), identity)
+        if len(identities_by_partition) == 3:
+            break
+    identities = tuple(sorted(identities_by_partition.values()))
+
+    def source() -> FakeSource:
+        return FakeSource(
+            description(),
+            tuple(record(identity) for identity in identities),
+            tuple(value for identity in identities for value in renditions(identity)),
+        )
+
+    _, serial = build(tmp_path / "serial", source())
+    assert serial.derivation == {
+        "build": {"path": "serial", "workers": 1},
+        "gate": {"path": "serial", "workers": 1},
+    }
+
+    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_ROW_THRESHOLD", 1)
+    _, parallel = build(tmp_path / "parallel", source())
+    assert parallel.reference == serial.reference
+    assert parallel.derivation["build"]["path"] == "parallel"
+    assert parallel.derivation["gate"]["path"] == "parallel"
+    assert parallel.derivation["build"]["workers"] >= 2
+
+    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_PROBE_TIMEOUT_SECONDS", 0.0)
+    _, fallback = build(tmp_path / "fallback", source())
+    assert fallback.reference == serial.reference
+    assert fallback.derivation == {
+        "build": {"path": "serial-fallback", "workers": 1},
+        "gate": {"path": "serial-fallback", "workers": 1},
+    }

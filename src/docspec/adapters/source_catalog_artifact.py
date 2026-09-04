@@ -10,7 +10,8 @@ import os
 import pickle
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from dataclasses import field as dataclass_field
 from itertools import zip_longest
 from typing import Any
 
@@ -202,6 +203,12 @@ class SourceCatalogBuildResult:
     reference: SourceCatalogRef
     summary: SourceCatalogSnapshotSummary
     byte_measurements: Mapping[str, int]
+    #: Which engine derived the digests, for the build and for the producer
+    #: gate's recomputation: ``{"build": {...}, "gate": {...}}``, each a
+    #: ``DERIVATION_PATHS`` member with its worker count. The parallel engine
+    #: falls back to the serial one silently when workers cannot start, and
+    #: nothing else records which path a receipt's digests came from.
+    derivation: Mapping[str, Mapping[str, object]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1444,6 +1451,15 @@ class _DerivedCatalog:
     disposition_counts: dict[str, int]
     reason_counts: list[dict[str, object]]
     diagnostics: dict[str, object]
+    #: ``{"path": DERIVATION_PATHS member, "workers": processes that derived}``.
+    derivation: Mapping[str, object] = dataclass_field(default_factory=dict)
+
+
+#: The engines a derivation can report. ``serial-fallback`` is the parallel
+#: engine giving up on its workers and running serially; the digests are
+#: identical either way, the wall clock and memory are not, so a measurement
+#: that does not know which ran is unscoped.
+DERIVATION_PATHS = frozenset({"serial", "parallel", "serial-fallback"})
 
 
 def _derive_catalog(
@@ -1546,6 +1562,7 @@ def _derive_catalog(
             "interpretationsDigest": interpretations.digest(),
             "renditionChoicesDigest": rendition_choices.digest(),
         },
+        {"path": "serial", "workers": 1},
     )
 
 
@@ -1635,7 +1652,7 @@ def _derive_catalog_parallel(
                 )
             except Exception:  # noqa: BLE001 - workers are unavailable here;
                 # the serial derivation is always available and identical.
-                return _derive_catalog(
+                fallback = _derive_catalog(
                     blob_source,
                     partitions,
                     item_count=item_count,
@@ -1643,6 +1660,7 @@ def _derive_catalog_parallel(
                     validate_rows=validate_rows,
                     workers=1,
                 )
+                return replace(fallback, derivation={"path": "serial-fallback", "workers": 1})
             pending: list[Any] = []
 
             def submit_next() -> bool:
@@ -1742,6 +1760,7 @@ def _derive_catalog_parallel(
                 "interpretationsDigest": interpretations.digest(),
                 "renditionChoicesDigest": rendition_choices.digest(),
             },
+            {"path": "parallel", "workers": worker_count},
         )
 
 
@@ -2072,6 +2091,7 @@ class SourceCatalogBuildGateVerifier:
         self._producer = producer
         self._blob_source = blob_source
         self.summary: SourceCatalogSnapshotSummary | None = None
+        self.derivation: Mapping[str, object] = {}
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
         receipt_verifier = SourceCatalogArtifactVerifier(self._producer, self._blob_source)
@@ -2087,6 +2107,7 @@ class SourceCatalogBuildGateVerifier:
             item_count=summary.item_count,
             selected_count=summary.disposition_counts[CatalogDisposition.SELECTED.value],
         )
+        self.derivation = dict(derived.derivation)
         computed = {
             "catalogStateDigest": derived.catalog_state_digest,
             "requestedUniverseSetDigest": derived.requested_universe_set_digest,
@@ -2295,6 +2316,7 @@ class SourceCatalogBuilder:
                 selected_count=row_partitioner.selected_count,
                 validate_rows=False,
             )
+            build_derivation = dict(derived.derivation)
             state_digest = derived.catalog_state_digest
             requested_digest = derived.requested_universe_set_digest
             selected_digest = derived.selected_source_set_digest
@@ -2432,6 +2454,7 @@ class SourceCatalogBuilder:
             published,
             verifier.summary,
             dict(receipt["byteMeasurements"]),
+            {"build": build_derivation, "gate": dict(verifier.derivation)},
         )
 
 
@@ -2442,6 +2465,7 @@ __all__ = [
     "SourceCatalogBuildGateVerifier",
     "SourceCatalogBuildRequest",
     "SourceCatalogBuildResult",
+    "DERIVATION_PATHS",
     "SourceCatalogBuilder",
     "requested_universe_set_digest",
     "selected_source_set_digest",
