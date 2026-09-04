@@ -57,6 +57,20 @@ class SqliteCatalogPolicyWorkspace:
             dir=parent,
         )
         self._connection = sqlite3.connect(Path(self._temporary.name) / "workspace.sqlite3")
+        # Set before CREATE TABLE, which is the only point it can be set: SQLite
+        # fixes the page size when the first table is written.
+        #
+        # Catalog rows average ~10.5 KB, which rounds badly against 4 KB pages --
+        # a raw b-tree sample of two real 40+ GB workspaces found 88% of pages
+        # were overflow, and the partition read-back is then latency-bound random
+        # I/O one page at a time. Measured here at that row size: 1.05 s to write
+        # and commit 20,000 rows at 4 KB against 0.25 s at 64 KB, 1.23x payload on
+        # disk against 1.12x.
+        #
+        # Safe because the workspace is disposable and its bytes are never
+        # digested -- the artifact is built from what this table yields, not from
+        # the file. No identity moves.
+        self._connection.execute("PRAGMA page_size=65536")
         self._connection.execute("PRAGMA journal_mode=DELETE")
         self._connection.execute("PRAGMA synchronous=OFF")
         self._connection.execute(
