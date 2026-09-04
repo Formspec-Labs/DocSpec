@@ -114,23 +114,23 @@ The domain layer defines valid identities, records, and evidence. Application se
 
 ### Source intake and document preparation
 
-- [Module overview](/Users/mikewolfd/Work/DocSpec/wiki/source_intake_and_document_preparation.md)
-- [Source Catalog Pipeline](/Users/mikewolfd/Work/DocSpec/wiki/source_catalog_pipeline.md)
-- [Content Acquisition and Processing](/Users/mikewolfd/Work/DocSpec/wiki/content_acquisition_and_processing.md)
+- [Module overview](wiki/source_intake_and_document_preparation.md)
+- [Source Catalog Pipeline](wiki/source_catalog_pipeline.md)
+- [Content Acquisition and Processing](wiki/content_acquisition_and_processing.md)
 
 ### Governed processing, execution, and qualification
 
-- [Module overview](/Users/mikewolfd/Work/DocSpec/wiki/governed_processing_execution_and_qualification.md)
-- [Document Run Application](/Users/mikewolfd/Work/DocSpec/wiki/document_run_application.md)
-- [Processing Plan and Job Model](/Users/mikewolfd/Work/DocSpec/wiki/processing_plan_and_job_model.md)
-- [Processor Extension Model](/Users/mikewolfd/Work/DocSpec/wiki/processor_extension_model.md)
-- [Portable Task Execution](/Users/mikewolfd/Work/DocSpec/wiki/portable_task_execution.md)
-- [Scale Acceptance](/Users/mikewolfd/Work/DocSpec/wiki/scale_acceptance.md)
+- [Module overview](wiki/governed_processing_execution_and_qualification.md)
+- [Document Run Application](wiki/document_run_application.md)
+- [Processing Plan and Job Model](wiki/processing_plan_and_job_model.md)
+- [Processor Extension Model](wiki/processor_extension_model.md)
+- [Portable Task Execution](wiki/portable_task_execution.md)
+- [Scale Acceptance](wiki/scale_acceptance.md)
 
 ### Durable results and release lifecycle
 
-- [Module overview](/Users/mikewolfd/Work/DocSpec/wiki/durable_results_and_release_lifecycle.md)
-- [Result Delivery and Reconciliation](/Users/mikewolfd/Work/DocSpec/wiki/result_delivery_and_reconciliation.md)
-- [Storage and Shared References](/Users/mikewolfd/Work/DocSpec/wiki/storage_and_shared_references.md)
-- [Document Release Artifacts](/Users/mikewolfd/Work/DocSpec/wiki/document_release_artifacts.md)
-- [Release Maintenance](/Users/mikewolfd/Work/DocSpec/wiki/release_maintenance.md)
+- [Module overview](wiki/durable_results_and_release_lifecycle.md)
+- [Result Delivery and Reconciliation](wiki/result_delivery_and_reconciliation.md)
+- [Storage and Shared References](wiki/storage_and_shared_references.md)
+- [Document Release Artifacts](wiki/document_release_artifacts.md)
+- [Release Maintenance](wiki/release_maintenance.md)
