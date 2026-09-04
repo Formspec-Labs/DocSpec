@@ -131,3 +131,97 @@ def test_a_payload_this_policy_cannot_read_does_not_own_anything() -> None:
     broken = {"sourceIndex": 0, "record": {"sourceRecordId": "A-1"}, "renditions": []}
     assert policy()._owns_its_filing(broken) is False
     assert policy().resolve_source_record_collision(SELECTOR, broken, broken) is None
+
+
+# --- the retained filing must ARRIVE, not merely be written -------------------
+# Written before the carrying code exists and confirmed red, so it constrains
+# the implementation rather than describing it. A test that only checked the
+# observation was written would pass against a chain that drops it.
+
+
+class _Source:
+    """One source-native input, shaped as the loader consumes it."""
+
+    def __init__(self, description, records):
+        self._description = description
+        self._records = records
+
+    def describe(self):
+        return self._description
+
+    def iter_records(self):
+        yield from self._records
+
+    def iter_renditions(self):
+        return
+        yield
+
+
+def native_record(document_id: str, docket_id: str, agency_id: str) -> dict[str, Any]:
+    return {
+        "sourceRecordId": document_id,
+        "scopeId": "regulations-gov-documents",
+        "schemaName": "regulations-gov-document-raw",
+        "schemaVersion": "1.0",
+        "schemaDigest": "sha256:" + "0" * 64,
+        "fieldDiagnostics": [],
+        "record": {
+            "data": {
+                "id": document_id,
+                "type": "documents",
+                "attributes": {
+                    "docketId": docket_id,
+                    "agencyId": agency_id,
+                    "title": f"Filed by {agency_id}",
+                },
+            }
+        },
+    }
+
+
+def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None:
+    """The collapse is only real if the retained filing survives the chain.
+
+    It crosses a closed workspace shape and a frozen dataclass between being
+    written and being read. Either one silently omitting it would leave the
+    build green and the evidence gone, which is the failure this asserts
+    against -- the discarded record and its renditions, byte for byte, not
+    merely present.
+    """
+
+    from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
+    from docspec.adapters.source_catalog_artifact import _CatalogPolicyInputs
+    from docspec.ports.source_catalog import SourceNativeDescription
+
+    description = SourceNativeDescription(
+        logical_id="urn:test:release",
+        artifact_digest="sha256:" + "1" * 64,
+        source_system_id="https://api.regulations.gov",
+        source_system_version="v4",
+        source_state_scope="complete-snapshot",
+        source_state_digest="sha256:" + "2" * 64,
+        source_native_schema_set_digest="sha256:" + "3" * 64,
+    )
+    owner = native_record("DHS_FRDOC_0001-2740", "DHS_FRDOC_0001", "DHS")
+    cross_file = native_record("DHS_FRDOC_0001-2740", "USCIS-2025-0040", "USCIS")
+
+    with SqliteCatalogPolicyWorkspace(directory=tmp_path) as workspace:
+        inputs = _CatalogPolicyInputs(
+            [_Source(description, (owner,)), _Source(description, (cross_file,))],
+            [description, description],
+            [SELECTOR],
+            workspace,
+            policy(),
+        )
+        rows = list(inputs.iter_universe_rows())
+
+    assert len(rows) == 1, "the two filings must collapse to one row"
+    surviving = rows[0]
+    assert surviving.record["record"]["data"]["attributes"]["agencyId"] == "DHS"
+
+    assert len(surviving.discarded_filings) == 1
+    retained = surviving.discarded_filings[0]
+    assert retained["reasonCode"] == "source.cross-filed-under-another-agency"
+    # Byte-for-byte, against the input rather than against a re-derivation.
+    assert retained["record"] == cross_file
+    assert retained["renditions"] == []
