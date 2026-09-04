@@ -149,6 +149,62 @@ changes in `0003` alter what a release *contains*; this alters what a release
 neither can be cleared without unpicking the other. spicy9 holds the build order;
 this sequences after their prerequisite work, not inside it.
 
+## The pattern behind the locks, named so a third instance is recognised
+
+Added 2026-09-04, after step 1 was built and a second instance of the same defect
+appeared the same day by a different route. This is not a fifth lock; it is the
+shape the locks keep taking.
+
+**Any check that compares an artefact to what the running code would produce,
+rather than to a frozen record of what has been accepted, refuses every artefact
+the moment the code changes.** The fix is always a version-keyed literal, never a
+reference to the live value.
+
+**Instance one — the field-set check**, `federal_register_request_window`. It
+compared a stored request's `fields[]` against `sorted(DOCUMENT_FIELDS)` *and*
+regenerated the canonical URL from the same live constant, so adding a field
+would have refused every stored acquisition page — including the 1.76 GB the
+Federal Register rebuild in `0003` depends on. Fixed in spicy-docs `6293692`,
+"replay stored evidence against the fields it declares".
+
+**Instance two — the schema-bundle check**, `verify_source_native_admission`. It
+requires a release's *embedded* schema bundle to equal
+`installed_release_schema_bundle()` — the bundle today's code generates — and its
+digest to equal the spec's `releaseSchemaDigest`. Widening `failure` in the
+acquisition-ledger schema changes that bundle, so upgraded code refuses **every
+published release: 668 of them, all of them.** Measured against
+`releases/fr-full-1994-2026` rather than a fixture — embedded `a7e0dba5…`,
+installed `4c32416…`, two members differing. Verified here independently: that
+release's `spec.releaseSchemaDigest` is `sha256:a7e0dba5…`.
+
+**What instance two falsifies.** "Ship the reader at step 1 and let it sit — it
+reads old releases unchanged" is false. `readers first` survives — nothing may be
+written before it can be read — but *the reader reads old releases unchanged* was
+an assumption about the reader that **the reader's own admission check refutes**.
+
+**So step 1 has a third item**, and all three must land in one commit:
+
+1. widen the ledger schema to permit both failure shapes;
+2. ship the reader and verifier that accept both;
+3. **admit historical schema bundles** — a known-good set keyed by version.
+
+Any two without the third leaves main refusing the corpus.
+
+**The sub-lesson, from `6293692` taking three drafts to hold: the frozen record
+must not alias the live value.** The first fix wrote
+`ACCEPTED_DOCUMENT_FIELD_SETS = {"1.0": DOCUMENT_FIELDS}`, which binds the
+historical entry to the current constant — so the next field addition silently
+rewrites what "1.0" means and reintroduces the defect under the new code's own
+error message. A historical entry must be its own literal, with the current value
+pointing *at* it rather than the reverse. The same applies to the bundle set:
+`{"1.0": installed_release_schema_bundle()}` would be the identical mistake.
+
+**Recognising a third instance.** Ask of any equality check against an artefact:
+*is the right-hand side a record, or is it a computation?* If the code computes
+it, the check answers "does this artefact match today" when the question is "was
+this artefact ever valid". Those diverge on the first change and not before,
+which is why both instances were latent and neither showed in a passing suite.
+
 ## What this does not decide
 
 - **The class boundary.** Ruled in `0002`; referenced, not restated.
