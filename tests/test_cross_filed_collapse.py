@@ -256,11 +256,23 @@ def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
     """
 
     cross_file = native_record("DHS_FRDOC_0001-2740", "USCIS-2025-0040", "USCIS")
+    # Given a rendition so both tests exercise the half that carries file
+    # evidence. The workspace test already proves renditions survive the round
+    # trip; leaving this one empty made the two inconsistent for no reason.
+    rendition = {
+        "sourceRecordId": "DHS_FRDOC_0001-2740",
+        "renditionId": "uscis-content",
+        "sourceField": "fileFormats",
+        "mediaType": "application/pdf",
+        "locator": "https://example.test/uscis.pdf",
+        "expectedSha256": "sha256:" + "4" * 64,
+        "expectedByteSize": 1024,
+    }
     carried = {
         "reasonCode": "source.cross-filed-under-another-agency",
         "reason": "the same document is mirrored under another agency",
         "record": cross_file,
-        "renditions": [],
+        "renditions": [rendition],
     }
     observations: list[dict[str, Any]] = []
     observations.extend(
@@ -271,6 +283,7 @@ def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
     assert [o["observationKey"] for o in observations] == ["cross-file-discard/0"]
     emitted = observations[0]["observationValue"]
     assert canonical_json_bytes(emitted["record"]) == canonical_json_bytes(cross_file)
+    assert canonical_json_bytes(emitted["renditions"]) == canonical_json_bytes([rendition])
     assert emitted["reasonCode"] == "source.cross-filed-under-another-agency"
 
 
