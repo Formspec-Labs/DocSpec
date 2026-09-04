@@ -236,13 +236,47 @@ title or a revised abstract on the same document differs too. So the scan's N is
 an **upper bound on distinct documents, not a count of them**, and it has to be
 reported in that form.
 
-This record already knows what settles the residual, because it faced it once.
-The seven modern-form collisions could not be adjudicated from metadata —
+This record thought it already knew what settles the residual, and the analogy
+it reached for was wrong in a way that changes the remedy.
+
+The seven modern-form collisions could not be adjudicated from metadata:
 federalregister.gov's own `correction_of` answers null for all seven, including
-the two that genuinely are self-corrections — and RefSpec resolved them from the
-document bodies. The scan is metadata, so it inherits that limit exactly. It
-narrows the range and hands back a smaller set to adjudicate; it does not close
-the question.
+the two that genuinely are self-corrections, and RefSpec resolved them from the
+document bodies. An earlier version of this section said the scan "inherits that
+limit exactly". **It does not — the two limits are different and have different
+fixes**, and spicy9 established the difference by checking our evidence rather
+than accepting the analogy.
+
+`correction_of` is not null in our corpus. It is **absent**. The Federal Register
+acquisition policy requests exactly 22 fields — `DOCUMENT_FIELDS` in
+`federal_register_source_native.py`, verified here independently — and
+`correction_of` is not among them, nor does the string appear anywhere in either
+tree. So:
+
+| limit | what it is | fix |
+| --- | --- | --- |
+| the field answers null (RefSpec, 7 documents) | present and uninformative | none; bodies are the only route, permanently |
+| the field was never requested (here, all 483) | absent from the crawl | request it, which helps every future collision and recovers none of these without a refetch |
+
+Which limit governs the 483 is **unmeasured, and this corpus cannot measure it**,
+precisely because the field is not in it. RefSpec's evidence establishes the null
+result for seven documents; generalising that to 483 by analogy is the same move
+this record has had to retract twice already.
+
+**The consequence for budgeting, which is the part that changes.** The residual
+adjudication is body-based no matter how N lands — not because metadata is
+uninformative, but because we do not hold the metadata. A small N therefore means
+a small number of *body fetches*, not a cheap metadata pass. Much cheaper than
+474, and a different kind of work than "narrows the range and hands back a
+smaller set" implied.
+
+**A forward-looking fix worth ruling on separately.** Adding `correction_of` to
+the Federal Register acquisition field list closes this for every future reuse.
+It does not touch the identity question, moves no schema, and is orthogonal to
+which of the four options is chosen; it costs an acquisition policy version and
+applies from the next crawl forward. It should be decided on its own merits
+rather than bundled — this record has already had one bundle unbundled for
+exactly that reason.
 
 The gate that makes the scan trustworthy is the receipt equation above:
 `inputObservationCount` 1,007,639 − `publishedRecordCount` 1,007,156 = 483, and
