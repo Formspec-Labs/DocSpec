@@ -166,6 +166,7 @@ def _index_rows(
             {
                 "record": dict(row.record),
                 "renditions": [dict(value) for value in row.renditions],
+                **_carried_discards(row),
             },
         )
 
@@ -181,6 +182,29 @@ def _indexed_row(
     if value is None:
         return None
     return _stored_row(value)
+
+
+def _carried_discards(row: Any) -> dict[str, Any]:
+    """Stage filings the loader collapsed into this row, and nothing when there are none.
+
+    Written for both staging paths rather than the universe one alone: a
+    collision on a lookup input would otherwise be resolved by the loader and
+    then silently dropped on the way to the join index, which is the loss this
+    whole decision exists to prevent.
+    """
+
+    if not row.discarded_filings:
+        return {}
+    return {"discardedFilings": [dict(value) for value in row.discarded_filings]}
+
+
+def _stored_discards(value: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    """Read back what `_carried_discards` staged, refusing a shape it did not write."""
+
+    raw = value.get("discardedFilings", [])
+    if not isinstance(raw, list) or not all(isinstance(item, Mapping) for item in raw):
+        raise IntegrityError("catalog join index discarded filings must be an array of objects")
+    return tuple(raw)
 
 
 def _stored_row(
@@ -728,6 +752,7 @@ class RegulationsGovCatalogPolicy:
                     record,
                     renditions,
                     workspace,
+                    discarded_filings=_stored_discards(value),
                     sample_drawn=(
                         workspace.get(_SAMPLE_DRAWN, (source_item_id,)) is not None
                         if self.sample is not None
@@ -763,6 +788,7 @@ class RegulationsGovCatalogPolicy:
             stored = {
                 "record": dict(row.record),
                 "renditions": [dict(value) for value in row.renditions],
+                **_carried_discards(row),
             }
             source_item_id = str(row.record["sourceRecordId"])
             workspace.put(_UNIVERSE_ROWS, (source_item_id,), stored)
@@ -1466,6 +1492,7 @@ class RegulationsGovCatalogPolicy:
         *,
         sample_drawn: bool | None,
         budget_available: bool,
+        discarded_filings: tuple[Mapping[str, Any], ...] = (),
     ) -> SourceCatalogItem:
         native, attributes = _record_data(record, expected_type="documents")
         source_item_id = str(record["sourceRecordId"])
@@ -1727,6 +1754,20 @@ class RegulationsGovCatalogPolicy:
                     "observationValue": malformed_fr_doc_num[0],
                 }
             )
+        # A filing this document was cross-filed under, collapsed by the loader
+        # and kept here rather than dropped. Decision 0004: the two filings of a
+        # real cross-filed document were measured to differ in 8 of 84 and 6 of
+        # 90 leaf fields, so the discarded side carries evidence -- a docket
+        # association and a Federal Register volume citation that exist on one
+        # side only. sourceObservations already takes a free-form key and an
+        # unconstrained value, so this needs no schema version.
+        observations.extend(
+            {
+                "observationKey": f"cross-file-discard/{index}",
+                "observationValue": dict(filing),
+            }
+            for index, filing in enumerate(discarded_filings)
+        )
         input_scope_ids = self._input_scope_ids()
         pin = {
             "policyId": self.policy_id,

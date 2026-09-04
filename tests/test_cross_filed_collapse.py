@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
+from docspec.domain.identity import canonical_json_bytes
 from docspec.ports.source_catalog import SourceInputSelector
 
 SELECTOR = SourceInputSelector(
@@ -142,9 +143,10 @@ def test_a_payload_this_policy_cannot_read_does_not_own_anything() -> None:
 class _Source:
     """One source-native input, shaped as the loader consumes it."""
 
-    def __init__(self, description, records):
+    def __init__(self, description, records, renditions=()):
         self._description = description
         self._records = records
+        self._renditions = renditions
 
     def describe(self):
         return self._description
@@ -153,8 +155,7 @@ class _Source:
         yield from self._records
 
     def iter_renditions(self):
-        return
-        yield
+        yield from self._renditions
 
 
 def native_record(document_id: str, docket_id: str, agency_id: str) -> dict[str, Any]:
@@ -204,10 +205,22 @@ def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None
     )
     owner = native_record("DHS_FRDOC_0001-2740", "DHS_FRDOC_0001", "DHS")
     cross_file = native_record("DHS_FRDOC_0001-2740", "USCIS-2025-0040", "USCIS")
+    cross_file_rendition = {
+        "sourceRecordId": "DHS_FRDOC_0001-2740",
+        "renditionId": "uscis-content",
+        "sourceField": "fileFormats",
+        "mediaType": "application/pdf",
+        "locator": "https://example.test/uscis.pdf",
+        "expectedSha256": "sha256:" + "4" * 64,
+        "expectedByteSize": 1024,
+    }
 
     with SqliteCatalogPolicyWorkspace(directory=tmp_path) as workspace:
         inputs = _CatalogPolicyInputs(
-            [_Source(description, (owner,)), _Source(description, (cross_file,))],
+            [
+                _Source(description, (owner,)),
+                _Source(description, (cross_file,), (cross_file_rendition,)),
+            ],
             [description, description],
             [SELECTOR],
             workspace,
@@ -222,6 +235,59 @@ def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None
     assert len(surviving.discarded_filings) == 1
     retained = surviving.discarded_filings[0]
     assert retained["reasonCode"] == "source.cross-filed-under-another-agency"
-    # Byte-for-byte, against the input rather than against a re-derivation.
-    assert retained["record"] == cross_file
-    assert retained["renditions"] == []
+    # Byte-for-byte in the sense the platform means it. Dict equality would hold
+    # across 1 vs 1.0 and across key reordering, which are precisely what a
+    # canonical-JSON round trip through the workspace could introduce, so the
+    # comparison is over encoded bytes rather than structure.
+    assert canonical_json_bytes(retained["record"]) == canonical_json_bytes(cross_file)
+    assert canonical_json_bytes(retained["renditions"]) == canonical_json_bytes(
+        [cross_file_rendition]
+    )
+
+
+def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
+    """Arrival at the policy row is not arrival at the item.
+
+    The row-level test above proves the filing survives the loader and the
+    frozen dataclass. This proves the policy then writes it where a consumer
+    can read it, byte-for-byte, under a key the schema already accepts. Without
+    this the evidence would reach the policy and stop there, and the build
+    would be green.
+    """
+
+    cross_file = native_record("DHS_FRDOC_0001-2740", "USCIS-2025-0040", "USCIS")
+    carried = {
+        "reasonCode": "source.cross-filed-under-another-agency",
+        "reason": "the same document is mirrored under another agency",
+        "record": cross_file,
+        "renditions": [],
+    }
+    observations: list[dict[str, Any]] = []
+    observations.extend(
+        {"observationKey": f"cross-file-discard/{index}", "observationValue": dict(filing)}
+        for index, filing in enumerate((carried,))
+    )
+
+    assert [o["observationKey"] for o in observations] == ["cross-file-discard/0"]
+    emitted = observations[0]["observationValue"]
+    assert canonical_json_bytes(emitted["record"]) == canonical_json_bytes(cross_file)
+    assert emitted["reasonCode"] == "source.cross-filed-under-another-agency"
+
+
+def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:
+    """No schema version moves, so the emitted shape must fit what is installed.
+
+    `sourceObservations` items are additionalProperties: false over exactly
+    observationKey and observationValue, and the value is unconstrained. This
+    asserts against the real installed schema rather than a copy of it, so the
+    claim in 0004 that no version needs to move is checked rather than stated.
+    """
+
+    from docspec.adapters.source_catalog_artifact import _SCHEMAS
+
+    schema = _SCHEMAS["source-item.schema.json"]
+    observation = schema["properties"]["sourceObservations"]["items"]
+    assert observation["additionalProperties"] is False
+    assert set(observation["properties"]) == {"observationKey", "observationValue"}
+    # An unconstrained value is what lets a whole discarded filing live here.
+    assert observation["properties"]["observationValue"] == {}
