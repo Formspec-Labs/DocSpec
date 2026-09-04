@@ -1,8 +1,11 @@
 # Decision 0004: a cross-filed Regulations.gov document is one item with a recorded discard
 
 - Date: 2026-09-03
-- Status: **accepted.** Ruled by the product owner 2026-09-03. Not yet implemented.
-- Raised-by: the full 671-input catalog-A build, which refuses and cannot complete
+- Status: **accepted and implemented**, 2026-09-03. Ruled by the product owner;
+  landed on main as `cc3336e`. Untested against production data — see the
+  closing note.
+- Raised-by: the full 671-input catalog-A build, which refused and could not
+  complete until this landed
 - Beside, not inside, `0003-federal-register-record-identity.md`: doc1 ruled that a
   different profile, a different mechanism and a different question deserve their
   own record rather than being folded into one titled for the Federal Register.
@@ -37,9 +40,9 @@ you mean, because three counts circulate:
 
 | count | population |
 | --- | --- |
-| **2,221,713** | every record in the 670 non-Federal-Register releases, documents and dockets alike |
-| **1,943,108** | document records only |
-| **1,797,201** | document records carrying both a `documentId` and a `docketId`, which is what the owner rule can be evaluated over |
+| **2,221,713** | every record in the 670 non-Federal-Register releases — 335 document releases and 335 docket releases, one pair per agency |
+| **1,943,108** | document records only, from the 335 document releases |
+| **1,797,201** | of those, the ones carrying both a `documentId` and a `docketId` — the population the owner rule can be evaluated over |
 
 The two above are the **only** two documentIds appearing in more than one
 release corpus-wide.
@@ -65,7 +68,7 @@ and ordered key, plus the explicit re-raise above.
 ## The owner is decided by measurement, not by judgement
 
 RefSpec supplied a rule; it was re-run here over all 1,797,201 document records
-in the 335 releases. Two tests, **four exceptions corpus-wide**, and both
+over that 1,797,201. Two tests, **four exceptions corpus-wide**, and both
 blocking records are among them — each caught by exactly one test and neither by
 both:
 
@@ -77,6 +80,13 @@ both:
 Both resolve to **DHS**. The docket-prefix tiebreak is itself a measured rule
 rather than a fallback: it has exactly one exception in 1,797,201 records, and
 that exception is the record it is being used to decide.
+
+**An independent cross-check that the populations are right.** 1,756,713
+one-segment sequences plus 40,485 two-segment sequences is 1,797,198 — exactly
+three short of 1,797,201, and three is the stated exception count for the
+`documentId`-starts-with-`docketId` test. Those three numbers were measured
+separately, in different passes, and they reconcile to the record. A wrong
+population would not have closed.
 
 The rule must be stated as **prefix containment**, not "docket plus one trailing
 segment". 1,756,713 sequences are one segment and **40,485 are two** —
@@ -176,15 +186,48 @@ Stated as a constraint rather than a preference, because written as a
 preference a future reader proposes the alternative again — doc1 did, and found
 it unbuildable.
 
-A sibling row carrying the discarded filing *cannot* be written: catalog items
-are keyed by `sourceItemId`, and a second row for the same document is exactly
-the duplicate the loader refuses. The dispositions schema is closed, so a new
+A sibling row carrying the discarded filing *cannot* be written, and the
+refusal that stops it is **not** the loader. `_CatalogPolicyInputs._load`
+refuses a repeated `sourceRecordId` on *input*, and this decision deliberately
+made it permissive — it now asks the policy first. What refuses a second
+**catalog item** is `_CatalogRowPartitioner.stage`, which requires strictly
+increasing `sourceItemId` and so rejects a duplicate as an ordering violation;
+the release-side equivalent is the `duplicate sourceItemId` refusal in
+`document_release_verify`.
+
+Naming the loader here would be worse than a miscitation: a reader sent to it
+would find it resolving duplicates and conclude the constraint had lapsed,
+which is precisely the re-litigation this section exists to prevent. The dispositions schema is closed, so a new
 top-level disposition kind is not available either. `sourceObservations` on the
 surviving row is what remains.
 
 Two things would have to change together before the sibling shape is even
 discussable: the item key would have to admit more than `sourceItemId`, and the
 dispositions schema would have to open. Either alone leaves it unbuildable.
+
+### Retained filings are staged on both paths, for symmetry rather than for a hazard
+
+The universe path and the lookup path both carry `discardedFilings`. The
+universe path is the one that matters today.
+
+The lookup path is currently unreachable, and the record should say so rather
+than imply a live loss. `_index_rows` has one call site and it passes
+`federal_register_input`, so the Federal Register index is the only lookup
+input. A Federal Register native record is flat — `abstract`, `agencies`,
+`document_number` — with **no `data` key at all**, so `_record_data(...,
+expected_type="documents")` refuses it, both candidates fail the ownership
+test, the resolver returns `None`, and the loader's refusal stands. Verified
+against a real catalog-B record rather than reasoned from the schema.
+
+It is staged anyway so the property holds structurally when a second lookup
+input appears, and it is deliberately untested: the only test reads
+`iter_universe_rows`, because asserting an unreachable path would be asserting
+nothing.
+
+**This corrects `cc3336e`'s merge message**, which claims the both-paths
+staging prevents "exactly the silent loss this decision exists to prevent". It
+does not, today; it prevents a loss that would exist if a second lookup input
+were added. A merge message cannot be edited, so the correction lives here.
 
 ### Which unbundles the reason-code labelling
 

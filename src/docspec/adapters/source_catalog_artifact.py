@@ -747,8 +747,8 @@ class _CatalogPolicyInputs:
 
         Reached only when ``put`` has already refused, so a corpus with no
         repeats pays nothing for this: the lookup and the resolution are on the
-        exception path, not per row. Measured over the 671 catalog-A inputs,
-        exactly two of 2,221,713 records reach it.
+        exception path, not per row. Measured over the 670 non-Federal-Register
+        catalog-A releases, exactly two of 2,221,713 records reach it.
 
         A policy that does not implement ``resolve_source_record_collision``
         keeps the refusal it has today, unchanged and with the same message.
@@ -809,7 +809,8 @@ class _CatalogPolicyInputs:
             _mapping(raw, "catalog policy workspace rendition") for raw in raw_renditions
         )
         # Absent is the overwhelming case -- all but two of 2,221,713 records in
-        # the 671 catalog-A inputs -- so the default has to satisfy the same
+        # the 670 non-Federal-Register catalog-A releases -- so the default has
+        # to satisfy the same
         # check a present value does, not merely be falsy.
         discarded = value.get("discardedFilings", [])
         if not isinstance(discarded, list):

@@ -186,10 +186,13 @@ def _indexed_row(
 def _carried_discards(row: Any) -> dict[str, Any]:
     """Stage filings the loader collapsed into this row, and nothing when there are none.
 
-    Written for both staging paths rather than the universe one alone: a
-    collision on a lookup input would otherwise be resolved by the loader and
-    then silently dropped on the way to the join index, which is the loss this
-    whole decision exists to prevent.
+    Written for both staging paths rather than the universe one alone, for
+    structural symmetry rather than against a live hazard. The Federal Register
+    index is the only lookup input today, and a Federal Register native record
+    is flat -- no ``data`` key -- so ``_record_data(expected_type="documents")``
+    refuses it, the resolver returns None and the loader's refusal stands. The
+    lookup path therefore never carries a discarded filing today; staging it
+    keeps the property true when a second lookup input appears.
     """
 
     if not row.discarded_filings:
@@ -694,8 +697,9 @@ class RegulationsGovCatalogPolicy:
         filing recorded rather than dropped.
 
         The owner is decided by measurement, not preference. Two tests over all
-        1,797,201 document records in the 671 catalog-A inputs produce four
-        exceptions between them:
+        1,797,201 document records carrying both a documentId and a docketId --
+        the population the rule can be evaluated over -- produce four exceptions
+        between them:
 
         * ``documentId`` starts with ``docketId + "-"`` -- three exceptions.
         * ``docketId`` starts with ``agencyId`` -- one exception.
