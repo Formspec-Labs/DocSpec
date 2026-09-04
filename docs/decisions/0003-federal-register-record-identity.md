@@ -346,6 +346,70 @@ Until that adjudication happens, the honest statement of cost is: **at least one
 real document is absent from a published release, at most 415 are under a stated
 assumption, and the best available estimate is several hundred.
 
+## The four options with the measured count beside each
+
+Written 2026-09-03 once the scan landed, because the count changes how the
+options read even though it does not change the arithmetic. Throughout: the loss
+is **at least 1 proven, ~359 by heuristic, at most 415 under a stated
+assumption** — see the scan section. Corpus is 1,007,156 published records.
+
+| option | what happens to the ~359 | what it costs |
+| --- | --- | --- |
+| 1. status quo | stay lost, uncounted | nothing, and the corpus lies by omission |
+| 2. refuse cross-date collisions | stay lost, loudly | 474 build aborts; extends the live same-day `tieDisposition` |
+| 4. keep the number, record the discards | stay unfindable, become auditable and possibly readable | a field on a closed row, or nothing if the release can already carry it — unresolved above |
+| 3. composite `(number, date)` | become findable items | re-partitions and re-digests all 1,007,156 |
+
+**The asymmetry that decides it, verified rather than asserted.**
+`_identity_bucket_for_row` partitions on `_partition_id(sourceRecordId)`, a
+sha256 of the identity modulo 64, and `sourceRecordId` is also the row-ordering
+key. Changing the identity from `00-111` to a composite therefore re-buckets
+**every** record, not the 474: all 64 partitions get new contents, new blobRefs
+and new member digests, the release digest moves, and every catalog and consumer
+pinning an existing Federal Register release breaks. The benefit scales with
+~359; the cost scales with 1,007,156. That is a 0.036% benefit against a 100%
+cost, and it is why this record has recommended against the composite at every
+revision.
+
+**The strongest argument for the composite, recorded because it is real.** The
+acquisition evidence is retained — 1,072 members, 1.76 GB, the pre-collapse
+population. So a composite rebuild recovers the ~359 **from what we already
+hold, with no refetch**. This record previously implied recovery needed a
+re-crawl; it does not. Anyone weighing the composite should weigh it at rebuild
+cost, not re-acquisition cost.
+
+**And the argument against the way it is usually proposed.** The recommendation
+on the table is composite identity *bundled with the next sealed move*, on the
+reasoning that the marginal cost is small if a digest is moving anyway. This
+record has already unbundled one rider today for precisely that reason: the
+reason-code labelling was bundled onto a schema cost that turned out not to
+exist, and when the cost vanished the rider would have *introduced* a move rather
+than shared one. A bundle is a promise about a future event. If the sealed move
+does not come, the composite is paid at full price, and the decision will have
+been made at the bundled price. Bundling is a scheduling convenience and should
+never be part of why an option wins.
+
+**One thing the composite does not do by itself.** It changes what future builds
+admit and what a rebuild can represent. It does not, on its own, put the ~359
+into any existing artifact — that still takes a rebuild and a re-pin of every
+consumer. So "composite makes them findable" is accurate only as "composite plus
+a full rebuild makes them findable", and the rebuild is the larger half.
+
+**This record's position, unchanged by the count.** Option 4, with the discarded
+record *carried* rather than merely named, and with the open question above
+settled first: whether the release can carry it without opening a closed schema.
+Ruling for it means ruling that **~359 real Federal Register documents stay
+unfindable and we can name every one of them**. At 0.036% of the corpus that is
+defensible, and it should be said in those words rather than reached by default.
+
+**The dissent, recorded so the owner sees both.** The overseer recommends the
+composite, on the grounds that our identity should match the source's actual
+uniqueness and that several hundred real documents is not a rounding error. That
+argument is strongest if a sealed move is already scheduled and if a consumer
+ever needs to address one of these documents directly. It is weakest against the
+1,007,156-to-359 cost ratio above. Both positions are in front of the owner; the
+count does not settle between them, and neither of us should pretend it does.
+
 ## Where document identity should be decided, and where it should not
 
 An earlier draft of my thinking proposed that DocSpec consult RefSpec's qualified
