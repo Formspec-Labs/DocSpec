@@ -67,6 +67,68 @@ The release-scoped reading of the carried field, specified above, governs the
 transition: a rebuilt release under composite identity collapses nothing, so it
 carries nothing, and no cleanup step is needed.
 
+**The rebuild is two changes, not three: the carried discard is moot.** Settled
+2026-09-04 with spicy9 before the first commit.
+
+Under composite identity two records differing in date are no longer the same
+record, so both survive and there is nothing to discard. The only discards that
+could remain are same-number **same-date** collisions, and there are none:
+
+    evidenceRowsRead             1,007,639
+    scanDistinctNumberDatePairs  1,007,639   -> every evidence row's (number, date) is unique
+    474 on >1 date + 1,006,682 on one date  = 1,007,156 published
+
+Every one of the 483 discards is different-date. Under composite the discard
+count goes to zero, so no source-native record field is needed and no DocSpec
+evidence path is needed. The execution note below stands as the analysis of what
+carrying *would* have cost; it is not needed once identity moves.
+
+**Cited to the distinctness scan, deliberately not to the collision census.**
+`fr-full-collision-census.json` reports `sameNumberSameDateIdenticalDigestCount:
+0` under `numberAndDateUniquelyIdentifyBasis` — *"the collapse groups
+observations by (document_number, publication_date) and refuses to publish a pair
+whose canonical record digests differ, so a release that published is itself the
+proof"*. That basis is circular, and it describes a grouping the code does not do:
+the collapse groups by `/document_number` alone. It is fatal for exactly the case
+being relied on — an identical-digest same-date pair is silently kept-one and
+trips no refusal, so publication is no evidence about it. The figures above come
+instead from a direct enumeration over the 1,072 pre-collapse evidence members,
+which is the population that could actually contain such a pair. **This record's
+own retracted basis was cited in support of it once; it is named here so it is
+not cited a third time.**
+
+**The outcome is stronger than option 4's floor.** The ~359–415 come back as
+**items** — retrievable, searchable, citable — not as carried discards. That is
+the visibility-versus-availability distinction argued above, and the route ruled
+delivers availability, which option 4 alone would not have. The bounds still
+hold: at most 415, roughly 359 as a heuristic centre, at least one proven.
+
+**`correction_of`'s justification moved and the record should say so.** It was
+authorized to make the residual adjudicable. Under composite there is no residual
+— nothing is discarded, so nothing needs adjudicating. Its remaining value is
+prospective: telling a genuine correction from a reused number in future data,
+and in any other profile that hits this. Real, but not the reason it was
+authorized, and a justification that was true when made and is now hollow reads
+as still-true later.
+
+**Acceptance:** `discardedObservationCount` 0; record count rises by **483**, and
+if it is not 483 the fault is upstream of the rebuild rather than in it; release
+embeds `4c324165…`.
+
+**One forward risk, named because it is not visible in the rebuild.** With
+`publication_date` becoming part of the identity while
+`federal_register_observation_version` still returns it, the observation version
+can no longer order anything within an identity — every same-identity pair is a
+tie by construction. That is coherent, and the rebuild is safe: the enumeration
+above shows no same-identity pairs exist in the retained evidence, so no tie can
+fire. But **the behaviour changes for future crawls**. Today a re-observation
+under a later date wins silently; under composite, a re-observation with the same
+number and date and a *differing* digest — a publisher editing a record in place
+— meets `tieDisposition` and **refuses the release** rather than being absorbed.
+Loud instead of silent is the right direction, but it converts a routine
+publisher correction into a build-stopping event, and nobody will have seen it
+happen before it happens.
+
 **A prerequisite the ruling did not know about: adding a field breaks replay of
 the evidence the rebuild depends on.** Found while preparing the change, verified
 by spicy9, and it must land before anything else moves.
