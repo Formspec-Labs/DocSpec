@@ -66,6 +66,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -257,39 +258,64 @@ def _head(url: str, timeout: float) -> dict[str, Any]:
 
 def probe_direct(
     document_id: str,
+    declared_urls: Sequence[str],
     *,
     timeout: float,
     max_index: int,
     hard_cap: int,
     workers: int,
 ) -> dict[str, Any]:
-    """Probe attachment_{n}.{ext} on the unmetered host, expanding on hits.
+    """Probe what the API declared, then a bounded grid for what it did not.
 
-    Indices 1..max_index are always probed; beyond that only while the previous
-    index hit, so a document with twenty attachments is fully enumerated and one
-    with none costs a bounded number of requests.
+    The declared set comes from this row's own ``fileFormats``, read one second
+    earlier, so an unusual extension is fetched rather than guessed at. The grid
+    then runs anyway, and anything it finds beyond the declared set is a counted
+    disagreement instead of a silent discovery.
+
+    The two directions are kept apart on purpose. *Declared but not served* and
+    *served but not declared* are different defects with different consequences,
+    and only their combination licenses sizing the campaign's byte cost from
+    declared metadata instead of downloading 712,350 files.
     """
-    hits: list[dict[str, Any]] = []
-    verdicts: list[str] = []
-    requests_made = 0
-    index = 1
     with ThreadPoolExecutor(max_workers=workers) as pool:
+        declared = list(pool.map(lambda u: _head(u, timeout), declared_urls))
+        requests_made = len(declared)
+        declared_hits = [r for r in declared if r["verdict"] == "hit"]
+
+        grid: list[dict[str, Any]] = []
+        index = 1
         while index <= hard_cap:
             urls = [f"{DOWNLOAD_ROOT}/{document_id}/attachment_{index}.{ext}" for ext in DIRECT_EXTENSIONS]
             results = list(pool.map(lambda u: _head(u, timeout), urls))
             requests_made += len(results)
+            grid.extend(results)
             found = [r for r in results if r["verdict"] == "hit"]
-            verdicts.extend(r["verdict"] for r in results)
-            hits.extend(found)
             if index >= max_index and not found:
                 break
             index += 1
+
+    grid_hits = [r for r in grid if r["verdict"] == "hit"]
+    by_url = {r["url"]: r for r in declared_hits + grid_hits}
+    declared_set = set(declared_urls)
+    served_set = set(by_url)
+    verdicts = [r["verdict"] for r in declared + grid]
     return {
-        "directHits": hits,
-        "directHitCount": len(hits),
-        "directBytes": sum(h.get("bytes", 0) for h in hits),
+        "userAgent": BROWSER_UA,
+        "directHits": sorted(by_url.values(), key=lambda r: r["url"]),
+        "directHitCount": len(by_url),
+        "directBytes": sum(r.get("bytes", 0) for r in by_url.values()),
         "directRequests": requests_made,
-        "directIndicesProbed": index if index <= hard_cap else hard_cap,
+        "directIndicesProbed": min(index, hard_cap),
+        "declaredCount": len(declared_set),
+        "declaredConfirmedCount": len(declared_set & served_set),
+        # Declared but not served: the API promised a file the host will not
+        # give up. Sizing cost from declared metadata over-counts by these.
+        "declaredNotServed": sorted(declared_set - served_set),
+        # Served but not declared: the grid found a file the API never
+        # mentioned. Sizing from declared metadata under-counts by these, and
+        # an unusual extension shows up here rather than as a false absence.
+        "servedNotDeclared": sorted(served_set - declared_set),
+        "directAgreesWithApi": declared_set == served_set,
         # Surfaced so a run degraded by client rejection is visible in the data
         # rather than silently indistinguishable from a run of real absences.
         "directClientRejected": verdicts.count("client-rejected"),
@@ -389,6 +415,31 @@ def run(args: argparse.Namespace) -> int:
     wall_started = time.monotonic()
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     with args.receipt.open("a") as sink:
+        # A run header, not a row. The route's health depends on the exact
+        # User-Agent, so it is recorded with the run rather than left implicit in
+        # whatever the code said that day. Rows are identified by documentId, so
+        # the resume scan skips this line.
+        sink.write(
+            json.dumps(
+                {
+                    "runHeader": True,
+                    "startedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "selectionDigest": actual,
+                    "userAgent": BROWSER_UA,
+                    "keyName": args.key_name,
+                    "delaySeconds": args.delay,
+                    "directEnabled": not args.no_direct,
+                    "directExtensions": list(DIRECT_EXTENSIONS),
+                    "directMaxIndex": args.direct_max_index,
+                    "controlUrl": CONTROL_URL,
+                    "controlEvery": args.control_every,
+                    "pending": len(pending),
+                },
+                sort_keys=True,
+            )
+            + "\n"
+        )
+        sink.flush()
         for index, row in enumerate(pending, start=1):
             document_id = row["documentId"]
             url = f"{API_ROOT}/{document_id}?include=attachments"
@@ -456,9 +507,13 @@ def run(args: argparse.Namespace) -> int:
                         control_failed = False
                         continue
                     control_failed = False
+                declared_urls = [
+                    r["fileUrl"] for r in record.get("renditions", ()) if r.get("fileUrl")
+                ]
                 record.update(
                     probe_direct(
                         document_id,
+                        declared_urls,
                         timeout=args.timeout,
                         max_index=args.direct_max_index,
                         hard_cap=args.direct_hard_cap,
@@ -466,11 +521,6 @@ def run(args: argparse.Namespace) -> int:
                     )
                 )
                 direct_requests += record.get("directRequests", 0)
-                api_urls = {r["fileUrl"] for r in record.get("renditions", ()) if r.get("fileUrl")}
-                direct_urls = {h["url"] for h in record.get("directHits", ())}
-                record["directAgreesWithApi"] = api_urls == direct_urls
-                record["directOnlyUrls"] = sorted(direct_urls - api_urls)
-                record["apiOnlyUrls"] = sorted(api_urls - direct_urls)
                 if record["directHitCount"] == 0:
                     negatives.append((document_id, record))
                 elif args.download:
@@ -499,6 +549,7 @@ def run(args: argparse.Namespace) -> int:
             for document_id, previous in negatives:
                 again = probe_direct(
                     document_id,
+                    [r["fileUrl"] for r in previous.get("renditions", ()) if r.get("fileUrl")],
                     timeout=args.timeout,
                     max_index=args.direct_max_index,
                     hard_cap=args.direct_hard_cap,

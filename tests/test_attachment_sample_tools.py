@@ -22,11 +22,13 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tools.fetch_attachment_sample import (  # noqa: E402
+    BROWSER_UA,
     MAGIC,
     _completed_ids,
     _head,
     _scrub,
     _summarize,
+    probe_direct,
     read_key,
 )
 from tools.select_attachment_sample import _largest_remainder, _rank  # noqa: E402
@@ -223,3 +225,59 @@ def test_magic_bytes_reject_an_error_page_that_arrived_with_a_pdf_name() -> None
     assert any(b"%PDF".startswith(m) or m == b"%PDF" for m in MAGIC["pdf"])
     assert MAGIC["docx"] == MAGIC["xlsx"] == (b"PK\x03\x04",)
     assert b"<html><body>Forbidden"[:4] not in MAGIC["pdf"]
+
+
+def test_an_unusual_extension_is_fetched_not_guessed_at(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The API declares each row's URLs a second earlier, so the grid never has to guess.
+
+    A .wpd file is outside the five-extension grid entirely. Probing the declared
+    URL turns it from a false absence into a confirmed hit; without that the
+    document would have read as having no content at all.
+    """
+    served = {
+        "https://downloads.regulations.gov/X-1/attachment_1.wpd": 4096,
+        "https://downloads.regulations.gov/X-1/attachment_2.pdf": 200,
+    }
+
+    def fake_head(url: str, timeout: float) -> dict[str, object]:  # noqa: ARG001
+        if url in served:
+            return {"url": url, "verdict": "hit", "bytes": served[url], "status": 200}
+        return {"url": url, "verdict": "absent", "status": 403}
+
+    monkeypatch.setattr("tools.fetch_attachment_sample._head", fake_head)
+    out = probe_direct(
+        "X-1",
+        ["https://downloads.regulations.gov/X-1/attachment_1.wpd"],
+        timeout=5,
+        max_index=3,
+        hard_cap=25,
+        workers=2,
+    )
+    assert out["declaredCount"] == 1
+    assert out["declaredConfirmedCount"] == 1
+    assert out["directHitCount"] == 2
+    assert out["declaredNotServed"] == []
+    # The grid found a second file the API never mentioned: a counted
+    # disagreement, which is what makes declared-metadata cost sizing checkable.
+    assert out["servedNotDeclared"] == ["https://downloads.regulations.gov/X-1/attachment_2.pdf"]
+    assert out["directAgreesWithApi"] is False
+    assert out["userAgent"] == BROWSER_UA
+
+
+def test_declared_but_not_served_is_recorded_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Over-counting and under-counting the campaign's bytes are different defects."""
+    monkeypatch.setattr(
+        "tools.fetch_attachment_sample._head",
+        lambda url, timeout: {"url": url, "verdict": "absent", "status": 403},  # noqa: ARG005
+    )
+    out = probe_direct(
+        "X-2",
+        ["https://downloads.regulations.gov/X-2/attachment_1.pdf"],
+        timeout=5,
+        max_index=1,
+        hard_cap=25,
+        workers=2,
+    )
+    assert out["declaredNotServed"] == ["https://downloads.regulations.gov/X-2/attachment_1.pdf"]
+    assert out["servedNotDeclared"] == []
+    assert out["directAgreesWithApi"] is False

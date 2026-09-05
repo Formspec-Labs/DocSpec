@@ -136,6 +136,27 @@ than discarded, and only rejection is indeterminate. Both counts are recorded
 per row, so a degraded run is visible in the data instead of looking like a run
 of true zeros.
 
+**The grid does not guess.** The API arm declares each row's `fileFormats` one
+second before the direct probes run, so the declared URLs are probed first and
+the five-extension grid runs after. An extension outside the grid — a `.wpd`,
+say — is therefore fetched rather than missed, and anything the grid finds
+beyond the declared set is recorded as a disagreement rather than a silent
+discovery. Each row carries both directions apart:
+
+- `declaredNotServed` — the API promised a file the host will not give up.
+  Sizing cost from declared metadata **over**-counts by these.
+- `servedNotDeclared` — the host serves a file the API never mentioned. Sizing
+  from declared metadata **under**-counts by these.
+
+Their combination is what licenses sizing the campaign's byte cost from
+metadata already in hand instead of downloading 712,350 files. On the twelve
+documents tested both are zero and declared equals served on every row.
+
+**The exact User-Agent is written into the receipt** as a run header, alongside
+the selection digest, key name, pacing, grid and control URL. The route's health
+depends on that string, so it is recorded with the run rather than left implicit
+in whatever the code happened to say that day.
+
 **Tested end to end on 12 documents across the cells**: 12 of 12 API 200, 315
 direct probes, 0 client-rejected, 0 unreadable, magic bytes valid on every
 download, declared bytes equal to actual on all three files fetched, and the
