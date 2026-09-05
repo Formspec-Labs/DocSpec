@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import sys
@@ -118,6 +119,12 @@ MAGIC = {
 KEY_NAME = "API_GOV"
 # 1,000 requests/hour is the published per-key budget: 3.6 s/request exactly.
 DEFAULT_DELAY_SECONDS = 3.7
+# urllib wraps h.request() in OSError -> URLError, but NOT h.getresponse(), so a
+# RemoteDisconnected raised while reading the status line escapes as itself. That
+# killed a 2,000-row run on 2026-09-05 after the main pass, mid re-probe. URLError
+# and HTTPError are both OSError subclasses, so this tuple is the whole family
+# plus the http.client exceptions that are not OSErrors.
+NETWORK_ERRORS = (OSError, http.client.HTTPException, TimeoutError)
 RATE_LIMIT_HEADERS = (
     "X-RateLimit-Limit",
     "X-RateLimit-Remaining",
@@ -269,7 +276,7 @@ def _head(url: str, timeout: float) -> dict[str, Any]:
             "contentType": content_type or None,
             "ms": round((time.monotonic() - started) * 1000, 1),
         }
-    except (urllib.error.URLError, TimeoutError) as error:
+    except NETWORK_ERRORS as error:
         return {"url": url, "verdict": "unreadable", "error": type(error).__name__}
 
 
@@ -362,7 +369,7 @@ def _download(url: str, timeout: float, extension: str, sink_dir: Path | None) -
                 size += len(chunk)
                 if sink is not None:
                     sink.write(chunk)
-    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+    except NETWORK_ERRORS as error:
         return {"url": url, "downloadError": type(error).__name__}
     finally:
         if sink is not None:
@@ -432,6 +439,60 @@ def _completed_ids(receipt: Path) -> set[str]:
             # A torn final line from a killed run: re-fetch that one item.
             continue
     return done
+
+
+def reprobe_only(args: argparse.Namespace) -> int:
+    """Finish the negative re-probe for a receipt whose main pass is complete.
+
+    The protocol re-probes every negative once, because a transient failure and a
+    genuine absence look identical in one observation. A run that dies partway
+    through that pass leaves the main data whole and the protocol half-kept, and
+    resuming the main loop will not finish it -- every document is already
+    recorded, so no negatives are collected to retry. This closes that gap
+    without re-fetching anything that succeeded. Direct route only: no metered
+    request, no quota, no lock.
+    """
+    rows = [json.loads(line) for line in args.receipt.read_text().splitlines() if line.strip()]
+    main = [r for r in rows if not r.get("runHeader") and not r.get("reprobe")]
+    already = {r["documentId"] for r in rows if r.get("reprobe")}
+    pending = [r for r in main if not r.get("directHitCount") and r["documentId"] not in already]
+    print(f"negatives {sum(1 for r in main if not r.get('directHitCount')):,}, "
+          f"already re-probed {len(already):,}, pending {len(pending):,}")
+    if args.dry_run or not pending:
+        return 0
+    print(f"pausing {args.control_pause}s before the retry, as the protocol requires")
+    time.sleep(args.control_pause)
+    flipped = 0
+    with args.receipt.open("a") as sink:
+        for index, row in enumerate(pending, start=1):
+            again = probe_direct(
+                row["documentId"],
+                [r["fileUrl"] for r in row.get("renditions", ()) if r.get("fileUrl")],
+                timeout=args.timeout,
+                max_index=args.direct_max_index,
+                hard_cap=args.direct_hard_cap,
+                workers=args.direct_workers,
+            )
+            if again["directHitCount"]:
+                flipped += 1
+            sink.write(
+                json.dumps(
+                    {
+                        "documentId": row["documentId"],
+                        "reprobe": True,
+                        "reprobePass": "resumed",
+                        "firstHitCount": row.get("directHitCount"),
+                        **again,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
+            sink.flush()
+            if index % 100 == 0:
+                print(f"  {index}/{len(pending)}")
+    print(f"re-probe flipped {flipped} of {len(pending)}")
+    return 0
 
 
 def run(args: argparse.Namespace) -> int:
@@ -563,7 +624,7 @@ def run(args: argparse.Namespace) -> int:
                     continue
                 else:
                     record["errorBody"] = _scrub(body.decode("utf-8", "replace")[:400], key)
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+            except (*NETWORK_ERRORS, json.JSONDecodeError) as error:
                 record["status"] = None
                 record["error"] = _scrub(f"{type(error).__name__}: {error}", key)
 
@@ -698,7 +759,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--control-every", type=int, default=25)
     parser.add_argument("--control-pause", type=float, default=60.0)
     parser.add_argument("--dry-run", action="store_true")
-    return run(parser.parse_args(argv))
+    parser.add_argument(
+        "--reprobe-only",
+        action="store_true",
+        help="finish the negative re-probe for an existing receipt; no metered requests",
+    )
+    args = parser.parse_args(argv)
+    return reprobe_only(args) if args.reprobe_only else run(args)
 
 
 if __name__ == "__main__":

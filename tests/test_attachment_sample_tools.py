@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import email.message
 import hashlib
+import http.client
 import json
 import sys
 import urllib.error
@@ -24,7 +25,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.fetch_attachment_sample import (  # noqa: E402
     BROWSER_UA,
     MAGIC,
+    NETWORK_ERRORS,
     _completed_ids,
+    _download,
     api_quota_lock,
     _head,
     _scrub,
@@ -303,3 +306,34 @@ def test_the_quota_lock_is_exclusive_and_released(tmp_path: Path) -> None:
     # the unmetered-only mode says "this costs nothing from the shared budget".
     with api_quota_lock(None, holder="direct-only", purpose="unmetered", wait=False):
         assert not lock.exists()
+
+
+def test_a_disconnect_while_reading_the_status_line_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
+    """urllib does not wrap this one, and it killed a 2,000-row run.
+
+    ``urllib.request.do_open`` wraps ``h.request()`` in OSError -> URLError but
+    leaves ``h.getresponse()`` outside that guard, so a RemoteDisconnected raised
+    while reading the status line escapes as itself. Catching only URLError and
+    TimeoutError let it reach the top and end the run after the main pass had
+    completed but before the negative re-probe finished.
+    """
+
+    def disconnect(request, timeout=None):  # noqa: ARG001
+        raise http.client.RemoteDisconnected("Remote end closed connection without response")
+
+    monkeypatch.setattr(urllib.request, "urlopen", disconnect)
+    out = _head("https://x/a.pdf", 5)
+    assert out["verdict"] == "unreadable"
+    assert out["error"] == "RemoteDisconnected"
+
+    # And the same for a download, where an escape would abandon the receipt.
+    got = _download("https://x/a.pdf", 5, "pdf", None)
+    assert got["downloadError"] == "RemoteDisconnected"
+
+
+def test_network_error_tuple_covers_both_exception_families() -> None:
+    """RemoteDisconnected is both an OSError and an HTTPException; URLError is an OSError."""
+    assert issubclass(http.client.RemoteDisconnected, NETWORK_ERRORS)
+    assert issubclass(urllib.error.URLError, NETWORK_ERRORS)
+    assert issubclass(urllib.error.HTTPError, NETWORK_ERRORS)
+    assert issubclass(http.client.BadStatusLine, NETWORK_ERRORS)
