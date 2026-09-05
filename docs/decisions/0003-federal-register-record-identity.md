@@ -422,6 +422,33 @@ property of the new release and not a rounding error.
 meets `tieDisposition` and refuses the release rather than being absorbed. Nothing
 in this rebuild could trigger it; the first future crawl can.
 
+### The release was rebuilt on 2026-09-05, and the logical id held
+
+The path this section names, `releases/fr-full-1994-2026-composite`, no longer
+exists: it was rebuilt the same day as `fr-full-1994-2026-composite-2`
+(completed 05:30:24Z against the first build's 01:54:56Z). Found while preparing
+an unrelated census, not by a check that was looking for it.
+
+**The physical artifact moved and the identity did not.** A rebuild always moves
+`artifactDigest`, because the receipts inside it carry timings and a completion
+instant — `sha256:d2d8b03b…` became `sha256:6cf8cf44…`. But the logical id is
+**identical**: `urn:spicy:artifact:spicyregs-source-native-release:d3d0a062…`
+on both, and so are `acquisitionPolicyDigest`, `sourceNativeSchemaSetDigest`,
+`releaseSchemaDigest` and `sourceStateDigest`.
+
+That is worth more than a corrected pointer. Two independent builds from the
+same retained evidence, hours apart, minted the same logical release id — so
+the identity this record moved is reproducible rather than incidental to one
+run, which is a stronger claim than the original acceptance made and one nobody
+set out to test.
+
+Re-verified on `composite-2` rather than assumed from the id: 1,007,639 records,
+1,007,156 distinct document numbers, 474 numbers reused, 483 extra rows,
+`sourceRecordId` of the form `00-1000@2000-01-18`, and `00-111` present twice as
+the 2000-01-14 Rule and the 2000-01-18 Notice. Every figure in "The rebuild ran
+on 2026-09-05" reproduces. The acceptance stands; only the path and the physical
+digest above are superseded.
+
 ### Consequence: catalog-A is superseded
 
 `catalog-A-build-2026-09-04.md` states its own supersession condition — *"any
