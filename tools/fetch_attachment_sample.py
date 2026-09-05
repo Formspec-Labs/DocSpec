@@ -94,10 +94,17 @@ MAGIC = {
     "doc": (b"\xd0\xcf\x11\xe0",),
     "tif": (b"II*\x00", b"MM\x00*"),
 }
-# api.data.gov keys are 40 characters. RefSpec/.env also holds a 41-character
-# REGULATIONS_GOV_API_KEY, which the endpoint rejects with API_KEY_INVALID --
-# verified live on 2026-09-05 against ten documents, all 403. API_GOV is the
-# working key; --key-name overrides if that ever changes.
+# api.data.gov keys are 40 characters. API_GOV is the working key; --key-name
+# overrides if that ever changes.
+#
+# RefSpec/.env used to also hold a 41-character REGULATIONS_GOV_API_KEY, which
+# this endpoint rejects with API_KEY_INVALID -- verified live on 2026-09-05
+# against ten documents, all 403. That name was removed from the file later the
+# same day, so the comment's original present tense ("also holds") outlived the
+# fact by about ten minutes. The finding is kept rather than deleted with the
+# key, because it is the reason not to put a 41-character key back: the length
+# is the tell, and a future reader finding one somewhere else should expect 403
+# rather than test it against production.
 KEY_NAME = "API_GOV"
 # 1,000 requests/hour is the published per-key budget: 3.6 s/request exactly.
 DEFAULT_DELAY_SECONDS = 3.7
