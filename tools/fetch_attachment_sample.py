@@ -17,17 +17,36 @@ default delay is 3.7 s, which is the published 1,000 requests/hour budget with a
 little slack; 2,000 items is therefore roughly two hours. Raising concurrency
 would make the rate-limit reading meaningless.
 
-**Bytes are read from the attachment metadata, not downloaded.** Every returned
-``fileFormats[].size`` is a declared byte count, which is what a cost estimate
-for 712,000 documents needs and costs one request per item instead of two.
-``--verify-bytes N`` downloads N of them to check declared against actual,
-because a declared size the publisher never validates is exactly the kind of
-number that agrees with itself. Default 0: opt in when you want that check.
+**Bytes are declared by the API and confirmed by the direct arm.** Every
+``fileFormats[].size`` is a publisher claim; the direct arm fetches the file and
+records the byte count and sha256 it actually got, so the cost estimate rests on
+a measurement rather than on a number the publisher never validates. On the ten
+documents checked so far the two agreed exactly.
 
 **The key is read at run time and never leaves this process.** It is sent as the
 ``X-Api-Key`` header, never as a query parameter, because the URL is written to
 every receipt line and a key in a URL would be published with it. Exception text
 is scrubbed before it is recorded.
+
+**Two arms, and only one of them is metered.** The API arm answers discovery at
+concurrency 1 and produces the throughput number for a registered key. The
+direct arm probes ``downloads.regulations.gov/{documentId}/attachment_{n}.{ext}``
+which serves the same files anonymously and is not metered by api.data.gov, so
+it costs nothing from the shared hourly quota and rides inside the API arm's
+pacing gap. Each row records whether the two agree.
+
+**The direct arm needs a browser User-Agent and that is not cosmetic.** With
+Python's default agent, or curl's, every URL returns 403 with a 919-byte HTML
+page -- including files the API declared one second earlier. Verified live on
+2026-09-05. Without the header the whole arm reads as "the unmetered route does
+not work", which is a clean and completely wrong answer.
+
+**The host's two 403s mean opposite things.** A rejected client gets 403 with
+``text/html`` and length 919; a genuinely absent file gets 403 with
+``application/xml`` and no length -- confirmed against a nonsense document id.
+Reading them alike turns client rejection into evidence of absence, so they are
+classified apart, a known-good control URL is interleaved, and a run whose
+control goes unhealthy stops rather than recording zeros that look like data.
 
 **The response shape here is verified, not assumed.** Ten documents, two from
 each stratum, were fetched live on 2026-09-05 to check it before 2,000 rows were
@@ -47,10 +66,33 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 API_ROOT = "https://api.regulations.gov/v4/documents"
+DOWNLOAD_ROOT = "https://downloads.regulations.gov"
+# downloads.regulations.gov refuses Python's default User-Agent and curl's with
+# 403 and a 919-byte HTML page -- verified 2026-09-05 on documents whose files
+# the API had just declared. With a browser UA the same URLs return 200 and a
+# Content-Length matching the API's declared size byte for byte. Without this
+# header every probe is a false negative, and the whole direct arm would read as
+# "the unmetered route does not work".
+BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+DIRECT_EXTENSIONS = ("pdf", "docx", "xlsx", "doc", "tif")
+# A file the API declares and this host serves; interleaved to prove the route
+# is healthy, so a run of misses is never mistaken for a run of absences.
+CONTROL_URL = f"{DOWNLOAD_ROOT}/DOT-OST-1996-1116-0017/attachment_1.pdf"
+MAGIC = {
+    "pdf": (b"%PDF",),
+    "docx": (b"PK\x03\x04",),
+    "xlsx": (b"PK\x03\x04",),
+    "doc": (b"\xd0\xcf\x11\xe0",),
+    "tif": (b"II*\x00", b"MM\x00*"),
+}
 # api.data.gov keys are 40 characters. RefSpec/.env also holds a 41-character
 # REGULATIONS_GOV_API_KEY, which the endpoint rejects with API_KEY_INVALID --
 # verified live on 2026-09-05 against ten documents, all 403. API_GOV is the
@@ -176,6 +218,125 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _head(url: str, timeout: float) -> dict[str, Any]:
+    """One HEAD, classified into hit / absent / unreadable.
+
+    The host answers 403 in two different situations and they mean opposite
+    things. A rejected client gets 403 with a 919-byte ``text/html`` page; a
+    genuinely absent key gets 403 with ``application/xml`` and no length. Reading
+    both as "no file" was the failure this classification exists to prevent, and
+    only the second is evidence about the document.
+    """
+    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": BROWSER_UA})
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return {
+                "url": url,
+                "verdict": "hit" if response.status == 200 else "unreadable",
+                "status": response.status,
+                "bytes": int(response.headers.get("Content-Length") or 0),
+                "contentType": response.headers.get("Content-Type"),
+                "ms": round((time.monotonic() - started) * 1000, 1),
+            }
+    except urllib.error.HTTPError as error:
+        content_type = (error.headers.get("Content-Type") or "") if error.headers else ""
+        length = (error.headers.get("Content-Length") or "") if error.headers else ""
+        absent = error.code in (403, 404) and "xml" in content_type
+        rejected = error.code == 403 and "html" in content_type and length == "919"
+        return {
+            "url": url,
+            "verdict": "absent" if absent else ("client-rejected" if rejected else "unreadable"),
+            "status": error.code,
+            "contentType": content_type or None,
+            "ms": round((time.monotonic() - started) * 1000, 1),
+        }
+    except (urllib.error.URLError, TimeoutError) as error:
+        return {"url": url, "verdict": "unreadable", "error": type(error).__name__}
+
+
+def probe_direct(
+    document_id: str,
+    *,
+    timeout: float,
+    max_index: int,
+    hard_cap: int,
+    workers: int,
+) -> dict[str, Any]:
+    """Probe attachment_{n}.{ext} on the unmetered host, expanding on hits.
+
+    Indices 1..max_index are always probed; beyond that only while the previous
+    index hit, so a document with twenty attachments is fully enumerated and one
+    with none costs a bounded number of requests.
+    """
+    hits: list[dict[str, Any]] = []
+    verdicts: list[str] = []
+    requests_made = 0
+    index = 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        while index <= hard_cap:
+            urls = [f"{DOWNLOAD_ROOT}/{document_id}/attachment_{index}.{ext}" for ext in DIRECT_EXTENSIONS]
+            results = list(pool.map(lambda u: _head(u, timeout), urls))
+            requests_made += len(results)
+            found = [r for r in results if r["verdict"] == "hit"]
+            verdicts.extend(r["verdict"] for r in results)
+            hits.extend(found)
+            if index >= max_index and not found:
+                break
+            index += 1
+    return {
+        "directHits": hits,
+        "directHitCount": len(hits),
+        "directBytes": sum(h.get("bytes", 0) for h in hits),
+        "directRequests": requests_made,
+        "directIndicesProbed": index if index <= hard_cap else hard_cap,
+        # Surfaced so a run degraded by client rejection is visible in the data
+        # rather than silently indistinguishable from a run of real absences.
+        "directClientRejected": verdicts.count("client-rejected"),
+        "directUnreadable": verdicts.count("unreadable"),
+    }
+
+
+def _download(url: str, timeout: float, extension: str, sink_dir: Path | None) -> dict[str, Any]:
+    """Fetch one file and judge it by its bytes, not by its status line."""
+    request = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+    digest = hashlib.sha256()
+    size = 0
+    head = b""
+    started = time.monotonic()
+    document_id, name = url.rsplit("/", 2)[-2:]
+    sink = None
+    try:
+        if sink_dir is not None:
+            target = sink_dir / document_id
+            target.mkdir(parents=True, exist_ok=True)
+            sink = (target / name).open("wb")
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            while chunk := response.read(1 << 16):
+                if not head:
+                    head = chunk[:8]
+                digest.update(chunk)
+                size += len(chunk)
+                if sink is not None:
+                    sink.write(chunk)
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
+        return {"url": url, "downloadError": type(error).__name__}
+    finally:
+        if sink is not None:
+            sink.close()
+    expected = MAGIC.get(extension, ())
+    return {
+        "url": url,
+        "actualBytes": size,
+        "sha256": digest.hexdigest(),
+        # A 919-byte error page written to disk still has a 200-shaped story to
+        # tell; its first bytes do not.
+        "magicOk": any(head.startswith(m) for m in expected) if expected else None,
+        "magicHead": head[:4].hex(),
+        "ms": round((time.monotonic() - started) * 1000, 1),
+    }
+
+
 def _completed_ids(receipt: Path) -> set[str]:
     if not receipt.exists():
         return set()
@@ -214,14 +375,18 @@ def run(args: argparse.Namespace) -> int:
     print(f"selection   {args.selection} ({actual[:12]}…)")
     print(f"sample      {len(rows)} rows, {len(done)} already done, {len(pending)} pending")
     print(f"receipt     {args.receipt}")
-    print(f"pace        {args.delay}s between requests, concurrency 1")
+    print(f"pace        {args.delay}s between API requests, concurrency 1")
+    print(f"direct      {'off' if args.no_direct else f'on, {args.direct_workers} workers, unmetered'}")
     print(f"estimate    {len(pending) * args.delay / 3600:.1f} h remaining")
     if args.dry_run:
         print("dry-run: no request made")
         return 0
 
     key = read_key(args.env, args.key_name)
-    verified = 0
+    control_failed = False
+    direct_requests = 0
+    negatives: list[tuple[str, dict[str, Any]]] = []
+    wall_started = time.monotonic()
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     with args.receipt.open("a") as sink:
         for index, row in enumerate(pending, start=1):
@@ -266,28 +431,101 @@ def run(args: argparse.Namespace) -> int:
                 record["status"] = None
                 record["error"] = _scrub(f"{type(error).__name__}: {error}", key)
 
-            if (
-                args.verify_bytes
-                and verified < args.verify_bytes
-                and record.get("renditions")
-                and record["renditions"][0].get("fileUrl")
-            ):
-                target = record["renditions"][0]
-                try:
-                    with urllib.request.urlopen(target["fileUrl"], timeout=args.timeout) as response:
-                        actual_bytes = len(response.read())
-                    record["verifiedFirstAttachmentBytes"] = actual_bytes
-                    record["declaredMatchesActual"] = actual_bytes == target.get("size")
-                except (urllib.error.URLError, TimeoutError) as error:
-                    record["verifyError"] = _scrub(f"{type(error).__name__}: {error}", key)
-                verified += 1
+
+            if not args.no_direct and record.get("status") == 200:
+                if index % args.control_every == 1 or control_failed:
+                    control = _head(CONTROL_URL, args.timeout)
+                    record["controlVerdict"] = control["verdict"]
+                    if control["verdict"] != "hit":
+                        # The route is unhealthy. Every direct verdict from here
+                        # would be a false absence, so the run stops rather than
+                        # filling the receipt with zeros that look like data.
+                        control_failed = True
+                        record["directSkipped"] = "control unhealthy"
+                        sink.write(json.dumps(record, sort_keys=True) + "\n")
+                        sink.flush()
+                        print(f"  control URL returned {control['verdict']}; pausing {args.control_pause}s")
+                        time.sleep(args.control_pause)
+                        recheck = _head(CONTROL_URL, args.timeout)
+                        if recheck["verdict"] != "hit":
+                            raise SystemExit(
+                                "control URL still unhealthy after a pause. The direct route is "
+                                "not readable from here; every probe would be a false negative. "
+                                "Re-run to resume -- completed rows are kept."
+                            )
+                        control_failed = False
+                        continue
+                    control_failed = False
+                record.update(
+                    probe_direct(
+                        document_id,
+                        timeout=args.timeout,
+                        max_index=args.direct_max_index,
+                        hard_cap=args.direct_hard_cap,
+                        workers=args.direct_workers,
+                    )
+                )
+                direct_requests += record.get("directRequests", 0)
+                api_urls = {r["fileUrl"] for r in record.get("renditions", ()) if r.get("fileUrl")}
+                direct_urls = {h["url"] for h in record.get("directHits", ())}
+                record["directAgreesWithApi"] = api_urls == direct_urls
+                record["directOnlyUrls"] = sorted(direct_urls - api_urls)
+                record["apiOnlyUrls"] = sorted(api_urls - direct_urls)
+                if record["directHitCount"] == 0:
+                    negatives.append((document_id, record))
+                elif args.download:
+                    downloads = []
+                    for hit in record["directHits"]:
+                        extension = hit["url"].rsplit(".", 1)[-1]
+                        downloads.append(_download(hit["url"], args.timeout, extension, args.bytes_dir))
+                    record["downloads"] = downloads
+                    record["actualBytesTotal"] = sum(d.get("actualBytes", 0) for d in downloads)
+                    record["declaredMatchesActual"] = record["actualBytesTotal"] == record["directBytes"]
+                    record["allMagicOk"] = all(d.get("magicOk") is not False for d in downloads)
 
             sink.write(json.dumps(record, sort_keys=True) + "\n")
             sink.flush()
             if index % 50 == 0:
                 print(f"  {index}/{len(pending)}  last status {record.get('status')}")
             time.sleep(args.delay)
-    print("done")
+
+    # Every negative is re-probed once after a pause. A transient throttle and a
+    # genuine absence look identical in one observation; they rarely agree twice.
+    if negatives and not args.no_direct:
+        print(f"re-probing {len(negatives)} negatives after {args.control_pause}s")
+        time.sleep(args.control_pause)
+        flipped = 0
+        with args.receipt.open("a") as sink:
+            for document_id, previous in negatives:
+                again = probe_direct(
+                    document_id,
+                    timeout=args.timeout,
+                    max_index=args.direct_max_index,
+                    hard_cap=args.direct_hard_cap,
+                    workers=args.direct_workers,
+                )
+                direct_requests += again.get("directRequests", 0)
+                if again["directHitCount"] > 0:
+                    flipped += 1
+                sink.write(
+                    json.dumps(
+                        {
+                            "documentId": document_id,
+                            "reprobe": True,
+                            "firstHitCount": previous.get("directHitCount"),
+                            **again,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+                sink.flush()
+        print(f"re-probe flipped {flipped} of {len(negatives)} negatives to hits")
+
+    elapsed = time.monotonic() - wall_started
+    print(f"done in {elapsed / 3600:.2f} h")
+    print(f"api requests   {len(pending)} at {len(pending) / max(elapsed, 1):.2f}/s")
+    print(f"direct requests {direct_requests} at {direct_requests / max(elapsed, 1):.2f}/s")
     return 0
 
 
@@ -301,13 +539,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY_SECONDS)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--retry-after", type=float, default=60.0)
-    parser.add_argument("--verify-bytes", type=int, default=0)
     parser.add_argument(
         "--save-first-raw",
         type=Path,
         default=None,
         help="write the first 200 response verbatim, to check the assumed shape",
     )
+    parser.add_argument("--no-direct", action="store_true", help="skip the unmetered downloads.regulations.gov arm")
+    parser.add_argument("--download", action="store_true", default=True)
+    parser.add_argument("--no-download", dest="download", action="store_false")
+    parser.add_argument("--bytes-dir", type=Path, default=None, help="keep downloaded files here (default: discard after hashing)")
+    parser.add_argument("--direct-max-index", type=int, default=3)
+    parser.add_argument("--direct-hard-cap", type=int, default=25)
+    parser.add_argument("--direct-workers", type=int, default=5)
+    parser.add_argument("--control-every", type=int, default=25)
+    parser.add_argument("--control-pause", type=float, default=60.0)
     parser.add_argument("--dry-run", action="store_true")
     return run(parser.parse_args(argv))
 

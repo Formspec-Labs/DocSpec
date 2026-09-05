@@ -9,16 +9,26 @@ These tests pin the two guards that make them visible.
 
 from __future__ import annotations
 
+import email.message
 import hashlib
 import json
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.fetch_attachment_sample import _completed_ids, _scrub, _summarize, read_key  # noqa: E402
+from tools.fetch_attachment_sample import (  # noqa: E402
+    MAGIC,
+    _completed_ids,
+    _head,
+    _scrub,
+    _summarize,
+    read_key,
+)
 from tools.select_attachment_sample import _largest_remainder, _rank  # noqa: E402
 
 
@@ -178,3 +188,38 @@ def test_the_sealed_selection_matches_its_sidecar() -> None:
     # Disproportionate allocation is the design, so the weights must not be
     # uniform; reading a raw sample fraction off this set would be wrong.
     assert len({row["designWeight"] for row in payload["rows"]}) == len(payload["strata"])
+
+
+def test_the_hosts_two_403s_are_classified_apart(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A rejected client and an absent file both answer 403. They are not the same fact.
+
+    Verified live on 2026-09-05: with Python's default User-Agent every URL --
+    including files the API had just declared -- returns 403 with a 919-byte
+    text/html page, while a genuinely absent key (a nonsense document id) returns
+    403 with application/xml and no length. Collapsing the two would turn client
+    rejection into evidence that the corpus has no files.
+    """
+
+    def reply(content_type: str, length: str | None):
+        message = email.message.Message()
+        message["Content-Type"] = content_type
+        if length is not None:
+            message["Content-Length"] = length
+
+        def _open(request, timeout=None):  # noqa: ARG001
+            raise urllib.error.HTTPError(request.full_url, 403, "Forbidden", message, None)
+
+        return _open
+
+    monkeypatch.setattr(urllib.request, "urlopen", reply("text/html", "919"))
+    assert _head("https://x/a.pdf", 5)["verdict"] == "client-rejected"
+
+    monkeypatch.setattr(urllib.request, "urlopen", reply("application/xml", None))
+    assert _head("https://x/a.pdf", 5)["verdict"] == "absent"
+
+
+def test_magic_bytes_reject_an_error_page_that_arrived_with_a_pdf_name() -> None:
+    """A 919-byte HTML error page saved as .pdf must not count as a recovered file."""
+    assert any(b"%PDF".startswith(m) or m == b"%PDF" for m in MAGIC["pdf"])
+    assert MAGIC["docx"] == MAGIC["xlsx"] == (b"PK\x03\x04",)
+    assert b"<html><body>Forbidden"[:4] not in MAGIC["pdf"]
