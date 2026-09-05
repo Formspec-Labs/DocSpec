@@ -1,9 +1,11 @@
 # Decision 0003: the Federal Register identity becomes composite, and the collapse is recorded until it does
 
 - Date: 2026-09-02
-- Status: **accepted 2026-09-04**, ruled by the product owner. See "The ruling"
-  immediately below. Everything after it is the record that produced it, kept
-  including the parts it corrected and the dissent it ruled against.
+- Status: **accepted 2026-09-04**, ruled by the product owner, and **executed
+  2026-09-05** — the rebuild ran and met all three acceptance criteria; see "The
+  rebuild ran on 2026-09-05". Everything after that is the record that produced
+  the ruling, kept including the parts it corrected and the dissent it ruled
+  against.
 - Evidence: the loss is demonstrated in a built release, not inferred from a
   comment, and the owed measurement was taken on 2026-09-03.
 
@@ -150,7 +152,8 @@ what changed is that the thing it was deciding for no longer exists.
 
 **Acceptance:** `discardedObservationCount` 0; record count rises by **483**, and
 if it is not 483 the fault is upstream of the rebuild rather than in it; release
-embeds `4c324165…`.
+embeds `4c324165…`. **All three met on 2026-09-05** — see "The rebuild ran on
+2026-09-05" for the measurements and for what they cannot see.
 
 **One forward risk, named because it is not visible in the rebuild.** With
 `publication_date` becoming part of the identity while
@@ -313,6 +316,97 @@ the rebuild never happens this is the position the record falls back to.
   exists, and the numbers are in "What the census measured" below.
 - Split from: `docs/decisions/0002-shared-execution-and-the-acquisition-gap-ledger.md`,
   where this was rule 8 of 11 and did not belong
+
+## The rebuild ran on 2026-09-05, and it met all three acceptance criteria
+
+Receipt: `~/Work/corpora/supply-2026-09-02/receipts/fr-replay-2026-09-04.log`.
+Run 01:12:35Z to 02:09:09Z, `replayExit=0`, producer
+`18bc4039bc783a96ff50ef67f0e2da2c2b3b321d` identical at start and finish with
+`dirtySrc=[]` — one code state, checked rather than assumed, on the editable
+install that `catalog-A-build-2026-09-04.md` names as an open hole.
+
+| | source release | composite release |
+| --- | --- | --- |
+| path | `releases/fr-full-1994-2026` | `releases/fr-full-1994-2026-composite` |
+| digest | `sha256:6695546e…` | `sha256:d2d8b03b…` |
+| logical id | `…5f35c56b…` | `…d3d0a062…` |
+| published records | 1,007,156 | 1,007,639 |
+
+### The three criteria
+
+| criterion | required | measured |
+| --- | --- | --- |
+| `discardedObservationCount` | 0 | **0** |
+| record count rise | exactly 483 | **483** (1,007,639 − 1,007,156) |
+| release embeds `4c324165…` | yes | **`spec/releaseSchemaDigest = sha256:4c32416532f3…`** |
+
+`inputObservationCount` and `publishedRecordCount` are both 1,007,639: under
+composite identity the release publishes its entire pre-collapse input, which is
+what "the collapse is recorded until it does" was pointing at.
+
+### Re-derived from the record blobs, not from the receipt
+
+The receipt is written by the thing under test, so its counts were re-derived by
+reading the 64 `records` payload blobs directly out of the blob store and
+counting:
+
+    record lines                  1,007,639
+    distinct sourceRecordId       1,007,639
+    distinct (number, date)       1,007,639
+    distinct document_number      1,007,156   <- the old release's count, derived
+    numbers used on >1 date             474
+    extra rows from that reuse          483
+
+The last three lines are the load-bearing ones. **1,007,156 and 474 were
+predicted in this record from the pre-collapse evidence before the rebuild
+existed** — see the `474 on >1 date + 1,006,682 on one date` arithmetic above —
+and the rebuild landed on both. That is a prediction meeting a measurement from
+the opposite direction, not a receipt agreeing with itself.
+
+`sourceRecordId` now reads `00-1000@2000-01-18`. **The specimen is back**:
+`00-111` is present twice, as the 2000-01-14 Rule *Compliance Monitoring and
+Miscellaneous Issues Relating to the Low-Income Housing Tax Credit* and the
+2000-01-18 Notice *Notice of Filing of Plat of an Island; Minnesota*. The
+document this record was opened over is in the release.
+
+Replay integrity, from the same receipt: 1,072 distinct request keys served
+against 1,072 in the source ledger, 2,144 fetch calls against 2,144 source page
+rows, `distinctRequestKeysMatchSource: true`. No refetch, as ruled.
+`semanticVerdict: pass`; deterministic, transient and unclassed failure counts
+all 0. Cost: 3,394 s wall, 238 MB peak RSS.
+
+### What this check cannot see
+
+**Content fidelity of the 483 is spot-checked, not proven.** The counts prove 483
+rows exist that did not before, and `00-111` matches this record's specimen on all
+four distinguishing fields. One specimen is not a proof for 483, and no count can
+be, because a count cannot tell a faithfully restored record from a well-formed
+wrong one.
+
+**The residual is now adjudicable, and is still not adjudicated.** Composite
+identity makes every discarded observation a readable record; it does not say
+which of them are distinct documents. The 359–415 range and its basis conditions
+stand exactly as written, and closing them is still body-level work.
+
+**68 true re-observations are now 68 separate records.** The ceiling assumption
+cuts both ways: if the 68 identical-on-four rows really are one document observed
+twice, the release now publishes each twice under different composite ids. That
+is the accepted cost of the ruling — a duplicate that can be found and collapsed
+downstream beats a document that cannot be found at all — but it is a real
+property of the new release and not a rounding error.
+
+**The forward risk named below is now live, not hypothetical.** With
+`publication_date` inside the identity, a publisher editing a record in place now
+meets `tieDisposition` and refuses the release rather than being absorbed. Nothing
+in this rebuild could trigger it; the first future crawl can.
+
+### Consequence: catalog-A is superseded
+
+`catalog-A-build-2026-09-04.md` states its own supersession condition — *"any
+remedy that recovers them moves the FR release digest and supersedes this
+catalog"*. The digest moved. That receipt's not-publishable mark and its Phase C
+pins are now spent, and a catalog that serves this corpus rebuilds against
+`sha256:d2d8b03b…`.
 
 ## Why this is its own record
 
