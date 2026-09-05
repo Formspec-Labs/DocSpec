@@ -107,6 +107,40 @@ Ten documents were fetched live on 2026-09-05 to check the response shape before
 Neither of the last two appears in the API documentation and neither raises an
 error; both would have produced a clean, confident, wrong number.
 
+## The unmetered route, and the header it needs
+
+`downloads.regulations.gov/{documentId}/attachment_{n}.{ext}` serves the same
+files anonymously and is not metered by api.data.gov, so the sample now runs
+both arms on the same 2,000 rows and records whether they agree. Found by a
+research pass recorded in spicysearch `PLAN.md` decision 6; verified here before
+being built on.
+
+**The 403s from that host are not primarily a throttle.** With Python's default
+User-Agent, and with curl's, *every* URL returns 403 with a 919-byte `text/html`
+page — including files the API declared one second earlier. With a browser
+User-Agent the same URLs return 200, with `Content-Length` matching the API's
+declared size byte for byte on all three positives tested (156,456, 449,805,
+164,047). Without that header the whole arm reads as "the unmetered route does
+not work".
+
+**Two 403s, opposite meanings, and separable:**
+
+| response | meaning |
+| --- | --- |
+| `403` + `Content-Length: 919` + `text/html` | client rejected — indeterminate |
+| `403` + no length + `application/xml` | the file genuinely is not there |
+
+Confirmed against a nonsense document id, which returns the XML form. This is
+sharper than treating every 403 as unreadable: real absences are counted rather
+than discarded, and only rejection is indeterminate. Both counts are recorded
+per row, so a degraded run is visible in the data instead of looking like a run
+of true zeros.
+
+**Tested end to end on 12 documents across the cells**: 12 of 12 API 200, 315
+direct probes, 0 client-rejected, 0 unreadable, magic bytes valid on every
+download, declared bytes equal to actual on all three files fetched, and the
+re-probe flipped 0 of 9 negatives.
+
 ## Operational
 
 `api.data.gov` meters **govinfo and regulations.gov against one hourly quota**,
