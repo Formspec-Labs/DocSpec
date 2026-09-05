@@ -1,0 +1,372 @@
+{
+ "anomalyCounts": {
+  "carriage-return": 1,
+  "embedded-newline": 13,
+  "leading-or-trailing-whitespace": 6,
+  "none": 16
+ },
+ "anomalyVocabulary": {
+  "all-caps": "the value is entirely upper case",
+  "carriage-return": "a CR is present, so line endings are not normalised",
+  "contained-in-title": "the value appears inside the document title",
+  "embedded-newline": "a newline is present inside the trimmed value",
+  "html-entities": "an HTML entity such as &amp; or &#39; is present",
+  "html-tags": "an HTML tag is present in the stored value",
+  "identical-to-title": "the value equals the document title exactly",
+  "leading-or-trailing-whitespace": "the stored value is not trimmed",
+  "placeholder": "the whole value is a placeholder such as N/A",
+  "replacement-character": "U+FFFD is present, so an encoding was already lost",
+  "very-short": "under 20 characters after trimming"
+ },
+ "catalog": "~/Work/corpora/supply-2026-09-02/catalogs/catalog-A/catalog-composite-2/1ac55e0c874c6692c5c61791353cf4b5fbbc755d56de05a0bbb960a278617604",
+ "draw": "sha256(salt || NUL || documentId), lowest-first within stratum",
+ "frame": {
+  "coverage": 0.2633,
+  "documentRows": 1943106,
+  "populated": 511572,
+  "stratumPopulations": {
+   "populated-2016-or-later": 134778,
+   "populated-notice-or-other": 209008,
+   "populated-rule-or-proposed": 29091
+  }
+ },
+ "purpose": "30 real docAbstract values for the v13 display-rule check under text policy 2.2. Values are stored exactly as found; anomalies are flagged beside the text and never repaired out of it.",
+ "receipt": "regulations-gov-docabstract-display-sample",
+ "rows": [
+  {
+   "anomalies": [],
+   "docAbstract": "Application of Gulf Air Company, G.S.C. applies to amend its exemption to add Geneva, Switzerland as an intermediate point on its route between the U.S. coterminals New York and Houston, and Abu Dhabi, Bahrain, Oman, and Qatar.",
+   "documentId": "DOT-OST-1995-309-0012",
+   "documentType": "Other",
+   "length": 227,
+   "rank": "0000488fe5b447a035cdcb30b7ddd33fac5fdf2046b5cef82a1a8d2e14d4b246",
+   "stratum": "populated-notice-or-other",
+   "year": "1996"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "By this Order, the United States Department of Transportation (the Department) is requesting proposals from airlines interested in providing Essential Air Service (EAS) at Cody, Wyoming, for a new contract period beginning March 1, 2016, with or without subsidy. (See Appendix A for a map). Airlines should file their proposals no later than November 5, 2015.",
+   "documentId": "DOT-OST-2011-0121-0030",
+   "documentType": "Other",
+   "length": 359,
+   "rank": "0000c4df7f67e62fe347cf42da235143c671f1cceeb89d2067ea1b0cf032aa36",
+   "stratum": "populated-notice-or-other",
+   "year": "2015"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Letters of Various Parties (50) in support of American\nAirlines's  application.",
+   "documentId": "DOT-OST-1999-6323-1191",
+   "documentType": "Other",
+   "length": 79,
+   "rank": "0000d65d68e403eac71e4b61b0e934df889c39a9f13e03b42909bc775162c4e1",
+   "stratum": "populated-notice-or-other",
+   "year": "2000"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Letter of the City of Charleston in support of the application.",
+   "documentId": "DOT-OST-1999-5583-0098",
+   "documentType": "Other",
+   "length": 63,
+   "rank": "0000f85cd57dccb1a09287b9aa75ea0c0c92171d87dfa76fe5243c02de09053b",
+   "stratum": "populated-notice-or-other",
+   "year": "1999"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace"
+   ],
+   "docAbstract": "Correspondence of Nikken Independent Wellness Consultants in support of the Sierra Vista Municipal Airport proposal to the Small Community Air Service Development Pilot Program. ",
+   "documentId": "DOT-OST-2003-15065-0311",
+   "documentType": "Other",
+   "length": 178,
+   "rank": "0000f8658ee5984a85b9b481e0033b96912cf7d895039901604f6e01a43ec9a8",
+   "stratum": "populated-notice-or-other",
+   "year": "2003"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Correspondence of Charles W. Roetter in support of Rapid City Air Service Task Force proposal to the Small Community Air Service Development Pilot Program.",
+   "documentId": "DOT-OST-2003-15065-0316",
+   "documentType": "Other",
+   "length": 155,
+   "rank": "000123fff0b1e095c40c0eed146bad6a3ce3f5c8cbe712127f2bff352d2b48eb",
+   "stratum": "populated-notice-or-other",
+   "year": "2003"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Decision on the petition that the exemption is not needed and is also closing the docket.",
+   "documentId": "FAA-2006-23740-0002",
+   "documentType": "Other",
+   "length": 89,
+   "rank": "0001b39033ae45357ad27b917482634d5d93e02c7134ec7c67241ddad914a7ca",
+   "stratum": "populated-notice-or-other",
+   "year": "2006"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Federal Register for Thursday, April 15, 2021 (86 FR 19884) [FRL-10021-18-ORD]",
+   "documentId": "EPA-HQ-ORD-2015-0765-0028",
+   "documentType": "Notice",
+   "length": 78,
+   "rank": "0001cc6f2673f460553fc8cdf87c1f2836d848f3cd2e798ffa01fde545efd385",
+   "stratum": "populated-notice-or-other",
+   "year": "2021"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Notice granting approval of application (subject to conditions). Effective April 2, 2015, through April 2, 2017. Petitions due April 13, 2015.",
+   "documentId": "DOT-OST-2010-0268-0006",
+   "documentType": "Other",
+   "length": 142,
+   "rank": "000202513a076fbfb787498b3be87433fd93f5cd2adebf74ae7a3f18dfe0fe9b",
+   "stratum": "populated-notice-or-other",
+   "year": "2015"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Letter from Sister Cities Association of Greater Cincinnati in support of Delta Air Lines' application.",
+   "documentId": "DOT-OST-1999-6323-1522",
+   "documentType": "Other",
+   "length": 103,
+   "rank": "00024a006acfe79cb38f90288e9e875c74299c2f10dd72d00e999eadc05fa51d",
+   "stratum": "populated-notice-or-other",
+   "year": "2000"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Federal Register of October 7, 2015 [80 FR 60584] [FRL-9934-71]",
+   "documentId": "EPA-HQ-OPPT-2015-0626-0001",
+   "documentType": "Proposed Rule",
+   "length": 63,
+   "rank": "00009f7b34a43bf5cfde027ad001a3a8e79e28177fa76a63cc0c14b8bfbe1ac4",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2015"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace",
+    "embedded-newline"
+   ],
+   "docAbstract": "Federal Register for Tuesday, December 10, 2024 \n(89 FR 99253) (FRL\u201312415\u201301\u2013 OCSPP)\nEPA\u2013HQ\u2013OPP\u20132024\u20130431\nChlorpyrifos; Tolerance Revocation \n",
+   "documentId": "EPA-HQ-OPP-2024-0431-0001",
+   "documentType": "Proposed Rule",
+   "length": 142,
+   "rank": "0000c18f9813fbd2f8c3310b822d99f58f51d70c9d672d232c36e4f8c7581598",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2024"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Federal Register for Friday, September 6, 1991 (56 FR 45866) [AMS-FRL-3992-6]\nFederal Register for Friday, September 6, 1991 (56 FR 45873) [FRL-3990-9]",
+   "documentId": "EPA-HQ-OAR-2004-0292-0052",
+   "documentType": "Proposed Rule",
+   "length": 151,
+   "rank": "00033910c0e6cb9690ba1a6b4a2e7c61751a115146e351d68c32f9feb276cf4a",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2021"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "The FAA proposes to adopt a new airworthiness directive (AD) for certain BAE Systems (Operations) Limited Model BAe 146 and Model Avro 146-RJ airplanes. This proposed AD would require a one-time detailed inspection for corrosion of the hinge bracket assembly of the left and right main landing gear (MLG) doors, and corrective action if necessary. This proposed AD results from in-service reports of hinge bracket failures on the MLG doors. We are proposing this AD to prevent failure of the hinge bracket on the MLG door, which could result in separation of the door, consequent structural damage to the airplane, and possible injury to people on the ground.\n\n\n\nDATES: We must receive comments on this proposed AD by February 3, \n\n2006.",
+   "documentId": "FAA-2005-23477-0001",
+   "documentType": "Rule",
+   "length": 737,
+   "rank": "0003ede8edd110383a522f4349eb2e228e2ec89e87b879d371918e2b7e9dde8e",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2006"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace",
+    "embedded-newline"
+   ],
+   "docAbstract": "RSPA is proposing changes to the hazard communication requirements of the Hazardous Materials Regulations (HMR), including revisions of the specifications for labels and placards, based on petitions for rulemaking, requests for clarification, and our own belief that clarifications and improvements in the HMR may be appropriate. The effect of the proposed regulatory changes would be to improve safety of emergency responders and the public, and of offerors and transporters of hazardous materials.\n\n\n\nDATES: Comments must be submitted on or before August 11, 2003. To the extent possible, we will accept late-filed comments as we develop a \n\nfinal rule.\n\n",
+   "documentId": "PHMSA-RSPA-2003-15327-0001",
+   "documentType": "Rule",
+   "length": 657,
+   "rank": "000558bdb306f4f8779faa722592f6afa5b50cc5f6141627fb3b0c32b60b1025",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2003"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Correction\n\nIn rule document 00-29622 beginning on page 69846 in the issue of Monday, November 20, 2000, make the following correction:  On page 69847, in the third column, in amendatory instruction 2., in the seventh line, ``because' should read ``become'.",
+   "documentId": "FAA-1999-5926-0560",
+   "documentType": "Rule",
+   "length": 257,
+   "rank": "0005eb14e25a712c5b4cd4ffa6bddba5a840dccd6986941a21cd189e8c5e8a62",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2000"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Federal Register of January 16, 2008 (73 FR 2854) (FRL-8131-8)",
+   "documentId": "EPA-HQ-OPPT-2007-0392-0001",
+   "documentType": "Proposed Rule",
+   "length": 62,
+   "rank": "000849a0db0ea15db1ef03762717fdb2088afff7f1d5c74a6a48afe91dec8426",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2008"
+  },
+  {
+   "anomalies": [
+    "carriage-return",
+    "embedded-newline"
+   ],
+   "docAbstract": "FinCEN is issuing this final\r\nrule to amend the Bank Secrecy Act\r\n(BSA) regulations regarding reports of\r\nforeign financial accounts. The rule\r\naddresses the scope of the persons that\r\nare required to file reports of foreign\r\nfinancial accounts. The rule further\r\nspecifies the types of accounts that are\r\nreportable, and provides filing relief in\r\nthe form of exemptions for certain\r\npersons with signature or other\r\nauthority over foreign financial\r\naccounts. Finally, the rule adopts\r\nprovisions intended to prevent persons\r\nsubject to the rule from avoiding their\r\nreporting requirement.",
+   "documentId": "FINCEN-2009-0008-0044",
+   "documentType": "Rule",
+   "length": 591,
+   "rank": "000a65261ebe8d8fc66b9a48c6c7fee3095ecd64d39c0059fe9628c4770f4868",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2011"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace",
+    "embedded-newline"
+   ],
+   "docAbstract": "Before a Federal agency can collect certain information from the public, it must receive approval from the Office of Management and Budget (OMB). Under procedures established by the Paperwork Reduction Act of 1995, before seeking OMB approval, Federal agencies must solicit public comment on proposed collections of information, including extensions and reinstatements of previously approved collections.    This document describes the collection of information for which NHTSA intends to seek OMB approval.\n\n\n\nDATES: Comments must be received on or before February 3, 2006.\n\n",
+   "documentId": "NHTSA-2005-22932-0001",
+   "documentType": "Rule",
+   "length": 576,
+   "rank": "000e6439d86097a8b48bdd729d3b65391f380a047f70af7e8646f9c4a9656afe",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2005"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Federal Register for  Monday, December 5, 2016 (81 FR  87463)\n (FRL\u20139954\u201369) EPA\u2013HQ\u2013OPP\u20132016\u20130049;\nOxathiapiprolin; Pesticide Tolerances",
+   "documentId": "EPA-HQ-OPP-2016-0049-0016",
+   "documentType": "Rule",
+   "length": 136,
+   "rank": "00112526007357adc61ddf1f9940766b84e74b0dd80d06a53ff931be6d2f1579",
+   "stratum": "populated-rule-or-proposed",
+   "year": "2016"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Memorandum, to Docket EPA-HQ-OAR-2016-0447 and EPA-HQ-OAR-2016-0449 from Brian Storey, Office of Air, et al., regarding  DRAFT Technology Review for Boat Manufacturing and Reinforced Plastic\nComposites Manufacturing Source Category",
+   "documentId": "EPA-HQ-OAR-2016-0449-0048",
+   "documentType": "Supporting & Related Material",
+   "length": 231,
+   "rank": "0000959ec2eeec2ce60c6187469d167cf5d3821d6a306fc6e5e716d988621b7e",
+   "stratum": "populated-2016-or-later",
+   "year": "2019"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Exceptional Event Demonstration for Ozone Exceedances in Clark County, Nevada: June 23, 2018",
+   "documentId": "EPA-HQ-OAR-2021-0742-0101",
+   "documentType": "Supporting & Related Material",
+   "length": 92,
+   "rank": "0000acfa0e6ca769e6236218cdc69e9604f7e438d43bb1207ec0f34d5c32a224",
+   "stratum": "populated-2016-or-later",
+   "year": "2022"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace",
+    "embedded-newline"
+   ],
+   "docAbstract": "Federal Register for Tuesday, December 10, 2024 \n(89 FR 99253) (FRL\u201312415\u201301\u2013 OCSPP)\nEPA\u2013HQ\u2013OPP\u20132024\u20130431\nChlorpyrifos; Tolerance Revocation \n",
+   "documentId": "EPA-HQ-OPP-2024-0431-0001",
+   "documentType": "Proposed Rule",
+   "length": 142,
+   "rank": "0000c18f9813fbd2f8c3310b822d99f58f51d70c9d672d232c36e4f8c7581598",
+   "stratum": "populated-2016-or-later",
+   "year": "2024"
+  },
+  {
+   "anomalies": [
+    "leading-or-trailing-whitespace",
+    "embedded-newline"
+   ],
+   "docAbstract": "Lowering the upper limit of serum alanine aminotransferase levels may reveal significant liver disease in the elderly\nPlease contact the EPA Docket Center, Public Reading Room to view this document. Address: 1301 Constitution Ave, NW Room 3334, Washington, DC 20004. Telephone: 202-566-1744. Fax: 202-566- 9744. Email: docket-customerservice@epa.gov\n\n\n",
+   "documentId": "EPA-HQ-OW-2022-0114-1323",
+   "documentType": "Supporting & Related Material",
+   "length": 352,
+   "rank": "0000c538a885ac7fdec967010d678a280711d2bfc691e3871810e6721c602466",
+   "stratum": "populated-2016-or-later",
+   "year": "2023"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "09/18/2017 memorandum from David Korotney, Office of Transportation and Air Quality, USEPA, to EPA Air Docket EPA-HQ-OAR-2017-0091, regarding Imports and exports of renewable fuel in 2013 through 2016",
+   "documentId": "EPA-HQ-OAR-2017-0091-4120",
+   "documentType": "Supporting & Related Material",
+   "length": 200,
+   "rank": "0000cc4c3b1e552aa5213a93952337445279fb625473ef3d2786995e982671b3",
+   "stratum": "populated-2016-or-later",
+   "year": "2017"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "U.S. Steel Edgar Thomson Plant, Braddock PA facility (USS-Braddock-PA). Emissions Testing: BOP Building. 7/2011-8/2011 Visible Emissions Observations provided from 2011 114 Survey.",
+   "documentId": "EPA-HQ-OAR-2002-0083-0478",
+   "documentType": "Supporting & Related Material",
+   "length": 180,
+   "rank": "00018c39c157f0d4e1f0d11a22e635c742c8b7b54bb98b36a910ddd146720b83",
+   "stratum": "populated-2016-or-later",
+   "year": "2019"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Federal Register for Thursday, April 15, 2021 (86 FR 19884) [FRL-10021-18-ORD]",
+   "documentId": "EPA-HQ-ORD-2015-0765-0028",
+   "documentType": "Notice",
+   "length": 78,
+   "rank": "0001cc6f2673f460553fc8cdf87c1f2836d848f3cd2e798ffa01fde545efd385",
+   "stratum": "populated-2016-or-later",
+   "year": "2021"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "U.S. Department of Agriculture intends to make available up to $100 million in competitive grants for activities designed to expand the availability and sale of renewable fuels. Press Release No. 0237.20, May 4, 2020.",
+   "documentId": "EPA-HQ-OAR-2021-0324-0623",
+   "documentType": "Supporting & Related Material",
+   "length": 217,
+   "rank": "000220533a1df11a3f76c7a655c20823be463a0931eb6300c797f351dd644946",
+   "stratum": "populated-2016-or-later",
+   "year": "2022"
+  },
+  {
+   "anomalies": [],
+   "docAbstract": "Notice granting approval of application. Effective February 1, 2019, through February 1, 2021. Petitions due: February 12, 2019.",
+   "documentId": "DOT-OST-2019-0003-0003",
+   "documentType": "Other",
+   "length": 128,
+   "rank": "0002db96d6ba0b05cc7da840f499cc59b414cadcc9d686e080a674df7fd0e3f8",
+   "stratum": "populated-2016-or-later",
+   "year": "2019"
+  },
+  {
+   "anomalies": [
+    "embedded-newline"
+   ],
+   "docAbstract": "Please contact the EPA Docket Center, Public Reading Room to view this document. Address: 1301 Constitution Ave. NW, Room 3334, Washington, DC 20004. Telephone: 202-566-1744; Fax: 202-566-9744; Email: docket-customerservice@epa.gov\nExposure to cement dust is one of the most common occupational dust exposures world-wide, but the mechanism of toxicity has not been fully elucidated. Cement dust (N) and clinker (C) samples collected from Nigeria and another sample of cement dust (U) collected from USA were evaluated using alveolar macrophage (NR8383) cell culture to determine the contribution of different sources of cement dust in the severity of cement dust toxicity. Cement dust particles internalization and morphologic alterations using transmission electron microscopy (TEM), cytotoxicity, apoptotic cells induction, intracellular reactive oxygen species generation, glutathione reduction, TNF-\u0002, IL-1\u0003, and CINC-3 secretion inalveolar macrophages (NR8383) exposed to cement dust and clinker samples were determined. Particles were internalized into the cytoplasmic vacuoles, with cells exposed to U showing increased cell membrane blebbing. Also, NR8383 exposed to U show more significant ROS generation, apoptotic cells induction and decreased glutathione. Interleukin-1\u0003and TNF-\u0002 secretion were significantly more in cells exposed to both cement dust samples compared with clinker, while CINC-3 secretion was significantly more in cells exposed to clinker (p < 0.05). Endocytosis, oxidative stress induced-apoptosis and induction of pro-inflammatory cytokines may be key mechanisms of cement dust immunology toxicity in the lung and toxicity may be factory dependent.",
+   "documentId": "EPA-HQ-RCRA-2016-0040-0141",
+   "documentType": "Supporting & Related Material",
+   "length": 1679,
+   "rank": "0002e3c2de7b5677244e845a8666aeb43dd3acae458b86521b78feaf699de87f",
+   "stratum": "populated-2016-or-later",
+   "year": "2016"
+  }
+ ],
+ "salt": "docspec-docabstract-display-2026-09-05"
+}
