@@ -1449,3 +1449,130 @@ other member, and cross-checked row by row by the gate. A reader asking "which
 floor governed this text?" reads the member; a reader asking "is this the same
 corpus?" reads the name; the two questions are deliberately not the same
 question.
+
+## Amendment 2026-09-05: `application/pdf` needs a different acceptance measure, and the ratio cannot be it
+
+**Proposed, not adopted.** This changes how a sealed acceptance gate gets its
+number, so it is written for the owner to rule on. The measurement below is
+complete; the policy move is not made.
+
+### Why it is being asked now
+
+The regulations.gov attachments campaign would recover roughly 712,350 documents
+whose content is `application/pdf`. There is no floor for that media type — the
+committed calibration carries exactly two, `application/xml` and `text/html` —
+and B5's own rule is that an undeclared floor fails closed. So the campaign, as
+things stand, produces files the builder enumerates and never selects as
+searchable bodies.
+
+A second thing surfaced while measuring: `application/pdf` extraction requires
+the `docspec[pdf]` extra, and it was **not installed**. `pypdf` is in the lock at
+`>=5,<7`; 6.17.0 was installed to take this measurement. The campaign would have
+failed on a missing optional dependency before it ever reached a missing floor.
+
+### The population
+
+1,000 regulations.gov documents with catalog disposition `selected` carrying a
+PDF `fileFormat`, drawn by `sha256(salt ‖ NUL ‖ documentId)` from a frame of
+1,041,783, fetched on the unmetered host, 1,000 of 1,000 with valid PDF magic.
+**Disjoint from the corpus a PDF floor would gate** — the campaign is the
+790,230 *unavailable* unrestricted documents, so a `selected` disposition is
+outside it by construction; document-id overlap with the sealed campaign sample
+is zero. Drawing it from the campaign's own documents would have rebuilt exactly
+the pooled-population defect B5 removed.
+
+Size 1,000 because the margin rule makes the floor a function of the population
+*minimum*, and a minimum is the least stable statistic available. Reshuffling
+both committed 993-document populations 400 times each puts the running
+minimum's last move at the 90th percentile of draw position — 913 of 993 for
+XML, 898 of 993 for HTML — and a 250-document stop would have set the HTML floor
+near 0.235 against its real 0.17, 38% too strict. *Both floors in force today are
+therefore only marginally stable, and neither receipt says so.*
+
+996 measured; 4 refused as encrypted, which is its own condition and not a thin
+parse — see the reason code below.
+
+### The ratio does not transfer, in both directions
+
+    min 0.0000   p01 0.0000   p05 0.0000   median 0.0678   p95 0.4482   max 1.4125
+
+Three quarters of a minimum of zero is zero, and a floor of zero admits
+everything — including a document that yields no text at all. Three documents
+also exceed 1.0, which C5's arithmetic cannot represent.
+
+This is structural rather than a bad draw. Retention is extracted-text bytes over
+source bytes, which assumes the source is a *text serialization* of the content.
+PDF is a binary container: the median document here is 207,625 bytes carrying
+13,953 bytes of text, plus fonts, images and structure. 6.78% is not 93% loss; it
+is what a container looks like. Against XML's 0.94 the two are incommensurable.
+
+### What separates the bad documents, tested against a label the metric did not choose
+
+The obvious test — does a byte threshold separate documents under that byte
+threshold — is circular, and it was run and discarded. The label used instead is
+the extractor's own page-level finding, **`emptyPageCount == pageCount`**: every
+page empty, an image-only scan. 48 of 996.
+
+| candidate measure | image-only scans | text-bearing | text-bearing a threshold would also refuse |
+| --- | --- | --- | --- |
+| retention ratio | max 0.00 | min 0.00 | 2 of 948, and it refuses nothing useful |
+| absolute text bytes | max 534 | min 17 | **16 of 948** |
+| **text bytes per page** | **max 2.98** | **min 3.05** | **0 of 948** |
+
+Bytes per page separates the population completely. Absolute bytes does not: a
+one-page memo and a 300-page appendix are not comparable on a total.
+
+### But the clean threshold sits on an artifact, and the margin rule inverts
+
+The scans cap at 2.98 bytes per page because the extractor joins pages with a
+3-byte `\n\f\n` separator, so an all-empty *N*-page document yields
+`(N-1)×3` bytes of pure separator — about 3 per page. The 2.98/3.05 boundary is
+that artifact, not a property of the documents.
+
+And B5's margin rule inverts here. Three quarters of the text-bearing minimum is
+`0.75 × 3.05 = 2.29`, which is **below** the scans' 2.98 ceiling: applying the
+existing margin discipline to this measure would admit every image-only scan. A
+margin that protects the lowest good document, applied to a measure whose good
+and bad populations nearly touch, protects the bad ones instead.
+
+### Recommendation
+
+**Gate `application/pdf` on the extractor's empty-page finding, not on a
+threshold.** `emptyPageCount == pageCount` refuses exactly the 48 image-only
+scans in this population and no text-bearing document, needs no margin, has no
+artifact at its boundary, and is already computed and recorded in the extraction
+receipt's metadata. Declare a bytes-per-page floor beside it as a secondary,
+measured value for partially-empty documents, with its threshold chosen from the
+table above rather than from the margin rule:
+
+| threshold | refuses | of which image-only | text-bearing refused |
+| --- | --- | --- | --- |
+| 3 /page | 48 | 48 | 0 |
+| 32 /page | 50 | 48 | 2 |
+| 128 /page | 55 | 48 | 7 |
+
+**Encrypted PDFs get their own reason code**, not a thin-parse one. The 4 here
+raise `encrypted PDF requires an explicit decryption profile` — a refusal to
+attempt, which is a different fact from an attempt that retained too little, and
+folding them together would misreport both.
+
+### What this means for the campaign, which is the number the owner asked for
+
+Only **4 of 996 (0.4%)** extract zero text and **47 of 996 (4.7%)** fall under
+200 bytes. The median document yields 13,953 bytes. So roughly **95%** of
+recovered PDFs carry substantive searchable text. The campaign's yield *is*
+searchable; what was missing is a gate to refuse the rest, and the honest reading
+of my earlier report — that the yield would be "downloadable, not searchable" —
+was too pessimistic by an order of magnitude.
+
+### Standing obligation
+
+The threshold is calibrated on `selected`-disposition documents. When the
+attachments sample completes, the same measure runs against its own PDFs — a
+population disjoint from this one in the other direction — and the confirmation
+is recorded here. If the two disagree the recommendation is withdrawn rather than
+averaged.
+
+- Raised-by: agent, from the attachments campaign pre-flight
+- Evidence: `receipts/pdf-floor-population-2026-09-05.json`,
+  `receipts/pdf-floor-measurement-2026-09-05.json`
