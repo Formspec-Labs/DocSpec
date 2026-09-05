@@ -1139,3 +1139,45 @@ not a distinct rule lost. `2010-517` is the one where the discarded observation
 is genuinely a different document from a different agency. If this record wants
 to say the loss is small, it can now say so about a named case rather than about
 seven averaged together.
+
+## The consumers this shape move broke, and the list that should carry the next one
+
+Recorded 2026-09-05, after the fact rather than before it, which is the point.
+
+Making `sourceRecordId` composite is correct and this record stands. What it
+also did was break every consumer that had been keying on it — silently, because
+the composite form is a well-shaped string that simply matches nothing. The
+producer change landed alone; the consumer changes did not travel with it. Each
+was found by a separate failure hours apart, and the last one refused a
+62-minute composition build.
+
+**Known consumers of the pre-composite shape, all now fixed:**
+
+| where | what it keyed on | how it failed | fixed in |
+| --- | --- | --- | --- |
+| DocSpec `regulations_gov_catalog._index_rows` | index key was `sourceRecordId` | Federal Register join coverage 430,323 → **0** across 499,238 eligible; build still reported `pass` | DocSpec `3880818` |
+| DocSpec `regulations_gov_catalog`, exact-join guard | compared returned `sourceRecordId` to the bare `frDocNum` | could never agree once composite; never fired only because the lookup was already returning `None` for every row | DocSpec `3880818` |
+| SpicySearch, native-fact decision | compared subject id to bare `document_number` | refused release two after 62 minutes | spicysearch `2b25860` |
+| SpicySearch, exact-join guard | `matchedSourceRecordId` | same shape | spicysearch `2b25860` |
+| SpicySearch tools, frozen-query runner | join key | same shape | spicysearch `2b25860` |
+
+**The rule this buys.** A join or lookup key must name a stable *field*
+(`record.document_number`), never a record's identity. An identity is allowed to
+change shape — that is what this decision is — so any key riding on one inherits
+every move it makes. When the two are currently the same string, that is not
+safety, it is the absence of a signal: nothing in a test, a type, or a review
+will name the coupling, because there is nothing yet to distinguish.
+
+**Before the next identity shape moves,** grep every consuming repository for
+the identity field and land those changes in the same commit as the producer's.
+This table is the starting list, not the finished one — it was assembled from
+three separate outages, so treat an empty grep as unfinished work rather than as
+evidence of none.
+
+**A second defect, independent of the key.** The zeroed join reported verdict
+`pass`. A catalog with no joins is structurally identical to one whose documents
+genuinely reference nothing, so nothing downstream could tell. `3880818` adds a
+build-time backstop — a join with 10,000 or more eligible rows matching none of
+them refuses — and labels it as a backstop: a build cannot know what its coverage
+ought to be, and only comparison against the catalog it succeeds can say coverage
+fell from 86% to zero. That check belongs in succession and does not exist yet.
