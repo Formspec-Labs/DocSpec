@@ -1452,9 +1452,14 @@ question.
 
 ## Amendment 2026-09-05: `application/pdf` needs a different acceptance measure, and the ratio cannot be it
 
-**Proposed, not adopted.** This changes how a sealed acceptance gate gets its
-number, so it is written for the owner to rule on. The measurement below is
-complete; the policy move is not made.
+**Deferred, not cancelled, and not proposed for activation.** The product owner
+deferred body search on 2026-09-05 — *"if we can't nail down the description +
+topic + title search, pulling in more body text solves nothing"* — and this
+amendment exists only for the attachments campaign that body search would feed.
+It is written down in full so that **nothing here is re-derived** when bodies
+resume: the population is drawn, the measurement is complete, the recommendation
+is reasoned, and the only thing outstanding is a policy move nobody should make
+today. Activating it needs the owner's word and moves the policy version.
 
 ### Why it is being asked now
 
