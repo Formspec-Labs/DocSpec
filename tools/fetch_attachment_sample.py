@@ -28,6 +28,14 @@ number that agrees with itself. Default 0: opt in when you want that check.
 ``X-Api-Key`` header, never as a query parameter, because the URL is written to
 every receipt line and a key in a URL would be published with it. Exception text
 is scrubbed before it is recorded.
+
+**The response shape here is verified, not assumed.** Ten documents, two from
+each stratum, were fetched live on 2026-09-05 to check it before 2,000 rows were
+read through this parser. That run corrected two things a reading of the docs
+would not have caught: one attachment is commonly published in several formats,
+so counting ``fileFormats`` entries overstates attachments and double-counts
+bytes; and an attachment can appear in both the linkage and ``included`` while
+carrying no file at all.
 """
 
 from __future__ import annotations
@@ -43,7 +51,11 @@ from pathlib import Path
 from typing import Any
 
 API_ROOT = "https://api.regulations.gov/v4/documents"
-KEY_NAME = "REGULATIONS_GOV_API_KEY"
+# api.data.gov keys are 40 characters. RefSpec/.env also holds a 41-character
+# REGULATIONS_GOV_API_KEY, which the endpoint rejects with API_KEY_INVALID --
+# verified live on 2026-09-05 against ten documents, all 403. API_GOV is the
+# working key; --key-name overrides if that ever changes.
+KEY_NAME = "API_GOV"
 # 1,000 requests/hour is the published per-key budget: 3.6 s/request exactly.
 DEFAULT_DELAY_SECONDS = 3.7
 RATE_LIMIT_HEADERS = (
@@ -54,7 +66,7 @@ RATE_LIMIT_HEADERS = (
 )
 
 
-def read_key(env_path: Path) -> str:
+def read_key(env_path: Path, key_name: str = KEY_NAME) -> str:
     """Return the API key from a dotenv file, without ever printing it."""
     if not env_path.exists():
         raise SystemExit(f"no env file at {env_path}")
@@ -63,9 +75,9 @@ def read_key(env_path: Path) -> str:
         if not line or line.startswith("#") or "=" not in line:
             continue
         name, _, value = line.partition("=")
-        if name.strip() == KEY_NAME:
+        if name.strip() == key_name:
             return value.strip().strip("'\"")
-    raise SystemExit(f"{KEY_NAME} is not set in {env_path}")
+    raise SystemExit(f"{key_name} is not set in {env_path}")
 
 
 def _scrub(text: str, key: str) -> str:
@@ -107,20 +119,33 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
     attributes = data.get("attributes") or {}
     comment = attributes.get("comment")
     included = payload.get("included")
-    attachments = []
-    declared_bytes = 0
+    renditions: list[dict[str, Any]] = []
+    attachment_count = 0
+    empty_attachments = 0
+    declared_all = 0
+    declared_first = 0
     sizes_missing = 0
     for entry in included or ():
         if entry.get("type") != "attachments":
             continue
+        attachment_count += 1
         formats = (entry.get("attributes") or {}).get("fileFormats") or []
-        for fmt in formats:
+        if not formats:
+            # Observed live on FDA-1987-N-0054-0051: the attachment is present
+            # in both the linkage and `included`, and carries no file at all.
+            # "An attachment with nothing to download" and "no attachment" are
+            # different answers for the campaign and must not merge.
+            empty_attachments += 1
+            continue
+        for position, fmt in enumerate(formats):
             size = fmt.get("size")
             if isinstance(size, int):
-                declared_bytes += size
+                declared_all += size
+                if position == 0:
+                    declared_first += size
             else:
                 sizes_missing += 1
-            attachments.append(
+            renditions.append(
                 {
                     "fileUrl": fmt.get("fileUrl"),
                     "format": fmt.get("format"),
@@ -129,10 +154,19 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
             )
     linkage = ((data.get("relationships") or {}).get("attachments") or {}).get("data")
     return {
-        "attachmentCount": len(attachments),
-        "declaredBytes": declared_bytes,
+        # One attachment is commonly published in several formats -- a scanned
+        # filing arrives as .tif and .pdf of the same pages -- so counting
+        # fileFormats entries would overstate attachments and double-count the
+        # content. Both counts travel, and so do both byte totals: all formats
+        # is the cost of taking everything, first-per-attachment the cost of
+        # one copy of each.
+        "attachmentCount": attachment_count,
+        "renditionCount": len(renditions),
+        "attachmentsWithNoFormats": empty_attachments,
+        "declaredBytesAllFormats": declared_all,
+        "declaredBytesFirstFormatPerAttachment": declared_first,
         "declaredSizesMissing": sizes_missing,
-        "attachments": attachments,
+        "renditions": renditions,
         "inlineCommentChars": len(comment) if isinstance(comment, str) else 0,
         "restrictReasonType": attributes.get("restrictReasonType"),
         "documentFileFormatsNull": attributes.get("fileFormats") is None,
@@ -186,7 +220,7 @@ def run(args: argparse.Namespace) -> int:
         print("dry-run: no request made")
         return 0
 
-    key = read_key(args.env)
+    key = read_key(args.env, args.key_name)
     verified = 0
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
     with args.receipt.open("a") as sink:
@@ -235,10 +269,10 @@ def run(args: argparse.Namespace) -> int:
             if (
                 args.verify_bytes
                 and verified < args.verify_bytes
-                and record.get("attachments")
-                and record["attachments"][0].get("fileUrl")
+                and record.get("renditions")
+                and record["renditions"][0].get("fileUrl")
             ):
-                target = record["attachments"][0]
+                target = record["renditions"][0]
                 try:
                     with urllib.request.urlopen(target["fileUrl"], timeout=args.timeout) as response:
                         actual_bytes = len(response.read())
@@ -262,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--selection", type=Path, required=True)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--env", type=Path, default=Path.home() / "Work" / "RefSpec" / ".env")
+    parser.add_argument("--key-name", default=KEY_NAME, help=f"env var holding the key (default {KEY_NAME})")
     parser.add_argument("--expect-digest", default=None, help="defaults to the .sha256 sidecar")
     parser.add_argument("--delay", type=float, default=DEFAULT_DELAY_SECONDS)
     parser.add_argument("--timeout", type=float, default=60.0)

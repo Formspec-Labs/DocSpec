@@ -62,11 +62,38 @@ def test_summarize_reads_attachments_and_sizes() -> None:
         ],
     }
     out = _summarize(payload)
-    assert out["attachmentCount"] == 2
-    assert out["declaredBytes"] == 15
+    # One attachment published in two formats: one attachment, two renditions.
+    assert out["attachmentCount"] == 1
+    assert out["renditionCount"] == 2
+    assert out["declaredBytesAllFormats"] == 15
+    assert out["declaredBytesFirstFormatPerAttachment"] == 10
     assert out["inlineCommentChars"] == 5
     assert out["linkedAttachmentCount"] == 2
     assert out["declaredSizesMissing"] == 0
+
+
+def test_an_attachment_carrying_no_file_is_not_the_same_as_no_attachment() -> None:
+    """Observed live on FDA-1987-N-0054-0051, 2026-09-05.
+
+    The attachment is in the linkage and in ``included`` and has no
+    ``fileFormats`` at all. Counting only downloadable formats would report this
+    document identically to one with no attachment, and the campaign's yield
+    question needs them apart: one is withheld content, the other is nothing.
+    """
+    out = _summarize(
+        {
+            "data": {
+                "attributes": {"restrictReasonType": "Confidential Business Information"},
+                "relationships": {"attachments": {"data": [{"id": "a"}]}},
+            },
+            "included": [{"type": "attachments", "attributes": {"fileFormats": []}}],
+        }
+    )
+    assert out["attachmentCount"] == 1
+    assert out["renditionCount"] == 0
+    assert out["attachmentsWithNoFormats"] == 1
+    assert out["linkedAttachmentCount"] == 1
+    assert out["declaredBytesAllFormats"] == 0
 
 
 def test_a_genuinely_bare_document_is_distinguishable_from_a_parser_miss() -> None:
@@ -108,7 +135,8 @@ def test_missing_declared_size_is_counted_not_silently_zero() -> None:
         }
     )
     assert out["attachmentCount"] == 1
-    assert out["declaredBytes"] == 0
+    assert out["renditionCount"] == 1
+    assert out["declaredBytesAllFormats"] == 0
     assert out["declaredSizesMissing"] == 1
 
 
@@ -118,8 +146,9 @@ def test_scrub_removes_the_key_from_recorded_text() -> None:
 
 def test_read_key_finds_the_named_key_and_refuses_when_absent(tmp_path: Path) -> None:
     env = tmp_path / ".env"
-    env.write_text("# comment\nOTHER=x\nREGULATIONS_GOV_API_KEY='abc123'\nZYTE_TOKEN=y\n")
+    env.write_text("# comment\nOTHER=x\nAPI_GOV='abc123'\nZYTE_TOKEN=y\n")
     assert read_key(env) == "abc123"
+    assert read_key(env, "ZYTE_TOKEN") == "y"
 
     empty = tmp_path / "empty.env"
     empty.write_text("ZYTE_TOKEN=y\n")
