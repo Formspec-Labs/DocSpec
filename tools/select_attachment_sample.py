@@ -24,12 +24,21 @@ takes the lowest within its stratum. There is no seed to trust and no PRNG to
 reproduce: anyone with the same frame and the same salt re-derives the identical
 set, and changing the salt is a visible change to the sealed file.
 
+**What this refines, and what it does not re-litigate.** The campaign is already
+sized: ``receipts/regs-document-attachments-2026-09-04.md`` puts recovery at
+**712,350 of 865,082 (82%)**, 95% band 657,099-750,366, from 306 documents
+probed at ``?include=attachments`` on a hash-partition frame that reproduced the
+full-corpus rates on three independent figures, and the estimate survived being
+re-derived under a different decomposition (712,318). This sample does not
+re-ask that question. It tightens the two cells the band actually rests on, adds
+per-agency rates the corpus estimate cannot give, and measures throughput at a
+registered key -- which the Zyte probe explicitly did not establish.
+
 **Disproportionate allocation is deliberate, and the weights ship with it.**
-Small strata are over-sampled so each is individually conclusive about whether
-it holds attachments at all. That makes the raw sample fraction a *wrong*
-estimate of the corpus-wide recoverable fraction, so every row carries a
-``designWeight`` and the sealed file states the estimator. Reading the naive
-fraction off this sample is the error the weights exist to prevent.
+Cells are sampled by where the estimate is loose rather than by size, so the raw
+sample fraction is a *wrong* estimate of the corpus-wide recoverable fraction.
+Every row carries a ``designWeight`` and the sealed file states the estimator.
+Reading the naive fraction off this sample is the error the weights prevent.
 """
 
 from __future__ import annotations
@@ -48,19 +57,53 @@ from typing import Any
 DOCUMENT_SCOPE = "regulations-gov-documents"
 NO_REASON = "(none)"
 
-# Fixed per-reason allocation. The three small strata are over-sampled so that
-# "this stratum holds no attachments at all" is answerable for each one
-# separately; at n=200 with zero found, the one-sided 95% bound on the true rate
-# is about 1.5%, which is an answer. Proportional allocation would have drawn 3
-# rows from Personally Identifiable Information, where the same zero means
-# nothing. designWeight restores the corpus estimate.
-ALLOCATION: dict[str, int] = {
-    NO_REASON: 1000,
-    "Copyrighted": 300,
-    "Other": 300,
-    "Confidential Business Information": 200,
-    "Personally Identifiable Information": 200,
+# Cells are (restrictReasonType, documentType group), because that is the axis
+# the 712,350 estimate is weighted on and the axis where its uncertainty lives.
+# A census of the frame on 2026-09-05:
+#
+#   Other                          694,914 unrestricted +     299 restricted
+#   Supporting & Related Material   93,179 unrestricted +  74,578 restricted
+#   Notice / Proposed Rule / Rule / Public Submission  2,137 +      99
+#
+# Two facts drive the allocation. Nearly every restricted document is Supporting
+# & Related Material (74,578 of 74,976), and `Other` -- two thirds of the whole
+# unavailable population -- is 99.96% unrestricted.
+#
+# So the dominant uncertainty in the corpus estimate is `Other` unrestricted:
+# 694,914 documents at a rate measured on 120 probes (93.3%, 87.4-96.6%), which
+# is +/-32,000 documents. Supporting & Related unrestricted adds +/-10,000 on 65
+# probes. The restricted block contributes almost nothing either way -- 0 of 45
+# Copyrighted and 0 of 3 CBI have files -- so re-measuring it buys little.
+#
+# An earlier draw here spent half the sample on the restricted strata. That only
+# re-confirmed a measured zero; these weights move those rows to where the
+# estimate is actually loose, and keep enough in each reason code to bound its
+# zero at roughly 2-6%.
+MINOR_TYPES = ("Notice", "Proposed Rule", "Rule", "Public Submission")
+MAIN_TYPES = ("Other", "Supporting & Related Material")
+
+ALLOCATION: dict[tuple[str, str], int] = {
+    (NO_REASON, "Other"): 1050,
+    (NO_REASON, "Supporting & Related Material"): 450,
+    (NO_REASON, "minor"): 150,
+    ("Copyrighted", "any"): 120,
+    ("Other", "any"): 120,
+    ("Confidential Business Information", "any"): 60,
+    ("Personally Identifiable Information", "any"): 50,
 }
+
+
+def _cell(row: dict[str, Any]) -> tuple[str, str]:
+    """Place a row in its (reason, documentType group) cell."""
+    reason = row["restrictReasonType"]
+    if reason != NO_REASON:
+        # The restricted block is 99.5% one document type, so splitting it by
+        # type would make cells of three rows. It stays whole per reason code.
+        return (reason, "any")
+    document_type = row["documentType"]
+    if document_type in MAIN_TYPES:
+        return (reason, document_type)
+    return (reason, "minor")
 
 
 def _rank(salt: str, document_id: str) -> str:
@@ -150,7 +193,7 @@ def build_selection(
     catalog_root: Path,
     blob_store: Path,
     salt: str,
-    allocation: dict[str, int],
+    allocation: dict[tuple[str, str], int],
     workers: int,
 ) -> dict[str, Any]:
     manifest = json.loads((catalog_root / "manifests" / "catalog.json").read_text())
@@ -167,15 +210,15 @@ def build_selection(
             frame.extend(kept)
             counts.update(member_counts)
 
-    by_reason: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_cell: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in frame:
-        by_reason[row["restrictReasonType"]].append(row)
+        by_cell[_cell(row)].append(row)
 
     strata: list[dict[str, Any]] = []
     chosen: list[dict[str, Any]] = []
-    for reason in sorted(allocation, key=lambda r: (-len(by_reason.get(r, ())), r)):
-        rows = by_reason.get(reason, [])
-        want = min(allocation[reason], len(rows))
+    for cell in sorted(allocation, key=lambda c: (-len(by_cell.get(c, ())), c)):
+        rows = by_cell.get(cell, [])
+        want = min(allocation[cell], len(rows))
         by_agency: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             by_agency[row["agencyId"] or "(none)"].append(row)
@@ -190,9 +233,10 @@ def build_selection(
         chosen.extend(taken)
         strata.append(
             {
-                "restrictReasonType": reason,
+                "restrictReasonType": cell[0],
+                "documentTypeGroup": cell[1],
                 "population": len(rows),
-                "requested": allocation[reason],
+                "requested": allocation[cell],
                 "drawn": len(taken),
                 "designWeight": weight,
                 "agenciesInStratum": len(by_agency),
@@ -202,7 +246,7 @@ def build_selection(
             }
         )
 
-    chosen.sort(key=lambda r: (r["restrictReasonType"], r["rank"]))
+    chosen.sort(key=lambda r: (r["restrictReasonType"], r["documentType"] or "", r["rank"]))
     try:
         # Written home-relative: this file is committed, and an absolute path
         # from one machine is noise on any other.
@@ -242,9 +286,9 @@ def build_selection(
         "design": {
             "salt": salt,
             "rank": "sha256(salt || NUL || documentId), lowest-first within stratum",
-            "primaryStratum": "restrictReasonType",
+            "primaryStratum": "(restrictReasonType, documentType group)",
             "secondaryStratum": "agencyId, apportioned by largest remainder, minimum 1",
-            "allocation": allocation,
+            "allocation": {f"{k[0]} | {k[1]}": v for k, v in allocation.items()},
             "disproportionate": True,
             "estimator": (
                 "Corpus-wide rates are sum(designWeight * indicator) / "
@@ -289,9 +333,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"sha256         {digest}")
     print(f"sample size    {selection['sampleSize']}")
     for stratum in selection["strata"]:
+        label = f"{stratum['restrictReasonType']} | {stratum['documentTypeGroup']}"
         print(
-            f"  {stratum['restrictReasonType']:36s} "
-            f"pop={stratum['population']:>7,} drawn={stratum['drawn']:>4} "
+            f"  {label:52s} pop={stratum['population']:>7,} drawn={stratum['drawn']:>4} "
             f"weight={stratum['designWeight']:>10.2f} agencies={stratum['agenciesDrawn']}"
         )
     return 0
