@@ -201,8 +201,19 @@ itself — it is in the stored request URL:**
 
 1. Parse `fields[]` out of the stored request rather than assuming it.
 2. Validate that parsed set against a small set of **accepted historical field
-   sets** keyed by policy version — 1.0 the 22, 1.1 the 23. Unknown drift is
-   still refused; only *known* drift is admitted.
+   sets** keyed by policy version — 1.0 the 22, and whichever future version
+   first carries the 23. Unknown drift is still refused; only *known* drift is
+   admitted.
+
+   **Corrected 2026-09-05: that future version is 1.2, not 1.1, and reopening
+   costs three digest moves rather than two.** Acquisition policy 1.1 was spent
+   on the composite-identity release without `correction_of` — a sealed version
+   absorbs a second change only until an artifact exists under it, and
+   `fr-full-1994-2026-composite-2` exists. `ACCEPTED_DOCUMENT_FIELD_SETS`
+   therefore carries only `"1.0"` today, verified. So the reopen path is
+   acquisition policy **1.2**, moving the acquisition policy digest, the
+   `sourceNativeSchemaSetDigest` (the schema is `additionalProperties: false`
+   over 22 properties), and the release id those mint.
 3. Give `federal_register_documents_url` an explicit `fields` argument and pass
    the parsed set, so canonicality is checked **for the field list the evidence
    declares** rather than for today's constant.
@@ -327,10 +338,21 @@ install that `catalog-A-build-2026-09-04.md` names as an open hole.
 
 | | source release | composite release |
 | --- | --- | --- |
-| path | `releases/fr-full-1994-2026` | `releases/fr-full-1994-2026-composite` |
-| digest | `sha256:6695546e…` | `sha256:d2d8b03b…` |
+| path | `releases/fr-full-1994-2026` | `releases/fr-full-1994-2026-composite-2` |
+| digest | `sha256:6695546e…` | `sha256:6cf8cf44…` |
 | logical id | `…5f35c56b…` | `…d3d0a062…` |
 | published records | 1,007,156 | 1,007,639 |
+
+**`sha256:d2d8b03b…` (`releases/fr-full-1994-2026-composite`, without the `-2`)
+is the scrapped first run and must not be pinned.** It recorded
+`verifierImplementationId ...@b590d867` while the code that ran was `18bc4039`,
+from a hand-typed literal in the launch script — and `b590d867` provably could
+not have produced it, because without `18bc403`'s accepted-policy-version fix
+the run cannot admit the release it replays. catalog-A's accepted-verifier gate
+refused it in 4.9 seconds and it was re-run with the id derived from
+`git rev-parse HEAD`. Its records are **byte-identical** to `composite-2`'s — 0
+changed, 0 missing, 0 added — so nothing about its content warns you off it; only
+the absent verifier id does.
 
 ### The three criteria
 
@@ -406,7 +428,10 @@ in this rebuild could trigger it; the first future crawl can.
 remedy that recovers them moves the FR release digest and supersedes this
 catalog"*. The digest moved. That receipt's not-publishable mark and its Phase C
 pins are now spent, and a catalog that serves this corpus rebuilds against
-`sha256:d2d8b03b…`.
+`sha256:6cf8cf44…` (`composite-2`), never against the scrapped `d2d8b03b…`.
+Both catalogs have since been rebuilt on it: catalog-A `sha256:1ac55e0c…`
+(state `sha256:6a12f498…`) and catalog-B `sha256:0872a608…` (state
+`sha256:88d481dc…`).
 
 ## Why this is its own record
 
@@ -1181,3 +1206,40 @@ build-time backstop — a join with 10,000 or more eligible rows matching none o
 them refuses — and labels it as a backstop: a build cannot know what its coverage
 ought to be, and only comparison against the catalog it succeeds can say coverage
 fell from 86% to zero. That check belongs in succession and does not exist yet.
+
+
+## The succession record cannot be written retroactively, and why
+
+The source-native release spec (spicy-docs
+`docs/superpowers/specs/2026-08-25-source-native-release-spec.md`) says a
+successor "records the exact superseded logical ID and artifact digest only as
+publication evidence in the Rulespec root `supersedes` record". Checked
+2026-09-05: **`supersedes` is absent from both roots**, and both carry
+`inputs: []`. So the record this decision's rebuild owed was never written.
+
+**It cannot be added now.** `artifactDigest` covers the root, so writing a
+`supersedes` field changes the root's bytes and moves that digest — and that
+digest is the value catalog-A (`sha256:1ac55e0c…`) and catalog-B
+(`sha256:0872a608…`) pin, and that both admit against. Adding the record would
+supersede the very release the record describes, and invalidate two catalogs and
+a day of builds to document a lineage that is already fully written down here and
+in `receipts/fr-composite-replay-2026-09-05.md`. The cure would cost more than
+the defect and would itself need a succession record.
+
+**What the next release does.** The next Federal Register release published from
+this producer writes `supersedes` naming `composite-2`'s logical id
+(`…d3d0a062…`) and artifact digest (`sha256:6cf8cf44…`) at publish time, when it
+is free. Until then the lineage lives in this record, which is where a reader
+looking for it will now find it. Note what the missing field does and does not
+cost: logical identity already carries the lineage correctly — `composite-2`'s
+`logicalId` moved from the source release's `…5f35c56b…` because the source
+state changed, exactly as the spec says it should. What is missing is the
+publication evidence naming the predecessor, not the identity relationship
+itself.
+
+**Worth stating plainly, because it is the second instance today:** a rule that
+lives only in a spec and is not enforced by the publisher gets skipped without
+anyone noticing. The producer writes no `supersedes` field and nothing refuses a
+release for lacking one, so every release so far has silently omitted it. That
+is a producer gap, not an operator lapse, and the fix belongs in the publisher
+rather than in a checklist.
