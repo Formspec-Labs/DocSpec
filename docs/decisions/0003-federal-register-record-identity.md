@@ -378,10 +378,15 @@ clean order is therefore Rule 4, then the crawl, then the census, then the
 identity decision with a number in hand.
 
 **This belongs in its own decision record, not as rule 8 of 11 here.** It
-changes a sealed identity, it contradicts two clauses of a live spec, it is
-contested between two agents, and it needs an owner's ruling rather than an
+changed a sealed identity, it contradicted two clauses of a live spec, it was
+contested between two agents, and it needed an owner's ruling rather than an
 agent's. Burying a contested identity decision inside a record about execution
 topology is how it gets executed without being decided.
+
+*Written while this was open, and left in place because the argument for
+splitting it still holds. It was ruled on 2026-09-04 — see the header and "The
+ruling" — so read this paragraph as the reason the record exists, not as a
+statement that a decision is still pending.*
 
 ## What the census measured
 

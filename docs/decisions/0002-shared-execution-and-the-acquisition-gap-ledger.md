@@ -293,8 +293,11 @@ the tree.*
 
 Rules 6, 7, 9, 10 and 11 are bounded defects with fixes attached rather than
 decisions, and live in `docs/history/2026-09-02-source-native-seam-findings.md`.
-Rule 8, the Federal Register record identity, is contested and needs an owner's
-ruling; it is `docs/decisions/0003-federal-register-record-identity.md`.
+Rule 8, the Federal Register record identity, became
+`docs/decisions/0003-federal-register-record-identity.md` and was **ruled by the
+product owner on 2026-09-04**: composite identity, adopted at the rebuild. This
+line read "contested and needs an owner's ruling" until then; corrected so it
+does not outlive the contest it describes.
 
 ## Which way the arrow points
 
