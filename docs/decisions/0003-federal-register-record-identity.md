@@ -316,15 +316,23 @@ the rebuild never happens this is the position the record falls back to.
 
 ## Why this is its own record
 
-It changes a sealed identity, it contradicts two clauses of a live specification,
-it is contested between two agents, and the remedy first proposed for it was
-retracted within hours by the same review that raised it. Burying a contested
-identity decision inside a record about execution topology is how it gets
-executed without being decided.
+It changed a sealed identity, it contradicted two clauses of a live
+specification, it was contested between two agents, and the remedy first
+proposed for it was retracted within hours by the same review that raised it.
+Burying a contested identity decision inside a record about execution topology is
+how it gets executed without being decided.
 
-The one thing this record does decide is that nobody should act on it yet. The
-diagnosis is sound; the remedy is not settled; and the measurement that would
-size the problem does not exist.
+*Both paragraphs here were written while this was open. All three conditions they
+describe are now discharged: the measurement was taken on 2026-09-03, the owner
+ruled on 2026-09-04, and the rebuild ran on 2026-09-05. The second paragraph said
+"the one thing this record does decide is that nobody should act on it yet" —
+that was the right call for eight days and is the opposite of the position today.
+Kept, in the past tense, because the reason for splitting the record still holds
+and deleting it would remove the reason this record exists.*
+
+The one thing this record decided, until the measurement existed, was that nobody
+should act on it yet. The diagnosis was sound; the remedy was not settled; and the
+measurement that would size the problem did not exist.
 
 ## The finding, carried over unchanged
 
