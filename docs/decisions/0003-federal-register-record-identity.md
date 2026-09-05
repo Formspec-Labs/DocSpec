@@ -111,6 +111,43 @@ and in any other profile that hits this. Real, but not the reason it was
 authorized, and a justification that was true when made and is now hollow reads
 as still-true later.
 
+**`correction_of` is deferred out of this release.** Ruled 2026-09-04 by the
+overseer on spicy9's measurement, reversing the companion authorized this
+morning. Mike is told it reverses that authorization and can reverse it back.
+
+Four reasons, in the order that decides them:
+
+1. **Its justification dissolved under composite identity.** It was authorized to
+   make the residual adjudicable; composite leaves no residual, because every
+   discarded observation becomes a record.
+2. **Keeping it needs a second sealed move, and the ruling budgeted one.**
+   `FEDERAL_REGISTER_DOCUMENT_SCHEMA` is `additionalProperties: false` over
+   **22 properties and does not include `correction_of`** — verified — so a
+   release carrying the field would violate its own published schema, failing in
+   whichever consumer validates against it, which is the worst of the three
+   places to fail. Adding it moves `sourceNativeSchemaSetDigest`, which mints the
+   release id; the ruling budgeted only the acquisition policy's move.
+3. **No record in this rebuild would carry it anyway.** The rebuild replays
+   evidence acquired before the field was ever requested.
+4. **It is the exact shape that `dc5687b` turns into a silent drop.** Now that an
+   unclassifiable record is recorded and the run continues rather than aborting,
+   a schema-forbidden field stops being a loud failure and becomes a countable
+   one — not today, but in the first later release that acquires it.
+
+**The deferral costs nothing to make.** `correction_of` is in spicy9's working
+tree and in no commit, so this is a back-out before landing rather than a revert.
+`DOCUMENT_FIELDS` currently reads 23 with the field present and the schema reads
+22 without it, which is precisely the inconsistency reason 2 describes.
+
+**Reopen condition, so this is a deferral and not a quiet drop.** The field is
+requested from the API and permitted by `classify_document`, and
+`ACCEPTED_DOCUMENT_FIELD_SETS` already carries both `1.0` (22) and `1.1` (23). So
+a future release adds it to `FEDERAL_REGISTER_DOCUMENT_SCHEMA` with its value
+shape and names **both** digest moves — acquisition policy and source-native
+schema set — in one small commit, whenever there is a reason to want it. The
+"decided with the ruling, not after" asymmetry written for it above still holds;
+what changed is that the thing it was deciding for no longer exists.
+
 **Acceptance:** `discardedObservationCount` 0; record count rises by **483**, and
 if it is not 483 the fault is upstream of the rebuild rather than in it; release
 embeds `4c324165…`.
