@@ -199,6 +199,53 @@ error message. A historical entry must be its own literal, with the current valu
 pointing *at* it rather than the reverse. The same applies to the bundle set:
 `{"1.0": installed_release_schema_bundle()}` would be the identical mistake.
 
+**Instance three — the acquisition policy version**, in the same admission
+function. `verify_source_native_admission` requires a release's declared
+`acquisitionPolicyVersion` to equal the current profile's. `b590d86` moved the
+Federal Register policy `1.0 → 1.1` for the identity change, and every existing
+Federal Register release became inadmissible — **including the one holding the
+retained evidence the rebuild depends on.** The replay tool reached admission in
+4.7 s and stopped. Verified: the profile constant now reads `"1.1"`, and the
+check compares it to whatever the artefact declared.
+
+**Instance four is known, open, and left in place knowingly.** The same condition
+compares `sourceSystemVersion` and `sourceStateScope` against the current profile
+too. They have not bitten because nothing has moved them yet. **This is a
+decision, not an oversight** — the next person to hit `sourceSystemVersion`
+should find a ruling here rather than conclude nobody looked.
+
+| | check | remedy |
+| --- | --- | --- |
+| 1 | stored request `fields[]` vs today's `DOCUMENT_FIELDS` | `6293692`, accepted field sets |
+| 2 | embedded schema bundle vs today's `installed_release_schema_bundle()` | `83e2032`, known bundle digests |
+| 3 | declared `acquisitionPolicyVersion` vs today's profile version | narrow fix in flight, known policy versions |
+| 4 | `sourceSystemVersion`, `sourceStateScope` vs current — same block | **known, open, left in place by decision** |
+
+**Ruled 2026-09-04: narrow fix now, general fix as its own work.** A
+`KNOWN_ACQUISITION_POLICY_VERSIONS` table per profile, mirroring the two tables
+that already exist, because instance 3 sits on the path to a corpus rebuild and
+its blast radius is visible. The general fix — one accepted-history mechanism for
+the whole `SPEC_FIELDS` identity block, keyed by version, covering all four — is
+named as its own piece of work with its own review, rather than smuggled in
+under a rebuild.
+
+**Not every field in that block belongs to the pattern, and the distinction is
+the useful part.** The condition compares five: `sourceSystemId`,
+`sourceSystemVersion`, `acquisitionPolicyId`, `acquisitionPolicyVersion`,
+`sourceStateScope`. The two **identifiers** should be compared against today —
+a release from a different source system genuinely must not load under this
+profile, and that check is doing its job. The three that **legitimately change
+over time** are the instances. So the pattern is narrower than "artefact versus
+current code": it is *comparing a value that is expected to version against the
+version the code happens to be at*. A general fix that froze all five would break
+the two checks that are correct.
+
+**After three, stop calling them bugs.** spicy9's framing, and it is right: this
+is one design assumption — that a reader validates an artefact against itself —
+applied wherever a release records what produced it. Three sites, three routes,
+one day. The count will keep rising until the assumption is fixed rather than its
+instances.
+
 **Recognising a third instance.** Ask of any equality check against an artefact:
 *is the right-hand side a record, or is it a computation?* If the code computes
 it, the check answers "does this artefact match today" when the question is "was
