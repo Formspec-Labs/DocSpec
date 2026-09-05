@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import json
 import math
+import sys
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 from urllib.parse import quote
 
 from docspec.application.catalog_policy import (
@@ -191,24 +193,130 @@ def _record_data(record: Mapping[str, Any], *, expected_type: str) -> tuple[Mapp
     return native, attributes
 
 
+#: Where the Federal Register index finds the key the document side looks up by.
+#:
+#: The document side has only a bare ``frDocNum`` to join on, so the index must
+#: hold bare numbers. This was ``sourceRecordId`` until 2026-09-05, and the two
+#: were the same string until the producer made ``sourceRecordId`` composite
+#: (``00-111@2000-01-14``) so that a reused number stops discarding the older
+#: filing. Composite key in, bare key out: 499,238 lookups returned zero
+#: matches, the join coverage fell from 430,323 to 0, and the build still
+#: reported ``pass``. See DocSpec 0003 and ``_join_coverage_gate`` below.
+#:
+#: Keyed on a named field rather than on the record's identity precisely because
+#: an identity is allowed to change shape; a join key that rides on one inherits
+#: every move it makes.
+_FEDERAL_REGISTER_KEY_PATH: Final = ("record", "document_number")
+
+
+def _lookup_key(record: Mapping[str, Any], key_path: Sequence[str]) -> str | None:
+    value: Any = record
+    for step in key_path:
+        if not isinstance(value, Mapping):
+            return None
+        value = value.get(step)
+    return value if isinstance(value, str) and value else None
+
+
+@dataclass(frozen=True)
+class LookupIndexStats:
+    """What the index refused, so the receipt can say so rather than imply it."""
+
+    indexed: int
+    ambiguous_keys: int
+    ambiguous_rows: int
+    unkeyed_rows: int
+
+
 def _index_rows(
     inputs: CatalogPolicyInputs,
     workspace: CatalogPolicyWorkspace,
     selector: SourceInputSelector | None,
     namespace: str,
-) -> None:
+    *,
+    key_path: Sequence[str],
+) -> LookupIndexStats:
+    """Index lookup rows by a named field, refusing keys that name several rows.
+
+    A bare number resolving to more than one record cannot be attributed from a
+    bare number alone, so the index holds neither. Keeping one -- the latest
+    ``publication_date``, say -- would reproduce the pre-fix coverage exactly,
+    which is the reason it is tempting and the reason it is wrong: it re-asserts
+    the collapse DocSpec 0003 removed, and would attach ``00-111``'s BLM plat
+    notice to a document that may have meant the IRS rule filed under the same
+    number four days earlier. Silence about which of two documents is meant is
+    the honest answer; the receipt carries the count so the silence is visible.
+
+    Two ordered passes over the input, which ``CatalogPolicyInputs.finish``
+    permits explicitly. Memory is the key set, not the corpus.
+    """
     if selector is None:
-        return
+        return LookupIndexStats(0, 0, 0, 0)
+
+    seen: set[str] = set()
+    ambiguous: set[str] = set()
+    unkeyed = 0
     for row in inputs.iter_lookup_rows(selector):
+        key = _lookup_key(row.record, key_path)
+        if key is None:
+            unkeyed += 1
+            continue
+        if key in seen:
+            ambiguous.add(key)
+        seen.add(key)
+
+    indexed = 0
+    ambiguous_rows = 0
+    for row in inputs.iter_lookup_rows(selector):
+        key = _lookup_key(row.record, key_path)
+        if key is None:
+            continue
+        if key in ambiguous:
+            ambiguous_rows += 1
+            continue
         workspace.put(
             namespace,
-            (str(row.record["sourceRecordId"]),),
+            (key,),
             {
                 "record": dict(row.record),
                 "renditions": [dict(value) for value in row.renditions],
                 **_carried_discards(row),
             },
         )
+        indexed += 1
+
+    stats = LookupIndexStats(
+        indexed=indexed,
+        ambiguous_keys=len(ambiguous),
+        ambiguous_rows=ambiguous_rows,
+        unkeyed_rows=unkeyed,
+    )
+    # stderr, in the shape the CLI uses for its own two diagnostics, so the
+    # build log records what the index refused. An abstention reports
+    # downstream as an ordinary no-match -- the outcome enum is sealed at three
+    # values in urn:docspec:schema:source-catalog-item:1.0 -- so without this
+    # line the difference between "no such record" and "several, and we will
+    # not choose" is unrecoverable from the artifact.
+    print(
+        json.dumps(
+            {
+                "format": "docspec-source-catalog-build-diagnostic",
+                "formatVersion": "1.0",
+                "lookupIndex": {
+                    "namespace": namespace,
+                    "keyPath": list(key_path),
+                    "indexed": stats.indexed,
+                    "ambiguousKeys": stats.ambiguous_keys,
+                    "ambiguousRowsRefused": stats.ambiguous_rows,
+                    "unkeyedRows": stats.unkeyed_rows,
+                },
+            },
+            sort_keys=True,
+        ),
+        file=sys.stderr,
+        flush=True,
+    )
+    return stats
 
 
 def _indexed_row(
@@ -904,7 +1012,13 @@ class RegulationsGovCatalogPolicy:
     ) -> Iterator[SourceCatalogItem]:
         resume = getattr(inputs, "resume", FRESH_BUILD)
         if not resume.indexed:
-            _index_rows(inputs, workspace, self.federal_register_input, _FEDERAL_REGISTER_INDEX)
+            _index_rows(
+                inputs,
+                workspace,
+                self.federal_register_input,
+                _FEDERAL_REGISTER_INDEX,
+                key_path=_FEDERAL_REGISTER_KEY_PATH,
+            )
             self._stage_universe(inputs, workspace)
             if self.sample is not None:
                 self._draw_document_sample(workspace)
@@ -1707,7 +1821,14 @@ class RegulationsGovCatalogPolicy:
         )
         if docket is not None and docket[0]["sourceRecordId"] != docket_id:
             raise IntegrityError("Regulations.gov docket join returned a different exact key")
-        if federal_register is not None and federal_register[0]["sourceRecordId"] != fr_doc_num:
+        if federal_register is not None and (
+            _lookup_key(federal_register[0], _FEDERAL_REGISTER_KEY_PATH) != fr_doc_num
+        ):
+            # Compares the field the index was keyed on. Comparing
+            # sourceRecordId here was correct only while the two were the same
+            # string; once the producer made it composite this guard could
+            # never agree, and the reason it never fired is that the lookup was
+            # returning None for every document instead.
             raise IntegrityError("Federal Register join returned a different exact key")
 
         title, malformed_title = _text(attributes.get("title"))

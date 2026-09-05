@@ -13,7 +13,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, replace
 from dataclasses import field as dataclass_field
 from itertools import zip_longest
-from typing import Any
+from typing import Any, Final
 
 import jsonschema
 
@@ -1547,6 +1547,7 @@ def _derive_catalog(
         {"joinId": join_id, **join_counts[join_id]}
         for join_id in sorted(join_counts, key=_utf16_key)
     ]
+    _refuse_collapsed_joins(join_coverage)
     return _DerivedCatalog(
         state.digest(),
         requested.digest(),
@@ -1745,6 +1746,7 @@ def _derive_catalog_parallel(
             {"joinId": join_id, **join_counts[join_id]}
             for join_id in sorted(join_counts, key=_utf16_key)
         ]
+        _refuse_collapsed_joins(join_coverage)
         return _DerivedCatalog(
             state.digest(),
             requested.digest(),
@@ -1859,6 +1861,41 @@ def _rendition_choice_record(row: Mapping[str, Any]) -> Mapping[str, Any]:
         "selectedFamilyId": choices[0]["result"]["selectedFamilyId"],
         "candidateIds": [candidate["renditionId"] for candidate in row["candidateRenditions"]],
     }
+
+
+#: Above this many eligible rows, a join that matches none of them is a broken
+#: key rather than a coverage story. Below it, zero matches is ordinary: a
+#: fixture with one document and one non-matching docket is a legitimate test,
+#: and a slice built from a one-day Federal Register release against documents
+#: citing other days genuinely matches nothing. There is no threshold-free
+#: version of this rule, so the number is stated rather than tuned: it exists to
+#: catch a key mismatch across a real corpus, and 499,238-eligible-zero-matched
+#: is the case it was written for.
+_COLLAPSED_JOIN_ELIGIBLE_FLOOR: Final = 10_000
+
+
+def _refuse_collapsed_joins(join_coverage: list[dict[str, Any]]) -> None:
+    """Refuse a build whose large join had candidates and matched none of them.
+
+    On 2026-09-05 the Federal Register join went from 430,323 matches to 0 --
+    every one of 499,238 eligible documents -- because the producer made the
+    indexed identity composite while the lookup still passed a bare number. The
+    build reported verdict "pass", and nothing downstream could tell: a catalog
+    with no joins is structurally identical to one whose documents genuinely
+    reference nothing.
+
+    This is a backstop, not the principled check. A build cannot know what its
+    coverage ought to be; only a comparison against the catalog it succeeds can
+    say that coverage fell from 86% to zero. That belongs in succession, and
+    this refuses meanwhile the one shape that is never a real corpus.
+    """
+    for coverage in join_coverage:
+        eligible = coverage.get("eligible", 0)
+        if eligible >= _COLLAPSED_JOIN_ELIGIBLE_FLOOR and not coverage.get("matched", 0):
+            raise IntegrityError(
+                f"catalog join {coverage.get('joinId')!r} matched none of its "
+                f"{eligible} eligible rows; the index key and the lookup key disagree"
+            )
 
 
 def _accumulate_join_coverage(

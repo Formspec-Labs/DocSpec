@@ -255,6 +255,34 @@ def _federal_register(identity: str = "2026-10001") -> dict[str, Any]:
     )
 
 
+def _federal_register_filing(
+    document_number: str,
+    publication_date: str,
+    *,
+    title: str = "Exact Federal Register title",
+) -> dict[str, Any]:
+    """One Federal Register filing under the composite identity of DocSpec 0003.
+
+    ``sourceRecordId`` is ``{number}@{date}`` while ``record.document_number``
+    stays bare. Separating them is the whole point: the two were the same string
+    until 2026-09-05, and a fixture that keeps them equal cannot catch a join
+    keyed on the wrong one.
+    """
+    return _source_record(
+        f"{document_number}@{publication_date}",
+        scope="federal-register-documents",
+        schema="federal-register-document",
+        record={
+            "document_number": document_number,
+            "publication_date": publication_date,
+            "docket_ids": ["EPA-2026-0001"],
+            "html_url": f"https://www.federalregister.gov/d/{document_number}",
+            "regulation_id_numbers": ["2060-AX01"],
+            "title": title,
+        },
+    )
+
+
 def _rendition(
     identity: str,
     rendition_id: str,
@@ -1447,3 +1475,78 @@ def test_resume_carries_the_selected_item_budget_across_the_kill(tmp_path: Path)
 
     assert counted.computed == 3
     assert resumed.reference == fresh.reference
+
+
+def test_a_composite_source_record_id_still_joins_on_the_bare_number(
+    tmp_path: Path,
+) -> None:
+    """The regression this whole change exists for.
+
+    DocSpec 0003 made the Federal Register sourceRecordId composite so a reused
+    number stops discarding the older filing. The index was keyed on that field
+    and the document side looks up by a bare frDocNum, so every one of 499,238
+    lookups missed and the build still reported pass.
+    """
+    item = _build(
+        tmp_path,
+        _document(frDocNum="2026-10001"),
+        federal_register_records=(
+            _federal_register_filing("2026-10001", "2026-03-04"),
+        ),
+        federal_register_renditions=(),
+    )
+
+    joins = {value["joinId"]: value for value in _interpretation(item, "exact-join")["joins"]}
+    federal_register = joins["document-federal-register"]
+    assert federal_register["outcome"] == "matched"
+    assert federal_register["matchedSourceRecordId"] == "2026-10001@2026-03-04"
+
+
+def test_a_reused_federal_register_number_matches_neither_filing(tmp_path: Path) -> None:
+    """Abstention, not an arbitrary winner.
+
+    Under composite identity 474 numbers carry more than one filing. Keeping the
+    latest publication_date would reproduce the pre-fix coverage exactly, which
+    is why it is tempting and why it is wrong -- it re-asserts the collapse 0003
+    removed, and would attach 00-111's BLM plat notice to a document that may
+    have meant the IRS rule filed under the same number four days earlier.
+    Measured population for this refusal: 30 documents of 430,323 matches.
+    """
+    item = _build(
+        tmp_path,
+        _document(frDocNum="2026-10001"),
+        federal_register_records=(
+            _federal_register_filing("2026-10001", "2026-03-04", title="First filing"),
+            _federal_register_filing("2026-10001", "2026-03-08", title="Second filing"),
+        ),
+        federal_register_renditions=(),
+    )
+
+    federal_register = {
+        value["joinId"]: value for value in _interpretation(item, "exact-join")["joins"]
+    }["document-federal-register"]
+    assert federal_register["outcome"] == "no-match"
+    assert federal_register["matchedSourceRecordId"] is None
+    assert federal_register["sourceValue"] == "2026-10001"
+
+
+def test_one_ambiguous_number_does_not_suppress_an_unambiguous_one(
+    tmp_path: Path,
+) -> None:
+    """The refusal is per key. A global abstention would be the same outage again."""
+    item = _build(
+        tmp_path,
+        _document(frDocNum="2026-10002"),
+        federal_register_records=(
+            _federal_register_filing("2026-10001", "2026-03-04"),
+            _federal_register_filing("2026-10001", "2026-03-08"),
+            _federal_register_filing("2026-10002", "2026-03-09"),
+        ),
+        federal_register_renditions=(),
+    )
+
+    federal_register = {
+        value["joinId"]: value for value in _interpretation(item, "exact-join")["joins"]
+    }["document-federal-register"]
+    assert federal_register["outcome"] == "matched"
+    assert federal_register["matchedSourceRecordId"] == "2026-10002@2026-03-09"
