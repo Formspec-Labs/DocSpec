@@ -9,6 +9,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import docspec
 
 ROOT = Path(__file__).resolve().parents[1]
 RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.11-py3-none-any.whl"
@@ -508,7 +509,7 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
 
 
 assert sys.version_info[:2] == (3, 12)
-assert importlib.metadata.version("docspec") == "0.2.10"
+assert importlib.metadata.version("docspec") == "__DOCSPEC_VERSION__"
 assert importlib.metadata.version("rulespec-artifacts") == "1.0.11"
 assert importlib.metadata.version("spicy-docs") == "0.1.0"
 assert not any(
@@ -862,7 +863,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert build.returncode == 0, build.stderr
-    docspec_wheel = next(build_root.glob("docspec-0.2.10-*.whl"))
+    docspec_wheel = next(build_root.glob(f"docspec-{docspec.__version__}-*.whl"))
     with zipfile.ZipFile(docspec_wheel) as archive:
         assert not any(
             name.endswith(".whl") or name.startswith("spicy_docs/")
@@ -920,7 +921,14 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
 
     probe_path = runtime_root / "installed_source_catalog_probe.py"
     proof_path = runtime_root / "installed_source_catalog_proof.json"
-    probe_path.write_text(_INSTALLED_PROBE, encoding="utf-8")
+    # Version comes from the tree, never a literal. Both of these were
+    # hardcoded "0.2.10" and this test was excluded from the runs that cut
+    # 0.2.11, so the bump would have been published with its own packaging
+    # check silently stale -- a literal describing changing code, which is
+    # the same defect the version bump existed to fix.
+    probe_path.write_text(
+        _INSTALLED_PROBE.replace("__DOCSPEC_VERSION__", docspec.__version__), encoding="utf-8"
+    )
     probe = subprocess.run(
         [
             environment_python,
