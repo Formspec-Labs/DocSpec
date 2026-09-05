@@ -1237,9 +1237,33 @@ state changed, exactly as the spec says it should. What is missing is the
 publication evidence naming the predecessor, not the identity relationship
 itself.
 
-**Worth stating plainly, because it is the second instance today:** a rule that
-lives only in a spec and is not enforced by the publisher gets skipped without
-anyone noticing. The producer writes no `supersedes` field and nothing refuses a
-release for lacking one, so every release so far has silently omitted it. That
-is a producer gap, not an operator lapse, and the fix belongs in the publisher
-rather than in a checklist.
+**Where the gap actually is — corrected within the hour, because the first
+version of this paragraph diagnosed it without checking.** It said the producer
+writes no `supersedes` field and the fix belongs in the publisher. Wrong on
+both counts. `SourceNativeReleaseBuild.supersedes` exists
+(spicy-docs `source_native.py:146`) and is passed straight through to the
+artifact writer (`:1683`); the dataclass docstring states the design
+deliberately — *"Publication evidence supplied by the caller, not inferred from
+a worktree."* The publisher has supported succession all along.
+
+**The callers never supply it.** Neither
+`tools/replay_federal_register_release.py` nor `tools/source_native_campaign.py`
+passes `supersedes`, so it defaults to `None` and every release published by
+either has silently omitted it. The replay tool is the clearest case: it exists
+precisely to republish one release from another's evidence, so it always knows
+its predecessor and has never recorded it.
+
+So the fix is two lines in the callers, plus the question of whether a
+republish that omits a known predecessor should be refused rather than
+defaulted. That is a real choice — a first release legitimately has no
+predecessor, and DocSpec's own document-release path already draws that line
+(`platform_artifact.py:462`: an initial release *must not* declare
+`supersedes`), which is the working model to copy rather than invent.
+
+**And the lesson is the one this record keeps relearning:** I named a plausible
+cause — "the producer does not support it" — and wrote it into a decision
+record without opening the producer. Same error as the receipt that attributed
+639 absent citations to pre-1994 scope and a parser defect, where the real cause
+was leading zeros and both named candidates were wrong. A cause that sounds
+right and is untested is worse in a decision record than in a message, because
+the record is what the next reader trusts.
