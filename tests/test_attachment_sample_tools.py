@@ -25,6 +25,7 @@ from tools.fetch_attachment_sample import (  # noqa: E402
     BROWSER_UA,
     MAGIC,
     _completed_ids,
+    api_quota_lock,
     _head,
     _scrub,
     _summarize,
@@ -281,3 +282,24 @@ def test_declared_but_not_served_is_recorded_separately(monkeypatch: pytest.Monk
     assert out["declaredNotServed"] == ["https://downloads.regulations.gov/X-2/attachment_1.pdf"]
     assert out["servedNotDeclared"] == []
     assert out["directAgreesWithApi"] is False
+
+
+def test_the_quota_lock_is_exclusive_and_released(tmp_path: Path) -> None:
+    """One hourly api.data.gov budget is shared with govinfo, so two runs must not overlap.
+
+    On 2026-09-05 a census was launched into a running sample and both drew on
+    that budget for nine minutes, because neither tool looked for the other.
+    """
+    lock = tmp_path / "api-quota.lock"
+    with api_quota_lock(lock, holder="first", purpose="sample", wait=False):
+        assert lock.exists()
+        assert "holder=first" in lock.read_text()
+        with pytest.raises(SystemExit):
+            with api_quota_lock(lock, holder="second", purpose="census", wait=False):
+                pass
+    assert not lock.exists()
+
+    # A run that takes no metered path takes no lock: passing None is the way
+    # the unmetered-only mode says "this costs nothing from the shared budget".
+    with api_quota_lock(None, holder="direct-only", purpose="unmetered", wait=False):
+        assert not lock.exists()

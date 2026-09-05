@@ -117,9 +117,18 @@ def _document_fact(row: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _scan_member(args: tuple[str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    """Reduce one partition blob to its unavailable rows' sampling fields."""
-    path, salt, partition_id = args
+def _scan_member(args: tuple[str, str, str] | tuple[str, str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Reduce one partition blob to the rows one selector wants.
+
+    Two selectors share this walk. ``unavailable`` keeps the campaign frame.
+    ``selected-pdf`` keeps documents the campaign will never touch, which is
+    what a retention floor needs: decision 0001's amendment B5 requires the
+    calibration population to be disjoint from the corpus the floor gates, and
+    a disposition the campaign excludes by definition is disjoint by
+    construction rather than by assertion.
+    """
+    path, salt, partition_id = args[:3]
+    mode = args[3] if len(args) > 3 else "unavailable"
     kept: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
     raw = Path(path).read_bytes()
@@ -132,7 +141,10 @@ def _scan_member(args: tuple[str, str, str]) -> tuple[list[dict[str, Any]], dict
         counts["rowsRead"] += 1
         disposition = (row.get("selection") or {}).get("disposition")
         counts[f"disposition/{disposition}"] += 1
-        if disposition != "unavailable":
+        if mode == "unavailable":
+            if disposition != "unavailable":
+                continue
+        elif disposition != "selected":
             continue
         fact = _document_fact(row)
         if fact is None:
@@ -145,6 +157,25 @@ def _scan_member(args: tuple[str, str, str]) -> tuple[list[dict[str, Any]], dict
         attachments = (relationships.get("attachments") or {}).get("links") or {}
         comment = attributes.get("comment")
         reason = attributes.get("restrictReasonType") or NO_REASON
+        file_formats = attributes.get("fileFormats") or []
+        if mode == "selected-pdf":
+            pdfs = [f for f in file_formats if (f.get("format") or "").lower() == "pdf"]
+            if not pdfs:
+                counts["selectedWithoutPdf"] += 1
+                continue
+            counts["selectedWithPdf"] += 1
+            kept.append(
+                {
+                    "documentId": row["documentId"],
+                    "agencyId": attributes.get("agencyId"),
+                    "documentType": attributes.get("documentType"),
+                    "pdfUrl": pdfs[0].get("fileUrl"),
+                    "pdfDeclaredBytes": pdfs[0].get("size"),
+                    "rank": _rank(salt, row["documentId"]),
+                    "partitionId": partition_id,
+                }
+            )
+            continue
         counts[f"reason/{reason}"] += 1
         kept.append(
             {
@@ -201,7 +232,7 @@ def build_selection(
     jobs = []
     for index, member in enumerate(sorted(members, key=lambda m: m["blobRef"])):
         digest = member["blobRef"].split(":", 1)[1]
-        jobs.append((str(blob_store / digest), salt, f"{index:02d}"))
+        jobs.append((str(blob_store / digest), salt, f"{index:02d}", "unavailable"))
 
     frame: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()

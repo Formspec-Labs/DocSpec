@@ -62,11 +62,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -87,6 +89,14 @@ DIRECT_EXTENSIONS = ("pdf", "docx", "xlsx", "doc", "tif")
 # A file the API declares and this host serves; interleaved to prove the route
 # is healthy, so a run of misses is never mistaken for a run of absences.
 CONTROL_URL = f"{DOWNLOAD_ROOT}/DOT-OST-1996-1116-0017/attachment_1.pdf"
+# api.data.gov meters govinfo and regulations.gov against ONE hourly budget, and
+# this tool alone runs near the whole of it: the sample's first thirty minutes
+# took X-RateLimit-Remaining from 999 to 678. On 2026-09-05 a census was
+# launched into the running sample and both drew on that budget for nine minutes
+# because neither tool looked for the other. This lock is the cheap fix, and it
+# is the same file protocol compositions/measure.sh uses: created atomically,
+# holding holder, start and purpose, removed when the run ends.
+QUOTA_LOCK = Path.home() / "Work" / "corpora" / "supply-2026-09-02" / "compositions" / "api-quota.lock"
 MAGIC = {
     "pdf": (b"%PDF",),
     "docx": (b"PK\x03\x04",),
@@ -370,6 +380,45 @@ def _download(url: str, timeout: float, extension: str, sink_dir: Path | None) -
     }
 
 
+@contextmanager
+def api_quota_lock(path: Path, *, holder: str, purpose: str, wait: bool, poll: float = 15.0):
+    """Hold the shared api.data.gov budget for the metered arm of this run.
+
+    Only the API arm needs it. The direct route is unmetered, so a run that skips
+    the API half needs no lock and does not take one.
+    """
+    if path is None:
+        yield None
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    body = (
+        f"holder={holder} pid {os.getpid()}\n"
+        f"start={started}\n"
+        f"purpose={purpose}\n"
+    )
+    while True:
+        try:
+            handle = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            current = path.read_text().splitlines()[:1]
+            if not wait:
+                raise SystemExit(
+                    f"the api.data.gov quota lock is held: {current}. "
+                    f"Wait, or pass --no-quota-lock if you know the holder is finished."
+                ) from None
+            print(f"  api quota lock held by {current}, waiting {poll:.0f}s")
+            time.sleep(poll)
+            continue
+        with os.fdopen(handle, "w") as sink:
+            sink.write(body)
+        break
+    try:
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def _completed_ids(receipt: Path) -> set[str]:
     if not receipt.exists():
         return set()
@@ -408,20 +457,29 @@ def run(args: argparse.Namespace) -> int:
     print(f"selection   {args.selection} ({actual[:12]}…)")
     print(f"sample      {len(rows)} rows, {len(done)} already done, {len(pending)} pending")
     print(f"receipt     {args.receipt}")
-    print(f"pace        {args.delay}s between API requests, concurrency 1")
+    print(f"pace        {'API arm off (unmetered only)' if args.no_api else f'{args.delay}s between API requests, concurrency 1'}")
     print(f"direct      {'off' if args.no_direct else f'on, {args.direct_workers} workers, unmetered'}")
     print(f"estimate    {len(pending) * args.delay / 3600:.1f} h remaining")
     if args.dry_run:
         print("dry-run: no request made")
         return 0
 
-    key = read_key(args.env, args.key_name)
+    quota_lock = None if (args.no_quota_lock or args.no_api) else args.quota_lock
+    key = "" if args.no_api else read_key(args.env, args.key_name)
     control_failed = False
     direct_requests = 0
     negatives: list[tuple[str, dict[str, Any]]] = []
     wall_started = time.monotonic()
     args.receipt.parent.mkdir(parents=True, exist_ok=True)
-    with args.receipt.open("a") as sink:
+    with (
+        api_quota_lock(
+            quota_lock,
+            holder="fetch_attachment_sample",
+            purpose=f"attachment sample, {len(pending)} rows at {args.delay}s",
+            wait=not args.no_quota_wait,
+        ),
+        args.receipt.open("a") as sink,
+    ):
         # A run header, not a row. The route's health depends on the exact
         # User-Agent, so it is recorded with the run rather than left implicit in
         # whatever the code said that day. Rows are identified by documentId, so
@@ -458,6 +516,26 @@ def run(args: argparse.Namespace) -> int:
                 "url": url,
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
+            if args.no_api:
+                # Direct arm only: no metered request, so no declared URLs and
+                # the grid does the whole job. Recorded as such rather than left
+                # to look like an API result.
+                record["status"] = None
+                record["apiSkipped"] = "no-api"
+                record.update(
+                    probe_direct(
+                        document_id,
+                        [],
+                        timeout=args.timeout,
+                        max_index=args.direct_max_index,
+                        hard_cap=args.direct_hard_cap,
+                        workers=args.direct_workers,
+                    )
+                )
+                direct_requests += record.get("directRequests", 0)
+                sink.write(json.dumps(record, sort_keys=True) + "\n")
+                sink.flush()
+                continue
             try:
                 status, headers, body, elapsed = _request(url, key, args.timeout)
                 record["status"] = status
@@ -582,7 +660,10 @@ def run(args: argparse.Namespace) -> int:
 
     elapsed = time.monotonic() - wall_started
     print(f"done in {elapsed / 3600:.2f} h")
-    print(f"api requests   {len(pending)} at {len(pending) / max(elapsed, 1):.2f}/s")
+    if args.no_api:
+        print(f"api requests   0 (API arm off; {len(pending)} rows probed on the unmetered route only)")
+    else:
+        print(f"api requests   {len(pending)} at {len(pending) / max(elapsed, 1):.2f}/s")
     print(f"direct requests {direct_requests} at {direct_requests / max(elapsed, 1):.2f}/s")
     return 0
 
@@ -603,6 +684,10 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="write the first 200 response verbatim, to check the assumed shape",
     )
+    parser.add_argument("--quota-lock", type=Path, default=QUOTA_LOCK)
+    parser.add_argument("--no-quota-lock", action="store_true", help="skip the shared api.data.gov lock")
+    parser.add_argument("--no-quota-wait", action="store_true", help="fail instead of waiting when the lock is held")
+    parser.add_argument("--no-api", action="store_true", help="direct arm only; takes no quota and no lock")
     parser.add_argument("--no-direct", action="store_true", help="skip the unmetered downloads.regulations.gov arm")
     parser.add_argument("--download", action="store_true", default=True)
     parser.add_argument("--no-download", dest="download", action="store_false")
