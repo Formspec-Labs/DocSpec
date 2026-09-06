@@ -86,7 +86,11 @@ BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
-DIRECT_EXTENSIONS = ("pdf", "docx", "xlsx", "doc", "tif")
+# The ten extensions the 2,000-document sample actually observed, in descending
+# frequency. The first five were a guess; xls, rtf, ppt, pptx and xlsm were the
+# only others that appeared, on 46 of 2,736 files. A grid of the first five
+# alone covers 98.72% of file-bearing documents completely.
+DIRECT_EXTENSIONS = ("pdf", "tif", "xlsx", "docx", "doc", "xls", "rtf", "pptx", "ppt", "xlsm")
 # A file the API declares and this host serves; interleaved to prove the route
 # is healthy, so a run of misses is never mistaken for a run of absences.
 CONTROL_URL = f"{DOWNLOAD_ROOT}/DOT-OST-1996-1116-0017/attachment_1.pdf"
@@ -596,6 +600,10 @@ def run(args: argparse.Namespace) -> int:
                 direct_requests += record.get("directRequests", 0)
                 sink.write(json.dumps(record, sort_keys=True) + "\n")
                 sink.flush()
+                # Honour the pacing flag here too. `continue` used to jump past
+                # the sleep at the loop foot, so --no-api ran unthrottled -- the
+                # opposite of what a flag meaning "do less" should do.
+                time.sleep(args.delay)
                 continue
             try:
                 status, headers, body, elapsed = _request(url, key, args.timeout)
