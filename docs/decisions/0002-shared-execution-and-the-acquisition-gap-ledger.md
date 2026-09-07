@@ -110,6 +110,54 @@ fact at all and the strictness bought nothing.
 
 At processing, a failed item is stuck forever. Rule 12 states the mechanism.
 
+### A publisher that answers absence with a well-formed success
+
+Named by spicy9 on 2026-09-07 after the fourth instance in two days. **GovInfo
+does not 404 for things that do not exist. It returns 200 with a well-formed
+empty result, so "this is empty" and "this is not there" are the same bytes.**
+
+| What was asked | What came back | What it was read as |
+|---|---|---|
+| keyed granules for 58 Federal Register issues, 1994 | `200`, `count: 0`, `granules: []` on 33 of them, while keyless MODS held all of them | 33 issues with no granules |
+| keyed granules for CFR-2024-title40 volumes 38 and 39 | `200`, `count: 0` — packages that are not volumes; bulkdata lists 37 and the ZIP carries exactly those 37 | two volumes missing from the bulkdata mirror |
+| a section's content URL, built from a real granule id | `200`, `text/html`, **44,165 bytes** of *"Page Not Found | GovInfo"* | a working keyless content route |
+| an issue's MODS during a multi-hour outage | `502`, which our own census wrote as `granuleCount: 0` | an issue govinfo lists no granules for |
+
+**Three of the four were nearly reported as findings about the corpus**, and the
+fourth was ours doing the same thing to ourselves. That is what makes this a
+rule rather than a list: the failure mode is not a wrong number, it is a **wrong
+subject**. Every one of these answers a question about the publisher's
+availability and gets filed as an answer about the documents. A per-granule pass
+over 245,464 sections would have recorded 245,464 successes over error pages, at
+a byte count and a status code that make a size histogram look healthy.
+
+**The countermeasure, in the same breath, because the rule without it is only a
+warning.**
+
+- **Never derive absence from an empty success.** A declared zero is not a fact
+  about the corpus, and neither is a package's existence.
+- **Assert on content, never on status or length.** `PK\x03\x04` for a ZIP;
+  the parsed shape for JSON; anything but the status line. Write the assertion
+  even when it never fires — a check that never fires reads as ceremony and the
+  next person tidies it away.
+- **Keep asked-and-got-nothing distinguishable from never-asked** in whatever
+  records the run. `spicy-docs f79b559` is the worked shape: only a complete
+  listing settles a date, a failure and a short read both return for retry, the
+  file stays append-only so a superseded failure survives beside its
+  replacement, and rows written before the guard existed must be *declared*
+  rather than guessed.
+- **Cross it against a surface that does not over-report.** Two bulkdata
+  surfaces agreeing — the listing and the ZIP's own contents — settled the
+  volume question against the endpoint that had already manufactured one
+  phantom. Prefer the measurement that cannot flatter itself.
+
+Recorded here rather than in the repository that found it because it constrains
+every fetcher anyone writes against this publisher, and acquisition is where the
+next person writing one will look. Evidence:
+`receipts/govinfo-outage-2026-09-05.md`,
+`receipts/govinfo-granule-census-1994-1999.md`,
+`receipts/cfr-bulkdata-head-sweep-2026-09-07.md`.
+
 ## Obligations
 
 Ordered by what a run of the owner's size needs, not by rule number. Numbers are
