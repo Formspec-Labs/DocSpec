@@ -129,7 +129,7 @@ class RunReconciler:
         }
         planned_store_ledger = self._stores.planned_store_ledger(plan.plan_id)
         handoff = self._verified_execution_handoff(plan, planned_store_ledger)
-        active = self._base_layers()
+        active, blob_roots = self._base_state()
         fragment_schemas: dict[str, RecordSchema] = {}
         touched_partitions: set[int] = set()
         counts = {
@@ -146,7 +146,6 @@ class RunReconciler:
         }
         failure_counts: dict[str, int] = {}
         first_failure: dict[str, Any] | None = None
-        blob_roots: dict[str, ArtifactRef] = {}
 
         for reference, store in self._verified_complete_stores(
             task_results,
@@ -205,7 +204,7 @@ class RunReconciler:
             for root in receipt.blob_roots:
                 existing = blob_roots.get(root.artifact_id)
                 if existing is not None and existing != root:
-                    raise IntegrityError("delivery receipts disagree on a blob root")
+                    raise IntegrityError("run inputs disagree on a blob root")
                 blob_roots[root.artifact_id] = root
             if self._stateful:
                 self._spool_store_layers(
@@ -292,11 +291,15 @@ class RunReconciler:
         )
         return self._controls.put(kind="run-receipts", artifact_id=receipt.run_id, value=receipt.to_dict())
 
-    def _base_layers(self) -> dict[str, LayerRef]:
+    def _base_state(self) -> tuple[dict[str, LayerRef], dict[str, ArtifactRef]]:
+        """Carry verified base storage with inherited layers, including zero-work runs."""
+
         if self._base_release_ref is None:
-            return {}
+            return {}, {}
         release = self._document_catalog.open(self._base_release_ref)
-        return {layer.layer_kind: layer for layer in release.active_layers}
+        layers = {layer.layer_kind: layer for layer in release.active_layers}
+        roots = {root.artifact_id: root for root in release.blob_roots} if self._stateful else {}
+        return layers, roots
 
     def _verified_complete_stores(
         self,

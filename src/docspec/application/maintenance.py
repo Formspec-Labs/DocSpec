@@ -432,29 +432,10 @@ class ReleaseCompactionService:
             raise StateTransitionError("release layers already match the composed compaction profile")
         rewritten_set = set(rewritten)
         reused = tuple(layer.layer_kind for layer in source.active_layers if layer.layer_kind not in rewritten_set)
-        completed_at = self._clock()
-
-        plan_ref, run_ref = self._maintenance_run(
-            source_reference,
-            source,
-            compacted_layers,
-            rewritten,
-            reused,
-            completed_at,
-        )
-        try:
-            successor_reference = ReleaseCommitService(
-                plan_ref=plan_ref,
-                controls=self._controls,
-                records=self._records,
-                document_catalog=self._document_catalog,
-            ).commit_release(source_reference, run_ref)
-        except (StaleBaseError, StateTransitionError) as commit_error:
-            current = self._document_catalog.current()
-            if current is None or current == source_reference:
-                raise
+        current = self._document_catalog.current()
+        if current is not None and current != source_reference:
+            successor_reference = current
             try:
-                successor_reference = current
                 successor_completed_at = self._verify_successor(
                     source_reference,
                     source,
@@ -463,17 +444,49 @@ class ReleaseCompactionService:
                     source_digest,
                     compacted_digest,
                 )
-            except IntegrityError:
-                raise commit_error
+            except IntegrityError as error:
+                raise StaleBaseError("catalog head is not the intended equivalent compaction successor") from error
         else:
-            successor_completed_at = self._verify_successor(
+            plan_ref, run_ref = self._maintenance_run(
                 source_reference,
                 source,
-                successor_reference,
                 compacted_layers,
-                source_digest,
-                compacted_digest,
+                rewritten,
+                reused,
+                self._clock(),
             )
+            try:
+                successor_reference = ReleaseCommitService(
+                    plan_ref=plan_ref,
+                    controls=self._controls,
+                    records=self._records,
+                    document_catalog=self._document_catalog,
+                ).commit_release(source_reference, run_ref)
+            except (StaleBaseError, StateTransitionError) as commit_error:
+                current = self._document_catalog.current()
+                if current is None or current == source_reference:
+                    raise
+                try:
+                    successor_reference = current
+                    successor_completed_at = self._verify_successor(
+                        source_reference,
+                        source,
+                        successor_reference,
+                        compacted_layers,
+                        source_digest,
+                        compacted_digest,
+                    )
+                except IntegrityError:
+                    raise commit_error
+            else:
+                successor_completed_at = self._verify_successor(
+                    source_reference,
+                    source,
+                    successor_reference,
+                    compacted_layers,
+                    source_digest,
+                    compacted_digest,
+                )
         self._after_catalog_commit(successor_reference)
         logical_record_count = sum(layer.record_count for layer in source.active_layers)
         receipt = ReleaseCompactionReceipt.create(
@@ -490,6 +503,8 @@ class ReleaseCompactionService:
                     source_digest_reads + rewrite_reads + successor_digest_reads
                 ),
                 "logicalScanPassCount": 3,
+                # Direct service opens: the source and the verified successor.
+                # Catalog-internal admission during current()/commit is separate.
                 "explicitCatalogOpenCount": 2,
                 "boundedStreaming": True,
             },

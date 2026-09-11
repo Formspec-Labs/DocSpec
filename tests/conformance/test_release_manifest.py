@@ -27,7 +27,7 @@ BASE_ROWS = _catalog_contract.BASE_ROWS
 def _committed_platform(tmp_path: Path):
     registered = _catalog_contract._registered_catalog_profiles()[0]
     platform = _catalog_contract._platform(registered, tmp_path / "platform")
-    committed = _catalog_contract._commit_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
+    committed = _catalog_contract._save_run(platform, run_tag="base", rows=BASE_ROWS, base=None)
     return registered, platform, committed
 
 

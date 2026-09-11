@@ -1,4 +1,4 @@
-"""Local catalog: verified releases and compare-and-swap publication."""
+"""Local catalog: retained immutable results and guarded current selection."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,7 @@ from docspec.ports.control_repository import ControlRepository
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_storage import RecordStorage
 
-_DOCUMENT_RELEASE_SUCCESSION_REASON = "advance document catalog from previousRelease"
+_DOCUMENT_RELEASE_SUCCESSION_REASON = "derive document state from previousRelease"
 
 
 class RootOnlyBlobProfileStateReachability:
@@ -109,7 +110,7 @@ class _LocalDocumentCatalogReader:
 
 
 class LocalManifestDocumentCatalog:
-    """Publish shared derivations with an operator-only compare-and-swap head."""
+    """Retain shared derivations with an optional compare-and-swap current head."""
 
     def __init__(
         self,
@@ -363,52 +364,64 @@ class LocalManifestDocumentCatalog:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def commit(
-        self,
-        staged: ArtifactRef,
-        *,
-        expected_base: DocumentReleaseRef | None,
-        stores: Iterable[StoreRef],
-    ) -> DocumentReleaseRef:
-        artifact, release, resolved_locator = self._load_staged(staged)
-        previous_store_id: str | None = None
-
-        def verified_store_values() -> Iterator[dict[str, Any]]:
-            nonlocal previous_store_id
-            for reference in stores:
-                if previous_store_id is not None and reference.store_id <= previous_store_id:
-                    raise IntegrityError("catalog commit store references must be sorted and distinct")
-                previous_store_id = reference.store_id
-                store = self.stores.load(reference)
-                if store.state != StoreState.SEALED:
-                    raise IntegrityError("catalog commit contains an unsealed document store")
-                yield reference.to_dict()
-
-        if ordered_json_sequence_digest(verified_store_values()) != release.store_receipt_set_digest:
-            raise IntegrityError("catalog commit store receipt set differs from the release")
+    @contextmanager
+    def _write_lock(self, release_id: str) -> Iterator[None]:
         lock = _contained(self.root, "document-catalog/.commit.lock", create_parents=True)
         try:
             descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError as error:
-            raise StateTransitionError("another document catalog commit is in progress") from error
+            raise StateTransitionError("another document catalog write is in progress") from error
         try:
             with os.fdopen(descriptor, "wb") as handle:
-                handle.write(release.release_id.encode("utf-8"))
+                handle.write(release_id.encode("utf-8"))
                 handle.flush()
                 os.fsync(handle.fileno())
-            current = self.current()
+            yield
+        finally:
+            lock.unlink(missing_ok=True)
+
+    def retain(
+        self,
+        staged: ArtifactRef,
+        *,
+        stores: Iterable[StoreRef],
+    ) -> DocumentReleaseRef:
+        """Save verified result bytes without requiring or advancing the current head."""
+
+        reference, _ = self._retain_result(staged, stores=stores)
+        return reference
+
+    def _retain_result(
+        self,
+        staged: ArtifactRef,
+        *,
+        stores: Iterable[StoreRef],
+    ) -> tuple[DocumentReleaseRef, DocumentRelease]:
+        with self._write_lock(staged.artifact_id):
+            artifact, release, resolved_locator = self._load_staged(staged)
+            if release.previous_release is not None:
+                self.open(release.previous_release)
+            previous_store_id: str | None = None
+
+            def verified_store_values() -> Iterator[dict[str, Any]]:
+                nonlocal previous_store_id
+                for reference in stores:
+                    if previous_store_id is not None and reference.store_id <= previous_store_id:
+                        raise IntegrityError("catalog retention store references must be sorted and distinct")
+                    previous_store_id = reference.store_id
+                    store = self.stores.load(reference)
+                    if store.state != StoreState.SEALED:
+                        raise IntegrityError("catalog retention contains an unsealed document store")
+                    yield reference.to_dict()
+
+            if ordered_json_sequence_digest(verified_store_values()) != release.store_receipt_set_digest:
+                raise IntegrityError("catalog retention store receipt set differs from the release")
             locator = self._release_locator(artifact.pin.artifact_digest)
             new_reference = DocumentReleaseRef(
                 release.release_id,
                 locator,
                 artifact.pin.artifact_digest,
             )
-            if current == new_reference:
-                return new_reference
-            if current != expected_base:
-                raise StaleBaseError("document catalog current release differs from the expected base")
-            if release.previous_release != expected_base:
-                raise IntegrityError("document release lineage differs from the expected catalog base")
             staged_directory = _contained(self.root, resolved_locator).parent
             published_directory = _contained(
                 self.root,
@@ -427,7 +440,45 @@ class LocalManifestDocumentCatalog:
                         published_directory.relative_to(self.root).as_posix(),
                     )
             self.open(new_reference)
-            self._write_current(new_reference)
-            return new_reference
-        finally:
-            lock.unlink(missing_ok=True)
+            return new_reference, release
+
+    def select(
+        self,
+        reference: DocumentReleaseRef,
+        *,
+        expected_current: DocumentReleaseRef | None,
+    ) -> DocumentReleaseRef:
+        """Select a verified result without changing its immutable input lineage.
+
+        The expected current head guards this choice; it need not be the result's
+        base. An already-selected exact reference is an idempotent success.
+        """
+
+        with self._write_lock(reference.release_id):
+            release = self.open(reference)
+            if release.previous_release is not None:
+                self.open(release.previous_release)
+            current = self.current()
+            if current == reference:
+                return reference
+            if current != expected_current:
+                raise StaleBaseError("document catalog current release differs from the expected current head")
+            self._write_current(reference)
+            return reference
+
+    def commit(
+        self,
+        staged: ArtifactRef,
+        *,
+        expected_base: DocumentReleaseRef | None,
+        stores: Iterable[StoreRef],
+    ) -> DocumentReleaseRef:
+        """Retain a verified result, then select it while its base remains current.
+
+        A stale selection leaves the retained result available by its exact pin.
+        """
+
+        reference, release = self._retain_result(staged, stores=stores)
+        if release.previous_release != expected_base:
+            raise IntegrityError("document release lineage differs from the expected catalog base")
+        return self.select(reference, expected_current=expected_base)

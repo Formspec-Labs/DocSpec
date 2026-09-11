@@ -15,18 +15,23 @@ from docspec.adapters.storage import (
     RootOnlyBlobProfileStateReachability,
 )
 from docspec.application.maintenance import BlobRetentionSetService, ReleaseCompactionService
+from docspec.application.reconcile import RunReconciler
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
+from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import BlobRef, DocumentReleaseRef
-from docspec.errors import IntegrityError
+from docspec.errors import IntegrityError, StaleBaseError
+from docspec.processing.processors import ContentStatisticsProcessor
 from tests.helpers import (
+    SharedFixtureContentFetcher,
     document_release_producer,
+    source_catalog_reader,
 )
 from tests.support.maintenance import (
     _Platform,
     _platform,
 )
-from tests.support.pipeline import _clock
+from tests.support.pipeline import _clock, _plan, _run
 
 
 def _blob_references(platform: _Platform) -> set[tuple[str, str, int, str]]:
@@ -302,6 +307,74 @@ def test_compaction_retry_recovers_the_successor_after_post_commit_failure(
     assert receipt.successor_release == committed_successor
     assert receipt.completed_at == "2026-08-05T13:00:00Z"
     assert _published_release_count(catalog) == 2
+
+
+def test_compaction_refuses_an_unrelated_verified_current_before_creating_run_state(tmp_path: Path) -> None:
+    platform = _platform(tmp_path, document_count=8, member_bytes=4 * 1024)
+    source = platform.catalog.open(platform.release)
+    retry = RetryPolicy(base_delay_milliseconds=0)
+    processor = ContentStatisticsProcessor(retry_policy=retry)
+    plan = _plan(
+        source.source_catalog, platform.release, processor, retry, AcceptedFailurePolicy(),
+        buckets=platform.partition_policy.bucket_count, max_entries=4,
+    )
+    planned, processed, sealed, run_ref, ordinary_successor = _run(
+        plan=plan, source_catalog=source_catalog_reader(tmp_path / "source-catalogs"),
+        controls=platform.controls, stores=platform.stores, blobs=platform.blobs,
+        records=platform.records, catalog=platform.catalog,
+        fetcher=SharedFixtureContentFetcher(tmp_path / "sources"), processor=processor,
+        partition_policy=platform.partition_policy,
+    )
+    successor = platform.catalog.open(ordinary_successor)
+    run = RunReceipt.from_dict(platform.controls.load(run_ref))
+    assert planned == processed == sealed == ()
+    assert run.store_count == run.selected_item_count == 0
+    assert run.blob_roots == successor.blob_roots == source.blob_roots
+    assert run.counts["capturedFiles"] == run.counts["deliveredRecords"] == run.counts["deliveredBytes"] == 0
+    assert successor.previous_release == platform.release
+    assert successor.active_layers == source.active_layers
+    assert successor.counts == source.counts
+    for layer in source.active_layers:
+        assert list(platform.catalog.compare(platform.release, ordinary_successor, layer_kind=layer.layer_kind)) == []
+    assert any(count > 1 for count in _member_counts(platform.records, ordinary_successor, platform.catalog).values())
+    stateless_ref = RunReconciler(
+        plan_ref=run.plan,
+        execution_profile_ref=run.execution_profile,
+        execution_handoff_ref=run.execution_handoff,
+        source_catalog_ref=source.source_catalog,
+        base_release_ref=platform.release,
+        controls=platform.controls,
+        stores=platform.stores,
+        records=platform.records,
+        document_catalog=platform.catalog,
+        source_catalog=source_catalog_reader(tmp_path / "source-catalogs"),
+        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(tmp_path / "stateless-reconciliation"),
+        partition_policy=platform.partition_policy,
+        clock=_clock,
+        stateful=False,
+    ).reconcile_run(())
+    stateless = RunReceipt.from_dict(platform.controls.load(stateless_ref))
+    assert not stateless.stateful
+    assert stateless.staged_layers == stateless.blob_roots == ()
+    assert stateless.counts == run.counts
+    controls_before = {
+        path.relative_to(platform.controls.root): path.read_bytes()
+        for path in platform.controls.root.rglob("*") if path.is_file()
+    }
+    stores_before = _revision_files(platform.stores)
+    release_count_before = _published_release_count(platform.catalog)
+    service, _, catalog = _compaction_service(platform, clock=_clock)
+
+    with pytest.raises(StaleBaseError, match="not the intended equivalent compaction successor"):
+        service.compact(platform.release)
+
+    assert catalog.current() == ordinary_successor
+    assert _published_release_count(catalog) == release_count_before
+    assert _revision_files(platform.stores) == stores_before
+    assert {
+        path.relative_to(platform.controls.root): path.read_bytes()
+        for path in platform.controls.root.rglob("*") if path.is_file()
+    } == controls_before
 
 
 def test_concurrent_compactions_converge_on_one_successor_and_receipt(

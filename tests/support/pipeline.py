@@ -98,6 +98,7 @@ def _run(
     processor_cache=None,
     partition_policy,
     accepted_failure_policy=None,
+    select_current: bool = True,
 ):
     configured_processors = processors
     if configured_processors is None:
@@ -237,10 +238,12 @@ def _run(
         clock=_clock,
     )
     run_ref = reconciler.reconcile_run(results)
-    release_ref = ReleaseCommitService(
+    service = ReleaseCommitService(
         plan_ref=plan_ref,
         controls=controls,
         records=records,
         document_catalog=catalog,
-    ).commit_release(plan.base_release, run_ref)
+    )
+    save = service.commit_release if select_current else service.retain_release
+    release_ref = save(plan.base_release, run_ref)
     return planned, processed, sealed, run_ref, release_ref

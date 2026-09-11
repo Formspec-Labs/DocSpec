@@ -1,4 +1,4 @@
-"""Verify reconciled release state and conditionally publish it."""
+"""Retain verified run results and optionally select the current release."""
 
 from __future__ import annotations
 
@@ -398,7 +398,7 @@ class DocumentReleaseVerifier:
 
 
 class ReleaseCommitService:
-    """Keep workers in staging; this service is the sole release visibility point."""
+    """Retain verified run results, with an explicit commit-and-select operation."""
 
     def __init__(
         self,
@@ -418,19 +418,33 @@ class ReleaseCommitService:
         base_document_release_ref: DocumentReleaseRef | None,
         run_receipt_ref: ArtifactRef,
     ) -> DocumentReleaseRef:
+        """Retain this run's result and select it against its exact base.
+
+        A stale current head refuses selection without discarding the result.
+        """
+
+        reference = self.retain_release(base_document_release_ref, run_receipt_ref)
+        return self._document_catalog.select(reference, expected_current=base_document_release_ref)
+
+    def retain_release(
+        self,
+        base_document_release_ref: DocumentReleaseRef | None,
+        run_receipt_ref: ArtifactRef,
+    ) -> DocumentReleaseRef:
+        """Retain an immutable result independently of the selected catalog head.
+
+        Its CatalogCommitReceipt records prepared authorization against the pinned
+        base; it does not claim that current was advanced.
+        """
+
         plan = self._load_plan()
         run = self._load_run(run_receipt_ref)
         if run.plan != self._plan_ref or run.base_release != base_document_release_ref:
             raise IntegrityError("run receipt differs from the requested plan or base release")
         if not run.stateful:
-            raise StateTransitionError("a stateless returned-result run cannot commit a DocumentRelease")
+            raise StateTransitionError("a stateless returned-result run cannot retain a DocumentRelease")
         if run.counts.get("rejectedStores", 0):
             raise StateTransitionError("a run with rejected stores cannot publish catalog state")
-        current = self._document_catalog.current()
-        if current is not None:
-            opened = self._document_catalog.open(current)
-            if opened.previous_release == base_document_release_ref and opened.run_receipt == run_receipt_ref:
-                return current
         self._verify_run_layers(plan, run)
         commit_token = catalog_commit_token_digest(
             base_release=base_document_release_ref,
@@ -473,14 +487,13 @@ class ReleaseCommitService:
             partition_policy=run.partition_policy,
         )
         staged = self._document_catalog.stage(release)
-        committed = self._document_catalog.commit(
+        retained = self._document_catalog.retain(
             staged,
-            expected_base=base_document_release_ref,
             stores=self._store_references(run),
         )
-        if committed.release_id != release.release_id:
-            raise IntegrityError("document catalog committed a different release")
-        return committed
+        if retained.release_id != release.release_id or retained.digest != staged.digest:
+            raise IntegrityError("document catalog retained a different release")
+        return retained
 
     def _load_plan(self) -> ProcessingPlan:
         self._controls.verify(self._plan_ref)

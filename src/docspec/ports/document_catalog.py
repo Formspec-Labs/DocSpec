@@ -29,7 +29,7 @@ class DocumentCatalogReader(Protocol):
 
 
 class DocumentCatalog(Protocol):
-    """Open and conditionally advance complete release-described state."""
+    """Retain immutable corpus results and explicitly select the current one."""
 
     def release_id(self, plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str: ...
 
@@ -49,10 +49,25 @@ class DocumentCatalog(Protocol):
 
     def stage(self, release: DocumentRelease) -> ArtifactRef: ...
 
+    def retain(self, staged: ArtifactRef, *, stores: Iterable[StoreRef]) -> DocumentReleaseRef:
+        """Verify and retain an independently readable result without changing current."""
+        ...
+
+    def select(
+        self,
+        reference: DocumentReleaseRef,
+        *,
+        expected_current: DocumentReleaseRef | None,
+    ) -> DocumentReleaseRef:
+        """Select a verified result only while the expected current head still matches."""
+        ...
+
     def commit(
         self,
         staged: ArtifactRef,
         *,
         expected_base: DocumentReleaseRef | None,
         stores: Iterable[StoreRef],
-    ) -> DocumentReleaseRef: ...
+    ) -> DocumentReleaseRef:
+        """Retain a verified result and select it against its expected base."""
+        ...

@@ -811,22 +811,38 @@ artifact digest.
 - scan active records and changes in stable order without loading the corpus;
 - compare two releases by logical identity;
 - stage verified outputs without making them current;
-- commit sealed `DocumentStore` receipts against one expected base release;
-- reject a stale base or conflicting commit;
-- publish and return the new `DocumentRelease`; and
-- reconstruct the same logical state from the committed release.
+- retain and return a verified immutable `DocumentRelease` with its exact base
+  and sealed `DocumentStore` receipts, without requiring that base to be current;
+- select a retained release only if the independently supplied expected current
+  reference still matches, or the exact result is already current;
+- reject a stale selection or invalid release; and
+- reconstruct the same logical state from any retained release.
 
 `DocumentCatalog` MUST NOT maintain corpus state that its `DocumentRelease`
 cannot identify and reproduce. A mutable `current` pointer MAY help operators,
-but consumers and jobs MUST use an explicit release identity. Moving that
-pointer requires the candidate Rulespec root's `supersedes` record to match the
-current root exactly with a nonempty reason, and the DocSpec verifier must prove
-series continuity. The release-local `previousRelease` field still records the
-logical corpus chain; the generic field protects the physical pointer update.
+but consumers and jobs MUST use an explicit release identity. The candidate
+Rulespec root's `supersedes` record MUST match the release's exact
+`previousRelease` with a nonempty reason; both identify its input lineage. The
+DocSpec verifier checks that lineage independently of the current pointer.
+Selecting one retained alternative after another MUST NOT restamp its bytes or
+rewrite its base. Selection verifies the candidate and its pinned base, then
+checks the independently supplied expected current reference under the catalog
+write lock. For alternatives A and B derived from X, selecting B while A is
+current requires `expected_current=A`; B continues to name X as its base.
+
+The combined `commit` operation retains a result and selects it with the expected
+current reference equal to its base, preserving the linear-update convenience.
+A failed selection MUST NOT discard a valid retained result. The existing
+`CatalogCommitReceipt` records prepared authorization for exact run state and
+base lineage: its `expectedHead` is the prepared base and its timestamp is
+`preparedAt`. It is not a receipt proving that the current pointer changed.
+Retention and selection MUST share existing artifact, dependency and store
+verification; neither introduces another run or dataset ledger.
 
 In this model, `DocumentCatalog` corresponds to the versioned corpus and
-`DocumentRelease` corresponds to one commit. The ordered release lineage is the
-catalog's history.
+`DocumentRelease` corresponds to one retained result. Base references preserve
+its experiment history, including alternatives derived from a common input. The
+current pointer records the operator's selected result, not the complete history.
 
 ### 5.3 ProcessingPlan
 
