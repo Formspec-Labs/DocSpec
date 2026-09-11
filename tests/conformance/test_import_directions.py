@@ -29,6 +29,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "ports": {"ports", "domain", "errors"},
     "processing": {"processing", "domain", "errors"},
     "profile_registry": {"domain", "errors"},
+    "workspace": {"profile_registry"},
     # The DocumentRelease 2.0 wire primitives: a leaf that reads DocSpec's byte
     # rules and adds the spellings that contract needs. It imports nothing that
     # could import it back.
@@ -61,6 +62,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "ports",
         "processing",
         "profile_registry",
+        "workspace",
         "__init__",
     },
 }
