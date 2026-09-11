@@ -145,8 +145,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   the existing worker and execution records. A focused test prepares equivalent
   implicit/explicit settings and proves identical references and successful
   resume. Workspace, CLI, offline-example, Dagster, conformance, and isolated-wheel
-  checks passed (76 tests); independent review approved the foundation. D02 and
-  the ordinary caller's plan/implementation configuration remain open; this is
+  checks passed (76 tests); independent review approved the foundation. The
+  ordinary caller's plan/implementation configuration remains open; this is
   not yet the complete installed experiment workflow.
 
 <a id="d04"></a>
@@ -158,6 +158,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   can fetch and process together, fetch first and process later, or work with a
   catalog alone without manually assembling every internal service. Avoid a
   wrapper that only renames calls without simplifying their use. Depends on D02–D03.
+
+  **Agreed approach:** move the existing CLI composition into an outer
+  `docspec.runtime` package that accepts typed plans, a workspace, policies, and
+  implementations. The CLI and Python callers use that one path. Keep core
+  application services independent of concrete adapters; do not add another
+  workspace model, run ledger, or plugin loader. A solutions architect approved
+  this direction. Capture-only completion and result inspection still need
+  their own implementation; moving composition alone does not complete D04.
 
 <a id="d05"></a>
 
@@ -270,6 +278,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   result validation, and optional imports. An unrestricted dynamic plugin loader
   is not needed to satisfy this outcome. See [extensions](extensions.md).
 
+  **Agreed approach:** extend the existing stage policy with effective extractor
+  and segmenter configuration digests derived from their actual implementations.
+  Registry digests include dispatch choices and child identities; leaf output
+  identities keep their existing meaning. Check those pins before planning,
+  checkpoint reuse, and sealed-result reuse. The architect rejected a worker-only
+  check because unchanged stage names can cause the planner to skip work.
+  Preserve lazy optional imports. Correct invalidation comes first; reuse of
+  captures or representations after stage changes remains D15.
+
 <a id="d14"></a>
 
 - [ ] **D14 · P0 · Demonstrate a meaningful optional processor.** Add a small
@@ -362,7 +379,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   Fifteen new identity cases and 61 related workspace, CLI, acquisition, and
   Dagster checks pass. This closes the existing local reconstruction gap;
   configurable extraction/segmentation and the full D04 interruption workflow
-  remain open.
+  remain open. Commit `c41b00b`.
 
 <a id="d21"></a>
 
@@ -595,6 +612,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   unnecessary complexity, correctness, and evidence gaps are resolved or
   explicitly recorded, and the final approach distinguishes consensus from open
   disagreement. Review throughout implementation, then consolidate the result.
+
+  **Progress:** the [foundation review](history/2026-09-11-experiment-foundation-review.md)
+  records independent approval of the bounded documentation, profiles,
+  workspace, retained alternatives, catalog-reader, and recovery changes through
+  `c41b00b`. Review findings were resolved. The combined local suite passed
+  907 tests, with one live integration test deselected; Ruff passed. Subsequent
+  API and lifecycle work still requires independent review and acceptance.
 
 <a id="d40"></a>
 
