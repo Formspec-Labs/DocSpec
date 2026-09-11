@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from docspec.application.catalog_policy import (
+    selection_failure,
+    catalog_interpretations,
     array_with_unparseable as _array_with_unparseable,
     date_value as _date_value,
     http_url as _http_url,
@@ -21,6 +23,7 @@ from docspec.application.catalog_policy import (
 
 from docspec.domain.source_catalog import (
     CatalogDisposition,
+    CatalogNormalizationField,
     CatalogRenditionFamily,
     CatalogSelectionDecision,
     SourceCatalogCandidate,
@@ -243,6 +246,80 @@ class FederalRegisterCatalogPolicy:
         document_id = native.get("document_number")
         if not isinstance(document_id, str) or not document_id:
             document_id = source_item_id
+        normalized, normalization_fields, issued_version = self._normalization(native)
+        candidates, rendition_families, selected_family_id = self._rendition_preference(
+            renditions
+        )
+        selection, decisions = self._selection(normalized, candidates)
+        field_diagnostics = record.get("fieldDiagnostics")
+        diagnostics = (
+            tuple(field_diagnostics)
+            if isinstance(field_diagnostics, Sequence)
+            and not isinstance(field_diagnostics, (str, bytes, bytearray, memoryview))
+            else ()
+        )
+        observations = tuple(
+            {"observationKey": f"field-diagnostic/{index}", "observationValue": value}
+            for index, value in enumerate(diagnostics)
+        )
+        observed_topics = _topics(native.get("topics"))
+        interpretation_pin = {
+            "policyId": self.policy_id,
+            "policyVersion": self.policy_version,
+            "policyDigest": self.policy_digest,
+            "inputScopeIds": [record["scopeId"]],
+        }
+        interpretations = catalog_interpretations(
+            interpretation_pin,
+            joins=(),
+            normalization_fields=normalization_fields,
+            ordered_family_ids=_RENDITION_ORDER,
+            families=rendition_families,
+            selected_family_id=selected_family_id,
+            candidates=candidates,
+            sampling_result={
+                "frameAdmitted": True,
+                "partition": "all",
+                "stratum": ["all"],
+                "orderHash": None,
+                "rank": None,
+                "stratumSize": None,
+                "allocationMethod": "all",
+                "limit": None,
+                "drawn": True,
+            },
+            selection=selection,
+            decisions=decisions,
+            topic_source_field="record.topics",
+            topics=observed_topics,
+        )
+        return SourceCatalogItem(
+            source_item_id=source_item_id,
+            document_id=document_id,
+            source_issued_version=issued_version,
+            source_native_facts=(
+                {
+                    "scopeId": record["scopeId"],
+                    "schemaName": record["schemaName"],
+                    "schemaVersion": record["schemaVersion"],
+                    "schemaDigest": record["schemaDigest"],
+                    "fields": dict(native),
+                },
+            ),
+            normalized_metadata=normalized,
+            source_observed_topics=observed_topics,
+            source_observations=observations,
+            interpretations=interpretations,
+            candidate_renditions=candidates,
+            selection=selection,
+        )
+
+
+    @staticmethod
+    def _normalization(
+        native: Mapping[str, Any],
+    ) -> tuple[dict[str, Any], tuple[CatalogNormalizationField, ...], str]:
+        """Normalize Federal Register fields with their exact source paths."""
         title, malformed_title = _text(native.get("title"))
         agencies, malformed_agencies = _agencies(native.get("agencies"))
         document_type, malformed_document_type = _text(native.get("type"))
@@ -256,9 +333,6 @@ class FederalRegisterCatalogPolicy:
             native.get("comments_close_on")
         )
         source_url, malformed_source_url = _http_url_value(native.get("html_url"))
-        candidates, rendition_families, selected_family_id = self._rendition_preference(
-            renditions
-        )
         normalized = {
             "title": title,
             "agencies": agencies,
@@ -330,148 +404,32 @@ class FederalRegisterCatalogPolicy:
         )
         if tuple(field.normalized_field for field in normalization_fields) != _NORMALIZED_FIELDS:
             raise AssertionError("Federal Register normalization field order drifted")
+        return normalized, normalization_fields, issued_version
+
+    @staticmethod
+    def _selection(
+        normalized: Mapping[str, Any], candidates: tuple[SourceCatalogCandidate, ...],
+    ) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
         missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
-        decisions: list[CatalogSelectionDecision] = []
-        metadata_decision_id, metadata_disposition, metadata_reason_code = _SELECTION_FAILURES[0]
+        metadata_id, metadata_disposition, metadata_reason = _SELECTION_FAILURES[0]
         if missing:
             reason = "Required normalized catalog values are unusable: " + ", ".join(missing)
-            decisions.append(
-                CatalogSelectionDecision(
-                    metadata_decision_id,
-                    False,
-                    metadata_disposition,
-                    metadata_reason_code,
-                    reason,
-                )
+            return selection_failure((), metadata_id, SourceCatalogSelection(
+                metadata_disposition, metadata_reason, reason,
+            ))
+        decisions = (CatalogSelectionDecision(metadata_id, True),)
+        rendition_id, rendition_disposition, rendition_reason = _SELECTION_FAILURES[1]
+        if not candidates:
+            reason = (
+                "The acquired source record offers no usable rendition to"
+                " capture. This states what the acquired source contains,"
+                " not whether the publisher holds content for it."
             )
-            selection = SourceCatalogSelection(
-                metadata_disposition,
-                metadata_reason_code,
-                reason,
-            )
-        else:
-            decisions.append(CatalogSelectionDecision(metadata_decision_id, True))
-            rendition_decision_id, rendition_disposition, rendition_reason_code = (
-                _SELECTION_FAILURES[1]
-            )
-            if candidates:
-                decisions.append(CatalogSelectionDecision(rendition_decision_id, True))
-                selection = SourceCatalogSelection(CatalogDisposition.SELECTED)
-            else:
-                reason = (
-                    "The acquired source record offers no usable rendition to"
-                    " capture. This states what the acquired source contains,"
-                    " not whether the publisher holds content for it."
-                )
-                decisions.append(
-                    CatalogSelectionDecision(
-                        rendition_decision_id,
-                        False,
-                        rendition_disposition,
-                        rendition_reason_code,
-                        reason,
-                    )
-                )
-                selection = SourceCatalogSelection(
-                    rendition_disposition,
-                    rendition_reason_code,
-                    reason,
-                )
-        field_diagnostics = record.get("fieldDiagnostics")
-        diagnostics = (
-            tuple(field_diagnostics)
-            if isinstance(field_diagnostics, Sequence)
-            and not isinstance(field_diagnostics, (str, bytes, bytearray, memoryview))
-            else ()
-        )
-        observations = tuple(
-            {"observationKey": f"field-diagnostic/{index}", "observationValue": value}
-            for index, value in enumerate(diagnostics)
-        )
-        observed_topics = _topics(native.get("topics"))
-        topic_outcome = "observed" if observed_topics else "not-recovered"
-        interpretation_pin = {
-            "policyId": self.policy_id,
-            "policyVersion": self.policy_version,
-            "policyDigest": self.policy_digest,
-            "inputScopeIds": [record["scopeId"]],
-        }
-        interpretations = (
-            {
-                "interpretationKind": "exact-join",
-                **interpretation_pin,
-                "result": {"joins": []},
-            },
-            {
-                "interpretationKind": "normalization",
-                **interpretation_pin,
-                "result": {"fields": [field.to_dict() for field in normalization_fields]},
-            },
-            {
-                "interpretationKind": "rendition-preference",
-                **interpretation_pin,
-                "result": {
-                    "orderedFamilyIds": list(_RENDITION_ORDER),
-                    "families": [family.to_dict() for family in rendition_families],
-                    "selectedFamilyId": selected_family_id,
-                    "selectedRenditionIds": [candidate.rendition_id for candidate in candidates],
-                },
-            },
-            {
-                "interpretationKind": "sampling",
-                **interpretation_pin,
-                "result": {
-                    "frameAdmitted": True,
-                    "partition": "all",
-                    "stratum": ["all"],
-                    "orderHash": None,
-                    "rank": None,
-                    "stratumSize": None,
-                    "allocationMethod": "all",
-                    "limit": None,
-                    "drawn": True,
-                },
-            },
-            {
-                "interpretationKind": "selection",
-                **interpretation_pin,
-                "result": {
-                    "decisions": [decision.to_dict() for decision in decisions],
-                    "finalDisposition": selection.disposition.value,
-                    "reasonCode": selection.reason_code,
-                    "reason": selection.reason,
-                },
-            },
-            {
-                "interpretationKind": "topic-recovery",
-                **interpretation_pin,
-                "result": {
-                    "sourceField": "record.topics",
-                    "outcome": topic_outcome,
-                    "evidenceDigest": None,
-                    "observedTopicIds": [topic["observedTopicId"] for topic in observed_topics],
-                },
-            },
-        )
-        return SourceCatalogItem(
-            source_item_id=source_item_id,
-            document_id=document_id,
-            source_issued_version=issued_version,
-            source_native_facts=(
-                {
-                    "scopeId": record["scopeId"],
-                    "schemaName": record["schemaName"],
-                    "schemaVersion": record["schemaVersion"],
-                    "schemaDigest": record["schemaDigest"],
-                    "fields": dict(native),
-                },
-            ),
-            normalized_metadata=normalized,
-            source_observed_topics=observed_topics,
-            source_observations=observations,
-            interpretations=interpretations,
-            candidate_renditions=candidates,
-            selection=selection,
+            return selection_failure(decisions, rendition_id, SourceCatalogSelection(
+                rendition_disposition, rendition_reason, reason,
+            ))
+        return SourceCatalogSelection(CatalogDisposition.SELECTED), (
+            *decisions, CatalogSelectionDecision(rendition_id, True),
         )
 
     @staticmethod

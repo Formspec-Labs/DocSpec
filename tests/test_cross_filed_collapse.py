@@ -246,7 +246,7 @@ def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None
     )
 
 
-def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
+def test_the_retained_filing_is_emitted_as_an_item_observation(tmp_path) -> None:
     """Arrival at the policy row is not arrival at the item.
 
     The row-level test above proves the filing survives the loader and the
@@ -256,6 +256,12 @@ def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
     would be green.
     """
 
+    from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
+
+    owner = native_record("DHS_FRDOC_0001-2740", "DHS_FRDOC_0001", "DHS")
+    owner["record"]["data"]["attributes"].update(
+        {"documentType": "Rule", "postedDate": "2026-08-25T00:00:00Z"}
+    )
     cross_file = native_record("DHS_FRDOC_0001-2740", "USCIS-2025-0040", "USCIS")
     # Given a rendition so both tests exercise the half that carries file
     # evidence. The workspace test already proves renditions survive the round
@@ -275,17 +281,34 @@ def test_the_retained_filing_is_emitted_as_an_item_observation() -> None:
         "record": cross_file,
         "renditions": [rendition],
     }
-    observations: list[dict[str, Any]] = []
-    observations.extend(
-        {"observationKey": f"cross-file-discard/{index}", "observationValue": dict(filing)}
-        for index, filing in enumerate((carried,))
-    )
+    owner_rendition = {
+        **rendition,
+        "renditionId": "dhs-content",
+        "locator": "https://example.test/dhs.pdf",
+    }
+    with SqliteCatalogPolicyWorkspace(directory=tmp_path) as workspace:
+        item = policy()._item_from_row(
+            owner,
+            (owner_rendition,),
+            workspace,
+            sample_drawn=None,
+            budget_available=True,
+            discarded_filings=(carried,),
+        )
+    observations = item.to_dict()["sourceObservations"]
 
     assert [o["observationKey"] for o in observations] == ["cross-file-discard/0"]
     emitted = observations[0]["observationValue"]
     assert canonical_json_bytes(emitted["record"]) == canonical_json_bytes(cross_file)
     assert canonical_json_bytes(emitted["renditions"]) == canonical_json_bytes([rendition])
     assert emitted["reasonCode"] == "source.cross-filed-under-another-agency"
+    assert item.source_item_id == owner["sourceRecordId"]
+    assert item.normalized_metadata["title"] == "Filed by DHS"
+    assert canonical_json_bytes(item.source_native_facts[0]["fields"]) == canonical_json_bytes(
+        owner["record"]
+    )
+    assert item.selection.disposition.value == "selected"
+    assert [candidate.locator for candidate in item.candidate_renditions] == [owner_rendition["locator"]]
 
 
 def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:

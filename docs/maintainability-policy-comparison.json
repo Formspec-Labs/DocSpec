@@ -1,0 +1,28 @@
+{
+  "scope": "Exact policy output/refusal comparison during D4, before strengthening cross-file and comment-refusal tests; not broad source-corpus qualification",
+  "method": "Temporary pytest instrumentation of the four real conversion methods; canonicalized complete item dictionaries and exception type/messages; sorted the captured records and compared bytes",
+  "testFiles": [
+    "tests/test_regulations_gov_catalog.py",
+    "tests/test_source_catalog_snapshot.py",
+    "tests/test_cross_filed_collapse.py",
+    "tests/test_source_catalog_succession.py"
+  ],
+  "focusedChecksPassed": 132,
+  "capturedCalls": 246,
+  "capturedBytes": 14175395,
+  "captureSha256": "8a842990fb462c3e4a488f3fe41116d9d8ef6f27bc71abbf8cc4259b56b74c73",
+  "callsByMethod": {
+    "RegulationsGovCatalogPolicy._comment_item_from_row": 25,
+    "FederalRegisterCatalogPolicy._item_from_row": 148,
+    "RegulationsGovCatalogPolicy._docket_item_from_row": 31,
+    "RegulationsGovCatalogPolicy._item_from_row": 42
+  },
+  "items": 244,
+  "refusals": 2,
+  "beforeEqualsAfter": true,
+  "limits": [
+    "The original capture includes no cross-file-discard observations. The formerly imitative test was replaced afterward with a real conversion and exact byte/owner assertions.",
+    "Strict malformed comment-version refusals were added as three direct build checks after the comparison.",
+    "The temporary capture is supplementary local evidence; the checked-in regression tests remain the maintained checks."
+  ]
+}

@@ -939,6 +939,38 @@ def test_comment_null_modify_date_uses_explicit_exact_posted_date_policy(
     }
 
 
+@pytest.mark.parametrize(
+    ("attributes", "message"),
+    [
+        (
+            {"modifyDate": ""},
+            "Regulations.gov comment modifyDate must be nonempty text or null",
+        ),
+        (
+            {"modifyDate": 7},
+            "Regulations.gov comment modifyDate must be nonempty text or null",
+        ),
+        (
+            {"modifyDate": None, "postedDate": None},
+            "Regulations.gov comment with null modifyDate has no postedDate fallback",
+        ),
+    ],
+)
+def test_comment_version_refuses_an_unusable_exact_source_value(
+    tmp_path: Path,
+    attributes: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(IntegrityError) as refused:
+        _build_items(
+            tmp_path,
+            (_document(),),
+            policy=_policy(include_comments=True),
+            comment_records=(_comment(**attributes),),
+        )
+    assert str(refused.value) == message
+
+
 def test_docspec_refuses_to_recollapse_comment_observations(tmp_path: Path) -> None:
     identity = "EPA-2026-0001-9003"
     with pytest.raises(IntegrityError, match="strictly ordered by sourceRecordId"):

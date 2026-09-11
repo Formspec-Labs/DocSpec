@@ -13,6 +13,8 @@ from typing import Any, Final
 from urllib.parse import quote
 
 from docspec.application.catalog_policy import (
+    selection_failure,
+    catalog_interpretations,
     http_url as _http_url,
     normalization_field as _field_outcome,
     normalized_rins as _normalized_rins,
@@ -24,6 +26,7 @@ from docspec.application.catalog_policy import (
 from docspec.domain.identity import canonical_json_bytes, closed_mapping, sha256_digest
 from docspec.domain.source_catalog import (
     CatalogDisposition,
+    CatalogNormalizationField,
     CatalogRenditionFamily,
     CatalogSelectionDecision,
     SourceCatalogCandidate,
@@ -38,6 +41,8 @@ from docspec.ports.source_catalog import (
     SourceInputSelector,
     SourceRecordCollisionResolution,
 )
+
+_IndexedRow = tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]]
 
 _DOCUMENT_SCOPE = "regulations-gov-documents"
 _DOCUMENT_SCHEMA = "regulations-gov-document-raw"
@@ -71,7 +76,6 @@ _REQUIRED_NORMALIZED_FIELDS = (
 _DOCKET_INDEX = "regulations-gov-catalog/dockets"
 _DOCUMENT_INDEX = "regulations-gov-catalog/document-index"
 _FEDERAL_REGISTER_INDEX = "regulations-gov-catalog/federal-register"
-_UNIVERSE_ROWS = "regulations-gov-catalog/universe"
 
 #: Appended to every "no rendition" reason. The disposition is a statement about
 #: the records this build acquired, and a reader reasonably hears it as a
@@ -323,7 +327,7 @@ def _indexed_row(
     workspace: CatalogPolicyWorkspace,
     namespace: str,
     source_id: str | None,
-) -> tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]] | None:
+) -> _IndexedRow | None:
     if source_id is None:
         return None
     value = workspace.get(namespace, (source_id,))
@@ -530,16 +534,7 @@ def _selection_result(
     decisions: list[CatalogSelectionDecision] = []
     fixture_selection = _test_fixture_selection(source_item_id)
     if fixture_selection is not None:
-        decisions.append(
-            CatalogSelectionDecision(
-                "publisher-test-fixture",
-                False,
-                fixture_selection.disposition,
-                fixture_selection.reason_code,
-                fixture_selection.reason,
-            )
-        )
-        return fixture_selection, tuple(decisions)
+        return selection_failure(decisions, "publisher-test-fixture", fixture_selection)
     decisions.append(CatalogSelectionDecision("publisher-test-fixture", True))
     if withdrawn:
         reason = "The source marks this item withdrawn."
@@ -550,16 +545,7 @@ def _selection_result(
             "source.withdrawn-after-publication",
             reason,
         )
-        decisions.append(
-            CatalogSelectionDecision(
-                "source-withdrawal",
-                False,
-                selection.disposition,
-                selection.reason_code,
-                selection.reason,
-            )
-        )
-        return selection, tuple(decisions)
+        return selection_failure(decisions, "source-withdrawal", selection)
     decisions.append(CatalogSelectionDecision("source-withdrawal", True))
     if missing_fields:
         reason = "Required normalized fields are absent or unparseable: " + ", ".join(
@@ -570,32 +556,14 @@ def _selection_result(
             "source.normalized-field-missing",
             reason,
         )
-        decisions.append(
-            CatalogSelectionDecision(
-                "required-metadata",
-                False,
-                selection.disposition,
-                selection.reason_code,
-                selection.reason,
-            )
-        )
-        return selection, tuple(decisions)
+        return selection_failure(decisions, "required-metadata", selection)
     decisions.append(CatalogSelectionDecision("required-metadata", True))
     if not candidates:
         selection = _no_rendition_selection(
             attributes,
             "The acquired source record offers no usable rendition." + _ACQUIRED_SOURCE_SCOPE,
         )
-        decisions.append(
-            CatalogSelectionDecision(
-                "candidate-rendition",
-                False,
-                selection.disposition,
-                selection.reason_code,
-                selection.reason,
-            )
-        )
-        return selection, tuple(decisions)
+        return selection_failure(decisions, "candidate-rendition", selection)
     decisions.append(CatalogSelectionDecision("candidate-rendition", True))
     if not budget_available:
         selection = SourceCatalogSelection(
@@ -603,16 +571,7 @@ def _selection_result(
             "policy.item-budget-exhausted",
             "The catalog selected-item budget is already exhausted.",
         )
-        decisions.append(
-            CatalogSelectionDecision(
-                "selected-item-budget",
-                False,
-                selection.disposition,
-                selection.reason_code,
-                selection.reason,
-            )
-        )
-        return selection, tuple(decisions)
+        return selection_failure(decisions, "selected-item-budget", selection)
     decisions.append(CatalogSelectionDecision("selected-item-budget", True))
     return SourceCatalogSelection(CatalogDisposition.SELECTED), tuple(decisions)
 
@@ -1070,26 +1029,16 @@ class RegulationsGovCatalogPolicy:
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> None:
-        """Stage the ordered universe plus the indexes this policy will read.
+        """Stage only the indexes this policy reads; inputs own the universe scan.
 
-        Every staged copy costs one canonical serialization and one SQLite row
-        of the full record and its renditions, so this loop decides most of the
-        workspace's size. It used to write each document row three times:
-        ``_UNIVERSE_ROWS`` for the ordered scan, plus ``_DOCUMENT_ROWS`` and
-        ``_DOCUMENT_INDEX``, which received byte-identical values under
-        identical keys and differed only in namespace.
+        Sampling reads the document index in order; comment conversion reads it
+        by key. Both use the same stored bytes, and neither needs that index
+        when sampling and comment input are absent. Earlier duplicate staging
+        cost 49.6 us and 4.7 MB per thousand rows per copy, accounting for 48.7%
+        of full-payload workspace bytes.
 
-        Those two are now one namespace, read two ways -- ordered by
-        ``_draw_document_sample`` and by key by ``_comment_item_from_row`` --
-        and it is staged only when one of those readers is configured. With
-        ``sample`` and ``comment_input`` both null, which is the production
-        Regulations.gov configuration, neither reader exists and two of the
-        three writes were pure cost: measured at 49.6 us and 4.7 MB per
-        thousand rows each, and 48.7% of all full-payload workspace bytes.
-
-        ``_DOCKET_INDEX`` stays unconditional because ``_item_from_row`` joins
-        every document to its docket. When ``docket_input`` is null no docket
-        row reaches this loop, so the namespace is simply empty.
+        The docket index stays unconditional because document conversion joins
+        to it. With no docket input, the index is simply empty.
         """
 
         index_documents = self.sample is not None or self.comment_input is not None
@@ -1281,76 +1230,13 @@ class RegulationsGovCatalogPolicy:
             scope_ids.append(self.federal_register_input.scope_id)
         return scope_ids
 
-    def _interpretations(
-        self,
-        *,
-        joins: Sequence[Mapping[str, Any]],
-        normalization_fields: Sequence[Any],
-        ordered_family_ids: Sequence[str],
-        families: Sequence[CatalogRenditionFamily],
-        selected_family_id: str | None,
-        candidates: Sequence[SourceCatalogCandidate],
-        sampling_result: Mapping[str, Any],
-        selection: SourceCatalogSelection,
-        decisions: Sequence[CatalogSelectionDecision],
-        topic_source_field: str,
-        topics: Sequence[Mapping[str, Any]] = (),
-    ) -> tuple[dict[str, Any], ...]:
-        pin = {
+    def _interpretation_pin(self) -> dict[str, Any]:
+        return {
             "policyId": self.policy_id,
             "policyVersion": self.policy_version,
             "policyDigest": self.policy_digest,
             "inputScopeIds": self._input_scope_ids(),
         }
-        return (
-            {
-                "interpretationKind": "exact-join",
-                **pin,
-                "result": {"joins": [dict(value) for value in joins]},
-            },
-            {
-                "interpretationKind": "normalization",
-                **pin,
-                "result": {
-                    "fields": [field.to_dict() for field in normalization_fields]
-                },
-            },
-            {
-                "interpretationKind": "rendition-preference",
-                **pin,
-                "result": {
-                    "orderedFamilyIds": list(ordered_family_ids),
-                    "families": [family.to_dict() for family in families],
-                    "selectedFamilyId": selected_family_id,
-                    "selectedRenditionIds": [value.rendition_id for value in candidates],
-                },
-            },
-            {
-                "interpretationKind": "sampling",
-                **pin,
-                "result": dict(sampling_result),
-            },
-            {
-                "interpretationKind": "selection",
-                **pin,
-                "result": {
-                    "decisions": [decision.to_dict() for decision in decisions],
-                    "finalDisposition": selection.disposition.value,
-                    "reasonCode": selection.reason_code,
-                    "reason": selection.reason,
-                },
-            },
-            {
-                "interpretationKind": "topic-recovery",
-                **pin,
-                "result": {
-                    "sourceField": topic_source_field,
-                    "outcome": "observed" if topics else "not-recovered",
-                    "evidenceDigest": None,
-                    "observedTopicIds": [value["observedTopicId"] for value in topics],
-                },
-            },
-        )
 
     @staticmethod
     def _source_observations(
@@ -1553,7 +1439,8 @@ class RegulationsGovCatalogPolicy:
             normalized_metadata=normalized,
             source_observed_topics=(),
             source_observations=tuple(self._source_observations((("docket", record),))),
-            interpretations=self._interpretations(
+            interpretations=catalog_interpretations(
+                self._interpretation_pin(),
                 joins=(),
                 normalization_fields=normalization_fields,
                 ordered_family_ids=family_order,
@@ -1586,20 +1473,171 @@ class RegulationsGovCatalogPolicy:
         comment_on_document_id, malformed_comment_on_document_id = _source_identifier(
             attributes.get("commentOnDocumentId")
         )
-        docket = _indexed_row(workspace, _DOCKET_INDEX, docket_id)
-        document = _indexed_row(
-            workspace,
-            _DOCUMENT_INDEX,
-            comment_on_document_id,
-        )
-        if docket is not None and docket[0]["sourceRecordId"] != docket_id:
-            raise IntegrityError("Regulations.gov comment docket join returned a different key")
-        if (
-            document is not None
-            and document[0]["sourceRecordId"] != comment_on_document_id
-        ):
-            raise IntegrityError("Regulations.gov comment document join returned a different key")
+        docket, document = self._comment_joins(workspace, docket_id, comment_on_document_id)
 
+        normalized, normalization_fields, raw_source_url = self._comment_normalization(
+            source_item_id, data, attributes, docket_id, malformed_docket_id, docket,
+        )
+        offers, families, selected_family, family_order = self._source_kind_rendition_preference(
+            renditions,
+            raw_source_url,
+            include_files=True,
+        )
+        withdrawn = attributes.get("withdrawn") is True
+        candidates = () if withdrawn else offers
+        selected_family_id = None if withdrawn else selected_family
+        withdrawal_reason, _ = _text(attributes.get("reasonWithdrawn"))
+        missing = [
+            name
+            for name in ("agencies", "documentType", "publicationDate", "sourceUrl")
+            if not normalized[name]
+        ]
+        selection, decisions = _selection_result(
+            source_item_id=source_item_id,
+            attributes=attributes,
+            withdrawn=withdrawn,
+            withdrawal_reason=withdrawal_reason,
+            missing_fields=missing,
+            candidates=candidates,
+            budget_available=budget_available,
+        )
+
+        source_issued_version, source_facts, observations = self._comment_provenance(
+            record, attributes, docket, document, malformed_comment_on_document_id,
+        )
+        joins = (
+            _join_result(
+                join_id="comment-docket",
+                source_field="data.attributes.docketId",
+                source_value=docket_id,
+                lookup_scope_id=_DOCKET_SCOPE,
+                matched=docket,
+            ),
+            _join_result(
+                join_id="comment-document",
+                source_field="data.attributes.commentOnDocumentId",
+                source_value=comment_on_document_id,
+                lookup_scope_id=_DOCUMENT_SCOPE,
+                matched=document,
+            ),
+        )
+        sampling_result = {
+            "frameAdmitted": not withdrawn,
+            "partition": None if withdrawn else "all",
+            "stratum": [] if withdrawn else ["all"],
+            "orderHash": None,
+            "rank": None,
+            "stratumSize": None,
+            "allocationMethod": "all",
+            "limit": None,
+            "drawn": not withdrawn,
+        }
+        return SourceCatalogItem(
+            source_item_id=source_item_id,
+            document_id=source_item_id,
+            source_issued_version=source_issued_version,
+            source_native_facts=source_facts,
+            normalized_metadata=normalized,
+            source_observed_topics=(),
+            source_observations=tuple(observations),
+            interpretations=catalog_interpretations(
+                self._interpretation_pin(),
+                joins=joins,
+                normalization_fields=normalization_fields,
+                ordered_family_ids=family_order,
+                families=families,
+                selected_family_id=selected_family_id,
+                candidates=candidates,
+                sampling_result=sampling_result,
+                selection=selection,
+                decisions=decisions,
+                topic_source_field="data.attributes.topics",
+            ),
+            candidate_renditions=candidates,
+            selection=selection,
+        )
+
+
+    def _comment_provenance(
+        self,
+        record: Mapping[str, Any],
+        attributes: Mapping[str, Any],
+        docket: _IndexedRow | None,
+        document: _IndexedRow | None,
+        malformed_comment_on_document_id: tuple[Any, ...],
+    ) -> tuple[str, tuple[dict[str, Any], ...], list[dict[str, Any]]]:
+        """Retain the upstream comment version choice and ordered source evidence.
+
+        Comments require an exact version; the document 'unknown' fallback
+        would discard the upstream-selected-version signal here.
+        """
+        observations = self._source_observations(
+            (
+                ("comment", record),
+                ("docket", docket[0] if docket is not None else None),
+                ("document", document[0] if document is not None else None),
+            )
+        )
+        modify_date = attributes.get("modifyDate")
+        if isinstance(modify_date, str) and modify_date:
+            source_issued_version = modify_date
+            source_issued_version_field = "data.attributes.modifyDate"
+            version_reason = "upstream-selected-newest-comment-version"
+        elif modify_date is None:
+            posted_date = attributes.get("postedDate")
+            if not isinstance(posted_date, str) or not posted_date:
+                raise IntegrityError(
+                    "Regulations.gov comment with null modifyDate has no postedDate fallback"
+                )
+            source_issued_version = posted_date
+            source_issued_version_field = "data.attributes.postedDate"
+            version_reason = "upstream-selected-comment-has-null-modify-date"
+        else:
+            raise IntegrityError(
+                "Regulations.gov comment modifyDate must be nonempty text or null"
+            )
+        observations.append(
+            {
+                "observationKey": "comment/source-issued-version-policy",
+                "observationValue": {
+                    "exactSourceValue": source_issued_version,
+                    "sourcePath": source_issued_version_field,
+                    "reasonCode": version_reason,
+                    "upstreamVersionPath": "data.attributes.modifyDate",
+                    "upstreamVersionValue": modify_date,
+                },
+            }
+        )
+        if malformed_comment_on_document_id:
+            observations.append(
+                {
+                    "observationKey": "comment/unparseable-comment-on-document-id",
+                    "observationValue": malformed_comment_on_document_id[0],
+                }
+            )
+        observations.sort(key=lambda value: _utf16_key(value["observationKey"]))
+        facts = [record]
+        if docket is not None:
+            facts.append(docket[0])
+        if document is not None:
+            facts.append(document[0])
+        source_facts = tuple(
+            _source_fact(value)
+            for value in sorted(facts, key=lambda value: _utf16_key(str(value["scopeId"])))
+        )
+        return source_issued_version, source_facts, observations
+
+
+    def _comment_normalization(
+        self,
+        source_item_id: str,
+        data: Mapping[str, Any],
+        attributes: Mapping[str, Any],
+        docket_id: str | None,
+        malformed_docket_id: tuple[Any, ...],
+        docket: _IndexedRow | None,
+    ) -> tuple[dict[str, Any], tuple[CatalogNormalizationField, ...], object]:
+        """Normalize comment fields, preserving their distinct docket-only RIN source."""
         title, malformed_title = _text(attributes.get("title"))
         agencies, malformed_agencies = _agency(attributes.get("agencyId"), self.agency_names)
         document_type, malformed_document_type = _text(attributes.get("documentType"))
@@ -1667,134 +1705,30 @@ class RegulationsGovCatalogPolicy:
                 unparseable_values=malformed_source_url,
             ),
         )
-        offers, families, selected_family, family_order = self._source_kind_rendition_preference(
-            renditions,
-            raw_source_url,
-            include_files=True,
-        )
-        withdrawn = attributes.get("withdrawn") is True
-        candidates = () if withdrawn else offers
-        selected_family_id = None if withdrawn else selected_family
-        withdrawal_reason, _ = _text(attributes.get("reasonWithdrawn"))
-        missing = [
-            name
-            for name in ("agencies", "documentType", "publicationDate", "sourceUrl")
-            if not normalized[name]
-        ]
-        selection, decisions = _selection_result(
-            source_item_id=source_item_id,
-            attributes=attributes,
-            withdrawn=withdrawn,
-            withdrawal_reason=withdrawal_reason,
-            missing_fields=missing,
-            candidates=candidates,
-            budget_available=budget_available,
-        )
+        return normalized, normalization_fields, raw_source_url
 
-        observations = self._source_observations(
-            (
-                ("comment", record),
-                ("docket", docket[0] if docket is not None else None),
-                ("document", document[0] if document is not None else None),
-            )
+
+    @staticmethod
+    def _comment_joins(
+        workspace: CatalogPolicyWorkspace, docket_id: str | None,
+        comment_on_document_id: str | None,
+    ) -> tuple[_IndexedRow | None, _IndexedRow | None]:
+        """Resolve a comment's declared docket and parent document independently."""
+        docket = _indexed_row(workspace, _DOCKET_INDEX, docket_id)
+        document = _indexed_row(
+            workspace,
+            _DOCUMENT_INDEX,
+            comment_on_document_id,
         )
-        modify_date = attributes.get("modifyDate")
-        if isinstance(modify_date, str) and modify_date:
-            source_issued_version = modify_date
-            source_issued_version_field = "data.attributes.modifyDate"
-            version_reason = "upstream-selected-newest-comment-version"
-        elif modify_date is None:
-            posted_date = attributes.get("postedDate")
-            if not isinstance(posted_date, str) or not posted_date:
-                raise IntegrityError(
-                    "Regulations.gov comment with null modifyDate has no postedDate fallback"
-                )
-            source_issued_version = posted_date
-            source_issued_version_field = "data.attributes.postedDate"
-            version_reason = "upstream-selected-comment-has-null-modify-date"
-        else:
-            raise IntegrityError(
-                "Regulations.gov comment modifyDate must be nonempty text or null"
-            )
-        observations.append(
-            {
-                "observationKey": "comment/source-issued-version-policy",
-                "observationValue": {
-                    "exactSourceValue": source_issued_version,
-                    "sourcePath": source_issued_version_field,
-                    "reasonCode": version_reason,
-                    "upstreamVersionPath": "data.attributes.modifyDate",
-                    "upstreamVersionValue": modify_date,
-                },
-            }
-        )
-        if malformed_comment_on_document_id:
-            observations.append(
-                {
-                    "observationKey": "comment/unparseable-comment-on-document-id",
-                    "observationValue": malformed_comment_on_document_id[0],
-                }
-            )
-        observations.sort(key=lambda value: _utf16_key(value["observationKey"]))
-        facts = [record]
-        if docket is not None:
-            facts.append(docket[0])
-        if document is not None:
-            facts.append(document[0])
-        source_facts = tuple(
-            _source_fact(value)
-            for value in sorted(facts, key=lambda value: _utf16_key(str(value["scopeId"])))
-        )
-        joins = (
-            _join_result(
-                join_id="comment-docket",
-                source_field="data.attributes.docketId",
-                source_value=docket_id,
-                lookup_scope_id=_DOCKET_SCOPE,
-                matched=docket,
-            ),
-            _join_result(
-                join_id="comment-document",
-                source_field="data.attributes.commentOnDocumentId",
-                source_value=comment_on_document_id,
-                lookup_scope_id=_DOCUMENT_SCOPE,
-                matched=document,
-            ),
-        )
-        sampling_result = {
-            "frameAdmitted": not withdrawn,
-            "partition": None if withdrawn else "all",
-            "stratum": [] if withdrawn else ["all"],
-            "orderHash": None,
-            "rank": None,
-            "stratumSize": None,
-            "allocationMethod": "all",
-            "limit": None,
-            "drawn": not withdrawn,
-        }
-        return SourceCatalogItem(
-            source_item_id=source_item_id,
-            document_id=source_item_id,
-            source_issued_version=source_issued_version,
-            source_native_facts=source_facts,
-            normalized_metadata=normalized,
-            source_observed_topics=(),
-            source_observations=tuple(observations),
-            interpretations=self._interpretations(
-                joins=joins,
-                normalization_fields=normalization_fields,
-                ordered_family_ids=family_order,
-                families=families,
-                selected_family_id=selected_family_id,
-                candidates=candidates,
-                sampling_result=sampling_result,
-                selection=selection,
-                decisions=decisions,
-                topic_source_field="data.attributes.topics",
-            ),
-            candidate_renditions=candidates,
-            selection=selection,
-        )
+        if docket is not None and docket[0]["sourceRecordId"] != docket_id:
+            raise IntegrityError("Regulations.gov comment docket join returned a different key")
+        if (
+            document is not None
+            and document[0]["sourceRecordId"] != comment_on_document_id
+        ):
+            raise IntegrityError("Regulations.gov comment document join returned a different key")
+
+        return docket, document
 
     def _item_from_row(
         self,
@@ -1813,24 +1747,150 @@ class RegulationsGovCatalogPolicy:
             raise IntegrityError("Regulations.gov document source identity differs")
         docket_id, malformed_docket_id = _source_identifier(attributes.get("docketId"))
         fr_doc_num, malformed_fr_doc_num = _source_identifier(attributes.get("frDocNum"))
-        docket = _indexed_row(workspace, _DOCKET_INDEX, docket_id)
-        federal_register = _indexed_row(
-            workspace,
-            _FEDERAL_REGISTER_INDEX,
-            fr_doc_num,
-        )
-        if docket is not None and docket[0]["sourceRecordId"] != docket_id:
-            raise IntegrityError("Regulations.gov docket join returned a different exact key")
-        if federal_register is not None and (
-            _lookup_key(federal_register[0], _FEDERAL_REGISTER_KEY_PATH) != fr_doc_num
-        ):
-            # Compares the field the index was keyed on. Comparing
-            # sourceRecordId here was correct only while the two were the same
-            # string; once the producer made it composite this guard could
-            # never agree, and the reason it never fired is that the lookup was
-            # returning None for every document instead.
-            raise IntegrityError("Federal Register join returned a different exact key")
+        docket, federal_register = self._document_joins(workspace, docket_id, fr_doc_num)
 
+        normalized, normalization_fields = self._document_normalization(
+            source_item_id, data, attributes, docket_id, malformed_docket_id,
+            docket, federal_register,
+        )
+
+        offers, families, selected_family = self._rendition_preference(
+            renditions,
+            federal_register[1] if federal_register is not None else (),
+        )
+        withdrawn = attributes.get("withdrawn") is True
+        candidates = () if withdrawn else offers
+        selected_family_id = None if withdrawn else selected_family
+        selection, decisions = self._document_selection(
+            source_item_id, attributes, normalized, candidates,
+            withdrawn=withdrawn, sample_drawn=sample_drawn, budget_available=budget_available,
+        )
+
+        topics = observed_topics(
+            attributes.get("topics"),
+            scheme="regulations.gov",
+            identity_fields=("id", "slug"),
+            label_fields=("label", "name"),
+        )
+        facts, observations = self._document_provenance(
+            record, docket, federal_register, malformed_fr_doc_num, discarded_filings,
+        )
+        join_rows = (
+            _join_result(
+                join_id="document-docket",
+                source_field="data.attributes.docketId",
+                source_value=docket_id,
+                lookup_scope_id=_DOCKET_SCOPE,
+                matched=docket,
+            ),
+            _join_result(
+                join_id="document-federal-register",
+                source_field="data.attributes.frDocNum",
+                source_value=fr_doc_num,
+                lookup_scope_id=_FEDERAL_REGISTER_SCOPE,
+                matched=federal_register,
+            ),
+        )
+        sampling_result = self._sampling_result(
+            source_item_id,
+            withdrawn=withdrawn,
+            sample_drawn=sample_drawn,
+            workspace=workspace,
+        )
+        interpretations = catalog_interpretations(
+            self._interpretation_pin(),
+            joins=join_rows,
+            normalization_fields=normalization_fields,
+            ordered_family_ids=_RENDITION_ORDER,
+            families=families,
+            selected_family_id=selected_family_id,
+            candidates=candidates,
+            sampling_result=sampling_result,
+            selection=selection,
+            decisions=decisions,
+            topic_source_field="data.attributes.topics",
+            topics=topics,
+        )
+        # Neither date leaves required `publicationDate` absent, so `selection`
+        # above is already DELETED, EXCLUDED, or FAILED: the placeholder never
+        # reaches a SELECTED item, and one bad row cannot abort a long build.
+        # `FederalRegisterCatalogPolicy` uses the same `"unknown"` fallback.
+        raw_issued_version = attributes.get("modifyDate") or attributes.get("postedDate")
+        source_issued_version = (
+            raw_issued_version
+            if isinstance(raw_issued_version, str) and raw_issued_version
+            else "unknown"
+        )
+        return SourceCatalogItem(
+            source_item_id=source_item_id,
+            document_id=source_item_id,
+            source_issued_version=source_issued_version,
+            source_native_facts=tuple(facts),
+            normalized_metadata=normalized,
+            source_observed_topics=topics,
+            source_observations=tuple(observations),
+            interpretations=interpretations,
+            candidate_renditions=candidates,
+            selection=selection,
+        )
+
+
+    def _document_provenance(
+        self,
+        record: Mapping[str, Any],
+        docket: _IndexedRow | None,
+        federal_register: _IndexedRow | None,
+        malformed_fr_doc_num: tuple[Any, ...],
+        discarded_filings: tuple[Mapping[str, Any], ...],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Retain matched facts, source diagnostics, and discarded filing evidence."""
+        facts = [_source_fact(record)]
+        if docket is not None:
+            facts.append(_source_fact(docket[0]))
+        if federal_register is not None:
+            facts.append(_source_fact(federal_register[0]))
+        observations = self._source_observations(
+            (
+                ("document", record),
+                ("docket", docket[0] if docket is not None else None),
+                ("federal-register", federal_register[0] if federal_register is not None else None),
+            )
+        )
+        if malformed_fr_doc_num:
+            observations.append(
+                {
+                    "observationKey": "unparseableFederalRegisterDocumentNumber",
+                    "observationValue": malformed_fr_doc_num[0],
+                }
+            )
+        # A filing this document was cross-filed under, collapsed by the loader
+        # and kept here rather than dropped. Decision 0004: the two filings of a
+        # real cross-filed document were measured to differ in 8 of 84 and 6 of
+        # 90 leaf fields, so the discarded side carries evidence -- a docket
+        # association and a Federal Register volume citation that exist on one
+        # side only. sourceObservations already takes a free-form key and an
+        # unconstrained value, so this needs no schema version.
+        observations.extend(
+            {
+                "observationKey": f"cross-file-discard/{index}",
+                "observationValue": dict(filing),
+            }
+            for index, filing in enumerate(discarded_filings)
+        )
+        return facts, observations
+
+
+    def _document_normalization(
+        self,
+        source_item_id: str,
+        data: Mapping[str, Any],
+        attributes: Mapping[str, Any],
+        docket_id: str | None,
+        malformed_docket_id: tuple[Any, ...],
+        docket: _IndexedRow | None,
+        federal_register: _IndexedRow | None,
+    ) -> tuple[dict[str, Any], tuple[CatalogNormalizationField, ...]]:
+        """Keep each normalized field beside its source paths and rejected values."""
         title, malformed_title = _text(attributes.get("title"))
         agencies, malformed_agencies = _agency(attributes.get("agencyId"), self.agency_names)
         document_type, malformed_document_type = _text(attributes.get("documentType"))
@@ -1919,286 +1979,101 @@ class RegulationsGovCatalogPolicy:
         if tuple(value.normalized_field for value in normalization_fields) != _NORMALIZED_FIELDS:
             raise AssertionError("Regulations.gov normalization field order drifted")
 
-        offers, families, selected_family = self._rendition_preference(
-            renditions,
-            federal_register[1] if federal_register is not None else (),
+        return normalized, normalization_fields
+
+
+    @staticmethod
+    def _document_joins(
+        workspace: CatalogPolicyWorkspace, docket_id: str | None, fr_doc_num: str | None,
+    ) -> tuple[_IndexedRow | None, _IndexedRow | None]:
+        """Resolve declared exact keys and check what the index returned."""
+        docket = _indexed_row(workspace, _DOCKET_INDEX, docket_id)
+        federal_register = _indexed_row(
+            workspace,
+            _FEDERAL_REGISTER_INDEX,
+            fr_doc_num,
         )
-        withdrawn = attributes.get("withdrawn") is True
-        candidates = () if withdrawn else offers
-        selected_family_id = None if withdrawn else selected_family
+        if docket is not None and docket[0]["sourceRecordId"] != docket_id:
+            raise IntegrityError("Regulations.gov docket join returned a different exact key")
+        if federal_register is not None and (
+            _lookup_key(federal_register[0], _FEDERAL_REGISTER_KEY_PATH) != fr_doc_num
+        ):
+            # Compares the field the index was keyed on. Comparing
+            # sourceRecordId here was correct only while the two were the same
+            # string; once the producer made it composite this guard could
+            # never agree, and the reason it never fired is that the lookup was
+            # returning None for every document instead.
+            raise IntegrityError("Federal Register join returned a different exact key")
+
+        return docket, federal_register
+
+    def _document_selection(
+        self,
+        source_item_id: str,
+        attributes: Mapping[str, Any],
+        normalized: Mapping[str, Any],
+        candidates: tuple[SourceCatalogCandidate, ...],
+        *,
+        withdrawn: bool,
+        sample_drawn: bool | None,
+        budget_available: bool,
+    ) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
+        """Stop at the first document decision, preserving its ordered evidence.
+
+        Documents include sampling and record successful budget checks only
+        when configured. Docket/comment selection has different recorded rules.
+        """
         decisions: list[CatalogSelectionDecision] = []
         fixture_selection = _test_fixture_selection(source_item_id)
         if fixture_selection is not None:
-            selection = fixture_selection
-            decisions.append(
-                CatalogSelectionDecision(
-                    "publisher-test-fixture",
-                    False,
-                    selection.disposition,
-                    selection.reason_code,
-                    selection.reason,
-                )
+            return selection_failure(decisions, "publisher-test-fixture", fixture_selection)
+        decisions.append(CatalogSelectionDecision("publisher-test-fixture", True))
+        if withdrawn:
+            reason_withdrawn, _ = _text(attributes.get("reasonWithdrawn"))
+            reason = "The source marks this document withdrawn."
+            if reason_withdrawn is not None:
+                reason = f"The source marks this document withdrawn: {reason_withdrawn}"
+            return selection_failure(decisions, "source-withdrawal", SourceCatalogSelection(
+                CatalogDisposition.DELETED, "source.withdrawn-after-publication", reason,
+            ))
+        decisions.append(CatalogSelectionDecision("source-withdrawal", True))
+        if sample_drawn is False:
+            limit = self.sample.per_partition_limit if self.sample is not None else 0
+            reason = (
+                "The deterministic stratified sample takes at most "
+                f"{limit} items per document type; this item was not drawn."
             )
-        else:
-            decisions.append(CatalogSelectionDecision("publisher-test-fixture", True))
-            if withdrawn:
-                reason_withdrawn, _ = _text(attributes.get("reasonWithdrawn"))
-                reason = "The source marks this document withdrawn."
-                if reason_withdrawn is not None:
-                    reason = f"The source marks this document withdrawn: {reason_withdrawn}"
-                selection = SourceCatalogSelection(
-                    CatalogDisposition.DELETED,
-                    "source.withdrawn-after-publication",
-                    reason,
-                )
-                decisions.append(
-                    CatalogSelectionDecision(
-                        "source-withdrawal",
-                        False,
-                        CatalogDisposition.DELETED,
-                        selection.reason_code,
-                        selection.reason,
-                    )
-                )
-            else:
-                decisions.append(CatalogSelectionDecision("source-withdrawal", True))
-                if sample_drawn is False:
-                    limit = self.sample.per_partition_limit if self.sample is not None else 0
-                    reason = (
-                        "The deterministic stratified sample takes at most "
-                        f"{limit} items per document type; this item was not drawn."
-                    )
-                    selection = SourceCatalogSelection(
-                        CatalogDisposition.EXCLUDED,
-                        "policy.sample-not-drawn",
-                        reason,
-                    )
-                    decisions.append(
-                        CatalogSelectionDecision(
-                            "sample-draw",
-                            False,
-                            CatalogDisposition.EXCLUDED,
-                            selection.reason_code,
-                            selection.reason,
-                        )
-                    )
-                else:
-                    if sample_drawn is True:
-                        decisions.append(CatalogSelectionDecision("sample-draw", True))
-                    missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
-                    if missing:
-                        reason = "Required normalized catalog values are unusable: " + ", ".join(missing)
-                        selection = SourceCatalogSelection(
-                            CatalogDisposition.FAILED,
-                            "source.normalized-field-missing",
-                            reason,
-                        )
-                        decisions.append(
-                            CatalogSelectionDecision(
-                                "required-metadata",
-                                False,
-                                CatalogDisposition.FAILED,
-                                selection.reason_code,
-                                selection.reason,
-                            )
-                        )
-                    else:
-                        decisions.append(CatalogSelectionDecision("required-metadata", True))
-                        if not candidates:
-                            reason = (
-                                "Neither the acquired source record nor its exact "
-                                "Federal Register match offers a usable rendition."
-                                + _ACQUIRED_SOURCE_SCOPE
-                            )
-                            selection = _no_rendition_selection(attributes, reason)
-                            decisions.append(
-                                CatalogSelectionDecision(
-                                    "candidate-rendition",
-                                    False,
-                                    selection.disposition,
-                                    selection.reason_code,
-                                    selection.reason,
-                                )
-                            )
-                        else:
-                            decisions.append(CatalogSelectionDecision("candidate-rendition", True))
-                            if not budget_available:
-                                reason = (
-                                    "The catalog selected-item budget is already exhausted."
-                                )
-                                selection = SourceCatalogSelection(
-                                    CatalogDisposition.EXCLUDED,
-                                    "policy.item-budget-exhausted",
-                                    reason,
-                                )
-                                decisions.append(
-                                    CatalogSelectionDecision(
-                                        "selected-item-budget",
-                                        False,
-                                        CatalogDisposition.EXCLUDED,
-                                        selection.reason_code,
-                                        selection.reason,
-                                    )
-                                )
-                            else:
-                                if self.max_selected_items is not None:
-                                    decisions.append(
-                                        CatalogSelectionDecision(
-                                            "selected-item-budget",
-                                            True,
-                                        )
-                                    )
-                                selection = SourceCatalogSelection(
-                                    CatalogDisposition.SELECTED
-                                )
-
-        topics = observed_topics(
-            attributes.get("topics"),
-            scheme="regulations.gov",
-            identity_fields=("id", "slug"),
-            label_fields=("label", "name"),
-        )
-        facts = [_source_fact(record)]
-        if docket is not None:
-            facts.append(_source_fact(docket[0]))
-        if federal_register is not None:
-            facts.append(_source_fact(federal_register[0]))
-        observations: list[dict[str, Any]] = []
-        for prefix, source_record in (
-            ("document", record),
-            ("docket", docket[0] if docket is not None else None),
-            ("federal-register", federal_register[0] if federal_register is not None else None),
-        ):
-            if source_record is None:
-                continue
-            diagnostics = source_record.get("fieldDiagnostics")
-            if isinstance(diagnostics, list):
-                observations.extend(
-                    {
-                        "observationKey": f"{prefix}/field-diagnostic/{index}",
-                        "observationValue": value,
-                    }
-                    for index, value in enumerate(diagnostics)
-                )
-        if malformed_fr_doc_num:
-            observations.append(
-                {
-                    "observationKey": "unparseableFederalRegisterDocumentNumber",
-                    "observationValue": malformed_fr_doc_num[0],
-                }
+            return selection_failure(decisions, "sample-draw", SourceCatalogSelection(
+                CatalogDisposition.EXCLUDED, "policy.sample-not-drawn", reason,
+            ))
+        if sample_drawn is True:
+            decisions.append(CatalogSelectionDecision("sample-draw", True))
+        missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
+        if missing:
+            reason = "Required normalized catalog values are unusable: " + ", ".join(missing)
+            return selection_failure(decisions, "required-metadata", SourceCatalogSelection(
+                CatalogDisposition.FAILED, "source.normalized-field-missing", reason,
+            ))
+        decisions.append(CatalogSelectionDecision("required-metadata", True))
+        if not candidates:
+            reason = (
+                "Neither the acquired source record nor its exact "
+                "Federal Register match offers a usable rendition."
+                + _ACQUIRED_SOURCE_SCOPE
             )
-        # A filing this document was cross-filed under, collapsed by the loader
-        # and kept here rather than dropped. Decision 0004: the two filings of a
-        # real cross-filed document were measured to differ in 8 of 84 and 6 of
-        # 90 leaf fields, so the discarded side carries evidence -- a docket
-        # association and a Federal Register volume citation that exist on one
-        # side only. sourceObservations already takes a free-form key and an
-        # unconstrained value, so this needs no schema version.
-        observations.extend(
-            {
-                "observationKey": f"cross-file-discard/{index}",
-                "observationValue": dict(filing),
-            }
-            for index, filing in enumerate(discarded_filings)
-        )
-        input_scope_ids = self._input_scope_ids()
-        pin = {
-            "policyId": self.policy_id,
-            "policyVersion": self.policy_version,
-            "policyDigest": self.policy_digest,
-            "inputScopeIds": input_scope_ids,
-        }
-        join_rows = (
-            _join_result(
-                join_id="document-docket",
-                source_field="data.attributes.docketId",
-                source_value=docket_id,
-                lookup_scope_id=_DOCKET_SCOPE,
-                matched=docket,
-            ),
-            _join_result(
-                join_id="document-federal-register",
-                source_field="data.attributes.frDocNum",
-                source_value=fr_doc_num,
-                lookup_scope_id=_FEDERAL_REGISTER_SCOPE,
-                matched=federal_register,
-            ),
-        )
-        sampling_result = self._sampling_result(
-            source_item_id,
-            withdrawn=withdrawn,
-            sample_drawn=sample_drawn,
-            workspace=workspace,
-        )
-        interpretations = (
-            {
-                "interpretationKind": "exact-join",
-                **pin,
-                "result": {"joins": list(join_rows)},
-            },
-            {
-                "interpretationKind": "normalization",
-                **pin,
-                "result": {"fields": [field.to_dict() for field in normalization_fields]},
-            },
-            {
-                "interpretationKind": "rendition-preference",
-                **pin,
-                "result": {
-                    "orderedFamilyIds": list(_RENDITION_ORDER),
-                    "families": [family.to_dict() for family in families],
-                    "selectedFamilyId": selected_family_id,
-                    "selectedRenditionIds": [value.rendition_id for value in candidates],
-                },
-            },
-            {
-                "interpretationKind": "sampling",
-                **pin,
-                "result": sampling_result,
-            },
-            {
-                "interpretationKind": "selection",
-                **pin,
-                "result": {
-                    "decisions": [decision.to_dict() for decision in decisions],
-                    "finalDisposition": selection.disposition.value,
-                    "reasonCode": selection.reason_code,
-                    "reason": selection.reason,
-                },
-            },
-            {
-                "interpretationKind": "topic-recovery",
-                **pin,
-                "result": {
-                    "sourceField": "data.attributes.topics",
-                    "outcome": "observed" if topics else "not-recovered",
-                    "evidenceDigest": None,
-                    "observedTopicIds": [value["observedTopicId"] for value in topics],
-                },
-            },
-        )
-        # Neither date leaves required `publicationDate` absent, so `selection`
-        # above is already DELETED, EXCLUDED, or FAILED: the placeholder never
-        # reaches a SELECTED item, and one bad row cannot abort a long build.
-        # `FederalRegisterCatalogPolicy` uses the same `"unknown"` fallback.
-        raw_issued_version = attributes.get("modifyDate") or attributes.get("postedDate")
-        source_issued_version = (
-            raw_issued_version
-            if isinstance(raw_issued_version, str) and raw_issued_version
-            else "unknown"
-        )
-        return SourceCatalogItem(
-            source_item_id=source_item_id,
-            document_id=source_item_id,
-            source_issued_version=source_issued_version,
-            source_native_facts=tuple(facts),
-            normalized_metadata=normalized,
-            source_observed_topics=topics,
-            source_observations=tuple(observations),
-            interpretations=interpretations,
-            candidate_renditions=candidates,
-            selection=selection,
-        )
+            return selection_failure(
+                decisions, "candidate-rendition", _no_rendition_selection(attributes, reason),
+            )
+        decisions.append(CatalogSelectionDecision("candidate-rendition", True))
+        if not budget_available:
+            return selection_failure(decisions, "selected-item-budget", SourceCatalogSelection(
+                CatalogDisposition.EXCLUDED,
+                "policy.item-budget-exhausted",
+                "The catalog selected-item budget is already exhausted.",
+            ))
+        if self.max_selected_items is not None:
+            decisions.append(CatalogSelectionDecision("selected-item-budget", True))
+        return SourceCatalogSelection(CatalogDisposition.SELECTED), tuple(decisions)
 
     @staticmethod
     def _rendition_preference(
