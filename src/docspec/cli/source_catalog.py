@@ -586,9 +586,9 @@ def _build(args: argparse.Namespace) -> int:
 
     # Import the producer adapter only after the operator selects it. Help and
     # verification do not require the producer package.
-    from docspec.adapters.spicyregs_source_native import (
-        SpicyRegsSourceNativeAdapter,
-        spicyregs_source_profile,
+    from docspec.adapters.spicy_docs_source_native import (
+        SpicyDocsSourceNativeAdapter,
+        spicy_docs_source_profile,
     )
 
     source_inputs = tuple(
@@ -607,11 +607,11 @@ def _build(args: argparse.Namespace) -> int:
         )
     )
     sources = tuple(
-        SpicyRegsSourceNativeAdapter.from_local(
+        SpicyDocsSourceNativeAdapter.from_local(
             locator,
             blob_root=blob_root,
             artifact_digest=digest,
-            profile=spicyregs_source_profile(profile_name),
+            profile=spicy_docs_source_profile(profile_name),
             accepted_verifier_implementation_ids=accepted_verifiers,
         )
         for locator, digest, blob_root, profile_name in source_inputs
@@ -743,7 +743,7 @@ def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
         action="append",
         type=Path,
         required=True,
-        help="Read-only SpicyRegs content-addressed blob store paired with one source-native input",
+        help="Read-only content-addressed blob store paired with one source-native input",
     )
     source_build.add_argument(
         "--source-native-profile",

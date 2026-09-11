@@ -1,12 +1,8 @@
-"""Optional outer adapter for the installed source-native reader.
+"""Read source-native artifacts through the installed SpicyDocs reader.
 
-DocSpec never imports a producer package from core; the two seams below
-resolve one by name at the edge. spicy-docs is the platform's source-native
-acquisition package (source supply consolidation plan, D7) and is resolved
-first; the spicy-regs copy is a fallback kept only until it is retired
-upstream. Either package satisfies the port as long as its reader module
-declares `SUPPORTED_PRODUCER_PRODUCTS` covering DocSpec's accepted producer
-set — resolution order alone never decides acceptance, the declared set does.
+The package stays optional and is loaded only at this adapter boundary. Artifact
+producer labels are independent of the reader package: pinned releases from
+both accepted producers remain readable through the current SpicyDocs owner.
 """
 
 from __future__ import annotations
@@ -27,31 +23,17 @@ from docspec.ports.source_catalog import SourceNativeDescription
 #: is refused: it would silently hard-refuse releases from the other producer.
 ACCEPTED_PRODUCER_PRODUCTS: frozenset[str] = frozenset({"spicy-regs", "spicy-docs"})
 
-_PRODUCER_PACKAGES = ("spicy_docs", "spicy_regs")
-
-
 def _resolve_producer_module(module_name: str) -> ModuleType:
-    """Import one source-native module, preferring spicy-docs over spicy-regs.
-
-    Both packages ship the module under the identical name. Trying spicy-docs
-    first matters only for which package is used when both are installed; a
-    package present in the venv does not by itself make its reader accepted.
-    """
-
-    for package in _PRODUCER_PACKAGES:
-        qualified = f"{package}.{module_name}"
-        try:
-            return import_module(qualified)
-        except ModuleNotFoundError as error:
-            # Only an absent producer package or module falls through. A
-            # ModuleNotFoundError raised from inside an installed one -- a
-            # broken transitive import -- names a different module, and
-            # swallowing it would silently serve the fallback producer.
-            if error.name not in (package, qualified):
-                raise
-    raise RuntimeError(
-        f"the source-native adapter requires an installed spicy-docs or spicy-regs package providing {module_name}"
-    )
+    """Load the current reader, preserving errors from its own dependencies."""
+    qualified = f"spicy_docs.{module_name}"
+    try:
+        return import_module(qualified)
+    except ModuleNotFoundError as error:
+        if error.name not in ("spicy_docs", qualified):
+            raise
+        raise RuntimeError(
+            f"the source-native adapter requires an installed spicy-docs package providing {module_name}"
+        ) from error
 
 
 def _require_accepted_reader(module: ModuleType) -> ModuleType:
@@ -66,7 +48,7 @@ def _require_accepted_reader(module: ModuleType) -> ModuleType:
     return module
 
 
-def spicyregs_source_profile(name: str) -> object:
+def spicy_docs_source_profile(name: str) -> object:
     """Resolve one explicit CLI choice without importing a producer package in DocSpec core."""
 
     module = _resolve_producer_module("source_native_profiles")
@@ -81,7 +63,7 @@ def spicyregs_source_profile(name: str) -> object:
     raise ValueError(f"unsupported source-native profile: {name}")
 
 
-class SpicyRegsSourceNativeAdapter:
+class SpicyDocsSourceNativeAdapter:
     """Expose source-native rows through DocSpec's structural source port."""
 
     def __init__(
@@ -115,7 +97,7 @@ class SpicyRegsSourceNativeAdapter:
         profile: object,
         accepted_verifier_implementation_ids: frozenset[str],
         logical_id: str | None = None,
-    ) -> SpicyRegsSourceNativeAdapter:
+    ) -> SpicyDocsSourceNativeAdapter:
         adapter = cls(
             LocalMemberSource(Path(root)),
             blob_source=LocalBlobSource(Path(blob_root)),
@@ -145,4 +127,4 @@ class SpicyRegsSourceNativeAdapter:
         yield from self._reader.iter_renditions()
 
 
-__all__ = ["SpicyRegsSourceNativeAdapter", "spicyregs_source_profile"]
+__all__ = ["SpicyDocsSourceNativeAdapter", "spicy_docs_source_profile"]

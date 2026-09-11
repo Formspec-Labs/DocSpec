@@ -7,10 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import docspec.adapters.spicyregs_source_native as spicyregs_adapter_module
-from docspec.adapters.spicyregs_source_native import (
-    SpicyRegsSourceNativeAdapter,
-    spicyregs_source_profile,
+import docspec.adapters.spicy_docs_source_native as spicy_docs_adapter_module
+from docspec.adapters.spicy_docs_source_native import (
+    SpicyDocsSourceNativeAdapter,
+    spicy_docs_source_profile,
 )
 from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
@@ -351,8 +351,8 @@ def test_installed_adapter_exposes_comment_profile_and_propagates_upstream_tie_r
 ) -> None:
     comment_profile = object()
     profiles = SimpleNamespace(REGULATIONS_GOV_COMMENT_PROFILE=comment_profile)
-    monkeypatch.setattr(spicyregs_adapter_module, "import_module", lambda _: profiles)
-    assert spicyregs_source_profile("regulations-gov-comments") is comment_profile
+    monkeypatch.setattr(spicy_docs_adapter_module, "import_module", lambda _: profiles)
+    assert spicy_docs_source_profile("regulations-gov-comments") is comment_profile
 
     class RefusingReader:
         def __init__(self, *args: object, **kwargs: object) -> None:
@@ -363,9 +363,9 @@ def test_installed_adapter_exposes_comment_profile_and_propagates_upstream_tie_r
         SUPPORTED_PRODUCER_PRODUCTS=frozenset({"spicy-regs", "spicy-docs"}),
         SourceNativeReleaseReader=RefusingReader,
     )
-    monkeypatch.setattr(spicyregs_adapter_module, "import_module", lambda _: source_native)
+    monkeypatch.setattr(spicy_docs_adapter_module, "import_module", lambda _: source_native)
     with pytest.raises(ValueError, match="upstream source-version tie"):
-        SpicyRegsSourceNativeAdapter(
+        SpicyDocsSourceNativeAdapter(
             SimpleNamespace(),
             blob_source=SimpleNamespace(),
             profile=comment_profile,

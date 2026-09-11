@@ -14,7 +14,7 @@ from rulespec_artifacts import ArtifactPin, LocalBlobSource, MemberSourceError
 
 from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
-from docspec.adapters.spicyregs_source_native import SpicyRegsSourceNativeAdapter
+from docspec.adapters.spicy_docs_source_native import SpicyDocsSourceNativeAdapter
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.references import SourceCatalogRef
 from docspec.entrypoint import main
@@ -74,12 +74,12 @@ def test_spicyregs_adapter_pins_the_source_blob_root_across_streams(
     source_native.SUPPORTED_PRODUCER_PRODUCTS = frozenset({"spicy-regs", "spicy-docs"})  # type: ignore[attr-defined]
     source_native.SourceNativeReleaseReader = FakeReader  # type: ignore[attr-defined]
     monkeypatch.setattr(
-        "docspec.adapters.spicyregs_source_native.import_module",
+        "docspec.adapters.spicy_docs_source_native.import_module",
         lambda name: source_native
         if name == module_name
         else (_ for _ in ()).throw(ModuleNotFoundError(name, name=name)),
     )
-    adapter = SpicyRegsSourceNativeAdapter.from_local(
+    adapter = SpicyDocsSourceNativeAdapter.from_local(
         source_root,
         blob_root=blob_root,
         artifact_digest=description().artifact_digest,
