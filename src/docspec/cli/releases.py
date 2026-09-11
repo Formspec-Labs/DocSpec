@@ -33,30 +33,34 @@ from docspec.domain.plans import ProcessingPlan
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef
 
 
-def _cmd_document_release_commit(args: argparse.Namespace) -> int:
+def _cmd_document_release_save(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
-    value = _read_json_object(args.request, label="document release commit request")
+    action = args.document_release_command
+    label = f"document release {action} request"
+    value = _read_json_object(args.request, label=label)
     fields = {"format", "formatVersion", "runRequest", "runReceipt", "baseRelease"}
     if set(value) != fields:
-        raise CliError("document release commit request has an invalid closed shape")
-    if value["format"] != "docspec-local-release-commit-request" or value["formatVersion"] != "1.0":
-        raise CliError("document release commit request has an unknown format")
+        raise CliError(f"{label} has an invalid closed shape")
+    if value["format"] != f"docspec-local-release-{action}-request" or value["formatVersion"] != "1.0":
+        raise CliError(f"{label} has an unknown format")
     run_request_path = _absolute_request_path(value["runRequest"], label="local run request")
     run_receipt_path = _absolute_request_path(value["runReceipt"], label="run receipt reference")
     _, plan, controls, _, records, _, catalog = _local_storage_for_run_request(run_request_path)
     base_release = None if value["baseRelease"] is None else DocumentReleaseRef.from_dict(value["baseRelease"])
     if base_release != plan.base_release:
-        raise CliError("commit base release differs from the processing plan")
+        raise CliError("release base differs from the processing plan")
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     run_receipt = ArtifactRef.from_dict(_read_canonical_object(run_receipt_path, label="run receipt reference"))
-    reference = ReleaseCommitService(
+    service = ReleaseCommitService(
         plan_ref=plan_ref,
         controls=controls,
         records=records,
         document_catalog=catalog,
-    ).commit_release(base_release, run_receipt)
+    )
+    save = service.retain_release if action == "retain" else service.commit_release
+    reference = save(base_release, run_receipt)
     receipt = _write_artifact_and_receipt(
-        operation="document-release.commit",
+        operation=args.operation,
         request_path=args.request,
         destination=args.destination,
         receipt_path=args.receipt,

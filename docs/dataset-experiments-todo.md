@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 2 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 3 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -105,17 +105,26 @@ to defer a conditional item is a documented deferral, not completed implementati
   entry points, mandatory extraction/segmentation, processor-only reruns, and
   the separate portable verifier. Independent review approved these claims and
   preserved the dated intent with a visible correction. Local links checked;
-  this documentation does not qualify the unimplemented workflow.
+  this documentation does not qualify the unimplemented workflow. Commit `4cda52b`.
 
 <a id="d02"></a>
 
-- [ ] **D02 · P0 · Define dataset, run, and attempt clearly.** Decide how a
+- [x] **D02 · P0 · Define dataset, run, and attempt clearly.** Decide how a
   persistent dataset relates to catalog versions, acquisition work, processing
   attempts, and a selected base. Reuse existing plans, references, stores, and
   receipts before adding persistent models. **Done when:** processing retained
   inputs later creates an attributable attempt; alternatives can share a base
   without overwriting one another; “resume this attempt” and “start another
   experiment” have distinct, documented behavior. Include a dependency sketch.
+  **Completed September 11:** [the experiment guide](experiments.md) defines
+  these names, reference relationships, and identical-plan versus resume behavior.
+  `retain_release` preserves alternatives independently of `select` and its
+  explicit expected current; the CLI exposes both. Tests run two processor
+  alternatives from one base without refetching, preserve exact no-op state,
+  and cover stale selection, concurrent retention, damaged dependencies, and
+  compaction recovery. Independent architecture and code reviews approved the
+  approach. Core implementation: `f813458`. The complete installed lifecycle
+  remains D03–D05/D38; no additional dataset or run ledger was introduced.
 
 <a id="d03"></a>
 
@@ -215,6 +224,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   admission-time membership and temporary-disk limits. SpicySearch adoption and
   its installed-wheel qualification remain in [SC01](../../spicysearch/PLAN.md#sc01);
   these local checks do not establish a capacity or end-to-end speed claim.
+  Commit `45883d7`.
 
 <a id="d10"></a>
 
@@ -285,6 +295,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   establish extraction/segmentation-change reuse.
   Depends on D02 and D13; build on
   [base reprocessing](../src/docspec/application/base_reprocessing.py).
+  **Progress, September 11:** D02's real processing test proves two processor
+  alternatives share captures, representations, and segments. Reconciliation now
+  retains verified base blob roots for a zero-work stateful result, while a
+  stateless result keeps no inherited roots/layers. These cases do not establish
+  changed-extractor or changed-segmenter reuse, which remains open.
 
 <a id="d16"></a>
 

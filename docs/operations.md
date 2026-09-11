@@ -53,11 +53,22 @@ merging; they do not become authoritative release references. See
 [incremental equivalence](../tests/conformance/test_incremental_equivalence.py).
 
 [`ReleaseCommitService`](../src/docspec/application/commit.py) verifies the
-assembled release and uses compare-and-swap publication: advance the current
-pointer only if it still equals the expected base. If another writer has advanced
-it, inspect that release and reconsider the plan or reconciliation. Do not bypass
-the stale-base refusal to force a previous candidate into place. An unreferenced
-artifact left by an unsuccessful attempt is not evidence of publication.
+assembled release before retaining it. `document-release retain` returns a
+readable immutable result without changing the current selection. Include every
+result you need in retention inputs; the current pointer identifies only the
+present choice.
+
+`document-release commit` retains the result, then selects it only if current
+still equals its pinned base. If selection fails, the verified result remains
+retained; repeating retention returns its exact reference. Inspect the current
+result before making another choice. `document-catalog select` accepts an
+explicit expected current reference and verifies the retained candidate before
+updating the pointer. Selecting an alternative preserves its original input
+lineage. A retained artifact does not establish that selection succeeded; see
+[the experiment guide](experiments.md) for requests and receipt meanings.
+Local retention and selection hold an exclusive catalog lock through verification;
+a competing writer fails promptly and can retry after that operation finishes.
+Verification can take time for a large result.
 
 ## Build retention evidence before inspecting garbage candidates
 

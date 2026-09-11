@@ -68,9 +68,13 @@ helpers used by other local storage adapters.
 3. `StoreDeliveryService` verifies and delivers record streams. `RunReconciler`
    accounts for every planned task and checks durable results before producing
    a run receipt.
-4. `ReleaseCommitService` verifies the assembled release and advances the current
-   pointer only if the expected base still matches. A concurrent writer cannot
-   silently replace another writer's release.
+4. `ReleaseCommitService.retain_release` verifies and retains the assembled
+   result independently of the current selection. Alternatives can share one
+   pinned base. `commit_release` also selects the result if that base is still
+   current; a stale selection leaves the verified result retained. An explicit
+   `catalog.select` can choose another retained result using the caller's expected
+   current reference, while each result keeps its original base. See
+   [experiment identities and selection](experiments.md).
 
 These steps exchange small immutable references so that local execution and
 external workers use the same application services. Dagster is an optional

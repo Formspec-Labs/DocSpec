@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from docspec.cli.blobs import _cmd_blob_store_gc, _cmd_blob_store_verify
-from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_catalog_open
+from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select
 from docspec.cli.common import _write_failure_receipt
 from docspec.cli.conformance import _cmd_conformance_report, _cmd_conformance_run
 from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
@@ -19,7 +19,7 @@ from docspec.cli.profiles import (
     _cmd_scale_profile_verify,
 )
 from docspec.cli.releases import (
-    _cmd_document_release_commit,
+    _cmd_document_release_save,
     _cmd_document_release_compact,
     _cmd_document_release_diff,
     _cmd_document_release_verify,
@@ -97,8 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
     scale_profile_verify.add_argument("profile", type=Path)
     scale_profile_verify.set_defaults(func=_cmd_scale_profile_verify)
 
-    document_catalog = commands.add_parser("document-catalog", help="Open and compare complete catalog releases")
+    document_catalog = commands.add_parser("document-catalog", help="Open, compare, and select retained results")
     catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")
+    _add_mutating_paths(
+        catalog_commands.add_parser("select", help="Select a retained result if current still matches the request"),
+        operation="document-catalog.select",
+        func=_cmd_document_catalog_select,
+    )
     catalog_open = catalog_commands.add_parser("open", help="Verify and open an explicit release reference")
     _add_local_catalog_arguments(catalog_open)
     catalog_open.add_argument("--reference", type=Path, required=True)
@@ -198,12 +203,17 @@ def build_parser() -> argparse.ArgumentParser:
     sink_verify.add_argument("--control-root", type=Path, help="Resolve an ArtifactRef from this control repository")
     sink_verify.set_defaults(func=_cmd_sink_verify)
 
-    release = commands.add_parser("document-release", help="Commit, verify, compare, and compact releases")
+    release = commands.add_parser("document-release", help="Retain, commit, verify, compare, and compact releases")
     release_commands = _subcommands(release, dest="document_release_command")
     _add_mutating_paths(
         release_commands.add_parser("commit", help="Commit a reconciled local run with compare-and-swap"),
         operation="document-release.commit",
-        func=_cmd_document_release_commit,
+        func=_cmd_document_release_save,
+    )
+    _add_mutating_paths(
+        release_commands.add_parser("retain", help="Keep a verified result without changing the current selection"),
+        operation="document-release.retain",
+        func=_cmd_document_release_save,
     )
     release_verify = release_commands.add_parser("verify", help="Verify one canonical release root")
     release_verify.add_argument("release", type=Path)

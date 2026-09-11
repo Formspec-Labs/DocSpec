@@ -1,4 +1,4 @@
-"""DocSpec command catalog: document-catalog inspection."""
+"""DocSpec commands for inspecting retained results and selecting current state."""
 
 from __future__ import annotations
 
@@ -12,7 +12,16 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
-from docspec.cli.common import _document_release_producer, _release_reference
+from docspec.cli.common import (
+    _document_release_producer,
+    _release_reference,
+    _require_new_output_paths,
+    _write_artifact_and_receipt,
+)
+from docspec.cli.requests import _absolute_request_path, _local_storage_for_run_request
+from docspec.cli_io import CliError, read_object
+from docspec.domain.identity import canonical_json_file_bytes
+from docspec.domain.references import DocumentReleaseRef
 from docspec.cli_io import (
     emit as _emit,
 )
@@ -101,4 +110,31 @@ def _cmd_document_catalog_compare(args: argparse.Namespace) -> int:
             "verdict": "pass",
         }
     )
+    return 0
+
+
+def _cmd_document_catalog_select(args: argparse.Namespace) -> int:
+    _require_new_output_paths(args.destination, args.receipt)
+    value = read_object(args.request, label="document catalog selection request")
+    fields = {"format", "formatVersion", "runRequest", "release", "expectedCurrent"}
+    if set(value) != fields:
+        raise CliError("document catalog selection request has an invalid closed shape")
+    if value["format"] != "docspec-local-catalog-select-request" or value["formatVersion"] != "1.0":
+        raise CliError("document catalog selection request has an unknown format")
+    run_request = _absolute_request_path(value["runRequest"], label="local run request")
+    reference = DocumentReleaseRef.from_dict(value["release"])
+    expected_current = (
+        None if value["expectedCurrent"] is None else DocumentReleaseRef.from_dict(value["expectedCurrent"])
+    )
+    _, _, _, _, _, _, catalog = _local_storage_for_run_request(run_request)
+    selected = catalog.select(reference, expected_current=expected_current)
+    receipt = _write_artifact_and_receipt(
+        operation=args.operation,
+        request_path=args.request,
+        destination=args.destination,
+        receipt_path=args.receipt,
+        artifact_id=selected.release_id,
+        payload=canonical_json_file_bytes(selected.to_dict()),
+    )
+    _emit(receipt)
     return 0
