@@ -37,11 +37,11 @@ def _write_local_run_request(
         canonical_json_file_bytes(
             {
                 "format": "docspec-local-run-request",
-                "formatVersion": "1.0",
+                "formatVersion": "2.0",
                 "documentReleaseProducer": document_release_producer().as_dict(),
                 "sourceCatalogProducer": source_catalog_producer().as_dict(),
                 "plan": plan_path.as_posix(),
-                "profileDirectory": (REPO_ROOT / "src" / "docspec" / "storage_profiles").as_posix(),
+                "workspace": path.parent.resolve().as_posix(),
                 "roots": roots,
                 "resultSinkId": result_sink_id,
                 "partitionPolicyId": partition_policy_id,

@@ -130,9 +130,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   Depends on D02; see [request composition](../src/docspec/cli/requests.py).
   **Progress, September 11:** installed profiles now have one canonical home in
   `src/docspec/storage_profiles/`, with checked built-in/local selection and a
-  default `docspec profile list`. The example shares that selection. Focused
-  profile, CLI, offline-example, conformance, and isolated-wheel checks passed
-  (69 tests). Workspace configuration and the public lifecycle remain open.
+  default `docspec profile list`. Version `2.0` local requests now use one
+  workspace, optional root/profile overrides, and one-worker defaults while
+  keeping limits and verifier acceptance explicit. Effective configuration uses
+  the existing worker and execution records. A focused test prepares equivalent
+  implicit/explicit settings and proves identical references and successful
+  resume. Workspace, CLI, offline-example, Dagster, conformance, and isolated-wheel
+  checks passed (76 tests); independent review approved the foundation. D02 and
+  the ordinary caller's plan/implementation configuration remain open; this is
+  not yet the complete installed experiment workflow.
 
 <a id="d04"></a>
 

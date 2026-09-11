@@ -28,6 +28,7 @@ from docspec.ports.content_fetcher import FetchStream
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
+from docspec.workspace import LocalWorkspace
 from docspec.source_catalog import (
     FederalRegisterCatalogPolicy,
     LocalSourceCatalogStore,
@@ -193,29 +194,15 @@ def run_example(output: Path) -> None:
         accepted_failure_policy_digest=accepted.digest,
     )
     write_json(output / "plan.json", plan.to_dict())
-    roots = {
-        name: str(output / name)
-        for name in (
-            "blobStorage",
-            "controlRepository",
-            "documentCatalog",
-            "documentStores",
-            "reconciliation",
-            "recordStorage",
-        )
-    }
-    roots.update(sourceCatalog=str(store.root), sourceContent=str(INPUT_ROOT))
     request = {
         "format": "docspec-local-run-request",
-        "formatVersion": "1.0",
+        "formatVersion": "2.0",
         "plan": str(output / "plan.json"),
-        "profileDirectory": str(REPO_ROOT / "src" / "docspec" / "storage_profiles"),
-        "roots": roots,
-        "resultSinkId": "urn:docspec:example:sink",
-        "partitionPolicyId": "source-item-sha256-v1",
+        "workspace": str(output),
+        "roots": {"sourceCatalog": str(store.root), "sourceContent": str(INPUT_ROOT)},
         "retryPolicy": retry.to_dict(),
         "acceptedFailurePolicy": accepted.to_dict(),
-        "execution": {"maxWorkers": 1, "maxInFlight": 1, "deadlineEpochSeconds": 4_000_000_000},
+        "execution": {"deadlineEpochSeconds": 4_000_000_000},
         "completedAt": COMPLETED_AT,
         "documentReleaseProducer": release_producer.as_dict(),
         "sourceCatalogProducer": source_producer.as_dict(),
@@ -244,6 +231,7 @@ def run_example(output: Path) -> None:
         str(output / "commit-receipt.json"),
     ]
     run_command(command, output / "commit-result.json")
+    roots = {name: str(path) for name, path in LocalWorkspace(output).roots.items()}
     command = [
         "document-catalog",
         "open",

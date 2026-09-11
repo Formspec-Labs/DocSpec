@@ -30,7 +30,8 @@ from docspec.domain.profiles import ProfileRole
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from docspec.profile_registry import ProfileRegistry, RegisteredProfile
+from docspec.profile_registry import BUILTIN_PROFILE_DIRECTORY, ProfileRegistry, RegisteredProfile
+from docspec.workspace import LocalWorkspace
 
 _LOCAL_PROFILE_SET_ID = "urn:docspec:profile-set:portable-local:1"
 
@@ -45,26 +46,11 @@ _LOCAL_PROFILE_MODULES = {
 }
 
 
-_LOCAL_RUN_ROOTS = {
-    "blobStorage",
-    "controlRepository",
-    "documentCatalog",
-    "documentStores",
-    "reconciliation",
-    "recordStorage",
-    "sourceCatalog",
-    "sourceContent",
-}
-
-
 _LOCAL_RUN_FIELDS = {
     "format",
     "formatVersion",
     "plan",
-    "profileDirectory",
-    "roots",
-    "resultSinkId",
-    "partitionPolicyId",
+    "workspace",
     "retryPolicy",
     "acceptedFailurePolicy",
     "execution",
@@ -73,11 +59,14 @@ _LOCAL_RUN_FIELDS = {
     "sourceCatalogProducer",
 }
 
+_LOCAL_RUN_OPTIONAL_FIELDS = {"profileDirectory", "roots", "resultSinkId", "partitionPolicyId"}
 
-_LOCAL_EXECUTION_REQUIRED_FIELDS = {"maxWorkers", "maxInFlight", "deadlineEpochSeconds"}
+
+_LOCAL_EXECUTION_REQUIRED_FIELDS = {"deadlineEpochSeconds"}
 
 
 _LOCAL_EXECUTION_OPTIONAL_DEFAULTS = {
+    "maxWorkers": 1,
     "maxScratchBytesPerWorker": 4 * 1024**3,
     "maxNetworkBytesPerTask": 8 * 1024**3,
     "requestRateLimitPerSecond": 100,
@@ -153,15 +142,20 @@ def _accepted_failure_policy(value: object) -> AcceptedFailurePolicy:
 
 def _local_run_request(path: Path) -> dict[str, Any]:
     value = _read_json_object(path, label="local run request")
-    if set(value) != _LOCAL_RUN_FIELDS:
+    if not _LOCAL_RUN_FIELDS <= set(value) or not set(value) <= _LOCAL_RUN_FIELDS | _LOCAL_RUN_OPTIONAL_FIELDS:
         raise CliError("local run request has an invalid closed shape")
-    if value["format"] != "docspec-local-run-request" or value["formatVersion"] != "1.0":
+    if value["format"] != "docspec-local-run-request" or value["formatVersion"] != "2.0":
         raise CliError("local run request has an unknown format")
-    roots = value["roots"]
-    if not isinstance(roots, dict) or set(roots) != _LOCAL_RUN_ROOTS:
-        raise CliError("local run roots have an invalid closed shape")
+    try:
+        workspace = LocalWorkspace(
+            value["workspace"],
+            value.get("roots", {}),
+            value.get("profileDirectory", BUILTIN_PROFILE_DIRECTORY),
+        )
+    except ValueError as error:
+        raise CliError(str(error)) from error
     execution = value["execution"]
-    allowed_execution_fields = _LOCAL_EXECUTION_REQUIRED_FIELDS | set(_LOCAL_EXECUTION_OPTIONAL_DEFAULTS)
+    allowed_execution_fields = _LOCAL_EXECUTION_REQUIRED_FIELDS | set(_LOCAL_EXECUTION_OPTIONAL_DEFAULTS) | {"maxInFlight"}
     if (
         not isinstance(execution, dict)
         or not _LOCAL_EXECUTION_REQUIRED_FIELDS <= set(execution)
@@ -169,6 +163,7 @@ def _local_run_request(path: Path) -> dict[str, Any]:
     ):
         raise CliError("local run execution settings have an invalid closed shape")
     execution = {**_LOCAL_EXECUTION_OPTIONAL_DEFAULTS, **execution}
+    execution.setdefault("maxInFlight", execution["maxWorkers"])
     zero_allowed = {"retryInitialDelayMilliseconds", "retryMaxDelayMilliseconds"}
     for name, setting in execution.items():
         minimum = 0 if name in zero_allowed else 1
@@ -176,20 +171,16 @@ def _local_run_request(path: Path) -> dict[str, Any]:
             raise CliError(f"local run execution setting {name} must be an integer of at least {minimum}")
     if execution["retryMaxDelayMilliseconds"] < execution["retryInitialDelayMilliseconds"]:
         raise CliError("local run execution retry maximum must not be less than its initial delay")
+    value = {"resultSinkId": "urn:docspec:local:sink", "partitionPolicyId": "source-item-sha256-v1", **value}
     for name in ("resultSinkId", "partitionPolicyId"):
         if not isinstance(value[name], str) or not value[name]:
             raise CliError(f"local run {name} must be a non-empty string")
     return {
         **value,
         "plan": _absolute_request_path(value["plan"], label="local run plan"),
-        "profileDirectory": _absolute_request_path(
-            value["profileDirectory"],
-            label="local run profile directory",
-        ),
-        "roots": {
-            name: _absolute_request_path(roots[name], label=f"local run {name} root")
-            for name in sorted(_LOCAL_RUN_ROOTS)
-        },
+        "workspace": workspace.root,
+        "profileDirectory": workspace.profile_directory,
+        "roots": workspace.roots,
         "retryPolicy": _retry_policy(value["retryPolicy"]),
         "acceptedFailurePolicy": _accepted_failure_policy(value["acceptedFailurePolicy"]),
         "documentReleaseProducer": _producer_record(

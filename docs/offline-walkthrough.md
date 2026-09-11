@@ -28,8 +28,8 @@ these local inputs; it does not claim they came from an official source-native
 release. The real `FederalRegisterCatalogPolicy`, `SourceCatalogBuilder`, and
 catalog verifier turn them into a sealed, selected catalog item.
 
-The example then selects the six existing local profiles, creates a processing
-plan, and calls `docspec.cli.execution.run_local`. This uses the same planning,
+The example selects the six installed local profiles through
+`ProfileRegistry.builtin().local_profiles()`, creates a processing plan, and calls `docspec.cli.execution.run_local`. This uses the same planning,
 execution, checkpoint, delivery, and reconciliation code as the run commands,
 with the local content fetcher explicitly injected and recorded. The plan runs
 extraction and segmentation without an additional processor.
@@ -40,13 +40,48 @@ the release and its dependencies; it does more than parse the reference JSON.
 This demonstrates the [application release lifecycle](architecture.md#what-comes-out).
 The separate portable-bundle builder has its own sealed fixture checks.
 
+## One workspace for local execution
+
+The example uses a `docspec-local-run-request` at version `2.0`. Its `workspace`
+is the output directory; storage defaults to named children such as
+`blobStorage`, `documentStores`, and `controlRepository`. Only the catalog and
+read-only example input locations need `roots` overrides. An omitted
+`profileDirectory` uses the descriptions shipped in the installed wheel.
+
+Python callers can inspect the same paths without creating them:
+
+```python
+from pathlib import Path
+from docspec.workspace import LocalWorkspace
+
+workspace = LocalWorkspace(Path("/absolute/path/to/experiment"))
+print(workspace.roots["documentStores"])
+```
+
+`roots` accepts any subset of the eight known storage names with absolute paths;
+unknown names and relative paths refuse before planning. `profileDirectory`
+remains an explicit override for a custom profile set. The plan still pins and
+checks complete profile descriptions, including their resource limits.
+`docspec profile list` shows installed profiles without an extra path argument.
+
+Local execution defaults to one worker and the same number of in-flight tasks;
+`maxWorkers` and `maxInFlight` can be overridden. The deadline, processing plan,
+retry/failure policy, and producer/verifier settings remain explicit. Defaults
+do not infer acceptance from supplied artifact metadata. Worker and execution
+records retain the resolved roots, profile pins, and settings for inspection.
+Version `1.0` run requests are no longer accepted; update current callers directly.
+
+A workspace supplies locations only. It does not create a second run ledger,
+change input identities, make an alternate experiment into a resume, or provide
+capture-only completion. The broader public lifecycle remains checklist D04.
+
 ## Inspect the output
 
 | File or directory inside `run/` | Meaning |
 | --- | --- |
 | `implementation.json` | Digests of the local code, schemas, profiles, example, and lockfile, including uncommitted edits; the example producer ID pins this manifest |
 | `source-catalog/`, `source-catalog-reference.json` | Sealed catalog and its small immutable reference |
-| `plan.json`, `run-request.json` | Selected profiles, processing limits, local roots, and execution settings |
+| `plan.json`, `run-request.json` | Selected profile pins, processing limits, workspace/overrides, and execution settings |
 | `blobStorage/`, `documentStores/`, `recordStorage/` | Captured source/representation bytes, job revisions, and immutable record layers |
 | `run-reference.json`, `controlRepository/` | Reconciliation receipt reference and the control artifacts it names |
 | `commit-request.json`, `commit-receipt.json`, `commit-result.json` | Exact publication request and CLI result/evidence |
