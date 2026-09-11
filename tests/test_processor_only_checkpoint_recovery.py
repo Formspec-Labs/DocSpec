@@ -19,14 +19,18 @@ from docspec.domain.plans import ProcessingPlan, StagePolicy
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
-from tests.test_application_pipeline import _run, _write_source
 from tests.helpers import (
     SharedFixtureContentFetcher,
     document_release_producer,
     source_catalog_reader,
     write_shared_source_catalog,
 )
-from tests.test_processor_reprocessing import (
+from tests.support.checkpoints import (
+    _InterruptAfterStageRepository,
+    _WorkerInterrupted,
+)
+from tests.support.pipeline import _run, _write_source
+from tests.support.processors import (
     _CountingExtractor,
     _CountingFetcher,
     _CountingProcessor,
@@ -34,11 +38,6 @@ from tests.test_processor_reprocessing import (
     _description,
     _plan,
 )
-from tests.test_stage_checkpoint_recovery import (
-    _InterruptAfterStageRepository,
-    _WorkerInterrupted,
-)
-
 
 NOW = "2026-08-05T12:00:00Z"
 

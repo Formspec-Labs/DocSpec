@@ -26,7 +26,11 @@ from docspec.domain.references import SourceCatalogRef, StoreRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchStream
 from tests.helpers import document_release_producer
-from tests.test_processor_reprocessing import (
+from tests.support.checkpoints import (
+    _InterruptAfterStageRepository,
+    _WorkerInterrupted,
+)
+from tests.support.processors import (
     _CountingExtractor,
     _CountingFetcher,
     _CountingProcessor,
@@ -35,39 +39,11 @@ from tests.test_processor_reprocessing import (
     _plan,
 )
 
-
 NOW = "2026-08-05T12:00:00Z"
-
-
-class _WorkerInterrupted(RuntimeError):
-    pass
 
 
 class _HardWorkerCrash(BaseException):
     pass
-
-
-class _InterruptAfterStageRepository:
-    """Persist a selected partial revision, then model abrupt worker loss."""
-
-    def __init__(
-        self,
-        delegate: LocalDocumentStoreRepository,
-        predicate: Callable[[DocumentStore], bool],
-    ) -> None:
-        self._delegate = delegate
-        self._predicate = predicate
-        self._armed = True
-
-    def save(self, store: DocumentStore) -> StoreRef:
-        reference = self._delegate.save(store)
-        if self._armed and self._predicate(store):
-            self._armed = False
-            raise _WorkerInterrupted("worker disappeared after the durable stage checkpoint")
-        return reference
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._delegate, name)
 
 
 class _CrashAfterExtractionOnce:

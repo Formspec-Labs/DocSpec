@@ -1,7 +1,6 @@
+
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,12 +13,11 @@ from docspec.processing import (
     SegmentPayload,
     verify_segment_evidence,
 )
+from tests.support import processing as _pipeline_helpers
+from tests.support import representation as _representation
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_representation = importlib.import_module("tests.conformance.test_representation")
-_pipeline_helpers = importlib.import_module("tests.test_processing_pipeline")
+
 FIXTURES = _representation.FIXTURES
 install_fake_pypdf = _representation.install_fake_pypdf
 resolver_for = _representation.resolver_for

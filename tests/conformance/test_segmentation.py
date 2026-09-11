@@ -1,20 +1,18 @@
+
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
 from docspec.domain.identity import sha256_digest
 from docspec.processing import DefaultExtractorRegistry, DefaultSegmenterRegistry
+from tests.support import processing as _pipeline_helpers
+from tests.support import representation as _representation
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_representation = importlib.import_module("tests.conformance.test_representation")
-_pipeline_helpers = importlib.import_module("tests.test_processing_pipeline")
+
 FIXTURES = _representation.FIXTURES
 FAKE_PDF_PAGES = _representation.FAKE_PDF_PAGES
 install_fake_pypdf = _representation.install_fake_pypdf

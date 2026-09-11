@@ -13,29 +13,28 @@ import email.message
 import hashlib
 import http.client
 import json
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from tools.fetch_attachment_sample import (  # noqa: E402
+from tools.fetch_attachment_sample import (
     BROWSER_UA,
     MAGIC,
     NETWORK_ERRORS,
     _completed_ids,
     _download,
-    api_quota_lock,
     _head,
     _scrub,
     _summarize,
+    api_quota_lock,
     probe_direct,
     read_key,
 )
-from tools.select_attachment_sample import _largest_remainder, _rank  # noqa: E402
+from tools.select_attachment_sample import _largest_remainder, _rank
+
+
 
 
 def test_rank_is_stable_and_salt_sensitive() -> None:

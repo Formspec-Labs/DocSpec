@@ -1,10 +1,9 @@
+
 from __future__ import annotations
 
-import importlib
 import itertools
 import json
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -13,11 +12,10 @@ from docspec.cli import main
 from docspec.domain.profiles import ProfileRole, ProfileSet
 from docspec.errors import ProfileError
 from docspec.profile_registry import ProfileRegistry
+from tests.support import profiles as _description_helpers
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_description_helpers = importlib.import_module("tests.conformance.test_profile_descriptions")
+
 _seeded_local_run = _description_helpers._seeded_local_run
 
 PROFILE_ROOT = ROOT / "profiles"

@@ -1,7 +1,6 @@
+
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 
 import pytest
@@ -18,11 +17,9 @@ from docspec.domain.profiles import ProfileRole
 from docspec.domain.references import DocumentReleaseRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.profile_registry import ProfileRegistry
+from tests.support import document_catalog as _catalog_contract
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_catalog_contract = importlib.import_module("tests.conformance.test_document_catalog_contract")
 
 BASE_ROWS = _catalog_contract.BASE_ROWS
 

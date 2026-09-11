@@ -1,40 +1,36 @@
+
 from __future__ import annotations
 
 import importlib
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.source_catalog_artifact import SourceCatalogArtifactReader
 from docspec.adapters.storage import (
-    LocalContentAddressedBlobStore,
-    LocalDocumentStoreRepository,
-    LocalJsonControlRepository,
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.maintenance import ReleaseCompactionService, logical_release_state_digest
 from docspec.application.planner import RunPlanner
 from docspec.domain.content import AcquisitionDisposition, SourceItem
-from docspec.domain.identity import canonical_json_bytes
 from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass
 from docspec.domain.maintenance import ReleaseCompactionReceipt
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.references import DocumentReleaseRef
-from docspec.domain.storage import PartitionPolicy
+from tests.support import pipeline as _pipeline_helpers
+from tests.support import processors as _processor_helpers
+from tests.support.incremental import (
+    _active_document_state,
+    _helpers,
+    _platform,
+    document_release_producer,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-_helpers = importlib.import_module("tests.helpers")
+
+
 SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
-write_shared_source_catalog = _helpers.write_shared_source_catalog
-source_catalog_reader = _helpers.source_catalog_reader
-document_release_producer = _helpers.document_release_producer
-_pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
-_processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
+
 _run = _pipeline_helpers._run
 _write_source = _pipeline_helpers._write_source
 _CountingExtractor = _processor_helpers._CountingExtractor
@@ -46,8 +42,6 @@ _plan = _processor_helpers._plan
 # tests.conformance.test_document_store imports this module at collection time
 # (for _platform and friends), so importing it back at module level here would
 # be circular; import it lazily inside the test that needs _FailingProcessor.
-
-_CORE_STATE_LAYERS = ("source-items", "files", "representations", "segments")
 
 
 def _targeted_plan(
@@ -76,97 +70,6 @@ def _targeted_plan(
         retry_policy_digest=untargeted.retry_policy_digest,
         accepted_failure_policy_digest=untargeted.accepted_failure_policy_digest,
     )
-
-
-@dataclass(frozen=True)
-class _Platform:
-    sources: Path
-    source_catalog: SourceCatalogArtifactReader
-    source_catalog_root: Path
-    controls: LocalJsonControlRepository
-    stores: LocalDocumentStoreRepository
-    blobs: LocalContentAddressedBlobStore
-    records: LocalJsonlRecordStorage
-    catalog: LocalManifestDocumentCatalog
-    partition_policy: PartitionPolicy
-
-    def publish_source(self, items: tuple[SourceItem, ...], *, name: str = "catalog"):
-        return write_shared_source_catalog(self.source_catalog_root, items, name=name)
-
-
-def _platform(root: Path, *, member_bytes: int) -> _Platform:
-    sources = root / "sources"
-    sources.mkdir(parents=True)
-    source_catalog_root = root / "source-catalogs"
-    source_catalog_root.mkdir()
-    source_catalog = source_catalog_reader(source_catalog_root)
-    controls = LocalJsonControlRepository(root / "controls")
-    stores = LocalDocumentStoreRepository(root / "stores")
-    blobs = LocalContentAddressedBlobStore(root / "blobs")
-    records = LocalJsonlRecordStorage(root / "records", max_member_bytes=member_bytes)
-    partition_policy = PartitionPolicy("source-item-sha256-v1", 8)
-    catalog = LocalManifestDocumentCatalog(
-        root / "document-catalog",
-        records=records,
-        stores=stores,
-        controls=controls,
-        producer=document_release_producer(),
-        blobs=blobs,
-    )
-    return _Platform(
-        sources,
-        source_catalog,
-        source_catalog_root,
-        controls,
-        stores,
-        blobs,
-        records,
-        catalog,
-        partition_policy,
-    )
-
-
-def _active_document_state(
-    catalog: LocalManifestDocumentCatalog,
-    release_ref: DocumentReleaseRef,
-) -> dict[str, tuple[dict[str, Any], ...]]:
-    """Project exact active document facts without run-specific execution evidence."""
-
-    release = catalog.open(release_ref)
-    layer_kinds = {
-        layer.layer_kind
-        for layer in release.active_layers
-        if layer.layer_kind in _CORE_STATE_LAYERS or layer.layer_kind.startswith("derived:")
-    }
-    state: dict[str, tuple[dict[str, Any], ...]] = {}
-    for layer_kind in sorted(layer_kinds):
-        projected = []
-        for row in catalog.scan(release_ref, layer_kind=layer_kind):
-            payload = dict(row["payload"])
-            record_id = row["recordId"]
-            if layer_kind == "files":
-                for field in (
-                    "acquiredAt",
-                    "acquisitionStartedAt",
-                    "attemptId",
-                    "downloaderConfigurationDigest",
-                    "taskId",
-                ):
-                    payload.pop(field)
-            elif layer_kind.startswith("derived:"):
-                payload.pop("derivedId")
-                payload.pop("providerReceiptDigest")
-                record_id = payload["outputDigest"]
-            projected.append(
-                {
-                    "recordId": record_id,
-                    "sourceItemId": row["sourceItemId"],
-                    "deleted": row["deleted"],
-                    "payload": payload,
-                }
-            )
-        state[layer_kind] = tuple(sorted(projected, key=canonical_json_bytes))
-    return state
 
 
 _REPAIR_FIXTURE = (
@@ -519,7 +422,7 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     UNCHANGED and drop out of the plan entirely, so one unrelated failure
     does not turn every incremental run into a full rebuild."""
 
-    _FailingProcessor = importlib.import_module("tests.conformance.test_document_store")._FailingProcessor
+    _FailingProcessor = importlib.import_module("tests.support.store_results")._FailingProcessor
 
     retry = RetryPolicy(base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy((FailureClass.DETERMINISTIC_INPUT,))

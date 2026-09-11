@@ -25,7 +25,7 @@ from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import SourceCatalogRef
 from docspec.errors import IntegrityError, StaleBaseError
 from docspec.ports.source_catalog import SourceCatalogSuccession
-from tests.test_source_catalog_snapshot import (
+from tests.support.source_catalog import (
     FakeSource,
     description,
     producer,

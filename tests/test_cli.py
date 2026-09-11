@@ -33,16 +33,19 @@ from docspec.domain.jobs import StoreState
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from docspec.profile_registry import ProfileRegistry
-from tests.test_maintenance import _platform
+from tests.support.maintenance import _platform
 from tests.helpers import (
     document_release_producer,
-    source_catalog_producer,
     write_shared_source_catalog,
 )
 
+from tests.support.cli import (
+    REPO_ROOT,
+    _portable_local_profiles,
+    _write_local_run_request,
+)
 
-REPO_ROOT = Path(__file__).parents[1]
+
 ZERO_DIGEST = "sha256:" + "0" * 64
 
 
@@ -167,7 +170,7 @@ def test_scale_profile_seal_and_verify_use_one_canonical_artifact(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     from docspec.domain.scale import ScaleProfile
-    from tests.test_scale_profile import scale_profile_content
+    from tests.support.scale import scale_profile_content
 
     request = tmp_path / "scale-content.json"
     destination = tmp_path / "scale-profile.json"
@@ -204,7 +207,7 @@ def test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     from docspec.domain.scale import ScaleProfile
-    from tests.test_scale_profile import source_catalog_scale_profile_content
+    from tests.support.scale import source_catalog_scale_profile_content
 
     request = tmp_path / "catalog-scale-content.json"
     destination = tmp_path / "catalog-scale-profile.json"
@@ -270,58 +273,6 @@ def test_mutating_command_failure_writes_a_new_machine_receipt(
     assert failure["requestDigest"] == sha256_digest(request.read_bytes())
     assert failure["verdict"] == "failed"
     assert not destination.exists()
-
-
-def _portable_local_profiles() -> ProfileSet:
-    return ProfileRegistry.from_directory(REPO_ROOT / "profiles").select(
-        (
-            "urn:docspec:profile:release-manifest:canonical-json:1",
-            "urn:docspec:profile:document-catalog:local-manifest:1",
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "urn:docspec:profile:blob-storage:local-content-addressed:1",
-            "urn:docspec:profile:document-store-persistence:local-json:1",
-            "urn:docspec:profile:result-delivery:durable-dataset:1",
-        )
-    )
-
-
-def _write_local_run_request(
-    path: Path,
-    *,
-    plan_path: Path,
-    roots: dict[str, str],
-    result_sink_id: str,
-    retry: RetryPolicy,
-    accepted: AcceptedFailurePolicy,
-    completed_at: str,
-    partition_policy_id: str = "source-item-sha256-v1",
-    max_workers: int = 1,
-    max_in_flight: int = 1,
-) -> Path:
-    path.write_bytes(
-        canonical_json_file_bytes(
-            {
-                "format": "docspec-local-run-request",
-                "formatVersion": "1.0",
-                "documentReleaseProducer": document_release_producer().as_dict(),
-                "sourceCatalogProducer": source_catalog_producer().as_dict(),
-                "plan": plan_path.as_posix(),
-                "profileDirectory": (REPO_ROOT / "profiles").as_posix(),
-                "roots": roots,
-                "resultSinkId": result_sink_id,
-                "partitionPolicyId": partition_policy_id,
-                "retryPolicy": retry.to_dict(),
-                "acceptedFailurePolicy": accepted.to_dict(),
-                "execution": {
-                    "maxWorkers": max_workers,
-                    "maxInFlight": max_in_flight,
-                    "deadlineEpochSeconds": 2_000_000_000,
-                },
-                "completedAt": completed_at,
-            }
-        )
-    )
-    return path
 
 
 @pytest.mark.parametrize("state", (StoreState.RUNNING, StoreState.SEALED))

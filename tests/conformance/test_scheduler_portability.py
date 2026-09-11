@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import importlib
@@ -32,13 +33,12 @@ from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
+from tests import helpers as _helpers
+from tests.support import cli as _cli_helpers
+from tests.support import incremental as _equivalence
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
-_cli_helpers = importlib.import_module("tests.test_cli")
-_helpers = importlib.import_module("tests.helpers")
+
 _active_document_state = _equivalence._active_document_state
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 _write_local_run_request = _cli_helpers._write_local_run_request

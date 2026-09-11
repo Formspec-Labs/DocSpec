@@ -6,8 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from docspec.domain.content import CapturedFile, Segment
-from docspec.domain.identity import identity_digest, sha256_digest
-from docspec.domain.references import BlobRef
+from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError
 from docspec.processing import (
     ContentStatisticsProcessor,
@@ -32,29 +31,9 @@ from docspec.processing import (
 )
 from docspec.processing.extraction import ExtractionError
 from tests.helpers import processor_payload, segment_processor_request
-
-
-def _captured(content: bytes, media_type: str) -> CapturedFile:
-    blob = BlobRef(
-        locator=f"fixture://{sha256_digest(content).removeprefix('sha256:')}",
-        digest=sha256_digest(content),
-        byte_size=len(content),
-        media_type=media_type,
-    )
-    return CapturedFile.create(
-        source_item_id="source:item-1",
-        source_version="2026-08-05",
-        candidate_id="primary",
-        blob=blob,
-        media_type=media_type,
-        acquired_at="2026-08-05T12:01:00Z",
-        downloader_id="fixture-downloader/v1",
-        transport_version="fixture-v1",
-        acquisition_started_at="2026-08-05T12:00:00Z",
-        downloader_configuration_digest=sha256_digest(b"fixture-downloader-config"),
-        task_id="fixture-task",
-        attempt_id="fixture-attempt",
-    )
+from tests.support.processing import (
+    _captured,
+)
 
 
 @pytest.mark.parametrize(

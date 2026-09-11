@@ -23,7 +23,7 @@ from docspec.processing.extraction import TextExtractor
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import ParagraphSegmenter
 from tests.helpers import processor_payload, segment_processor_request
-from tests.test_processing_pipeline import _captured
+from tests.support.processing import _captured
 
 
 def _segment(content: bytes = b"policy-projected content"):

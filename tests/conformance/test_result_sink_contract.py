@@ -1,7 +1,6 @@
+
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
@@ -12,13 +11,12 @@ from docspec.domain.delivery import iter_delivery_records
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.storage import PartitionPolicy
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
+from tests import helpers as _helpers
+from tests.support import records as _record_contract
+from tests.support import sinks as _sink_helpers
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_record_contract = importlib.import_module("tests.conformance.test_record_storage_contract")
-_sink_helpers = importlib.import_module("tests.test_result_sinks_and_recovery")
-_helpers = importlib.import_module("tests.helpers")
+
 _terminal_store = _sink_helpers._terminal_store
 _RecordingReceiver = _sink_helpers._RecordingReceiver
 _clock = _sink_helpers._clock
