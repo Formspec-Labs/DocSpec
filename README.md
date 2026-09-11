@@ -37,11 +37,17 @@ that edge; it does not define document or catalog meaning.
 
 ## Quick start
 
+Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
+[current architecture](docs/architecture.md). The
+[generated wiki overview](wiki/overview.md) is a dated reference snapshot.
+Then run the [offline walkthrough](docs/offline-walkthrough.md) to publish and
+verify one local document.
+
 ```sh
-uv sync --python 3.12
-uv run pytest          # offline, standalone
-uv run ruff check .
-uv run docspec --help  # the one CLI
+uv sync --frozen --python 3.12
+uv run --frozen pytest          # offline, standalone
+uv run --frozen ruff check .
+uv run --frozen docspec --help  # the one CLI
 ```
 
 ## Where things are
@@ -56,6 +62,7 @@ uv run docspec --help  # the one CLI
 | Conformance fixtures | `conformance/`, `fixtures/` |
 | Decision records | `docs/decisions/` |
 | Measurements and incidents | `docs/history/` |
+| Contributor improvements and code cleanup | [Maintainability to-do list](docs/maintainability-todo.md) |
 
 ## Boundaries
 

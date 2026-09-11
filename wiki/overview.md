@@ -1,5 +1,10 @@
 # DocSpec Repository Overview
 
+> Generated snapshot: 2026-09-03, revision `0a41ac7fb50f0f0044738b4d7fdf2f2e1b8b5cf7`.
+> Start with the maintained [architecture](../docs/architecture.md) and
+> [contributor guide](../CONTRIBUTING.md). See [documentation ownership](../docs/documentation.md)
+> before regenerating this reference. Navigation was repaired after generation.
+
 ## Purpose
 
 DocSpec is a format-neutral pipeline for turning immutable, source-native releases into verified document releases.
@@ -114,23 +119,23 @@ The domain layer defines valid identities, records, and evidence. Application se
 
 ### Source intake and document preparation
 
-- [Module overview](wiki/source_intake_and_document_preparation.md)
-- [Source Catalog Pipeline](wiki/source_catalog_pipeline.md)
-- [Content Acquisition and Processing](wiki/content_acquisition_and_processing.md)
+- [Module overview](source_intake_and_document_preparation.md)
+- [Source Catalog Pipeline](source_catalog_pipeline.md)
+- [Content Acquisition and Processing](content_acquisition_and_processing.md)
 
 ### Governed processing, execution, and qualification
 
-- [Module overview](wiki/governed_processing_execution_and_qualification.md)
-- [Document Run Application](wiki/document_run_application.md)
-- [Processing Plan and Job Model](wiki/processing_plan_and_job_model.md)
-- [Processor Extension Model](wiki/processor_extension_model.md)
-- [Portable Task Execution](wiki/portable_task_execution.md)
-- [Scale Acceptance](wiki/scale_acceptance.md)
+- [Module overview](governed_processing_execution_and_qualification.md)
+- [Document Run Application](document_run_application.md)
+- [Processing Plan and Job Model](processing_plan_and_job_model.md)
+- [Processor Extension Model](processor_extension_model.md)
+- [Portable Task Execution](portable_task_execution.md)
+- [Scale Acceptance](scale_acceptance.md)
 
 ### Durable results and release lifecycle
 
-- [Module overview](wiki/durable_results_and_release_lifecycle.md)
-- [Result Delivery and Reconciliation](wiki/result_delivery_and_reconciliation.md)
-- [Storage and Shared References](wiki/storage_and_shared_references.md)
-- [Document Release Artifacts](wiki/document_release_artifacts.md)
-- [Release Maintenance](wiki/release_maintenance.md)
+- [Module overview](durable_results_and_release_lifecycle.md)
+- [Result Delivery and Reconciliation](result_delivery_and_reconciliation.md)
+- [Storage and Shared References](storage_and_shared_references.md)
+- [Document Release Artifacts](document_release_artifacts.md)
+- [Release Maintenance](release_maintenance.md)

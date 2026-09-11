@@ -1,5 +1,10 @@
 # Document Run Application: Planning
 
+> Snapshot correction, 2026-09-11: the unused `DocSpecApplication` wrapper was retired.
+> Use the direct application services described in the
+> [cleanup decision](../docs/cleanup-decisions.md#retire-the-unused-application-wrapper)
+> and [current architecture](../docs/architecture.md). The generated discussion below predates this cleanup.
+
 Run planning compares one immutable source catalog with an optional base `DocumentRelease`, applies the processing plan's selection, repair, and invalidation rules, and persists a deterministic set of bounded `DocumentStore` jobs. The planner moves only immutable references across the coordinator boundary. Source rows and content bytes remain in the source catalog, document catalog, and store repositories.
 
 This page covers `src/docspec/application/planner.py` and its direct domain and port dependencies. See [Document Run Application](document_run_application.md) for the full plan, execute, deliver, reconcile, and commit sequence. The data types that define plans and jobs belong to [Processing Plan and Job Model](processing_plan_and_job_model.md); this page explains how the application planner uses them.

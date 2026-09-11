@@ -1,5 +1,10 @@
 # Document Run Application
 
+> Snapshot correction, 2026-09-11: the unused `DocSpecApplication` wrapper was retired.
+> Use the direct application services described in the
+> [cleanup decision](../docs/cleanup-decisions.md#retire-the-unused-application-wrapper)
+> and [current architecture](../docs/architecture.md). The generated discussion below predates this cleanup.
+
 The document run application turns a verified source catalog and a pinned processing plan into a verified `DocumentRelease`. It plans bounded `DocumentStore` jobs, executes and checkpoints each job, delivers every terminal record, reconciles the complete task population, and publishes release state through one conditional commit.
 
 This module is DocSpec's application layer for a run. It coordinates domain rules and storage or processing ports; it does not define source-catalog policy, content parsing algorithms, processor implementations, scheduler products, or storage formats. Those responsibilities stay in the neighboring modules linked below.
@@ -83,7 +88,7 @@ The current command-line composition constructs the services directly because sc
 
 | Component | Primary responsibility |
 | --- | --- |
-| [`DocSpecApplication`](../src/docspec/application/service.py) | Delegates planning, store execution, delivery, reconciliation, and release commit to injected services. It owns no run state or adapters. |
+| [`DocSpecApplication` (retired)](../docs/cleanup-decisions.md#retire-the-unused-application-wrapper) | Former delegation wrapper; current callers construct the services below directly. |
 | [`RunPlanner`](../src/docspec/application/planner.py) | Validates the plan, compares the complete source snapshot with the optional base release, selects work, estimates it, and saves deterministic bounded stores plus their ledger. |
 | [`StoreExecutionService`](../src/docspec/application/execution.py) | Recovers the latest store revision, verifies reusable checkpoints, acquires and processes nonterminal entries, enforces policy and actual-work limits, and saves immutable checkpoints. |
 | [`WorkBudget` and `MemoryScope`](../src/docspec/application/work_budget.py) | Charge stable logical work once across retries and resumes; track current and peak materialized memory; enforce aggregate store limits. |
@@ -236,11 +241,11 @@ Changes must preserve these properties:
 - **Single publication point:** worker and reconciliation activity stays staged. Only a successful stateful commit against the expected catalog head makes a release current.
 - **Independent release verification:** release admission recomputes relationships and summaries from retained objects instead of trusting self-reported receipt fields.
 
-## Current façade caveat
+## Retired application wrapper
 
-The operational scheduler path passes `Iterable[StoreTaskResult]` to `RunReconciler.reconcile_run()`. [`DocSpecApplication.reconcile_run()`](../src/docspec/application/service.py) currently annotates its parameter as `Iterable[StoreRef]` and forwards it unchanged. `RunReconciler` rejects non-`StoreTaskResult` values, so callers must follow the reconciler's runtime input shape until the façade annotation is corrected.
+The operational scheduler path passes `Iterable[StoreTaskResult]` to `RunReconciler.reconcile_run()`. The unused wrapper advertised `Iterable[StoreRef]`, which disagreed with that input. The [cleanup decision](../docs/cleanup-decisions.md#retire-the-unused-application-wrapper) retired the wrapper; use the direct services.
 
-The repository's command-line composition does follow the runtime shape: its worker returns `StoreTaskResult.succeeded(...)`, and its reconciliation helper passes that result stream to `RunReconciler`. No current repository caller constructs `DocSpecApplication`, so the mismatch is isolated to the convenience façade's public typing rather than the tested operator path.
+The command-line worker returns `StoreTaskResult.succeeded(...)`, and its reconciliation helper passes that result stream to `RunReconciler`.
 
 ## Composition and operator entry points
 
