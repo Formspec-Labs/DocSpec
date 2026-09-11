@@ -20,8 +20,9 @@ under `docs/history/` remain separate work.
 | C6 | Serial and parallel catalog derivation share fixed-count digest headers, deferred detail-count headers, and final result assembly. Every scheduling, streaming, and payload loop retains its original syntax tree. Catalog, succession, fallback, and installed-wheel checks: 95 passed. [Raw comparison evidence](maintainability-catalog-comparison.json) preserves all samples and exact derived values for 4,096 rows across 64 partitions. |
 | D5 | Split local storage into blobs, controls, document stores, records, catalog, and narrowly shared file operations. Existing public class imports and profile strings remain valid. All 26 moved definitions retained identical syntax trees. Storage, catalog, bounded-partition, and boundary checks: 117 passed. |
 | D1 | Separated release format/identity rules, coverage calculations, member/schema reading, body indexing, and semantic validation. Verification now lives in `adapters.document_release.verify`; builders import rule owners directly, and the old import facade is removed. All 109 moved definitions retained identical syntax trees before comment cleanup. Release, builder, schema, encoding, and package checks: 298 passed. The fixture restamper still matches a clean rebuild. |
-| D2 | Split the source-catalog artifact into building, reading, verification, source inputs/recovery, bounded rows, accounting, schema rules, and digest derivation. The largest module is 499 lines. All 97 definitions moved unchanged; three calls then became owner-qualified so fault injection still reaches the shared engine or reader. Catalog, succession, spawned workers, recovery, installed-wheel, offline, and boundary checks: 126 passed. Six further runs over the existing 4,096-row catalog preserve every digest, count, diagnostic, and actual serial/parallel engine identity. |
+| D2 | Split the source-catalog artifact into building, reading, verification, source inputs/recovery, bounded rows, accounting, schema rules, and digest derivation. The largest module was 499 lines at the move boundary. All 97 definitions moved unchanged; three calls then became owner-qualified so fault injection still reaches the shared engine or reader. Catalog, succession, spawned workers, recovery, installed-wheel, offline, and boundary checks: 126 passed. Six further runs over the existing 4,096-row catalog preserve every digest, count, diagnostic, and actual serial/parallel engine identity. |
 | D4 | Source conversion now names joins, normalization, selection, and provenance. The common policy module records the six interpretation forms and stopping decisions; source policies still choose their own rules. Document/comment conversion shrank from 403/227 to 103/100 lines; Federal Register conversion shrank from 245 to 82. [Comparison evidence](maintainability-policy-comparison.json) records byte-identical results for 246 calls, including two refusals. Independent review led to a real retained-filing conversion test and three strict comment-version refusal checks. Policy, catalog, wheel, offline, and import checks: 142 passed. |
+| D7 | The command-receipt reader is 17 lines, catalog `build` is 67, and root-binding validation is 60, reduced from 300, 230, and 266. Named phases preserve validation order, lazy digest computation, resource lifetimes, byte accounting, and gate-before-commit publication. Helper expansion reproduces the original statement trees. A durable-workspace test proves publication retry without recomputing policy, and all 29 complete portable verdicts remain byte-identical after the binding split. The longer digest-plan helper retains the existing nine-entry declaration and its identity rationale. |
 | E1 | Shared setup lives in `tests/support/` and `tests/helpers.py`, including formerly dynamic cross-test imports. The extraction preserved all 638 original named test functions and their assertions; later predecessor retirement deliberately removes obsolete acceptance tests. Conformance test selectors stay at their existing paths. Full default suite after extraction: 875 passed, 3 skipped, 1 deselected. |
 | E3, E4 | Contributor guidance defines dependency direction, helper ownership, size review prompts and exceptions, public interfaces, and reviewer responsibilities. The PR template asks for behavior, validation, format/API impact, and open follow-up work. |
 
@@ -56,6 +57,11 @@ under `docs/history/` remain separate work.
   closed a malformed-schema-set refusal gap using complete, correctly restamped
   bundles. The corrected release/schema/builder/encoding checks: **203 passed**;
   the fixture restamper still matches a clean rebuild.
+- The combined staged tree through predecessor retirement passed the full suite
+  with Dagster: **816 passed, 1 deselected**, no skips, in 122.57 seconds. The
+  lower count reflects withdrawal of obsolete predecessor acceptance tests.
+  The subsequent root-binding phase extraction passed **203** focused checks
+  and preserved every byte of the 29-result current-corpus replay above.
 - All **40 command help pages** compare byte for byte with the baseline parser.
   An empty environment successfully installs the built wheel together with its
   pinned vendored Rulespec dependency, imports the public APIs, and runs the
@@ -78,8 +84,8 @@ that the entire to-do list is complete.
 
 ## Still open
 
-Execution/checkpoint responsibilities; remaining long validation
-functions; the outlier assessment; test-file organization; and the unfamiliar
+Execution/checkpoint responsibilities; the outlier assessment;
+test-file organization; and the unfamiliar
 contributor exercise remain open on the to-do list. The last exercise requires
 actual participant evidence; line counts and this agent's familiarity cannot
 substitute for it.

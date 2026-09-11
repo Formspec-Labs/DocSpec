@@ -30,6 +30,8 @@ def _validate_root_bindings(
     key: str,
     issues: list[VerificationIssue],
 ) -> None:
+    """Reconcile each root claim in the established diagnostic order."""
+
     content = root.get("content")
     if not isinstance(content, Mapping):
         return
@@ -65,6 +67,24 @@ def _validate_root_bindings(
         if isinstance(row.get("textBodyId"), str) and isinstance(row.get("textKind"), str)
     ]
 
+    _validate_root_pin(content, documents, documents_key, issues)
+    _validate_root_sets(
+        content, dispositions, documents, attachments, comments,
+        nodes, segments, joined, text_bodies, issues,
+    )
+    _validate_root_join(content, selected_ids, version_ids, issues)
+    _validate_root_accounting(
+        content, dispositions, documents, attachments, comments,
+        nodes, segments, members, key, issues,
+    )
+
+
+def _validate_root_pin(
+    content: Mapping[str, Any],
+    documents: Sequence[Mapping[str, Any]],
+    documents_key: str,
+    issues: list[VerificationIssue],
+) -> None:
     catalog = content.get("sourceCatalog")
     if isinstance(catalog, Mapping):
         pinned = catalog.get("catalogId")
@@ -78,6 +98,19 @@ def _validate_root_bindings(
                     f"capture names a different catalog release than the root pin {pinned!r}",
                 )
 
+
+def _validate_root_sets(
+    content: Mapping[str, Any],
+    dispositions: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
+    nodes: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    joined: Sequence[Mapping[str, Any]],
+    text_bodies: Sequence[Mapping[str, Any]],
+    issues: list[VerificationIssue],
+) -> None:
     digest_plan: tuple[tuple[str, Callable[[], str]], ...]
     # Amendment B1: every one of these frames the members' FULL LOGICAL
     # ROWS, so a same-length mutation of a body's bytes, a rewritten
@@ -154,6 +187,13 @@ def _validate_root_bindings(
                 f"expected {expected}",
             )
 
+
+def _validate_root_join(
+    content: Mapping[str, Any],
+    selected_ids: Sequence[str],
+    version_ids: Sequence[str],
+    issues: list[VerificationIssue],
+) -> None:
     receipt = content.get("joinReceipt")
     if isinstance(receipt, Mapping):
         if receipt.get("mappingDigest") != content.get("sourceDocumentMappingDigest"):
@@ -187,6 +227,19 @@ def _validate_root_bindings(
                 "the source-to-document join is not one-to-one",
             )
 
+
+def _validate_root_accounting(
+    content: Mapping[str, Any],
+    dispositions: Sequence[Mapping[str, Any]],
+    documents: Sequence[Mapping[str, Any]],
+    attachments: Sequence[Mapping[str, Any]],
+    comments: Sequence[Mapping[str, Any]],
+    nodes: Sequence[Mapping[str, Any]],
+    segments: Sequence[Mapping[str, Any]],
+    members: Sequence[Mapping[str, Any]],
+    key: str,
+    issues: list[VerificationIssue],
+) -> None:
     expected_counts = derive_counts(
         dispositions,
         documents,

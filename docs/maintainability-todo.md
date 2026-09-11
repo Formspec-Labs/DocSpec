@@ -250,7 +250,7 @@ separate simplification; keep those changes reviewable independently.
   budgets, and performs only the required processor work. Avoid splitting one
   shared mutable state machine across mixins merely to shorten the file.
 
-- [ ] **D7 · P2 · Simplify the remaining long control-flow functions.** Review
+- [x] **D7 · P2 · Simplify the remaining long control-flow functions.** Review
   `_load_build_command_receipt` in the catalog CLI (300 lines),
   `_validate_root_bindings` in the release verifier (266), and the catalog
   builder's `build` method (230). Coordinate each change with its module split.
