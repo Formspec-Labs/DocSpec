@@ -1,4 +1,11 @@
-# Documentation ownership
+# Documentation guide and ownership
+
+Start with the [README](../README.md) for DocSpec's purpose: build a catalog,
+capture selected documents through an injected fetcher, process retained inputs
+now or later, and inspect comparable attempts. That is the intended experiment
+workflow. The README distinguishes current entry points from the interfaces and
+qualification still tracked in the
+[dataset experimentation checklist](dataset-experiments-todo.md).
 
 Maintainers edit `README.md`, `CONTRIBUTING.md`, and the guides directly under
 `docs/`. Update the relevant guide, code links, and contributor task map in the
@@ -8,13 +15,28 @@ same change as the behavior or file move they describe.
 | --- | --- |
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
-| Run one complete local example | [Offline walkthrough](offline-walkthrough.md) |
+| Build a synthetic catalog and verify one local application release | [Offline walkthrough](offline-walkthrough.md) |
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
 | Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
+
+A catalog can be used without document acquisition or search. Captures,
+checkpoints, record layers, and run receipts are retained working state;
+convenient stage completion and unified attempt inspection remain checklist
+items [D24](dataset-experiments-todo.md#d24) and
+[D19](dataset-experiments-todo.md#d19). The offline walkthrough exercises one
+application release, without demonstrating every intended stopping point or
+the complete iterative workflow.
+
+Choose the output guide before choosing a verifier. Application release state
+and portable document bundles currently both use version `2.0`, with different
+shapes and checks. The [architecture comparison](architecture.md#what-comes-out)
+names each path. Optional export and shared structural verification are open
+work in [D26–D27](dataset-experiments-todo.md#d26), so an application commit does
+not imply that a portable bundle was produced.
 
 The [decision index](decisions/README.md) distinguishes accepted rules, later
 amendments, and implementation gaps. Code and executable checks establish

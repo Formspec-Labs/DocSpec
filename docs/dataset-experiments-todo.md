@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 0 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 1 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -93,13 +93,19 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d01"></a>
 
-- [ ] **D01 · P0 · Align the product explanation and current behavior.** Update
+- [x] **D01 · P0 · Align the product explanation and current behavior.** Update
   README, architecture, and decision status around catalog building, capture,
   optional processing, iteration, and optional export. Explain what is available
   through supported entry points versus only through internal composition.
   **Done when:** a reader can identify inputs, outputs, useful stopping points,
   and present gaps without reconstructing previous discussions. Correct README's
   claim that no separate portable structural path exists.
+  **Completed September 11:** README, architecture, documentation index, and
+  Decision 0002's status now distinguish intended experiment use from current
+  entry points, mandatory extraction/segmentation, processor-only reruns, and
+  the separate portable verifier. Independent review approved these claims and
+  preserved the dated intent with a visible correction. Local links checked;
+  this documentation does not qualify the unimplemented workflow.
 
 <a id="d02"></a>
 
@@ -157,8 +163,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   provenance for supplied records without inventing acquisition evidence.
   **Done when:** one provider example and one local-record example build catalogs
   through public interfaces without private imports or sibling checkouts. Reuse
-  [source ports](../src/docspec/ports/source_catalog.py). SpicyDocs S17/S18 track
-  the specific GAO-topic and retained public-comment-table examples; they extend
+  [source ports](../src/docspec/ports/source_catalog.py). [D51](#d51) and
+  [D52](#d52) own the GAO-topic and retained public-comment-table examples; they extend
   this interface without requiring a provider package move or blocking the
   initial local example.
 

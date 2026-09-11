@@ -27,6 +27,23 @@ recorded absence.
 
 ## What DocSpec is for
 
+**Current-status correction, 2026-09-11:** The owner intent and September 2
+assessment below remain part of this decision's history. The statement that
+every requirement already exists overstates current stage flexibility and reuse.
+[`StagePolicy`](../../src/docspec/domain/plans.py) requires extraction and
+segmentation for a full-processing plan. Current
+[execution](../../src/docspec/application/execution.py) can recover retained
+checkpoints or rerun processors from a verified base release, but a new capture
+opens its fetcher before writing to the content-addressed store. Avoiding
+duplicate stored objects does not by itself avoid another fetch. Convenient
+capture-only completion, later stage selection, and unified attempt inspection
+remain [D24](../dataset-experiments-todo.md#d24),
+[D13–D17](../dataset-experiments-todo.md#d13), and
+[D19](../dataset-experiments-todo.md#d19). The historical population measurements
+below do not establish today's qualification. See the
+[current entry points](../../README.md#what-you-can-use-today) and
+[qualification work](../dataset-experiments-todo.md#d37).
+
 The owner's framing, and the reason this record was reorganized around it:
 DocSpec is an experimental dataset runner. You point it at a population, it
 acquires the files once, and it runs processing over them in a way you can

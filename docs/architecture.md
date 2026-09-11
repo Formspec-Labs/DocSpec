@@ -1,9 +1,19 @@
 # Current architecture
 
-DocSpec turns source records into an explicit file-selection catalog, then
-captures and processes those files into verifiable document state. Consumers
-read immutable artifacts. The system's meaning belongs to DocSpec; Rulespec
-provides the generic artifact container and structural verification.
+DocSpec supports repeatable document dataset experiments: build a selection
+catalog, capture selected bytes, process retained inputs, and compare results.
+A catalog is useful on its own. The intended workflow also allows capture-only
+completion, processing now or later, and optional export to a consumer.
+
+Current application services retain captures and checkpoints and support
+processor-only reruns from a verified base release. A full-processing plan still
+requires extraction and segmentation. Convenient stage completion and unified
+attempt inspection remain [D24](dataset-experiments-todo.md#d24) and
+[D19](dataset-experiments-todo.md#d19); the
+[README](../README.md#what-you-can-use-today) identifies current entry points.
+Dataset meaning belongs to DocSpec. Rulespec provides shared artifact-container
+utilities, while the separate portable bundle still has DocSpec structural
+checks, described under [outputs](#what-comes-out).
 
 This maintained guide describes the code, with executable checks linked below.
 Use the [decision index](decisions/README.md) for accepted changes and migration
