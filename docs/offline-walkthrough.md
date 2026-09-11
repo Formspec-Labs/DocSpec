@@ -71,6 +71,25 @@ and `segments` layers named in `verification.json`. The captured digest and
 evidence should follow the changed bytes. Restore the fixture when finished,
 or include an intentional example change and its validation in your contribution.
 
+## Unfamiliar-contributor exercise
+
+Checklist E5 tests whether these instructions work for someone who has not read
+the implementation or the refactor conversation. The exercise is still pending.
+
+1. Record the checkout commit and start time, then follow the setup and walkthrough
+   using the repository documentation. Record any outside help you need.
+2. Choose one small behavior change from the contributor task map. Find its code,
+   governing rule, and focused tests; explain the intended result before editing.
+3. Make the change, run the focused checks, and review the diff. Record the commands
+   and outcomes, including any failure that required another file or instruction.
+4. Report elapsed time, files consulted, confusing steps, and whether the change
+   worked without private context. Include the diff or commit so a reviewer can
+   verify the result.
+
+A maintainer records the participant's evidence and resolves the observed
+friction before closing E5. Passing the automated example alone does not finish
+this exercise.
+
 The timestamps and source record are synthetic. The result proves this local
 walkthrough worked; it is not upstream acquisition evidence, a scale campaign,
 or a published package.

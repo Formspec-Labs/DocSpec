@@ -65,13 +65,38 @@ under `docs/history/` remain separate work.
   lower count reflects withdrawal of obsolete predecessor acceptance tests.
   The subsequent root-binding phase extraction passed **203** focused checks
   and preserved every byte of the 29-result current-corpus replay above.
+- Final execution and test organization were checked in isolated staged snapshots:
+  checkpoint verification **69**, processor runtime **69** plus **8** dedicated
+  cache checks, catalog storage **110**, and organized tests/conformance **239**.
+  Base preparation then passed **80** focused checks, including incremental
+  equivalence. Independent reviews approved each change. Test execution exposed
+  missing fixture registration; independent review caught three stale conformance
+  selectors. Both were corrected before the combined checks.
+- The complete implementation at `d38dd9c` passed the full default suite with
+  Dagster: **816 passed, 1 deselected**, no skips, in **114.74 seconds**. All
+  **1,067** sealed fixture/schema files and **29** complete current verifier
+  results remain unchanged; the fixture restamper matches a clean rebuild.
+- A clean local checkout of `d38dd9c` builds both distributions. Its wheel installs
+  with the pinned vendored Rulespec wheel in an empty environment; the public
+  APIs, extracted execution/storage owners, and installed CLI work outside the
+  source checkout without Dagster, boto3, or httpx installed.
+- The [sealed conformance report](history/2026-09-11-maintainability-conformance.json)
+  records a clean checkout of `d38dd9c`: **294 test executions passed**, with no
+  failures, errors, or skips. **15 of 24 requirements pass**; nine remain declared
+  partial, so the overall verdict is `fail` with
+  `DOCSPEC-CONFORMANCE-TEST-NOT-IMPLEMENTED`. This is incomplete qualification,
+  not a failing test or a conformance claim. The local source checkout initially
+  refused because it contained unrelated untracked work; the clean copy pins the
+  tested commit without changing that work. The CI comment now describes partial
+  evidence without its obsolete implementation counts.
 - All **40 command help pages** compare byte for byte with the baseline parser.
   An empty environment successfully installs the built wheel together with its
   pinned vendored Rulespec dependency, imports the public APIs, and runs the
   installed command. The first installation attempt exposed the unavailable
   public-index dependency; CI and the guide now supply its wheel explicitly.
 - Ruff and `uv lock --check` pass. Sealed fixture files and packaged schema bytes
-  have not been regenerated or changed.
+  have not been regenerated or changed. The final documentation check resolves
+  **84 relative file links** across 11 maintained entry pages.
 
 The catalog comparison preserved every digest, count, diagnostic field, and
 reported engine. Separate serial batches varied (median 1.784 → 2.094 seconds).
@@ -79,44 +104,6 @@ Alternating the old and new implementations in the same process did not reproduc
 that slowdown (five samples each, median 1.851 → 1.761 seconds). The two-worker
 medians were 1.072 → 1.063 seconds. These are small local checks for a regression,
 not evidence of a speedup or large-corpus qualification.
-
-The full suite needs another run after the remaining refactors. Continue to use
-focused checks during each move, then run the final full suite and clean-wheel
-checks. These checkpoints describe the work verified at each stage, not a claim
-that the entire to-do list is complete.
-
-## Still open
-
-The unfamiliar contributor exercise remains open on the to-do list. It requires
-actual participant evidence; line counts and this agent's familiarity cannot
-substitute for it.
-
-D6's first extraction separates read-only checkpoint verification into
-`application/execution_checkpoints.py` and shared request/result rules into
-`application/processor_rules.py`. The coordinating service still owns every
-store save and the one cumulative work budget. All 28 original substantive
-methods preserve their statement trees after explicit owner/name substitutions;
-the constructor passes the same dependency objects to the verifier. Focused
-checkpoint, processor-only recovery, retry/cache, budget, policy-security,
-pipeline, result-sink, and recovery-conformance checks: **65 passed**. Processor
-runtime and base-reuse preparation were the remaining D6 boundaries at that
-checkpoint. The exact staged snapshot also passed four import-direction checks
-for **69 passed** in total.
-
-The subsequent runtime extraction gives `ProcessorRuntime` the single copied
-registry, retry/cache behavior, and original clock dependencies. It receives the
-caller's mutable records, results, receipts, and work budget; failed-attempt
-evidence remains available after exceptions. `execution_evidence.py` shares
-receipt persistence and sanitized failure classification, while acceptance stays
-with the service. All 19 substantive methods preserve their statement trees
-after explicit owner substitutions. The same **69 focused checks passed**.
-The eight dedicated cache tests also passed in an exact staged snapshot.
-Base-reuse preparation then moved behind explicit inputs and a seven-field
-result. Helper expansion reproduces the original guarded preparation block and
-remaining execution loop; all other service methods remain unchanged. The
-separate TypeError/ValueError refusal boundary, current-plan reuse receipts,
-checkpoint comparisons, and mutable progress survive the move. This completes
-D6; **80 focused checks passed**, including current incremental equivalence.
 
 Independent static reviews approved the storage/CLI split, portable verifier,
 catalog artifact split and import retirement, and source-policy conversion.
@@ -126,3 +113,13 @@ also approved retiring predecessor portable-format handling while retaining
 both current 2.0 workflows. The runtime now uses current portable rules only;
 frozen predecessor data remains provenance and, for the old source-catalog
 fixture, a required current restamping input.
+
+
+## Still open
+
+**30 of 31 items are complete.** E5 requires an unfamiliar person's contribution
+exercise and feedback; line counts and this agent's familiarity cannot substitute
+for that evidence. The [walkthrough exercise](offline-walkthrough.md#unfamiliar-contributor-exercise)
+now lists the steps and evidence to return: commit, change, governing rule,
+commands/results, elapsed time, files consulted, and friction. No participant
+result has been supplied, so E5 remains unchecked.
