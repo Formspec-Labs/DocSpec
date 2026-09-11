@@ -424,20 +424,3 @@ def coverage_for(capture: BulkCapture, items: Sequence[SourceItem]) -> dict[str,
         "activeItemCount": len(active),
         "activeByteTotal": sum(int(i.metadata["byteSize"]) for i in active),
     }
-
-
-def build_catalog(
-    catalog: Any,
-    capture: BulkCapture,
-    *,
-    datasets: Iterable[str] | None = None,
-    previous: BulkCapture | None = None,
-) -> Any:
-    """Publish one capture as a source catalog a future campaign can run over."""
-    items = build_source_items(capture, datasets=datasets, previous=previous)
-    return catalog.write(items, coverage=coverage_for(capture, items))
-
-
-def capture_digest_of(pins_path: Path) -> str:
-    """Digest of the pins file itself, for receipts that must name this capture."""
-    return sha256_digest(_regular_file(Path(pins_path), "bulk capture pins file").read_bytes())

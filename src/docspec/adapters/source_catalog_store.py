@@ -346,10 +346,6 @@ def _object_parts(object_key: str) -> tuple[str, ...]:
     return key.parts
 
 
-def _object_path(root: Path, object_key: str) -> Path:
-    return root.joinpath(*_object_parts(object_key))
-
-
 def _duplicate_directory(directory: _PinnedDirectory) -> _PinnedDirectory:
     descriptor = os.open(".", _DIRECTORY_FLAGS, dir_fd=directory.descriptor)
     metadata = os.fstat(descriptor)

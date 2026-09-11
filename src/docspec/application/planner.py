@@ -30,14 +30,6 @@ _SELECTION_FIELDS = frozenset(
         "states",
     }
 )
-_ESTIMATE_FIELDS = (
-    "estimatedBytes",
-    "estimatedPagesOrFrames",
-    "expectedSegments",
-    "processorCost",
-    "estimatedMemoryBytes",
-    "estimatedDurationSeconds",
-)
 _PLANNING_STORE_ORDER_COLLECTION = "planner:store-order"
 _PLANNING_FAILED_ITEM_COLLECTION = "planner:failed-items"
 _DELIVERY_RECORD_FIELDS = frozenset({"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"})
