@@ -22,7 +22,6 @@ which one a fix would have to address.
 from __future__ import annotations
 
 import argparse
-import gzip
 import json
 import statistics
 import sys
@@ -30,6 +29,13 @@ from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.catalog_sample_support import (  # noqa: E402
+    iter_source_item_rows,
+    source_item_member_paths,
+)
 
 SOURCES = {
     "federal-register-documents": ("abstract", ()),
@@ -54,17 +60,11 @@ def _describe(fact: dict[str, Any], scope: str) -> tuple[str | None, str, dict[s
 
 def _scan(args: tuple[str, str]) -> dict[str, Any]:
     path, scope = args
-    raw = Path(path).read_bytes()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
     counts: Counter[str] = Counter()
     lengths: list[int] = []
     by_type: dict[str, Counter[str]] = defaultdict(Counter)
     by_year: dict[str, Counter[str]] = defaultdict(Counter)
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in iter_source_item_rows(path):
         fact = next(
             (f for f in row.get("sourceNativeFacts") or () if f.get("scopeId") == scope),
             None,
@@ -89,12 +89,8 @@ def _scan(args: tuple[str, str]) -> dict[str, Any]:
 
 
 def measure(catalog_root: Path, blob_store: Path, scope: str, workers: int) -> dict[str, Any]:
-    manifest = json.loads((catalog_root / "manifests" / "catalog.json").read_text())
-    members = sorted(
-        (m for m in manifest["members"] if m["role"] == "source-items"),
-        key=lambda m: m["blobRef"],
-    )
-    jobs = [(str(blob_store / m["blobRef"].split(":", 1)[1]), scope) for m in members]
+    jobs = [(path, scope) for path in source_item_member_paths(catalog_root, blob_store)]
+
     counts: Counter[str] = Counter()
     lengths: list[int] = []
     by_type: dict[str, Counter[str]] = defaultdict(Counter)

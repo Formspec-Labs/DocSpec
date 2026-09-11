@@ -218,16 +218,3 @@ class ProfileRegistry:
                 )
             )
         )
-
-    def to_inventory(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "profile": item.description.to_dict(),
-                "descriptionDigest": item.description_digest,
-                "implementationStatus": item.implementation_status,
-                "implementationModule": item.implementation_module,
-                "profileSetId": item.profile_set_id,
-                "verifier": {"status": item.verifier_status, "testId": item.verifier_test_id},
-            }
-            for item in self._profiles
-        ]

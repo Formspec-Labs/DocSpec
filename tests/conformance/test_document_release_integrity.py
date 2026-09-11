@@ -1,27 +1,25 @@
+
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
 
-from docspec.domain.content import CapturedFile, Representation, Segment
+from docspec.domain.content import CapturedFile, Representation, Segment, SourceItem
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import DocumentReleaseRef, StoreRef
-from docspec.domain.content import SourceItem
 from docspec.errors import DocSpecError, IntegrityError
+from tests import helpers as _helpers
+from tests.support import incremental as _equivalence
+from tests.support import pipeline as _pipeline_helpers
+from tests.support import processors as _processor_helpers
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_helpers = importlib.import_module("tests.helpers")
+
 SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
-_equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
-_pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
-_processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
+
 _platform = _equivalence._platform
 _run = _pipeline_helpers._run
 _write_source = _pipeline_helpers._write_source

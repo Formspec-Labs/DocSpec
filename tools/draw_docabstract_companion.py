@@ -20,7 +20,6 @@ title restatement, or empty.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import sys
@@ -30,6 +29,12 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.catalog_sample_support import (  # noqa: E402
+    iter_source_item_rows,
+    source_item_member_paths,
+    report_catalog_root,
+)
 
 from tools.draw_docabstract_sample import _anomalies  # noqa: E402
 
@@ -41,13 +46,7 @@ def _scan(args: tuple[str, list[str]]) -> list[dict[str, Any]]:
     path, wanted = args
     want = set(wanted)
     found: list[dict[str, Any]] = []
-    raw = Path(path).read_bytes()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in iter_source_item_rows(path):
         if row.get("documentId") not in want:
             continue
         document = docket = None
@@ -105,12 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     strata = {r["documentId"]: r["stratum"] for r in first["rows"]}
     wanted = list(ranks)
 
-    manifest = json.loads((args.catalog_root / "manifests" / "catalog.json").read_text())
-    members = sorted(
-        (m for m in manifest["members"] if m["role"] == "source-items"),
-        key=lambda m: m["blobRef"],
-    )
-    jobs = [(str(args.blob_store / m["blobRef"].split(":", 1)[1]), wanted) for m in members]
+    jobs = [(path, wanted) for path in source_item_member_paths(args.catalog_root, args.blob_store)]
+
     rows: list[dict[str, Any]] = []
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         for part in pool.map(_scan, jobs):
@@ -144,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
                 "has been cited by digest, and rewriting it would invalidate that citation."
             ),
         },
-        "catalog": "~/" + str(args.catalog_root.relative_to(Path.home())),
+        "catalog": report_catalog_root(args.catalog_root),
         "documentsRequested": len(wanted),
         "documentsFound": len(rows),
         "documentsMissing": missing,

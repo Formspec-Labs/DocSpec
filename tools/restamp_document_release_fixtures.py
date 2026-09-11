@@ -22,8 +22,8 @@ The DOCSPEC minting generation, at `tests/fixtures/document_release_v2_docspec`
 -- `docs/decisions/0001-document-release-2-0.md` restamp items 1 through 16, as
 far as they are mechanically specified. The predecessor corpus at
 `tests/fixtures/document_release_v2` is NOT rebuilt by this tool and never
-should be: it is the frozen regression anchor the generation-aware verifier is
-measured against, sealed by the tree digests in its own `corpus.json`.
+should be: its tree digests preserve the provenance of the current corpus.
+Predecessor runtime verification is no longer supported.
 
 All sixteen items are implemented. Three of them -- 2, 3, and 7 -- were stopped
 on the first pass because item 2 as written was self-contradictory, and the
@@ -64,27 +64,31 @@ from typing import Any
 
 from rulespec_artifacts import FramedSection, framed_section_digest
 
-from docspec.adapters.document_release_verify import (
-    DOCSPEC_GENERATION,
+from docspec.adapters.document_release.coverage import (
+    derive_counts,
+    derive_coverage,
+)
+from docspec.adapters.document_release.rules import (
     FORMAT,
     FORMAT_VERSION,
+    FRAMED_SET_DOMAINS,
     REPRESENTATION_MEDIA_TYPE,
     SCHEMA_FILES,
     SCHEMA_IDS,
-    FRAMED_SET_DOMAINS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    TEXT_BODY_SET_DOMAIN,
-    TABULAR_MEDIA_TYPES,
+    TABULAR_MEDIA_TYPE,
     TEXT_BODY_INDEX_ROLE,
-    TEXT_BODY_KEYS,
-    derive_counts,
-    derive_coverage,
+    TEXT_BODY_KEY,
+    TEXT_BODY_SET_DOMAIN,
     framed_set_digest,
     stamp_root,
+)
+from docspec.adapters.document_release.verify import (
     verify_document_release,
 )
 from docspec.document_release_support import (
+    member_descriptor,
     canonical_json_bytes,
     canonical_sha256,
     file_sha256,
@@ -111,11 +115,6 @@ PREDECESSOR_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "document_release_
 CORPUS_ID = "urn:docspec:document-corpus:us-federal-register"
 PUBLISHED_AT = "2026-08-11T00:00:00Z"
 
-# The text body key and tabular media type this builder mints under. Read from
-# the gate's own tables rather than restated, so builder and verifier cannot
-# drift apart about what the docspec generation is.
-TEXT_BODY_KEY = TEXT_BODY_KEYS[DOCSPEC_GENERATION]
-TABULAR_MEDIA_TYPE = TABULAR_MEDIA_TYPES[DOCSPEC_GENERATION]
 DOCUMENT_BODY = "document-body"
 
 # Restamp item 11: text and blob members follow the SourceCatalog multipart
@@ -525,17 +524,6 @@ def _search_segments(
     return segments
 
 
-def _member(bundle: Path, object_key: str, *, role: str, record_count: int | None, schema_id: str, media_type: str) -> dict[str, Any]:
-    path = bundle / object_key
-    return {
-        "byteSize": path.stat().st_size,
-        "mediaType": media_type,
-        "objectKey": object_key,
-        "recordCount": record_count,
-        "role": role,
-        "schemaId": schema_id,
-        "sha256": file_sha256(path),
-    }
 
 
 DATA_MEMBERS: tuple[tuple[str, str], ...] = (
@@ -642,7 +630,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         object_key = f"data/{role}.jsonl"
         write_canonical_jsonl(bundle / object_key, rows_by_role[role])
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role=role,
@@ -653,7 +641,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         )
     for role in sorted(SCHEMA_FILES):
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 f"schemas/{SCHEMA_FILES[role].name}",
                 role="schema",
@@ -663,7 +651,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             )
         )
     members.append(
-        _member(
+        member_descriptor(
             bundle,
             TEXT_BODY_INDEX_KEY,
             role=TEXT_BODY_INDEX_ROLE,
@@ -692,7 +680,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             capture["mediaType"] for capture in captures if capture["objectKey"] == object_key
         )
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role="rendition",
@@ -703,7 +691,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         )
     for object_key, count in sorted(representation_counts.items()):
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role="representation",
@@ -794,7 +782,6 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             total_member_byte_size=sum(member["byteSize"] for member in members),
             attachments=attachments,
             comments=comments,
-            generation=DOCSPEC_GENERATION,
         ),
         "coverage": derive_coverage(
             dispositions,

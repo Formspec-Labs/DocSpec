@@ -44,7 +44,6 @@ Reading the naive fraction off this sample is the error the weights prevent.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import os
@@ -53,6 +52,14 @@ from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.catalog_sample_support import (  # noqa: E402
+    iter_source_item_rows,
+    source_item_member_paths,
+    report_catalog_root,
+)
 
 DOCUMENT_SCOPE = "regulations-gov-documents"
 NO_REASON = "(none)"
@@ -79,7 +86,6 @@ NO_REASON = "(none)"
 # re-confirmed a measured zero; these weights move those rows to where the
 # estimate is actually loose, and keep enough in each reason code to bound its
 # zero at roughly 2-6%.
-MINOR_TYPES = ("Notice", "Proposed Rule", "Rule", "Public Submission")
 MAIN_TYPES = ("Other", "Supporting & Related Material")
 
 ALLOCATION: dict[tuple[str, str], int] = {
@@ -117,7 +123,7 @@ def _document_fact(row: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _scan_member(args: tuple[str, str, str] | tuple[str, str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _scan_member(args: tuple[str, str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Reduce one partition blob to the rows one selector wants.
 
     Two selectors share this walk. ``unavailable`` keeps the campaign frame.
@@ -127,17 +133,10 @@ def _scan_member(args: tuple[str, str, str] | tuple[str, str, str, str]) -> tupl
     a disposition the campaign excludes by definition is disjoint by
     construction rather than by assertion.
     """
-    path, salt, partition_id = args[:3]
-    mode = args[3] if len(args) > 3 else "unavailable"
+    path, salt, partition_id, mode = args
     kept: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
-    raw = Path(path).read_bytes()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in iter_source_item_rows(path):
         counts["rowsRead"] += 1
         disposition = (row.get("selection") or {}).get("disposition")
         counts[f"disposition/{disposition}"] += 1
@@ -227,12 +226,10 @@ def build_selection(
     allocation: dict[tuple[str, str], int],
     workers: int,
 ) -> dict[str, Any]:
-    manifest = json.loads((catalog_root / "manifests" / "catalog.json").read_text())
-    members = [m for m in manifest["members"] if m["role"] == "source-items"]
-    jobs = []
-    for index, member in enumerate(sorted(members, key=lambda m: m["blobRef"])):
-        digest = member["blobRef"].split(":", 1)[1]
-        jobs.append((str(blob_store / digest), salt, f"{index:02d}", "unavailable"))
+    jobs = [
+        (path, salt, f"{index:02d}", "unavailable")
+        for index, path in enumerate(source_item_member_paths(catalog_root, blob_store))
+    ]
 
     frame: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
@@ -278,12 +275,7 @@ def build_selection(
         )
 
     chosen.sort(key=lambda r: (r["restrictReasonType"], r["documentType"] or "", r["rank"]))
-    try:
-        # Written home-relative: this file is committed, and an absolute path
-        # from one machine is noise on any other.
-        catalog_label = "~/" + str(catalog_root.relative_to(Path.home()))
-    except ValueError:
-        catalog_label = str(catalog_root)
+    catalog_label = report_catalog_root(catalog_root)
     return {
         "receipt": "attachment-sample-selection",
         "question": (

@@ -14,10 +14,10 @@ from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import LayerRef, SourceCatalogRef
-from docspec.errors import IntegrityError, LimitExceededError
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
+from docspec.errors import IntegrityError, LimitExceededError
 from tests.helpers import EMPTY_DIGEST, profile_set
-from tests.test_planner import EmptyDocumentCatalog, MemoryControls, MemorySourceCatalog, MemoryStores
+from tests.support.planner import EmptyDocumentCatalog, MemoryControls, MemorySourceCatalog, MemoryStores
 
 
 def _source_items_in_distinct_partitions(count: int, bucket_count: int) -> tuple[SourceItem, ...]:

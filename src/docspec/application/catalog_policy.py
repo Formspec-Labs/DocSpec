@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-from docspec.domain.source_catalog import CatalogNormalizationField
+from docspec.domain.source_catalog import (CatalogNormalizationField, CatalogRenditionFamily, CatalogSelectionDecision, SourceCatalogCandidate, SourceCatalogSelection)
 from docspec.errors import IntegrityError
 
 _RIN = re.compile(r"^[0-9]{4}-[A-Z][A-Z0-9]{3}$")
@@ -190,7 +190,94 @@ def observed_topics(
     )
 
 
+def catalog_interpretations(
+    pin: Mapping[str, Any],
+    *,
+    joins: Sequence[Mapping[str, Any]],
+    normalization_fields: Sequence[Any],
+    ordered_family_ids: Sequence[str],
+    families: Sequence[CatalogRenditionFamily],
+    selected_family_id: str | None,
+    candidates: Sequence[SourceCatalogCandidate],
+    sampling_result: Mapping[str, Any],
+    selection: SourceCatalogSelection,
+    decisions: Sequence[CatalogSelectionDecision],
+    topic_source_field: str,
+    topics: Sequence[Mapping[str, Any]] = (),
+) -> tuple[dict[str, Any], ...]:
+    """Record the six ordered interpretation forms without choosing policy rules."""
+
+    return (
+        {
+            "interpretationKind": "exact-join",
+            **pin,
+            "result": {"joins": [dict(value) for value in joins]},
+        },
+        {
+            "interpretationKind": "normalization",
+            **pin,
+            "result": {
+                "fields": [field.to_dict() for field in normalization_fields]
+            },
+        },
+        {
+            "interpretationKind": "rendition-preference",
+            **pin,
+            "result": {
+                "orderedFamilyIds": list(ordered_family_ids),
+                "families": [family.to_dict() for family in families],
+                "selectedFamilyId": selected_family_id,
+                "selectedRenditionIds": [value.rendition_id for value in candidates],
+            },
+        },
+        {
+            "interpretationKind": "sampling",
+            **pin,
+            "result": dict(sampling_result),
+        },
+        {
+            "interpretationKind": "selection",
+            **pin,
+            "result": {
+                "decisions": [decision.to_dict() for decision in decisions],
+                "finalDisposition": selection.disposition.value,
+                "reasonCode": selection.reason_code,
+                "reason": selection.reason,
+            },
+        },
+        {
+            "interpretationKind": "topic-recovery",
+            **pin,
+            "result": {
+                "sourceField": topic_source_field,
+                "outcome": "observed" if topics else "not-recovered",
+                "evidenceDigest": None,
+                "observedTopicIds": [value["observedTopicId"] for value in topics],
+            },
+        },
+    )
+
+def selection_failure(
+    decisions: Sequence[CatalogSelectionDecision],
+    decision_id: str,
+    selection: SourceCatalogSelection,
+) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
+    """Record the stopping decision after the caller has chosen its outcome."""
+    return selection, (
+        *decisions,
+        CatalogSelectionDecision(
+            decision_id,
+            False,
+            selection.disposition,
+            selection.reason_code,
+            selection.reason,
+        ),
+    )
+
+
 __all__ = [
+    "catalog_interpretations",
+    "selection_failure",
     "array_with_unparseable",
     "date_value",
     "http_url",

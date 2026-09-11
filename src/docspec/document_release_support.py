@@ -130,7 +130,7 @@ def write_canonical_json(path: Path, value: Any) -> None:
 def load_strict_canonical_jsonl(path: Path) -> list[Any]:
     """Load one JSONL member: one canonical-JSON record per newline-terminated line.
 
-    The docspec minting generation carries every tabular member as JSONL under
+    Portable releases carry every tabular member as JSONL under
     DocSpec's own `docspec-record-layer/1.1` framing, so a consumer streams rows
     instead of parsing a whole file to reach the first one. The strictness is
     the same strictness `load_strict_canonical_json` applies, per line: exact
@@ -198,18 +198,7 @@ def tree_digest(bundle: Path) -> str:
     return canonical_sha256(inventory)
 
 
-def source_set_digest(source_item_ids: Sequence[str]) -> str:
-    """Canonical set digest over a deduplicated, sorted identifier list.
-
-    A SET digest, so a repeated identifier does not change it. Duplicates are a
-    separate defect with a separate diagnostic (``invalid.duplicate-identity``);
-    folding them into the digest would let one defect mask the other.
-    """
-
-    return "sha256:" + canonical_sha256(sorted(set(source_item_ids)))
-
-
-# The physical and packing facts a docspec-generation identity preimage leaves
+# The physical and packing facts a portable release identity preimage leaves
 # out (`docs/decisions/0001-document-release-2-0.md`, "Identity -- two minted
 # names, one derived form"). `coverage`'s representation and segment byte totals
 # stay IN: they are facts about the corpus text, not about how it was packed.
@@ -393,8 +382,22 @@ __all__ = [
     "member_path",
     "packaged_schema_root",
     "safe_object_key",
-    "source_set_digest",
     "tree_digest",
     "write_canonical_json",
     "write_canonical_jsonl",
 ]
+
+
+def member_descriptor(
+    bundle: Path, object_key: str, *, role: str, record_count: int | None, schema_id: str, media_type: str
+) -> dict[str, Any]:
+    path = bundle / object_key
+    return {
+        "byteSize": path.stat().st_size,
+        "mediaType": media_type,
+        "objectKey": object_key,
+        "recordCount": record_count,
+        "role": role,
+        "schemaId": schema_id,
+        "sha256": file_sha256(path),
+    }

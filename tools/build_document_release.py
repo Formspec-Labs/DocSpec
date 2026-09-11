@@ -12,7 +12,7 @@ Reuse, not re-implementation
 ----------------------------
 Every derived value comes from the code that already owns it:
 `stamp_root`, `derive_counts`, `derive_coverage`, and `framed_set_digest` from
-`adapters/document_release_verify.py`; the canonical byte, JSONL, and digest
+`adapters/document_release/rules.py` and `coverage.py`; the canonical byte, JSONL, and digest
 primitives from `document_release_support.py`; `partition_bucket` from
 `domain/storage.py`; the boundaries from `processing/bounded_segmentation.py`;
 the floors from the committed calibration receipt. Nothing here re-derives a
@@ -99,8 +99,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from docspec.adapters.document_release_verify import (
-    DOCSPEC_GENERATION,
+from docspec.adapters.document_release.coverage import (
+    derive_counts,
+    derive_coverage,
+)
+from docspec.adapters.document_release.rules import (
     FORMAT,
     FORMAT_VERSION,
     REPRESENTATION_MEDIA_TYPE,
@@ -108,17 +111,18 @@ from docspec.adapters.document_release_verify import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    TEXT_BODY_SET_DOMAIN,
-    TABULAR_MEDIA_TYPES,
+    TABULAR_MEDIA_TYPE,
     TEXT_BODY_INDEX_ROLE,
-    TEXT_BODY_KEYS,
-    derive_counts,
-    derive_coverage,
+    TEXT_BODY_KEY,
+    TEXT_BODY_SET_DOMAIN,
     framed_set_digest,
     stamp_root,
+)
+from docspec.adapters.document_release.verify import (
     verify_document_release,
 )
 from docspec.document_release_support import (
+    member_descriptor,
     canonical_sha256,
     file_sha256,
     write_canonical_json,
@@ -150,8 +154,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CORPUS_ID = "urn:docspec:document-corpus:us-federal-register"
 DOCUMENT_BODY = "document-body"
-TEXT_BODY_KEY = TEXT_BODY_KEYS[DOCSPEC_GENERATION]
-TABULAR_MEDIA_TYPE = TABULAR_MEDIA_TYPES[DOCSPEC_GENERATION]
 JOIN_RECEIPT_ID = "urn:docspec:join-receipt:source-to-document-v1"
 
 # Decision 0001, restamp item 11: text and blob members follow the SourceCatalog
@@ -590,19 +592,6 @@ def _unique(rows: Iterable[Mapping[str, Any]], field_name: str) -> list[dict[str
     return list(seen.values())
 
 
-def _member(
-    bundle: Path, object_key: str, *, role: str, record_count: int | None, schema_id: str, media_type: str
-) -> dict[str, Any]:
-    path = bundle / object_key
-    return {
-        "byteSize": path.stat().st_size,
-        "mediaType": media_type,
-        "objectKey": object_key,
-        "recordCount": record_count,
-        "role": role,
-        "schemaId": schema_id,
-        "sha256": file_sha256(path),
-    }
 
 
 DATA_MEMBERS: tuple[str, ...] = (
@@ -739,7 +728,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
         object_key = f"data/{role}.jsonl"
         write_canonical_jsonl(bundle / object_key, rows_by_role[role])
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role=role,
@@ -750,7 +739,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
         )
     for role in sorted(SCHEMA_FILES):
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 f"schemas/{SCHEMA_FILES[role].name}",
                 role="schema",
@@ -760,7 +749,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             )
         )
     members.append(
-        _member(
+        member_descriptor(
             bundle,
             TEXT_BODY_INDEX_KEY,
             role=TEXT_BODY_INDEX_ROLE,
@@ -781,7 +770,7 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             REPRESENTATION_MEDIA_TYPE if family_role == "representation" else bucket_media[object_key]
         )
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role=family_role,
@@ -848,7 +837,6 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             total_member_byte_size=sum(member["byteSize"] for member in members),
             attachments=attachments,
             comments=[],
-            generation=DOCSPEC_GENERATION,
         ),
         "coverage": derive_coverage(
             dispositions,
@@ -1469,7 +1457,6 @@ def mint(
             "code": result.code,
             "diagnostics": [str(issue) for issue in result.issues[:20]],
             "diagnosticCount": len(result.issues),
-            "generation": DOCSPEC_GENERATION,
         },
     }
     return receipt

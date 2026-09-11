@@ -14,7 +14,6 @@ from docspec import __version__
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.source_catalog import source_catalog_schemas
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
 SOURCE_CATALOG_SCHEMA_ROOT = PRODUCTION_ROOT / "schemas" / "source_catalog" / "1.0"
@@ -36,18 +35,8 @@ REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 SIBLING_CHECKOUT_PATH = re.compile(r"(?:^|/)spicy[-_]regs(?:/|\Z)")
 SIBLING_MODULE_PATH = re.compile(r"\bspicy_regs\.")
 SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
-OPTIONAL_SOURCE_ADAPTER = "src/docspec/adapters/spicyregs_source_native.py"
-# The adapter's own test names the fallback reader module as test data: it
-# injects a fake under that name to prove resolution order and refusal.
-OPTIONAL_SOURCE_ADAPTER_TEST = "tests/test_spicyregs_source_native.py"
-OPTIONAL_SOURCE_MODULES = frozenset(
-    {
-        "spicy_" + "regs.source_native",
-        "spicy_" + "regs.source_native_profiles",
-    }
-)
 OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
-    {"src/docspec/cli.py", "src/docspec/source_catalog_cli.py"}
+    {"src/docspec/cli/source_catalog.py"}
 )
 # This module names a URN namespace reserved for a registry DocSpec does not
 # own. It is data the catalog refuses to mint, not an import of that product.
@@ -67,6 +56,7 @@ ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
     {
         "refspec",
         "rulespec",
+        "spicy_docs",
         "spicy_regs",
         "spicyregs",
         "spicysearch",
@@ -153,10 +143,7 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
                     violations.append(f"{relative}:{node.lineno} names a home directory: {value!r}")
                 if "/" in value and SIBLING_CHECKOUT_PATH.search(value):
                     violations.append(f"{relative}:{node.lineno} names a SpicyRegs path: {value!r}")
-                if SIBLING_MODULE_PATH.search(value) and not (
-                    relative in (OPTIONAL_SOURCE_ADAPTER, OPTIONAL_SOURCE_ADAPTER_TEST)
-                    and value in OPTIONAL_SOURCE_MODULES
-                ):
+                if SIBLING_MODULE_PATH.search(value):
                     violations.append(f"{relative}:{node.lineno} names a spicy_regs module: {value!r}")
             elif isinstance(node, ast.Call):
                 for keyword in node.keywords:
@@ -255,7 +242,9 @@ def test_superseded_source_formats_are_absent_from_repository_code() -> None:
     for name in ("SourceReleasePin", "SourceReleaseReader", "SourceReleaseSchemaGate"):
         assert not hasattr(ports, name)
 
-    cli_source = (PRODUCTION_ROOT / "cli.py").read_text(encoding="utf-8")
+    cli_source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((PRODUCTION_ROOT / "cli").glob("*.py"))
+    )
     assert "LocalJsonlSourceCatalog" not in cli_source
     assert "wire_source_release" not in cli_source
 
@@ -290,7 +279,7 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
-        is_command_surface = relative_parts[0] in {"cli.py", "entrypoint.py", "source_catalog_cli.py"}
+        is_command_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
             if not is_adapter and not is_command_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
@@ -321,7 +310,7 @@ def test_non_docspec_product_areas_are_absent_from_production() -> None:
             continue
         source = path.read_text(encoding="utf-8").casefold()
         for word in ADAPTER_ONLY_SIBLING_PACKAGES:
-            if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicyregs":
+            if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicy_docs":
                 continue
             if relative in RESERVED_NAMESPACE_ROOTS and word == "refspec":
                 continue

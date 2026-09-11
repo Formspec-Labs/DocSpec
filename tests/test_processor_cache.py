@@ -28,8 +28,8 @@ from tests.helpers import (
     source_catalog_reader,
     write_shared_source_catalog,
 )
-from tests.test_application_pipeline import _plan, _run, _write_source
-from tests.test_processing_pipeline import _captured
+from tests.support.pipeline import _plan, _run, _write_source
+from tests.support.processing import _captured
 
 
 class _CountingProcessor:

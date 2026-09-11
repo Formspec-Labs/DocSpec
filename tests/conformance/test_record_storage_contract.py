@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 from pathlib import Path
-from typing import Callable
 
 import pytest
 
-from docspec.domain.profiles import ProfileRole
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError
-from docspec.ports.record_storage import RecordStorage
-from docspec.profile_registry import ProfileRegistry, RegisteredProfile
-
-ROOT = Path(__file__).resolve().parents[2]
+from tests.support.records import (
+    _FACTORIES,
+    _registered_record_profiles,
+)
 
 # One shared logical layer fixture: every registered record profile must
 # expose exactly these records through the same port surface.
@@ -33,43 +30,8 @@ BASE_RECORDS = (
 )
 
 
-def _implementation(registered: RegisteredProfile) -> type:
-    module_name, _, attribute = registered.implementation_module.partition(":")
-    return getattr(importlib.import_module(module_name), attribute)
-
-
-def _local_jsonl_storage(registered: RegisteredProfile, root: Path) -> RecordStorage:
-    limits = registered.description.limits
-    return _implementation(registered)(
-        root / "records",
-        max_member_bytes=limits["maxMemberBytes"],
-        max_record_bytes=limits["maxRecordBytes"],
-        max_root_bytes=limits["maxRootBytes"],
-        max_open_members=limits["maxOpenMembers"],
-        max_merge_scratch_bytes=limits["maxMergeScratchBytes"],
-    )
-
-
-# Constructing an adapter from its machine description is the one thing the
-# description cannot carry itself, so each registered record profile names a
-# factory here. A newly registered profile fails the coverage check below
-# until it joins this table and passes the same fixture.
-_FACTORIES: dict[str, Callable[[RegisteredProfile, Path], RecordStorage]] = {
-    "docspec.record-storage.local-jsonl.v1": _local_jsonl_storage,
-}
-
-
 def _bucket(value: str) -> int:
     return int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big") % POLICY.bucket_count
-
-
-def _registered_record_profiles() -> tuple[RegisteredProfile, ...]:
-    profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.RECORD_STORAGE)
-    assert profiles
-    assert {item.description.implementation_id for item in profiles} == set(_FACTORIES), (
-        "a registered record profile has no conformance factory"
-    )
-    return profiles
 
 
 def test_every_registered_record_profile_passes_the_shared_layer_contract(tmp_path: Path) -> None:

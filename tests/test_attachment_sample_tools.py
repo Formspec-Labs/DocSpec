@@ -13,29 +13,29 @@ import email.message
 import hashlib
 import http.client
 import json
-import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from tools.fetch_attachment_sample import (  # noqa: E402
+from tools.fetch_attachment_sample import (
     BROWSER_UA,
     MAGIC,
     NETWORK_ERRORS,
     _completed_ids,
     _download,
-    api_quota_lock,
     _head,
     _scrub,
     _summarize,
+    api_quota_lock,
     probe_direct,
     read_key,
 )
-from tools.select_attachment_sample import _largest_remainder, _rank  # noqa: E402
+from tools.select_attachment_sample import _largest_remainder, _rank
+from tools import fetch_attachment_sample
+
+
 
 
 def test_rank_is_stable_and_salt_sensitive() -> None:
@@ -178,6 +178,79 @@ def test_resume_survives_a_torn_final_line(tmp_path: Path) -> None:
         json.dumps({"documentId": "A-1"}) + "\n" + json.dumps({"documentId": "A-2"}) + "\n" + '{"docume'
     )
     assert _completed_ids(receipt) == {"A-1", "A-2"}
+
+
+@pytest.mark.parametrize("tail", [b'{"docume', b'{"error": "\xc3', b'{"documentId": "A-1"}'])
+def test_resume_repairs_only_the_tail_before_appending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tail: bytes,
+) -> None:
+    receipt = tmp_path / "r.ndjson"
+    prefix = json.dumps({"documentId": "A-1", "evidence": "kept"}).encode() + b"\n"
+    receipt.write_bytes(prefix + tail)
+    selection = tmp_path / "selection.json"
+    selection.write_text(json.dumps({"rows": [{
+        "documentId": "A-2", "restrictReasonType": "(none)", "agencyId": "EPA", "designWeight": 1,
+    }]}))
+    digest = hashlib.sha256(selection.read_bytes()).hexdigest()
+    calls = []
+
+    def probe(document_id, *args, **kwargs):
+        calls.append(document_id)
+        return {"directHitCount": 1, "directRequests": 1}
+
+    monkeypatch.setattr(fetch_attachment_sample, "probe_direct", probe)
+    args = ["--selection", str(selection), "--receipt", str(receipt), "--expect-digest", digest, "--no-api", "--delay", "0"]
+    original = receipt.read_bytes()
+    assert fetch_attachment_sample.main([*args, "--dry-run"]) == 0
+    assert receipt.read_bytes() == original
+    assert calls == []
+    assert fetch_attachment_sample.main(args) == 0
+    assert receipt.read_bytes().startswith(prefix)
+    rows = [json.loads(line) for line in receipt.read_bytes().splitlines()]
+    assert rows[0] == {"documentId": "A-1", "evidence": "kept"}
+    assert rows[-1]["documentId"] == "A-2"
+    assert calls == ["A-2"]
+    assert _completed_ids(receipt) == {"A-1", "A-2"}
+
+
+def test_reprobe_resume_repairs_a_torn_tail_without_repeating_complete_observations(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = tmp_path / "r.ndjson"
+    rows = [
+        {"documentId": "A-1", "directHitCount": 0},
+        {"documentId": "A-2", "directHitCount": 0},
+        {"documentId": "A-1", "reprobe": True, "directHitCount": 0},
+    ]
+    prefix = b"".join(json.dumps(row).encode() + b"\n" for row in rows)
+    receipt.write_bytes(prefix + b'{"documentId": "A-2", "reprobe": tr')
+    calls = []
+
+    def probe(document_id, *args, **kwargs):
+        calls.append(document_id)
+        return {"directHitCount": 1}
+
+    monkeypatch.setattr(fetch_attachment_sample, "probe_direct", probe)
+    args = ["--selection", str(tmp_path / "unused.json"), "--receipt", str(receipt), "--reprobe-only", "--control-pause", "0"]
+    original = receipt.read_bytes()
+    assert fetch_attachment_sample.main([*args, "--dry-run"]) == 0
+    assert receipt.read_bytes() == original
+    assert fetch_attachment_sample.main(args) == 0
+    assert receipt.read_bytes().startswith(prefix)
+    resumed = [json.loads(line) for line in receipt.read_bytes().splitlines()]
+    assert resumed[:3] == rows
+    assert resumed[-1]["reprobePass"] == "resumed"
+    assert resumed[-1]["documentId"] == "A-2"
+    assert calls == ["A-2"]
+
+
+def test_resume_refuses_corrupt_completed_lines_without_changing_evidence(tmp_path: Path) -> None:
+    receipt = tmp_path / "r.ndjson"
+    original = b'{"documentId": "A-1"}\nnot-json\n{"documentId": "A-2"}\n'
+    receipt.write_bytes(original)
+    with pytest.raises(json.JSONDecodeError):
+        _completed_ids(receipt)
+    assert receipt.read_bytes() == original
 
 
 def test_the_sealed_selection_matches_its_sidecar() -> None:

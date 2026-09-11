@@ -37,11 +37,18 @@ that edge; it does not define document or catalog meaning.
 
 ## Quick start
 
+Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
+[current architecture](docs/architecture.md). The
+[documentation index](docs/documentation.md) links to maintained guides for
+catalog evidence, extensions, and operations.
+Then run the [offline walkthrough](docs/offline-walkthrough.md) to publish and
+verify one local document.
+
 ```sh
-uv sync --python 3.12
-uv run pytest          # offline, standalone
-uv run ruff check .
-uv run docspec --help  # the one CLI
+uv sync --frozen --python 3.12
+uv run --frozen pytest          # offline, standalone
+uv run --frozen ruff check .
+uv run --frozen docspec --help  # the one CLI
 ```
 
 ## Where things are
@@ -54,7 +61,9 @@ uv run docspec --help  # the one CLI
 | Release pipeline | `src/docspec/application/` |
 | Document profiles (per source kind) | `profiles/` |
 | Conformance fixtures | `conformance/`, `fixtures/` |
-| Active plan | `docs/plans/` (newest date wins) |
+| Decision records | `docs/decisions/` |
+| Measurements and incidents | `docs/history/` |
+| Contributor improvements and code cleanup | [Maintainability to-do list](docs/maintainability-todo.md) |
 
 ## Boundaries
 
@@ -65,5 +74,21 @@ reference resources. SpicyRegs owns faithful source-native acquisition and
 public raw-data publication. SpicySearch owns search, ranking, composition, and
 serving. A consumer needs the published artifacts and installed packages—not a
 sibling checkout.
+
+## What the published schemas do not promise
+
+Two facts consumers have depended on that no schema states, both verified
+against `src/docspec/schemas/source_catalog/1.0/source-item.schema.json`:
+
+- **Normalized dates are unconstrained strings.** `publicationDate`,
+  `commentCloseDate` and `lastUpdatedDate` are each `null` or a non-empty
+  string — no `format`, no `pattern`. Anything comparing them as `YYYY-MM-DD`
+  text is relying on a convention this schema does not enforce, and a source
+  emitting another shape is schema-valid. Check before comparing, or state the
+  assumption where you compare.
+- **Field provenance is per field, not per item.** Every entry of
+  `interpretations[].result.fields[]` carries `sourcePaths`: the distinct
+  source paths that produced that one value. "Where did this field come from"
+  is answered there, not inferred from the item.
 
 **Status:** internal, unpublished; no license selected.

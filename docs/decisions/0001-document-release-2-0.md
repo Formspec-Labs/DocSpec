@@ -74,7 +74,7 @@ ordered by UTF-16 code unit under `artifact_json_bytes` and by code point under
 `canonical_json_bytes` — needs an object key outside the Basic Multilingual
 Plane, which no member of this format carries. The landed support module asserts
 the byte agreement directly
-(`tests/test_document_release_verify.py::test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain`,
+(`tests/test_document_release_identity.py::test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain`,
 which runs both encoders over the sealed root, its content, and the logical
 payload),
 modulo the safe-integer guard `document_release_support.py:75-90` adds on top.
@@ -446,6 +446,15 @@ accounting, and verification from a clean installed package with no
 source-producer checkout.
 
 ## Migration, and the builder's obligations
+
+> **Predecessor reader retired, 2026-09-11.** The restamp is complete, and the
+> maintainer has withdrawn legacy support. The portable verifier now accepts
+> only this decision's current eight-schema shape and identity rules. This
+> supersedes the temporary generation-aware acceptance described below.
+> Frozen predecessor fixtures remain provenance; the frozen source-catalog
+> fixture also remains an input to the current restamping recipe. The separate
+> application release lifecycle still serves current callers, as explained in
+> the [current architecture](../architecture.md#what-comes-out).
 
 There is no migration to perform: nothing is minted in 2.0, and 1.1 is replaced,
 not migrated — no compatibility reader, no dual-write, no conversion tool.

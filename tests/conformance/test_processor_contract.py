@@ -1,7 +1,6 @@
+
 from __future__ import annotations
 
-import importlib
-import sys
 from pathlib import Path
 
 from docspec.domain.content import AcquisitionDisposition, DerivedRecord, ProcessorDisposition, SourceItem
@@ -10,16 +9,16 @@ from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetryP
 from docspec.domain.processors import ProcessorRecordRef, ProcessorResourceUse, ProcessorResult
 from docspec.domain.receipts import RunReceipt
 from docspec.processing.processors import ContentStatisticsProcessor
+from tests import helpers as _helpers
+from tests.support import incremental as _equivalence
+from tests.support import pipeline as _pipeline_helpers
+from tests.support import processors as _processor_helpers
+from tests.support import store_results as _document_store
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_helpers = importlib.import_module("tests.helpers")
+
 SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
-_equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
-_document_store = importlib.import_module("tests.conformance.test_document_store")
-_pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
-_processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
+
 _platform = _equivalence._platform
 _reconciled_counts = _document_store._reconciled_counts
 _run = _pipeline_helpers._run

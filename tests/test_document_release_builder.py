@@ -23,7 +23,12 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.document_release_verify import stamp_root, verify_document_release
+from docspec.adapters.document_release.rules import (
+    stamp_root,
+)
+from docspec.adapters.document_release.verify import (
+    verify_document_release,
+)
 from docspec.document_release_support import load_strict_canonical_jsonl, write_canonical_json
 from docspec.processing.retention_floors import (
     VISIBLE_TEXT_FRACTION,
@@ -699,7 +704,6 @@ def test_a_sample_of_the_real_corpus_mints_and_verifies(tmp_path: Path) -> None:
         "code": "valid",
         "diagnosticCount": 0,
         "diagnostics": [],
-        "generation": "docspec",
     }
     counts = receipt["counts"]
     assert counts["requestedUniverseCount"] == 200

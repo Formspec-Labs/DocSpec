@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Self
 
+from docspec.adapters.s3_errors import provider_error_identity
 from docspec.domain.identity import require_relative_path, require_sha256, require_text
 from docspec.domain.references import BlobRef
 from docspec.errors import DocSpecError, IntegrityError, LimitExceededError
@@ -44,19 +45,8 @@ class S3BlobStoreConfig:
             object.__setattr__(self, "staging_directory", Path(self.staging_directory))
 
 
-def _provider_error_identity(error: Exception) -> tuple[str | None, int | None]:
-    response = getattr(error, "response", None)
-    if not isinstance(response, Mapping):
-        return None, None
-    details = response.get("Error")
-    metadata = response.get("ResponseMetadata")
-    code = details.get("Code") if isinstance(details, Mapping) else None
-    status = metadata.get("HTTPStatusCode") if isinstance(metadata, Mapping) else None
-    return str(code) if code is not None else None, status if isinstance(status, int) else None
-
-
 def _is_provider_error(error: Exception, codes: frozenset[str]) -> bool:
-    code, status = _provider_error_identity(error)
+    code, status = provider_error_identity(error)
     return code in codes or (status is not None and str(status) in codes)
 
 

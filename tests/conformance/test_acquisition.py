@@ -1,15 +1,14 @@
+
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from docspec.domain.content import AcquisitionDisposition, CandidateFile, SourceItem
+from docspec.domain.content import AcquisitionDisposition, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import FailureClass, StoreVerdict
 from docspec.domain.plans import WorkLimits
@@ -17,17 +16,18 @@ from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import StoreRef
 from docspec.errors import LimitExceededError, StateTransitionError
-from docspec.ports.content_fetcher import FetchStream
+from tests.support import incremental as _equivalence
+from tests.support import pipeline as _pipeline_helpers
+from tests.support import processors as _processor_helpers
+from tests.support import store_results as _document_store
+from tests.support.acquisition import (
+    SharedFixtureContentFetcher,
+    _FailFirstFetchFetcher,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-_helpers = importlib.import_module("tests.helpers")
-SharedFixtureContentFetcher = _helpers.SharedFixtureContentFetcher
-_equivalence = importlib.import_module("tests.conformance.test_incremental_equivalence")
-_document_store = importlib.import_module("tests.conformance.test_document_store")
-_pipeline_helpers = importlib.import_module("tests.test_application_pipeline")
-_processor_helpers = importlib.import_module("tests.test_processor_reprocessing")
+
+
 _platform = _equivalence._platform
 _reconciled_counts = _document_store._reconciled_counts
 _run = _pipeline_helpers._run
@@ -35,29 +35,6 @@ _write_source = _pipeline_helpers._write_source
 _CountingProcessor = _processor_helpers._CountingProcessor
 _description = _processor_helpers._description
 _plan = _processor_helpers._plan
-
-
-class _FailFirstFetchFetcher:
-    """Delegate to the real fetcher, losing one candidate's first transport."""
-
-    def __init__(self, delegate: SharedFixtureContentFetcher, *, flaky_locator: str) -> None:
-        self.delegate = delegate
-        self.flaky_locator = flaky_locator
-        self.calls: dict[str, int] = {}
-
-    def fetch(self, candidate: CandidateFile, **kwargs: Any) -> FetchStream:
-        locator_name = candidate.locator.rsplit("/", 1)[-1]
-        count = self.calls.get(locator_name, 0) + 1
-        self.calls[locator_name] = count
-        stream = self.delegate.fetch(candidate, **kwargs)
-        if locator_name != self.flaky_locator or count != 1:
-            return stream
-
-        def interrupted() -> Any:
-            yield from stream.chunks
-            raise ConnectionError("transport ended before verification")
-
-        return FetchStream(stream.metadata, interrupted())
 
 
 def _bounded_plan(source, base, processors, retry, accepted, *, limits: WorkLimits):

@@ -11,13 +11,13 @@ from typing import Any
 import dagster
 
 from docspec.adapters.dagster import DAGSTER_JOB_NAME, DagsterRuntime, build_dagster_definitions
-from docspec.cli import (
+from docspec.cli.execution import _execute_local_task
+from docspec.cli.local import (
     _compose_local_run,
-    _execute_local_task,
     _load_prepared_local_run,
-    _local_run_request,
     _prepared_tasks,
 )
+from docspec.cli.requests import _local_run_request
 from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import ArtifactRef, StoreRef
