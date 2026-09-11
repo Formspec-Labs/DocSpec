@@ -356,8 +356,15 @@ def source_catalog_reader(root: Path) -> SourceCatalogArtifactReader:
 class SharedFixtureContentFetcher:
     """Resolve the shared test HTTPS namespace through an injected local reader."""
 
+    downloader_id = "docspec.test.shared-fixture-content-fetcher.v1"
+
     def __init__(self, root: Path) -> None:
         self._local = LocalFileContentFetcher(root)
+        self.configuration_digest = identity_digest({
+            "implementationId": self.downloader_id,
+            "sourceOrigin": _FIXTURE_SOURCE_ORIGIN,
+            "localConfigurationDigest": self._local.configuration_digest,
+        })
 
     def fetch(self, candidate: CandidateFile, **kwargs):  # type: ignore[no-untyped-def]
         parsed = urlsplit(candidate.locator)
@@ -366,7 +373,12 @@ class SharedFixtureContentFetcher:
         local = replace(candidate, locator=unquote(parsed.path.lstrip("/")))
         result = self._local.fetch(local, **kwargs)
         return FetchStream(
-            replace(result.metadata, transport_version=candidate.transport_version),
+            replace(
+                result.metadata,
+                downloader_id=self.downloader_id,
+                downloader_configuration_digest=self.configuration_digest,
+                transport_version=candidate.transport_version,
+            ),
             result.chunks,
             result.close_callback,
         )

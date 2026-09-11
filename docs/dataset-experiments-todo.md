@@ -355,6 +355,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   reaches active work where the backend promises it. Reuse the existing recovery
   tests and add only missing cases introduced by D04.
 
+  **Progress:** local preparation and saved-handoff loading now derive one
+  worker description from the actual fetcher, roots, policies, accepted
+  producers, sink, partition settings, and evidence timestamp. Changed settings
+  refuse recovery before fetching; unchanged settings reuse completed work.
+  Fifteen new identity cases and 61 related workspace, CLI, acquisition, and
+  Dagster checks pass. This closes the existing local reconstruction gap;
+  configurable extraction/segmentation and the full D04 interruption workflow
+  remain open.
+
 <a id="d21"></a>
 
 - [ ] **D21 · P1 · Complete the Dagster composition of the same workflow.** Keep

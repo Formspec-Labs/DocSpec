@@ -38,6 +38,8 @@ from docspec.domain.execution import (
     summarize_store_tasks,
 )
 from docspec.domain.identity import (
+    require_sha256,
+    require_text,
     stable_urn,
 )
 from docspec.domain.plans import ProcessingPlan
@@ -65,7 +67,7 @@ class _LocalRunComposition:
     executor: StoreExecutionService
     delivery: StoreDeliveryService
     clock: Any
-    content_fetcher_composition: dict[str, Any]
+    content_fetcher: ContentFetcher
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,15 +82,53 @@ def _local_processor_cache_path(roots: dict[str, Path]) -> Path:
     return roots["reconciliation"] / "processor-results.sqlite3"
 
 
+def _content_fetcher_identity(fetcher: ContentFetcher) -> dict[str, str]:
+    try:
+        return {
+            "implementationId": require_text(getattr(fetcher, "downloader_id", None), "downloader identity"),
+            "configurationDigest": require_sha256(
+                getattr(fetcher, "configuration_digest", None), "downloader configuration digest",
+            ),
+        }
+    except ValueError as error:
+        raise CliError(f"content fetcher identity is invalid: {error}") from error
+
+
+def _worker_composition_value(composition: _LocalRunComposition) -> dict[str, Any]:
+    """Describe the same effective worker when preparing or recovering tasks."""
+
+    request = composition.request
+    return {
+        "format": "docspec-local-worker-composition",
+        "formatVersion": "2.0",
+        "implementationId": "docspec.cli.local-worker/v3",
+        "processingPlan": composition.plan_ref.to_dict(),
+        "profileSet": composition.plan.profiles.to_dict(),
+        "roots": {name: path.as_posix() for name, path in sorted(request["roots"].items())},
+        "retryPolicy": request["retryPolicy"].to_dict(),
+        "acceptedFailurePolicy": request["acceptedFailurePolicy"].to_dict(),
+        "contentFetcher": _content_fetcher_identity(composition.content_fetcher),
+        "completedAt": composition.clock(),
+        "documentReleaseProducer": composition.catalog.producer.as_dict(),
+        "sourceCatalogProducer": request["sourceCatalogProducer"].as_dict(),
+        "partitionPolicy": {
+            "policyId": composition.partition_policy.policy_id,
+            "bucketCount": composition.partition_policy.bucket_count,
+        },
+        "resultSink": composition.sink_ref.to_dict(),
+    }
+
+
 def _compose_local_run(
     request: dict[str, Any],
     *,
     source_catalog: ImmutableSourceCatalogReader | None = None,
     content_fetcher: ContentFetcher | None = None,
-    content_fetcher_composition: dict[str, Any] | None = None,
 ) -> _LocalRunComposition:
     plan, processors, profiles = _verified_local_plan(request)
     roots = request["roots"]
+    fetcher = content_fetcher if content_fetcher is not None else LocalFileContentFetcher(roots["sourceContent"])
+    _content_fetcher_identity(fetcher)
     controls, stores, records, blobs, catalog = _local_storage(
         roots,
         profiles,
@@ -100,20 +140,6 @@ def _compose_local_run(
             LocalSourceCatalogStore(roots["sourceCatalog"], create=False),
             producer=request["sourceCatalogProducer"],
         )
-    fetcher = content_fetcher or LocalFileContentFetcher(roots["sourceContent"])
-    actual_fetcher_composition = {
-        "implementationId": getattr(fetcher, "downloader_id", None),
-        "configurationDigest": getattr(fetcher, "configuration_digest", None),
-    }
-    if content_fetcher_composition is None:
-        content_fetcher_composition = actual_fetcher_composition
-    elif (
-        not isinstance(content_fetcher_composition, dict)
-        or content_fetcher_composition.get("implementationId") != actual_fetcher_composition["implementationId"]
-        or content_fetcher_composition.get("configurationDigest")
-        != actual_fetcher_composition["configurationDigest"]
-    ):
-        raise CliError("content fetcher differs from its sealed worker composition")
     partition_policy = PartitionPolicy(request["partitionPolicyId"], plan.partition_count)
     completed_at = request["completedAt"]
 
@@ -175,7 +201,7 @@ def _compose_local_run(
         executor,
         delivery,
         clock,
-        content_fetcher_composition,
+        fetcher,
     )
 
 
@@ -225,17 +251,7 @@ def _prepare_local_run(
         )
 
     task_count, task_set_digest = summarize_store_tasks(tasks())
-    worker_composition_value = {
-        "format": "docspec-local-worker-composition",
-        "formatVersion": "1.1",
-        "implementationId": "docspec.cli.local-worker/v2",
-        "processingPlan": composition.plan_ref.to_dict(),
-        "profileSet": plan.profiles.to_dict(),
-        "roots": {name: path.as_posix() for name, path in sorted(roots.items())},
-        "retryPolicy": request["retryPolicy"].to_dict(),
-        "acceptedFailurePolicy": request["acceptedFailurePolicy"].to_dict(),
-        "contentFetcher": composition.content_fetcher_composition,
-    }
+    worker_composition_value = _worker_composition_value(composition)
     worker_composition = controls.put(
         kind="worker-compositions",
         artifact_id=stable_urn("worker-composition", worker_composition_value),
@@ -339,8 +355,14 @@ def _load_prepared_local_run(
         raise CliError("saved execution handoff identity differs from its reference")
     if profile.profile_id != handoff.execution_profile.artifact_id:
         raise CliError("saved execution profile identity differs from its reference")
+    expected_worker = _worker_composition_value(composition)
     for reference in profile.control_artifacts:
-        composition.controls.verify(reference)
+        value = composition.controls.load(reference)
+        if reference == profile.worker_composition and (
+            value != expected_worker
+            or reference.artifact_id != stable_urn("worker-composition", expected_worker)
+        ):
+            raise CliError("saved worker composition differs from the reconstructed local worker")
     planned_ledger = composition.stores.planned_store_ledger(composition.plan.plan_id)
     if (
         handoff.processing_plan != composition.plan_ref

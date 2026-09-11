@@ -32,6 +32,14 @@ current policy permits a terminal failure. Do not reset accounting on resume.
 See [stage recovery](../tests/test_stage_checkpoint_recovery.py) and
 [processor-only recovery](../tests/test_processor_only_checkpoint_recovery.py).
 
+For a saved execution handoff, local task execution and reconciliation also
+compare the reconstructed worker with its retained description. Storage roots,
+fetcher identity/configuration, acceptance policies, sink, partition settings,
+and the fixed evidence timestamp must match. The
+[worker recovery tests](../tests/test_local_worker_identity.py) exercise refusal
+before fetching when those values change. Broader injected extractor/segmenter
+configuration pins remain part of the public lifecycle work.
+
 ## Deliver and reconcile before publishing
 
 [`StoreDeliveryService`](../src/docspec/application/delivery.py) checks the record

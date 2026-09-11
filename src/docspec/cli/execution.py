@@ -41,7 +41,8 @@ def run_local(
     """Run a closed local request, optionally injecting a content source.
 
     This is the same execution path as the run commands. An injected fetcher
-    is recorded in the worker composition for this execution.
+    must declare a nonempty ``downloader_id`` and SHA-256
+    ``configuration_digest``. Recovery checks these against the saved worker.
     """
     return _execute_local_run(
         _local_run_request(request_path), resume=resume, content_fetcher=content_fetcher
@@ -105,13 +106,11 @@ def _execute_local_run(
     resume: bool | None,
     source_catalog: ImmutableSourceCatalogReader | None = None,
     content_fetcher: ContentFetcher | None = None,
-    content_fetcher_composition: dict[str, Any] | None = None,
 ) -> ArtifactRef:
     composition = _compose_local_run(
         request,
         source_catalog=source_catalog,
         content_fetcher=content_fetcher,
-        content_fetcher_composition=content_fetcher_composition,
     )
     prepared = _prepare_local_run(composition, resume=resume)
 

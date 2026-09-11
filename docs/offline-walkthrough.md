@@ -71,6 +71,14 @@ do not infer acceptance from supplied artifact metadata. Worker and execution
 records retain the resolved roots, profile pins, and settings for inspection.
 Version `1.0` run requests are no longer accepted; update current callers directly.
 
+An injected fetcher used by local runs must declare a nonempty `downloader_id`
+and a SHA-256 `configuration_digest`. Its acquisition metadata should describe
+that same implementation and configuration. Preparation and saved-task recovery
+use one worker description containing the effective roots, fetcher, policies,
+accepted producers, sink, partition settings, and fixed evidence timestamp.
+Recovery refuses changed settings before fetching. Saved worker descriptions
+now use version `2.0`; older prepared workers must be prepared again.
+
 A workspace supplies locations only. It does not create a second run ledger,
 change input identities, make an alternate experiment into a resume, or provide
 capture-only completion. The broader public lifecycle remains checklist D04.
