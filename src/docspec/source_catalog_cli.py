@@ -70,16 +70,6 @@ _SOURCE_NATIVE_PROFILES = (
 )
 
 
-
-
-
-
-
-
-
-
-
-
 def _paths_overlap(first: Path, second: Path) -> bool:
     resolved_first = Path(first).resolve(strict=False)
     resolved_second = Path(second).resolve(strict=False)
@@ -136,41 +126,38 @@ def _producer(args: argparse.Namespace):
     )
 
 
-def _load_build_command_receipt(
-    root: Path,
-) -> tuple[dict[str, Any], SourceCatalogRef]:
-    """Parse and validate the one closed command receipt at a catalog root."""
+def _receipt_object(
+    value: object,
+    fields: set[str],
+    *,
+    nested_label: str,
+) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != fields:
+        raise SourceCatalogCliError(f"{nested_label} has an invalid closed shape")
+    return value
 
-    label = "source catalog build command receipt"
-    receipt = _read_object(root / _BUILD_RECEIPT_NAME, label=label, canonical=True)
 
-    def closed(
-        value: object,
-        fields: set[str],
-        *,
-        nested_label: str,
-    ) -> dict[str, Any]:
-        if not isinstance(value, dict) or set(value) != fields:
-            raise SourceCatalogCliError(f"{nested_label} has an invalid closed shape")
-        return value
+def _receipt_text(value: object, *, nested_label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SourceCatalogCliError(f"{nested_label} must be a non-empty string")
+    return value
 
-    def text(value: object, *, nested_label: str) -> str:
-        if not isinstance(value, str) or not value.strip():
-            raise SourceCatalogCliError(f"{nested_label} must be a non-empty string")
-        return value
 
-    def count(value: object, *, nested_label: str) -> int:
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise SourceCatalogCliError(f"{nested_label} must be a non-negative integer")
-        return value
+def _receipt_count(value: object, *, nested_label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise SourceCatalogCliError(f"{nested_label} must be a non-negative integer")
+    return value
 
-    def absolute_path(value: object, *, nested_label: str) -> str:
-        selected = text(value, nested_label=nested_label)
-        if not Path(selected).is_absolute():
-            raise SourceCatalogCliError(f"{nested_label} must be an absolute path")
-        return selected
 
-    receipt = closed(
+def _receipt_absolute_path(value: object, *, nested_label: str) -> str:
+    selected = _receipt_text(value, nested_label=nested_label)
+    if not Path(selected).is_absolute():
+        raise SourceCatalogCliError(f"{nested_label} must be an absolute path")
+    return selected
+
+
+def _validate_receipt_identity(receipt: dict[str, Any], *, label: str) -> None:
+    receipt = _receipt_object(
         receipt,
         {
             "acceptedSourceVerifierImplementationIds",
@@ -216,22 +203,24 @@ def _load_build_command_receipt(
     if receipt["receiptId"] != expected_receipt_id:
         raise SourceCatalogCliError(f"{label} receiptId does not match its content")
 
+
+def _validate_receipt_sources(receipt: dict[str, Any], *, label: str) -> None:
     raw_inputs = receipt["sourceNativeInputs"]
     if not isinstance(raw_inputs, list) or not raw_inputs:
         raise SourceCatalogCliError(f"{label} sourceNativeInputs must be a non-empty array")
     input_pins: list[tuple[str, str]] = []
     for index, raw_input in enumerate(raw_inputs):
-        source_input = closed(
+        source_input = _receipt_object(
             raw_input,
             {"artifactDigest", "blobStore", "locator", "logicalId", "profile"},
             nested_label=f"{label} sourceNativeInputs[{index}]",
         )
-        absolute_path(source_input["locator"], nested_label=f"{label} source-native locator")
-        absolute_path(
+        _receipt_absolute_path(source_input["locator"], nested_label=f"{label} source-native locator")
+        _receipt_absolute_path(
             source_input["blobStore"],
             nested_label=f"{label} source-native blob store",
         )
-        text(source_input["logicalId"], nested_label=f"{label} source-native logicalId")
+        _receipt_text(source_input["logicalId"], nested_label=f"{label} source-native logicalId")
         try:
             require_sha256(
                 source_input["artifactDigest"],
@@ -251,25 +240,27 @@ def _load_build_command_receipt(
             f"{label} acceptedSourceVerifierImplementationIds must be a non-empty array"
         )
     for value in accepted_verifiers:
-        text(value, nested_label=f"{label} accepted source verifier implementation ID")
+        _receipt_text(value, nested_label=f"{label} accepted source verifier implementation ID")
     if accepted_verifiers != sorted(set(accepted_verifiers)):
         raise SourceCatalogCliError(
             f"{label} accepted source verifier implementation IDs must be sorted and distinct"
         )
 
-    catalog_policy = closed(
+
+def _validate_receipt_catalog(receipt: dict[str, Any], *, label: str) -> SourceCatalogRef:
+    catalog_policy = _receipt_object(
         receipt["catalogPolicy"],
         {"policyDigest", "policyId", "policyVersion"},
         nested_label=f"{label} catalogPolicy",
     )
-    text(catalog_policy["policyId"], nested_label=f"{label} catalog policyId")
-    text(catalog_policy["policyVersion"], nested_label=f"{label} catalog policyVersion")
+    _receipt_text(catalog_policy["policyId"], nested_label=f"{label} catalog policyId")
+    _receipt_text(catalog_policy["policyVersion"], nested_label=f"{label} catalog policyVersion")
     try:
         require_sha256(catalog_policy["policyDigest"], f"{label} catalog policyDigest")
     except ValueError as error:
         raise SourceCatalogCliError(str(error)) from error
 
-    producer = closed(
+    producer = _receipt_object(
         receipt["producer"],
         {
             "implementationId",
@@ -281,9 +272,9 @@ def _load_build_command_receipt(
         nested_label=f"{label} producer",
     )
     for name, value in producer.items():
-        text(value, nested_label=f"{label} producer {name}")
+        _receipt_text(value, nested_label=f"{label} producer {name}")
 
-    catalog = closed(
+    catalog = _receipt_object(
         receipt["catalog"],
         {"catalogId", "digest", "locator"},
         nested_label=f"{label} catalog",
@@ -292,8 +283,11 @@ def _load_build_command_receipt(
         catalog_reference = SourceCatalogRef.from_dict(catalog)
     except (TypeError, ValueError) as error:
         raise SourceCatalogCliError(f"{label} catalog reference is invalid: {error}") from error
+    return catalog_reference
 
-    count(receipt["itemCount"], nested_label=f"{label} itemCount")
+
+def _validate_receipt_summary(receipt: dict[str, Any], *, label: str) -> None:
+    _receipt_count(receipt["itemCount"], nested_label=f"{label} itemCount")
     for name in (
         "catalogStateDigest",
         "requestedUniverseSetDigest",
@@ -303,40 +297,43 @@ def _load_build_command_receipt(
             require_sha256(receipt[name], f"{label} {name}")
         except ValueError as error:
             raise SourceCatalogCliError(str(error)) from error
-    dispositions = closed(
+    dispositions = _receipt_object(
         receipt["dispositionCounts"],
         {value.value for value in CatalogDisposition},
         nested_label=f"{label} dispositionCounts",
     )
     for name, value in dispositions.items():
-        count(value, nested_label=f"{label} dispositionCounts.{name}")
+        _receipt_count(value, nested_label=f"{label} dispositionCounts.{name}")
     reason_counts = receipt["reasonCounts"]
     if not isinstance(reason_counts, list):
         raise SourceCatalogCliError(f"{label} reasonCounts must be an array")
     for index, raw_row in enumerate(reason_counts):
-        row = closed(
+        row = _receipt_object(
             raw_row,
             {"count", "disposition", "reasonCode"},
             nested_label=f"{label} reasonCounts[{index}]",
         )
-        text(row["disposition"], nested_label=f"{label} reasonCounts[{index}].disposition")
-        text(row["reasonCode"], nested_label=f"{label} reasonCounts[{index}].reasonCode")
-        count(row["count"], nested_label=f"{label} reasonCounts[{index}].count")
-    derivation = closed(receipt["derivation"], {"build", "gate"}, nested_label=f"{label} derivation")
+        _receipt_text(row["disposition"], nested_label=f"{label} reasonCounts[{index}].disposition")
+        _receipt_text(row["reasonCode"], nested_label=f"{label} reasonCounts[{index}].reasonCode")
+        _receipt_count(row["count"], nested_label=f"{label} reasonCounts[{index}].count")
+    derivation = _receipt_object(receipt["derivation"], {"build", "gate"}, nested_label=f"{label} derivation")
     for stage, raw_engine in derivation.items():
-        engine = closed(raw_engine, {"path", "workers"}, nested_label=f"{label} derivation.{stage}")
+        engine = _receipt_object(raw_engine, {"path", "workers"}, nested_label=f"{label} derivation.{stage}")
         if engine["path"] not in DERIVATION_PATHS:
             raise SourceCatalogCliError(f"{label} derivation.{stage}.path is not a known derivation path")
-        count(engine["workers"], nested_label=f"{label} derivation.{stage}.workers")
+        _receipt_count(engine["workers"], nested_label=f"{label} derivation.{stage}.workers")
         if engine["workers"] < 1:
             raise SourceCatalogCliError(f"{label} derivation.{stage}.workers must be at least one")
-    partition_policy = closed(
+
+
+def _validate_receipt_partition(receipt: dict[str, Any], *, label: str) -> None:
+    partition_policy = _receipt_object(
         receipt["partitionPolicy"],
         {"bucketCount", "policyDigest", "policyId", "policyVersion"},
         nested_label=f"{label} partitionPolicy",
     )
-    text(partition_policy["policyId"], nested_label=f"{label} partition policyId")
-    text(
+    _receipt_text(partition_policy["policyId"], nested_label=f"{label} partition policyId")
+    _receipt_text(
         partition_policy["policyVersion"],
         nested_label=f"{label} partition policyVersion",
     )
@@ -347,28 +344,34 @@ def _load_build_command_receipt(
         )
     except ValueError as error:
         raise SourceCatalogCliError(str(error)) from error
-    bucket_count = count(
+    bucket_count = _receipt_count(
         partition_policy["bucketCount"],
         nested_label=f"{label} partition bucketCount",
     )
     if not 1 <= bucket_count <= 65_536:
         raise SourceCatalogCliError(f"{label} partition bucketCount is invalid")
+
+
+def _validate_receipt_joins(receipt: dict[str, Any], *, label: str) -> None:
     join_coverage = receipt["joinCoverage"]
     if not isinstance(join_coverage, list):
         raise SourceCatalogCliError(f"{label} joinCoverage must be an array")
     for index, value in enumerate(join_coverage):
-        coverage = closed(
+        coverage = _receipt_object(
             value,
             {"eligible", "joinId", "matched", "nullResult", "unmatched"},
             nested_label=f"{label} joinCoverage[{index}]",
         )
-        text(coverage["joinId"], nested_label=f"{label} joinCoverage[{index}].joinId")
+        _receipt_text(coverage["joinId"], nested_label=f"{label} joinCoverage[{index}].joinId")
         for name in ("eligible", "matched", "nullResult", "unmatched"):
-            count(
+            _receipt_count(
                 coverage[name],
                 nested_label=f"{label} joinCoverage[{index}].{name}",
             )
-    diagnostic_digests = closed(
+
+
+def _validate_receipt_diagnostics(receipt: dict[str, Any], *, label: str) -> None:
+    diagnostic_digests = _receipt_object(
         receipt["diagnosticDigests"],
         {
             "dispositionsDigest",
@@ -386,7 +389,9 @@ def _load_build_command_receipt(
         except ValueError as error:
             raise SourceCatalogCliError(str(error)) from error
 
-    measurements = closed(
+
+def _validate_receipt_byte_evidence(receipt: dict[str, Any], *, label: str) -> None:
+    measurements = _receipt_object(
         receipt["byteMeasurements"],
         {
             "payloadBytesRead",
@@ -397,7 +402,7 @@ def _load_build_command_receipt(
         nested_label=f"{label} byteMeasurements",
     )
     for name, value in measurements.items():
-        count(value, nested_label=f"{label} byteMeasurements.{name}")
+        _receipt_count(value, nested_label=f"{label} byteMeasurements.{name}")
     if measurements["payloadBytesRead"] != (
         measurements["payloadBytesReused"] + measurements["payloadBytesWritten"]
     ):
@@ -405,7 +410,7 @@ def _load_build_command_receipt(
 
     blob_store = receipt["blobStore"]
     if blob_store is not None:
-        blob_store = closed(
+        blob_store = _receipt_object(
             blob_store,
             {
                 "accountingStatus",
@@ -416,12 +421,12 @@ def _load_build_command_receipt(
             },
             nested_label=f"{label} blobStore",
         )
-        absolute_path(blob_store["path"], nested_label=f"{label} blob-store path")
-        count(
+        _receipt_absolute_path(blob_store["path"], nested_label=f"{label} blob-store path")
+        _receipt_count(
             blob_store["payloadBytesReused"],
             nested_label=f"{label} blobStore.payloadBytesReused",
         )
-        count(
+        _receipt_count(
             blob_store["payloadBytesWritten"],
             nested_label=f"{label} blobStore.payloadBytesWritten",
         )
@@ -434,7 +439,23 @@ def _load_build_command_receipt(
         ):
             raise SourceCatalogCliError(f"{label} blob-store evidence is invalid")
 
-    absolute_path(receipt["destination"], nested_label=f"{label} destination")
+
+def _load_build_command_receipt(
+    root: Path,
+) -> tuple[dict[str, Any], SourceCatalogRef]:
+    """Validate a command receipt in its original refusal order."""
+
+    label = "source catalog build command receipt"
+    receipt = _read_object(root / _BUILD_RECEIPT_NAME, label=label, canonical=True)
+    _validate_receipt_identity(receipt, label=label)
+    _validate_receipt_sources(receipt, label=label)
+    catalog_reference = _validate_receipt_catalog(receipt, label=label)
+    _validate_receipt_summary(receipt, label=label)
+    _validate_receipt_partition(receipt, label=label)
+    _validate_receipt_joins(receipt, label=label)
+    _validate_receipt_diagnostics(receipt, label=label)
+    _validate_receipt_byte_evidence(receipt, label=label)
+    _receipt_absolute_path(receipt["destination"], nested_label=f"{label} destination")
     return receipt, catalog_reference
 
 
