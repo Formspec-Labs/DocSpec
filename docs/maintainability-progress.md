@@ -98,7 +98,18 @@ methods preserve their statement trees after explicit owner/name substitutions;
 the constructor passes the same dependency objects to the verifier. Focused
 checkpoint, processor-only recovery, retry/cache, budget, policy-security,
 pipeline, result-sink, and recovery-conformance checks: **65 passed**. Processor
-runtime and base-reuse preparation remain to be separated before D6 closes.
+runtime and base-reuse preparation were the remaining D6 boundaries at that
+checkpoint. The exact staged snapshot also passed four import-direction checks
+for **69 passed** in total.
+
+The subsequent runtime extraction gives `ProcessorRuntime` the single copied
+registry, retry/cache behavior, and original clock dependencies. It receives the
+caller's mutable records, results, receipts, and work budget; failed-attempt
+evidence remains available after exceptions. `execution_evidence.py` shares
+receipt persistence and sanitized failure classification, while acceptance stays
+with the service. All 19 substantive methods preserve their statement trees
+after explicit owner substitutions. The same **69 focused checks passed**.
+Base-reuse preparation remains before D6 closes.
 
 Independent static reviews approved the storage/CLI split, portable verifier,
 catalog artifact split and import retirement, and source-policy conversion.

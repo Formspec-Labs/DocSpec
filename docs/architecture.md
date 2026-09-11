@@ -79,6 +79,14 @@ check duration, restore accounting, then start and save the attempt.
 construction, permitted-input sizing, result validation, and record ordering
 for execution and reuse.
 
+[`ProcessorRuntime`](../src/docspec/application/processor_runtime.py) owns the
+processor registry, retries, and cache operations. The executor supplies its
+existing budget and mutable result, record, and receipt collections. Failed
+attempts remain in those collections when an invocation raises, so the executor
+can record the same partial work and decide whether the failure is accepted.
+Shared [stage evidence functions](../src/docspec/application/execution_evidence.py)
+persist receipt identities and classify errors without deciding the outcome.
+
 ## What comes out?
 
 There are two release representations in the current code. **Both advertise
