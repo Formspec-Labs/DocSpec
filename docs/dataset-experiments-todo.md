@@ -7,11 +7,16 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 0 of 46 items complete.** Compiled on 2026-09-11 against merged revision
+**Status: 0 of 50 items complete.** Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
 capabilities below have been implemented or validated. Some already exist inside
 application services; those items call for making them usable and proving the
 whole workflow, not rebuilding them.
+
+The later [search-catalog investigation](history/2026-09-11-search-catalog-consolidation.md)
+adds D47–D50 using the inspected SpicySearch and SpicyEngine candidate branches.
+Those items propose shared build execution and definitions, not moving native
+indexing or serving into DocSpec.
 
 The [previous maintainability checklist](maintainability-todo.md) remains the
 record of the first refactor: 30 of 31 items are complete. Its unfinished human
@@ -351,6 +356,9 @@ to defer a conditional item is a documented deferral, not completed implementati
   where that reduces total code, or a documented reason to remain separate.
   Avoid a new shared package without a demonstrated saving. Defer changes whose
   only value is the future SpicyRegs move; coordinates with SpicyDocs S14/S22.
+  Include the compiled schema-gate mechanics shared with SpicySearch. Reuse
+  generic validation without merging product-specific schemas or error meaning;
+  D47 handles the search/engine dataset definitions separately.
 
 - [ ] **D32 · P1 · Remove configuration that repeats facts or promises no enforcement.**
   Review role/profile declarations, governance identifiers, provider metadata,
@@ -516,6 +524,57 @@ renaming packages or moving unchanged duplication does not achieve it.
   switch current imports directly without a legacy fallback chain. Depends on
   D42–D45 for the capabilities actually selected.
 
+## 9. Share search-catalog construction with the experiment workflow
+
+The [independent investigation](history/2026-09-11-search-catalog-consolidation.md)
+found a newer direct Parquet builder and compatible Engine loader in candidate
+worktrees. Recheck their revisions before implementation. Keep one search recipe
+and one search definition API; use DocSpec for shared attempt and dataset work.
+
+- [ ] **D47 · P1 · Share search-dataset definitions and identifier normalization.**
+  Reuse one installed API for search field roles/scopes, typed columns and
+  schemas, identifier normalization, and the corresponding identity-bearing
+  policies. Separate those from Engine's query weights and SQL. **Done when:**
+  the current Search builder and Engine reader use one implementation, a field
+  change no longer requires parallel authored definitions, and Engine still
+  rejects unsupported or damaged datasets. Keep shared definition imports
+  independent of build/runtime modules. Prefer the existing Search wheel over
+  creating another package. Owners: SpicySearch and SpicyEngine.
+
+- [ ] **D48 · P1 · Support bounded dataset recipes beyond segment processors.**
+  Extend D04/D13 using the existing catalog workspace, artifact, and execution
+  primitives. Accept pinned catalog/layer/resource inputs and named output
+  partitions without inventing a document capture or segment. **Done when:**
+  an ordinary retained-input experiment and a metadata-only dataset build share
+  attempt/reuse accounting. Global census and lookup dependencies invalidate
+  affected outputs correctly. State whether resume reuses whole completed builds
+  or completed partitions; do not promise the latter without implementing it.
+  Keep scheduler messages small references. Depends on D02–D04 and D15.
+
+- [ ] **D49 · P1 · Run the existing search preparation as an injected dataset recipe.**
+  Connect the current direct builder's metadata preparation, collision census,
+  optional topic joins, typed rows, and publication to D48. Preserve the full
+  requested catalog population, including records not selected for body capture.
+  **Done when:** DocSpec runs and records the build without importing search
+  policy into its core, the current Engine direct loader consumes its output,
+  and a later experiment can reuse retained inputs. Keep search recipe identity
+  distinct from DocSpec runner identity; a different runner alone does not
+  require renaming the artifact producer. Depends on D09, D47–D48.
+  Owners: DocSpec with SpicySearch composition and Engine admission checks.
+
+- [ ] **D50 · P1 · Prove the sharing saves work and retire the replaced paths.**
+  Compare the integrated recipe with the chosen current direct builder using
+  fixed inputs and independent expected cases for source evidence, population,
+  collisions, conflicting dates, repeated text, and topic eligibility. Exercise
+  changed global dependencies, interruption, installed wheels, and index-only
+  rebuilding. **Done when:** results and accounting meet those checks, scans,
+  preparation calls, memory/scratch and output work are recorded, and named
+  duplicate build/export mechanisms are removed. If shared execution adds a
+  parallel ledger or cannot remove repeated lifecycle work, retain the Search
+  recipe's standalone runner and limit consolidation to D09/D31/D47. Record that
+  narrower decision explicitly; do not claim the broader integration complete.
+  Depends on D49; owners: all three products.
+
 ## Suggested delivery order
 
 1. **Usable local experiment:** D01–D07, D11, D13–D17, D19–D20, D24, and D38.
@@ -530,6 +589,9 @@ renaming packages or moving unchanged duplication does not achieve it.
 5. **Reuse provider capabilities through a wheel:** D41/D43/D45 can accompany
    current source integration; D42/D44/D46 follow actual consumer needs. A later
    SpicyDocs/SpicyRegs repository move remains optional and independent.
+6. **Share search preparation:** D09/D47 provide immediate API/definition reuse.
+   Prove D48–D50 alongside the experiment workflow before generalizing the runner
+   further or deleting the current working build path.
 
 ## Evidence and coordination notes
 
