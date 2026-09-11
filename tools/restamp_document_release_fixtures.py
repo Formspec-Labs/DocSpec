@@ -64,27 +64,32 @@ from typing import Any
 
 from rulespec_artifacts import FramedSection, framed_section_digest
 
-from docspec.adapters.document_release_verify import (
+from docspec.adapters.document_release.coverage import (
+    derive_counts,
+    derive_coverage,
+)
+from docspec.adapters.document_release.rules import (
     DOCSPEC_GENERATION,
     FORMAT,
     FORMAT_VERSION,
+    FRAMED_SET_DOMAINS,
     REPRESENTATION_MEDIA_TYPE,
     SCHEMA_FILES,
     SCHEMA_IDS,
-    FRAMED_SET_DOMAINS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    TEXT_BODY_SET_DOMAIN,
     TABULAR_MEDIA_TYPES,
     TEXT_BODY_INDEX_ROLE,
     TEXT_BODY_KEYS,
-    derive_counts,
-    derive_coverage,
+    TEXT_BODY_SET_DOMAIN,
     framed_set_digest,
     stamp_root,
+)
+from docspec.adapters.document_release.verify import (
     verify_document_release,
 )
 from docspec.document_release_support import (
+    member_descriptor,
     canonical_json_bytes,
     canonical_sha256,
     file_sha256,
@@ -525,17 +530,6 @@ def _search_segments(
     return segments
 
 
-def _member(bundle: Path, object_key: str, *, role: str, record_count: int | None, schema_id: str, media_type: str) -> dict[str, Any]:
-    path = bundle / object_key
-    return {
-        "byteSize": path.stat().st_size,
-        "mediaType": media_type,
-        "objectKey": object_key,
-        "recordCount": record_count,
-        "role": role,
-        "schemaId": schema_id,
-        "sha256": file_sha256(path),
-    }
 
 
 DATA_MEMBERS: tuple[tuple[str, str], ...] = (
@@ -642,7 +636,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         object_key = f"data/{role}.jsonl"
         write_canonical_jsonl(bundle / object_key, rows_by_role[role])
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role=role,
@@ -653,7 +647,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         )
     for role in sorted(SCHEMA_FILES):
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 f"schemas/{SCHEMA_FILES[role].name}",
                 role="schema",
@@ -663,7 +657,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             )
         )
     members.append(
-        _member(
+        member_descriptor(
             bundle,
             TEXT_BODY_INDEX_KEY,
             role=TEXT_BODY_INDEX_ROLE,
@@ -692,7 +686,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             capture["mediaType"] for capture in captures if capture["objectKey"] == object_key
         )
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role="rendition",
@@ -703,7 +697,7 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
         )
     for object_key, count in sorted(representation_counts.items()):
         members.append(
-            _member(
+            member_descriptor(
                 bundle,
                 object_key,
                 role="representation",

@@ -31,13 +31,12 @@ import pytest
 from rulespec_artifacts import FramedSection, framed_section_digest
 from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_bytes
 
-from docspec.adapters.document_release_verify import (
+from docspec.adapters.document_release.rules import (
     ALLOWED_MEMBER_ROLES,
     ATTACHMENT_DISPOSITIONS,
     ATTACHMENT_RENDITION_REASON_CODES,
     CATALOG_DISPOSITIONS,
     CATALOG_STATE_REASON_CODES,
-    DIAGNOSTIC_CODES,
     DOCSPEC_GENERATION,
     FRAMED_SET_DOMAINS,
     GENERATION_SCHEMA_ROLES,
@@ -58,11 +57,18 @@ from docspec.adapters.document_release_verify import (
     bundle_generation,
     canonical_schema_id,
     declared_generations,
-    derive_per_kind_counts,
     expected_document_state_digest,
     expected_release_id,
     framed_set_digest,
     stamp_root,
+)
+from docspec.adapters.document_release.diagnostics import (
+    DIAGNOSTIC_CODES,
+)
+from docspec.adapters.document_release.coverage import (
+    derive_per_kind_counts,
+)
+from docspec.adapters.document_release.verify import (
     verify_corpus,
     verify_document_release,
 )
@@ -2224,7 +2230,7 @@ def test_a_negative_index_offset_is_refused_rather_than_crashing_the_gate(
 
 
 def test_read_slice_refuses_a_negative_range_before_it_seeks(tmp_path: Path) -> None:
-    from docspec.adapters.document_release_verify import _read_slice
+    from docspec.adapters.document_release.members import _read_slice
 
     path = tmp_path / "member"
     path.write_bytes(b"0123456789")
@@ -2240,7 +2246,7 @@ def test_the_gate_always_produces_a_verdict_even_when_a_rule_raises(
 ) -> None:
     """A gate that can be crashed is a gate that can be skipped (amendment B3)."""
 
-    import docspec.adapters.document_release_verify as module
+    import docspec.adapters.document_release.verify as module
 
     def explode(_bundle: Path) -> Any:
         raise RuntimeError("a rule reached an unreachable state")

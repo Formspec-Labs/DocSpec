@@ -23,7 +23,12 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.document_release_verify import stamp_root, verify_document_release
+from docspec.adapters.document_release.rules import (
+    stamp_root,
+)
+from docspec.adapters.document_release.verify import (
+    verify_document_release,
+)
 from docspec.document_release_support import load_strict_canonical_jsonl, write_canonical_json
 from docspec.processing.retention_floors import (
     VISIBLE_TEXT_FRACTION,

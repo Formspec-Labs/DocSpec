@@ -398,3 +398,18 @@ __all__ = [
     "write_canonical_json",
     "write_canonical_jsonl",
 ]
+
+
+def member_descriptor(
+    bundle: Path, object_key: str, *, role: str, record_count: int | None, schema_id: str, media_type: str
+) -> dict[str, Any]:
+    path = bundle / object_key
+    return {
+        "byteSize": path.stat().st_size,
+        "mediaType": media_type,
+        "objectKey": object_key,
+        "recordCount": record_count,
+        "role": role,
+        "schemaId": schema_id,
+        "sha256": file_sha256(path),
+    }

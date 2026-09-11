@@ -26,7 +26,7 @@ RELEASE_FORMAT = "docspec-document-release"
 #
 # This is the FORMAT VERSION, and it is not the identity namespace. The portable
 # bundle's `releaseId` prefix stays `urn:docspec:document-release:v2:`
-# (`adapters/document_release_verify.py`, `RELEASE_ID_PREFIX`), which downstream
+# (`adapters/document_release/rules.py`, `RELEASE_ID_PREFIX`), which downstream
 # consumers pin: the version says which contract the bytes obey, the prefix says
 # which namespace the name lives in, and *Sealed identities* fixed the latter at
 # `v2` for the 2.0 format deliberately. Flipping one must never move the other.
