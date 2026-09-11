@@ -430,19 +430,48 @@ def api_quota_lock(path: Path, *, holder: str, purpose: str, wait: bool, poll: f
         path.unlink(missing_ok=True)
 
 
-def _completed_ids(receipt: Path) -> set[str]:
+def _read_receipt(receipt: Path) -> tuple[list[dict[str, Any]], int]:
+    """Read complete records and locate a torn, unterminated final record.
+
+    Keep this read-only for dry runs. Invalid completed lines still raise: a
+    damaged earlier record is not evidence that one final write was interrupted.
+    """
     if not receipt.exists():
-        return set()
-    done: set[str] = set()
-    for line in receipt.read_text().splitlines():
+        return [], 0
+    lines = receipt.read_bytes().splitlines(keepends=True)
+    rows: list[dict[str, Any]] = []
+    complete_bytes = 0
+    for index, line in enumerate(lines):
         if not line.strip():
+            complete_bytes += len(line)
             continue
         try:
-            done.add(json.loads(line)["documentId"])
-        except (json.JSONDecodeError, KeyError):
-            # A torn final line from a killed run: re-fetch that one item.
-            continue
-    return done
+            rows.append(json.loads(line))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            if index != len(lines) - 1 or line.endswith((b"\n", b"\r")):
+                raise
+            break
+        complete_bytes += len(line)
+    return rows, complete_bytes
+
+
+def _completed_ids(receipt: Path) -> set[str]:
+    rows, _ = _read_receipt(receipt)
+    return {row["documentId"] for row in rows if "documentId" in row}
+
+
+@contextmanager
+def _append_receipt(receipt: Path):
+    """Repair only an interrupted tail before appending complete JSON lines."""
+    _, complete_bytes = _read_receipt(receipt)
+    with receipt.open("r+b" if receipt.exists() else "w+b") as raw:
+        raw.truncate(complete_bytes)
+        if complete_bytes:
+            raw.seek(-1, 2)
+            if raw.read(1) not in (b"\n", b"\r"):
+                raw.write(b"\n")
+    with receipt.open("a") as sink:
+        yield sink
 
 
 def reprobe_only(args: argparse.Namespace) -> int:
@@ -456,7 +485,7 @@ def reprobe_only(args: argparse.Namespace) -> int:
     without re-fetching anything that succeeded. Direct route only: no metered
     request, no quota, no lock.
     """
-    rows = [json.loads(line) for line in args.receipt.read_text().splitlines() if line.strip()]
+    rows, _ = _read_receipt(args.receipt)
     main = [r for r in rows if not r.get("runHeader") and not r.get("reprobe")]
     already = {r["documentId"] for r in rows if r.get("reprobe")}
     pending = [r for r in main if not r.get("directHitCount") and r["documentId"] not in already]
@@ -467,7 +496,7 @@ def reprobe_only(args: argparse.Namespace) -> int:
     print(f"pausing {args.control_pause}s before the retry, as the protocol requires")
     time.sleep(args.control_pause)
     flipped = 0
-    with args.receipt.open("a") as sink:
+    with _append_receipt(args.receipt) as sink:
         for index, row in enumerate(pending, start=1):
             again = probe_direct(
                 row["documentId"],
@@ -543,7 +572,7 @@ def run(args: argparse.Namespace) -> int:
             purpose=f"attachment sample, {len(pending)} rows at {args.delay}s",
             wait=not args.no_quota_wait,
         ),
-        args.receipt.open("a") as sink,
+        _append_receipt(args.receipt) as sink,
     ):
         # A run header, not a row. The route's health depends on the exact
         # User-Agent, so it is recorded with the run rather than left implicit in
@@ -699,7 +728,7 @@ def run(args: argparse.Namespace) -> int:
         print(f"re-probing {len(negatives)} negatives after {args.control_pause}s")
         time.sleep(args.control_pause)
         flipped = 0
-        with args.receipt.open("a") as sink:
+        with _append_receipt(args.receipt) as sink:
             for document_id, previous in negatives:
                 again = probe_direct(
                     document_id,
