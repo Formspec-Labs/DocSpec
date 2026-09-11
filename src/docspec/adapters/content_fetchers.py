@@ -15,7 +15,7 @@ from docspec.domain.content import CandidateFile
 from docspec.domain.identity import identity_digest, require_relative_path, require_text, stable_urn
 from docspec.errors import DocSpecError, IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import ContentFetcher, FetchMetadata, FetchStream
-from docspec.adapters.storage import _contained, _storage_root
+from docspec.adapters.storage.files import _contained, _storage_root
 from docspec.adapters.s3_errors import provider_error_identity
 
 _MISSING_CODES = frozenset({"404", "NoSuchKey", "NoSuchObject", "NotFound"})

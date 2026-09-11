@@ -150,7 +150,7 @@ def test_revision_writes_stage_crash_debris_outside_the_declared_revision_set(
         staging_directories.append(Path(str(kwargs["dir"])))
         return real_mkstemp(*args, **kwargs)
 
-    monkeypatch.setattr("docspec.adapters.storage.tempfile.mkstemp", recording_mkstemp)
+    monkeypatch.setattr("docspec.adapters.storage.files.tempfile.mkstemp", recording_mkstemp)
     planned = _planned_store()
     planned_ref = repository.save(planned)
     running_ref = repository.save(planned.start("attempt-1"))

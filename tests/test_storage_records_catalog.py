@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-import docspec.adapters.storage as storage_module
+import docspec.adapters.storage.files as storage_module
 from docspec.adapters.storage import (
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
@@ -30,12 +30,11 @@ from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, Retent
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.receipts import CatalogCommitReceipt, RunReceipt
-from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
+from docspec.domain.release import DocumentRelease
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError, LimitExceededError
 from tests.helpers import document_release_producer, local_profile_set, persist_execution_evidence
-
 
 SCHEMA = RecordSchema(
     "docspec-test-record/1.0",
