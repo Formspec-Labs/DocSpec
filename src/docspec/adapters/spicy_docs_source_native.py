@@ -15,13 +15,18 @@ from typing import Any
 
 from rulespec_artifacts import ArtifactPin, LocalBlobSource, LocalMemberSource, MemberSource
 
-from docspec.errors import IntegrityError
+from docspec.errors import DocSpecError, IntegrityError
 from docspec.ports.source_catalog import SourceNativeDescription
 
 #: Producer products DocSpec's source-native adapter accepts. A reader module
 #: whose SUPPORTED_PRODUCER_PRODUCTS is missing or a strict subset of this set
 #: is refused: it would silently hard-refuse releases from the other producer.
 ACCEPTED_PRODUCER_PRODUCTS: frozenset[str] = frozenset({"spicy-regs", "spicy-docs"})
+
+
+class SourceNativeReaderError(RuntimeError, DocSpecError):
+    """The optional installed reader is missing or cannot admit the source."""
+
 
 def _resolve_producer_module(module_name: str) -> ModuleType:
     """Load the current reader, preserving errors from its own dependencies."""
@@ -31,7 +36,7 @@ def _resolve_producer_module(module_name: str) -> ModuleType:
     except ModuleNotFoundError as error:
         if error.name not in ("spicy_docs", qualified):
             raise
-        raise RuntimeError(
+        raise SourceNativeReaderError(
             f"the source-native adapter requires an installed spicy-docs package providing {module_name}"
         ) from error
 
@@ -41,7 +46,7 @@ def _require_accepted_reader(module: ModuleType) -> ModuleType:
 
     supported = getattr(module, "SUPPORTED_PRODUCER_PRODUCTS", None)
     if supported is None or not ACCEPTED_PRODUCER_PRODUCTS.issubset(supported):
-        raise RuntimeError(
+        raise SourceNativeReaderError(
             f"{module.__name__} does not declare SUPPORTED_PRODUCER_PRODUCTS covering "
             f"{sorted(ACCEPTED_PRODUCER_PRODUCTS)}"
         )
@@ -78,7 +83,7 @@ class SpicyDocsSourceNativeAdapter:
         module = _require_accepted_reader(_resolve_producer_module("source_native"))
         reader_type = getattr(module, "SourceNativeReleaseReader", None)
         if reader_type is None:
-            raise RuntimeError(f"{module.__name__} has no SourceNativeReleaseReader")
+            raise SourceNativeReaderError(f"{module.__name__} has no SourceNativeReleaseReader")
         self._reader = reader_type(
             source,
             blob_source=blob_source,
@@ -127,4 +132,4 @@ class SpicyDocsSourceNativeAdapter:
         yield from self._reader.iter_renditions()
 
 
-__all__ = ["SpicyDocsSourceNativeAdapter", "spicy_docs_source_profile"]
+__all__ = ["SourceNativeReaderError", "SpicyDocsSourceNativeAdapter", "spicy_docs_source_profile"]

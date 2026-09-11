@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
 from docspec.adapters import spicy_docs_source_native as adapter_module
+from docspec.entrypoint import main
+from tests.support.source_catalog_cli import source_catalog_build_arguments
 
 _READER_MODULE_NAME = "spicy_docs.source_native"
 
@@ -76,3 +80,40 @@ def test_a_broken_reader_preserves_its_transitive_import_error(monkeypatch: pyte
         adapter_module._resolve_producer_module("source_native")
 
     assert caught.value is failure
+
+
+def test_missing_producer_is_a_structured_cli_failure_before_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    destination = tmp_path / "catalog"
+    receipt = destination / "source-catalog-build-command-receipt.json"
+    arguments = source_catalog_build_arguments(
+        tmp_path, destination=destination, receipt_path=receipt,
+    )
+    attempted: list[str] = []
+
+    def import_module(name: str) -> types.ModuleType:
+        attempted.append(name)
+        raise ModuleNotFoundError("No module named 'spicy_docs'", name="spicy_docs")
+
+    monkeypatch.setattr(adapter_module, "import_module", import_module)
+
+    assert main(arguments) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "format": "docspec-cli-error",
+        "formatVersion": "1.0",
+        "errorType": "SourceNativeReaderError",
+        "message": (
+            "the source-native adapter requires an installed spicy-docs package "
+            "providing source_native_profiles"
+        ),
+        "verdict": "fail",
+    }
+    assert attempted == ["spicy_docs.source_native_profiles"]
+    assert not destination.exists()
+    assert not receipt.exists()
