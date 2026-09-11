@@ -11,8 +11,8 @@ An intentional format change needs its own compatibility decision and review.
 | --- | --- | --- | --- |
 | Source catalog 1.0 | `source_catalog_schemas()` in `src/docspec/domain/source_catalog.py`; serialize with `canonical_json_file_bytes` | `source_catalog/1.0/` | `tests/test_package_boundary.py` compares all three files byte for byte with domain generation and checks the wheel |
 | Scale profile 2.0 and scale result 1.0 | Dataclasses in `domain/scale.py` plus explicit constraints in `tools/generate_scale_profile_schema.py` | `scale_profile/2.0/`, `scale_result/1.0/` | `tests/test_machine_files.py` compares generator output, `conformance/` copies, and installed-source copies; package-boundary checks inspect the wheel |
-| Portable DocumentRelease 2.0 | Deliberately edit the eight JSON schemas in `src/docspec/schemas/document_release/2.0/` against Decision 0001; these are not generated from `domain.release.DocumentRelease` | `document_release/2.0/` | `tests/test_document_release_schema_bundle.py`, `tests/test_document_release_verify.py`, `tests/test_document_release_builder.py`, and fixture restamp check |
-| Retention-floor calibration 2.0 | Deliberately edit `src/docspec/schemas/retention_floor_calibration/2.0/retention-floor-calibration.schema.json`; keep calibration writer and verifier aligned | `retention_floor_calibration/2.0/` | `tests/test_retention_floors.py`, calibration/bundle checks in `tests/test_document_release_verify.py`; `tools/calibrate_retention_floors.py` loads the packaged schema |
+| Portable DocumentRelease 2.0 | Deliberately edit the eight JSON schemas in `src/docspec/schemas/document_release/2.0/` against Decision 0001; these are not generated from `domain.release.DocumentRelease` | `document_release/2.0/` | `tests/test_document_release_schema_bundle.py`, the five focused verifier suites in the command below, `tests/test_document_release_builder.py`, and fixture restamp check |
+| Retention-floor calibration 2.0 | Deliberately edit `src/docspec/schemas/retention_floor_calibration/2.0/retention-floor-calibration.schema.json`; keep calibration writer and verifier aligned | `retention_floor_calibration/2.0/` | `tests/test_retention_floors.py`, format and per-kind checks in `tests/test_document_release_wire_format.py` and `tests/test_document_release_text_bodies.py`; `tools/calibrate_retention_floors.py` loads the packaged schema |
 
 Profiles under `profiles/` are maintained machine descriptions, not generated
 schemas. `tests/test_machine_files.py` checks their implementation strings,
@@ -62,7 +62,9 @@ To check it without changing committed files:
 ```sh
 uv run --frozen python tools/restamp_document_release_fixtures.py --check
 uv run --frozen pytest tests/test_document_release_schema_bundle.py \
-  tests/test_document_release_verify.py tests/test_document_release_builder.py \
+  tests/test_document_release_verify.py tests/test_document_release_identity.py \
+  tests/test_document_release_wire_format.py tests/test_document_release_text_bodies.py \
+  tests/test_document_release_member_index.py tests/test_document_release_builder.py \
   tests/test_canonical_encoding_equivalence.py
 ```
 

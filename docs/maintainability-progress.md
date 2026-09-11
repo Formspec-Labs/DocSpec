@@ -25,6 +25,7 @@ under `docs/history/` remain separate work.
 | D7 | The command-receipt reader is 17 lines, catalog `build` is 67, and root-binding validation is 60, reduced from 300, 230, and 266. Named phases preserve validation order, lazy digest computation, resource lifetimes, byte accounting, and gate-before-commit publication. Helper expansion reproduces the original statement trees. A durable-workspace test proves publication retry without recomputing policy, and all 29 complete portable verdicts remain byte-identical after the binding split. The longer digest-plan helper retains the existing nine-entry declaration and its identity rationale. |
 | D8 | Split the 1,697-line source-catalog store into pinned filesystem operations, staging, immutable lookup/publication, and current-pointer advancement. All 21 definitions and seven constants retain identical statement trees; fault injection now targets each real owner. Independent review confirms descriptor lifetimes, safe cleanup, blob-before-root publication, and pointer admission order. Storage/catalog/wheel/import checks: 110 passed; 16 public-boundary checks passed again after removing an incidental export. [Size decisions](cleanup-decisions.md#large-modules-reviewed-by-responsibility) retain the coherent catalog schema, scale family, and bounded segmentation algorithm with their rationale. |
 | E1 | Shared setup lives in `tests/support/` and `tests/helpers.py`, including formerly dynamic cross-test imports. The extraction preserved all 638 original named test functions and their assertions; later predecessor retirement deliberately removes obsolete acceptance tests. Conformance test selectors stay at their existing paths. Full default suite after extraction: 875 passed, 3 skipped, 1 deselected. |
+| E2 | Organized the three large test files into eight catalog suites, five portable-verifier suites, and three Regulations.gov suites, with explicit family setup in `tests/support/`. All 183 test functions, 230 collected cases, and original test/helper statements remain; parameter IDs and order within each function are unchanged. Focused runs passed all 230 cases. Independent review caught three moved conformance selectors; corrected paths preserve names, order, and declared status. All 206 configured selectors collect successfully (248 cases), and the actual conformance runner passes all 11 source-catalog checks. The contributor and schema guides now route to the focused suites. |
 | E3, E4 | Contributor guidance defines dependency direction, helper ownership, size review prompts and exceptions, public interfaces, and reviewer responsibilities. The PR template asks for behavior, validation, format/API impact, and open follow-up work. |
 
 ## Verification checkpoints
@@ -85,7 +86,7 @@ that the entire to-do list is complete.
 
 ## Still open
 
-Execution/checkpoint responsibilities, test-file organization, and the unfamiliar
+Execution/checkpoint responsibilities and the unfamiliar
 contributor exercise remain open on the to-do list. The last exercise requires
 actual participant evidence; line counts and this agent's familiarity cannot
 substitute for it.

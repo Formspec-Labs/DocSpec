@@ -277,7 +277,7 @@ separate simplification; keep those changes reviewable independently.
   modules, affected tests retain their assertions, and fixture setup remains
   explicit enough for a contributor to understand.
 
-- [ ] **E2 · P2 · Make the largest test files easier to navigate.** Organize
+- [x] **E2 · P2 · Make the largest test files easier to navigate.** Organize
   catalog snapshot, release verification, and source-policy tests by observable
   behavior. Preserve conformance selectors and any dynamically referenced test
   identifiers when files move. **Done when:** the contributor map points to
@@ -330,9 +330,9 @@ run the full baseline and applicable packaging checks before completing a PR.
 | --- | --- |
 | Imports, modules, public exports, installation | `tests/test_package_boundary.py`, `tests/conformance/test_import_directions.py`, `tests/test_source_catalog_installed_wheel.py`; CI wheel checks |
 | CLI and local composition | `tests/test_cli.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`, `tests/test_dagster_adapter.py` |
-| Source policies and catalog artifacts | `tests/test_catalog_policy.py`, `tests/test_regulations_gov_catalog.py`, `tests/test_cross_filed_collapse.py`, `tests/test_source_catalog_snapshot.py`, `tests/test_source_catalog_succession.py` |
-| Release rules and builder | `tests/test_document_release_verify.py`, `tests/test_document_release_builder.py`, `tests/test_document_release_schema_bundle.py`, `tests/test_canonical_encoding_equivalence.py`; fixture restamper `--check` |
-| Storage and S3 | `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_source_catalog_snapshot.py`, `tests/test_s3_blob_adapter.py`, `tests/test_content_fetchers.py` |
+| Source policies and catalog artifacts | `tests/test_catalog_policy.py`, `tests/test_regulations_gov_*.py`, `tests/test_cross_filed_collapse.py`, `tests/test_source_catalog_*.py`; choose a focused suite from [the contributor map](../CONTRIBUTING.md#find-a-bounded-change) |
+| Release rules and builder | `tests/test_document_release_*.py`, `tests/test_canonical_encoding_equivalence.py`; fixture restamper `--check`. The contributor map separates admission, identity, format, text-body, and index checks. |
+| Storage and S3 | `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_source_catalog_storage.py`, `tests/test_source_catalog_build_safety.py`, `tests/test_source_catalog_succession.py`, `tests/test_s3_blob_adapter.py`, `tests/test_content_fetchers.py` |
 | Extraction and segmentation | `tests/test_visible_text.py`, `tests/test_processing_pipeline.py`, `tests/test_bounded_segmentation.py`, `tests/conformance/test_evidence_roundtrip.py` |
 | Execution and recovery | `tests/test_stage_checkpoint_recovery.py`, `tests/test_processor_only_checkpoint_recovery.py`, `tests/test_processor_reprocessing.py`, `tests/test_work_budget.py`, `tests/test_processor_cache.py`, `tests/conformance/test_incremental_equivalence.py` |
 | Schemas and profiles | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_scale_profile.py`, `tests/test_profile_registry.py` |

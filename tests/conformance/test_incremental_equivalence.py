@@ -39,9 +39,6 @@ _CountingProcessor = _processor_helpers._CountingProcessor
 _CountingSegmenter = _processor_helpers._CountingSegmenter
 _description = _processor_helpers._description
 _plan = _processor_helpers._plan
-# tests.conformance.test_document_store imports this module at collection time
-# (for _platform and friends), so importing it back at module level here would
-# be circular; import it lazily inside the test that needs _FailingProcessor.
 
 
 def _targeted_plan(

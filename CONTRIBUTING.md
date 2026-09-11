@@ -36,7 +36,7 @@ catalog → processing → publication → verification flow using one local doc
 | --- | --- | --- | --- |
 | Extract a format | `ports/extractor.py`, `processing/extraction.py` | `processing/visible_text.py`; `tests/test_visible_text.py`, `tests/test_processing_pipeline.py` | Exact source bytes, byte offsets, extraction identity, evidence round trips |
 | Change segmentation | `ports/segmenter.py`, `processing/segmentation.py` | `processing/bounded_segmentation.py`; `tests/test_bounded_segmentation.py`, `tests/conformance/test_segmentation.py` | Deterministic order, size bounds, source coordinates |
-| Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog.py`; `tests/test_catalog_policy.py`, `tests/test_regulations_gov_catalog.py`, `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
+| Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog.py`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
 | Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
 | Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
 | Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `cli/local.py` connects local services; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands remain in `source_catalog_cli.py` | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
@@ -45,6 +45,26 @@ catalog → processing → publication → verification flow using one local doc
 Source paths in this table are relative to `src/docspec/`. Shared test setup
 lives in focused `tests/support/` modules and `tests/helpers.py`. Import setup
 from there; test modules should not import other test modules.
+
+For catalog and portable-release changes, choose the suite for the behavior:
+
+| Behavior | Focused suites under `tests/` |
+| --- | --- |
+| Catalog identity and unchanged-payload reuse | `test_source_catalog_snapshot.py` |
+| Catalog source admission, policy rows, and row encoding | `test_source_catalog_policy.py`, `test_source_catalog_rows.py` |
+| Catalog filesystem safety, publication recovery, and pointer advancement | `test_source_catalog_storage.py`, `test_source_catalog_build_safety.py`, `test_source_catalog_succession.py` |
+| Serial and spawned-worker catalog derivation | `test_source_catalog_workers.py` |
+| Catalog command builds and verification receipts | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
+| Regulations.gov joins/provenance, selection, and comments | `test_regulations_gov_catalog.py`, `test_regulations_gov_selection.py`, `test_regulations_gov_comments.py` |
+| Portable release admission and complete diagnostics | `test_document_release_verify.py` |
+| Portable identity, digest rules, and canonical encoding | `test_document_release_identity.py` |
+| Minted portable rows and declared format | `test_document_release_wire_format.py` |
+| Comment/attachment accounting and indexed byte ownership | `test_document_release_text_bodies.py`, `test_document_release_member_index.py` |
+
+Each suite imports only the setup it needs. Family setup lives in
+`tests/support/source_catalog_builds.py`, `source_catalog_cli.py`,
+`document_release.py`, and `regulations_gov.py`. Shared pytest fixtures are
+registered explicitly in the suites that use them.
 
 For an embedded local runner, `docspec.cli.execution.run_local` accepts the same
 closed request file as the CLI and an optional injected content fetcher. The

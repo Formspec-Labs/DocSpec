@@ -74,7 +74,7 @@ ordered by UTF-16 code unit under `artifact_json_bytes` and by code point under
 `canonical_json_bytes` — needs an object key outside the Basic Multilingual
 Plane, which no member of this format carries. The landed support module asserts
 the byte agreement directly
-(`tests/test_document_release_verify.py::test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain`,
+(`tests/test_document_release_identity.py::test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain`,
 which runs both encoders over the sealed root, its content, and the logical
 payload),
 modulo the safe-integer guard `document_release_support.py:75-90` adds on top.
