@@ -246,7 +246,7 @@ def test_cli_receipt_write_failure_leaves_no_published_artifact_or_receipt(
     monkeypatch: pytest.MonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    import docspec.source_catalog_cli as source_catalog_cli
+    import docspec.cli.source_catalog as source_catalog_cli
 
     install_fake_source_native(monkeypatch)
     destination = tmp_path / "catalog-store"
@@ -386,7 +386,7 @@ def test_cli_concurrent_publishers_leave_one_artifact_and_one_success_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import docspec.source_catalog_cli as source_catalog_cli
+    import docspec.cli.source_catalog as source_catalog_cli
 
     install_fake_source_native(monkeypatch)
     monkeypatch.setattr(source_catalog_cli, "_emit", lambda *_args, **_kwargs: None)

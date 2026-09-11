@@ -39,7 +39,7 @@ from docspec.cli_io import (
 )
 from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
-from docspec.source_catalog_cli import add_source_catalog_command
+from docspec.cli.source_catalog import add_source_catalog_command
 
 
 def _add_local_catalog_arguments(parser: argparse.ArgumentParser) -> None:

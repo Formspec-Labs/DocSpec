@@ -40,6 +40,7 @@ from docspec.domain.source_catalog import CatalogDisposition
 from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
 
+from docspec.cli.catalog_policy import add_policy_command
 from docspec.cli_io import (
     SourceCatalogCliError,
     emit as _emit,
@@ -733,6 +734,7 @@ def _build(args: argparse.Namespace) -> int:
 
 def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
     source_commands = source_catalog.add_subparsers(dest="source_catalog_command", required=True)
+    add_policy_command(source_commands)
     source_build = source_commands.add_parser("build", help="Build one complete immutable source-catalog snapshot")
     source_build.add_argument("--source-native", action="append", type=Path, required=True)
     source_build.add_argument("--source-native-artifact-digest", action="append", required=True)

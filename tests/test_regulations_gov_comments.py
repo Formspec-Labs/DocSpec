@@ -17,7 +17,7 @@ from docspec.application.regulations_gov_catalog import (
 )
 from docspec.domain.source_catalog import CatalogDisposition
 from docspec.errors import IntegrityError
-from docspec.source_catalog_cli import build_parser as source_catalog_build_parser
+from docspec.cli.source_catalog import build_parser as source_catalog_build_parser
 from tests.support.regulations_gov import (
     _SHA_A,
     _SHA_E,

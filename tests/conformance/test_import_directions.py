@@ -48,8 +48,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
     # Stable public assembly surface. It re-exports explicit constructors but
     # selects and instantiates none of them; the CLI remains the composition root.
     "source_catalog": {"adapters", "application", "domain", "ports"},
-    "source_catalog_cli": {"adapters", "application", "domain", "errors", "cli_io"},
-    "entrypoint": {"cli", "source_catalog_cli"},
+    "entrypoint": {"cli"},
     "cli_io": {"domain", "errors"},
     "cli": {
         "cli",
@@ -62,14 +61,13 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "ports",
         "processing",
         "profile_registry",
-        "source_catalog_cli",
         "__init__",
     },
 }
 
 # Areas whose modules the core must never import back: concrete adapters and
 # the operator command are the outermost ring.
-_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "source_catalog_cli", "cli_io"}
+_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "cli_io"}
 _CORE_AREAS = set(_ALLOWED_INTERNAL_IMPORTS) - _OUTER_AREAS
 _PUBLIC_FACADE_MODULES = {"docspec.source_catalog"}
 
@@ -157,7 +155,7 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
         "docspec.cli.blobs", "docspec.cli.catalog", "docspec.cli.common",
         "docspec.cli.execution", "docspec.cli.local",
         "docspec.cli.plans", "docspec.cli.requests",
-        "docspec.source_catalog_cli",
+        "docspec.cli.source_catalog",
     }
     assert {
         module

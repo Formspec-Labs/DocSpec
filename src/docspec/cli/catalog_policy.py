@@ -1,19 +1,9 @@
-"""Generate a sealed catalog-policy member from its free fields (A0.5).
+"""Create sealed source-catalog policies through their application owners.
 
-`from_member` demands `member == policy.to_member()` byte-for-byte, so no
-policy member can be hand-written. This builds the policy object from an input
-JSON of its free fields, proves the canonical bytes round-trip back through
-`from_member` unchanged -- the check `source-catalog build` applies at read
-time -- and only then creates the output, never overwriting one.
-
-The input's keys are the policy's own field names; its nested selector and
-sample objects use the closed camelCase shapes `SourceInputSelector.from_dict`
-and `RegulationsGovSamplePolicy.from_dict` already parse. `agency_names` is
-that mapping inline, or a path to it relative to the input file. An omitted
-optional key keeps the policy dataclass's own default.
-
-    uv run python -m tools.write_catalog_policy_member \\
-        --policy regulations-gov --input fields.json --output policy-member.json
+Selectors and samples use the closed shapes those owners already parse. An
+agency-name mapping may be inline or relative to the input file. Omitted
+optional fields retain the policy defaults. Prove the member round-trip before
+exclusive creation so an existing member or symlink is never overwritten.
 """
 
 from __future__ import annotations
@@ -30,7 +20,7 @@ from docspec.application.regulations_gov_catalog import (
 )
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.ports.source_catalog import SourceInputSelector
-from docspec.cli_io import MAX_JSON_BYTES, SourceCatalogCliError, read_object
+from docspec.cli_io import MAX_JSON_BYTES, SourceCatalogCliError, emit, read_object
 
 _POLICY_CHOICES = ("regulations-gov", "federal-register")
 
@@ -44,13 +34,13 @@ def _agency_names(value: object, *, input_path: Path) -> dict[str, str]:
         mapping_path = Path(value)
         if not mapping_path.is_absolute():
             mapping_path = input_path.parent / mapping_path
-        value = json.loads(mapping_path.read_text(encoding="utf-8"))
+        value = read_object(mapping_path, label="agency names", error_type=SourceCatalogCliError)
     if not isinstance(value, dict):
         raise ValueError("agency_names must be a JSON object or a path to one")
     return dict(value)
 
 
-def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) -> object:
+def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) -> FederalRegisterCatalogPolicy | RegulationsGovCatalogPolicy:
     if policy_name == "regulations-gov":
         if fields.get("document_input") is None:
             raise ValueError("regulations-gov document_input is required and may not be null")
@@ -59,7 +49,7 @@ def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) 
             document_input=SourceInputSelector.from_dict(fields["document_input"]),
             docket_input=_optional_selector(fields.get("docket_input")),
             federal_register_input=_optional_selector(fields.get("federal_register_input")),
-            agency_names=_agency_names(fields["agency_names"], input_path=input_path),
+            agency_names=_agency_names(fields.get("agency_names"), input_path=input_path),
             sample=None if sample is None else RegulationsGovSamplePolicy.from_dict(sample),
             max_selected_items=fields.get("max_selected_items"),
             comment_input=_optional_selector(fields.get("comment_input")),
@@ -70,7 +60,7 @@ def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) 
             },
         )
     if policy_name == "federal-register":
-        return FederalRegisterCatalogPolicy(fields["expected_source_system_id"])
+        return FederalRegisterCatalogPolicy(fields.get("expected_source_system_id"))
     raise ValueError(f"unsupported --policy: {policy_name}")
 
 
@@ -95,16 +85,17 @@ def write_member(policy_name: str, input_path: Path, output_path: Path) -> bytes
     return member_bytes
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--policy", choices=_POLICY_CHOICES, required=True)
-    parser.add_argument("--input", type=Path, required=True, help="JSON file of the policy's free fields")
-    parser.add_argument("--output", type=Path, required=True, help="destination for the canonical policy member")
-    args = parser.parse_args()
 
+def write_policy(args: argparse.Namespace) -> int:
+    """Write a verified policy member and return its existing canonical shape."""
     member_bytes = write_member(args.policy, args.input, args.output)
-    print(f"wrote {args.output} ({len(member_bytes)} bytes), round-trip verified")
+    emit(json.loads(member_bytes))
+    return 0
 
 
-if __name__ == "__main__":
-    main()
+def add_policy_command(commands: argparse._SubParsersAction) -> None:
+    parser = commands.add_parser("write-policy", help="Create a sealed catalog policy from its configurable fields")
+    parser.add_argument("--policy", choices=_POLICY_CHOICES, required=True)
+    parser.add_argument("--input", type=Path, required=True, help="JSON file of the policy's configurable fields")
+    parser.add_argument("--output", type=Path, required=True, help="New canonical policy member; refuses existing paths")
+    parser.set_defaults(func=write_policy)

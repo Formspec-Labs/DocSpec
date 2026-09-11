@@ -46,7 +46,7 @@ OPTIONAL_SOURCE_MODULES = frozenset(
     }
 )
 OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
-    {"src/docspec/source_catalog_cli.py"}
+    {"src/docspec/cli/source_catalog.py"}
 )
 # This module names a URN namespace reserved for a registry DocSpec does not
 # own. It is data the catalog refuses to mint, not an import of that product.
@@ -291,7 +291,7 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
-        is_command_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py", "source_catalog_cli.py"}
+        is_command_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
             if not is_adapter and not is_command_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
