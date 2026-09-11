@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
-from docspec.errors import IntegrityError
-from dataclasses import dataclass
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
 
@@ -13,10 +11,12 @@ from rulespec_artifacts import Producer
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
-    SourceCatalogBuildRequest,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuilder,
+    SourceCatalogBuildRequest,
 )
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
@@ -40,7 +40,6 @@ from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
-from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.domain.source_catalog import (
     CatalogDisposition,
     CatalogNormalizationField,
@@ -50,6 +49,8 @@ from docspec.domain.source_catalog import (
     SourceCatalogItem,
     SourceCatalogSelection,
 )
+from docspec.domain.storage import PartitionPolicy, RecordSchema
+from docspec.errors import IntegrityError
 from docspec.ports.content_fetcher import FetchStream
 from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
@@ -57,7 +58,6 @@ from docspec.ports.source_catalog import (
     SourceInputSelector,
     SourceNativeDescription,
 )
-
 
 EMPTY_DIGEST = sha256_digest(b"")
 DATA_USE_POLICY = DataUsePolicy.local_content()

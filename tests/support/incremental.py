@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
 )
 from docspec.adapters.storage import (

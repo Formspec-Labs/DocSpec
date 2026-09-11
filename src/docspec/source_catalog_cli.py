@@ -9,12 +9,20 @@ from pathlib import Path
 from typing import Any
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.digests import (
     DERIVATION_PATHS,
+)
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
     SourceCatalogBuilder,
+)
+from docspec.adapters.catalog_artifact.rules import (
     source_catalog_producer,
+)
+from docspec.adapters.catalog_artifact.schemas import (
     source_item_validator_implementation,
 )
 from docspec.adapters.source_catalog_store import (

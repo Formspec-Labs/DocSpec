@@ -192,7 +192,7 @@ def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None
     """
 
     from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-    from docspec.adapters.source_catalog_artifact import _CatalogPolicyInputs
+    from docspec.adapters.catalog_artifact.inputs import _CatalogPolicyInputs
     from docspec.ports.source_catalog import SourceNativeDescription
 
     description = SourceNativeDescription(
@@ -297,7 +297,7 @@ def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:
     claim in 0004 that no version needs to move is checked rather than stated.
     """
 
-    from docspec.adapters.source_catalog_artifact import _SCHEMAS
+    from docspec.adapters.catalog_artifact.schemas import _SCHEMAS
 
     schema = _SCHEMAS["source-item.schema.json"]
     observation = schema["properties"]["sourceObservations"]["items"]

@@ -2,23 +2,25 @@ from __future__ import annotations
 
 import hashlib
 import json
-from types import SimpleNamespace
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from rulespec_artifacts import Producer
 
+import docspec.adapters.spicyregs_source_native as spicyregs_adapter_module
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
-    SourceCatalogBuildRequest,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuilder,
+    SourceCatalogBuildRequest,
 )
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
-import docspec.adapters.spicyregs_source_native as spicyregs_adapter_module
 from docspec.adapters.spicyregs_source_native import (
     SpicyRegsSourceNativeAdapter,
     spicyregs_source_profile,

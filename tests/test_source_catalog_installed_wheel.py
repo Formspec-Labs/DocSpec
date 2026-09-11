@@ -46,8 +46,10 @@ from typing import Any
 
 import docspec
 import spicy_docs
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
+)
+from docspec.adapters.catalog_artifact.rules import (
     source_catalog_producer,
 )
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore

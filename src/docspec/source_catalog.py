@@ -10,13 +10,19 @@ from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
     RegulationsGovSamplePolicy,
 )
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
     SourceCatalogBuildResult,
     SourceCatalogBuilder,
+)
+from docspec.adapters.catalog_artifact.digests import (
     requested_universe_set_digest,
     selected_source_set_digest,
+)
+from docspec.adapters.catalog_artifact.rules import (
     source_catalog_producer,
 )
 from docspec.domain.source_catalog import (

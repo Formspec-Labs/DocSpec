@@ -11,10 +11,12 @@ from rulespec_artifacts import Supersedes
 
 import docspec.adapters.source_catalog_store as source_catalog_store
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
-    SourceCatalogBuildRequest,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuilder,
+    SourceCatalogBuildRequest,
 )
 from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogCurrentPointer,
@@ -32,7 +34,6 @@ from tests.support.source_catalog import (
     record,
     renditions,
 )
-
 
 CATALOG_ID = "urn:docspec:catalog:federal-register"
 OTHER_CATALOG_ID = "urn:docspec:catalog:other-series"

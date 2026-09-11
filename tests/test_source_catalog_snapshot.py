@@ -19,14 +19,24 @@ from rulespec_artifacts import (
     Producer,
 )
 
-import docspec.adapters.source_catalog_artifact as source_catalog_artifact
+from docspec.adapters.catalog_artifact import verification as catalog_verification
+from docspec.adapters import framing
+from docspec.adapters.catalog_artifact import accounting as catalog_accounting
+from docspec.adapters.catalog_artifact import derivation as catalog_derivation
+from docspec.adapters.catalog_artifact import digests as catalog_digests
+from docspec.adapters.catalog_artifact import rows as catalog_rows
+from docspec.adapters.catalog_artifact import rules as catalog_rules
+from docspec.adapters.catalog_artifact import schemas as catalog_schemas
 import docspec.adapters.source_catalog_store as source_catalog_store
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
-from docspec.adapters.source_catalog_artifact import (
+from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
-    SourceCatalogBuildRequest,
+)
+from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuilder,
+    SourceCatalogBuildRequest,
+)
+from docspec.adapters.catalog_artifact.digests import (
     requested_universe_set_digest,
     selected_source_set_digest,
 )
@@ -35,11 +45,7 @@ from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogStore,
 )
 from docspec.adapters.spicyregs_source_native import SpicyRegsSourceNativeAdapter
-from docspec.domain.source_catalog import (
-    CatalogDisposition,
-    SOURCE_CATALOG_MAX_JOIN_IDS,
-    SourceCatalogItem,
-)
+from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.domain.identity import (
     canonical_json_bytes,
     canonical_json_file_bytes,
@@ -47,20 +53,24 @@ from docspec.domain.identity import (
     stable_urn,
 )
 from docspec.domain.references import SourceCatalogRef
+from docspec.domain.source_catalog import (
+    SOURCE_CATALOG_MAX_JOIN_IDS,
+    CatalogDisposition,
+    SourceCatalogItem,
+)
+from docspec.entrypoint import main
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.source_catalog import (
     CatalogPolicyInputs,
     CatalogPolicyWorkspace,
     SourceInputSelector,
 )
-from docspec.entrypoint import main
 from tests.helpers import CountItems, KillAfter
-
 from tests.support.source_catalog import (
-    FakeSource,
     _FEDERAL_REGISTER_SOURCE,
     _SHA_A,
     _SHA_C,
+    FakeSource,
     description,
     producer,
     record,
@@ -722,7 +732,7 @@ def test_multipart_successor_reuses_unchanged_blob_refs_and_writes_only_changed_
     identities_by_partition: dict[str, str] = {}
     for index in range(1, 100):
         identity = f"2026-{index:05d}"
-        identities_by_partition.setdefault(source_catalog_artifact._partition_id(identity), identity)
+        identities_by_partition.setdefault(catalog_rules._partition_id(identity), identity)
         if len(identities_by_partition) == 3:
             break
     identities = tuple(sorted(identities_by_partition.values()))
@@ -780,7 +790,7 @@ def test_multipart_successor_reuses_unchanged_blob_refs_and_writes_only_changed_
     successor_root = tmp_path / successor.reference.digest.removeprefix("sha256:")
     successor_receipt = json.loads((successor_root / "catalog-build-receipt.json").read_text())
     successor_partitions = {value["partitionId"]: value for value in successor_receipt["partitions"]}
-    changed_partition = source_catalog_artifact._partition_id(changed_identity)
+    changed_partition = catalog_rules._partition_id(changed_identity)
 
     assert successor.reference.catalog_id != initial.reference.catalog_id
     assert successor_partitions[changed_partition]["blobRef"] != initial_partitions[changed_partition]["blobRef"]
@@ -800,7 +810,7 @@ def test_multipart_successor_reuses_unchanged_blob_refs_and_writes_only_changed_
     )
     assert [value.item.source_item_id for value in located] == list(identities)
     assert {value.item.source_item_id: value.blob_ref for value in located} == {
-        identity: successor_partitions[source_catalog_artifact._partition_id(identity)]["blobRef"]
+        identity: successor_partitions[catalog_rules._partition_id(identity)]["blobRef"]
         for identity in identities
     }
     assert [
@@ -810,12 +820,12 @@ def test_multipart_successor_reuses_unchanged_blob_refs_and_writes_only_changed_
 
 
 def test_normalized_diagnostic_values_use_stable_repeated_value_indices() -> None:
-    assert list(source_catalog_artifact._indexed_values(["EPA", "DOE"])) == [
+    assert list(catalog_digests._indexed_values(["EPA", "DOE"])) == [
         (0, "EPA"),
         (1, "DOE"),
     ]
-    assert list(source_catalog_artifact._indexed_values([])) == [(0, [])]
-    assert list(source_catalog_artifact._indexed_values("EPA")) == [(0, "EPA")]
+    assert list(catalog_digests._indexed_values([])) == [(0, [])]
+    assert list(catalog_digests._indexed_values("EPA")) == [(0, "EPA")]
 
 
 def test_generic_builder_accepts_a_second_injected_policy_configuration_shape(tmp_path: Path) -> None:
@@ -1272,7 +1282,7 @@ def test_source_stream_failure_cannot_publish_a_partial_catalog(tmp_path: Path) 
 
 def test_catalog_row_limit_fails_before_publication(tmp_path: Path) -> None:
     oversized = record("2026-00001")
-    oversized["record"]["title"] = "x" * source_catalog_artifact.MAX_CATALOG_ROW_BYTES
+    oversized["record"]["title"] = "x" * catalog_rules.MAX_CATALOG_ROW_BYTES
     source = FakeSource(description(), (oversized,), renditions("2026-00001"))
 
     with pytest.raises(LimitExceededError, match="row exceeds"):
@@ -1286,7 +1296,7 @@ def test_source_rendition_count_limit_fails_before_eager_record_allocation(
 ) -> None:
     class ExcessiveRenditionSource(FakeSource):
         def iter_renditions(self) -> Iterator[Mapping[str, Any]]:
-            for index in range(source_catalog_artifact.MAX_SOURCE_RENDITIONS_PER_RECORD + 1):
+            for index in range(catalog_rules.MAX_SOURCE_RENDITIONS_PER_RECORD + 1):
                 yield {
                     "sourceRecordId": "2026-00001",
                     "renditionId": f"2026-00001/{index:05d}",
@@ -1312,7 +1322,7 @@ def test_source_rendition_aggregate_byte_limit_fails_before_publication(
     tmp_path: Path,
 ) -> None:
     oversized = dict(renditions("2026-00001")[0])
-    oversized["locator"] = "https://example.test/" + "x" * source_catalog_artifact.MAX_SOURCE_RENDITION_BYTES_PER_RECORD
+    oversized["locator"] = "https://example.test/" + "x" * catalog_rules.MAX_SOURCE_RENDITION_BYTES_PER_RECORD
     source = FakeSource(description(), (record("2026-00001"),), (oversized,))
 
     with pytest.raises(LimitExceededError, match="rendition bytes"):
@@ -1352,15 +1362,15 @@ def test_producer_gate_recomputes_state_before_publication(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actual_derivation = source_catalog_artifact._derive_catalog
+    actual_derivation = catalog_derivation._derive_catalog
     calls = 0
 
-    def wrong_initial_state(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
+    def wrong_initial_state(*args: Any, **kwargs: Any) -> catalog_digests._DerivedCatalog:
         nonlocal calls
         calls += 1
         derived = actual_derivation(*args, **kwargs)
         if calls == 1:
-            derived = source_catalog_artifact._DerivedCatalog(
+            derived = catalog_digests._DerivedCatalog(
                 "sha256:" + "f" * 64,
                 derived.requested_universe_set_digest,
                 derived.selected_source_set_digest,
@@ -1370,7 +1380,7 @@ def test_producer_gate_recomputes_state_before_publication(
             )
         return derived
 
-    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", wrong_initial_state)
+    monkeypatch.setattr(catalog_derivation, "_derive_catalog", wrong_initial_state)
     source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
 
     with pytest.raises(IntegrityError, match="catalogStateDigest"):
@@ -2358,16 +2368,16 @@ def test_the_incremental_framer_equals_rulespec_batch_framing_byte_for_byte() ->
     ]
     for domain, name, records in cases:
         expected = framed_section_digest(domain, (FramedSection(name, len(records), iter(records)),))
-        hasher = source_catalog_artifact._FramedSectionHasher(domain, name, len(records))
+        hasher = framing.FramedSectionHasher(domain, name, len(records))
         for digest_record in records:
             hasher.add(digest_record)
         assert hasher.digest() == expected
 
-    over = source_catalog_artifact._FramedSectionHasher("docspec-test-domain/1", "records", 1)
+    over = framing.FramedSectionHasher("docspec-test-domain/1", "records", 1)
     over.add({"a": 1})
     with pytest.raises(IntegrityError, match="exceeds its declared count"):
         over.add({"a": 2})
-    under = source_catalog_artifact._FramedSectionHasher("docspec-test-domain/1", "records", 2)
+    under = framing.FramedSectionHasher("docspec-test-domain/1", "records", 2)
     under.add({"a": 1})
     with pytest.raises(IntegrityError, match="declared 2 records but yielded 1"):
         under.digest()
@@ -2413,7 +2423,7 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
     raise exactly when the authority rejects, with the authority's message.
     """
 
-    gate = source_catalog_artifact._ITEM_VALIDATOR
+    gate = catalog_schemas._ITEM_VALIDATOR
     assert gate._fast is not None, "compiled validator failed to build for the item schema"
     authority = gate._authority
 
@@ -2479,7 +2489,7 @@ def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: P
 
     blob_source = store.blob_source()
     artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
-    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
     admit_artifact(
         LocalMemberSource(artifact_root),
         blob_source=blob_source,
@@ -2490,16 +2500,16 @@ def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: P
     assert len(verifier.partitions) > 1, "test needs a multi-partition catalog"
 
     selected_count = summary.disposition_counts[
-        source_catalog_artifact.CatalogDisposition.SELECTED.value
+        CatalogDisposition.SELECTED.value
     ]
-    serial = source_catalog_artifact._derive_catalog(
+    serial = catalog_derivation._derive_catalog(
         blob_source,
         verifier.partitions,
         item_count=summary.item_count,
         selected_count=selected_count,
         workers=1,
     )
-    parallel = source_catalog_artifact._derive_catalog(
+    parallel = catalog_derivation._derive_catalog(
         blob_source,
         verifier.partitions,
         item_count=summary.item_count,
@@ -2524,12 +2534,12 @@ def test_the_automatic_worker_count_resolves_on_this_interpreter(
     function that every explicit-workers test skipped past).
     """
 
-    resolve = source_catalog_artifact._derive_worker_count
+    resolve = catalog_derivation._derive_worker_count
     assert resolve(10, 3) == 3
     assert resolve(10, None) == 1
-    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_ROW_THRESHOLD", 5)
+    monkeypatch.setattr(catalog_derivation, "_PARALLEL_ROW_THRESHOLD", 5)
     automatic = resolve(10, None)
-    assert 1 <= automatic <= source_catalog_artifact._MAX_DERIVE_WORKERS
+    assert 1 <= automatic <= catalog_derivation._MAX_DERIVE_WORKERS
 
 
 def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_domain(
@@ -2546,7 +2556,7 @@ def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_dom
 
     from rulespec_artifacts import canonical_json_bytes
 
-    fast = source_catalog_artifact._canonical_record_payload
+    fast = framing.canonical_record_payload
     from docspec.adapters.framing import is_fast_canonical_safe as safe
 
     source = FakeSource(
@@ -2564,10 +2574,10 @@ def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_dom
             {"sourceItemId": item.source_item_id},
             {"sourceItemId": item.source_item_id, "disposition": item.disposition.value},
             {"sourceItemId": item.source_item_id, "reason": item.selection.reason},
-            source_catalog_artifact._rendition_choice_record(item_dict),
-            *source_catalog_artifact._normalized_field_records_for(item_dict),
-            *source_catalog_artifact._joined_field_records_for(item_dict),
-            *source_catalog_artifact._interpretation_records_for(item_dict),
+            catalog_digests._rendition_choice_record(item_dict),
+            *catalog_digests._normalized_field_records_for(item_dict),
+            *catalog_digests._joined_field_records_for(item_dict),
+            *catalog_digests._interpretation_records_for(item_dict),
         ]
         for value in records:
             assert fast(value) == canonical_json_bytes(value)
@@ -2605,13 +2615,13 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
     store, result = build(tmp_path, source)
 
     calls = {"derive": 0}
-    actual = source_catalog_artifact._derive_catalog
+    actual = catalog_derivation._derive_catalog
 
-    def spy(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
+    def spy(*args: Any, **kwargs: Any) -> catalog_digests._DerivedCatalog:
         calls["derive"] += 1
         return actual(*args, **kwargs)
 
-    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", spy)
+    monkeypatch.setattr(catalog_derivation, "_derive_catalog", spy)
     reader = SourceCatalogArtifactReader(store, producer=producer())
     summary = reader.verify_snapshot(result.reference)
     assert summary == result.summary
@@ -2619,9 +2629,9 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
     assert reader.verify_snapshot(result.reference) == summary
     assert calls["derive"] == 1
 
-    def lying(*args: Any, **kwargs: Any) -> source_catalog_artifact._DerivedCatalog:
+    def lying(*args: Any, **kwargs: Any) -> catalog_digests._DerivedCatalog:
         derived = actual(*args, **kwargs)
-        return source_catalog_artifact._DerivedCatalog(
+        return catalog_digests._DerivedCatalog(
             "sha256:" + "e" * 64,
             derived.requested_universe_set_digest,
             derived.selected_source_set_digest,
@@ -2630,7 +2640,7 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
             derived.diagnostics,
         )
 
-    monkeypatch.setattr(source_catalog_artifact, "_derive_catalog", lying)
+    monkeypatch.setattr(catalog_derivation, "_derive_catalog", lying)
     fresh = SourceCatalogArtifactReader(store, producer=producer())
     with pytest.raises(IntegrityError, match="catalogStateDigest"):
         fresh.verify_snapshot(result.reference)
@@ -2651,13 +2661,13 @@ def test_a_verified_reader_streams_items_without_repeating_the_row_proofs(
     )
     store, result = build(tmp_path, source)
     seen: list[bool] = []
-    actual = source_catalog_artifact._iter_located_catalog_rows
+    actual = catalog_rows._iter_located_catalog_rows
 
     def spy(*args: Any, **kwargs: Any) -> Any:
         seen.append(kwargs.get("validate", True))
         return actual(*args, **kwargs)
 
-    monkeypatch.setattr(source_catalog_artifact, "_iter_located_catalog_rows", spy)
+    monkeypatch.setattr(catalog_rows, "_iter_located_catalog_rows", spy)
 
     fresh = SourceCatalogArtifactReader(store, producer=producer())
     assert len(list(fresh.open_snapshot(result.reference).items)) == 2
@@ -2730,7 +2740,7 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
     summary = reader.verify_snapshot(result.reference)
     blob_source = store.blob_source()
     artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
-    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
     admit_artifact(
         LocalMemberSource(artifact_root),
         blob_source=blob_source,
@@ -2781,26 +2791,26 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
                 recorded.append(scrubbed_size(args[0]))
             return self._pool.apply_async(function, args, **kwargs)
 
-    inner = source_catalog_artifact._derive_pool_context()
+    inner = catalog_derivation._derive_pool_context()
 
     class RecordingContext:
         def Pool(self, *args: Any, **kwargs: Any) -> RecordingPool:
             return RecordingPool(inner.Pool(*args, **kwargs))
 
     selected_count = summary.disposition_counts[
-        source_catalog_artifact.CatalogDisposition.SELECTED.value
+        CatalogDisposition.SELECTED.value
     ]
-    serial = source_catalog_artifact._derive_catalog(
+    serial = catalog_derivation._derive_catalog(
         blob_source,
         partitions,
         item_count=summary.item_count,
         selected_count=selected_count,
         workers=1,
     )
-    original = source_catalog_artifact._derive_pool_context
-    source_catalog_artifact._derive_pool_context = RecordingContext  # type: ignore[assignment]
+    original = catalog_derivation._derive_pool_context
+    catalog_derivation._derive_pool_context = RecordingContext  # type: ignore[assignment]
     try:
-        parallel = source_catalog_artifact._derive_catalog(
+        parallel = catalog_derivation._derive_catalog(
             blob_source,
             partitions,
             item_count=summary.item_count,
@@ -2808,7 +2818,7 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
             workers=2,
         )
     finally:
-        source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
+        catalog_derivation._derive_pool_context = original  # type: ignore[assignment]
 
     assert replace(parallel, derivation={}) == replace(serial, derivation={}), (
         "streaming must not change a single derived value"
@@ -2852,7 +2862,7 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
     summary = reader.verify_snapshot(result.reference)
     blob_source = store.blob_source()
     artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
-    verifier = source_catalog_artifact.SourceCatalogArtifactVerifier(producer(), blob_source)
+    verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
     admit_artifact(
         LocalMemberSource(artifact_root),
         blob_source=blob_source,
@@ -2891,19 +2901,19 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
             return DeadPool()
 
     selected_count = summary.disposition_counts[
-        source_catalog_artifact.CatalogDisposition.SELECTED.value
+        CatalogDisposition.SELECTED.value
     ]
-    serial = source_catalog_artifact._derive_catalog(
+    serial = catalog_derivation._derive_catalog(
         blob_source,
         verifier.partitions,
         item_count=summary.item_count,
         selected_count=selected_count,
         workers=1,
     )
-    original = source_catalog_artifact._derive_pool_context
-    source_catalog_artifact._derive_pool_context = DeadContext  # type: ignore[assignment]
+    original = catalog_derivation._derive_pool_context
+    catalog_derivation._derive_pool_context = DeadContext  # type: ignore[assignment]
     try:
-        fell_back = source_catalog_artifact._derive_catalog(
+        fell_back = catalog_derivation._derive_catalog(
             blob_source,
             verifier.partitions,
             item_count=summary.item_count,
@@ -2911,7 +2921,7 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
             workers=2,
         )
     finally:
-        source_catalog_artifact._derive_pool_context = original  # type: ignore[assignment]
+        catalog_derivation._derive_pool_context = original  # type: ignore[assignment]
 
     assert replace(fell_back, derivation={}) == replace(serial, derivation={})
     assert fell_back.derivation == {"path": "serial-fallback", "workers": 1}
@@ -2923,7 +2933,7 @@ def test_receipt_reason_counts_must_be_ordered_distinct_and_reconciled() -> None
     express: sealed order, no repeats, and every non-selected bucket accounted for.
     """
 
-    reconcile = source_catalog_artifact._reconcile_reason_counts
+    reconcile = catalog_accounting._reconcile_reason_counts
     counts = {"selected": 3, "excluded": 0, "deleted": 1, "unavailable": 2, "failed": 0}
     good = [
         {"disposition": "deleted", "reasonCode": "source.withdrawn-after-publication", "count": 1},
@@ -3048,7 +3058,7 @@ def test_derivation_names_the_engine_that_produced_the_digests(
     identities_by_partition: dict[str, str] = {}
     for index in range(1, 200):
         identity = f"2026-{index:05d}"
-        identities_by_partition.setdefault(source_catalog_artifact._partition_id(identity), identity)
+        identities_by_partition.setdefault(catalog_rules._partition_id(identity), identity)
         if len(identities_by_partition) == 3:
             break
     identities = tuple(sorted(identities_by_partition.values()))
@@ -3066,14 +3076,14 @@ def test_derivation_names_the_engine_that_produced_the_digests(
         "gate": {"path": "serial", "workers": 1},
     }
 
-    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_ROW_THRESHOLD", 1)
+    monkeypatch.setattr(catalog_derivation, "_PARALLEL_ROW_THRESHOLD", 1)
     _, parallel = build(tmp_path / "parallel", source())
     assert parallel.reference == serial.reference
     assert parallel.derivation["build"]["path"] == "parallel"
     assert parallel.derivation["gate"]["path"] == "parallel"
     assert parallel.derivation["build"]["workers"] >= 2
 
-    monkeypatch.setattr(source_catalog_artifact, "_PARALLEL_PROBE_TIMEOUT_SECONDS", 0.0)
+    monkeypatch.setattr(catalog_derivation, "_PARALLEL_PROBE_TIMEOUT_SECONDS", 0.0)
     _, fallback = build(tmp_path / "fallback", source())
     assert fallback.reference == serial.reference
     assert fallback.derivation == {

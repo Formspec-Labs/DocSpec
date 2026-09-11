@@ -1,0 +1,201 @@
+{
+  "scope": "Local maintainability comparison; not scale qualification",
+  "baselineRevision": "b1736e9",
+  "beforeSourceSha256": "c597c416b341eb744a0cdfd371f4a863398df500c355038c4d5cd7d747137f23",
+  "afterSourceSha256": "e2e0870503c0a6a6a4420cbbac9156bf30c5b968291bbcfa63315a6a44e18e15",
+  "catalog": {
+    "catalogId": "urn:spicy:artifact:docspec-source-catalog:09b8a01a9828c51473494db13c5e520060b49d8297d201facc5013132a592750",
+    "locator": "ea2d4a50b49271b44d20b2502edb8d2b6690c803a0b34f763fed5507225607f7/artifact.json",
+    "digest": "sha256:ea2d4a50b49271b44d20b2502edb8d2b6690c803a0b34f763fed5507225607f7"
+  },
+  "itemCount": 4096,
+  "partitionCount": 64,
+  "inputRecipe": "tests.support.source_catalog.FakeSource(description(), records, renditions), with record() and renditions() for IDs 2026-00000 through 2026-04095; production FederalRegisterCatalogPolicy and SourceCatalogBuilder",
+  "separateRuns": {
+    "before": {
+      "scope": "4096 synthetic Federal Register-shaped rows, same sealed local catalog, warm filesystem, three alternating runs per engine",
+      "seconds": {
+        "1": [
+          1.7534384579630569,
+          1.784390417044051,
+          1.8274697499582544
+        ],
+        "2": [
+          1.1842377909924835,
+          1.0717488749651238,
+          0.9929717499762774
+        ]
+      },
+      "medianSeconds": {
+        "1": 1.784390417044051,
+        "2": 1.0717488749651238
+      },
+      "engines": [
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        },
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        },
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        }
+      ]
+    },
+    "after": {
+      "scope": "4096 synthetic Federal Register-shaped rows, same sealed local catalog, warm filesystem, three alternating runs per engine",
+      "seconds": {
+        "1": [
+          2.0994479169603437,
+          2.094495916971937,
+          1.7814811250427738
+        ],
+        "2": [
+          1.1077379999915138,
+          1.0633586660260335,
+          1.0467183750588447
+        ]
+      },
+      "medianSeconds": {
+        "1": 2.094495916971937,
+        "2": 1.0633586660260335
+      },
+      "engines": [
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        },
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        },
+        {
+          "path": "serial",
+          "workers": 1
+        },
+        {
+          "path": "parallel",
+          "workers": 2
+        }
+      ]
+    }
+  },
+  "interleavedSerial": {
+    "scope": "same process, same sealed 4096-row catalog, serial engine, one warmup per implementation, five alternating pairs with order reversed on odd repetitions",
+    "seconds": {
+      "before": [
+        1.7738761249929667,
+        1.9401283339830115,
+        1.8514213749440387,
+        1.7500401670113206,
+        1.8528288749512285
+      ],
+      "after": [
+        1.8962642499245703,
+        1.7605050830170512,
+        1.9472297499887645,
+        1.7595593750011176,
+        1.7385965830180794
+      ]
+    },
+    "medians": {
+      "before": 1.8514213749440387,
+      "after": 1.7605050830170512
+    }
+  },
+  "derivedValuesEqual": true,
+  "derivedValues": {
+    "catalog_state_digest": "sha256:6dd4ef6c8a00a8ea4530d9c99a6edf15de41f2d6ae19e2c24b08211a2fcb2d9f",
+    "requested_universe_set_digest": "sha256:bc4c01f6ee2d249d498c65718c10ae9af3bbe00fc7dc2381e1b0f4ed12237b59",
+    "selected_source_set_digest": "sha256:4a168fb89d3813055da1cfbc89e1c0e57a15a6db93a74430d6a06a3a261fa581",
+    "disposition_counts": {
+      "selected": 4096,
+      "excluded": 0,
+      "deleted": 0,
+      "unavailable": 0,
+      "failed": 0
+    },
+    "reason_counts": [],
+    "diagnostics": {
+      "joinCoverage": [],
+      "normalizedFieldsDigest": "sha256:43f24225ac78cac3c8ff4cbfeec924e91bcaf8695c6d98e0b7f2801b35b43bba",
+      "joinedFieldsDigest": "sha256:9e72abfcc4b6185fe53f8681e02e2c712a09be95b321466e2f02c6583e1a842f",
+      "dispositionsDigest": "sha256:9f55fefa630b227d818f372895092598e433924388f7c9f96c619e55fcda3a39",
+      "reasonsDigest": "sha256:e8dfe441167e67107802b4fb4a1ed7b3885d0e863669f1cfa50100baeabf3b89",
+      "interpretationsDigest": "sha256:cef7a000106b67032ac3b421a6fa6120ffa2250394aa2cf306031b31e47b1281",
+      "renditionChoicesDigest": "sha256:dff3e717124806f541fadd8f9fbe012ceb875850d9817659c520f2e4244be556"
+    },
+    "derivation": {}
+  },
+  "interpretation": "The separate serial batches varied; interleaving the implementations in one process did not reproduce the apparent slowdown. These small warm-filesystem samples do not establish a speedup or large-corpus qualification.",
+  "afterModuleSplit": {
+    "scope": "4096 synthetic Federal Register-shaped rows, same sealed local catalog, warm filesystem, three alternating runs per engine",
+    "partitions": 64,
+    "seconds": {
+      "1": [
+        1.7222258750116453,
+        1.7085511659970507,
+        1.716594124911353
+      ],
+      "2": [
+        0.970911042066291,
+        0.9810578749747947,
+        0.9940119580132887
+      ]
+    },
+    "medianSeconds": {
+      "1": 1.716594124911353,
+      "2": 0.9810578749747947
+    },
+    "engines": [
+      {
+        "path": "serial",
+        "workers": 1
+      },
+      {
+        "path": "parallel",
+        "workers": 2
+      },
+      {
+        "path": "serial",
+        "workers": 1
+      },
+      {
+        "path": "parallel",
+        "workers": 2
+      },
+      {
+        "path": "serial",
+        "workers": 1
+      },
+      {
+        "path": "parallel",
+        "workers": 2
+      }
+    ],
+    "matchesPreviouslyRecordedDerivedValues": true
+  }
+}

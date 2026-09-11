@@ -28,7 +28,7 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
-from docspec.adapters.source_catalog_artifact import SourceCatalogArtifactReader
+from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.application.commit import ReleaseCommitService
 from docspec.application.delivery import StoreDeliveryService
