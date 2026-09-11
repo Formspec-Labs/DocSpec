@@ -116,6 +116,47 @@ frozen predecessor data remains provenance and, for the old source-catalog
 fixture, a required current restamping input.
 
 
+## Follow-up: documentation, tool placement, and remaining code owners
+
+The follow-up through `3b5f289` implements the September 11 request for another
+organization and superseded-code pass. Three subagents covered documentation,
+tool architecture, implementation, and independent review. All scoped reviews
+approved the corrected result; this does not replace the human exercise below.
+
+| Area | Completed change and evidence |
+| --- | --- |
+| Documentation | Consolidated useful wiki explanations into three maintained guides for catalog/processing, extensions, and operations. Retired 28 generated pages and two duplicate navigation trees; moved exact generation metadata and retained all 31 tracked-file hashes. The [consolidation record](history/2026-09-11-wiki-consolidation.md) distinguishes Git provenance from the removed ignored dependency cache. |
+| Tool placement | Added a [tool inventory](../tools/README.md). Integrated policy creation into `docspec source-catalog write-policy` and moved source-catalog command handling under `cli/`. Architecture review retained the fixed-corpus portable mint as a historical recipe and the research, proof, schema, and fixture tools in their present roles. [Cleanup decisions](cleanup-decisions.md#place-tools-according-to-their-current-purpose) explain the current consumers and limits. |
+| Transport owners | Split the 832-line fetcher into local-file, HTTPS, S3, and routing modules; the largest is 335 lines. The same 11 public exports remain, and all 17 moved definitions have identical syntax trees. |
+| Regulations.gov owners | Split the 2,131-line module into six implementation owners; the largest is 530 lines. Explicit dependencies preserve selection/resume state, field provenance, and lazy identity calculation. The corrected extraction preserves all 174 complete outputs/refusals from 74 existing tests, byte for byte: SHA-256 `c5414b8c0b72cd834b107a952fd553400aa2b378976eecdd3d66f0fa7561b833`. Six additional cases pass against both old and new classes and preserve refusal order without filling the identity cache. |
+| Shared research reading | Seven tools reuse one manifest/JSONL reader. Their complete before/after receipts remain byte-identical on the same mixed plain/gzip inputs with a deterministic publisher substitute. Actual worker and direct-script checks run separately. Outside-home catalog paths now produce a receipt instead of failing. Removed an unused constant and the superseded three-argument sample-worker input. |
+| Current reader and error handling | Removed the `spicy_regs` installed-package fallback and renamed the adapter for its current `spicy_docs` owner, preserving accepted artifact producer labels. Expected missing-reader errors now reach the CLI's structured error response. Malformed policy URL templates now receive the existing policy validation error, with real-command tests for null, number, object, list, and missing-placeholder inputs. |
+| Interrupted tool receipts | Resume discards only an incomplete final record, preserves valid final JSON without a newline, and refuses corrupt completed lines. Dry runs remain read-only. Focused tests cover truncated JSON/UTF-8, normal and reprobe continuation, and complete-line corruption. |
+
+Final local checks at `3b5f289`:
+
+- Full suite with Dagster: **850 passed, 1 integration test deselected**, no
+  skips, in **117.18 seconds**. Ruff, dependency-lock validation, and whitespace
+  checks passed.
+- A clean clone built the source distribution and wheel. Its installed command
+  created a canonical policy member outside the checkout in an empty environment
+  with vendored Rulespec and without Dagster, boto3, httpx, or SpicyDocs installed.
+  Imports of the new transport, policy, and reader owners also passed there.
+- The fixture restamper still reports a matching clean rebuild. All tracked
+  files under `fixtures/`, `tests/fixtures/`, and `src/docspec/schemas/` are
+  unchanged from `b0878fd`.
+- The consolidated documentation check resolved **208 local links and 17
+  anchors** across 13 pages and verified the 31 tracked wiki hashes and exact
+  generation metadata. The final evidence-only additions also pass: **213 local
+  links and 19 anchors** across 14 pages.
+
+The 174-record comparison covers the mechanical policy extraction at `8fd8600`;
+the subsequent malformed-template correction in `c27bd34` deliberately changes
+invalid-input handling. Likewise, the earlier 40-page help comparison predates
+the new policy command and current-reader help text. These checks establish
+local behavior and packaging; the earlier sealed conformance report remains
+pinned to its recorded revision and does not qualify the new tree automatically.
+
 ## Still open
 
 **30 of 31 items are complete.** E5 requires an unfamiliar person's contribution

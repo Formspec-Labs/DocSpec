@@ -64,6 +64,45 @@ The working local composition is in `src/docspec/cli/local.py` and
 | Builder/restamper member descriptors | One `member_descriptor` in `document_release_support.py` now derives the same seven fields from the actual member file. Both builders use it; sealed fixture identities remain the check. |
 | Source policies' `to_member` | Retain each small explicit serialization method. It sits beside that policy's inverse reader and names its own version and configuration. A generic serialization function would add parameters and indirection without reducing the code needed to understand either policy. The shared domain schema checks both shapes. |
 | Source policies' cached `policy_digest` | Retain the short per-instance cache. Lazy calculation preserves configuration-error timing and avoids hashing the whole configuration for each item. A shared mutation helper or inheritance layer would obscure ownership of the frozen policy's cache. The Regulations.gov method retains the measurements that explain why this cache matters. |
+| Retained-catalog research readers | Seven tools now share manifest ordering, plain/gzip JSONL reading, and receipt path formatting in `tools/catalog_sample_support.py`. Sampling rules and receipt meanings stay with their callers. This helper reads research inputs; package verification still governs publication. |
+| Tool `_unique` helpers | Retain the small local functions. Their copy behavior differs, and a parameterized abstraction would add more decisions than the few repeated lines remove. |
+
+## Place tools according to their current purpose
+
+The [tool inventory](../tools/README.md) names each family, its inputs and
+outputs, and its executable checks. Architecture review led to one product
+integration: policy-member creation now runs through the installed
+`docspec source-catalog write-policy` command. It calls the existing application
+policy constructors, validates a canonical round trip, and refuses overwrites.
+The former `tools/write_catalog_policy_member.py` entry point is removed.
+Source-catalog command handling also moved into `cli/source_catalog.py`, so
+contributors can find command code in one tree.
+
+Retain `build_document_release.py` and `fr_mirrulations_pin.py` as historical
+FR/Mirrulations reproduction recipes. Their campaign-specific inputs, empty
+comment output, document-body assumptions, and refusal behavior do not define
+a general installed writer. No current product caller was found. The portable
+format remains supported, and shared identity and verification rules already
+have package owners. The application release service produces a different
+representation and does not supersede this reproduction recipe.
+
+Research tools, the CourtListener population proof, schema generation, and
+fixture restamping keep their distinct roles. Removed the unused `MINOR_TYPES`
+constant and obsolete three-argument sample-worker input; both current callers
+use the four-argument shape. A similar filename alone does not establish that
+one tool supersedes another.
+
+## Require the current installed source reader
+
+`SpicyDocsSourceNativeAdapter` in `adapters/spicy_docs_source_native.py` now loads
+only `spicy_docs`. The predecessor `spicy_regs` fallback and old adapter names
+are removed, with current imports and tests updated directly. Accepted artifact
+producer labels still include `spicy-regs` and `spicy-docs`: those recorded data
+labels are separate from the installed reader's ownership.
+
+Expected reader-admission failures use `SourceNativeReaderError`, which the CLI
+reports as a structured error. Import failures inside an installed reader retain
+their original cause and are not mistaken for an absent package.
 
 ## Dormant public helpers
 
@@ -90,6 +129,8 @@ tests, with independent architecture review.
 | Module at review | Decision and contribution boundary |
 | --- | --- |
 | `adapters/source_catalog_store.py` — 1,697 lines | Split into `source_catalog_store/pinned_fs.py` (435), `staging.py` (585), `store.py` (326), and `current.py` (409), with a 13-line public import file. Filesystem operations, staging, immutable publication, and pointer advancement have distinct reasons to change. Keep the staging transaction together: its descriptor ownership, publication, and cleanup form one lifetime. |
+| `adapters/content_fetchers.py` — 832 lines | Split into local-file, HTTPS, S3, and routing owners, with the same public exports. The largest is 335 lines. Transport-specific retries, credentials, optional imports, and resource lifetimes remain together. |
+| `application/regulations_gov_catalog.py` — 2,131 lines | Split into policy configuration/dispatch, indexed rows, sampling, shared record facts, document conversion, and comment/docket conversion. The largest owner is 530 lines. The policy retains its selected count, resume order, and lazy identity cache; conversion helpers receive explicit inputs. Independent review caught and corrected an early identity calculation before the split was committed. |
 | `domain/source_catalog.py` — 1,077 lines | Keep the typed catalog rows and their closed schema family together. `source_catalog_schemas()` contains 681 lines of declarations, shares its field vocabulary locally, and feeds the artifact schema owner. `tests/test_package_boundary.py` compares generated and packaged schemas byte for byte. Splitting schema fragments would add navigation to one schema-maintenance task. |
 | `domain/scale.py` — 1,560 lines | Keep the closed profile/result family together. `ScaleProfile` admits exactly the document-processing and source-catalog variants; `ScaleResult.verify_profile` binds evidence and rejects impossible pass claims for both. Its longer method contains two explicit variant checks and their resource-limit tables. `tests/test_scale_profile.py` covers both variants. No separate scale format or per-type modules are needed. |
 | `processing/bounded_segmentation.py` — 1,104 lines | Keep the cohesive region → unit → packing → coverage algorithm and its provenance. `_bound` is the one owner of both boundaries and byte accounting. The introductory rationale explains source adaptation, tokenizer choice, excluded headings, and reversible evidence; it remains beside the algorithm. `tests/test_bounded_segmentation.py` covers deterministic output, token limits, coverage, and refusal cases. |
