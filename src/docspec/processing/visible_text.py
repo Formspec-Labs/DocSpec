@@ -62,7 +62,7 @@ from typing import Any
 
 from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError
-from docspec.processing.artifacts import decode_utf8
+from docspec.processing.artifacts import decode_utf8, utf8_byte_offsets
 
 XML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.xml-visible-text/v1"
 HTML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.html-visible-text/v1"
@@ -559,7 +559,7 @@ class _HtmlTreeBuilder(HTMLParser):
 
 def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
     text = decode_utf8(source_bytes, label="captured HTML")
-    offsets = None if text.isascii() else _byte_offsets(text)
+    offsets = None if text.isascii() else utf8_byte_offsets(text)
     builder = _HtmlTreeBuilder(offsets)
     builder.prepare(text)
     try:
@@ -569,17 +569,6 @@ def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
         raise VisibleTextError(UNPARSEABLE, f"captured HTML cannot be parsed: {error}") from error
     builder.finish(len(source_bytes))
     return builder.root, builder.element_count
-
-
-def _byte_offsets(text: str) -> tuple[int, ...]:
-    """Every codepoint boundary's UTF-8 byte offset, for a non-ASCII source."""
-
-    offsets = [0]
-    total = 0
-    for character in text:
-        total += len(character.encode("utf-8"))
-        offsets.append(total)
-    return tuple(offsets)
 
 
 def is_atx_heading(line: str) -> bool:

@@ -444,8 +444,8 @@ def preserved_captures(pinned: PinnedCorpus) -> dict[str, dict[str, PreservedCap
     """
 
     found: dict[str, dict[str, PreservedCapture]] = {}
-    for name in RUN_NAMES:
-        run_root = pinned.root / "runs" / name
+    for run_root in pinned.run_roots:
+        name = run_root.name
         for record in _file_records(run_root):
             blob = record["blob"]
             item = found.setdefault(record["sourceItemId"], {})

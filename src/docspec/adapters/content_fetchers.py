@@ -16,6 +16,7 @@ from docspec.domain.identity import identity_digest, require_relative_path, requ
 from docspec.errors import DocSpecError, IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import ContentFetcher, FetchMetadata, FetchStream
 from docspec.adapters.storage import _contained, _storage_root
+from docspec.adapters.s3_errors import provider_error_identity
 
 _MISSING_CODES = frozenset({"404", "NoSuchKey", "NoSuchObject", "NotFound"})
 _CHANGED_CODES = frozenset({"412", "PreconditionFailed"})
@@ -302,17 +303,6 @@ def public_s3_url(*, bucket: str, key: str, region_name: str) -> str:
     key = require_relative_path(key, "S3 object key")
     region_name = require_text(region_name, "S3 source region")
     return f"https://{bucket}.s3.{region_name}.amazonaws.com/{quote(key, safe='/')}"
-
-
-def _provider_error_identity(error: Exception) -> tuple[str | None, int | None]:
-    response = getattr(error, "response", None)
-    if not isinstance(response, Mapping):
-        return None, None
-    details = response.get("Error")
-    metadata = response.get("ResponseMetadata")
-    code = details.get("Code") if isinstance(details, Mapping) else None
-    status = metadata.get("HTTPStatusCode") if isinstance(metadata, Mapping) else None
-    return str(code) if code is not None else None, status if isinstance(status, int) else None
 
 
 def _close_body(body: object) -> None:
@@ -649,7 +639,7 @@ class AnonymousS3ContentFetcher:
                 IfMatch=record["etag"],
             )
         except Exception as error:
-            code, status = _provider_error_identity(error)
+            code, status = provider_error_identity(error)
             if code in _MISSING_CODES or status == 404:
                 raise IntegrityError("sealed S3 candidate does not exist") from error
             if code in _CHANGED_CODES or status == 412:
