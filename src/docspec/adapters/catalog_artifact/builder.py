@@ -26,7 +26,11 @@ from rulespec_artifacts import (
 
 from docspec.adapters.catalog_artifact import derivation
 from docspec.adapters.catalog_artifact.accounting import _DispositionTally
-from docspec.adapters.catalog_artifact.digests import _source_schema_set_digest, _source_system_set_digest
+from docspec.adapters.catalog_artifact.digests import (
+    _DerivedCatalog,
+    _source_schema_set_digest,
+    _source_system_set_digest,
+)
 from docspec.adapters.catalog_artifact.inputs import _policy_rows, _ResumeLedger
 from docspec.adapters.catalog_artifact.rows import _require_interpretation_order
 from docspec.adapters.catalog_artifact.rules import (
@@ -72,7 +76,9 @@ from docspec.ports.source_catalog import (
     CatalogPolicyWorkspace,
     SourceCatalogPolicy,
     SourceCatalogSnapshotSummary,
+    SourceCatalogStaging,
     SourceCatalogStore,
+    SourceNativeDescription,
     SourceNativeRecordSource,
 )
 
@@ -260,66 +266,12 @@ class SourceCatalogBuilder:
         catalog_schema_digest = schema_bundle_digest(_SCHEMAS)
 
         with self._workspace_factory() as workspace, self._store.stage() as staging:
-            ledger = _ResumeLedger(workspace)
-            ledger.open(
-                {
-                    "catalogId": self._request.catalog_id,
-                    "catalogSchemaDigest": catalog_schema_digest,
-                    "policyDigest": policy_digest,
-                    "producer": self._request.producer.as_dict(),
-                    "inputs": [
-                        {"logicalId": value.logical_id, "artifactDigest": value.artifact_digest}
-                        for value in descriptions
-                    ],
-                }
+            row_partitioner = self._stage_policy_rows(
+                sources, descriptions, workspace, policy_digest, catalog_schema_digest
             )
-            row_partitioner = _CatalogRowPartitioner(
-                _policy_rows(
-                    sources,
-                    descriptions,
-                    self._policy,
-                    policy_digest,
-                    workspace,
-                    ledger,
-                ),
-                ledger=ledger,
-                batch_items=self._resume_batch_items,
+            partitions, payload_bytes_reused, payload_bytes_written = self._stage_partition_blobs(
+                row_partitioner, workspace, staging
             )
-            if ledger.staged_state is not None:
-                # Every row is staged and accounted; only publication remains.
-                row_partitioner.restore(ledger.staged_state)
-            else:
-                if ledger.cursor_state is not None:
-                    row_partitioner.restore(ledger.cursor_state)
-                row_partitioner.stage(workspace)
-                ledger.mark_staged(row_partitioner.state())
-            partitions: list[_CatalogPartition] = []
-            payload_bytes_reused = 0
-            payload_bytes_written = 0
-            for partition_id in sorted(row_partitioner.partition_counts, key=_utf16_key):
-                blob_ref, byte_size = _measure_blob(_CatalogRowPartitioner.chunks(workspace, partition_id))
-                write = staging.put_blob(
-                    blob_ref,
-                    byte_size,
-                    _CatalogRowPartitioner.chunks(workspace, partition_id),
-                )
-                if write.reused:
-                    payload_bytes_reused += write.byte_size
-                else:
-                    payload_bytes_written += write.byte_size
-                partitions.append(
-                    _CatalogPartition(
-                        partition_id,
-                        describe_member_from_receipt(
-                            blob_ref=write.blob_ref,
-                            role=CATALOG_ITEMS_ROLE,
-                            media_type=CATALOG_ITEMS_MEDIA_TYPE,
-                            byte_size=write.byte_size,
-                            record_count=row_partitioner.partition_counts[partition_id],
-                            schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
-                        ),
-                    )
-                )
             selected_blob_source = staging.blob_source()
             # The builder reads back bytes it staged itself; the producer gate
             # independently re-validates every row before publication, so this
@@ -332,124 +284,18 @@ class SourceCatalogBuilder:
                 validate_rows=False,
             )
             build_derivation = dict(derived.derivation)
-            state_digest = derived.catalog_state_digest
-            requested_digest = derived.requested_universe_set_digest
-            selected_digest = derived.selected_source_set_digest
-            diagnostics = derived.diagnostics
-            spec = {
-                "catalogId": self._request.catalog_id,
-                "catalogSchemaDigest": catalog_schema_digest,
-                "sourceSystemSetDigest": _source_system_set_digest(descriptions),
-                "sourceNativeSchemaSetDigest": _source_schema_set_digest(descriptions),
-                "selectionPolicyId": self._policy.policy_id,
-                "selectionPolicyVersion": self._policy.policy_version,
-                "selectionPolicyDigest": policy_digest,
-                "requestedUniverseSetDigest": requested_digest,
-                "selectedSourceSetDigest": selected_digest,
-                "catalogStateDigest": state_digest,
-            }
-            inputs = tuple(
-                ArtifactInput("source-native", value.logical_id, value.artifact_digest) for value in descriptions
+            spec, ordered_inputs, receipt = self._publication_metadata(
+                descriptions,
+                catalog_schema_digest,
+                policy_digest,
+                derived,
+                row_partitioner,
+                partitions,
+                payload_bytes_reused,
+                payload_bytes_written,
             )
-            ordered_inputs = tuple(
-                sorted(
-                    inputs,
-                    key=lambda value: _utf16_key(value.logical_id.rsplit(":", 1)[-1]),
-                )
-            )
-            payload_bytes_read = payload_bytes_reused + payload_bytes_written
-            receipt: dict[str, Any] = {
-                "format": CATALOG_RECEIPT_FORMAT,
-                "formatVersion": CATALOG_FORMAT_VERSION,
-                "catalogId": self._request.catalog_id,
-                "catalogSchemaDigest": catalog_schema_digest,
-                "sourceSystemSetDigest": spec["sourceSystemSetDigest"],
-                "sourceNativeSchemaSetDigest": spec["sourceNativeSchemaSetDigest"],
-                "selectionPolicyId": self._policy.policy_id,
-                "selectionPolicyVersion": self._policy.policy_version,
-                "selectionPolicyDigest": policy_digest,
-                "sourceNativeInputs": [
-                    {
-                        "logicalId": value.logical_id,
-                        "artifactDigest": value.artifact_digest,
-                    }
-                    for value in ordered_inputs
-                ],
-                "catalogStateDigest": state_digest,
-                "requestedUniverseSetDigest": requested_digest,
-                "selectedSourceSetDigest": selected_digest,
-                "itemCount": row_partitioner.item_count,
-                "dispositionCounts": row_partitioner.disposition_counts,
-                "reasonCounts": row_partitioner.tally.reason_counts(),
-                "partitionPolicy": _partition_policy(),
-                "partitions": [value.to_receipt() for value in partitions],
-                **diagnostics,
-                "byteMeasurements": {
-                    "payloadBytesRead": payload_bytes_read,
-                    "payloadBytesReused": payload_bytes_reused,
-                    "payloadBytesWritten": payload_bytes_written,
-                    "publicationBytesWritten": 0,
-                },
-                "verifierId": self._request.producer.verifier_id,
-                "verifierVersion": self._request.producer.verifier_version,
-                "verifierImplementationId": self._request.producer.verifier_implementation_id,
-                "semanticVerdict": "pass",
-            }
-            publication_bytes = -1
-            for _ in range(8):
-                receipt["byteMeasurements"]["publicationBytesWritten"] = publication_bytes
-                receipt_bytes = canonical_json_bytes(receipt)
-                local_members = (
-                    describe_member_from_receipt(
-                        object_key=CATALOG_POLICY_KEY,
-                        sha256=sha256_digest(policy_bytes),
-                        role=CATALOG_POLICY_ROLE,
-                        media_type=CATALOG_JSON_MEDIA_TYPE,
-                        byte_size=len(policy_bytes),
-                        schema_id=SOURCE_CATALOG_POLICY_SCHEMA_ID,
-                    ),
-                    describe_member_from_receipt(
-                        object_key=CATALOG_RECEIPT_KEY,
-                        sha256=sha256_digest(receipt_bytes),
-                        role=CATALOG_RECEIPT_ROLE,
-                        media_type=CATALOG_JSON_MEDIA_TYPE,
-                        byte_size=len(receipt_bytes),
-                        schema_id=SOURCE_CATALOG_RECEIPT_SCHEMA_ID,
-                    ),
-                )
-                members = (*local_members, *(value.member for value in partitions))
-                manifest, manifest_bytes = MemberManifestReference.for_members(
-                    scope_kind="global",
-                    scope_id="catalog",
-                    object_key=CATALOG_MANIFEST_KEY,
-                    members=members,
-                )
-                root = build_artifact_root(
-                    kind=CATALOG_KIND,
-                    spec=spec,
-                    producer=self._request.producer,
-                    inputs=ordered_inputs,
-                    manifests=(manifest,),
-                    supersedes=self._request.supersedes,
-                )
-                root_bytes = canonical_json_bytes(root)
-                measured_publication_bytes = (
-                    len(policy_bytes) + len(receipt_bytes) + len(manifest_bytes) + len(root_bytes)
-                )
-                if measured_publication_bytes == publication_bytes:
-                    break
-                publication_bytes = measured_publication_bytes
-            else:
-                raise IntegrityError("catalog publication byte accounting did not stabilize")
-            _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
-            staging.write(CATALOG_POLICY_KEY, (policy_bytes,))
-            staging.write(CATALOG_RECEIPT_KEY, (receipt_bytes,))
-            staging.write(CATALOG_MANIFEST_KEY, (manifest_bytes,))
-            staging.write(ROOT_OBJECT_KEY, (root_bytes,))
-            reference = SourceCatalogRef(
-                root["logicalId"],
-                f"{root['artifactDigest'].removeprefix('sha256:')}/{ROOT_OBJECT_KEY}",
-                root["artifactDigest"],
+            reference = self._stage_publication(
+                staging, policy_bytes, spec, ordered_inputs, receipt, partitions
             )
             verifier = SourceCatalogBuildGateVerifier(self._request.producer, selected_blob_source)
             try:
@@ -470,3 +316,232 @@ class SourceCatalogBuilder:
             dict(receipt["byteMeasurements"]),
             {"build": build_derivation, "gate": dict(verifier.derivation)},
         )
+
+    def _stage_policy_rows(
+        self,
+        sources: Sequence[SourceNativeRecordSource],
+        descriptions: tuple[SourceNativeDescription, ...],
+        workspace: CatalogPolicyWorkspace,
+        policy_digest: str,
+        catalog_schema_digest: str,
+    ) -> _CatalogRowPartitioner:
+        """Restore or complete the durable policy output and its accounting."""
+
+        ledger = _ResumeLedger(workspace)
+        ledger.open(
+            {
+                "catalogId": self._request.catalog_id,
+                "catalogSchemaDigest": catalog_schema_digest,
+                "policyDigest": policy_digest,
+                "producer": self._request.producer.as_dict(),
+                "inputs": [
+                    {"logicalId": value.logical_id, "artifactDigest": value.artifact_digest}
+                    for value in descriptions
+                ],
+            }
+        )
+        row_partitioner = _CatalogRowPartitioner(
+            _policy_rows(
+                sources,
+                descriptions,
+                self._policy,
+                policy_digest,
+                workspace,
+                ledger,
+            ),
+            ledger=ledger,
+            batch_items=self._resume_batch_items,
+        )
+        if ledger.staged_state is not None:
+            # Every row is staged and accounted; only publication remains.
+            row_partitioner.restore(ledger.staged_state)
+        else:
+            if ledger.cursor_state is not None:
+                row_partitioner.restore(ledger.cursor_state)
+            row_partitioner.stage(workspace)
+            ledger.mark_staged(row_partitioner.state())
+        return row_partitioner
+
+    @staticmethod
+    def _stage_partition_blobs(
+        row_partitioner: _CatalogRowPartitioner,
+        workspace: CatalogPolicyWorkspace,
+        staging: SourceCatalogStaging,
+    ) -> tuple[list[_CatalogPartition], int, int]:
+        """Write ordered payloads and return partitions, reused bytes, and written bytes."""
+
+        partitions: list[_CatalogPartition] = []
+        payload_bytes_reused = 0
+        payload_bytes_written = 0
+        for partition_id in sorted(row_partitioner.partition_counts, key=_utf16_key):
+            blob_ref, byte_size = _measure_blob(_CatalogRowPartitioner.chunks(workspace, partition_id))
+            write = staging.put_blob(
+                blob_ref,
+                byte_size,
+                _CatalogRowPartitioner.chunks(workspace, partition_id),
+            )
+            if write.reused:
+                payload_bytes_reused += write.byte_size
+            else:
+                payload_bytes_written += write.byte_size
+            partitions.append(
+                _CatalogPartition(
+                    partition_id,
+                    describe_member_from_receipt(
+                        blob_ref=write.blob_ref,
+                        role=CATALOG_ITEMS_ROLE,
+                        media_type=CATALOG_ITEMS_MEDIA_TYPE,
+                        byte_size=write.byte_size,
+                        record_count=row_partitioner.partition_counts[partition_id],
+                        schema_id=SOURCE_CATALOG_ITEM_SCHEMA_ID,
+                    ),
+                )
+            )
+        return partitions, payload_bytes_reused, payload_bytes_written
+
+    def _publication_metadata(
+        self,
+        descriptions: tuple[SourceNativeDescription, ...],
+        catalog_schema_digest: str,
+        policy_digest: str,
+        derived: _DerivedCatalog,
+        row_partitioner: _CatalogRowPartitioner,
+        partitions: Sequence[_CatalogPartition],
+        payload_bytes_reused: int,
+        payload_bytes_written: int,
+    ) -> tuple[dict[str, Any], tuple[ArtifactInput, ...], dict[str, Any]]:
+        """Describe the derived catalog and its accounted inputs before sealing."""
+
+        state_digest = derived.catalog_state_digest
+        requested_digest = derived.requested_universe_set_digest
+        selected_digest = derived.selected_source_set_digest
+        diagnostics = derived.diagnostics
+        spec = {
+            "catalogId": self._request.catalog_id,
+            "catalogSchemaDigest": catalog_schema_digest,
+            "sourceSystemSetDigest": _source_system_set_digest(descriptions),
+            "sourceNativeSchemaSetDigest": _source_schema_set_digest(descriptions),
+            "selectionPolicyId": self._policy.policy_id,
+            "selectionPolicyVersion": self._policy.policy_version,
+            "selectionPolicyDigest": policy_digest,
+            "requestedUniverseSetDigest": requested_digest,
+            "selectedSourceSetDigest": selected_digest,
+            "catalogStateDigest": state_digest,
+        }
+        inputs = tuple(
+            ArtifactInput("source-native", value.logical_id, value.artifact_digest) for value in descriptions
+        )
+        ordered_inputs = tuple(
+            sorted(
+                inputs,
+                key=lambda value: _utf16_key(value.logical_id.rsplit(":", 1)[-1]),
+            )
+        )
+        payload_bytes_read = payload_bytes_reused + payload_bytes_written
+        receipt: dict[str, Any] = {
+            "format": CATALOG_RECEIPT_FORMAT,
+            "formatVersion": CATALOG_FORMAT_VERSION,
+            "catalogId": self._request.catalog_id,
+            "catalogSchemaDigest": catalog_schema_digest,
+            "sourceSystemSetDigest": spec["sourceSystemSetDigest"],
+            "sourceNativeSchemaSetDigest": spec["sourceNativeSchemaSetDigest"],
+            "selectionPolicyId": self._policy.policy_id,
+            "selectionPolicyVersion": self._policy.policy_version,
+            "selectionPolicyDigest": policy_digest,
+            "sourceNativeInputs": [
+                {
+                    "logicalId": value.logical_id,
+                    "artifactDigest": value.artifact_digest,
+                }
+                for value in ordered_inputs
+            ],
+            "catalogStateDigest": state_digest,
+            "requestedUniverseSetDigest": requested_digest,
+            "selectedSourceSetDigest": selected_digest,
+            "itemCount": row_partitioner.item_count,
+            "dispositionCounts": row_partitioner.disposition_counts,
+            "reasonCounts": row_partitioner.tally.reason_counts(),
+            "partitionPolicy": _partition_policy(),
+            "partitions": [value.to_receipt() for value in partitions],
+            **diagnostics,
+            "byteMeasurements": {
+                "payloadBytesRead": payload_bytes_read,
+                "payloadBytesReused": payload_bytes_reused,
+                "payloadBytesWritten": payload_bytes_written,
+                "publicationBytesWritten": 0,
+            },
+            "verifierId": self._request.producer.verifier_id,
+            "verifierVersion": self._request.producer.verifier_version,
+            "verifierImplementationId": self._request.producer.verifier_implementation_id,
+            "semanticVerdict": "pass",
+        }
+        return spec, ordered_inputs, receipt
+
+    def _stage_publication(
+        self,
+        staging: SourceCatalogStaging,
+        policy_bytes: bytes,
+        spec: Mapping[str, Any],
+        ordered_inputs: tuple[ArtifactInput, ...],
+        receipt: dict[str, Any],
+        partitions: Sequence[_CatalogPartition],
+    ) -> SourceCatalogRef:
+        """Stabilize publication byte accounting, then write the unpublished members."""
+
+        publication_bytes = -1
+        for _ in range(8):
+            receipt["byteMeasurements"]["publicationBytesWritten"] = publication_bytes
+            receipt_bytes = canonical_json_bytes(receipt)
+            local_members = (
+                describe_member_from_receipt(
+                    object_key=CATALOG_POLICY_KEY,
+                    sha256=sha256_digest(policy_bytes),
+                    role=CATALOG_POLICY_ROLE,
+                    media_type=CATALOG_JSON_MEDIA_TYPE,
+                    byte_size=len(policy_bytes),
+                    schema_id=SOURCE_CATALOG_POLICY_SCHEMA_ID,
+                ),
+                describe_member_from_receipt(
+                    object_key=CATALOG_RECEIPT_KEY,
+                    sha256=sha256_digest(receipt_bytes),
+                    role=CATALOG_RECEIPT_ROLE,
+                    media_type=CATALOG_JSON_MEDIA_TYPE,
+                    byte_size=len(receipt_bytes),
+                    schema_id=SOURCE_CATALOG_RECEIPT_SCHEMA_ID,
+                ),
+            )
+            members = (*local_members, *(value.member for value in partitions))
+            manifest, manifest_bytes = MemberManifestReference.for_members(
+                scope_kind="global",
+                scope_id="catalog",
+                object_key=CATALOG_MANIFEST_KEY,
+                members=members,
+            )
+            root = build_artifact_root(
+                kind=CATALOG_KIND,
+                spec=spec,
+                producer=self._request.producer,
+                inputs=ordered_inputs,
+                manifests=(manifest,),
+                supersedes=self._request.supersedes,
+            )
+            root_bytes = canonical_json_bytes(root)
+            measured_publication_bytes = (
+                len(policy_bytes) + len(receipt_bytes) + len(manifest_bytes) + len(root_bytes)
+            )
+            if measured_publication_bytes == publication_bytes:
+                break
+            publication_bytes = measured_publication_bytes
+        else:
+            raise IntegrityError("catalog publication byte accounting did not stabilize")
+        _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
+        staging.write(CATALOG_POLICY_KEY, (policy_bytes,))
+        staging.write(CATALOG_RECEIPT_KEY, (receipt_bytes,))
+        staging.write(CATALOG_MANIFEST_KEY, (manifest_bytes,))
+        staging.write(ROOT_OBJECT_KEY, (root_bytes,))
+        reference = SourceCatalogRef(
+            root["logicalId"],
+            f"{root['artifactDigest'].removeprefix('sha256:')}/{ROOT_OBJECT_KEY}",
+            root["artifactDigest"],
+        )
+        return reference

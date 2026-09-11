@@ -3044,6 +3044,68 @@ def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifac
         ).build((source(),))
 
 
+def test_a_fully_staged_workspace_retries_publication_without_recomputing_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OnePassPolicy(CountItems):
+        calls = 0
+
+        def iter_items(self, inputs: object, workspace: object) -> Iterator[object]:
+            self.calls += 1
+            assert self.calls == 1, "fully staged policy output must not be recomputed"
+            yield from super().iter_items(inputs, workspace)
+
+    source = FakeSource(
+        description(),
+        (record("2026-00001"), record("2026-00002")),
+        renditions("2026-00002"),
+    )
+    root = tmp_path / "store"
+    store = LocalSourceCatalogStore(root)
+    workspace_path = tmp_path / "workspace.sqlite3"
+    policy = OnePassPolicy(FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE))
+    builder = SourceCatalogBuilder(
+        store=store,
+        policy=policy,  # type: ignore[arg-type]
+        request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
+        workspace_factory=lambda: SqliteCatalogPolicyWorkspace(path=workspace_path),
+    )
+
+    def fail_publication(*args: Any) -> None:
+        raise IntegrityError("injected root publication failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(source_catalog_store, "_publish_directory_no_replace_at", fail_publication)
+        with pytest.raises(IntegrityError, match="injected root publication failure"):
+            builder.build((source,))
+
+    assert policy.computed == 2
+    assert not [path for path in root.iterdir() if not path.name.startswith(".")]
+    resumed = builder.build((source,))
+
+    assert policy.calls == 1
+    assert policy.computed == 2
+    assert resumed.summary.item_count == 2
+    assert resumed.summary.disposition_counts["selected"] == 1
+    assert resumed.summary.disposition_counts["unavailable"] == 1
+    assert resumed.summary.reason_counts == (
+        {"disposition": "unavailable", "reasonCode": "source.no-candidate-rendition", "count": 1},
+    )
+    assert resumed.byte_measurements["payloadBytesWritten"] == 0
+    assert resumed.byte_measurements["payloadBytesReused"] > 0
+    assert SourceCatalogArtifactReader(store, producer=producer()).verify_snapshot(resumed.reference) == resumed.summary
+
+    # A new workspace and publication root reuse the blobs and seal the same artifact.
+    rebuilt = SourceCatalogBuilder(
+        store=LocalSourceCatalogStore(tmp_path / "rebuilt", shared_blob_root=root / ".blobs"),
+        policy=FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE),
+        request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
+        workspace_factory=SqliteCatalogPolicyWorkspace,
+    ).build((source,))
+    assert resumed == rebuilt
+
+
 def test_derivation_names_the_engine_that_produced_the_digests(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
