@@ -90,6 +90,16 @@ contributor exercise remain open on the to-do list. The last exercise requires
 actual participant evidence; line counts and this agent's familiarity cannot
 substitute for it.
 
+D6's first extraction separates read-only checkpoint verification into
+`application/execution_checkpoints.py` and shared request/result rules into
+`application/processor_rules.py`. The coordinating service still owns every
+store save and the one cumulative work budget. All 28 original substantive
+methods preserve their statement trees after explicit owner/name substitutions;
+the constructor passes the same dependency objects to the verifier. Focused
+checkpoint, processor-only recovery, retry/cache, budget, policy-security,
+pipeline, result-sink, and recovery-conformance checks: **65 passed**. Processor
+runtime and base-reuse preparation remain to be separated before D6 closes.
+
 Independent static reviews approved the storage/CLI split, portable verifier,
 catalog artifact split and import retirement, and source-policy conversion.
 The reviews led to corrected fault-injection imports, failure-receipt coverage,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Any
 
 from docspec.domain.content import (
@@ -16,7 +16,7 @@ from docspec.domain.content import (
     Segment,
     SourceItem,
 )
-from docspec.domain.identity import canonical_json_bytes, identity_digest, stable_urn
+from docspec.domain.identity import stable_urn
 from docspec.domain.jobs import (
     DocumentEntry,
     DocumentStore,
@@ -36,7 +36,6 @@ from docspec.domain.processors import (
     ProcessorCacheMode,
     ProcessorDescription,
     ProcessorPayload,
-    ProcessorRecordRef,
     ProcessorRequest,
     ProcessorResult,
     ProcessorSet,
@@ -53,22 +52,19 @@ from docspec.ports.processor import Processor
 from docspec.ports.processor_cache import ProcessorResultCache
 from docspec.ports.segmenter import Segmenter
 from docspec.processing.artifacts import RepresentationPayload, SegmentPayload, verify_segment_representation
-from docspec.processing.extraction import ExtractionReceipt, ExtractionResult
+from docspec.processing.extraction import ExtractionResult
 from docspec.processing.segmentation import SegmentationReceipt
 
+from .execution_checkpoints import EntryCheckpointVerifier, VerifiedEntryCheckpoint
+from .processor_rules import (
+    flatten_processor_records,
+    processor_request,
+    projected_segment_byte_size,
+    require_segment_input,
+    validate_processor_result,
+)
 from .store_state import load_latest_store
 from .work_budget import MemoryScope, WorkBudget
-
-
-@dataclass(frozen=True, slots=True)
-class _VerifiedEntryCheckpoint:
-    """Verified durable frontier for one entry; never serialized as a cursor."""
-
-    extraction_complete: bool
-    segmentation_complete: bool
-    completed_processors: tuple[str, ...]
-    processor_results: Mapping[tuple[str, str], tuple[ArtifactRef, ProcessorResult]]
-    processor_invocations: tuple[str, ...]
 
 
 class StoreExecutionService:
@@ -108,6 +104,12 @@ class StoreExecutionService:
         self._processor_cache = processor_cache
         self._sleep = sleep
         self._monotonic = monotonic
+        self._checkpoints = EntryCheckpointVerifier(
+            controls=controls,
+            blobs=blobs,
+            extractor=extractor,
+            retry_policy=retry_policy,
+        )
 
     def execute_store(self, planned_document_store_ref: StoreRef) -> StoreRef:
         plan = self._load_plan()
@@ -116,16 +118,16 @@ class StoreExecutionService:
             raise IntegrityError("document store belongs to another processing plan")
         if store.state == StoreState.SEALED:
             for entry in store.entries:
-                self._verify_terminal_entry(entry, plan)
+                self._checkpoints.verify_terminal_entry(entry, plan)
             if store.delivery_receipt is None:
                 raise IntegrityError("sealed document store has no delivery receipt")
             self._controls.verify(store.delivery_receipt)
             return current_ref
         budget = WorkBudget(plan.limits, monotonic=self._monotonic)
-        verified_checkpoints: dict[str, _VerifiedEntryCheckpoint] = {}
+        verified_checkpoints: dict[str, VerifiedEntryCheckpoint] = {}
         verified_processor_invocations: dict[str, tuple[str, ...]] = {}
         for entry in store.entries:
-            checkpoint = self._verify_entry_checkpoint(entry, plan)
+            checkpoint = self._checkpoints.verify_entry(entry, plan)
             verified_checkpoints[entry.entry_id] = checkpoint
             verified_processor_invocations[entry.entry_id] = checkpoint.processor_invocations
         budget.check_duration()
@@ -143,7 +145,7 @@ class StoreExecutionService:
 
             def checkpoint_entry(partial: DocumentEntry) -> None:
                 nonlocal store, current_ref
-                self._verify_entry_checkpoint(partial, plan)
+                self._checkpoints.verify_entry(partial, plan)
                 entries[index] = partial
                 store = store.checkpoint(tuple(entries))
                 current_ref = self._stores.save(store)
@@ -158,7 +160,7 @@ class StoreExecutionService:
                 verified_checkpoints[entry.entry_id],
                 checkpoint_entry,
             )
-            self._verify_terminal_entry(entries[index], plan)
+            self._checkpoints.verify_terminal_entry(entries[index], plan)
             store = store.checkpoint(tuple(entries))
             current_ref = self._stores.save(store)
         return current_ref
@@ -173,495 +175,6 @@ class StoreExecutionService:
         if plan.base_release is None:
             raise IntegrityError("processor-only reprocessing requires a pinned base release")
         return self._document_catalog.open_reader(plan.base_release)
-
-    def _verify_terminal_entry(
-        self,
-        entry: DocumentEntry,
-        plan: ProcessingPlan,
-    ) -> tuple[str, ...]:
-        """Verify every immutable object and relationship before checkpoint reuse."""
-
-        if not entry.terminal:
-            raise IntegrityError("only a terminal document entry may be reused")
-        return self._verify_entry_checkpoint(entry, plan).processor_invocations
-
-    def _load_stage_receipts(
-        self,
-        entry: DocumentEntry,
-    ) -> tuple[tuple[ArtifactRef, dict[str, Any]], ...]:
-        """Load each closed receipt once and verify its semantic artifact identity."""
-
-        identity_kinds = {
-            "docspec-extraction-receipt": "extraction-receipt",
-            "docspec-segmentation-receipt": "segmentation-receipt",
-            "docspec-processor-attempt-receipt": "processor-attempt-receipt",
-            "docspec-processor-invocation-receipt": "processor-invocation-receipt",
-        }
-        loaded: list[tuple[ArtifactRef, dict[str, Any]]] = []
-        seen: set[ArtifactRef] = set()
-        for reference in entry.stage_receipts:
-            if reference in seen:
-                raise IntegrityError("checkpoint repeats a stage receipt reference")
-            seen.add(reference)
-            value = self._controls.load(reference)
-            receipt_format = value.get("format")
-            identity_kind = identity_kinds.get(receipt_format)
-            if identity_kind is None:
-                raise IntegrityError("checkpoint contains an unknown stage receipt format")
-            if reference.artifact_id != stable_urn(identity_kind, value):
-                raise IntegrityError("stage receipt semantic identity differs from its reference")
-            loaded.append((reference, value))
-        return tuple(loaded)
-
-    def _verify_entry_checkpoint(
-        self,
-        entry: DocumentEntry,
-        plan: ProcessingPlan,
-    ) -> _VerifiedEntryCheckpoint:
-        """Verify a terminal entry or a coarse, restartable processing frontier."""
-
-        if entry.requested_stages != plan.stages and entry.execution_mode is EntryExecutionMode.FULL:
-            raise IntegrityError("document entry stages differ from the processing plan")
-        loaded_receipts = self._load_stage_receipts(entry)
-
-        files = {item.file_id: item for item in entry.captured_files}
-        if len(files) != len(entry.captured_files):
-            raise IntegrityError("checkpoint repeats a captured-file identity")
-        candidates = entry.source_item.candidates
-        captured_candidate_ids = tuple(item.candidate_id for item in entry.captured_files)
-        expected_candidate_ids = tuple(item.candidate_id for item in candidates)
-        if captured_candidate_ids != expected_candidate_ids[: len(captured_candidate_ids)]:
-            raise IntegrityError("checkpoint captured files are not an ordered source-candidate prefix")
-        for captured, candidate in zip(entry.captured_files, candidates, strict=False):
-            if (
-                captured.source_item_id != entry.source_item.item_id
-                or captured.source_version != entry.source_item.version
-                or captured.candidate_id != candidate.candidate_id
-                or captured.media_type != candidate.media_type
-                or captured.transport_version != candidate.transport_version
-                or (candidate.expected_digest is not None and captured.blob.digest != candidate.expected_digest)
-                or (candidate.expected_size is not None and captured.blob.byte_size != candidate.expected_size)
-            ):
-                raise IntegrityError("checkpoint captured file names a different source item")
-            self._blobs.verify(captured.blob)
-
-        representations = {item.representation_id: item for item in entry.representations}
-        if len(representations) != len(entry.representations):
-            raise IntegrityError("checkpoint repeats a representation identity")
-        if tuple(item.file_id for item in entry.representations) != tuple(files)[: len(entry.representations)]:
-            raise IntegrityError("checkpoint representations are not an ordered captured-file prefix")
-        if len(entry.captured_files) - len(entry.representations) not in {0, 1}:
-            raise IntegrityError("checkpoint must stop at a candidate capture or extraction frontier")
-        for representation in entry.representations:
-            captured = files.get(representation.file_id)
-            extractor_registry_id = getattr(self._extractor, "extractor_id", None)
-            if (
-                captured is None
-                or representation.source_item_id != entry.source_item.item_id
-                or representation.file_digest != captured.blob.digest
-                or (
-                    representation.extractor_id not in plan.stages.extractor_ids
-                    and extractor_registry_id not in plan.stages.extractor_ids
-                )
-            ):
-                raise IntegrityError("checkpoint representation has broken source-file lineage")
-            if any(
-                mapping.evidence.end is not None and mapping.evidence.end > captured.blob.byte_size
-                for mapping in representation.evidence_mappings
-            ):
-                raise IntegrityError("checkpoint representation evidence exceeds its captured file")
-            self._blobs.verify(representation.blob)
-
-        extraction_receipts: list[ExtractionReceipt] = []
-        segmentation_receipts: list[SegmentationReceipt] = []
-        for _, raw in loaded_receipts:
-            try:
-                if raw["format"] == "docspec-extraction-receipt":
-                    extraction_receipts.append(ExtractionReceipt.from_dict(raw))
-                elif raw["format"] == "docspec-segmentation-receipt":
-                    segmentation_receipts.append(SegmentationReceipt.from_dict(raw))
-            except (KeyError, TypeError, ValueError) as error:
-                raise IntegrityError(f"checkpoint stage receipt is invalid: {error}") from error
-        if len(extraction_receipts) != len(entry.representations):
-            raise IntegrityError("checkpoint extraction receipts do not cover its representations")
-        for receipt, representation in zip(extraction_receipts, entry.representations, strict=True):
-            captured = files[representation.file_id]
-            if (
-                receipt.file_id != captured.file_id
-                or receipt.input_digest != captured.blob.digest
-                or receipt.representation_id != representation.representation_id
-                or receipt.output_digest != representation.blob.digest
-                or receipt.output_byte_size != representation.blob.byte_size
-                or receipt.kind != representation.kind
-                or receipt.extractor_id != representation.extractor_id
-                or receipt.configuration_digest != representation.configuration_digest
-                or receipt.warnings != representation.warnings
-            ):
-                raise IntegrityError("checkpoint extraction receipt differs from its immutable output")
-        extraction_complete = (
-            len(entry.captured_files) == len(candidates)
-            and len(entry.representations) == len(entry.captured_files)
-        )
-
-        segments = {item.segment_id: item for item in entry.segments}
-        if len(segments) != len(entry.segments):
-            raise IntegrityError("checkpoint repeats a segment identity")
-        for segment in entry.segments:
-            representation = representations.get(segment.representation_id)
-            if (
-                representation is None
-                or segment.source_item_id != entry.source_item.item_id
-                or segment.file_id != representation.file_id
-                or segment.evidence.source_digest != representation.file_digest
-            ):
-                raise IntegrityError("checkpoint segment has broken representation or source lineage")
-            try:
-                expected_evidence = representation.evidence_for_range(
-                    segment.representation_start,
-                    segment.representation_end,
-                )
-            except ValueError as error:
-                raise IntegrityError("checkpoint segment has no reversible representation mapping") from error
-            if segment.evidence != expected_evidence:
-                raise IntegrityError("checkpoint segment evidence differs from its representation mapping")
-            self._blobs.verify(segment.content)
-
-        if tuple(item.representation_id for item in segmentation_receipts) != tuple(representations)[
-            : len(segmentation_receipts)
-        ]:
-            raise IntegrityError("checkpoint segmentation receipts are not an ordered representation prefix")
-        receipted_segment_ids = tuple(
-            segment_id
-            for receipt in segmentation_receipts
-            for segment_id in receipt.segment_ids
-        )
-        if receipted_segment_ids != tuple(segments):
-            raise IntegrityError("checkpoint segmentation receipts differ from its ordered segments")
-        for receipt in segmentation_receipts:
-            if receipt.segmenter_id != plan.stages.segmenter_id:
-                raise IntegrityError("checkpoint segmentation receipt differs from the processing plan")
-            if any(segments[segment_id].representation_id != receipt.representation_id for segment_id in receipt.segment_ids):
-                raise IntegrityError("checkpoint segmentation receipt includes an unrelated segment")
-        segmentation_complete = extraction_complete and len(segmentation_receipts) == len(entry.representations)
-
-        available_inputs = set(segments)
-        for record in entry.derived_records:
-            if record.source_item_id != entry.source_item.item_id or not set(record.input_ids).issubset(available_inputs):
-                raise IntegrityError("checkpoint processor record has unavailable source inputs")
-            available_inputs.add(record.derived_id)
-        processor_results, invocation_ids = self._verify_processor_receipts(
-            entry,
-            plan,
-            segments,
-            loaded_receipts,
-        )
-        expected_nodes = tuple(
-            (description.processor_id, segment_id)
-            for description in plan.processors.execution_order
-            for segment_id in segments
-        )
-        actual_nodes = tuple(processor_results)
-        if (
-            entry.execution_mode is EntryExecutionMode.FULL
-            and actual_nodes != expected_nodes[: len(actual_nodes)]
-        ):
-            raise IntegrityError("checkpoint processor results are not an ordered graph prefix")
-        completed_processors: list[str] = []
-        if segmentation_complete:
-            for description in plan.processors.execution_order:
-                expected = {(description.processor_id, segment_id) for segment_id in segments}
-                actual = expected.intersection(processor_results)
-                if actual == expected:
-                    completed_processors.append(description.processor_id)
-                elif entry.execution_mode is EntryExecutionMode.FULL:
-                    break
-
-        has_segmentation_progress = bool(entry.segments or segmentation_receipts)
-        has_processor_progress = any(
-            raw["format"].startswith("docspec-processor-") for _, raw in loaded_receipts
-        )
-        if has_processor_progress and not segmentation_complete:
-            raise IntegrityError("checkpoint has processor work before segmentation completes")
-        if not entry.terminal:
-            if has_segmentation_progress and not segmentation_complete:
-                raise IntegrityError("nonterminal checkpoint stops inside segmentation")
-            if entry.execution_mode is EntryExecutionMode.FULL:
-                completed_node_count = len(completed_processors) * len(segments)
-                if len(actual_nodes) != completed_node_count:
-                    raise IntegrityError("nonterminal checkpoint stops inside a processor layer")
-            elif has_processor_progress:
-                requested = entry.requested_stages.processor_ids
-                completed_requested = tuple(
-                    identifier for identifier in requested if identifier in completed_processors
-                )
-                if completed_requested != requested[: len(completed_requested)]:
-                    raise IntegrityError("processor-only checkpoint is not a requested-layer prefix")
-                completed_ids = (
-                    set(plan.stages.processor_ids).difference(requested)
-                    | set(completed_requested)
-                )
-                expected_completed_nodes = {
-                    (processor_id, segment_id)
-                    for processor_id in completed_ids
-                    for segment_id in segments
-                }
-                if set(actual_nodes) != expected_completed_nodes:
-                    raise IntegrityError("processor-only checkpoint stops inside a requested processor layer")
-            result_request_ids = {
-                raw["request"]["requestId"]
-                for _, raw in loaded_receipts
-                if raw["format"] == "docspec-processor-invocation-receipt"
-            }
-            for _, raw in loaded_receipts:
-                if (
-                    raw["format"] == "docspec-processor-attempt-receipt"
-                    and raw["requestId"] not in result_request_ids
-                ):
-                    raise IntegrityError("nonterminal checkpoint contains an incomplete processor attempt")
-
-        if entry.disposition is AcquisitionDisposition.CAPTURED:
-            processor_complete = (
-                actual_nodes == expected_nodes
-                if entry.execution_mode is EntryExecutionMode.FULL
-                else set(actual_nodes) == set(expected_nodes)
-            )
-            if not extraction_complete or not segmentation_complete or not processor_complete:
-                raise IntegrityError("captured entry does not cover every planned processing stage")
-        elif entry.disposition in {
-            AcquisitionDisposition.UNCHANGED,
-            AcquisitionDisposition.DELETED,
-            AcquisitionDisposition.EXCLUDED,
-        } and (
-            entry.captured_files
-            or entry.representations
-            or entry.segments
-            or entry.derived_records
-            or entry.stage_receipts
-        ):
-            raise IntegrityError("metadata-only terminal entry unexpectedly contains processing output")
-
-        checkpoint_invocations = invocation_ids
-        if entry.execution_mode is EntryExecutionMode.PROCESSORS_ONLY:
-            requested_processors = set(entry.requested_stages.processor_ids)
-            checkpoint_invocations = tuple(
-                sorted(
-                    {
-                        (
-                            raw["invocationId"]
-                            if raw["format"] == "docspec-processor-attempt-receipt"
-                            else raw["request"]["invocationId"]
-                        )
-                        for _, raw in loaded_receipts
-                        if raw["format"].startswith("docspec-processor-")
-                        and raw["processorId"] in requested_processors
-                    }
-                )
-            )
-
-        return _VerifiedEntryCheckpoint(
-            extraction_complete,
-            segmentation_complete,
-            tuple(completed_processors),
-            processor_results,
-            checkpoint_invocations,
-        )
-
-    def _verify_processor_receipts(
-        self,
-        entry: DocumentEntry,
-        plan: ProcessingPlan,
-        segments: Mapping[str, Segment],
-        loaded_receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...] | None = None,
-    ) -> tuple[
-        dict[tuple[str, str], tuple[ArtifactRef, ProcessorResult]],
-        tuple[str, ...],
-    ]:
-        """Verify one entry's complete processor subgraph without reading bulk bytes."""
-
-        derived_by_id = {record.derived_id: record for record in entry.derived_records}
-        if len(derived_by_id) != len(entry.derived_records):
-            raise IntegrityError("entry repeats a processor-derived record identity")
-        receipted_derived_ids: set[str] = set()
-        invocation_ids: set[str] = set()
-        processor_results: dict[tuple[str, str], tuple[ArtifactRef, ProcessorResult]] = {}
-        processor_attempts: dict[tuple[str, str, str], dict[int, str]] = {}
-        settled_attempt_keys: set[tuple[str, str, str]] = set()
-        descriptions = {item.processor_id: item for item in plan.processors.execution_order}
-        allowed_fields = self._allowed_processor_fields(plan)
-        receipts = loaded_receipts if loaded_receipts is not None else self._load_stage_receipts(entry)
-        for _, receipt in receipts:
-            receipt_format = receipt.get("format")
-            if receipt_format == "docspec-processor-attempt-receipt":
-                expected_attempt = {
-                    "format",
-                    "formatVersion",
-                    "processorId",
-                    "segmentId",
-                    "requestId",
-                    "invocationId",
-                    "attempt",
-                    "outcome",
-                    "elapsedMilliseconds",
-                    "failure",
-                }
-                processor_id = receipt.get("processorId")
-                segment_id = receipt.get("segmentId")
-                request_id = receipt.get("requestId")
-                invocation_id = receipt.get("invocationId")
-                attempt = receipt.get("attempt")
-                outcome = receipt.get("outcome")
-                elapsed = receipt.get("elapsedMilliseconds")
-                if (
-                    set(receipt) != expected_attempt
-                    or receipt.get("formatVersion") != "1.0"
-                    or not all(
-                        isinstance(value, str) and value
-                        for value in (processor_id, segment_id, request_id, invocation_id)
-                    )
-                    or processor_id not in descriptions
-                    or segment_id not in segments
-                    or type(attempt) is not int
-                    or not 1 <= attempt <= self._retry_policy.max_attempts
-                    or outcome not in {"failed", "succeeded"}
-                    or type(elapsed) is not int
-                    or elapsed < 0
-                    or invocation_id
-                    != WorkBudget.processor_invocation_id(
-                        entry.entry_id,
-                        processor_id,
-                        (segment_id,),
-                    )
-                ):
-                    raise IntegrityError("processor attempt receipt has an invalid closed shape or identity")
-                if outcome == "failed":
-                    try:
-                        failure = FailureRecord.from_dict(receipt["failure"])
-                    except (TypeError, ValueError) as error:
-                        raise IntegrityError("processor attempt receipt has an invalid failure") from error
-                    if failure.attempt != attempt:
-                        raise IntegrityError("processor attempt failure names a different attempt")
-                elif receipt["failure"] is not None:
-                    raise IntegrityError("successful processor attempt receipt contains a failure")
-                attempt_key = (processor_id, segment_id, request_id)
-                attempts = processor_attempts.setdefault(attempt_key, {})
-                if attempt in attempts:
-                    raise IntegrityError("entry repeats a processor attempt")
-                attempts[attempt] = outcome
-                invocation_ids.add(invocation_id)
-                continue
-            if receipt_format != "docspec-processor-invocation-receipt":
-                continue
-            expected = {
-                "format",
-                "formatVersion",
-                "processorId",
-                "segmentId",
-                "request",
-                "result",
-                "cacheDisposition",
-            }
-            if (
-                set(receipt) != expected
-                or receipt["formatVersion"] != "1.0"
-                or receipt["cacheDisposition"]
-                not in {"hit", "miss", "bypassed", "invalid", "unavailable", "reused-base"}
-            ):
-                raise IntegrityError("processor invocation receipt has an invalid closed shape")
-            try:
-                request = ProcessorRequest.from_dict(receipt["request"])
-                result_ref = ArtifactRef.from_dict(receipt["result"])
-                result = ProcessorResult.from_dict(self._controls.load(result_ref))
-            except (TypeError, ValueError) as error:
-                raise IntegrityError(f"processor invocation receipt is invalid: {error}") from error
-            processor_id = receipt["processorId"]
-            segment_id = receipt["segmentId"]
-            if not isinstance(processor_id, str) or not isinstance(segment_id, str):
-                raise IntegrityError("processor invocation receipt identities must be strings")
-            description = descriptions.get(processor_id)
-            segment = segments.get(segment_id)
-            key = (processor_id, segment_id)
-            if description is None or key in processor_results:
-                raise IntegrityError("processor invocation receipt names an unknown or repeated graph node")
-            prerequisite_pairs: list[tuple[ArtifactRef, ProcessorResult]] = []
-            for dependency in description.dependencies:
-                pair = processor_results.get((dependency, segment_id))
-                if pair is None:
-                    raise IntegrityError("processor invocation receipt is missing a prerequisite result")
-                prerequisite_pairs.append(pair)
-            expected_invocation_id = WorkBudget.processor_invocation_id(
-                entry.entry_id,
-                processor_id,
-                (segment_id,),
-            )
-            if (
-                request.processor_id != processor_id
-                or request.processor_description_digest != identity_digest(description.to_dict())
-                or request.source_item_id != entry.source_item.item_id
-                or segment is None
-                or request.input_records
-                != (ProcessorRecordRef.for_segment(segment),)
-                or request.prerequisite_results
-                != tuple(reference for reference, _ in prerequisite_pairs)
-                or request.allowed_fields != allowed_fields
-                or request.item_limits != description.item_limits
-                or request.cache_key_schema_id
-                != (description.cache_policy.key_schema_id or "docspec-cache-disabled/1")
-                or request.invocation_id != expected_invocation_id
-                or result.result_id != result_ref.artifact_id
-                or result.reuse_key != request.reuse_key
-            ):
-                raise IntegrityError("processor invocation receipt differs from its entry or result")
-            invocation_ids.add(request.invocation_id)
-            self._validate_processor_result(
-                result,
-                request,
-                description,
-                segment,
-                self._projected_segment_byte_size(segment, request.allowed_fields),
-                tuple(value for _, value in prerequisite_pairs),
-                data_use_policy=plan.data_use_policy,
-                require_current_request=False,
-            )
-            processor_results[key] = (result_ref, result)
-            attempt_key = (processor_id, segment_id, request.request_id)
-            settled_attempt_keys.add(attempt_key)
-            attempts = processor_attempts.get(attempt_key, {})
-            if receipt["cacheDisposition"] == "reused-base" and attempts:
-                raise IntegrityError("base-reused processor result contains local attempt receipts")
-            if attempts and attempts[max(attempts)] != "succeeded":
-                raise IntegrityError("processor result follows an unsuccessful final attempt")
-            if receipt["cacheDisposition"] in {"miss", "bypassed", "invalid", "unavailable"}:
-                if not attempts:
-                    raise IntegrityError("executed processor result lacks a successful attempt receipt")
-            for record in result.derived_records:
-                if derived_by_id.get(record.derived_id) != record:
-                    raise IntegrityError("processor invocation result differs from the entry derived records")
-                if record.derived_id in receipted_derived_ids:
-                    raise IntegrityError("entry repeats a processor-derived result across receipts")
-                receipted_derived_ids.add(record.derived_id)
-        for key, attempts in processor_attempts.items():
-            ordered = sorted(attempts)
-            if ordered != list(range(1, len(ordered) + 1)):
-                raise IntegrityError("processor attempt receipts are not a contiguous retry sequence")
-            if any(attempts[number] == "succeeded" for number in ordered[:-1]):
-                raise IntegrityError("processor attempt sequence continued after success")
-            if key not in settled_attempt_keys and (
-                entry.disposition
-                not in {AcquisitionDisposition.ACCEPTED_FAILURE, AcquisitionDisposition.REJECTED_RUN}
-                or attempts[ordered[-1]] != "failed"
-            ):
-                raise IntegrityError("processor attempt receipt is not settled by a result or terminal failure")
-        if receipted_derived_ids != set(derived_by_id):
-            raise IntegrityError("entry derived records are not covered by exact processor results")
-        if entry.disposition is AcquisitionDisposition.CAPTURED:
-            expected_nodes = {
-                (description.processor_id, segment_id)
-                for description in plan.processors.execution_order
-                for segment_id in segments
-            }
-            if set(processor_results) != expected_nodes:
-                raise IntegrityError("captured entry does not cover the complete processor graph")
-        return processor_results, tuple(sorted(invocation_ids))
 
     def _load_plan(self) -> ProcessingPlan:
         self._controls.verify(self._plan_ref)
@@ -708,7 +221,7 @@ class StoreExecutionService:
         store_attempt_id: str,
         budget: WorkBudget,
         base_reader: DocumentCatalogReader | None,
-        checkpoint: _VerifiedEntryCheckpoint,
+        checkpoint: VerifiedEntryCheckpoint,
         checkpoint_entry: Callable[[DocumentEntry], None],
     ) -> DocumentEntry:
         if entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY:
@@ -738,7 +251,7 @@ class StoreExecutionService:
                     records.extend(pair[1].derived_records)
             if records or description.processor_id in checkpoint.completed_processors:
                 derived_by_processor[description.processor_id] = records
-        if self._flatten_processor_records(plan, derived_by_processor) != entry.derived_records:
+        if flatten_processor_records(plan, derived_by_processor) != entry.derived_records:
             raise IntegrityError("verified processor results differ from checkpoint records")
         failures = list(entry.failures)
         receipt_refs = list(entry.stage_receipts)
@@ -749,7 +262,7 @@ class StoreExecutionService:
                 captured_files=tuple(captured),
                 representations=tuple(representations),
                 segments=tuple(segments),
-                derived_records=self._flatten_processor_records(plan, derived_by_processor),
+                derived_records=flatten_processor_records(plan, derived_by_processor),
                 failures=tuple(failures),
                 stage_receipts=tuple(receipt_refs),
             )
@@ -914,33 +427,6 @@ class StoreExecutionService:
                 disposition=AcquisitionDisposition.CAPTURED,
             )
 
-    @staticmethod
-    def _flatten_processor_records(
-        plan: ProcessingPlan,
-        records: Mapping[str, list[DerivedRecord]],
-    ) -> tuple[DerivedRecord, ...]:
-        return tuple(
-            record
-            for description in plan.processors.execution_order
-            for record in sorted(
-                records.get(description.processor_id, ()),
-                key=lambda item: item.derived_id,
-            )
-        )
-
-    @staticmethod
-    def _allowed_processor_fields(plan: ProcessingPlan) -> tuple[str, ...]:
-        return plan.data_use_policy.allowed_fields
-
-    @staticmethod
-    def _projected_segment_byte_size(
-        segment: Segment,
-        allowed_fields: tuple[str, ...],
-    ) -> int:
-        """Account for the same projected content bytes during execution and replay."""
-
-        return segment.content.byte_size if "content" in allowed_fields else 0
-
     def _run_processor_graph(
         self,
         entry: DocumentEntry,
@@ -956,7 +442,7 @@ class StoreExecutionService:
             processor = self._processor(identifier)
             records = derived_by_processor.setdefault(identifier, [])
             for segment in segments:
-                self._require_segment_input(processor.description, segment)
+                require_segment_input(processor.description, segment)
                 segment_id = segment.segment.segment_id
                 prerequisite_pairs = []
                 for dependency in processor.description.dependencies:
@@ -971,7 +457,8 @@ class StoreExecutionService:
                     identifier,
                     (segment_id,),
                 )
-                request = self._processor_request(
+                request = processor_request(
+                    self._plan_ref,
                     entry,
                     plan,
                     processor.description,
@@ -1015,53 +502,6 @@ class StoreExecutionService:
                         },
                     )
                 )
-
-    def _processor_request(
-        self,
-        entry: DocumentEntry,
-        plan: ProcessingPlan,
-        description: ProcessorDescription,
-        segment: Segment,
-        prerequisites: tuple[ArtifactRef, ...],
-        invocation_id: str,
-    ) -> ProcessorRequest:
-        return ProcessorRequest(
-            self._plan_ref,
-            description.processor_id,
-            identity_digest(description.to_dict()),
-            entry.source_item.item_id,
-            (ProcessorRecordRef.for_segment(segment),),
-            prerequisites,
-            self._allowed_processor_fields(plan),
-            description.item_limits,
-            description.cache_policy.key_schema_id or "docspec-cache-disabled/1",
-            invocation_id,
-        )
-
-    @staticmethod
-    def _require_segment_input(
-        description: ProcessorDescription,
-        segment: SegmentPayload,
-    ) -> None:
-        declaration = next(
-            (item for item in description.accepted_inputs if item.record_kind == "segment"),
-            None,
-        )
-        if declaration is None or "docspec-segment/1" not in declaration.schema_ids:
-            raise IntegrityError(
-                f"processor {description.processor_id} does not accept docspec-segment/1 inputs"
-            )
-        actual = segment.segment.content.media_type
-        accepted = any(
-            pattern == "*/*"
-            or pattern == actual
-            or (pattern.endswith("/*") and actual.startswith(pattern[:-1]))
-            for pattern in declaration.media_types
-        )
-        if not accepted:
-            raise IntegrityError(
-                f"processor {description.processor_id} does not accept segment media type {actual}"
-            )
 
     def _invoke_processor(
         self,
@@ -1121,7 +561,7 @@ class StoreExecutionService:
                     raise IntegrityError("processor monotonic clock moved backwards")
                 if elapsed_seconds > description.item_limits.max_duration_seconds:
                     raise LimitExceededError("processor execution exceeds its declared item duration limit")
-                self._validate_processor_result(
+                validate_processor_result(
                     candidate,
                     request,
                     description,
@@ -1242,7 +682,7 @@ class StoreExecutionService:
         data_use_policy: DataUsePolicy,
     ) -> ProcessorResult:
         cached = ProcessorResult.from_dict(self._controls.load(reference))
-        self._validate_processor_result(
+        validate_processor_result(
             cached,
             request,
             description,
@@ -1259,84 +699,6 @@ class StoreExecutionService:
         if cached.result_id != reference.artifact_id:
             raise IntegrityError("cached processor-result identity differs from its reference")
         return cached
-
-    @staticmethod
-    def _validate_processor_result(
-        result: ProcessorResult,
-        request: ProcessorRequest,
-        description: ProcessorDescription,
-        segment: Segment,
-        segment_byte_size: int,
-        prerequisites: tuple[ProcessorResult, ...],
-        *,
-        data_use_policy: DataUsePolicy,
-        require_current_request: bool,
-    ) -> None:
-        if not isinstance(result, ProcessorResult):
-            raise IntegrityError("processor returned a non-DocSpec ProcessorResult")
-        if result.reuse_key != request.reuse_key or (
-            require_current_request and result.request_id != request.request_id
-        ):
-            raise IntegrityError("processor result differs from its request identity")
-        if result.output_media_type not in description.output_media_types:
-            raise IntegrityError("processor result media type is not declared by its description")
-        if result.resource_identities != description.external_resources:
-            raise IntegrityError("processor result resources differ from its description")
-        try:
-            external_processing = (
-                description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
-            )
-            data_use_policy.require_provider_evidence(
-                result.provider_evidence,
-                external=external_processing,
-            )
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"processor provider evidence differs from its data-use policy: {error}") from error
-        if external_processing != (result.resource_use.external_request_count > 0):
-            raise IntegrityError("processor external-request count differs from its declared execution scope")
-        expected_inputs = (
-            segment.segment_id,
-            *(record.derived_id for prerequisite in prerequisites for record in prerequisite.derived_records),
-        )
-        receipt = result.provider_receipt
-        if (
-            receipt["requestId"] != result.request_id
-            or receipt["reuseKey"] != result.reuse_key
-            or receipt["processorId"] != description.processor_id
-            or receipt["processorDescriptionDigest"] != identity_digest(description.to_dict())
-            or tuple(receipt["inputIds"]) != expected_inputs
-            or receipt["outputSchemaId"] != description.output_schema_id
-            or receipt["outputMediaType"] != result.output_media_type
-            or receipt["configurationDigest"] != description.configuration_digest
-            or receipt["dataUsePolicyDigest"] != description.data_use_policy_digest
-            or receipt["retryPolicyDigest"] != description.retry_policy_digest
-        ):
-            raise IntegrityError("processor provider receipt differs from its request or description")
-        if len(result.derived_records) > request.item_limits.max_output_records:
-            raise LimitExceededError("processor result exceeds its output-record limit")
-        output_bytes = sum(len(canonical_json_bytes(record.value)) for record in result.derived_records)
-        if output_bytes > request.item_limits.max_output_bytes:
-            raise LimitExceededError("processor result exceeds its output-byte limit")
-        input_bytes = segment_byte_size + sum(
-            len(canonical_json_bytes(prerequisite.to_dict())) for prerequisite in prerequisites
-        )
-        if input_bytes > request.item_limits.max_input_bytes:
-            raise LimitExceededError("processor request exceeds its input-byte limit")
-        if 1 + len(prerequisites) > request.item_limits.max_input_records:
-            raise LimitExceededError("processor request exceeds its input-record limit")
-        if result.resource_use.input_bytes != input_bytes or result.resource_use.output_bytes != output_bytes:
-            raise IntegrityError("processor resource use differs from its verified inputs or outputs")
-        if result.resource_use.duration_milliseconds > request.item_limits.max_duration_seconds * 1000:
-            raise LimitExceededError("processor result exceeds its duration limit")
-        for record in result.derived_records:
-            if (
-                record.processor_id != description.processor_id
-                or record.source_item_id != request.source_item_id
-                or record.schema_id != description.output_schema_id
-                or record.input_ids != expected_inputs
-                or record.disposition is not result.disposition
-            ):
-                raise IntegrityError("processor derived record differs from its request or result")
 
     @staticmethod
     def _base_payloads(
@@ -1359,7 +721,7 @@ class StoreExecutionService:
         plan: ProcessingPlan,
         budget: WorkBudget,
         reader: DocumentCatalogReader,
-        checkpoint: _VerifiedEntryCheckpoint,
+        checkpoint: VerifiedEntryCheckpoint,
         checkpoint_entry: Callable[[DocumentEntry], None],
     ) -> DocumentEntry:
         """Reuse exact base content and run only the invalid processor subgraph."""
@@ -1497,7 +859,8 @@ class StoreExecutionService:
                         if pair is None:
                             raise IntegrityError("base processor result is missing a prerequisite result")
                         prerequisite_pairs.append(pair)
-                    request = self._processor_request(
+                    request = processor_request(
+                        self._plan_ref,
                         entry,
                         plan,
                         description,
@@ -1509,12 +872,12 @@ class StoreExecutionService:
                             (segment.segment_id,),
                         ),
                     )
-                    self._validate_processor_result(
+                    validate_processor_result(
                         result,
                         request,
                         description,
                         segment,
-                        self._projected_segment_byte_size(segment, request.allowed_fields),
+                        projected_segment_byte_size(segment, request.allowed_fields),
                         tuple(value for _, value in prerequisite_pairs),
                         data_use_policy=plan.data_use_policy,
                         require_current_request=False,
@@ -1548,11 +911,11 @@ class StoreExecutionService:
                 captured_files=captured,
                 representations=representations,
                 segments=segments,
-                derived_records=self._flatten_processor_records(plan, derived_by_processor),
+                derived_records=flatten_processor_records(plan, derived_by_processor),
                 stage_receipts=tuple(receipt_refs),
                 warnings=warnings,
             )
-            result_by_processor_segment, _ = self._verify_processor_receipts(
+            result_by_processor_segment, _ = self._checkpoints.verify_processor_receipts(
                 base_entry,
                 plan,
                 segments_by_id,
@@ -1581,7 +944,7 @@ class StoreExecutionService:
                             records.extend(pair[1].derived_records)
                     if records or description.processor_id in checkpoint.completed_processors:
                         derived_by_processor[description.processor_id] = records
-                checkpoint_records = self._flatten_processor_records(plan, derived_by_processor)
+                checkpoint_records = flatten_processor_records(plan, derived_by_processor)
                 if checkpoint_records != entry.derived_records:
                     raise IntegrityError("processor-only checkpoint records differ from its exact results")
         except (TypeError, ValueError) as error:
@@ -1595,7 +958,7 @@ class StoreExecutionService:
                 captured_files=captured,
                 representations=representations,
                 segments=segments,
-                derived_records=self._flatten_processor_records(plan, derived_by_processor),
+                derived_records=flatten_processor_records(plan, derived_by_processor),
                 failures=tuple(failures),
                 stage_receipts=tuple(receipt_refs),
                 warnings=warnings,
@@ -1647,7 +1010,7 @@ class StoreExecutionService:
                 current_entry(),
                 disposition=AcquisitionDisposition.CAPTURED,
             )
-            self._verify_terminal_entry(completed, plan)
+            self._checkpoints.verify_terminal_entry(completed, plan)
             return completed
 
     def _capture_candidate(

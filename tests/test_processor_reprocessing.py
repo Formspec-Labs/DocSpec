@@ -13,7 +13,7 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage,
     LocalManifestDocumentCatalog,
 )
-from docspec.application.execution import StoreExecutionService
+from docspec.application.processor_rules import validate_processor_result
 from docspec.domain.content import SourceItem
 from docspec.domain.identity import identity_digest
 from docspec.domain.jobs import ChangeKind, EntryExecutionMode
@@ -73,7 +73,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
     request = segment_processor_request(processor, segment)
     result = processor.process(request, processor_payload(segment), ())
 
-    StoreExecutionService._validate_processor_result(
+    validate_processor_result(
         result,
         request,
         processor.description,
@@ -84,7 +84,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
         require_current_request=True,
     )
     with pytest.raises(IntegrityError, match="media type"):
-        StoreExecutionService._validate_processor_result(
+        validate_processor_result(
             replace(result, output_media_type="application/json"),
             request,
             processor.description,
@@ -95,7 +95,7 @@ def test_processor_result_must_report_declared_media_and_resources() -> None:
             require_current_request=True,
         )
     with pytest.raises(IntegrityError, match="resources"):
-        StoreExecutionService._validate_processor_result(
+        validate_processor_result(
             replace(result, resource_identities=()),
             request,
             processor.description,

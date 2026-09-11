@@ -61,6 +61,16 @@ See [application services](../src/docspec/application/),
 [recovery tests](../tests/test_stage_checkpoint_recovery.py), and
 [task portability tests](../tests/test_execution_backends.py).
 
+The executor delegates retained-artifact checks to
+[`EntryCheckpointVerifier`](../src/docspec/application/execution_checkpoints.py).
+It reads the same controls, blobs, extractor identity, and retry policy, then
+returns the completed frontier and verified processor results. Store writes and
+the cumulative work budget stay in `StoreExecutionService`: verify every entry,
+check duration, restore accounting, then start and save the attempt.
+[`processor_rules`](../src/docspec/application/processor_rules.py) owns request
+construction, permitted-input sizing, result validation, and record ordering
+for execution and reuse.
+
 ## What comes out?
 
 There are two release representations in the current code. **Both advertise

@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from docspec.application.execution import StoreExecutionService
+from docspec.application.processor_rules import projected_segment_byte_size, validate_processor_result
 from docspec.domain.policies import (
     DataUsePolicy,
     ProcessorExecutionScope,
@@ -104,7 +104,7 @@ def test_processor_payload_contains_only_policy_selected_fields() -> None:
     )
     assert metadata_payload.input_byte_size == 0
     assert (
-        StoreExecutionService._projected_segment_byte_size(
+        projected_segment_byte_size(
             segment.segment,
             metadata_only.allowed_fields,
         )
@@ -152,7 +152,7 @@ def test_external_request_accounting_matches_the_declared_execution_scope() -> N
     )
 
     with pytest.raises(IntegrityError, match="external-request count"):
-        StoreExecutionService._validate_processor_result(
+        validate_processor_result(
             replace(
                 result,
                 resource_use=ProcessorResourceUse(
