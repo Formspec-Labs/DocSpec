@@ -35,6 +35,12 @@ splits or documentation consolidation without a new, concrete problem.
   inputs now. D41–D46 identify reusable source capabilities and later handoffs;
   moving code or choosing a repository is not a prerequisite for DocSpec's
   experiment workflow.
+- **Expose DocSpec's dataset capabilities through its own wheel.** Source and
+  experiment tools can replace their dataset loops with supported DocSpec APIs.
+  Connect the two products in an optional integration or experiment caller;
+  independent source code must not depend on DocSpec. Separate modules alone do
+  not prevent a circular package dependency. Coordinate both wheel directions
+  with SpicyDocs S31 and the dependency map below.
 - **Support useful stopping points.** A catalog, captured documents, and a
   processing attempt can each be useful outputs. Export is optional. Every
   experiment need not end in a searchable release.
@@ -118,12 +124,15 @@ to defer a conditional item is a documented deferral, not completed implementati
 ## 2. Build catalogs and acquire inputs through clear interfaces
 
 - [ ] **D06 · P0 · Support provider inputs and caller-supplied records.** Make the
-  source interface usable for SpicyDocs today, a future SpicyRegs provider, another
-  source, and bounded local records. Define the required source identity and
+  source interface usable for SpicyDocs, SpicyRegs-derived data, another source,
+  and bounded local records. Define the required source identity and
   provenance for supplied records without inventing acquisition evidence.
   **Done when:** one provider example and one local-record example build catalogs
   through public interfaces without private imports or sibling checkouts. Reuse
-  [source ports](../src/docspec/ports/source_catalog.py).
+  [source ports](../src/docspec/ports/source_catalog.py). SpicyDocs S17/S18 track
+  the specific GAO-topic and retained public-comment-table examples; they extend
+  this interface without requiring a provider package move or blocking the
+  initial local example.
 
 - [ ] **D07 · P0 · Make catalog iteration and selection inspectable.** Expose
   previewable additions, changes, exclusions, selected candidates, and reasons
@@ -321,12 +330,18 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 - [ ] **D28 · P1 · Resolve canonical encoding before sharing identity code.**
   Compare DocSpec's arbitrary-integer and Unicode ordering rules with Rulespec's
-  safe-integer and UTF-16 ordering rules. Choose a common representation only
-  with explicit data and identity consequences. **Done when:** fixtures cover
-  large integers and differing Unicode key orders, source values survive
-  exactly, and any changed IDs/schema pins have current producer-consumer tests.
-  Otherwise retain narrowly documented distinct encoders. An identical function
-  name is insufficient evidence of equivalent behavior. See
+  safe-integer and UTF-16 ordering rules. Make one decision with SpicyDocs S30:
+  establish values required by supported sources/processors, then choose an
+  exact shared representation and one emission implementation. Start with
+  Rulespec's supported rules; an optimization test alone does not establish a
+  need to widen them. Preserve DocSpec's useful domain conversion and validation.
+  **Done when:** shared fixtures cover number boundaries, Unicode key ordering,
+  duplicate keys, and domain conversion; required source values survive exactly;
+  current producers/consumers agree on changed identities and schema pins; and
+  the replaced emitter is removed without a compatibility mode. Do not round
+  values or indiscriminately stringify them. If required value domains prevent
+  convergence, record the evidence and defer the shared-emitter change in both
+  lists; retaining separate encoders does not complete it. See
   [identity](../src/docspec/domain/identity.py).
 
 - [ ] **D29 · P1 · Provide public document-result admission and reading.** Expose
@@ -356,6 +371,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   where that reduces total code, or a documented reason to remain separate.
   Avoid a new shared package without a demonstrated saving. Defer changes whose
   only value is the future SpicyRegs move; coordinates with SpicyDocs S14/S22.
+  Keep dataset capture and transactions in DocSpec. Choose the shared physical
+  writer's owner around independent source callers, using suitable existing
+  primitives where possible; do not make provider storage depend on DocSpec's
+  lifecycle solely to share a writer. Record justified deferrals in both lists.
   Include the compiled schema-gate mechanics shared with SpicySearch. Reuse
   generic validation without merging product-specific schemas or error meaning;
   D47 handles the search/engine dataset definitions separately.
@@ -456,6 +475,14 @@ package integration while retaining DocSpec's own catalog/experiment assertions.
 Success means fewer implementations and fewer places to update the same rule;
 renaming packages or moving unchanged duplication does not achieve it.
 
+Wheel reuse works in both directions at the application boundary. The independent
+provider package uses shared primitives and remains usable without DocSpec. An
+optional DocSpec integration or a separate experiment caller uses both packages'
+public APIs and injects source operations and fetchers. That caller can replace
+dataset-specific source-tool loops through DocSpec's wheel (SpicyDocs S31).
+Check declared package dependencies as well as imports before choosing where the
+caller lives; moving imports between modules does not remove a package cycle.
+
 | Responsibility | Intended owner and how DocSpec uses it |
 | --- | --- |
 | Publisher clients, enumeration, pagination, source record identity, literal field meaning, and discovery coverage | Source provider. DocSpec calls public source operations or reads their retained output. Current implementations include SpicyDocs `sources/` and SpicyRegs `sources/`; assess overlap before choosing one. |
@@ -512,6 +539,10 @@ renaming packages or moving unchanged duplication does not achieve it.
   sibling paths or undeclared extras; core DocSpec still works without the provider.
   Record wheel identity separately from source dataset/artifact pins. Review the
   chosen provider's actual packaging instead of trusting an old `dist/` file.
+  Coordinate S31's consumption of the DocSpec wheel: qualify both directions
+  through the composition boundary above, with independent source-only and core
+  DocSpec installs. D04/D09/D11/D13/D19/D21/D29 supply the selected public APIs;
+  do not create a second API inventory or require every optional stage at once.
 
 - [ ] **D46 · P1 · Prove the wheel handoff, then remove replaced code.** Run a
   small captured-source fixture through the installed provider and DocSpec:
@@ -609,13 +640,41 @@ minimum task adaptation needed before campaign consolidation. The final review
 found no material scope mistakes. This validates the plan's reasoning, not its
 unimplemented behavior.
 
-The SpicyDocs coordination IDs refer to its 2026-09-11
-`spicy-docs-simplification-todo.md` (reviewed producer revision `605acb4`). They
-identify dependencies, not completed work or agreement from that task's owner.
-Its source-side failure replay, refused-response retention, discovery coverage,
-GAO handoff, and optional raw/table outputs remain in that product's backlog.
-DocSpec carries relevant outcomes and consumes a demonstrated source interface;
-it does not take ownership of every acquisition repair.
+The canonical source checklist is `spicy-docs/docs/simplification-todo.md`,
+reviewed at planning revision `5f04771` for this September 11 sync. The earlier
+session file is historical. A solutions architect independently compared that
+checklist with DocSpec `da5e227`; this sync reconciles package choice, both wheel
+directions, storage ownership, encoding, and the optional search extension.
+It records plan agreement, not implementation or runtime validation.
+
+The mapping below appears in both checklists. D items detail DocSpec work; S
+items retain source work and cross-product acceptance. These are linked work,
+not duplicate implementations or blanket blocking dependencies. Completing one
+item closes a mapped item only when its own acceptance criteria are also met.
+
+| SpicyDocs items | DocSpec items | Coordination and implementation lead |
+| --- | --- | --- |
+| S01–S02, S09 | D08, D43 | Source owner exposes outcomes and coverage; DocSpec carries them and selects partial-input policy. |
+| S03, S06–S08, S10 | D08, D23, D43 | Source owner fixes replay, reporting, retained refusals, and discovery; DocSpec consumes relevant facts, with distinct count units. |
+| S04 | D01, D36 | Each product documents its actual behavior and useful stopping points. |
+| S05, S23 | D10, D27–D29, D36–D37, D45–D46 | Qualify current formats and installed packages; share applicable evidence, not unrun completion claims. |
+| S11–S16, S25 | D30–D35, D41–D42 | Inventory real callers and repeated work; keep package placement open and remove copies after selected replacements work. |
+| S17–S18 | D06–D08, D38, D43, D46 | Source owners and DocSpec prove GAO-topic and captured-comment examples; source-only use remains independent. |
+| S19, S26 | D04, D06–D07, D11–D12, D44 | DocSpec accepts independent inputs/fetchers; providers retain publisher routes and identity checks. |
+| S20 | D20–D21, D23 | DocSpec and executor owners agree bounded retries, interruption, and cumulative accounting. |
+| S21 | D22 | Replace the selected experiment campaign only; independently useful source publishing remains separate. |
+| S22 | D31, D41 | Decide one useful physical writer with its callers; DocSpec owns dataset capture and transactions. |
+| S24 | D38–D40 | Reuse independent review and workflow evidence; simulated personas do not complete D40's human exercise. |
+| S27 | D07, D13–D19, D38 | DocSpec exposes processing, dataset growth, dependency-aware reuse, and comparison. |
+| S28 | D02–D04, D19–D21, D32 | DocSpec simplifies configuration and public references while retaining one dataset lifecycle. |
+| S29 | D02, D19, D24–D29, D38 | Retained catalog/capture/processing stages are useful independently; portable export has separate admission checks. |
+| S30 | D28 | DocSpec, Rulespec, and source owners make one exact-value encoding decision; unresolved convergence is deferred in both lists. |
+| S31 | D04, D09, D11, D13, D19, D21, D29, D45–D46 | Replace dataset loops with public DocSpec wheel APIs; compose independent provider APIs without circular package dependencies. |
+| Optional search extension | D47–D50 | Search owns dataset definitions and transformations, DocSpec supplies reusable execution, and Engine owns indexing/serving. Adoption must remove duplicate lifecycle work. |
+
+Source-side repairs and optional raw/table outputs stay in the source backlog;
+DocSpec does not take ownership of every acquisition repair. D47–D50 do not gate
+source-only use, ordinary document experiments, or S20's Dagster example.
 
 A static size scan at this baseline found 147 Python files and 40,495 lines under
 `src/docspec/`, with six files above 800 lines. The largest include scale and
