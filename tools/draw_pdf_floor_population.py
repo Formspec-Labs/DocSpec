@@ -41,6 +41,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from tools.catalog_sample_support import (  # noqa: E402
+    source_item_member_paths,
+)
+
 from tools.fetch_attachment_sample import BROWSER_UA, _download, _head  # noqa: E402
 from tools.select_attachment_sample import _scan_member  # noqa: E402
 
@@ -53,15 +57,11 @@ def draw(
     size: int,
     workers: int,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
-    manifest = json.loads((catalog_root / "manifests" / "catalog.json").read_text())
-    members = sorted(
-        (m for m in manifest["members"] if m["role"] == "source-items"),
-        key=lambda m: m["blobRef"],
-    )
     jobs = [
-        (str(blob_store / m["blobRef"].split(":", 1)[1]), salt, f"{i:02d}", "selected-pdf")
-        for i, m in enumerate(members)
+        (path, salt, f"{i:02d}", "selected-pdf")
+        for i, path in enumerate(source_item_member_paths(catalog_root, blob_store))
     ]
+
     frame: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
     with ProcessPoolExecutor(max_workers=workers) as pool:

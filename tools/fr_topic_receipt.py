@@ -32,7 +32,6 @@ shape records that rather than leaving it implied.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import sys
@@ -44,6 +43,14 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.catalog_sample_support import (  # noqa: E402
+    iter_source_item_rows,
+    source_item_member_paths,
+    report_catalog_root,
+)
+
 FR_SCOPE = "federal-register-documents"
 API = "https://www.federalregister.gov/api/v1/documents"
 UA = "docspec-topic-receipt/1.0 (+https://github.com/Formspec-Labs/DocSpec)"
@@ -54,13 +61,7 @@ def _scan(args: tuple[str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     path, salt = args
     kept: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
-    raw = Path(path).read_bytes()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in iter_source_item_rows(path):
         fact = next(
             (f for f in row.get("sourceNativeFacts") or () if f.get("scopeId") == FR_SCOPE),
             None,
@@ -121,12 +122,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     args = parser.parse_args(argv)
 
-    manifest = json.loads((args.catalog_root / "manifests" / "catalog.json").read_text())
-    members = sorted(
-        (m for m in manifest["members"] if m["role"] == "source-items"),
-        key=lambda m: m["blobRef"],
-    )
-    jobs = [(str(args.blob_store / m["blobRef"].split(":", 1)[1]), args.salt) for m in members]
+    jobs = [(path, args.salt) for path in source_item_member_paths(args.catalog_root, args.blob_store)]
+
     frame: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
@@ -167,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             "printed no topics, or that something between publisher and catalog dropped them?"
         ),
         "catalog": {
-            "root": "~/" + str(args.catalog_root.relative_to(Path.home())),
+            "root": report_catalog_root(args.catalog_root),
             "rows": counts["rows"],
             "strata": {k: counts[k] for k in ("populated", "empty-post-2000", "empty-pre-2000")},
         },

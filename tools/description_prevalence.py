@@ -17,7 +17,6 @@ worth writing.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 import re
@@ -26,6 +25,14 @@ from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.catalog_sample_support import (  # noqa: E402
+    iter_source_item_rows,
+    source_item_member_paths,
+    report_catalog_root,
+)
 
 DOCUMENT_SCOPE = "regulations-gov-documents"
 DOCKET_SCOPE = "regulations-gov-dockets"
@@ -62,16 +69,10 @@ def normalize(value: str) -> str:
 
 
 def _scan(path: str) -> dict[str, Any]:
-    raw = Path(path).read_bytes()
-    if raw[:2] == b"\x1f\x8b":
-        raw = gzip.decompress(raw)
     counts: Counter[str] = Counter()
     dockets: dict[str, dict[str, Any]] = {}
     residuals: list[int] = []
-    for line in raw.splitlines():
-        if not line.strip():
-            continue
-        row = json.loads(line)
+    for row in iter_source_item_rows(path):
         document = docket = None
         for fact in row.get("sourceNativeFacts") or ():
             attributes = (fact["fields"].get("data") or {}).get("attributes") or {}
@@ -128,12 +129,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workers", type=int, default=6)
     args = parser.parse_args(argv)
 
-    manifest = json.loads((args.catalog_root / "manifests" / "catalog.json").read_text())
-    members = sorted(
-        (m for m in manifest["members"] if m["role"] == "source-items"),
-        key=lambda m: m["blobRef"],
-    )
-    jobs = [str(args.blob_store / m["blobRef"].split(":", 1)[1]) for m in members]
+    jobs = source_item_member_paths(args.catalog_root, args.blob_store)
+
     counts: Counter[str] = Counter()
     dockets: dict[str, dict[str, Any]] = {}
     residuals: list[int] = []
@@ -155,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
             "Prevalence of the exact string shapes three readers named on the "
             "30-row display page. The readers set the boundary; this counts it."
         ),
-        "catalog": "~/" + str(args.catalog_root.relative_to(Path.home())),
+        "catalog": report_catalog_root(args.catalog_root),
         "predicates": {
             "1": {
                 "field": "document data/attributes/docAbstract",
