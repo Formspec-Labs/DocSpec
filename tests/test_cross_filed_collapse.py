@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
+from docspec.application.regulations_gov_catalog.documents import _item_from_row
 from docspec.domain.identity import canonical_json_bytes
 from docspec.errors import IntegrityError
 from docspec.ports.source_catalog import SourceInputSelector
@@ -286,14 +287,21 @@ def test_the_retained_filing_is_emitted_as_an_item_observation(tmp_path) -> None
         "renditionId": "dhs-content",
         "locator": "https://example.test/dhs.pdf",
     }
+    selected_policy = policy()
     with SqliteCatalogPolicyWorkspace(directory=tmp_path) as workspace:
-        item = policy()._item_from_row(
+        item = _item_from_row(
             owner,
             (owner_rendition,),
             workspace,
             sample_drawn=None,
             budget_available=True,
             discarded_filings=(carried,),
+            agency_names=selected_policy.agency_names,
+            language=selected_policy.language,
+            source_url_template=selected_policy.source_url_template,
+            sample=selected_policy.sample,
+            max_selected_items=selected_policy.max_selected_items,
+            interpretation_pin=selected_policy._interpretation_pin,
         )
     observations = item.to_dict()["sourceObservations"]
 
@@ -345,7 +353,7 @@ def test_a_row_carrying_a_discard_survives_the_join_index_round_trip() -> None:
     collide.
     """
 
-    from docspec.application.regulations_gov_catalog import (
+    from docspec.application.regulations_gov_catalog.indexed_rows import (
         _carried_discards,
         _stored_discards,
         _stored_row,
@@ -372,7 +380,7 @@ def test_a_row_carrying_a_discard_survives_the_join_index_round_trip() -> None:
 def test_a_row_without_discards_still_refuses_an_unknown_key() -> None:
     """Widening for one optional key must not open the shape generally."""
 
-    from docspec.application.regulations_gov_catalog import _stored_row
+    from docspec.application.regulations_gov_catalog.indexed_rows import _stored_row
 
     with pytest.raises(IntegrityError):
         _stored_row({"record": {}, "renditions": [], "somethingElse": 1})

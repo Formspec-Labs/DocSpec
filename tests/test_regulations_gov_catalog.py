@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
+from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
 )
 from docspec.domain.source_catalog import CatalogDisposition
+from docspec.errors import IntegrityError
+from docspec.ports.source_catalog import CatalogResumePoint, SourceNativeRow
 from tests.support.regulations_gov import (
     _build,
     _build_items,
+    _description,
     _docket,
     _document,
     _federal_register_filing,
@@ -332,3 +339,37 @@ def test_one_ambiguous_number_does_not_suppress_an_unambiguous_one(
     }["document-federal-register"]
     assert federal_register["outcome"] == "matched"
     assert federal_register["matchedSourceRecordId"] == "2026-10002@2026-03-09"
+
+
+@pytest.mark.parametrize("kind", ["documents", "dockets", "comments"])
+@pytest.mark.parametrize("language", ["en", "\ud800"], ids=["valid-policy", "unencodable-policy"])
+def test_direct_policy_refuses_bad_source_before_reading_its_identity(
+    tmp_path: Path, kind: str, language: str,
+) -> None:
+    """An early source refusal precedes policy serialization, even outside the builder."""
+    selected_policy = replace(_policy(include_comments=True), language=language)
+    selector = selected_policy.document_input
+    source_row = SourceNativeRow(
+        description=_description("documents", selector.source_system_id, selector.source_system_version),
+        record={
+            "scopeId": f"regulations-gov-{kind}",
+            "sourceRecordId": "EPA-2026-0001",
+            "record": None,
+        },
+        renditions=(),
+    )
+
+    class Inputs:
+        resume = CatalogResumePoint(indexed=True, after=None, selected_count=0)
+
+        def iter_universe_rows(self):
+            yield source_row
+
+    with SqliteCatalogPolicyWorkspace(directory=tmp_path) as workspace:
+        with pytest.raises(IntegrityError, match=f"^Regulations.gov {kind} payload must be an object$"):
+            next(selected_policy.iter_items(Inputs(), workspace))
+
+    assert selected_policy._policy_digest is None
+    if language != "en":
+        with pytest.raises(UnicodeEncodeError):
+            _ = selected_policy.policy_digest
