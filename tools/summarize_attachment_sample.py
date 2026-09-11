@@ -9,21 +9,20 @@ design-weighted `sum(w.indicator)/sum(w)` -- the raw sample fraction is 66.2%
 against a weighted 81.0%, because the allocation deliberately over-samples the
 withheld cells, and quoting the raw figure as a corpus rate is the error the
 weights exist to prevent.
+
+This reproduces the September 2026 sample report, including its historical
+interpretation. Supply that run's receipt and sealed selection; this is not a
+general report template for unrelated samples.
 """
 
 from __future__ import annotations
 
+import argparse
 import datetime as dt
 import json
 import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
-
-R = Path("/Users/mikewolfd/Work/corpora/supply-2026-09-02")
-NDJSON = R / "receipts" / "attachment-sample-2026-09-05.ndjson"
-SELECTION = Path("/Users/mikewolfd/Work/DocSpec/docs/history/2026-09-05-attachment-sample-selection.json")
-OUT = R / "receipts" / "attachment-sample-2026-09-05.md"
-
 
 def pct(x: float) -> str:
     return f"{100 * x:.1f}%"
@@ -40,12 +39,17 @@ def wilson(k: int, n: int) -> tuple[float, float]:
     return (max(0.0, c - h), min(1.0, c + h))
 
 
-def main() -> int:
-    rows = [json.loads(line) for line in NDJSON.read_text().splitlines() if line.strip()]
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--receipt", type=Path, required=True, help="September 2026 attachment sample NDJSON receipt")
+    parser.add_argument("--selection", type=Path, required=True, help="sealed attachment sample selection JSON")
+    parser.add_argument("--output", type=Path, required=True, help="destination Markdown report (replaced if present)")
+    args = parser.parse_args(argv)
+    rows = [json.loads(line) for line in args.receipt.read_text().splitlines() if line.strip()]
     header = next(r for r in rows if r.get("runHeader"))
     main_rows = [r for r in rows if not r.get("runHeader") and not r.get("reprobe")]
     reprobes = [r for r in rows if r.get("reprobe")]
-    selection = json.loads(SELECTION.read_text())
+    selection = json.loads(args.selection.read_text())
     strata = {s["restrictReasonType"] + " | " + s["documentTypeGroup"]: s for s in selection["strata"]}
     stratum_of = {}
     for row in selection["rows"]:
@@ -203,7 +207,7 @@ def main() -> int:
       f"pause, and **{flipped}** changed. A transient failure and a genuine absence look "
       f"identical in one observation; they rarely agree twice. Zero flips means the "
       f"negatives are absences, not failures.")
-    OUT.write_text("\n".join(lines) + "\n")
+    args.output.write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
     return 0
 
