@@ -87,6 +87,15 @@ can record the same partial work and decide whether the failure is accepted.
 Shared [stage evidence functions](../src/docspec/application/execution_evidence.py)
 persist receipt identities and classify errors without deciding the outcome.
 
+[`prepare_base_reprocessing`](../src/docspec/application/base_reprocessing.py)
+reads pinned base rows, verifies unaffected results, writes their current-plan
+reuse receipts, and reconciles any retained checkpoint. It returns exact content
+and the three mutable progress collections to the executor. The executor owns
+the remaining-layer loop, memory scope, failure outcome, and checkpoint saves.
+Preparation preserves current incremental reuse; an old request identity alone
+does not invalidate a result whose inputs, processor, policy, and evidence still
+match.
+
 ## What comes out?
 
 There are two release representations in the current code. **Both advertise

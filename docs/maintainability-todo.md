@@ -240,7 +240,7 @@ separate simplification; keep those changes reviewable independently.
   be understood independently and existing checks preserve atomic publication,
   immutable writes, path containment, bounded merging, and stale-base rejection.
 
-- [ ] **D6 · P2 · Reduce the responsibilities of `StoreExecutionService`.**
+- [x] **D6 · P2 · Reduce the responsibilities of `StoreExecutionService`.**
   Separate coordination, checkpoint verification, processor execution, and
   reprocessing in the 1,867-line
   [execution module](../src/docspec/application/execution.py). Start with
@@ -249,6 +249,9 @@ separate simplification; keep those changes reviewable independently.
   still verifies retained work, reuses completed stages, restores cumulative
   budgets, and performs only the required processor work. Avoid splitting one
   shared mutable state machine across mixins merely to shorten the file.
+  The service now coordinates 705 lines; read-only verification, processor
+  runtime, shared rules/evidence, and base preparation have explicit owners
+  described in [the architecture guide](architecture.md#what-happens-to-it).
 
 - [x] **D7 · P2 · Simplify the remaining long control-flow functions.** Review
   `_load_build_command_receipt` in the catalog CLI (300 lines),

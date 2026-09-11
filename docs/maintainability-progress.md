@@ -19,6 +19,7 @@ under `docs/history/` remain separate work.
 | C5, D3 | CLI commands now live in focused `cli/` modules; the largest is 354 lines after the move. `docspec`, `python -m docspec.cli`, `main`, and `build_parser` remain available. Shared JSON I/O preserves error types and output handling. The intentional input correction bounds the actual read, including growth after `stat`; two focused tests cover that race. Failure-receipt hashing uses the same bounded reader. |
 | C6 | Serial and parallel catalog derivation share fixed-count digest headers, deferred detail-count headers, and final result assembly. Every scheduling, streaming, and payload loop retains its original syntax tree. Catalog, succession, fallback, and installed-wheel checks: 95 passed. [Raw comparison evidence](maintainability-catalog-comparison.json) preserves all samples and exact derived values for 4,096 rows across 64 partitions. |
 | D5 | Split local storage into blobs, controls, document stores, records, catalog, and narrowly shared file operations. Existing public class imports and profile strings remain valid. All 26 moved definitions retained identical syntax trees. Storage, catalog, bounded-partition, and boundary checks: 117 passed. |
+| D6 | Reduced `StoreExecutionService` from 1,867 to 705 lines by separating read-only checkpoints (541), processor runtime (339), shared processor rules (167), stage evidence (36), and base preparation (305). Store saves, one cumulative budget, materialization, and accepted-failure decisions stay in the service. Prepared base content transfers the same mutable records/results/receipts, preserving partial failed work. Independent reviews approved each slice and reproduced the original statements after explicit owner/field substitutions. Final focused recovery, cache, budget, policy, pipeline, import, and incremental-equivalence checks: 80 passed. |
 | D1 | Separated release format/identity rules, coverage calculations, member/schema reading, body indexing, and semantic validation. Verification now lives in `adapters.document_release.verify`; builders import rule owners directly, and the old import facade is removed. All 109 moved definitions retained identical syntax trees before comment cleanup. Release, builder, schema, encoding, and package checks: 298 passed. The fixture restamper still matches a clean rebuild. |
 | D2 | Split the source-catalog artifact into building, reading, verification, source inputs/recovery, bounded rows, accounting, schema rules, and digest derivation. The largest module was 499 lines at the move boundary. All 97 definitions moved unchanged; three calls then became owner-qualified so fault injection still reaches the shared engine or reader. Catalog, succession, spawned workers, recovery, installed-wheel, offline, and boundary checks: 126 passed. Six further runs over the existing 4,096-row catalog preserve every digest, count, diagnostic, and actual serial/parallel engine identity. |
 | D4 | Source conversion now names joins, normalization, selection, and provenance. The common policy module records the six interpretation forms and stopping decisions; source policies still choose their own rules. Document/comment conversion shrank from 403/227 to 103/100 lines; Federal Register conversion shrank from 245 to 82. [Comparison evidence](maintainability-policy-comparison.json) records byte-identical results for 246 calls, including two refusals. Independent review led to a real retained-filing conversion test and three strict comment-version refusal checks. Policy, catalog, wheel, offline, and import checks: 142 passed. |
@@ -86,8 +87,7 @@ that the entire to-do list is complete.
 
 ## Still open
 
-Execution/checkpoint responsibilities and the unfamiliar
-contributor exercise remain open on the to-do list. The last exercise requires
+The unfamiliar contributor exercise remains open on the to-do list. It requires
 actual participant evidence; line counts and this agent's familiarity cannot
 substitute for it.
 
@@ -110,7 +110,13 @@ evidence remains available after exceptions. `execution_evidence.py` shares
 receipt persistence and sanitized failure classification, while acceptance stays
 with the service. All 19 substantive methods preserve their statement trees
 after explicit owner substitutions. The same **69 focused checks passed**.
-Base-reuse preparation remains before D6 closes.
+The eight dedicated cache tests also passed in an exact staged snapshot.
+Base-reuse preparation then moved behind explicit inputs and a seven-field
+result. Helper expansion reproduces the original guarded preparation block and
+remaining execution loop; all other service methods remain unchanged. The
+separate TypeError/ValueError refusal boundary, current-plan reuse receipts,
+checkpoint comparisons, and mutable progress survive the move. This completes
+D6; **80 focused checks passed**, including current incremental equivalence.
 
 Independent static reviews approved the storage/CLI split, portable verifier,
 catalog artifact split and import retirement, and source-policy conversion.
