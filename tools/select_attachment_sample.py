@@ -86,7 +86,6 @@ NO_REASON = "(none)"
 # re-confirmed a measured zero; these weights move those rows to where the
 # estimate is actually loose, and keep enough in each reason code to bound its
 # zero at roughly 2-6%.
-MINOR_TYPES = ("Notice", "Proposed Rule", "Rule", "Public Submission")
 MAIN_TYPES = ("Other", "Supporting & Related Material")
 
 ALLOCATION: dict[tuple[str, str], int] = {
@@ -124,7 +123,7 @@ def _document_fact(row: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def _scan_member(args: tuple[str, str, str] | tuple[str, str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+def _scan_member(args: tuple[str, str, str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Reduce one partition blob to the rows one selector wants.
 
     Two selectors share this walk. ``unavailable`` keeps the campaign frame.
@@ -134,8 +133,7 @@ def _scan_member(args: tuple[str, str, str] | tuple[str, str, str, str]) -> tupl
     a disposition the campaign excludes by definition is disjoint by
     construction rather than by assertion.
     """
-    path, salt, partition_id = args[:3]
-    mode = args[3] if len(args) > 3 else "unavailable"
+    path, salt, partition_id, mode = args
     kept: list[dict[str, Any]] = []
     counts: Counter[str] = Counter()
     for row in iter_source_item_rows(path):
