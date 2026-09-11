@@ -22,13 +22,17 @@ from docspec.adapters.catalog_artifact.rules import (
     _utf16_key,
 )
 from docspec.adapters.catalog_artifact.schemas import _ITEM_VALIDATOR
-from docspec.domain.identity import trusted_json_input
+from docspec.domain.identity import require_text, trusted_json_input
 from docspec.domain.source_catalog import (
+    SourceCatalogCandidate,
     SourceCatalogItem,
+    SourceCatalogSelection,
+    _require_candidate_renditions,
 )
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.source_catalog import (
     LocatedSourceCatalogItem,
+    LocatedSourceCatalogMapping,
     SourceCatalogBlobSource,
 )
 
@@ -105,6 +109,16 @@ def _iter_partition_stream(
             source_item_id = value["sourceItemId"]
             if not isinstance(source_item_id, str):
                 raise IntegrityError(f"source-catalog row {count} is invalid: sourceItemId must be text")
+            if validate:
+                try:
+                    for field in ("sourceItemId", "documentId", "sourceIssuedVersion"):
+                        require_text(value[field], field)
+                    _require_candidate_renditions(
+                        tuple(SourceCatalogCandidate.from_dict(candidate) for candidate in value["candidateRenditions"]),
+                        SourceCatalogSelection.from_dict(value["selection"]),
+                    )
+                except (TypeError, ValueError) as error:
+                    raise IntegrityError(f"source-catalog row {count} is invalid: {error}") from error
             item: Any = value
         else:
             try:
@@ -193,10 +207,11 @@ def _iter_located_catalog_rows(
             if blob_ref is None:
                 raise IntegrityError("source-item partition descriptor requires blobRef")
             count += 1
-            if with_raw:
-                yield LocatedSourceCatalogItem(item, blob_ref), entry[1]
-            else:
-                yield LocatedSourceCatalogItem(item, blob_ref)
+            located = (
+                LocatedSourceCatalogMapping(item, blob_ref)
+                if as_dict else LocatedSourceCatalogItem(item, blob_ref)
+            )
+            yield (located, entry[1]) if with_raw else located
             following = next(streams[index], None)
             if following is not None:
                 heapq.heappush(heap, (_utf16_key(entry_id(following)), index, following))

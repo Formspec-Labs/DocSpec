@@ -524,6 +524,18 @@ class LocatedSourceCatalogItem:
         require_sha256(self.blob_ref, "source catalog item blob_ref")
 
 
+@dataclass(frozen=True, slots=True)
+class LocatedSourceCatalogMapping:
+    """A validated JSON row and the content address of its supplying partition.
+
+    The dictionary belongs to the caller; changing it cannot change a later
+    read or the catalog's admitted summary.
+    """
+
+    item: dict[str, Any]
+    blob_ref: str
+
+
 @dataclass(slots=True)
 class SourceCatalogSnapshot:
     """One verified root and its bounded full normative row stream."""
@@ -535,7 +547,13 @@ class SourceCatalogSnapshot:
     def items(self) -> Iterator[SourceCatalogItem]:
         """Expose existing consumers to the same single-pass located stream."""
 
-        return (located.item for located in self.located_items)
+        try:
+            for located in self.located_items:
+                yield located.item
+        finally:
+            close = getattr(self.located_items, "close", None)
+            if close is not None:
+                close()
 
 
 class ImmutableSourceCatalogReader(Protocol):

@@ -17,6 +17,7 @@ same change as the behavior or file move they describe.
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
 | Build a synthetic catalog and verify one local application release | [Offline walkthrough](offline-walkthrough.md) |
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
+| Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |

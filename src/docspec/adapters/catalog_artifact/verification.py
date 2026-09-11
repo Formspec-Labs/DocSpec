@@ -7,6 +7,7 @@ from typing import Any
 
 from rulespec_artifacts import (
     ROOT_OBJECT_KEY,
+    MemberDescriptor,
     MemberSource,
     Producer,
     VerifiedArtifact,
@@ -53,6 +54,16 @@ from docspec.ports.source_catalog import (
 )
 
 
+def _read_catalog_member(source: MemberSource, member: MemberDescriptor) -> bytes:
+    """Bind each small product member to the manifest already checked."""
+
+    assert member.object_key is not None
+    payload = _read_small(source, member.object_key)
+    if len(payload) != member.byte_size or sha256_digest(payload) != member.sha256:
+        raise IntegrityError(f"source catalog member changed after admission: {member.object_key}")
+    return payload
+
+
 class SourceCatalogArtifactVerifier:
     """Check DocSpec meaning after Rulespec has checked generic structure."""
 
@@ -92,8 +103,8 @@ class SourceCatalogArtifactVerifier:
             or receipt_member.record_count is not None
         ):
             raise IntegrityError("source-catalog member descriptions are invalid")
-        policy = parse_canonical_json(_read_small(source, CATALOG_POLICY_KEY), path=CATALOG_POLICY_KEY)
-        receipt = parse_canonical_json(_read_small(source, CATALOG_RECEIPT_KEY), path=CATALOG_RECEIPT_KEY)
+        policy = parse_canonical_json(_read_catalog_member(source, policy_member), path=CATALOG_POLICY_KEY)
+        receipt = parse_canonical_json(_read_catalog_member(source, receipt_member), path=CATALOG_RECEIPT_KEY)
         _schema_error(_POLICY_VALIDATOR, policy, "catalog policy")
         _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
         policy = _mapping(policy, "catalog policy")

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 1 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 2 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -198,7 +198,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d09"></a>
 
-- [ ] **D09 · P1 · Add public catalog admission and bounded row access.** Expose
+- [x] **D09 · P1 · Add public catalog admission and bounded row access.** Expose
   an admitted, pinned catalog through supported object and validated mapping
   access as needed by current consumers. Keep full producer re-derivation separate
   from ordinary opening and bind access to the artifact actually checked.
@@ -206,6 +206,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   private row readers or repeated full derivation, while changed or invalid
   artifacts are refused. See [the facade](../src/docspec/source_catalog.py) and
   [the recorded consumer request](history/2026-09-05-reader-api-requests.md).
+  **Completed September 11:** `admit_snapshot` and
+  `open_admitted_source_catalog` expose repeatable object/mapping access without
+  repeated generic admission or full producer derivation. Tests bind consumed
+  bytes to admitted identities, preserve mapping/object refusal parity, and
+  prove bounded reads and early closure (107 catalog tests passed). Independent
+  review approved the implementation; [the guide](catalog-evidence.md) states
+  admission-time membership and temporary-disk limits. SpicySearch adoption and
+  its installed-wheel qualification remain in [SC01](../../spicysearch/PLAN.md#sc01);
+  these local checks do not establish a capacity or end-to-end speed claim.
 
 <a id="d10"></a>
 

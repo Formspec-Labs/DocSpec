@@ -11,7 +11,9 @@ from docspec.application.regulations_gov_catalog import (
     RegulationsGovSamplePolicy,
 )
 from docspec.adapters.catalog_artifact.reader import (
+    AdmittedSourceCatalog,
     SourceCatalogArtifactReader,
+    open_admitted_source_catalog,
 )
 from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
@@ -36,6 +38,7 @@ from docspec.ports.source_catalog import (
     CatalogPolicyWorkspace,
     ImmutableSourceCatalogReader,
     LocatedSourceCatalogItem,
+    LocatedSourceCatalogMapping,
     SourceInputSelector,
     SourceCatalogPolicy,
     SourceCatalogCurrentPointer,
@@ -49,12 +52,14 @@ from docspec.ports.source_catalog import (
 )
 
 __all__ = [
+    "AdmittedSourceCatalog",
     "CatalogPolicyInputs",
     "CatalogPolicyWorkspace",
     "CatalogDisposition",
     "FederalRegisterCatalogPolicy",
     "ImmutableSourceCatalogReader",
     "LocatedSourceCatalogItem",
+    "LocatedSourceCatalogMapping",
     "LocalSourceCatalogStore",
     "LocalSourceCatalogCurrentPointer",
     "RegulationsGovCatalogPolicy",
@@ -80,4 +85,5 @@ __all__ = [
     "requested_universe_set_digest",
     "selected_source_set_digest",
     "source_catalog_producer",
+    "open_admitted_source_catalog",
 ]

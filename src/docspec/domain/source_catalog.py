@@ -242,6 +242,16 @@ class CatalogSelectionDecision:
         }
 
 
+def _require_candidate_renditions(
+    candidates: Sequence[SourceCatalogCandidate], selection: SourceCatalogSelection,
+) -> None:
+    rendition_ids = [candidate.rendition_id for candidate in candidates]
+    if len(rendition_ids) != len(set(rendition_ids)):
+        raise ValueError("candidate rendition identities must be distinct")
+    if selection.disposition is CatalogDisposition.SELECTED and not candidates:
+        raise ValueError("a selected catalog row must contain a candidate rendition")
+
+
 @dataclass(frozen=True, slots=True)
 class SourceCatalogItem:
     """One complete normative row from an immutable ``SourceCatalog``."""
@@ -286,11 +296,7 @@ class SourceCatalogItem:
             "interpretations",
             _json_objects(self.interpretations, "interpretations"),
         )
-        rendition_ids = [candidate.rendition_id for candidate in self.candidate_renditions]
-        if len(rendition_ids) != len(set(rendition_ids)):
-            raise ValueError("candidate rendition identities must be distinct")
-        if self.selection.disposition is CatalogDisposition.SELECTED and not self.candidate_renditions:
-            raise ValueError("a selected catalog row must contain a candidate rendition")
+        _require_candidate_renditions(self.candidate_renditions, self.selection)
 
     @property
     def disposition(self) -> CatalogDisposition:

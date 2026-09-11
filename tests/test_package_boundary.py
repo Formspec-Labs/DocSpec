@@ -466,6 +466,7 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
                 "from docspec.adapters import DagsterRuntime; "
                 "assert DagsterRuntime.__name__ == 'DagsterRuntime'; "
                 "from docspec.source_catalog import requested_universe_set_digest; "
+                "from docspec.source_catalog import AdmittedSourceCatalog, open_admitted_source_catalog; "
                 "assert requested_universe_set_digest(0, ()).startswith('sha256:'); "
                 "import importlib.util, sys; "
                     "import docspec.cli; "
