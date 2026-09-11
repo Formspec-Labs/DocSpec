@@ -41,6 +41,17 @@ DEFAULT_GOVERNANCE_POLICY_IDS = frozenset(
     }
 )
 
+BUILTIN_PROFILE_DIRECTORY = Path(__file__).with_name("storage_profiles")
+
+LOCAL_PROFILE_IDS = (
+    "urn:docspec:profile:release-manifest:canonical-json:1",
+    "urn:docspec:profile:document-catalog:local-manifest:1",
+    "urn:docspec:profile:record-storage:local-jsonl:1",
+    "urn:docspec:profile:blob-storage:local-content-addressed:1",
+    "urn:docspec:profile:document-store-persistence:local-json:1",
+    "urn:docspec:profile:result-delivery:durable-dataset:1",
+)
+
 
 def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
     """Return the executable profile fields; mutable evidence status is not identity-bearing."""
@@ -85,6 +96,19 @@ class ProfileRegistry:
             raise ProfileError("profile registry contains duplicate profile identities")
         self._profiles = tuple(sorted(profiles, key=lambda item: item.description.profile_id))
         self._by_id = by_id
+
+    @classmethod
+    def builtin(cls) -> ProfileRegistry:
+        """Load the machine descriptions shipped with this installed package."""
+        return cls.from_directory(BUILTIN_PROFILE_DIRECTORY)
+
+    def local_profiles(self) -> ProfileSet:
+        """Select the supported local storage and durable-delivery defaults.
+
+        Selection still checks implementation status, dependencies, and the
+        complete description pins; defaults do not bypass profile admission.
+        """
+        return self.select(LOCAL_PROFILE_IDS)
 
     @classmethod
     def from_directory(

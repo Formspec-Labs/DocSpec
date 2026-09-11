@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 _seeded_local_run = _description_helpers._seeded_local_run
 
-PROFILE_ROOT = ROOT / "profiles"
+PROFILE_ROOT = ROOT / "src" / "docspec" / "storage_profiles"
 
 
 def _registry() -> ProfileRegistry:

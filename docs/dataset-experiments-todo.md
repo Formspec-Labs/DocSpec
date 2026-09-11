@@ -122,6 +122,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   Accepted verifier policy remains independently configured; do not derive
   acceptance authority from the supplied artifact or selected implementation.
   Depends on D02; see [request composition](../src/docspec/cli/requests.py).
+  **Progress, September 11:** installed profiles now have one canonical home in
+  `src/docspec/storage_profiles/`, with checked built-in/local selection and a
+  default `docspec profile list`. The example shares that selection. Focused
+  profile, CLI, offline-example, conformance, and isolated-wheel checks passed
+  (69 tests). Workspace configuration and the public lifecycle remain open.
 
 <a id="d04"></a>
 

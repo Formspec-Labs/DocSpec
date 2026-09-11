@@ -24,7 +24,7 @@ from docspec.domain.identity import (
     sha256_digest,
 )
 from docspec.domain.scale import ScaleProfile
-from docspec.profile_registry import ProfileRegistry
+from docspec.profile_registry import BUILTIN_PROFILE_DIRECTORY, ProfileRegistry
 
 
 def _cmd_profile_verify(args: argparse.Namespace) -> int:
@@ -50,7 +50,7 @@ def _cmd_profile_verify(args: argparse.Namespace) -> int:
 
 
 def _cmd_profile_list(args: argparse.Namespace) -> int:
-    directory = _existing_root(args.directory, label="profile directory")
+    directory = _existing_root(args.directory or BUILTIN_PROFILE_DIRECTORY, label="profile directory")
     registry = ProfileRegistry.from_directory(directory)
     profiles = [
         {

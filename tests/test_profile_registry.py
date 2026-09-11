@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_machine_profiles_load_and_select_one_implemented_local_set() -> None:
-    registry = ProfileRegistry.from_directory(ROOT / "profiles")
+    registry = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles")
     by_role = {role: registry.list(role) for role in ProfileRole}
     assert all(by_role.values())
     selected = (
@@ -29,13 +29,13 @@ def test_machine_profiles_load_and_select_one_implemented_local_set() -> None:
 
 
 def test_profile_selection_fails_before_work_when_a_requirement_is_missing() -> None:
-    registry = ProfileRegistry.from_directory(ROOT / "profiles")
+    registry = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles")
     with pytest.raises(ProfileError, match="missing required profiles"):
         registry.select(("urn:docspec:profile:result-delivery:durable-dataset:1",))
 
 
 def test_profile_pin_identifies_the_complete_machine_description(tmp_path: Path) -> None:
-    original_path = ROOT / "profiles" / "canonical-release-manifest-v1.json"
+    original_path = ROOT / "src" / "docspec" / "storage_profiles" / "canonical-release-manifest-v1.json"
     original = ProfileRegistry.from_file(original_path)
     changed_value = json.loads(original_path.read_text(encoding="utf-8"))
     changed_value["limits"]["maxRootBytes"] += 1
@@ -51,7 +51,7 @@ def test_profile_pin_identifies_the_complete_machine_description(tmp_path: Path)
 
 
 def test_profile_governance_is_closed_declared_and_identity_bearing(tmp_path: Path) -> None:
-    original_path = ROOT / "profiles" / "local-jsonl-records-v1.json"
+    original_path = ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json"
     original = ProfileRegistry.from_file(original_path)
     governance = original.description.governance
 
@@ -85,7 +85,7 @@ def test_profile_registry_rejects_string_values_where_arrays_are_required(
     tmp_path: Path,
     field: str,
 ) -> None:
-    value = json.loads((ROOT / "profiles" / "local-jsonl-records-v1.json").read_text(encoding="utf-8"))
+    value = json.loads((ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json").read_text(encoding="utf-8"))
     value[field] = "docspec-not-an-array/1"
     path = tmp_path / f"invalid-{field}.json"
     path.write_text(json.dumps(value), encoding="utf-8")
@@ -101,5 +101,5 @@ def test_release_bearing_profiles_declare_the_schema_the_code_emits() -> None:
     declarations were stale at 1.0 once before)."""
 
     for name in ("canonical-release-manifest-v1.json", "local-document-catalog-v1.json"):
-        value = json.loads((ROOT / "profiles" / name).read_text(encoding="utf-8"))
+        value = json.loads((ROOT / "src" / "docspec" / "storage_profiles" / name).read_text(encoding="utf-8"))
         assert value["logicalSchemas"] == [RELEASE_LOGICAL_SCHEMA], name

@@ -46,7 +46,7 @@ def test_every_catalog_profile_publishes_the_canonical_release_root(tmp_path: Pa
 
     release = catalog.open(reference)
     assert release.release_id == artifact.pin.logical_id == reference.release_id
-    manifest_profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.RELEASE_MANIFEST)
+    manifest_profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.RELEASE_MANIFEST)
     assert manifest_profiles
     assert release.profiles.for_role(ProfileRole.RELEASE_MANIFEST).profile_id in {
         item.description.profile_id for item in manifest_profiles

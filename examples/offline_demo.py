@@ -142,7 +142,6 @@ class ExampleFetcher:
 def implementation_manifest() -> dict[str, str]:
     """Identify the actual local implementation, including uncommitted edits."""
     paths = [path for path in (REPO_ROOT / "src" / "docspec").rglob("*") if path.suffix in {".py", ".json"}]
-    paths += sorted((REPO_ROOT / "profiles").glob("*.json"))
     paths += [Path(__file__), REPO_ROOT / "uv.lock"]
     return {path.relative_to(REPO_ROOT).as_posix(): sha256_digest(path.read_bytes()) for path in sorted(paths)}
 
@@ -177,17 +176,7 @@ def run_example(output: Path) -> None:
     reader.verify_snapshot(built.reference)
     write_json(output / "source-catalog-reference.json", built.reference.to_dict())
 
-    registry = ProfileRegistry.from_directory(REPO_ROOT / "profiles")
-    profiles = registry.select(
-        (
-            "urn:docspec:profile:release-manifest:canonical-json:1",
-            "urn:docspec:profile:document-catalog:local-manifest:1",
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "urn:docspec:profile:blob-storage:local-content-addressed:1",
-            "urn:docspec:profile:document-store-persistence:local-json:1",
-            "urn:docspec:profile:result-delivery:durable-dataset:1",
-        )
-    )
+    profiles = ProfileRegistry.builtin().local_profiles()
     retry, accepted = RetryPolicy(), AcceptedFailurePolicy()
     plan = ProcessingPlan.create(
         source_catalog=built.reference,
@@ -220,7 +209,7 @@ def run_example(output: Path) -> None:
         "format": "docspec-local-run-request",
         "formatVersion": "1.0",
         "plan": str(output / "plan.json"),
-        "profileDirectory": str(REPO_ROOT / "profiles"),
+        "profileDirectory": str(REPO_ROOT / "src" / "docspec" / "storage_profiles"),
         "roots": roots,
         "resultSinkId": "urn:docspec:example:sink",
         "partitionPolicyId": "source-item-sha256-v1",

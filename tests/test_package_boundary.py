@@ -355,7 +355,7 @@ def test_dagster_adapter_has_one_lazy_runtime_resource_and_no_deployment_schema(
     assert adapters.DagsterRuntime.__name__ == "DagsterRuntime"
     for removed_name in ("DagsterAdapterProfile", "DagsterDeploymentConfig"):
         assert not hasattr(adapters, removed_name)
-    assert not any((ROOT / "profiles/schedulers").glob("*.json"))
+    assert not any((PRODUCTION_ROOT / "storage_profiles" / "schedulers").glob("*.json"))
     isolated = subprocess.run(
         [
             sys.executable,
@@ -400,6 +400,11 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
             if len(parts) > 2
         }
         assert packaged_areas.isdisjoint(ARCHIVED_PRODUCT_AREAS)
+
+        profile_paths = sorted((PRODUCTION_ROOT / "storage_profiles").glob("*.json"))
+        assert len(profile_paths) == 10
+        for path in profile_paths:
+            assert archive.read(f"docspec/storage_profiles/{path.name}") == path.read_bytes()
 
         for name, schema in source_catalog_schemas().items():
             member = f"docspec/schemas/source_catalog/1.0/{name}"
@@ -451,6 +456,10 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
             (
                 "import docspec; "
                 "import docspec.entrypoint; "
+                "from docspec.profile_registry import ProfileRegistry; "
+                "registry = ProfileRegistry.builtin(); "
+                "assert len(registry.list()) == 10; "
+                "assert len(registry.local_profiles().pins) == 6; "
                 "from docspec.adapters import DagsterRuntime; "
                 "assert DagsterRuntime.__name__ == 'DagsterRuntime'; "
                 "from docspec.source_catalog import requested_universe_set_digest; "
@@ -488,3 +497,13 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
     )
     assert source_catalog_help.returncode == 0, source_catalog_help.stderr
     assert "source-catalog" in source_catalog_help.stdout
+
+    profile_list = subprocess.run(
+        [environment / "bin" / "docspec", "profile", "list"],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert profile_list.returncode == 0, profile_list.stderr
+    assert '"profileCount":10' in profile_list.stdout

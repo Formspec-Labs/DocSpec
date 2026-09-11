@@ -17,16 +17,7 @@ REPO_ROOT = Path(__file__).parents[2]
 
 
 def _portable_local_profiles() -> ProfileSet:
-    return ProfileRegistry.from_directory(REPO_ROOT / "profiles").select(
-        (
-            "urn:docspec:profile:release-manifest:canonical-json:1",
-            "urn:docspec:profile:document-catalog:local-manifest:1",
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "urn:docspec:profile:blob-storage:local-content-addressed:1",
-            "urn:docspec:profile:document-store-persistence:local-json:1",
-            "urn:docspec:profile:result-delivery:durable-dataset:1",
-        )
-    )
+    return ProfileRegistry.builtin().local_profiles()
 
 
 def _write_local_run_request(
@@ -50,7 +41,7 @@ def _write_local_run_request(
                 "documentReleaseProducer": document_release_producer().as_dict(),
                 "sourceCatalogProducer": source_catalog_producer().as_dict(),
                 "plan": plan_path.as_posix(),
-                "profileDirectory": (REPO_ROOT / "profiles").as_posix(),
+                "profileDirectory": (REPO_ROOT / "src" / "docspec" / "storage_profiles").as_posix(),
                 "roots": roots,
                 "resultSinkId": result_sink_id,
                 "partitionPolicyId": partition_policy_id,

@@ -14,7 +14,7 @@ An intentional format change needs its own compatibility decision and review.
 | Portable DocumentRelease 2.0 | Deliberately edit the eight JSON schemas in `src/docspec/schemas/document_release/2.0/` against Decision 0001; these are not generated from `domain.release.DocumentRelease` | `document_release/2.0/` | `tests/test_document_release_schema_bundle.py`, the five focused verifier suites in the command below, `tests/test_document_release_builder.py`, and fixture restamp check |
 | Retention-floor calibration 2.0 | Deliberately edit `src/docspec/schemas/retention_floor_calibration/2.0/retention-floor-calibration.schema.json`; keep calibration writer and verifier aligned | `retention_floor_calibration/2.0/` | `tests/test_retention_floors.py`, format and per-kind checks in `tests/test_document_release_wire_format.py` and `tests/test_document_release_text_bodies.py`; `tools/calibrate_retention_floors.py` loads the packaged schema |
 
-Profiles under `profiles/` are maintained machine descriptions, not generated
+Profiles under `src/docspec/storage_profiles/` are maintained machine descriptions, not generated
 schemas. `tests/test_machine_files.py` checks their implementation strings,
 roles, references, and conformance mapping. Update descriptions deliberately
 when supported behavior changes, not merely because an internal file moved.

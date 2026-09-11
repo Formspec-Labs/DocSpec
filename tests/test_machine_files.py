@@ -102,8 +102,8 @@ def test_conformance_specification_and_matrix_name_every_required_test() -> None
 
 
 def test_profile_descriptions_are_closed_and_cover_every_role() -> None:
-    profile_paths = sorted((ROOT / "profiles").glob("*.json"))
-    registry = ProfileRegistry.from_directory(ROOT / "profiles")
+    profile_paths = sorted((ROOT / "src" / "docspec" / "storage_profiles").glob("*.json"))
+    registry = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles")
     registered = registry.list()
     required_test_ids = _required_test_ids()
     test_statuses = {

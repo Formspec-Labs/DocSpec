@@ -316,7 +316,7 @@ def test_bounded_merge_rejects_cross_run_duplicates_and_cleans_scratch(tmp_path:
 
 def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path: Path) -> None:
     profile = json.loads(
-        (Path(__file__).parents[1] / "profiles" / "local-jsonl-records-v1.json").read_text()
+        (Path(__file__).parents[1] / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json").read_text()
     )
     digest = "sha256:" + "a" * 64
     members = [

@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 
-PROFILE_ROOT = ROOT / "profiles"
+PROFILE_ROOT = ROOT / "src" / "docspec" / "storage_profiles"
 # Identity-bearing description fields: changing any one must change the
 # description digest a plan pins, or a deployment could swap executable
 # behavior under an existing pin.

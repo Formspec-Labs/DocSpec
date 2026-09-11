@@ -76,8 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     profile = commands.add_parser("profile", help="Inspect storage and delivery profile descriptions")
     profile_commands = _subcommands(profile, dest="profile_command")
-    profile_list = profile_commands.add_parser("list", help="List and verify every profile in an explicit directory")
-    profile_list.add_argument("--directory", type=Path, required=True)
+    profile_list = profile_commands.add_parser("list", help="List installed profiles or an explicit profile directory")
+    profile_list.add_argument("--directory", type=Path)
     profile_list.set_defaults(func=_cmd_profile_list)
     profile_verify = profile_commands.add_parser("verify", help="Verify one closed profile description")
     profile_verify.add_argument("profile", type=Path)

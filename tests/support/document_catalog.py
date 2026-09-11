@@ -104,7 +104,7 @@ _FACTORIES: dict[str, Callable[..., DocumentCatalog]] = {
 
 
 def _registered_catalog_profiles() -> tuple[RegisteredProfile, ...]:
-    profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.DOCUMENT_CATALOG)
+    profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.DOCUMENT_CATALOG)
     assert profiles
     assert {item.description.implementation_id for item in profiles} == set(_FACTORIES), (
         "a registered catalog profile has no conformance factory"

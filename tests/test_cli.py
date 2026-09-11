@@ -82,7 +82,7 @@ def test_one_cli_exposes_the_complete_lifecycle(
 
 
 def test_profile_verification_uses_the_machine_description(capfd: pytest.CaptureFixture[str]) -> None:
-    profile = REPO_ROOT / "profiles" / "canonical-release-manifest-v1.json"
+    profile = REPO_ROOT / "src" / "docspec" / "storage_profiles" / "canonical-release-manifest-v1.json"
     assert main(["profile", "verify", str(profile)]) == 0
     result = json.loads(capfd.readouterr().out)
     assert result == {
