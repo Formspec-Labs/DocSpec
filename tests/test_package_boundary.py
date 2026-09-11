@@ -14,7 +14,6 @@ from docspec import __version__
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.source_catalog import source_catalog_schemas
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
 SOURCE_CATALOG_SCHEMA_ROOT = PRODUCTION_ROOT / "schemas" / "source_catalog" / "1.0"
@@ -47,7 +46,7 @@ OPTIONAL_SOURCE_MODULES = frozenset(
     }
 )
 OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
-    {"src/docspec/cli.py", "src/docspec/source_catalog_cli.py"}
+    {"src/docspec/source_catalog_cli.py"}
 )
 # This module names a URN namespace reserved for a registry DocSpec does not
 # own. It is data the catalog refuses to mint, not an import of that product.
@@ -255,7 +254,9 @@ def test_superseded_source_formats_are_absent_from_repository_code() -> None:
     for name in ("SourceReleasePin", "SourceReleaseReader", "SourceReleaseSchemaGate"):
         assert not hasattr(ports, name)
 
-    cli_source = (PRODUCTION_ROOT / "cli.py").read_text(encoding="utf-8")
+    cli_source = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted((PRODUCTION_ROOT / "cli").glob("*.py"))
+    )
     assert "LocalJsonlSourceCatalog" not in cli_source
     assert "wire_source_release" not in cli_source
 
@@ -290,7 +291,7 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
-        is_command_surface = relative_parts[0] in {"cli.py", "entrypoint.py", "source_catalog_cli.py"}
+        is_command_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py", "source_catalog_cli.py"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
             if not is_adapter and not is_command_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:

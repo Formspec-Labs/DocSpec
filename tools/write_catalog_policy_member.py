@@ -30,7 +30,7 @@ from docspec.application.regulations_gov_catalog import (
 )
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.ports.source_catalog import SourceInputSelector
-from docspec.source_catalog_cli import _MAX_JSON_BYTES, _read_object
+from docspec.cli_io import MAX_JSON_BYTES, SourceCatalogCliError, read_object
 
 _POLICY_CHOICES = ("regulations-gov", "federal-register")
 
@@ -75,11 +75,13 @@ def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) 
 
 
 def write_member(policy_name: str, input_path: Path, output_path: Path) -> bytes:
-    fields = _read_object(input_path, label="catalog policy fields", canonical=False)
+    fields = read_object(
+        input_path, label="catalog policy fields", error_type=SourceCatalogCliError
+    )
     policy = build_policy(policy_name, fields, input_path=input_path)
     member_bytes = canonical_json_file_bytes(policy.to_member())
-    if len(member_bytes) > _MAX_JSON_BYTES:
-        raise ValueError(f"the policy member exceeds the CLI's {_MAX_JSON_BYTES}-byte limit")
+    if len(member_bytes) > MAX_JSON_BYTES:
+        raise ValueError(f"the policy member exceeds the CLI's {MAX_JSON_BYTES}-byte limit")
 
     round_tripped = type(policy).from_member(json.loads(member_bytes))
     if canonical_json_file_bytes(round_tripped.to_member()) != member_bytes:

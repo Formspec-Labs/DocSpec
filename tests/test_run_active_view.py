@@ -17,14 +17,18 @@ inventing new fixture machinery.
 """
 
 from __future__ import annotations
+
 import json
 import os
 import time
 from pathlib import Path
+
 import pytest
-import docspec.cli as cli_module
+
 from docspec.adapters.storage import LocalDocumentStoreRepository, LocalJsonControlRepository
+from docspec.cli import local as cli_local
 from docspec.cli import main
+from docspec.cli import requests as cli_requests
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, StoreTask
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
@@ -36,11 +40,11 @@ from docspec.domain.references import ArtifactRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.support import cli as _cli_helpers
 from tests import helpers as _helpers
-
+from tests.support import cli as _cli_helpers
 
 ROOT = Path(__file__).resolve().parents[1]
+
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 _write_local_run_request = _cli_helpers._write_local_run_request
 write_shared_source_catalog = _helpers.write_shared_source_catalog
@@ -403,8 +407,8 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
     # (`_compose_local_run`), just with the shared-fixture fetcher that
     # resolves this test's on-disk content -- the CLI's own composition
     # helper, not a hand-rolled substitute.
-    composition = cli_module._compose_local_run(
-        cli_module._local_run_request(run_request),
+    composition = cli_local._compose_local_run(
+        cli_requests._local_run_request(run_request),
         content_fetcher=SharedFixtureContentFetcher(source_content),
     )
     processed_reference = composition.executor.execute_store(by_item["item-active-ok"])

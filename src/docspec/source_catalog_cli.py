@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -33,18 +32,35 @@ from docspec.application.federal_register_catalog import FederalRegisterCatalogP
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
 from docspec.domain.identity import (
     canonical_json_file_bytes,
-    parse_canonical_json,
-    parse_closed_json,
     require_sha256,
     stable_urn,
-    thaw_json,
 )
 from docspec.domain.references import SourceCatalogRef
 from docspec.domain.source_catalog import CatalogDisposition
-from docspec.domain.security import redact, redact_text, require_secret_free
+from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
 
-_MAX_JSON_BYTES = 16 * 1024 * 1024
+from docspec.cli_io import (
+    SourceCatalogCliError,
+    emit as _emit,
+    existing_root,
+    read_bytes,
+    read_object,
+)
+
+
+def _read_bytes(path: Path, *, label: str) -> bytes:
+    return read_bytes(path, label=label, error_type=SourceCatalogCliError)
+
+
+def _read_object(path: Path, *, label: str, canonical: bool) -> dict[str, Any]:
+    return read_object(path, label=label, canonical=canonical, error_type=SourceCatalogCliError)
+
+
+def _existing_root(path: Path, *, label: str) -> Path:
+    return existing_root(path, label=label, error_type=SourceCatalogCliError)
+
+
 _BUILD_RECEIPT_NAME = "source-catalog-build-command-receipt.json"
 _SOURCE_NATIVE_PROFILES = (
     "federal-register",
@@ -54,45 +70,14 @@ _SOURCE_NATIVE_PROFILES = (
 )
 
 
-class SourceCatalogCliError(DocSpecError):
-    """A source-catalog operator action failed preflight or verification."""
 
 
-def _read_bytes(path: Path, *, label: str) -> bytes:
-    path = Path(path)
-    if path.is_symlink() or not path.is_file():
-        raise SourceCatalogCliError(f"{label} must be a regular, non-symlink file: {path}")
-    with path.open("rb") as stream:
-        payload = stream.read(_MAX_JSON_BYTES + 1)
-    if len(payload) > _MAX_JSON_BYTES:
-        raise SourceCatalogCliError(f"{label} exceeds the {_MAX_JSON_BYTES}-byte limit")
-    return payload
 
 
-def _read_object(path: Path, *, label: str, canonical: bool) -> dict[str, Any]:
-    payload = _read_bytes(path, label=label)
-    parser = parse_canonical_json if canonical else parse_closed_json
-    value = thaw_json(parser(payload, label=label))
-    if not isinstance(value, dict):
-        raise SourceCatalogCliError(f"{label} must be a JSON object")
-    return value
 
 
-def _existing_root(path: Path, *, label: str) -> Path:
-    path = Path(path)
-    if path.is_symlink() or not path.is_dir():
-        raise SourceCatalogCliError(f"{label} must be an existing, non-symlink directory: {path}")
-    return path.resolve(strict=True)
 
 
-def _emit(value: object, *, error: bool = False) -> None:
-    if error:
-        value = redact(value)
-    else:
-        require_secret_free(value, label="CLI output")
-    stream = sys.stderr.buffer if error else sys.stdout.buffer
-    stream.write(canonical_json_file_bytes(value))
-    stream.flush()
 
 
 def _paths_overlap(first: Path, second: Path) -> bool:

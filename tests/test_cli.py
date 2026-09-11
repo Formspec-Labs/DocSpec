@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-import docspec.cli as cli_module
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
@@ -19,32 +18,35 @@ from docspec.adapters.storage import (
     RootOnlyBlobProfileStateReachability,
 )
 from docspec.application.maintenance import BlobRetentionSetService
+from docspec.cli import execution as cli_execution
+from docspec.cli import local as cli_local
 from docspec.cli import main
+from docspec.cli import plans as cli_plans
+from docspec.cli import requests as cli_requests
+from docspec.cli_io import MAX_JSON_BYTES
 from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
+from docspec.domain.jobs import StoreState
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
-from docspec.domain.jobs import StoreState
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
-from tests.support.maintenance import _platform
 from tests.helpers import (
     document_release_producer,
     write_shared_source_catalog,
 )
-
 from tests.support.cli import (
     REPO_ROOT,
     _portable_local_profiles,
     _write_local_run_request,
 )
-
+from tests.support.maintenance import _platform
 
 ZERO_DIGEST = "sha256:" + "0" * 64
 
@@ -275,6 +277,45 @@ def test_mutating_command_failure_writes_a_new_machine_receipt(
     assert not destination.exists()
 
 
+@pytest.mark.parametrize("request_change", ("disappeared", "oversized"))
+def test_failure_receipt_keeps_the_original_error_when_request_hashing_fails(
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    request_change: str,
+) -> None:
+    request = tmp_path / "invalid-request.json"
+    request.write_bytes(canonical_json_file_bytes({}))
+    destination = tmp_path / "plan.json"
+    receipt = tmp_path / "failure-receipt.json"
+    read_request = cli_plans._read_json_object
+
+    def change_after_read(path: Path, *, label: str) -> dict[str, object]:
+        value = read_request(path, label=label)
+        if request_change == "disappeared":
+            request.unlink()
+        else:
+            with request.open("r+b") as stream:
+                stream.truncate(MAX_JSON_BYTES + 1)
+        return value
+
+    monkeypatch.setattr(cli_plans, "_read_json_object", change_after_read)
+    assert main(
+        [
+            "plan", "create", "--request", str(request),
+            "--destination", str(destination), "--receipt", str(receipt),
+        ]
+    ) == 2
+    error = json.loads(capfd.readouterr().err)
+    failure = json.loads(receipt.read_text(encoding="utf-8"))
+    assert error["errorType"] == "CliError"
+    assert error["message"] == "plan creation request has an invalid closed shape"
+    assert failure["errorType"] == "CliError"
+    assert failure["requestDigest"] is None
+    assert failure["verdict"] == "failed"
+    assert not destination.exists()
+
+
 @pytest.mark.parametrize("state", (StoreState.RUNNING, StoreState.SEALED))
 def test_local_task_recovery_executes_only_an_unfinished_store(state: StoreState) -> None:
     plan_ref = ArtifactRef("plan-1", "plan.json", ZERO_DIGEST, "application/json", 1)
@@ -324,7 +365,7 @@ def test_local_task_recovery_executes_only_an_unfinished_store(state: StoreState
         )
     )
 
-    result = cli_module._execute_local_task(composition, prepared, task)
+    result = cli_execution._execute_local_task(composition, prepared, task)
 
     if state is StoreState.SEALED:
         assert executor_calls == []
@@ -441,10 +482,10 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         pytest.fail("automatic recovery must not deeply re-execute an already sealed store")
 
     with monkeypatch.context() as recovery_patch:
-        recovery_patch.setattr(cli_module.RunPlanner, "plan_run", unexpected_replanning)
-        recovery_patch.setattr(cli_module.StoreExecutionService, "execute_store", unexpected_execution)
-        automatic_resume = cli_module._execute_local_run(
-            cli_module._local_run_request(run_request),
+        recovery_patch.setattr(cli_local.RunPlanner, "plan_run", unexpected_replanning)
+        recovery_patch.setattr(cli_local.StoreExecutionService, "execute_store", unexpected_execution)
+        automatic_resume = cli_execution._execute_local_run(
+            cli_requests._local_run_request(run_request),
             resume=None,
         )
     assert automatic_resume == run_reference
@@ -704,9 +745,9 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         producer=document_release_producer(),
         blobs=platform.blobs,
     )
-    monkeypatch.setattr(cli_module, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
     monkeypatch.setattr(
-        cli_module,
+        cli_requests,
         "_local_storage",
         lambda _roots, _profiles, _producer: (
             platform.controls,
@@ -793,9 +834,9 @@ def test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index(
         platform,
         completed_at="2026-08-05T16:00:00Z",
     )
-    monkeypatch.setattr(cli_module, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
     monkeypatch.setattr(
-        cli_module,
+        cli_requests,
         "_local_storage",
         lambda _roots, _profiles, _producer: (
             platform.controls,
