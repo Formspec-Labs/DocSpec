@@ -95,3 +95,31 @@ def test_write_policy_refuses_invalid_fields_before_creating_output(
 
     assert not output.exists()
     assert json.loads(capsys.readouterr().err)["errorType"] == "ValueError"
+
+
+@pytest.mark.parametrize("template", [None, 42, {}, ["{documentId}"], "https://example.test/static"])
+def test_write_policy_refuses_invalid_url_templates_as_structured_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], template: object,
+) -> None:
+    selector = SourceInputSelector(
+        "urn:test:regulations-gov", "v4", "regulations-gov-documents",
+        "regulations-gov-document-raw", "1.0",
+    )
+    source = tmp_path / "fields.json"
+    source.write_text(json.dumps({
+        "document_input": selector.to_dict(), "agency_names": {}, "source_url_template": template,
+    }))
+    output = tmp_path / "policy.json"
+
+    assert main([
+        "source-catalog", "write-policy", "--policy", "regulations-gov",
+        "--input", str(source), "--output", str(output),
+    ]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert json.loads(captured.err) == {
+        "format": "docspec-cli-error", "formatVersion": "1.0", "errorType": "ValueError",
+        "message": "Regulations.gov source URL template must contain one {documentId}", "verdict": "fail",
+    }
+    assert not output.exists()

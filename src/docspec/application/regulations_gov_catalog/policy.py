@@ -110,7 +110,7 @@ class RegulationsGovCatalogPolicy:
         object.__setattr__(self, "agency_names", dict(sorted(names.items(), key=lambda pair: _utf16_key(pair[0]))))
         if not isinstance(self.language, str) or not self.language:
             raise ValueError("Regulations.gov catalog language must be nonempty")
-        if self.source_url_template.count("{documentId}") != 1:
+        if not isinstance(self.source_url_template, str) or self.source_url_template.count("{documentId}") != 1:
             raise ValueError("Regulations.gov source URL template must contain one {documentId}")
         if _http_url(self.source_url_template.replace("{documentId}", "probe")) is None:
             raise ValueError("Regulations.gov source URL template must be HTTP(S)")
