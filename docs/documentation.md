@@ -14,6 +14,7 @@ same change as the behavior or file move they describe.
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
+| Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
 
 The [decision index](decisions/README.md) distinguishes accepted rules, later
 amendments, and implementation gaps. Code and executable checks establish

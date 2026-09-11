@@ -1,5 +1,10 @@
 # Contributor maintainability to-do list
 
+The next phase is tracked in the [dataset experimentation and simplification
+to-do list](dataset-experiments-todo.md). This checklist retains the earlier
+refactor's completion evidence; its open human contributor exercise (E5) carries
+forward as D40 in the new plan.
+
 Make a small contribution understandable and verifiable without reconstructing
 earlier AI conversations. Keep the existing domain, application, interface, and
 adapter boundaries; reduce the context needed to work inside them.
