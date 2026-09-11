@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 from rulespec_artifacts import Supersedes
 
-import docspec.adapters.source_catalog_store as source_catalog_store
+from docspec.adapters.source_catalog_store import current as catalog_current
+from docspec.adapters.source_catalog_store import pinned_fs as catalog_pinned_fs
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
@@ -25,7 +26,7 @@ from docspec.adapters.source_catalog_store import (
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import SourceCatalogRef
-from docspec.errors import IntegrityError, StaleBaseError
+from docspec.errors import IntegrityError, StaleBaseError, StateTransitionError
 from docspec.ports.source_catalog import SourceCatalogSuccession
 from tests.support.source_catalog import (
     FakeSource,
@@ -230,7 +231,7 @@ def test_source_catalog_pointer_crash_before_replace_preserves_current(
         assert dst_dir_fd == src_dir_fd
         raise OSError("simulated crash before pointer replacement")
 
-    monkeypatch.setattr(source_catalog_store.os, "replace", fail_replace)
+    monkeypatch.setattr(catalog_current.os, "replace", fail_replace)
     with pytest.raises(OSError, match="before pointer replacement"):
         pointer.advance(
             CATALOG_ID,
@@ -299,7 +300,7 @@ def test_source_catalog_pointer_uses_pinned_parent_during_read(
     swapped = False
 
     def swap_current_before_pointer_open(
-        parent: source_catalog_store._PinnedDirectory,
+        parent: catalog_pinned_fs._PinnedDirectory,
         catalog_id: str,
     ) -> tuple[SourceCatalogRef, SourceCatalogRef | None] | None:
         nonlocal swapped
@@ -333,7 +334,7 @@ def test_source_catalog_pointer_uses_pinned_parent_during_write(
     outside.mkdir()
     (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
     retained = pointer_root / "current-retained"
-    actual_replace = source_catalog_store.os.replace
+    actual_replace = catalog_current.os.replace
     swapped = False
 
     def swap_current_before_pointer_replace(
@@ -356,7 +357,7 @@ def test_source_catalog_pointer_uses_pinned_parent_during_write(
             dst_dir_fd=dst_dir_fd,
         )
 
-    monkeypatch.setattr(source_catalog_store.os, "replace", swap_current_before_pointer_replace)
+    monkeypatch.setattr(catalog_current.os, "replace", swap_current_before_pointer_replace)
 
     with pytest.raises(IntegrityError, match="current-pointer parent changed during use"):
         pointer.advance(CATALOG_ID, initial.reference, expected_current=None)
@@ -411,7 +412,7 @@ def test_source_catalog_pointer_advisory_lock_recovers_with_persistent_file(
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         with pytest.raises(
-            source_catalog_store.StateTransitionError,
+            StateTransitionError,
             match="another source-catalog pointer advance",
         ):
             pointer.advance(CATALOG_ID, initial.reference, expected_current=None)

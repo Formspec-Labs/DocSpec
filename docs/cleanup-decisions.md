@@ -81,6 +81,29 @@ removal where no current use was found.
 Parser handlers and profile implementations remain live through registration
 even when a direct-call search finds no caller.
 
+## Large modules reviewed by responsibility
+
+The remaining outlier assessment distinguishes declarations from execution
+flow. These decisions follow inspection of the implementation, its callers and
+tests, with independent architecture review.
+
+| Module at review | Decision and contribution boundary |
+| --- | --- |
+| `adapters/source_catalog_store.py` — 1,697 lines | Split into `source_catalog_store/pinned_fs.py` (435), `staging.py` (585), `store.py` (326), and `current.py` (409), with a 13-line public import file. Filesystem operations, staging, immutable publication, and pointer advancement have distinct reasons to change. Keep the staging transaction together: its descriptor ownership, publication, and cleanup form one lifetime. |
+| `domain/source_catalog.py` — 1,077 lines | Keep the typed catalog rows and their closed schema family together. `source_catalog_schemas()` contains 681 lines of declarations, shares its field vocabulary locally, and feeds the artifact schema owner. `tests/test_package_boundary.py` compares generated and packaged schemas byte for byte. Splitting schema fragments would add navigation to one schema-maintenance task. |
+| `domain/scale.py` — 1,560 lines | Keep the closed profile/result family together. `ScaleProfile` admits exactly the document-processing and source-catalog variants; `ScaleResult.verify_profile` binds evidence and rejects impossible pass claims for both. Its longer method contains two explicit variant checks and their resource-limit tables. `tests/test_scale_profile.py` covers both variants. No separate scale format or per-type modules are needed. |
+| `processing/bounded_segmentation.py` — 1,104 lines | Keep the cohesive region → unit → packing → coverage algorithm and its provenance. `_bound` is the one owner of both boundaries and byte accounting. The introductory rationale explains source adaptation, tokenizer choice, excluded headings, and reversible evidence; it remains beside the algorithm. `tests/test_bounded_segmentation.py` covers deterministic output, token limits, coverage, and refusal cases. |
+
+Source-catalog filesystem checks remain separate from `adapters/storage/files.py`.
+They pin open directory descriptors and verify device/inode identities before
+publication or cleanup. The path-based storage helpers do not provide that same
+guarantee. Repeated identity checks at different points protect against changes
+between operations; they are deliberate behavior, not duplicate convenience code.
+
+These are justified size exceptions, not a waiver for unrelated additions.
+Review a new responsibility on its own merits and retain the governing rules,
+measurements, and failure explanations when moving code.
+
 ## Source-policy boundaries
 
 The source policies share the six ordered interpretation forms through

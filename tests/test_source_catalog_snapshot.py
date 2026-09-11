@@ -27,7 +27,8 @@ from docspec.adapters.catalog_artifact import digests as catalog_digests
 from docspec.adapters.catalog_artifact import rows as catalog_rows
 from docspec.adapters.catalog_artifact import rules as catalog_rules
 from docspec.adapters.catalog_artifact import schemas as catalog_schemas
-import docspec.adapters.source_catalog_store as source_catalog_store
+from docspec.adapters.source_catalog_store import pinned_fs as catalog_pinned_fs
+from docspec.adapters.source_catalog_store import staging as catalog_staging
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
@@ -314,7 +315,7 @@ def test_local_source_catalog_store_creates_session_under_pinned_staging_fd(
     outside.mkdir()
     (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
     store = LocalSourceCatalogStore(root)
-    actual_mkdir = source_catalog_store.os.mkdir
+    actual_mkdir = catalog_pinned_fs.os.mkdir
     swapped = False
 
     def swap_staging_before_session_mkdir(
@@ -331,7 +332,7 @@ def test_local_source_catalog_store_creates_session_under_pinned_staging_fd(
             swapped = True
         actual_mkdir(path, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(source_catalog_store.os, "mkdir", swap_staging_before_session_mkdir)
+    monkeypatch.setattr(catalog_pinned_fs.os, "mkdir", swap_staging_before_session_mkdir)
 
     with pytest.raises(IntegrityError, match="staging root changed during use"):
         with store.stage():
@@ -370,13 +371,13 @@ def test_local_source_catalog_store_refuses_same_name_tombstone_replacement_clea
 ) -> None:
     root = tmp_path / "catalog-store"
     store = LocalSourceCatalogStore(root)
-    actual_clear = source_catalog_store._clear_directory_contents_at
+    actual_clear = catalog_pinned_fs._clear_directory_contents_at
     replacement: Path | None = None
     retained: Path | None = None
     swapped = False
 
     def swap_tombstone_before_descriptor_relative_clear(
-        directory: source_catalog_store._PinnedDirectory,
+        directory: catalog_pinned_fs._PinnedDirectory,
     ) -> None:
         nonlocal replacement, retained, swapped
         if not swapped:
@@ -390,7 +391,7 @@ def test_local_source_catalog_store_refuses_same_name_tombstone_replacement_clea
         actual_clear(directory)
 
     monkeypatch.setattr(
-        source_catalog_store,
+        catalog_pinned_fs,
         "_clear_directory_contents_at",
         swap_tombstone_before_descriptor_relative_clear,
     )
@@ -454,7 +455,7 @@ def test_local_source_catalog_store_creates_pending_blob_under_pinned_fd(
     outside.mkdir()
     (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
     store = LocalSourceCatalogStore(root)
-    actual_open = source_catalog_store.os.open
+    actual_open = catalog_pinned_fs.os.open
     swapped = False
 
     def swap_pending_before_file_open(
@@ -469,7 +470,7 @@ def test_local_source_catalog_store_creates_pending_blob_under_pinned_fd(
             not swapped
             and isinstance(path, str)
             and path.startswith("blob-")
-            and flags & source_catalog_store.os.O_CREAT
+            and flags & catalog_pinned_fs.os.O_CREAT
         ):
             pending = next((root / ".staging").glob("catalog-*/blobs/.pending"))
             pending.rename(pending.with_name(".pending-retained"))
@@ -477,7 +478,7 @@ def test_local_source_catalog_store_creates_pending_blob_under_pinned_fd(
             swapped = True
         return actual_open(path, flags, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(source_catalog_store.os, "open", swap_pending_before_file_open)
+    monkeypatch.setattr(catalog_pinned_fs.os, "open", swap_pending_before_file_open)
 
     with pytest.raises(IntegrityError, match="pending blob root changed during use"):
         build_with_store(store)
@@ -503,7 +504,7 @@ def test_local_source_catalog_store_links_published_blobs_under_pinned_sha_fd(
     )
     target = (root / ".blobs" if destination_kind == "local" else shared) / "sha256"
     retained = target.with_name("sha256-retained")
-    actual_link = source_catalog_store.os.link
+    actual_link = catalog_staging.os.link
     swapped = False
 
     def swap_sha_before_link(
@@ -517,7 +518,7 @@ def test_local_source_catalog_store_links_published_blobs_under_pinned_sha_fd(
         nonlocal swapped
         if not swapped and dst_dir_fd is not None and target.is_dir():
             named = target.lstat()
-            opened = source_catalog_store.os.fstat(dst_dir_fd)
+            opened = catalog_staging.os.fstat(dst_dir_fd)
             if (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino):
                 target.rename(retained)
                 target.symlink_to(outside, target_is_directory=True)
@@ -530,7 +531,7 @@ def test_local_source_catalog_store_links_published_blobs_under_pinned_sha_fd(
             follow_symlinks=follow_symlinks,
         )
 
-    monkeypatch.setattr(source_catalog_store.os, "link", swap_sha_before_link)
+    monkeypatch.setattr(catalog_staging.os, "link", swap_sha_before_link)
 
     with pytest.raises(IntegrityError, match="published SHA-256 root changed during use"):
         build_with_store(store)
@@ -555,7 +556,7 @@ def test_local_source_catalog_store_links_shared_reuse_under_pinned_staging_sha_
     outside.mkdir()
     (outside / "sentinel.txt").write_bytes(b"outside must stay unchanged")
     store = LocalSourceCatalogStore(root, shared_blob_root=shared)
-    actual_link = source_catalog_store.os.link
+    actual_link = catalog_staging.os.link
     swapped = False
 
     def swap_staged_sha_before_link(
@@ -571,7 +572,7 @@ def test_local_source_catalog_store_links_shared_reuse_under_pinned_staging_sha_
         if not swapped and dst_dir_fd is not None and candidates:
             target = candidates[0]
             named = target.lstat()
-            opened = source_catalog_store.os.fstat(dst_dir_fd)
+            opened = catalog_staging.os.fstat(dst_dir_fd)
             if (named.st_dev, named.st_ino) == (opened.st_dev, opened.st_ino):
                 target.rename(target.with_name("sha256-retained"))
                 target.symlink_to(outside, target_is_directory=True)
@@ -584,7 +585,7 @@ def test_local_source_catalog_store_links_shared_reuse_under_pinned_staging_sha_
             follow_symlinks=follow_symlinks,
         )
 
-    monkeypatch.setattr(source_catalog_store.os, "link", swap_staged_sha_before_link)
+    monkeypatch.setattr(catalog_staging.os, "link", swap_staged_sha_before_link)
 
     with pytest.raises(IntegrityError, match="staged SHA-256 root changed during use"):
         with store.stage() as staging:
@@ -1014,7 +1015,7 @@ def test_root_publish_failure_exposes_no_artifact_and_recovers_by_blob_reuse(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    actual_publish = source_catalog_store._publish_directory_no_replace_at
+    actual_publish = catalog_staging._publish_directory_no_replace_at
     attempts = 0
 
     def fail_root_publication(*args: Any) -> None:
@@ -1025,7 +1026,7 @@ def test_root_publish_failure_exposes_no_artifact_and_recovers_by_blob_reuse(
         actual_publish(*args)
 
     monkeypatch.setattr(
-        source_catalog_store,
+        catalog_staging,
         "_publish_directory_no_replace_at",
         fail_root_publication,
     )
@@ -3076,7 +3077,7 @@ def test_a_fully_staged_workspace_retries_publication_without_recomputing_policy
         raise IntegrityError("injected root publication failure")
 
     with monkeypatch.context() as patch:
-        patch.setattr(source_catalog_store, "_publish_directory_no_replace_at", fail_publication)
+        patch.setattr(catalog_staging, "_publish_directory_no_replace_at", fail_publication)
         with pytest.raises(IntegrityError, match="injected root publication failure"):
             builder.build((source,))
 

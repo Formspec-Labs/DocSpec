@@ -123,7 +123,7 @@ remaining candidates only when the evidence supports a change.
 
 - [x] **C1 · P1 · Remove the confirmed unused private definitions.** Recheck
   references, then remove `_object_path` from
-  [source catalog storage](../src/docspec/adapters/source_catalog_store.py#L349),
+  [source catalog storage](../src/docspec/adapters/source_catalog_store/pinned_fs.py),
   `_SHA256_HEX_RE` from [storage](../src/docspec/adapters/storage/files.py),
   `_ESTIMATE_FIELDS` from [the planner](../src/docspec/application/planner.py#L33),
   and `_UNIVERSE_ROWS` from
@@ -257,13 +257,15 @@ separate simplification; keep those changes reviewable independently.
   **Done when:** validations and workflow steps have clear names, preserved error
   precedence, and focused checks for the behavior they own.
 
-- [ ] **D8 · P3 · Review remaining size outliers by responsibility.** Assess
+- [x] **D8 · P3 · Review remaining size outliers by responsibility.** Assess
   `source_catalog_store.py` (1,701 lines), `domain/scale.py` (1,560),
   `bounded_segmentation.py` (1,104), and `domain/source_catalog.py` (1,077).
   Include large schemas and historical docstrings in the assessment, while
   distinguishing declarations from complex control flow. **Done when:** each
   remaining outlier has a coherent responsibility or a justified split; useful
   rationale and normative schema definitions remain discoverable.
+  [Recorded decisions](cleanup-decisions.md#large-modules-reviewed-by-responsibility)
+  explain the store split and the retained schema, scale, and segmentation families.
 
 **E. Tests and contribution conventions**
 

@@ -35,6 +35,14 @@ and spawned-worker execution, sharing byte rules in `digests` and bounded reads
 in `rows`. The worker entry points remain module-level functions so a fresh
 interpreter can import them. The public catalog API imports these owners directly.
 
+Within [`adapters/source_catalog_store`](../src/docspec/adapters/source_catalog_store/),
+`pinned_fs` checks open directory identities and owns safe cleanup; `staging`
+keeps each blob and artifact transaction together; `store` provides immutable
+lookup and destination publication; and `current` admits and advances catalog
+pointers under a lock. Public store imports stay at the package entry point.
+These filesystem checks deliberately remain stronger than the path-based
+helpers used by other local storage adapters.
+
 ## What happens to it?
 
 1. A `ProcessingPlan` pins the catalog, profiles, processor graph, policies,
