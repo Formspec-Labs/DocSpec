@@ -371,6 +371,15 @@ at `:573`; the adapter resolves `spicy_docs.*` first, falling back to
 `spicy_docs-0.1.0` wheel and states its role outright: "It is test input, not a
 DocSpec dependency."
 
+**Current code location, 2026-09-11:** catalog commands now live in
+[`src/docspec/cli/source_catalog.py`](../../src/docspec/cli/source_catalog.py).
+The adapter is
+[`src/docspec/adapters/spicy_docs_source_native.py`](../../src/docspec/adapters/spicy_docs_source_native.py),
+with `SpicyDocsSourceNativeAdapter` and `spicy_docs_source_profile`. It now requires
+the installed `spicy_docs` package; the transitional `spicy_regs` fallback was
+retired. Accepted artifact producer labels remain distinct from the installed
+package name. The paths and fallback above describe the earlier evidence.
+
 What is missing is only that DocSpec consumes the *published release* and not
 the *act of producing it*. Production runs outside, in spicy-docs' own CLI and a
 hand-rolled campaign script. Closing that is the work.

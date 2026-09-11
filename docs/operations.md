@@ -1,0 +1,108 @@
+# Recovery, publication, and maintenance
+
+DocSpec records planned work and durable evidence so another process can verify
+what happened. Follow immutable references through that evidence before retrying,
+publishing, compacting, or assessing scale. See the
+[architecture guide](architecture.md) for the distinction between application
+release state and portable document bundles. The lifecycle and maintenance
+services below operate on application release state.
+
+## Recover the planned work and its verified progress
+
+[`RunPlanner`](../src/docspec/application/planner.py) seals an explicit run ledger
+and complete task population. A loose store file that is not referenced by the
+planned work does not become a runnable task merely because it exists on disk.
+When examining a store, distinguish its newest revision from its whole history:
+`latest()` admits the newest stored revision, while `revisions()` enumerates
+the history. The local [store adapter](../src/docspec/adapters/storage/stores.py)
+owns those reads.
+
+[`load_latest_store()`](../src/docspec/application/store_state.py) first loads
+the requested immutable reference, then considers a later revision. That order
+prevents a damaged task reference from being hidden by a newer store. Recovery
+must verify retained checkpoints before using them as evidence of completed work.
+
+Capture and extraction checkpoints retain ordered progress. Segmentation and
+processor layers have complete-stage boundaries. The
+[checkpoint verifier](../src/docspec/application/execution_checkpoints.py)
+checks retained artifacts and returns the verified frontier; the executor
+restores cumulative retry and work budgets before starting another attempt.
+Partial failure receipts remain evidence of attempted work, including when the
+current policy permits a terminal failure. Do not reset accounting on resume.
+See [stage recovery](../tests/test_stage_checkpoint_recovery.py) and
+[processor-only recovery](../tests/test_processor_only_checkpoint_recovery.py).
+
+## Deliver and reconcile before publishing
+
+[`StoreDeliveryService`](../src/docspec/application/delivery.py) checks the record
+stream and sink receipt before sealing completion. A failed attempt can leave
+immutable data whose receipt was never saved. Retry therefore depends on stable
+record identity and sink behavior, not on an assumption that nothing was written.
+
+[`RunReconciler`](../src/docspec/application/reconcile.py) compares returned task
+results with the exact planned population. It handles arrival order independently
+of planned order, collapses identical duplicate results, and rejects conflicting
+ones. Every planned task needs an admissible result and verified durable output.
+It rechecks delivery evidence before assembling the run receipt.
+
+For incremental layers, replacing a touched partition must retain unaffected rows
+inside that partition. Verify the base layer's schema and partition policy before
+combining it with new rows. Scratch SQLite workspaces support bounded sorting and
+merging; they do not become authoritative release references. See
+[reconciliation workspace tests](../tests/test_reconciliation_workspace.py) and
+[incremental equivalence](../tests/conformance/test_incremental_equivalence.py).
+
+[`ReleaseCommitService`](../src/docspec/application/commit.py) verifies the
+assembled release and uses compare-and-swap publication: advance the current
+pointer only if it still equals the expected base. If another writer has advanced
+it, inspect that release and reconsider the plan or reconciliation. Do not bypass
+the stale-base refusal to force a previous candidate into place. An unreferenced
+artifact left by an unsuccessful attempt is not evidence of publication.
+
+## Build retention evidence before inspecting garbage candidates
+
+[`BlobRetentionSetService`](../src/docspec/application/maintenance.py) builds a
+retention set from explicitly retained releases, stores, and profile state.
+It verifies those roots and retains reachable captures, representations, and
+segments. Opaque profile state requires the profile's
+[reachability interface](../src/docspec/ports/profile_state_reachability.py) to
+identify its referenced blobs. Omitting those references could misclassify live
+data as garbage.
+
+The `docspec blob-store gc` command requires `--dry-run`. It reads a prepared,
+verified retention set and reports inventory; it does not delete blobs or build
+the retention set for the caller. Its minimum-age filter controls which
+unretained blobs become candidates, not which references remain protected.
+Check [the command](../src/docspec/cli/blobs.py) and
+[retention tests](../tests/test_maintenance.py) before changing these rules.
+
+## Compact physical storage while preserving document state
+
+[`ReleaseCompactionService`](../src/docspec/application/maintenance.py) rewrites
+physical record layers without recapturing content or rerunning processors. It
+creates a distinct successor with a maintenance handoff containing zero document
+tasks. The source and successor must have identical logical state digests, and
+the receipt accounts for the rewritten layers. Normal release verification and
+expected-current publication still apply.
+
+Use `docspec document-release compact --help` for the request interface. The
+[CLI implementation](../src/docspec/cli/releases.py),
+[maintenance models](../src/docspec/domain/maintenance.py), and
+[compaction tests](../tests/test_maintenance.py) establish the required evidence.
+A smaller physical layout alone does not establish equivalent document state.
+
+## Separate local checks from qualification evidence
+
+Tests establish behavior for their actual inputs and environment. A valid
+`ScaleProfile` or a parsed `ScaleResult` is also only one part of qualification:
+the [scale model](../src/docspec/domain/scale.py) checks pins, workload declarations,
+inputs, limits, and reported evidence, while the qualification workflow must
+produce and verify the actual artifacts.
+
+The [conformance matrix](../conformance/test-matrix.json) currently declares the
+scale requirement partial. The [specification](../conformance/specification.json)
+requires ordered campaigns at 100,000, 1,000,000, and at least 5,000,000 items,
+along with the applicable clean-revision and package evidence. A focused test,
+synthetic timing run, or historical receipt does not establish that those
+campaigns completed for a later release. Keep local validation, remote CI,
+qualification, and publication status separate in reviews and run reports.

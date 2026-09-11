@@ -5,6 +5,3 @@ __pycache__/
 *.pyc
 output/
 dist/
-
-# Generated dependency-graph dumps; 4.1 MB of machine output that no code reads.
-wiki/temp/

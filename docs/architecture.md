@@ -8,12 +8,15 @@ provides the generic artifact container and structural verification.
 This maintained guide describes the code, with executable checks linked below.
 Use the [decision index](decisions/README.md) for accepted changes and migration
 limits, and [CONTRIBUTING](../CONTRIBUTING.md) to find a small change.
+For deeper guidance, see [catalog evidence and processing](catalog-and-processing.md),
+[extension points](extensions.md), and [recovery and maintenance](operations.md).
 
 ## What goes in?
 
 A source adapter exposes a verified, immutable source-native release through
-`ports/source_catalog.py`. The installed SpicyDocs/SpicyRegs reader is an optional
-adapter; core tests supply local implementations of the same interface.
+`ports/source_catalog.py`. The installed SpicyDocs reader is an optional
+[adapter](../src/docspec/adapters/spicy_docs_source_native.py); core tests supply
+local implementations of the same interface.
 Upstream acquisition owns source facts. DocSpec owns their interpretation for
 document processing.
 
@@ -113,6 +116,9 @@ the application state model remains a separate path. A cleanup must preserve
 each path's identities and readers; converting the application lifecycle into
 the portable publication workflow requires an explicit integration change.
 Recorded local mint receipts establish local builds, not external publication.
+The portable builder remains a historical mint recipe in `tools/`, with
+campaign-specific assumptions. It is not an installed generic build API, and
+application release output does not replace its historical mints byte-for-byte.
 
 Catalog, plan, and release artifacts use Rulespec's generic container. Consumers
 verify their pinned bytes and DocSpec meaning before reading them. Search,

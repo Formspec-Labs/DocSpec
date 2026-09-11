@@ -39,7 +39,8 @@ that edge; it does not define document or catalog meaning.
 
 Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
 [current architecture](docs/architecture.md). The
-[generated wiki overview](wiki/overview.md) is a dated reference snapshot.
+[documentation index](docs/documentation.md) links to maintained guides for
+catalog evidence, extensions, and operations.
 Then run the [offline walkthrough](docs/offline-walkthrough.md) to publish and
 verify one local document.
 

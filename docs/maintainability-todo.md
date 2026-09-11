@@ -52,10 +52,11 @@ remaining candidates only when the evidence supports a change.
   and output. Add a focused argument-handling check if existing tests do not
   cover the new behavior.
 
-- [x] **A2 · P1 · Repair documentation navigation.** Fix the 14 `wiki/`-prefixed
-  links in [the wiki overview](../wiki/overview.md#L113), then check links in the
-  maintained onboarding pages. **Done when:** each link resolves from the page
-  containing it and the README reaches the contributor guide and overview.
+- [x] **A2 · P1 · Repair documentation navigation.** Repaired the 14 generated
+  overview links, then [consolidated useful wiki content](history/2026-09-11-wiki-consolidation.md)
+  into maintained guides. **Done when:** each maintained link resolves from the
+  page containing it and the README reaches the contributor guide, architecture,
+  and [documentation index](documentation.md).
 
 - [x] **A3 · P1 · Add `CONTRIBUTING.md`.** Explain Python 3.12 and `uv` setup,
   focused tests, the full local suite, optional dependencies, expected generated
@@ -104,12 +105,13 @@ remaining candidates only when the evidence supports a change.
   history and point current guidance at the applicable rule. **Done when:** a
   contributor can tell which rule governs a change and what remains proposed.
 
-- [x] **B3 · P1 · Label and route generated documentation.** Show the generation
-  date and source revision from [wiki metadata](../wiki/metadata.json) on its
-  entry page. Explain which pages maintainers edit and which are regenerated.
-  Make the maintained entry guide's ownership explicit if it is removed from
-  generation. **Done when:** readers can identify snapshot material immediately,
-  and regeneration preserves maintained contributor guidance.
+- [x] **B3 · P1 · Label and route generated documentation.** Recorded the
+  generation date and source revision, then retained the
+  [exact metadata](history/2026-09-03-wiki-generation.json) when the generated
+  pages were consolidated into `docs/`. [Documentation ownership](documentation.md)
+  distinguishes maintained guides from historical evidence. **Done when:**
+  readers can identify snapshot material immediately, and generated output does
+  not overwrite maintained contributor guidance.
 
 - [x] **B4 · P1 · Document schema and fixture maintenance.** Map each schema
   family to its authoritative definition, generator or deliberate editing
@@ -127,7 +129,7 @@ remaining candidates only when the evidence supports a change.
   `_SHA256_HEX_RE` from [storage](../src/docspec/adapters/storage/files.py),
   `_ESTIMATE_FIELDS` from [the planner](../src/docspec/application/planner.py#L33),
   and `_UNIVERSE_ROWS` from
-  [Regulations.gov policy](../src/docspec/application/regulations_gov_catalog.py#L74).
+  [Regulations.gov policy](../src/docspec/application/regulations_gov_catalog/).
   Correct the outdated `_UNIVERSE_ROWS` docstring and remove imports made unused
   by the deletion. **Done when:** lint and the relevant existing checks pass,
   with no remaining references to the removed private definitions.
@@ -153,7 +155,7 @@ remaining candidates only when the evidence supports a change.
 
 - [x] **C4 · P1 · Consolidate S3 error interpretation.** Give
   [blob storage](../src/docspec/adapters/s3_blob.py#L47) and
-  [content fetching](../src/docspec/adapters/content_fetchers.py#L307) one shared
+  [content fetching](../src/docspec/adapters/content_fetchers/s3.py) one shared
   `_provider_error_identity` implementation owned by the S3 adapter area.
   **Done when:** both callers retain their own operation-specific decisions,
   existing error tests pass, and core imports still avoid optional SDKs.

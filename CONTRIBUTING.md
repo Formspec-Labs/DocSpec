@@ -36,10 +36,10 @@ catalog → processing → publication → verification flow using one local doc
 | --- | --- | --- | --- |
 | Extract a format | `ports/extractor.py`, `processing/extraction.py` | `processing/visible_text.py`; `tests/test_visible_text.py`, `tests/test_processing_pipeline.py` | Exact source bytes, byte offsets, extraction identity, evidence round trips |
 | Change segmentation | `ports/segmenter.py`, `processing/segmentation.py` | `processing/bounded_segmentation.py`; `tests/test_bounded_segmentation.py`, `tests/conformance/test_segmentation.py` | Deterministic order, size bounds, source coordinates |
-| Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog.py`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
+| Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog/`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
 | Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
 | Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
-| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `cli/local.py` connects local services; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands remain in `source_catalog_cli.py` | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
+| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `cli/local.py` connects local services; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
 | Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_document_release_schema_bundle.py` | Closed shapes, canonical bytes, version/identity rules, predecessor fixtures |
 
 Source paths in this table are relative to `src/docspec/`. Shared test setup
@@ -160,5 +160,9 @@ no per-directory reviewer roster; do not infer ownership from who last generated
 a file. The [PR template](.github/pull_request_template.md) captures the evidence
 for human- and AI-authored changes alike.
 
-Maintainers edit this guide and `docs/architecture.md` directly. Generated wiki
-pages are dated snapshots, as explained in [documentation ownership](docs/documentation.md).
+Maintainers edit this guide and the guides under `docs/` directly. The
+[documentation index](docs/documentation.md) links to catalog evidence,
+extension guidance, operations, and historical provenance. Update the relevant
+guide with a behavior or file move so the next contributor finds its current owner.
+Use the [tool inventory](tools/README.md) for repository scripts, including the
+historical portable mint recipe and its limits.

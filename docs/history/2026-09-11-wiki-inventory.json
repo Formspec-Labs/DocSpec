@@ -1,0 +1,351 @@
+{
+  "recorded_on": "2026-09-11",
+  "tracked_snapshot_revision": "b0878fdf4c0cdda1bc138c3e6e50627343cc76c6",
+  "generation_metadata": "2026-09-03-wiki-generation.json",
+  "scope": "31 tracked snapshot files and one ignored local dependency cache observed before consolidation. Maintained destinations retain useful meaning, not line-for-line generated prose.",
+  "totals": {
+    "files": 32,
+    "tracked_files": 31,
+    "markdown_files": 28,
+    "bytes": 5087181,
+    "tracked_bytes": 767505
+  },
+  "files": [
+    {
+      "path": "wiki/content_acquisition_and_processing.md",
+      "bytes": 18897,
+      "sha256": "3b0247017ea601a3e4d99263ce6356f50ec8dd28ac7b2b1c0757e35d5cf8d924",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/content_acquisition_and_processing_acquisition.md",
+      "bytes": 14039,
+      "sha256": "c68cb4cd589a3fa2f74cb56f68135a1dc9f18f4cb4c39cb04a2f2e91aa5887f9",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/content_acquisition_and_processing_extraction.md",
+      "bytes": 16028,
+      "sha256": "232d34c4e00cf2f84da271726fe88e228c812d411a7a74ec8b7f6b9421a12edf",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/content_acquisition_and_processing_segmentation.md",
+      "bytes": 15906,
+      "sha256": "de3e9183b4f784d38c73918ada6ede08e043c4b173779e365ce9f0ee5c9f8783",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/document_release_artifacts.md",
+      "bytes": 49099,
+      "sha256": "ca674ed9d8c66614cf05c709879f585d8487e5544db4bd87d65e48af785b1aae",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/schema-maintenance.md",
+        "docs/decisions/README.md"
+      ]
+    },
+    {
+      "path": "wiki/document_run_application.md",
+      "bytes": 27309,
+      "sha256": "e8480732874a2139397d98260d5b635e1dd24196c1ce0574f7c7000e68c8c17c",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/document_run_application_delivery_and_release.md",
+      "bytes": 29206,
+      "sha256": "d55e9dffbd0eb348f8dbb3cfdbd5b67858183fcdcd573117a0e299293ae5796d",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/document_run_application_execution.md",
+      "bytes": 37705,
+      "sha256": "fecd0a8b5cb64a5d01207c285ac05a51ba8f54436b312c1f4cb176f6bf508771",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/document_run_application_planning.md",
+      "bytes": 33246,
+      "sha256": "b580904e4fa7877a4feaf1ba272bc1bb1e667299e1c2ed259118950e303d8943",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/durable_results_and_release_lifecycle.md",
+      "bytes": 6078,
+      "sha256": "89f1ec407ba25f0d0d13a4df8560b80374bc41048e2f28119f08e87c4d9a1d78",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/first_module_tree.json",
+      "bytes": 39430,
+      "sha256": "0b91630cc13aa37888da83ed45b5422e206ff29705960bf82e9a0f128668740f",
+      "tracked_at_revision": true,
+      "disposition": "Duplicate generated navigation retired; current navigation is maintained.",
+      "maintained_destinations": [
+        "docs/documentation.md"
+      ]
+    },
+    {
+      "path": "wiki/governed_processing_execution_and_qualification.md",
+      "bytes": 4937,
+      "sha256": "b39e36fd61ee9bca038b0067d4081587ac9e360c9c1a21277966d7756d3a813a",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/metadata.json",
+      "bytes": 1853,
+      "sha256": "d059e41e4e1309935a3f5661bef8d014e8b20ee9ca1634833e5a6cbfeacae893",
+      "tracked_at_revision": true,
+      "disposition": "Original bytes retained as generation provenance.",
+      "maintained_destinations": [
+        "docs/history/2026-09-03-wiki-generation.json"
+      ]
+    },
+    {
+      "path": "wiki/module_tree.json",
+      "bytes": 39430,
+      "sha256": "0b91630cc13aa37888da83ed45b5422e206ff29705960bf82e9a0f128668740f",
+      "tracked_at_revision": true,
+      "disposition": "Duplicate generated navigation retired; current navigation is maintained.",
+      "maintained_destinations": [
+        "docs/documentation.md"
+      ]
+    },
+    {
+      "path": "wiki/overview.md",
+      "bytes": 5719,
+      "sha256": "3e0d64bb529bd21af9db65019f4436871f1c96042a7aad7bf0cfb68bdd5f3ff9",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/documentation.md"
+      ]
+    },
+    {
+      "path": "wiki/portable_task_execution.md",
+      "bytes": 31597,
+      "sha256": "9a5610d951fdedc399e2d4cdcc0d11cba27d4dc284b8704095077c9a5ed8ece1",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/processing_plan_and_job_model.md",
+      "bytes": 40296,
+      "sha256": "bb5834dd8314b3ebe8f2c470085da4214e658b506943861306919e3358f9e84e",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/architecture.md",
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/processor_extension_model.md",
+      "bytes": 33964,
+      "sha256": "a820858983d14d4351af352cb1cde2dd5142fc0bd183141c5d8d86ec7cd6426c",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md"
+      ]
+    },
+    {
+      "path": "wiki/release_maintenance.md",
+      "bytes": 43513,
+      "sha256": "94f82b6b68cdbd1da8f119ff77098d81acd3468eab50e8b92bcd6d6d58b6344b",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/result_delivery_and_reconciliation.md",
+      "bytes": 36723,
+      "sha256": "353d10ed3b26287fd78d0309f0be7264fd4a512b77549fc2cd41b4caa6ab3a3d",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/scale_acceptance.md",
+      "bytes": 36293,
+      "sha256": "eb7927918624fa0a92368c4c9638d371a486d98caee6cd9dc9cc3299f326683a",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/source_catalog_pipeline.md",
+      "bytes": 16648,
+      "sha256": "db3facab59555aee99861b8c78c394fa71c56c0e35bc33b0133fd0ab3076bcb6",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/source_catalog_pipeline_artifacts_and_storage.md",
+      "bytes": 24697,
+      "sha256": "176abb709e6db159f8d027df56d3e0c024b79187030a0a65b4128c6e2509c645",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/source_catalog_pipeline_model_and_ports.md",
+      "bytes": 26607,
+      "sha256": "5b50c61f6158a525f1ec27bb86431a7d0d913c33e4edc65048228d9c609eb761",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/source_catalog_pipeline_policy_execution.md",
+      "bytes": 28781,
+      "sha256": "b1190739c7e4412ed037adbacab9efbf3be458caa9f48e108b97d406fd0492dd",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/source_intake_and_document_preparation.md",
+      "bytes": 3199,
+      "sha256": "f8757c10e537224d969c52bb7c6931440305d53a15ab5f3be9e86141edeaa357",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/catalog-and-processing.md"
+      ]
+    },
+    {
+      "path": "wiki/storage_and_shared_references.md",
+      "bytes": 17260,
+      "sha256": "607ee34a43a47bf67c0714d2770c5eaabfe44d331e4c715abf9480c139506047",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/storage_and_shared_references_blob_storage.md",
+      "bytes": 24762,
+      "sha256": "7478c9d2b719cd98e2359d5315f427a5d35da77dda791c5f601ed04299373908",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/storage_and_shared_references_control_and_document_stores.md",
+      "bytes": 24522,
+      "sha256": "63e8418188ee664423d4d8557569bdfaabb87b0161b6d7d7c35bffb938d6688e",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/storage_and_shared_references_record_layers.md",
+      "bytes": 24736,
+      "sha256": "50549bae1ab1188abc963d09ce0b2d78766178c7eb1ffe55dfc9d5258aa4bf27",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/storage_and_shared_references_reference_model.md",
+      "bytes": 15025,
+      "sha256": "d00d0ec8c7d7487c2b40b5e88a6d66356f7bd5150701672a39c01fccfcba35e9",
+      "tracked_at_revision": true,
+      "disposition": "Useful operational meaning consolidated; generated code summaries retired to Git history.",
+      "maintained_destinations": [
+        "docs/extensions.md",
+        "docs/operations.md"
+      ]
+    },
+    {
+      "path": "wiki/temp/dependency_graphs/DocSpec_dependency_graph.json",
+      "bytes": 4319676,
+      "sha256": "e90c05b28bb3d28fc099fceb376320f70704d9c8f27021782c605771fe3d0217",
+      "tracked_at_revision": false,
+      "disposition": "Ignored local extraction cache removed; 1886 records all contain copied source_code, with no checked-in consumer.",
+      "maintained_destinations": []
+    }
+  ]
+}
