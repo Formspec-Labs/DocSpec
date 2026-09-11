@@ -9,18 +9,11 @@ from docspec.adapters.document_release.coverage import derive_counts, derive_cov
 from docspec.adapters.document_release.diagnostics import VerificationIssue, _issue
 from docspec.adapters.document_release.rules import (
     CATALOG_STATE_REASON_CODES,
-    DOCSPEC_GENERATION,
-    PREDECESSOR_GENERATION,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
     TEXT_BODY_SET_DOMAIN,
     TEXT_KINDS,
-    bundle_generation,
     framed_set_digest,
-    mapping_digest,
-)
-from docspec.document_release_support import (
-    source_set_digest,
 )
 
 
@@ -51,17 +44,6 @@ def _validate_root_bindings(
         for document in documents
         if isinstance(document.get("documentVersionId"), str)
     ]
-    # The predecessor generation's plain sorted-set digests, which take the ids
-    # alone. The docspec generation streams the whole rows instead (B1).
-    segment_ids = [
-        segment["segmentId"] for segment in segments if isinstance(segment.get("segmentId"), str)
-    ]
-    pairs = [
-        [document["sourceItemId"], document["documentVersionId"]]
-        for document in documents
-        if isinstance(document.get("sourceItemId"), str)
-        and isinstance(document.get("documentVersionId"), str)
-    ]
     joined = [
         document
         for document in documents
@@ -82,36 +64,10 @@ def _validate_root_bindings(
         for row in [*attachments, *comments]
         if isinstance(row.get("textBodyId"), str) and isinstance(row.get("textKind"), str)
     ]
-    generation = bundle_generation(root)
 
     catalog = content.get("sourceCatalog")
     if isinstance(catalog, Mapping):
-        # The predecessor pin carries the catalog's own `selectedSourceSetDigest`
-        # and is checked against it. The docspec-generation pin is
-        # `{catalogId, catalogDigest}` (Decision 0001, restamp item 9) and
-        # carries no set digest at all, so there is nothing for the release to
-        # agree with; its own value is checked below, against the members.
-        if generation == PREDECESSOR_GENERATION:
-            expected_selected = source_set_digest(selected_ids)
-            if catalog.get("selectedSourceSetDigest") != expected_selected:
-                _issue(
-                    issues,
-                    "invalid.source-catalog-pin",
-                    "release.json/content/sourceCatalog/selectedSourceSetDigest",
-                    "the pinned catalog's selected set does not equal this release's selected rows",
-                )
-            if content.get("selectedSourceSetDigest") != catalog.get("selectedSourceSetDigest"):
-                _issue(
-                    issues,
-                    "invalid.source-catalog-pin",
-                    "release.json/content/selectedSourceSetDigest",
-                    "release and pinned catalog disagree on the selected source set",
-                )
-        pinned = (
-            catalog.get("catalogId")
-            if generation == DOCSPEC_GENERATION
-            else catalog.get("releaseId")
-        )
+        pinned = catalog.get("catalogId")
         for index, document in enumerate(documents):
             capture = document.get("capture")
             if isinstance(capture, Mapping) and capture.get("catalogReleaseId") != pinned:
@@ -122,79 +78,68 @@ def _validate_root_bindings(
                     f"capture names a different catalog release than the root pin {pinned!r}",
                 )
 
-    # One fact, two minting rules. The sealed corpus is plain sorted-set digests
-    # and a list digest over the pairs; the docspec generation is framed digests
-    # under the domains Decision 0001 declares, the pair digest among them.
     digest_plan: tuple[tuple[str, Callable[[], str]], ...]
-    if generation == DOCSPEC_GENERATION:
-        # Amendment B1: every one of these frames the members' FULL LOGICAL
-        # ROWS, so a same-length mutation of a body's bytes, a rewritten
-        # `sourceUrl`, or a narrowed evidence coordinate moves the release's
-        # name. The rows go in as the bundle carries them; `framed_set_digest`
-        # applies the exclusion set, so producer and gate cannot disagree.
-        #
-        # Amendment C3: `selectedSourceSetDigest` IS here, and B6's reason for
-        # leaving it out is withdrawn. The pinned catalog's BYTES are not in the
-        # bundle, but the MEMBERS the domain digests are: every disposition row
-        # carries both fields `docspec-selected-source-set/1` takes. The member
-        # set is every row the CATALOG selected -- which is every row except the
-        # two reason codes that say the catalog itself did not, every other
-        # refusal in the vocabulary being this producer's about an item the
-        # catalog did select. The builder still DERIVES the value from the pin
-        # (B6 is unchanged); this is a second, independent route to it from
-        # bundle bytes alone, and the two must agree.
-        catalog_selected = [
-            {"documentId": row.get("documentId"), "sourceItemId": row.get("sourceItemId")}
-            for row in dispositions
-            if row.get("reasonCode") not in CATALOG_STATE_REASON_CODES
-        ]
-        digest_plan = (
-            (
-                "selectedSourceSetDigest",
-                lambda: framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, catalog_selected),
-            ),
-            (
-                "sourceDispositionSetDigest",
-                lambda: framed_set_digest("docspec-source-disposition-set/3", dispositions),
-            ),
-            (
-                "documentVersionSetDigest",
-                lambda: framed_set_digest("docspec-document-version-set/3", documents),
-            ),
-            (
-                "structuralNodeSetDigest",
-                lambda: framed_set_digest("docspec-structural-node-set/3", nodes),
-            ),
-            (
-                "segmentSetDigest",
-                lambda: framed_set_digest("docspec-segment-set/3", segments),
-            ),
-            (
-                "sourceDocumentMappingDigest",
-                lambda: framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined),
-            ),
-            (
-                "textBodySetDigest",
-                lambda: framed_set_digest(TEXT_BODY_SET_DOMAIN, text_bodies),
-            ),
-            # A release with none of a kind streams the empty set rather than
-            # omitting the digest: a zero is written, never omitted.
-            (
-                "attachmentSetDigest",
-                lambda: framed_set_digest("docspec-attachment-set/3", attachments),
-            ),
-            (
-                "commentSetDigest",
-                lambda: framed_set_digest("docspec-comment-set/3", comments),
-            ),
-        )
-    else:
-        digest_plan = (
-            ("selectedSourceSetDigest", lambda: source_set_digest(selected_ids)),
-            ("documentVersionSetDigest", lambda: source_set_digest(version_ids)),
-            ("segmentSetDigest", lambda: source_set_digest(segment_ids)),
-            ("sourceDocumentMappingDigest", lambda: mapping_digest(pairs)),
-        )
+    # Amendment B1: every one of these frames the members' FULL LOGICAL
+    # ROWS, so a same-length mutation of a body's bytes, a rewritten
+    # `sourceUrl`, or a narrowed evidence coordinate moves the release's
+    # name. The rows go in as the bundle carries them; `framed_set_digest`
+    # applies the exclusion set, so producer and gate cannot disagree.
+    #
+    # Amendment C3: `selectedSourceSetDigest` IS here, and B6's reason for
+    # leaving it out is withdrawn. The pinned catalog's BYTES are not in the
+    # bundle, but the MEMBERS the domain digests are: every disposition row
+    # carries both fields `docspec-selected-source-set/1` takes. The member
+    # set is every row the CATALOG selected -- which is every row except the
+    # two reason codes that say the catalog itself did not, every other
+    # refusal in the vocabulary being this producer's about an item the
+    # catalog did select. The builder still DERIVES the value from the pin
+    # (B6 is unchanged); this is a second, independent route to it from
+    # bundle bytes alone, and the two must agree.
+    catalog_selected = [
+        {"documentId": row.get("documentId"), "sourceItemId": row.get("sourceItemId")}
+        for row in dispositions
+        if row.get("reasonCode") not in CATALOG_STATE_REASON_CODES
+    ]
+    digest_plan = (
+        (
+            "selectedSourceSetDigest",
+            lambda: framed_set_digest(SELECTED_SOURCE_SET_DOMAIN, catalog_selected),
+        ),
+        (
+            "sourceDispositionSetDigest",
+            lambda: framed_set_digest("docspec-source-disposition-set/3", dispositions),
+        ),
+        (
+            "documentVersionSetDigest",
+            lambda: framed_set_digest("docspec-document-version-set/3", documents),
+        ),
+        (
+            "structuralNodeSetDigest",
+            lambda: framed_set_digest("docspec-structural-node-set/3", nodes),
+        ),
+        (
+            "segmentSetDigest",
+            lambda: framed_set_digest("docspec-segment-set/3", segments),
+        ),
+        (
+            "sourceDocumentMappingDigest",
+            lambda: framed_set_digest(SOURCE_TO_DOCUMENT_DOMAIN, joined),
+        ),
+        (
+            "textBodySetDigest",
+            lambda: framed_set_digest(TEXT_BODY_SET_DOMAIN, text_bodies),
+        ),
+        # A release with none of a kind streams the empty set rather than
+        # omitting the digest: a zero is written, never omitted.
+        (
+            "attachmentSetDigest",
+            lambda: framed_set_digest("docspec-attachment-set/3", attachments),
+        ),
+        (
+            "commentSetDigest",
+            lambda: framed_set_digest("docspec-comment-set/3", comments),
+        ),
+    )
     for field, compute in digest_plan:
         try:
             expected = compute()
@@ -255,23 +200,21 @@ def _validate_root_bindings(
         ),
         attachments=attachments,
         comments=comments,
-        generation=generation,
     )
-    if generation == DOCSPEC_GENERATION:
-        expected_accounting = expected_counts.get("attachmentAccounting")
-        declared_counts = content.get("counts")
-        declared_accounting = (
-            declared_counts.get("attachmentAccounting")
-            if isinstance(declared_counts, Mapping)
-            else None
+    expected_accounting = expected_counts.get("attachmentAccounting")
+    declared_counts = content.get("counts")
+    declared_accounting = (
+        declared_counts.get("attachmentAccounting")
+        if isinstance(declared_counts, Mapping)
+        else None
+    )
+    if declared_accounting != expected_accounting:
+        _issue(
+            issues,
+            "invalid.attachment-accounting",
+            "release.json/content/counts/attachmentAccounting",
+            f"expected {expected_accounting}",
         )
-        if declared_accounting != expected_accounting:
-            _issue(
-                issues,
-                "invalid.attachment-accounting",
-                "release.json/content/counts/attachmentAccounting",
-                f"expected {expected_accounting}",
-            )
     if content.get("counts") != expected_counts:
         _issue(issues, "invalid.counts", "release.json/content/counts", f"expected {expected_counts}")
     expected_coverage = derive_coverage(
@@ -289,19 +232,18 @@ def _validate_root_bindings(
             "release.json/content/coverage",
             f"expected {expected_coverage}",
         )
-    _validate_coverage_identity(content, generation, issues)
+    _validate_coverage_identity(content, issues)
 
 
 def _validate_coverage_identity(
-    content: Mapping[str, Any], generation: str, issues: list[VerificationIssue]
+    content: Mapping[str, Any], issues: list[VerificationIssue]
 ) -> None:
     """``segmented + excluded == representation``, per kind and in aggregate.
 
     Amendment A2 states the identity twice on purpose. An aggregate that
     balances while one kind's does not is a hole in one kind hidden by a surplus
     in another, and the whole point of the per-kind breakdown is that such a
-    hole has nowhere to hide. The per-kind half is the docspec generation's:
-    the sealed corpus carries no `perKind` to check.
+    hole has nowhere to hide.
     """
 
     def holds(totals: Any) -> bool:
@@ -322,8 +264,6 @@ def _validate_coverage_identity(
             "release.json/content/coverage",
             "segmentedByteTotal + excludedByteTotal must equal representationByteTotal",
         )
-    if generation != DOCSPEC_GENERATION:
-        return
     counts = content.get("counts")
     per_kind = counts.get("perKind") if isinstance(counts, Mapping) else None
     if not isinstance(per_kind, Mapping):

@@ -12,7 +12,6 @@ from docspec.adapters.document_release.diagnostics import VerificationIssue, _is
 from docspec.adapters.document_release.rules import (
     ATTACHMENT_DISPOSITIONS,
     ATTACHMENT_RENDITION_REASON_CODES,
-    DOCSPEC_GENERATION,
     NON_SELECTED_DISPOSITIONS,
     SOURCE_DISPOSITION_REASON_CODES,
 )
@@ -22,17 +21,12 @@ from docspec.domain.identity import stable_urn
 def _validate_dispositions(
     dispositions: Sequence[Mapping[str, Any]],
     object_key: str,
-    generation: str,
     issues: list[VerificationIssue],
 ) -> None:
     """Check one row per member of ``U``: identity, and the refusal it declares.
 
-    Amendment C4 adds the vocabulary. A `reasonCode` outside
-    `SOURCE_DISPOSITION_REASON_CODES` is refused here, under the docspec
-    generation only: the twenty sealed predecessor bundles were minted before any
-    such list existed and are not retroactively judged by it. The schema's dotted
-    pattern stays the outer bound; this is the inner one, and it is what turns
-    "the vocabulary is closed" from a sentence into a check.
+    Amendment C4 closes SOURCE_DISPOSITION_REASON_CODES. The schema's dotted
+    pattern bounds the spelling; this check admits only declared reason codes.
     """
 
     seen_items: set[str] = set()
@@ -61,8 +55,7 @@ def _validate_dispositions(
                     )
         reason_code = row.get("reasonCode")
         if (
-            generation == DOCSPEC_GENERATION
-            and isinstance(reason_code, str)
+            isinstance(reason_code, str)
             and reason_code not in SOURCE_DISPOSITION_REASON_CODES
         ):
             _issue(
@@ -140,15 +133,12 @@ def _validate_documents(
     slices: TextBodyIndex,
     object_key: str,
     key: str,
-    generation: str,
     issues: list[VerificationIssue],
 ) -> dict[str, int]:
     """Check captures and representations. Returns representation byte sizes.
 
-    The returned sizes are keyed by ``key`` -- the field structure and segments
-    hang off in this generation -- because that is what the later range checks
-    resolve against. For a document body the two names hold the same value; the
-    declared one is the one read.
+    The returned sizes use the text-body key that later structure and segment
+    range checks resolve against.
     """
 
     selected = {
@@ -170,8 +160,7 @@ def _validate_documents(
                     f"duplicate documentVersionId {version_id}",
                 )
             seen_versions.add(version_id)
-        if generation == DOCSPEC_GENERATION:
-            _validate_version_binding(document, path, issues)
+        _validate_version_binding(document, path, issues)
 
         source_item_id = document.get("sourceItemId")
         projection = selected.get(source_item_id) if isinstance(source_item_id, str) else None
@@ -309,9 +298,8 @@ def _validate_attachments(
                                 f"{sub_path}/{field}",
                                 f"attachment disposition {disposition!r} requires a {field}",
                             )
-                    # Amendment C4: the kebab-case pattern is the outer bound,
-                    # this list is the inner one. Attachment rows exist only in
-                    # the docspec generation, so no generation guard is needed.
+                    # Amendment C4: the kebab-case pattern bounds the spelling;
+                    # this list admits only declared attachment reason codes.
                     reason_code = rendition.get("reasonCode")
                     if (
                         isinstance(reason_code, str)

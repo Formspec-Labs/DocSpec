@@ -12,20 +12,15 @@ import jsonschema
 from docspec.adapters.document_release.diagnostics import VerificationIssue, _issue, _schema_issues, _validator_issues
 from docspec.adapters.document_release.rules import (
     ALLOWED_MEMBER_ROLES,
-    DOCSPEC_GENERATION,
     FORMAT,
     FORMAT_VERSION,
     MEMBER_MANIFEST_SCHEMA,
-    MEMBER_ROLES_BY_GENERATION,
     OPAQUE_ROLES,
-    PREDECESSOR_TABULAR_ROLES,
     REPRESENTATION_MEDIA_TYPE,
     SCHEMA_IDS,
-    TABULAR_MEDIA_TYPES,
+    TABULAR_MEDIA_TYPE,
     TABULAR_ROLES,
     TEXT_BODY_INDEX_ROLE,
-    bundle_generation,
-    canonical_schema_id,
     expected_document_state_digest,
     expected_release_id,
 )
@@ -87,26 +82,24 @@ def _read_root(bundle: Path, issues: list[VerificationIssue]) -> dict[str, Any] 
             "release.json",
             f"expected {FORMAT!r} version {FORMAT_VERSION!r}",
         )
-    generation = bundle_generation(root)
-    if generation == DOCSPEC_GENERATION:
-        # Two names over one content: the state digest is the minted one, the
-        # release id is derived from its hex. Both are checked, because a root
-        # that carries a correct id beside a wrong state digest is a root whose
-        # two names disagree about the same corpus.
-        try:
-            expected_state = expected_document_state_digest(root)
-        except (TypeError, ValueError) as exc:
-            _issue(issues, "invalid.identity", "release.json", str(exc))
-        else:
-            if root.get("documentStateDigest") != expected_state:
-                _issue(
-                    issues,
-                    "invalid.identity",
-                    "release.json/documentStateDigest",
-                    f"expected {expected_state}",
-                )
+    # Two names over one content: the state digest is the minted one, the
+    # release id is derived from its hex. Both are checked, because a root
+    # that carries a correct id beside a wrong state digest is a root whose
+    # two names disagree about the same corpus.
     try:
-        expected = expected_release_id(root, generation=generation)
+        expected_state = expected_document_state_digest(root)
+    except (TypeError, ValueError) as exc:
+        _issue(issues, "invalid.identity", "release.json", str(exc))
+    else:
+        if root.get("documentStateDigest") != expected_state:
+            _issue(
+                issues,
+                "invalid.identity",
+                "release.json/documentStateDigest",
+                f"expected {expected_state}",
+            )
+    try:
+        expected = expected_release_id(root)
     except (TypeError, ValueError) as exc:
         _issue(issues, "invalid.identity", "release.json", str(exc))
     else:
@@ -128,24 +121,13 @@ def _materialized_files(bundle: Path, issues: list[VerificationIssue]) -> set[st
     return result
 
 
-def _counted_roles(generation: str) -> frozenset[str]:
-    """Which member roles declare an integer ``recordCount`` in this generation.
-
-    Restamp item 16: the rule is stated per ROLE, not per "has rows". A `schema`
-    member is one document and declares null in both generations. A tabular
-    member is a stream of rows in both. A `rendition` or `representation` member
-    was one file per document under the predecessor and declared null; under the
-    docspec generation it is a partition bucket of text bodies and carries its
-    own count, exactly as the catalog's partitions do.
-    """
-
-    if generation == DOCSPEC_GENERATION:
-        return frozenset({*TABULAR_ROLES, *OPAQUE_ROLES, TEXT_BODY_INDEX_ROLE})
-    return frozenset(PREDECESSOR_TABULAR_ROLES)
+# Schema members are single documents and declare null; row streams and
+# partitioned text/blob members declare their record count (restamp item 16).
+COUNTED_MEMBER_ROLES = frozenset({*TABULAR_ROLES, *OPAQUE_ROLES, TEXT_BODY_INDEX_ROLE})
 
 
 def _validate_member_descriptor(
-    member: Any, *, path: str, generation: str, issues: list[VerificationIssue]
+    member: Any, *, path: str, issues: list[VerificationIssue]
 ) -> dict[str, Any] | None:
     if not isinstance(member, dict):
         _issue(issues, "invalid.schema", path, "member descriptor must be an object")
@@ -155,24 +137,21 @@ def _validate_member_descriptor(
     if not safe_object_key(member.get("objectKey")):
         _issue(issues, "invalid.path", f"{path}/objectKey", "unsafe member path")
     role = member.get("role")
-    if role not in MEMBER_ROLES_BY_GENERATION[generation]:
+    if role not in ALLOWED_MEMBER_ROLES:
         _issue(
             issues,
             "invalid.schema",
             f"{path}/role",
-            f"role {role!r} has no sealed schema in this generation, so its rows cannot be checked"
-            if role in ALLOWED_MEMBER_ROLES
-            else f"unknown role {role!r}",
+            f"unknown role {role!r}",
         )
     if role == "schema" and member.get("mediaType") != "application/schema+json":
         _issue(issues, "invalid.schema", f"{path}/mediaType", "expected application/schema+json")
-    tabular_media_type = TABULAR_MEDIA_TYPES[generation]
-    if role in TABULAR_ROLES and member.get("mediaType") != tabular_media_type:
-        _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {tabular_media_type}")
+    if role in TABULAR_ROLES and member.get("mediaType") != TABULAR_MEDIA_TYPE:
+        _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {TABULAR_MEDIA_TYPE}")
     if role == TEXT_BODY_INDEX_ROLE:
-        if member.get("mediaType") != tabular_media_type:
-            _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {tabular_media_type}")
-        if canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS["member-manifest"]:
+        if member.get("mediaType") != TABULAR_MEDIA_TYPE:
+            _issue(issues, "invalid.schema", f"{path}/mediaType", f"expected {TABULAR_MEDIA_TYPE}")
+        if member.get("schemaId") != SCHEMA_IDS["member-manifest"]:
             _issue(
                 issues,
                 "invalid.schema",
@@ -186,7 +165,7 @@ def _validate_member_descriptor(
             f"{path}/mediaType",
             f"expected {REPRESENTATION_MEDIA_TYPE}",
         )
-    if role in TABULAR_ROLES and canonical_schema_id(member.get("schemaId")) != SCHEMA_IDS[
+    if role in TABULAR_ROLES and member.get("schemaId") != SCHEMA_IDS[
         TABULAR_ROLES[role]
     ]:
         _issue(
@@ -195,9 +174,8 @@ def _validate_member_descriptor(
             f"{path}/schemaId",
             f"expected {SCHEMA_IDS[TABULAR_ROLES[role]]}",
         )
-    counted = _counted_roles(generation)
     record_count = member.get("recordCount")
-    if role in counted:
+    if role in COUNTED_MEMBER_ROLES:
         if not isinstance(record_count, int) or isinstance(record_count, bool):
             _issue(issues, "invalid.schema", f"{path}/recordCount", "invalid record count")
     elif record_count is not None:
@@ -213,7 +191,6 @@ def _validate_member_descriptor(
 def _read_member_manifest(
     bundle: Path,
     root: Mapping[str, Any],
-    generation: str,
     issues: list[VerificationIssue],
 ) -> tuple[list[dict[str, Any]], dict[str, Path], set[str]]:
     declared = {"release.json"}
@@ -304,7 +281,6 @@ def _read_member_manifest(
         member = _validate_member_descriptor(
             raw_member,
             path=f"{object_key}/members/{index}",
-            generation=generation,
             issues=issues,
         )
         if member is None:
@@ -386,17 +362,13 @@ def _read_rows(
     role: str,
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
-    generation: str,
     schemas: Mapping[str, Mapping[str, Any]],
     issues: list[VerificationIssue],
 ) -> tuple[list[dict[str, Any]] | None, str]:
     """Load one tabular member's rows, or ``None`` when they cannot be trusted.
 
-    Restamp item 11: the docspec generation carries these members as JSONL, one
-    canonical-JSON record per newline-terminated line, so a consumer streams the
-    rows instead of parsing a whole file to reach the first one. The predecessor
-    corpus carries a single JSON array. Which reader runs is read off the
-    generation, never sniffed from the bytes.
+    Tabular members carry one canonical JSON record per newline-terminated
+    line. The declared row schema and count must match the parsed stream.
     """
 
     matching = [member for member in members if member.get("role") == role]
@@ -413,13 +385,8 @@ def _read_rows(
     path = member_paths.get(object_key)
     if path is None or path.is_symlink() or not path.is_file():
         return None, object_key
-    reader = (
-        load_strict_canonical_jsonl
-        if generation == DOCSPEC_GENERATION
-        else load_strict_canonical_json
-    )
     try:
-        rows = reader(path)
+        rows = load_strict_canonical_jsonl(path)
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
         _issue(issues, "invalid.schema", object_key, str(exc))
         return None, object_key

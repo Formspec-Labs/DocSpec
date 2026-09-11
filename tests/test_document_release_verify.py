@@ -1,19 +1,7 @@
-"""Exercise the DocumentRelease 2.0 verifier against BOTH sealed corpora.
+"""Verify the current portable DocumentRelease 2.0 corpus and its invariants.
 
-Each corpus is one mutation per diagnostic code: the valid bundle must verify,
-and each invalid bundle must fail with exactly the code and path it is named
-for. Anything less than every bundle leaves the fixtures inert -- present,
-digest-sealed, and never actually run.
-
-There are two corpora because there are two minting generations. The
-predecessor corpus is the frozen regression anchor: twenty bundles minted
-before Decision 0001, which must keep verifying byte-unchanged under the
-predecessor rules forever. The docspec corpus is that decision's restamp of
-them -- re-homed schema ids, JSONL members, `textBodyId` keys, partitioned
-text and blob members, the reshaped catalog pin, `documentStateDigest` -- and
-must verify equally completely under the docspec rules. Every diagnostic code
-fires on its own bundle in each. A verifier that could only do one of these
-would be wrong about half of what it reads.
+Every current case seals its complete diagnostic set. The frozen predecessor
+corpus remains provenance data; its old schema IDs and reader rules are unsupported.
 """
 
 from __future__ import annotations
@@ -22,7 +10,6 @@ import hashlib
 import json
 import re
 import shutil
-from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -37,14 +24,9 @@ from docspec.adapters.document_release.rules import (
     ATTACHMENT_RENDITION_REASON_CODES,
     CATALOG_DISPOSITIONS,
     CATALOG_STATE_REASON_CODES,
-    DOCSPEC_GENERATION,
     FRAMED_SET_DOMAINS,
-    GENERATION_SCHEMA_ROLES,
-    MEMBER_ROLES_BY_GENERATION,
-    PREDECESSOR_GENERATION,
     RELEASE_ID_PREFIX,
     SCHEMA_FILES,
-    SCHEMA_ID_GENERATIONS,
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_DISPOSITION_REASON_CODES,
@@ -54,9 +36,6 @@ from docspec.adapters.document_release.rules import (
     TEXT_BODY_INDEX_ROW_DEF,
     TEXT_BODY_SET_DOMAIN,
     TEXT_KINDS,
-    bundle_generation,
-    canonical_schema_id,
-    declared_generations,
     expected_document_state_digest,
     expected_release_id,
     framed_set_digest,
@@ -92,8 +71,7 @@ from docspec.source_catalog import selected_source_set_digest
 from tools.restamp_document_release_fixtures import COMMENT_SELECTION_POLICY_DIGEST
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "document_release_v2"
-CORPUS_FILE = FIXTURE_ROOT / "corpus.json"
+PREDECESSOR_FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "document_release_v2"
 DOCSPEC_FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "document_release_v2_docspec"
 DOCSPEC_CORPUS_FILE = DOCSPEC_FIXTURE_ROOT / "corpus.json"
 
@@ -102,50 +80,21 @@ def _cases(corpus_file: Path) -> list[dict[str, Any]]:
     return json.loads(corpus_file.read_text(encoding="utf-8"))["cases"]
 
 
-CASES: list[dict[str, Any]] = _cases(CORPUS_FILE)
-INVALID_CASES = [case for case in CASES if case["expectedCode"] != "valid"]
-DOCSPEC_CASES: list[dict[str, Any]] = _cases(DOCSPEC_CORPUS_FILE)
+PREDECESSOR_CASES = _cases(PREDECESSOR_FIXTURE_ROOT / "corpus.json")
+DOCSPEC_CASES = _cases(DOCSPEC_CORPUS_FILE)
+INVALID_CASES = [case for case in DOCSPEC_CASES if case["expectedCode"] != "valid"]
 
 
-@dataclass(frozen=True)
-class Corpus:
-    """One sealed corpus and the minting generation it was written under."""
-
-    generation: str
-    root: Path
-    corpus_file: Path
-
-    @property
-    def cases(self) -> list[dict[str, Any]]:
-        return _cases(self.corpus_file)
-
-    def __str__(self) -> str:
-        return self.generation
-
-
-CORPORA = (
-    Corpus(PREDECESSOR_GENERATION, FIXTURE_ROOT, CORPUS_FILE),
-    Corpus(DOCSPEC_GENERATION, DOCSPEC_FIXTURE_ROOT, DOCSPEC_CORPUS_FILE),
+DOCSPEC_VALID = DOCSPEC_FIXTURE_ROOT / "valid"
+DOCSPEC_ROOT: dict[str, Any] = load_strict_canonical_json(DOCSPEC_VALID / "release.json")
+DOCSPEC_MANIFEST: dict[str, Any] = load_strict_canonical_json(
+    DOCSPEC_VALID / "manifests" / "global.json"
 )
-BOTH = pytest.mark.parametrize("corpus", CORPORA, ids=[str(item) for item in CORPORA])
-EVERY_INVALID_BUNDLE = [
-    (corpus, case)
-    for corpus in CORPORA
-    for case in corpus.cases
-    if case["expectedCode"] != "valid"
-]
-EVERY_BUNDLE = [(corpus, case) for corpus in CORPORA for case in corpus.cases]
+SOURCE_CATALOG_FIXTURE = ROOT / "tests" / "fixtures" / "source_catalog_release_v1" / "valid"
 
 
-def _case(name: str) -> dict[str, Any]:
-    return next(case for case in CASES if case["name"] == name)
-
-
-@BOTH
-def test_the_valid_bundle_of_each_generation_verifies_with_no_diagnostic_at_all(
-    corpus: Corpus,
-) -> None:
-    result = verify_document_release(corpus.root / "valid")
+def test_the_valid_bundle_verifies_with_no_diagnostic_at_all() -> None:
+    result = verify_document_release(DOCSPEC_FIXTURE_ROOT / "valid")
 
     assert [str(issue) for issue in result.issues] == []
     assert result.valid
@@ -154,265 +103,161 @@ def test_the_valid_bundle_of_each_generation_verifies_with_no_diagnostic_at_all(
     assert result.release_id.startswith("urn:docspec:document-release:v2:")
 
 
-@pytest.mark.parametrize(
-    ("corpus", "case"),
-    EVERY_INVALID_BUNDLE,
-    ids=[f"{corpus}-{case['name']}" for corpus, case in EVERY_INVALID_BUNDLE],
-)
+@pytest.mark.parametrize("case", INVALID_CASES, ids=[case["name"] for case in INVALID_CASES])
 def test_each_invalid_bundle_fails_with_exactly_the_diagnostic_it_is_named_for(
-    corpus: Corpus, case: dict[str, Any]
+    case: dict[str, Any],
 ) -> None:
-    result = verify_document_release(corpus.root / case["bundle"])
+    result = verify_document_release(DOCSPEC_FIXTURE_ROOT / case["bundle"])
 
-    assert not result.valid, f"{corpus}/{case['name']} was accepted"
+    assert not result.valid, f"{case['name']} was accepted"
     assert result.code == case["expectedCode"], [str(issue) for issue in result.issues]
     assert result.path == case["expectedPath"], [str(issue) for issue in result.issues]
 
 
-# The four diagnostics only a docspec-generation bundle can produce: three are
-# amendment B4's, and the version binding is B2's. The sealed predecessor corpus
-# was minted before any of them existed and is frozen, so it cannot spend a
-# bundle on one.
-DOCSPEC_ONLY_CODES = frozenset(
+# A second fixture under one code proves a distinct rule, not another spelling:
+# B1's repeated key; B4/C1's ungoverned media type; C3's selected-source digest;
+# and C4's source and attachment reason vocabularies.
+CODES_WITH_A_SECOND_RULE = frozenset(
     {
-        "invalid.version-binding",
-        "invalid.comment-selection",
-        "invalid.attachment-accounting",
+        "invalid.duplicate-identity",
         "invalid.retention-floor",
+        "invalid.set-digest",
+        "invalid.disposition",
+        "invalid.attachment-accounting",
     }
 )
-# Empty, and it used to hold `invalid.comment-selection`. The recorded reason was
-# that a comment is a member of U and the sealed source-dispositions schema
-# requires a selected U member to be a document, so no fixture could mint one --
-# and that reason was wrong about its own premise: a comment reaches a release as
-# a TEXT BODY of a document that is a member, and needs no U row of its own.
-# Amendment C6 minted the comment the corpus had never carried, and the fixture
-# followed. The set stays, empty, so the next unreachable code is recorded here
-# rather than noticed later.
-UNMINTABLE_CODES: frozenset[str] = frozenset()
-CODES_BY_GENERATION = {
-    PREDECESSOR_GENERATION: frozenset(DIAGNOSTIC_CODES) - DOCSPEC_ONLY_CODES,
-    DOCSPEC_GENERATION: frozenset(DIAGNOSTIC_CODES) - UNMINTABLE_CODES,
-}
-# A code may be spent on two bundles only where the second proves a DIFFERENT
-# rule wearing the same code. Named one by one so the exception cannot spread.
-#
-#   duplicate-identity        B1's guard that a `/3` digest refuses a repeat
-#   retention-floor           B4's second arm -- an ungoverned `(kind, media
-#                             type)` pair -- which C1 found broken and unfixtured
-#   set-digest                C3's dispositions-derived `selectedSourceSetDigest`
-#   disposition               C4's closed source reason-code vocabulary
-#   attachment-accounting     C4's closed attachment reason-code vocabulary
-CODES_WITH_A_SECOND_RULE = {
-    PREDECESSOR_GENERATION: frozenset({"invalid.duplicate-identity"}),
-    DOCSPEC_GENERATION: frozenset(
-        {
-            "invalid.duplicate-identity",
-            "invalid.retention-floor",
-            "invalid.set-digest",
-            "invalid.disposition",
-            "invalid.attachment-accounting",
-        }
-    ),
-}
 
 
-@BOTH
-def test_each_corpus_covers_every_diagnostic_code_its_generation_can_produce(
-    corpus: Corpus,
-) -> None:
-    """The codes and the invalid bundles are one list, so neither grows alone."""
+def test_the_corpus_covers_every_diagnostic_code() -> None:
+    """The codes and invalid bundles stay one complete list."""
 
-    invalid = [case for case in corpus.cases if case["expectedCode"] != "valid"]
-    covered = {case["expectedCode"] for case in invalid}
-
-    assert covered == CODES_BY_GENERATION[corpus.generation]
-    # One bundle per code, except where a second bundle proves a SECOND RULE
-    # under the same code. Every exception below is named, because "a code with
-    # two cases" is how a corpus quietly becomes a corpus with one untested rule
-    # per code: amendment B1's guard that a `/3` digest refuses a repeated key,
-    # and the four arms amendments C1, C3 and C4 added under codes Decision 0001
-    # had already assigned.
-    spent = [case["expectedCode"] for case in invalid]
+    covered = {case["expectedCode"] for case in INVALID_CASES}
+    assert covered == set(DIAGNOSTIC_CODES)
+    spent = [case["expectedCode"] for case in INVALID_CASES]
     repeated = {code for code in spent if spent.count(code) > 1}
-    assert repeated <= CODES_WITH_A_SECOND_RULE[corpus.generation]
+    assert repeated <= CODES_WITH_A_SECOND_RULE
 
 
-@BOTH
-def test_every_case_seals_the_whole_diagnostic_set_it_produces(corpus: Corpus) -> None:
-    """Amendment B3: all codes and all paths, not just the primary pair.
+def test_every_case_seals_the_whole_diagnostic_set_it_produces() -> None:
+    """A new secondary diagnostic must fail just as a changed primary one does."""
 
-    A bundle that emitted its expected diagnostic PLUS five others used to pass
-    this corpus, because only the first was asserted. Sealing the whole set
-    means a rule that starts firing where it did not is a test failure rather
-    than a silent widening -- and the sealed lists were regenerated from
-    observed behaviour, then read, rather than written from memory.
-    """
-
-    for case in corpus.cases:
-        expected = case.get("expectedDiagnostics")
-        if expected is None:
-            # The frozen predecessor corpus predates this field and its bytes
-            # are sealed; its primary code and path are asserted elsewhere.
-            assert corpus.generation == PREDECESSOR_GENERATION
-            continue
-        result = verify_document_release(corpus.root / case["bundle"])
+    for case in DOCSPEC_CASES:
+        result = verify_document_release(DOCSPEC_FIXTURE_ROOT / case["bundle"])
         observed = [{"code": issue.code, "path": issue.path} for issue in result.issues]
-        assert observed == expected, case["name"]
+        assert observed == case["expectedDiagnostics"], case["name"]
 
 
-@BOTH
-def test_verifying_each_corpus_reports_every_bundle_sealed_and_as_expected(
-    corpus: Corpus,
-) -> None:
-    rows = verify_corpus(corpus.corpus_file)
+def test_verifying_the_corpus_reports_every_bundle_sealed_and_as_expected() -> None:
+    rows = verify_corpus(DOCSPEC_CORPUS_FILE)
 
-    assert len(rows) == len(corpus.cases)
-    unsealed = [row["name"] for row in rows if not row["sealed"]]
-    assert unsealed == [], "a fixture bundle's bytes no longer match its recorded tree digest"
-    mismatched = [
+    assert len(rows) == len(DOCSPEC_CASES)
+    assert [row["name"] for row in rows if not row["sealed"]] == []
+    assert [
         row
         for row in rows
         if row["observedCode"] != row["expectedCode"] or row["observedPath"] != row["expectedPath"]
+    ] == []
+
+
+def test_the_frozen_predecessor_corpus_keeps_its_provenance_seals() -> None:
+    """Preserve historic fixture bytes without supporting their reader rules."""
+
+    assert len(PREDECESSOR_CASES) == 20
+    for case in PREDECESSOR_CASES:
+        assert tree_digest(PREDECESSOR_FIXTURE_ROOT / case["bundle"]) == case["treeSha256"]
+
+
+def test_the_current_corpus_preserves_the_predecessors_diagnostic_cases() -> None:
+    """The restamp retained its original rules and added the amendments' cases."""
+
+    predecessor_names = [case["name"] for case in PREDECESSOR_CASES]
+    kept = [case for case in DOCSPEC_CASES if case["name"] in predecessor_names]
+    assert [(case["name"], case["expectedCode"]) for case in kept] == [
+        (case["name"], case["expectedCode"]) for case in PREDECESSOR_CASES
     ]
-    assert mismatched == []
-
-
-@pytest.mark.parametrize(
-    ("corpus", "case"),
-    EVERY_BUNDLE,
-    ids=[f"{corpus}-{case['name']}" for corpus, case in EVERY_BUNDLE],
-)
-def test_every_bundle_still_digests_to_the_tree_it_was_sealed_under(
-    corpus: Corpus, case: dict[str, Any]
-) -> None:
-    assert tree_digest(corpus.root / case["bundle"]) == case["treeSha256"]
-
-
-def test_the_docspec_corpus_is_the_sealed_one_restamped_and_then_extended() -> None:
-    """The restamp re-minted the corpus; it did not redesign it.
-
-    Every predecessor case survives, in order, under the same expected code. The
-    paths differ exactly where the member keys did -- `data/*.json` became
-    `data/*.jsonl`, and one file-per-document member became a partition bucket --
-    which is what restamp item 11 changed and nothing more. What is ADDED is the
-    cases the amendments' new rules need, and nothing else.
-    """
-
-    docspec_names = [case["name"] for case in DOCSPEC_CASES]
-    sealed_names = [case["name"] for case in CASES]
-    added = [name for name in docspec_names if name not in sealed_names]
-
-    assert [name for name in docspec_names if name in sealed_names] == sealed_names
-    assert added == [
-        # Amendments B2 and B4.
+    assert [case["name"] for case in DOCSPEC_CASES if case["name"] not in predecessor_names] == [
         "version-binding",
         "attachment-accounting",
         "duplicate-attachment",
         "retention-floor",
-        # Amendment C6 minted the comment that made this one mintable at last.
         "comment-selection",
-        # Amendments C1, C3, and C4: four rules that were prose until now.
         "ungoverned-media-type",
         "selected-source-set-digest",
         "unknown-disposition-reason-code",
         "unknown-attachment-reason-code",
     ]
-    kept = [case for case in DOCSPEC_CASES if case["name"] in sealed_names]
-    assert [case["expectedCode"] for case in kept] == [
-        case["expectedCode"] for case in CASES
-    ]
-    moved = {
-        case["name"]: (case["expectedPath"], docspec["expectedPath"])
-        for case, docspec in zip(CASES, kept, strict=True)
-        if case["expectedPath"] != docspec["expectedPath"]
-    }
-    assert moved == {
-        "missing-member": ("text/FR-2026-04188.txt", "text/0019"),
-        "member-digest": ("data/structural-nodes.json", "data/structural-nodes.jsonl"),
-        "unknown-node-kind": (
-            "data/structural-nodes.json/0/nodeKind",
-            "data/structural-nodes.jsonl/0/nodeKind",
-        ),
-        "duplicate-segment": (
-            "data/search-segments.json/1/segmentId",
-            "data/search-segments.jsonl/1/segmentId",
-        ),
-        "catalog-pin-mismatch": (
-            "data/documents.json/0/capture/catalogReleaseId",
-            "data/documents.jsonl/0/capture/catalogReleaseId",
-        ),
-        "missing-projection-reason": (
-            "data/source-dispositions.json/2/reason",
-            "data/source-dispositions.jsonl/2/reason",
-        ),
-        "expected-digest-mismatch": (
-            "data/documents.json/0/capture/expectedSha256",
-            "data/documents.jsonl/0/capture/expectedSha256",
-        ),
-        "representation-bytes-differ": (
-            "data/documents.json/0/representation/sha256",
-            "data/documents.jsonl/0/representation/sha256",
-        ),
-        "orphan-structural-parent": (
-            "data/structural-nodes.json/2/structuralParentId",
-            "data/structural-nodes.jsonl/2/structuralParentId",
-        ),
-        "segment-heading-path": (
-            "data/search-segments.json/2/headingPath",
-            "data/search-segments.jsonl/2/headingPath",
-        ),
-        "coverage-gap": (
-            "data/documents.json/0/representation",
-            "data/documents.jsonl/0/representation",
-        ),
-    }
 
 
 # ─── Schema identity across the REF-048 re-homing ──────────────────────
 
 
-def test_the_sealed_corpus_declares_the_predecessor_schema_identifiers() -> None:
-    """The premise of the resolution: these bundles predate the re-homed ``$id``s."""
+def test_a_frozen_predecessor_bundle_is_unsupported() -> None:
+    result = verify_document_release(PREDECESSOR_FIXTURE_ROOT / "valid")
 
-    manifest = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "manifests" / "global.json")
-    declared = {
-        member["schemaId"] for member in manifest["members"] if member["role"] == "schema"
-    }
-
-    assert declared
-    assert declared.isdisjoint(set(SCHEMA_IDS.values()))
-    assert all(canonical_schema_id(value) in set(SCHEMA_IDS.values()) for value in declared)
+    assert not result.valid
+    assert any(
+        issue.code == "invalid.schema" and "https://rulespec.org/schemas/releases/" in issue.message
+        for issue in result.issues
+    ), [str(issue) for issue in result.issues]
 
 
-def test_the_packaged_schema_identifiers_resolve_to_themselves() -> None:
-    assert set(SCHEMA_FILES) == set(SCHEMA_IDS)
-    for schema_id in SCHEMA_IDS.values():
-        assert canonical_schema_id(schema_id) == schema_id
-    # Every packaged spelling, plus one predecessor spelling for each role that
-    # generation had. `attachments` and `comments` have no predecessor spelling
-    # because they did not exist under it.
-    predecessor = GENERATION_SCHEMA_ROLES[PREDECESSOR_GENERATION]
-    assert len(set(SCHEMA_ID_GENERATIONS)) == len(SCHEMA_IDS) + len(predecessor)
-    assert predecessor < GENERATION_SCHEMA_ROLES[DOCSPEC_GENERATION]
-    assert GENERATION_SCHEMA_ROLES[DOCSPEC_GENERATION] - predecessor == {
-        "attachments",
-        "comments",
-    }
-
-
-def test_an_unregistered_schema_identifier_resolves_to_itself_and_so_fails_closed() -> None:
-    assert canonical_schema_id("urn:docspec:schema:document-release:9.9") == (
-        "urn:docspec:schema:document-release:9.9"
+@pytest.mark.parametrize(
+    "schema_id",
+    [
+        "https://rulespec.org/schemas/releases/document-release-v2.schema.json",
+        "urn:docspec:schema:document-release:9.9",
+    ],
+)
+def test_an_unregistered_schema_identifier_is_refused(tmp_path: Path, schema_id: str) -> None:
+    root = _root_copy()
+    descriptor = next(
+        item for item in root["content"]["schemaSet"]["schemas"] if item["roles"] == ["release-root"]
     )
-    assert canonical_schema_id(None) is None
+    descriptor["schemaId"] = schema_id
+
+    result = _verify_root_only(tmp_path / "unsupported-schema", stamp_root(root))
+
+    assert not result.valid
+    assert any(
+        issue.code == "invalid.schema"
+        and issue.path.startswith("release.json/content/schemaSet/schemas/")
+        and schema_id in issue.message
+        for issue in result.issues
+    ), [str(issue) for issue in result.issues]
+
+
+@pytest.mark.parametrize(
+    ("schema_set", "expected_path"),
+    [
+        pytest.param("missing", "release.json/content/schemaSet", id="missing-schema-set"),
+        pytest.param(None, "release.json/content/schemaSet", id="null-schema-set"),
+        pytest.param({}, "release.json/content/schemaSet/schemas", id="missing-schemas"),
+        pytest.param({"schemas": "eight"}, "release.json/content/schemaSet/schemas", id="non-array-schemas"),
+    ],
+)
+def test_an_unreadable_schema_set_refuses_a_complete_bundle(
+    tmp_path: Path, schema_set: Any, expected_path: str,
+) -> None:
+    bundle = tmp_path / "unreadable-schema-set"
+    shutil.copytree(DOCSPEC_VALID, bundle)
+    root = _root_copy()
+    if schema_set == "missing":
+        root["content"].pop("schemaSet")
+    else:
+        root["content"]["schemaSet"] = schema_set
+    (bundle / "release.json").write_bytes(canonical_json_bytes(stamp_root(root)))
+
+    result = verify_document_release(bundle)
+
+    assert not result.valid
+    assert [(issue.code, issue.path) for issue in result.issues] == [("invalid.schema", expected_path)]
 
 
 def test_each_bundle_embedded_schema_still_carries_the_id_its_descriptor_names() -> None:
-    """A bundle is read as it was written: resolution never rewrites sealed bytes."""
+    """Each schema descriptor binds the registered ID to the carried bytes."""
 
-    root = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "release.json")
-    manifest = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "manifests" / "global.json")
+    root = load_strict_canonical_json(DOCSPEC_FIXTURE_ROOT / "valid" / "release.json")
+    manifest = load_strict_canonical_json(DOCSPEC_FIXTURE_ROOT / "valid" / "manifests" / "global.json")
     members = {
         member["schemaId"]: member
         for member in manifest["members"]
@@ -420,11 +265,11 @@ def test_each_bundle_embedded_schema_still_carries_the_id_its_descriptor_names()
     }
 
     descriptors = root["content"]["schemaSet"]["schemas"]
-    assert len(descriptors) == len(GENERATION_SCHEMA_ROLES[PREDECESSOR_GENERATION])
+    assert len(descriptors) == len(SCHEMA_FILES)
     for descriptor in descriptors:
         member = members[descriptor["schemaId"]]
         embedded = json.loads(
-            (FIXTURE_ROOT / "valid" / member["objectKey"]).read_text(encoding="utf-8")
+            (DOCSPEC_FIXTURE_ROOT / "valid" / member["objectKey"]).read_text(encoding="utf-8")
         )
         assert embedded["$id"] == descriptor["schemaId"]
         assert member["sha256"] == descriptor["schemaSha256"]
@@ -444,7 +289,7 @@ def test_the_wire_contract_digest_is_the_unqualified_spelling_of_docspec_identit
 
 
 def test_the_file_digest_is_the_unqualified_spelling_of_the_files_own_bytes() -> None:
-    path = FIXTURE_ROOT / "valid" / "release.json"
+    path = DOCSPEC_FIXTURE_ROOT / "valid" / "release.json"
 
     assert sha256_digest(path.read_bytes()) == f"sha256:{file_sha256(path)}"
 
@@ -452,12 +297,12 @@ def test_the_file_digest_is_the_unqualified_spelling_of_the_files_own_bytes() ->
 def test_strict_loading_returns_mutable_json_and_refuses_a_trailing_newline() -> None:
     """2.0 root bytes are canonical JSON in non-file form; the verifier mutates rows."""
 
-    root = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "release.json")
+    root = load_strict_canonical_json(DOCSPEC_FIXTURE_ROOT / "valid" / "release.json")
 
     assert isinstance(root, dict)
     assert isinstance(root["content"]["schemaSet"]["schemas"], list)
     with pytest.raises(ValueError):
-        load_strict_canonical_json(FIXTURE_ROOT / "invalid" / "noncanonical-root" / "release.json")
+        load_strict_canonical_json(DOCSPEC_FIXTURE_ROOT / "invalid" / "noncanonical-root" / "release.json")
 
 
 def test_an_object_key_may_not_escape_traverse_or_name_a_foreign_filesystem() -> None:
@@ -477,30 +322,11 @@ def test_an_object_key_may_not_escape_traverse_or_name_a_foreign_filesystem() ->
         assert not safe_object_key(refused), refused
 
 
-# ─── The docspec minting generation ────────────────────────────────────
-#
-# Nothing is minted in 2.0 yet, so there is no real docspec-generation bundle to
-# read. The roots below are synthetic on purpose: the sealed valid root with its
-# schema set re-declared under the re-homed `$id`s, which is the smallest change
-# that makes a root say "I was minted under the rules Decision 0001 settled".
-# That declaration is exactly what the verifier keys its generation off.
+# ─── Portable logical identity ────────────────────────────────────────
 
 
-SEALED_ROOT: dict[str, Any] = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "release.json")
-
-
-def _redeclared(root: dict[str, Any], resolve: bool) -> dict[str, Any]:
-    copied = json.loads(json.dumps(root))
-    descriptors = copied["content"]["schemaSet"]["schemas"]
-    for descriptor in descriptors:
-        if resolve:
-            descriptor["schemaId"] = canonical_schema_id(descriptor["schemaId"])
-    descriptors.sort(key=lambda descriptor: descriptor["schemaId"])
-    return copied
-
-
-def _docspec_generation_root() -> dict[str, Any]:
-    return stamp_root(_redeclared(SEALED_ROOT, resolve=True))
+def _root_copy() -> dict[str, Any]:
+    return json.loads(json.dumps(DOCSPEC_ROOT))
 
 
 def _verify_root_only(bundle: Path, root: dict[str, Any]) -> Any:
@@ -521,46 +347,8 @@ def _identity_issues(result: Any) -> list[str]:
     return [str(issue) for issue in result.issues if issue.code == "invalid.identity"]
 
 
-def test_the_sealed_corpus_is_read_under_the_predecessor_minting_generation() -> None:
-    assert bundle_generation(SEALED_ROOT) == PREDECESSOR_GENERATION
-    assert declared_generations(SEALED_ROOT) == {PREDECESSOR_GENERATION}
-
-
-def test_a_root_declaring_the_rehomed_identifiers_is_read_under_the_docspec_rules() -> None:
-    root = _docspec_generation_root()
-
-    assert declared_generations(root) == {DOCSPEC_GENERATION}
-    assert bundle_generation(root) == DOCSPEC_GENERATION
-
-
-def test_a_root_mixing_both_spellings_falls_back_rather_than_picking_a_winner() -> None:
-    mixed = _redeclared(SEALED_ROOT, resolve=False)
-    mixed["content"]["schemaSet"]["schemas"][0]["schemaId"] = SCHEMA_IDS["release-root"]
-
-    assert declared_generations(mixed) == {PREDECESSOR_GENERATION, DOCSPEC_GENERATION}
-    assert bundle_generation(mixed) == PREDECESSOR_GENERATION
-
-
-def test_a_root_with_no_legible_schema_set_stays_on_the_predecessor_rules() -> None:
-    for content in ({}, {"schemaSet": {}}, {"schemaSet": {"schemas": "six"}}):
-        assert bundle_generation({"content": content}) == PREDECESSOR_GENERATION
-    assert bundle_generation({}) == PREDECESSOR_GENERATION
-
-
-def test_a_mixed_generation_schema_set_is_refused_as_a_schema_defect(tmp_path: Path) -> None:
-    mixed = _redeclared(SEALED_ROOT, resolve=False)
-    mixed["content"]["schemaSet"]["schemas"][0]["schemaId"] = SCHEMA_IDS["release-root"]
-
-    result = _verify_root_only(tmp_path / "mixed", stamp_root(mixed))
-
-    assert any(
-        issue.code == "invalid.schema" and "mix minting generations" in issue.message
-        for issue in result.issues
-    ), [str(issue) for issue in result.issues]
-
-
 def test_the_docspec_generation_mints_two_names_over_one_content() -> None:
-    root = _docspec_generation_root()
+    root = _root_copy()
     state_digest = expected_document_state_digest(root)
 
     assert root["documentStateDigest"] == state_digest
@@ -570,11 +358,7 @@ def test_the_docspec_generation_mints_two_names_over_one_content() -> None:
 
 
 def test_the_state_digest_is_taken_with_the_containers_canonicaliser() -> None:
-    root = _docspec_generation_root()
-    # The sealed root carries the singular predecessor key; give the content the
-    # plural docspec-generation key so the exclusion below is exercised, not
-    # vacuously true.
-    root["content"]["processingPolicies"] = {"document-body/text-html": {}}
+    root = _root_copy()
     payload = {
         "format": root["format"],
         "formatVersion": root["formatVersion"],
@@ -591,21 +375,8 @@ def test_the_state_digest_is_taken_with_the_containers_canonicaliser() -> None:
     assert payload["logicalContent"]["coverage"] == root["content"]["coverage"]
 
 
-def test_the_two_generations_derive_different_names_from_one_root() -> None:
-    """The rules are genuinely different, so the detection is load-bearing."""
-
-    root = _docspec_generation_root()
-
-    assert expected_release_id(root, generation=DOCSPEC_GENERATION) != expected_release_id(
-        root, generation=PREDECESSOR_GENERATION
-    )
-    assert expected_release_id(
-        SEALED_ROOT, generation=PREDECESSOR_GENERATION
-    ) == SEALED_ROOT["releaseId"]
-
-
 def test_a_docspec_generation_root_raises_no_identity_diagnostic(tmp_path: Path) -> None:
-    result = _verify_root_only(tmp_path / "docspec-generation", _docspec_generation_root())
+    result = _verify_root_only(tmp_path / "docspec-generation", _root_copy())
 
     assert _identity_issues(result) == []
 
@@ -620,7 +391,7 @@ def test_a_docspec_generation_root_raises_no_identity_diagnostic(tmp_path: Path)
 def test_either_docspec_generation_name_moving_alone_is_an_identity_defect(
     tmp_path: Path, field: str, path: str
 ) -> None:
-    root = _docspec_generation_root()
+    root = _root_copy()
     root[field] = root[field][:-1] + ("0" if root[field][-1] != "0" else "1")
 
     result = _verify_root_only(tmp_path / f"tampered-{field}", root)
@@ -645,34 +416,18 @@ def _repacked(root: dict[str, Any]) -> dict[str, Any]:
 
 
 def test_a_physical_only_repack_leaves_the_docspec_state_digest_where_it_was() -> None:
-    root = _docspec_generation_root()
+    root = _root_copy()
     repacked = _repacked(root)
 
     assert repacked["content"] != root["content"]
     assert expected_document_state_digest(repacked) == expected_document_state_digest(root)
-    assert expected_release_id(repacked, generation=DOCSPEC_GENERATION) == root["releaseId"]
-
-
-def test_the_same_repack_does_move_the_predecessor_generation_name() -> None:
-    """The property is the docspec generation's, and only its.
-
-    The sealed corpus digests the whole content, member manifest and packing
-    counts included, so the identical repack renames it. That is why identity
-    had to be made generation-aware instead of switched over.
-    """
-
-    repacked = _repacked(SEALED_ROOT)
-
-    assert expected_release_id(
-        repacked, generation=PREDECESSOR_GENERATION
-    ) != SEALED_ROOT["releaseId"]
-    assert bundle_generation(repacked) == PREDECESSOR_GENERATION
+    assert expected_release_id(repacked) == root["releaseId"]
 
 
 def test_a_content_change_still_moves_the_docspec_state_digest() -> None:
     """The exclusion is physical facts, not "anything that is not a row"."""
 
-    root = _docspec_generation_root()
+    root = _root_copy()
     for mutate in (
         lambda value: value["content"]["counts"].__setitem__("selectedCount", 99),
         lambda value: value["content"]["coverage"].__setitem__("representationByteTotal", 1),
@@ -837,41 +592,6 @@ def test_every_three_domain_refuses_a_repeated_key_rather_than_absorbing_it() ->
             framed_set_digest(domain, [row, dict(row)])
 
 
-def test_relabelling_the_sealed_corpus_does_not_make_it_a_docspec_generation_bundle(
-    tmp_path: Path,
-) -> None:
-    """Re-declaring the `$id`s is not a restamp, and the gate says so.
-
-    Before Decision 0001's restamp landed, swapping the schema identifiers was
-    the only thing that separated the two generations, so this synthetic hybrid
-    was the closest thing to a docspec-generation bundle in existence. The
-    restamp reshaped the RECORDS -- JSONL members, `textBodyId` keys, the
-    reshaped pin, the new digests -- so a bundle that relabels the sealed
-    corpus without re-minting it now embeds schema bodies that are not the
-    registered docspec generation, and is refused for exactly that.
-    """
-
-    root = _docspec_generation_root()
-    bundle = tmp_path / "relabelled"
-    shutil.copytree(FIXTURE_ROOT / "valid", bundle)
-    (bundle / "release.json").write_bytes(canonical_json_bytes(root))
-
-    result = verify_document_release(bundle)
-    messages = [str(issue) for issue in result.issues]
-
-    assert not result.valid
-    # The records, not the identifiers: every tabular member is refused as
-    # un-streamable (item 11), for declaring the predecessor's media type
-    # (item 11), and every partition member for declaring no row count
-    # (item 16).
-    assert [item for item in messages if "JSONL record must be terminated" in item] == [
-        f"invalid.schema data/{name}.json: every JSONL record must be terminated by a newline"
-        for name in ("source-dispositions", "documents", "structural-nodes", "search-segments")
-    ]
-    assert sum("expected application/x-ndjson" in item for item in messages) == 4
-    assert sum("invalid record count" in item for item in messages) == 4
-
-
 def test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain() -> None:
     """D2's surviving factual basis, asserted rather than cited.
 
@@ -881,7 +601,7 @@ def test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain() -> None:
     generation digests. Where they differ (non-BMP object keys, refusal
     surfaces) is outside this format's domain.
     """
-    root = SEALED_ROOT
+    root = DOCSPEC_ROOT
     logical = {
         "format": root["format"],
         "formatVersion": root["formatVersion"],
@@ -893,17 +613,9 @@ def test_the_two_encoders_agree_byte_for_byte_on_this_formats_domain() -> None:
 
 # ─── The docspec generation, as minted ─────────────────────────────────
 #
-# Everything above proves both corpora verify. What follows proves the docspec
+# Everything above verifies the supported corpus. What follows proves the docspec
 # corpus is actually the restamp Decision 0001 specified, item by item, read off
 # the minted bytes rather than off the builder that wrote them.
-
-
-DOCSPEC_VALID = DOCSPEC_FIXTURE_ROOT / "valid"
-DOCSPEC_ROOT: dict[str, Any] = load_strict_canonical_json(DOCSPEC_VALID / "release.json")
-DOCSPEC_MANIFEST: dict[str, Any] = load_strict_canonical_json(
-    DOCSPEC_VALID / "manifests" / "global.json"
-)
-SOURCE_CATALOG_FIXTURE = ROOT / "tests" / "fixtures" / "source_catalog_release_v1" / "valid"
 
 
 def _rows(name: str) -> list[dict[str, Any]]:
@@ -912,12 +624,6 @@ def _rows(name: str) -> list[dict[str, Any]]:
 
 def _members(role: str) -> list[dict[str, Any]]:
     return [member for member in DOCSPEC_MANIFEST["members"] if member["role"] == role]
-
-
-def test_each_corpus_declares_the_generation_it_was_minted_under() -> None:
-    assert bundle_generation(DOCSPEC_ROOT) == DOCSPEC_GENERATION
-    assert declared_generations(DOCSPEC_ROOT) == {DOCSPEC_GENERATION}
-    assert bundle_generation(SEALED_ROOT) == PREDECESSOR_GENERATION
 
 
 def test_item_1_every_declared_schema_id_is_the_re_homed_docspec_spelling() -> None:
@@ -952,8 +658,6 @@ def test_item_3_the_schema_set_is_the_eight_sealed_schemas_with_a_recomputed_id(
     assert schema_set["schemaSetId"] == (
         f"urn:spicy:schema-set:v1:{canonical_sha256(descriptors)}"
     )
-    assert schema_set["schemaSetId"] != SEALED_ROOT["content"]["schemaSet"]["schemaSetId"]
-    assert len(SEALED_ROOT["content"]["schemaSet"]["schemas"]) == 6
 
 
 def test_the_embedded_schemas_are_the_packaged_generation_byte_for_byte() -> None:
@@ -1010,13 +714,6 @@ def test_item_16_record_count_is_stated_per_role_not_per_has_rows() -> None:
     for role in ("rendition", "representation"):
         counts = [member["recordCount"] for member in _members(role)]
         assert counts and all(isinstance(count, int) and count >= 1 for count in counts)
-    # The predecessor said null for exactly the members that now carry a count.
-    sealed_manifest = load_strict_canonical_json(FIXTURE_ROOT / "valid" / "manifests" / "global.json")
-    assert all(
-        member["recordCount"] is None
-        for member in sealed_manifest["members"]
-        if member["role"] in {"rendition", "representation"}
-    )
 
 
 def test_item_13_the_manifest_role_vocabulary_gained_the_two_tabular_roles() -> None:
@@ -1029,14 +726,7 @@ def test_item_13_the_manifest_role_vocabulary_gained_the_two_tabular_roles() -> 
 
     assert "attachments" in roles
     assert "comments" in roles
-    # Both roles were fail-closed while their schemas were unsealed. They are
-    # sealed now, so the docspec generation judges them -- and the predecessor
-    # generation, whose schemas would not govern them, still refuses them.
     assert {"attachments", "comments"} <= ALLOWED_MEMBER_ROLES
-    assert {"attachments", "comments"} <= MEMBER_ROLES_BY_GENERATION[DOCSPEC_GENERATION]
-    assert MEMBER_ROLES_BY_GENERATION[PREDECESSOR_GENERATION].isdisjoint(
-        {"attachments", "comments", TEXT_BODY_INDEX_ROLE}
-    )
     assert set(roles) == ALLOWED_MEMBER_ROLES
 
 
@@ -1226,8 +916,8 @@ def test_amendment_b1_declares_the_two_digests_that_close_the_last_uncovered_row
     )
 
 
-def test_the_docspec_corpus_uses_framed_domains_where_the_sealed_corpus_used_plain() -> None:
-    """The set-digest branch, on real bundles of each generation."""
+def test_the_current_corpus_uses_the_declared_framed_domains() -> None:
+    """Mapping and selected-source digests follow their declared domains."""
 
     content = DOCSPEC_ROOT["content"]
     documents = _rows("documents")
@@ -1259,11 +949,6 @@ def test_the_docspec_corpus_uses_framed_domains_where_the_sealed_corpus_used_pla
     assert content["selectedSourceSetDigest"] != framed_set_digest(
         SELECTED_SOURCE_SET_DOMAIN, joined
     )
-    # The predecessor's list digest over pairs is a different value entirely,
-    # and stays where it was.
-    assert SEALED_ROOT["content"]["sourceDocumentMappingDigest"] != content[
-        "sourceDocumentMappingDigest"
-    ]
 
 
 def test_a_physical_only_repack_of_the_real_bundle_preserves_its_state_digest() -> None:
@@ -1274,7 +959,7 @@ def test_a_physical_only_repack_of_the_real_bundle_preserves_its_state_digest() 
     assert repacked["content"] != DOCSPEC_ROOT["content"]
     assert expected_document_state_digest(repacked) == DOCSPEC_ROOT["documentStateDigest"]
     assert (
-        expected_release_id(repacked, generation=DOCSPEC_GENERATION)
+        expected_release_id(repacked)
         == DOCSPEC_ROOT["releaseId"]
     )
 
@@ -1306,17 +991,14 @@ def test_the_restamper_never_names_the_frozen_predecessor_corpus_as_its_output()
     from tools import restamp_document_release_fixtures as restamper
 
     assert restamper.FIXTURE_ROOT == DOCSPEC_FIXTURE_ROOT
-    assert restamper.PREDECESSOR_FIXTURE_ROOT == FIXTURE_ROOT
+    assert restamper.PREDECESSOR_FIXTURE_ROOT == PREDECESSOR_FIXTURE_ROOT
     assert restamper.CORPUS_FILE == DOCSPEC_CORPUS_FILE
 
 
 # ─── The sealed extension: attachments, comments, and the byte index ────
 #
-# This corpus's synthetic content carries neither an attachment nor a comment,
-# so both members are minted present and empty. Sealing a schema and never
-# writing a row against it is how a contract rots, so the tests below GROW a
-# real docspec bundle by one comment and one attachment -- through the
-# restamper's own machinery, so every digest, count, and index slice is derived
+# The tests below grow the current bundle by another comment and attachment
+# through the restamper's own machinery, so every digest, count, and index slice is derived
 # the way the builder derives them -- and then verify it.
 
 

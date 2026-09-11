@@ -4,6 +4,12 @@
 
 Editor's Draft — 30 August 2026
 
+> **Reader support updated, 2026-09-11.** Decision 0001's
+> [migration section](../../decisions/0001-document-release-2-0.md#migration-and-the-builders-obligations)
+> records retirement of the temporary predecessor reader. Only the current
+> eight-schema portable shape is accepted. The predecessor descriptions below
+> preserve adoption history; they no longer promise runtime acceptance.
+
 > **Partly superseded by Decision 0001 (2026-08-30),**
 > `docs/decisions/0001-document-release-2-0.md`. This document records the
 > *adoption* — what DocSpec took over from the Rulespec candidate, byte-faithful,
@@ -117,6 +123,10 @@ at `src/docspec/schemas/document_release/2.0/`, under DocSpec's packaged-schema
 naming and URN `$id` scheme; §8 records that mapping.
 
 ## 3. Identity
+
+> **Historical generation comparison.** The predecessor acceptance described
+> here ended on 2026-09-11. Current portable identity follows Decision 0001;
+> frozen predecessor bytes remain provenance.
 
 There are **two** minting generations under this format version, and the rule
 below is only the first one's. Both are live, because the sealed conformance

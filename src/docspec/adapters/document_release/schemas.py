@@ -1,4 +1,4 @@
-"""Embedded schema admission and generation-specific row schemas."""
+"""Embedded schema admission and registered row schemas."""
 
 from __future__ import annotations
 
@@ -11,12 +11,8 @@ import jsonschema
 
 from docspec.adapters.document_release.diagnostics import VerificationIssue, _issue, _schema_issues
 from docspec.adapters.document_release.rules import (
-    DOCSPEC_GENERATION,
-    GENERATION_SCHEMA_ROLES,
     SCHEMA_FILES,
     SCHEMA_IDS,
-    canonical_schema_id,
-    declared_generations,
 )
 from docspec.document_release_support import (
     canonical_sha256,
@@ -32,13 +28,10 @@ def _validate_root_shape(
     schemas: Mapping[str, Mapping[str, Any]],
     issues: list[VerificationIssue],
 ) -> None:
-    """Check the root against the release-root schema of its own generation.
+    """Check the root after its registered embedded schema has been admitted.
 
-    Deferred until the members have been read, because for a predecessor bundle
-    the only copy of the schema it was written against is the one it carries.
-    A bundle whose release-root schema cannot be resolved has already been
-    reported -- as a missing member, a broken digest, or an unregistered `$id` --
-    and is not reported a second time here.
+    Missing or invalid schema members are reported during schema-set admission.
+    Avoid reporting their absence a second time here.
     """
 
     schema = schemas.get("release-root")
@@ -66,34 +59,35 @@ def _validate_schema_set(
     root: Mapping[str, Any],
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
-    generation: str,
     issues: list[VerificationIssue],
 ) -> dict[str, dict[str, Any]]:
     """Check the carried schema set, and hand back the bodies it resolved.
 
-    The returned map is role -> schema body, and it is what every later row
-    check validates against. Under the docspec generation the packaged body is
-    the contract and the embedded copy must equal it byte for byte; under the
-    predecessor generation the embedded copy IS the contract, because the bodies
-    the sealed corpus was written against are not packaged anywhere else.
+    The returned role-to-schema map serves every later row check. Embedded
+    schemas must match the packaged definitions registered under their IDs.
     """
 
     bodies: dict[str, dict[str, Any]] = {}
     content = root.get("content")
     schema_set = content.get("schemaSet") if isinstance(content, dict) else None
     if not isinstance(schema_set, dict):
-        return bodies
-    descriptors = schema_set.get("schemas")
-    if not isinstance(descriptors, list):
-        return bodies
-    base = "release.json/content/schemaSet"
-    if len(declared_generations(root)) > 1:
         _issue(
             issues,
             "invalid.schema",
-            f"{base}/schemas",
-            "schema identifiers mix minting generations",
+            "release.json/content/schemaSet",
+            "schemaSet must be an object",
         )
+        return bodies
+    descriptors = schema_set.get("schemas")
+    if not isinstance(descriptors, list):
+        _issue(
+            issues,
+            "invalid.schema",
+            "release.json/content/schemaSet/schemas",
+            "schemas must be an array",
+        )
+        return bodies
+    base = "release.json/content/schemaSet"
     ids = [item.get("schemaId") for item in descriptors if isinstance(item, dict)]
     if ids != sorted(ids, key=lambda value: str(value)):
         _issue(issues, "invalid.schema", f"{base}/schemas", "schemas must be sorted by schemaId")
@@ -117,7 +111,7 @@ def _validate_schema_set(
         schema_id = descriptor.get("schemaId")
         roles = descriptor.get("roles")
         role = roles[0] if isinstance(roles, list) and len(roles) == 1 else None
-        if role is None or SCHEMA_IDS.get(role) != canonical_schema_id(schema_id):
+        if role is None or SCHEMA_IDS.get(role) != schema_id:
             _issue(
                 issues,
                 "invalid.schema",
@@ -159,8 +153,8 @@ def _validate_schema_set(
                 "$id differs from the descriptor",
             )
             continue
-        if generation == DOCSPEC_GENERATION and schema != _load_schema(SCHEMA_FILES[role]):
-            # The packaged schema is the docspec generation. A bundle may carry
+        if schema != _load_schema(SCHEMA_FILES[role]):
+            # The packaged schema is authoritative. A bundle may carry
             # its own copy -- that is what makes it portable -- but a copy that
             # says something else is a bundle checked against a contract nobody
             # registered.
@@ -172,7 +166,7 @@ def _validate_schema_set(
             )
             continue
         bodies[role] = schema
-    for role in sorted(GENERATION_SCHEMA_ROLES[generation]):
+    for role in sorted(SCHEMA_FILES):
         if seen_roles.get(role) != 1:
             _issue(issues, "invalid.schema", f"{base}/schemas", f"role {role!r} must resolve exactly once")
     return bodies

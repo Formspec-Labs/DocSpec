@@ -447,6 +447,15 @@ source-producer checkout.
 
 ## Migration, and the builder's obligations
 
+> **Predecessor reader retired, 2026-09-11.** The restamp is complete, and the
+> maintainer has withdrawn legacy support. The portable verifier now accepts
+> only this decision's current eight-schema shape and identity rules. This
+> supersedes the temporary generation-aware acceptance described below.
+> Frozen predecessor fixtures remain provenance; the frozen source-catalog
+> fixture also remains an input to the current restamping recipe. The separate
+> application release lifecycle still serves current callers, as explained in
+> the [current architecture](../architecture.md#what-comes-out).
+
 There is no migration to perform: nothing is minted in 2.0, and 1.1 is replaced,
 not migrated — no compatibility reader, no dual-write, no conversion tool.
 `RELEASE_FORMAT_VERSION` stays `"1.1"` until the builder lands, then becomes

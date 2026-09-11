@@ -28,7 +28,7 @@ from docspec.adapters.document_release.rows import (
     _validate_dispositions,
     _validate_documents,
 )
-from docspec.adapters.document_release.rules import DOCSPEC_GENERATION, TEXT_BODY_KEYS, bundle_generation
+from docspec.adapters.document_release.rules import TEXT_BODY_KEY
 from docspec.adapters.document_release.schemas import _validate_root_shape, _validate_schema_set
 from docspec.document_release_support import (
     tree_digest,
@@ -68,37 +68,25 @@ def _verify_document_release(bundle: Path) -> VerificationResult:
     root = _read_root(bundle, issues)
     if root is None:
         return VerificationResult(None, tuple(issues))
-    # One reading of the bundle's own declaration, threaded through every rule
-    # below, so a bundle can never be parsed under one generation and judged
-    # under the other.
-    generation = bundle_generation(root)
-    key = TEXT_BODY_KEYS[generation]
-    members, member_paths, declared = _read_member_manifest(bundle, root, generation, issues)
+    key = TEXT_BODY_KEY
+    members, member_paths, declared = _read_member_manifest(bundle, root, issues)
     _verify_member_files(bundle, members, member_paths, declared, issues)
-    schemas = _validate_schema_set(root, members, member_paths, generation, issues)
+    schemas = _validate_schema_set(root, members, member_paths, issues)
     _validate_root_shape(root, schemas, issues)
 
     def rows(role: str) -> tuple[list[dict[str, Any]] | None, str]:
-        return _read_rows(role, members, member_paths, generation, schemas, issues)
+        return _read_rows(role, members, member_paths, schemas, issues)
 
     dispositions, dispositions_key = rows("source-dispositions")
     documents, documents_key = rows("documents")
     nodes, nodes_key = rows("structural-nodes")
     segments, segments_key = rows("search-segments")
-    # The two members restamp item 2 sealed. They belong to the docspec
-    # generation alone: a predecessor bundle declaring one would be declaring a
-    # member only another generation's schemas could judge, which the role
-    # vocabulary already refuses.
-    if generation == DOCSPEC_GENERATION:
-        attachments, attachments_key = rows("attachments")
-        comments, comments_key = rows("comments")
-    else:
-        attachments, attachments_key = [], "data/attachments.jsonl"
-        comments, comments_key = [], "data/comments.jsonl"
-    slices = _read_text_body_index(members, member_paths, generation, schemas, issues)
+    attachments, attachments_key = rows("attachments")
+    comments, comments_key = rows("comments")
+    slices = _read_text_body_index(members, member_paths, schemas, issues)
 
     if dispositions is not None:
-        _validate_dispositions(dispositions, dispositions_key, generation, issues)
+        _validate_dispositions(dispositions, dispositions_key, issues)
     sizes: dict[str, int] = {}
     if documents is not None and dispositions is not None:
         sizes = _validate_documents(
@@ -108,7 +96,6 @@ def _verify_document_release(bundle: Path) -> VerificationResult:
             slices,
             documents_key,
             key,
-            generation,
             issues,
         )
     if comments is not None and documents is not None:
@@ -156,8 +143,7 @@ def _verify_document_release(bundle: Path) -> VerificationResult:
         _validate_segments(segments, node_index, renditions, sizes, segments_key, key, issues)
         _validate_coverage(documents, segments, sizes, documents_key, key, issues)
     if (
-        generation == DOCSPEC_GENERATION
-        and documents is not None
+        documents is not None
         and attachments is not None
         and comments is not None
     ):

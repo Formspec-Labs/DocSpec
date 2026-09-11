@@ -1,4 +1,4 @@
-"""Portable DocumentRelease format generations and shared identity rules.
+"""Portable DocumentRelease format and shared identity rules.
 
 Ported under REF-048 from ``rulespec_conformance/document_release.py`` at
 c584a1d9fcb89fb8c4253b5bb6879741b0e24c1c. Decision 0001 and its amendments
@@ -11,17 +11,11 @@ active layers, blob roots, and store receipts versus self-contained document
 members. Use each representation's own reader (see docs/architecture.md).
 The portable identity namespace remains ``urn:docspec:document-release:v2:``.
 
-A bundle's schema IDs select its minting generation. The predecessor uses
-plain sorted-set digests and its own embedded schemas. The DocSpec generation
-uses logical content, the artifact canonicalizer, and framed set digests
-(including the /3 domains amended after the first mint). Registry aliases
-identify roles; they never rewrite an embedded schema or its sealed digest.
-Mixed generations are refused, and DocSpec schemas must match the packaged
-bytes. Predecessor schemas remain readable as written.
+Portable bundles use the eight registered DocSpec schemas, logical content,
+the artifact canonicalizer, framed set digests, and JSONL tabular members.
+The frozen predecessor fixtures record provenance; this reader accepts only
+the current schema IDs and shapes.
 
-Generation also controls JSON arrays versus JSONL, documentVersionId versus
-textBodyId, and null versus counted opaque members. Read all those rules from
-the same generation so parsing and validation cannot silently diverge.
 Canonical bytes, safe paths, and tree digests come from
 ``docspec.document_release_support``. Member reading and semantic validation
 live beside this module; builders consume these identity rules directly.
@@ -31,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,7 +34,6 @@ from rulespec_artifacts import FramedSection, framed_section_digest
 from rulespec_artifacts import canonical_json_bytes as artifact_canonical_json_bytes
 
 from docspec.document_release_support import (
-    canonical_sha256,
     logical_content,
     logical_row,
     packaged_schema_root,
@@ -80,9 +73,6 @@ FORMAT_VERSION = "2.0"
 
 
 RELEASE_ID_PREFIX = "urn:docspec:document-release:v2:"
-
-
-SOURCE_CATALOG_ID_PREFIX = "urn:spicy-regs:source-catalog-release:v1:"
 
 
 CATALOG_DISPOSITIONS: tuple[str, ...] = (
@@ -216,126 +206,7 @@ SCHEMA_IDS: dict[str, str] = {
 }
 
 
-# Every ``$id`` spelling a conforming 2.0 bundle may carry, mapped onto the
-# packaged one. The predecessor generation is the identifier set the sealed
-# corpus was minted under; it is frozen, so it is listed rather than derived. A
-# spelling absent here is an unregistered schema and still fails closed.
-_PREDECESSOR_SCHEMA_ID_BASE = "https://rulespec.org/schemas/releases"
-
-
-_PREDECESSOR_SCHEMA_IDS: dict[str, str] = {
-    "release-root": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2.schema.json",
-    "member-manifest": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/member-manifest-v1.schema.json",
-    "source-dispositions": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/source-dispositions-v1.schema.json",
-    "documents": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/documents-v1.schema.json",
-    "structural-nodes": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/structural-nodes-v1.schema.json",
-    "search-segments": f"{_PREDECESSOR_SCHEMA_ID_BASE}/document-release-v2/search-segments-v1.schema.json",
-}
-
-
-SCHEMA_ID_GENERATIONS: dict[str, str] = {
-    **{schema_id: schema_id for schema_id in SCHEMA_IDS.values()},
-    **{
-        predecessor: SCHEMA_IDS[role]
-        for role, predecessor in _PREDECESSOR_SCHEMA_IDS.items()
-        if role in SCHEMA_IDS
-    },
-}
-
-
-def canonical_schema_id(value: Any) -> Any:
-    """Resolve one declared schema ``$id`` onto the packaged spelling.
-
-    An unregistered value is returned unchanged so the caller reports it as the
-    mismatch it is, naming what the bundle actually declared.
-    """
-
-    return SCHEMA_ID_GENERATIONS.get(value, value)
-
-
-# ─── Minting generations ───────────────────────────────────────────────
-
-PREDECESSOR_GENERATION = "predecessor"
-
-
-DOCSPEC_GENERATION = "docspec"
-
-
-# The same two id sets `SCHEMA_ID_GENERATIONS` maps, read for the other fact
-# they carry: which minting rules the bundle declaring them was written under.
-# One table, two questions, so a bundle can never resolve its schemas under one
-# generation and its identity under the other.
-_GENERATION_OF_SCHEMA_ID: dict[str, str] = {
-    **{schema_id: DOCSPEC_GENERATION for schema_id in SCHEMA_IDS.values()},
-    **{schema_id: PREDECESSOR_GENERATION for schema_id in _PREDECESSOR_SCHEMA_IDS.values()},
-}
-
-
-# How many schemas a conforming bundle of each generation declares, and which
-# roles. The docspec generation is the packaged eight (restamp item 3's 6 -> 8
-# widening); the predecessor generation is the frozen six the sealed corpus was
-# minted with, and `attachments`/`comments` are absent there because they did
-# not exist. One table, so neither branch can silently demand the other's roles.
-GENERATION_SCHEMA_ROLES: dict[str, frozenset[str]] = {
-    PREDECESSOR_GENERATION: frozenset(_PREDECESSOR_SCHEMA_IDS),
-    DOCSPEC_GENERATION: frozenset(SCHEMA_FILES),
-}
-
-
-def schema_id_generation(value: Any) -> str | None:
-    """Name the minting generation one declared ``$id`` belongs to, or nothing."""
-
-    return _GENERATION_OF_SCHEMA_ID.get(value)
-
-
-def declared_generations(root: Mapping[str, Any]) -> set[str]:
-    """Every registered generation this root's schema set declares.
-
-    Unregistered spellings are dropped here rather than guessed at: they are
-    already reported as unregistered schemas, and one unknown id must not
-    silently move a bundle onto the other generation's identity rule.
-    """
-
-    content = root.get("content")
-    schema_set = content.get("schemaSet") if isinstance(content, Mapping) else None
-    descriptors = schema_set.get("schemas") if isinstance(schema_set, Mapping) else None
-    if not isinstance(descriptors, list):
-        return set()
-    found = {
-        schema_id_generation(descriptor.get("schemaId"))
-        for descriptor in descriptors
-        if isinstance(descriptor, Mapping)
-    }
-    found.discard(None)
-    return {generation for generation in found if generation is not None}
-
-
-def bundle_generation(root: Mapping[str, Any]) -> str:
-    """Which generation's minting rules this bundle must be verified under.
-
-    Only a root whose declared schema identifiers are ALL the docspec spelling
-    is read under the docspec rules. Everything else -- the predecessor corpus,
-    a mixed set, a root with no legible schema set at all -- is read under the
-    predecessor rules, which is where a bundle that cannot say what it is
-    belongs: they are the rules the only sealed bundles in existence were minted
-    under, and a mixed or illegible set is separately refused as
-    ``invalid.schema``.
-    """
-
-    return (
-        DOCSPEC_GENERATION
-        if declared_generations(root) == {DOCSPEC_GENERATION}
-        else PREDECESSOR_GENERATION
-    )
-
-
 # Member roles that carry schema-governed rows, and the schema role serving each.
-# `attachments` and `comments` were fail-closed here until restamp item 2 was
-# resolvable: a role whose rows no sealed schema governs cannot be judged, and a
-# role the verifier cannot judge must not pass unread. Both schemas are sealed
-# now, so both roles are judged rather than refused -- under the docspec
-# generation only. Under the predecessor generation they are still refused,
-# because the schemas that would govern them are not that generation's.
 TABULAR_ROLES: dict[str, str] = {
     "source-dispositions": "source-dispositions",
     "documents": "documents",
@@ -344,17 +215,6 @@ TABULAR_ROLES: dict[str, str] = {
     "structural-nodes": "structural-nodes",
     "search-segments": "search-segments",
 }
-
-
-# The tabular members every generation carries. `attachments` and `comments` are
-# the two the docspec generation added; the four here are the ones a predecessor
-# bundle also declares, and the ones every bundle must declare exactly one of.
-PREDECESSOR_TABULAR_ROLES: tuple[str, ...] = (
-    "source-dispositions",
-    "documents",
-    "structural-nodes",
-    "search-segments",
-)
 
 
 # The index over partitioned member bytes (amendment A4). Its rows are governed
@@ -372,8 +232,8 @@ TEXT_BODY_INDEX_FAMILIES: dict[str, str] = {"text": "representation", "blob": "c
 
 
 # `rendition` and `representation`. Opaque in the sense that no row schema
-# governs their bytes -- but under the docspec generation they are partition
-# BUCKETS carrying a `recordCount`, not single documents (restamp items 11, 16).
+# governs their bytes. They are partition buckets carrying a `recordCount`
+# (restamp items 11, 16).
 OPAQUE_ROLES = frozenset({"rendition", "representation"})
 
 
@@ -382,35 +242,14 @@ ALLOWED_MEMBER_ROLES = frozenset(
 )
 
 
-# One role vocabulary per generation, read off the same declaration everything
-# else is. The predecessor corpus has no attachment, comment, or index member,
-# and a bundle that declared one would be declaring a member this verifier could
-# only judge against another generation's schemas.
-MEMBER_ROLES_BY_GENERATION: dict[str, frozenset[str]] = {
-    PREDECESSOR_GENERATION: frozenset(
-        {"schema", *PREDECESSOR_TABULAR_ROLES, *OPAQUE_ROLES}
-    ),
-    DOCSPEC_GENERATION: ALLOWED_MEMBER_ROLES,
-}
-
-
 REPRESENTATION_MEDIA_TYPE = "text/plain; charset=utf-8"
 
 
-# One fact per generation, read off the same declared `$id`s.
-TABULAR_MEDIA_TYPES: dict[str, str] = {
-    PREDECESSOR_GENERATION: "application/json",
-    DOCSPEC_GENERATION: "application/x-ndjson",
-}
+TABULAR_MEDIA_TYPE = "application/x-ndjson"
 
 
-# The field structure and segments hang off. The docspec generation re-keys to
-# `textBodyId` so one set of records serves all three text kinds; for a document
-# body the two values are equal, but the DECLARED key is the one that is read.
-TEXT_BODY_KEYS: dict[str, str] = {
-    PREDECESSOR_GENERATION: "documentVersionId",
-    DOCSPEC_GENERATION: "textBodyId",
-}
+# Structure and segments use one key across document bodies, attachments, and comments.
+TEXT_BODY_KEY = "textBodyId"
 
 
 # ─── Identity and derived values ───────────────────────────────────────
@@ -419,21 +258,16 @@ TEXT_BODY_KEYS: dict[str, str] = {
 def artifact_sha256(value: Any) -> str:
     """Digest one value under the artifact canonicaliser, unqualified.
 
-    The docspec generation mints with `rulespec_artifacts.canonical_json_bytes`
-    -- the container's canonicaliser, not DocSpec's -- so the container is the
-    single minter of the top-level release name (Decision 0001, D2). The two
-    encoders agree byte for byte on every value this format carries; they part
-    company on their refusal surfaces and on object keys outside the Basic
-    Multilingual Plane, which this format has none of. Which one signed a digest
-    is therefore not observable from the digest, and that is exactly why the
-    generation has to be read from the bundle rather than guessed at.
+    The container's canonicalizer owns the top-level release name (Decision
+    0001, D2). DocSpec's own encoder has different refusal behavior and key
+    ordering outside the Basic Multilingual Plane; the minter is fixed here.
     """
 
     return hashlib.sha256(artifact_canonical_json_bytes(value)).hexdigest()
 
 
 def expected_document_state_digest(root: Mapping[str, Any]) -> str:
-    """The docspec-generation digest over this bundle's LOGICAL content.
+    """The digest over this bundle's logical content.
 
     `logical_content` drops the physical and packing facts, so a repack that
     changes only how the bundle was written -- its member manifest, its member
@@ -450,63 +284,29 @@ def expected_document_state_digest(root: Mapping[str, Any]) -> str:
     return "sha256:" + artifact_sha256(payload)
 
 
-def expected_release_id(root: Mapping[str, Any], *, generation: str | None = None) -> str:
-    """Derive the release identity from the exact identity-bearing payload.
+def expected_release_id(root: Mapping[str, Any]) -> str:
+    """Derive the portable release name from its logical content digest.
 
-    ``annotations`` is excluded, and that is where every fact about the act of
-    publishing lives. Unlike DocSpec's live root, the format token and version
-    are INSIDE the preimage, so a future reshape cannot mint a colliding name.
-
-    Under the docspec generation the name is not minted a second time: it is
-    the URN prefix plus the ``documentStateDigest`` hex, by string form
-    (Decision 0001, identity rule 2). Under the predecessor generation -- the
-    twenty sealed bundles -- it is the full-content digest those bundles were
-    sealed with, taken under DocSpec's own canonicaliser.
+    The format token and version are inside the digest preimage, and publication
+    annotations and physical packing facts are outside it (Decision 0001).
     """
 
-    if (generation or bundle_generation(root)) == DOCSPEC_GENERATION:
-        return RELEASE_ID_PREFIX + expected_document_state_digest(root).split(":", 1)[1]
-    payload = {
-        "format": root.get("format"),
-        "formatVersion": root.get("formatVersion"),
-        "content": root.get("content"),
-    }
-    return RELEASE_ID_PREFIX + canonical_sha256(payload)
+    return RELEASE_ID_PREFIX + expected_document_state_digest(root).split(":", 1)[1]
 
 
 def stamp_root(root: Mapping[str, Any]) -> dict[str, Any]:
     """Return a root copy carrying its content-derived identity.
 
-    A docspec-generation root is stamped with both names, in the order the
-    decision derives them: the state digest over logical content first, the
-    release id from its hex second.
+    Stamp the logical state digest first, then derive the release ID from its
+    hex value (Decision 0001).
     """
 
     stamped = json.loads(json.dumps(root))
     stamped.pop("releaseId", None)
-    generation = bundle_generation(stamped)
-    if generation == DOCSPEC_GENERATION:
-        stamped.pop("documentStateDigest", None)
-        stamped["documentStateDigest"] = expected_document_state_digest(stamped)
-    stamped["releaseId"] = expected_release_id(stamped, generation=generation)
+    stamped.pop("documentStateDigest", None)
+    stamped["documentStateDigest"] = expected_document_state_digest(stamped)
+    stamped["releaseId"] = expected_release_id(stamped)
     return stamped
-
-
-def mapping_digest(pairs: Sequence[Sequence[str]]) -> str:
-    """The PREDECESSOR generation's source-item/document-version pair digest.
-
-    A LIST digest, not a set digest: under the rules the sealed corpus was
-    minted with, the pairing IS the fact this release exists to carry, so a
-    repeated pair moves the digest rather than being silently folded away.
-    Duplication is separately reported by the join receipt and by
-    `invalid.duplicate-identity`.
-
-    The docspec generation does not use this. There the same fact is a framed
-    SET digest over unique ``sourceItemId`` keys under
-    ``docspec-source-to-document/2`` -- see `FRAMED_SET_DOMAINS`.
-    """
-
-    return "sha256:" + canonical_sha256(sorted([list(pair) for pair in pairs]))
 
 
 # ─── Framed set digests: the docspec generation's ``/3`` domains ───────

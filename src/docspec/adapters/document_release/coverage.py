@@ -7,9 +7,7 @@ from typing import Any
 
 from docspec.adapters.document_release.rules import (
     CATALOG_DISPOSITIONS,
-    DOCSPEC_GENERATION,
-    PREDECESSOR_GENERATION,
-    TEXT_BODY_KEYS,
+    TEXT_BODY_KEY,
     TEXT_KINDS,
 )
 
@@ -218,14 +216,8 @@ def derive_counts(
     total_member_byte_size: int,
     attachments: Sequence[Mapping[str, Any]] = (),
     comments: Sequence[Mapping[str, Any]] = (),
-    generation: str = PREDECESSOR_GENERATION,
 ) -> dict[str, Any]:
-    """Recompute the diagnostic counts from the members alone.
-
-    ``perKind`` is the docspec generation's field and only that generation's:
-    the sealed corpus was minted before amendment A2 named those fields, and a
-    recomputation that added them would rename all twenty bundles.
-    """
+    """Recompute aggregate, per-kind, and attachment counts from the members."""
 
     tally = {name: 0 for name in CATALOG_DISPOSITIONS}
     for row in dispositions:
@@ -245,11 +237,10 @@ def derive_counts(
         "memberCount": member_count,
         "totalMemberByteSize": total_member_byte_size,
     }
-    if generation == DOCSPEC_GENERATION:
-        counts["perKind"] = derive_per_kind_counts(
-            documents, attachments, comments, segments, key=TEXT_BODY_KEYS[generation]
-        )
-        counts["attachmentAccounting"] = derive_attachment_accounting(attachments)
+    counts["perKind"] = derive_per_kind_counts(
+        documents, attachments, comments, segments, key=TEXT_BODY_KEY
+    )
+    counts["attachmentAccounting"] = derive_attachment_accounting(attachments)
     return counts
 
 
@@ -258,16 +249,11 @@ def derive_coverage(
     documents: Sequence[Mapping[str, Any]],
     segments: Sequence[Mapping[str, Any]],
     *,
-    key: str = "documentVersionId",
+    key: str = TEXT_BODY_KEY,
     attachments: Sequence[Mapping[str, Any]] = (),
     comments: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, int]:
     """Recompute the accounting proof from the members alone.
-
-    ``key`` is the field segments hang off in the generation being read --
-    ``documentVersionId`` for the sealed corpus, ``textBodyId`` for the docspec
-    generation. It defaults to the predecessor's so the sealed corpus keeps
-    being derived exactly as it was sealed.
 
     ``coverage`` stays AGGREGATE (amendment A2): the byte totals span every text
     kind together, and the per-kind breakdown lives under ``counts.perKind``.

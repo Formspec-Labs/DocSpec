@@ -1,7 +1,7 @@
 # Schema and fixture maintenance
 
 Schema bytes participate in artifact identity. Begin by identifying the format
-generation and governing [decision](decisions/README.md). A refactor preserves
+and governing [decision](decisions/README.md). A refactor preserves
 existing schema bytes, field order, IDs, digest domains, and sealed fixtures.
 An intentional format change needs its own compatibility decision and review.
 
@@ -46,14 +46,18 @@ hide an unexplained mismatch. The dependency lock and vendored artifact package
 are also reviewed inputs; updating dependencies can alter canonical encoding or
 structural checks and warrants the equivalence and installed-wheel tests.
 
-## Preserve sealed fixture generations
+## Preserve sealed fixtures and their provenance
 
 `tests/fixtures/document_release_v2/` is the frozen predecessor corpus. Its
-embedded schemas describe that generation; it must continue to be read as
-written. The restamper never writes it.
+embedded schemas and tree seals preserve the original bytes; the production
+verifier no longer accepts that shape. The restamper never writes it.
 
-`tests/fixtures/document_release_v2_docspec/` is the DocSpec generation. To check
-it without changing committed files:
+`tests/fixtures/source_catalog_release_v1/valid/` remains an input to the current
+restamping recipe. Its historical name does not make that input unused. Keep
+the recipe and provenance together when reviewing future fixture changes.
+
+`tests/fixtures/document_release_v2_docspec/` is the supported portable corpus.
+To check it without changing committed files:
 
 ```sh
 uv run --frozen python tools/restamp_document_release_fixtures.py --check
@@ -73,7 +77,7 @@ Only after deciding to change the wire format or its sealed test cases, use:
 uv run --frozen python tools/restamp_document_release_fixtures.py --allow-regeneration
 ```
 
-This replaces the DocSpec-generation corpus. Review every changed tree digest,
+This replaces the current portable corpus. Review every changed tree digest,
 root identity, embedded schema, expected diagnostic, and generated member. Keep
 the predecessor corpus untouched. Record why new bytes are required and which
 consumers or published pins are affected; passing regenerated tests alone does

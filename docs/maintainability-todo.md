@@ -32,6 +32,10 @@ current CI, full conformance, scale qualification, or release status. Dead-code
 searches covered repository source, tools, tests, and documentation; they cannot
 prove that an external consumer never imports a public symbol.
 
+The maintainer subsequently clarified that legacy support is unnecessary.
+Unused legacy entry points and predecessor readers may be retired; current
+workflows, source evidence, and reproducible fixture provenance remain required.
+
 P0 restores the default development baseline. P1 removes immediate contribution
 barriers and resolves small cleanup decisions. P2 restructures larger areas after
 their interfaces and checks are clear. P3 measures the result and addresses

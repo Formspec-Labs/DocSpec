@@ -13,7 +13,7 @@ import jsonschema
 
 from docspec.adapters.document_release.diagnostics import VerificationIssue, _issue, _validator_issues
 from docspec.adapters.document_release.members import _read_slice
-from docspec.adapters.document_release.rules import DOCSPEC_GENERATION, TEXT_BODY_INDEX_ROLE, TEXT_BODY_INDEX_ROW_DEF
+from docspec.adapters.document_release.rules import TEXT_BODY_INDEX_ROLE, TEXT_BODY_INDEX_ROW_DEF
 from docspec.adapters.document_release.schemas import _row_subschema
 from docspec.document_release_support import (
     load_strict_canonical_jsonl,
@@ -47,7 +47,6 @@ class TextBodyIndex:
 def _read_text_body_index(
     members: Sequence[Mapping[str, Any]],
     member_paths: Mapping[str, Path],
-    generation: str,
     schemas: Mapping[str, Mapping[str, Any]],
     issues: list[VerificationIssue],
 ) -> TextBodyIndex:
@@ -66,8 +65,6 @@ def _read_text_body_index(
     ``invalid.member-digest``, exactly as a whole member's would be.
     """
 
-    if generation != DOCSPEC_GENERATION:
-        return TextBodyIndex.empty()
     matching = [member for member in members if member.get("role") == TEXT_BODY_INDEX_ROLE]
     if not matching:
         return TextBodyIndex.empty()

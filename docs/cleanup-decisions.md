@@ -17,7 +17,23 @@ verification lives at `adapters.document_release.verify.verify_document_release`
 The application release lifecycle and portable bundle lifecycle both serve
 current callers. Both advertise `2.0`, and their structures differ; removing an
 old import path does not make either current workflow obsolete. Predecessor
-portable-format handling is a separate retirement still under review.
+portable-format handling is retired as described below.
+
+## Retire the predecessor portable reader
+
+The portable verifier accepts the current eight-schema shape, strict JSONL
+members, framed set digests, and content-based release identity. Removed schema
+aliases, generation inference, JSON-array member parsing, and predecessor digest
+rules no longer create a second validation path. Current per-kind accounting,
+retention floors, source versions, and indexed-byte ownership checks remain.
+
+Decision 0001 explicitly made the predecessor reader temporary until restamping.
+The current restamper produces the supported corpus and does not read the old
+DocumentRelease corpus. Both frozen fixture trees remain sealed provenance;
+`source_catalog_release_v1/valid` remains a required input to the current recipe.
+No packaged schema or sealed fixture bytes changed. The
+[dated retirement note](decisions/0001-document-release-2-0.md#migration-and-the-builders-obligations)
+supersedes the earlier promise to accept both portable generations.
 
 ## Retire the unused application wrapper
 

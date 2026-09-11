@@ -104,7 +104,6 @@ from docspec.adapters.document_release.coverage import (
     derive_coverage,
 )
 from docspec.adapters.document_release.rules import (
-    DOCSPEC_GENERATION,
     FORMAT,
     FORMAT_VERSION,
     REPRESENTATION_MEDIA_TYPE,
@@ -112,9 +111,9 @@ from docspec.adapters.document_release.rules import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    TABULAR_MEDIA_TYPES,
+    TABULAR_MEDIA_TYPE,
     TEXT_BODY_INDEX_ROLE,
-    TEXT_BODY_KEYS,
+    TEXT_BODY_KEY,
     TEXT_BODY_SET_DOMAIN,
     framed_set_digest,
     stamp_root,
@@ -155,8 +154,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CORPUS_ID = "urn:docspec:document-corpus:us-federal-register"
 DOCUMENT_BODY = "document-body"
-TEXT_BODY_KEY = TEXT_BODY_KEYS[DOCSPEC_GENERATION]
-TABULAR_MEDIA_TYPE = TABULAR_MEDIA_TYPES[DOCSPEC_GENERATION]
 JOIN_RECEIPT_ID = "urn:docspec:join-receipt:source-to-document-v1"
 
 # Decision 0001, restamp item 11: text and blob members follow the SourceCatalog
@@ -840,7 +837,6 @@ def build_release(bundle: Path, inputs: BuildInputs) -> tuple[dict[str, Any], Bu
             total_member_byte_size=sum(member["byteSize"] for member in members),
             attachments=attachments,
             comments=[],
-            generation=DOCSPEC_GENERATION,
         ),
         "coverage": derive_coverage(
             dispositions,
@@ -1461,7 +1457,6 @@ def mint(
             "code": result.code,
             "diagnostics": [str(issue) for issue in result.issues[:20]],
             "diagnosticCount": len(result.issues),
-            "generation": DOCSPEC_GENERATION,
         },
     }
     return receipt

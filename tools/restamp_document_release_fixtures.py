@@ -22,8 +22,8 @@ The DOCSPEC minting generation, at `tests/fixtures/document_release_v2_docspec`
 -- `docs/decisions/0001-document-release-2-0.md` restamp items 1 through 16, as
 far as they are mechanically specified. The predecessor corpus at
 `tests/fixtures/document_release_v2` is NOT rebuilt by this tool and never
-should be: it is the frozen regression anchor the generation-aware verifier is
-measured against, sealed by the tree digests in its own `corpus.json`.
+should be: its tree digests preserve the provenance of the current corpus.
+Predecessor runtime verification is no longer supported.
 
 All sixteen items are implemented. Three of them -- 2, 3, and 7 -- were stopped
 on the first pass because item 2 as written was self-contradictory, and the
@@ -69,7 +69,6 @@ from docspec.adapters.document_release.coverage import (
     derive_coverage,
 )
 from docspec.adapters.document_release.rules import (
-    DOCSPEC_GENERATION,
     FORMAT,
     FORMAT_VERSION,
     FRAMED_SET_DOMAINS,
@@ -78,9 +77,9 @@ from docspec.adapters.document_release.rules import (
     SCHEMA_IDS,
     SELECTED_SOURCE_SET_DOMAIN,
     SOURCE_TO_DOCUMENT_DOMAIN,
-    TABULAR_MEDIA_TYPES,
+    TABULAR_MEDIA_TYPE,
     TEXT_BODY_INDEX_ROLE,
-    TEXT_BODY_KEYS,
+    TEXT_BODY_KEY,
     TEXT_BODY_SET_DOMAIN,
     framed_set_digest,
     stamp_root,
@@ -116,11 +115,6 @@ PREDECESSOR_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "document_release_
 CORPUS_ID = "urn:docspec:document-corpus:us-federal-register"
 PUBLISHED_AT = "2026-08-11T00:00:00Z"
 
-# The text body key and tabular media type this builder mints under. Read from
-# the gate's own tables rather than restated, so builder and verifier cannot
-# drift apart about what the docspec generation is.
-TEXT_BODY_KEY = TEXT_BODY_KEYS[DOCSPEC_GENERATION]
-TABULAR_MEDIA_TYPE = TABULAR_MEDIA_TYPES[DOCSPEC_GENERATION]
 DOCUMENT_BODY = "document-body"
 
 # Restamp item 11: text and blob members follow the SourceCatalog multipart
@@ -788,7 +782,6 @@ def _restamp(bundle: Path, state: dict[str, Any]) -> None:
             total_member_byte_size=sum(member["byteSize"] for member in members),
             attachments=attachments,
             comments=comments,
-            generation=DOCSPEC_GENERATION,
         ),
         "coverage": derive_coverage(
             dispositions,

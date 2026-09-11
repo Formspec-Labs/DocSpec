@@ -22,7 +22,7 @@ under `docs/history/` remain separate work.
 | D1 | Separated release format/identity rules, coverage calculations, member/schema reading, body indexing, and semantic validation. Verification now lives in `adapters.document_release.verify`; builders import rule owners directly, and the old import facade is removed. All 109 moved definitions retained identical syntax trees before comment cleanup. Release, builder, schema, encoding, and package checks: 298 passed. The fixture restamper still matches a clean rebuild. |
 | D2 | Split the source-catalog artifact into building, reading, verification, source inputs/recovery, bounded rows, accounting, schema rules, and digest derivation. The largest module is 499 lines. All 97 definitions moved unchanged; three calls then became owner-qualified so fault injection still reaches the shared engine or reader. Catalog, succession, spawned workers, recovery, installed-wheel, offline, and boundary checks: 126 passed. Six further runs over the existing 4,096-row catalog preserve every digest, count, diagnostic, and actual serial/parallel engine identity. |
 | D4 | Source conversion now names joins, normalization, selection, and provenance. The common policy module records the six interpretation forms and stopping decisions; source policies still choose their own rules. Document/comment conversion shrank from 403/227 to 103/100 lines; Federal Register conversion shrank from 245 to 82. [Comparison evidence](maintainability-policy-comparison.json) records byte-identical results for 246 calls, including two refusals. Independent review led to a real retained-filing conversion test and three strict comment-version refusal checks. Policy, catalog, wheel, offline, and import checks: 142 passed. |
-| E1 | Shared setup lives in `tests/support/` and `tests/helpers.py`, including formerly dynamic cross-test imports. All 638 original named test functions remain; their assertions were retained. Conformance test selectors stay at their existing paths. Full default suite after extraction: 875 passed, 3 skipped, 1 deselected. |
+| E1 | Shared setup lives in `tests/support/` and `tests/helpers.py`, including formerly dynamic cross-test imports. The extraction preserved all 638 original named test functions and their assertions; later predecessor retirement deliberately removes obsolete acceptance tests. Conformance test selectors stay at their existing paths. Full default suite after extraction: 875 passed, 3 skipped, 1 deselected. |
 | E3, E4 | Contributor guidance defines dependency direction, helper ownership, size review prompts and exceptions, public interfaces, and reviewer responsibilities. The PR template asks for behavior, validation, format/API impact, and open follow-up work. |
 
 ## Verification checkpoints
@@ -42,6 +42,20 @@ under `docs/history/` remain separate work.
   profile and CourtListener helpers: **21 passed, 1 deselected**. The policy
   writer also completes a real canonical round trip and refuses overwriting
   its existing output after switching to the shared CLI input reader.
+- Logical commits were checked in isolated staged snapshots: storage **22**,
+  portable module split **284** plus a matching fixture rebuild, catalog split
+  **148**, CLI split **64**, policy conversion **138**, and offline example **1**.
+  Test-support extraction passed **886** suite checks plus **2** installed-wheel
+  checks after the temporary validation checkout was given Git tracking and a
+  separate runtime directory. The receipt-validator and catalog-build phase
+  refactors then passed **123** and **96** focused staged-snapshot checks.
+- Predecessor portable-reader retirement preserves all **29 complete current
+  verifier results**, including diagnostic messages and ordering (comparison
+  SHA-256 `6be952d9035c014a095db9cf991206fdd99a7d4995b6244147335f001f84ad27`),
+  and all **1,067 fixture/schema file hashes**. Independent review caught and
+  closed a malformed-schema-set refusal gap using complete, correctly restamped
+  bundles. The corrected release/schema/builder/encoding checks: **203 passed**;
+  the fixture restamper still matches a clean rebuild.
 - All **40 command help pages** compare byte for byte with the baseline parser.
   An empty environment successfully installs the built wheel together with its
   pinned vendored Rulespec dependency, imports the public APIs, and runs the
@@ -75,5 +89,6 @@ catalog artifact split and import retirement, and source-policy conversion.
 The reviews led to corrected fault-injection imports, failure-receipt coverage,
 and stronger cross-filing and strict comment-version tests. Architecture review
 also approved retiring predecessor portable-format handling while retaining
-both current 2.0 workflows. That runtime retirement remains to be implemented
-and verified; removing the old import paths does not complete it.
+both current 2.0 workflows. The runtime now uses current portable rules only;
+frozen predecessor data remains provenance and, for the old source-catalog
+fixture, a required current restamping input.

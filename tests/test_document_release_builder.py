@@ -704,7 +704,6 @@ def test_a_sample_of_the_real_corpus_mints_and_verifies(tmp_path: Path) -> None:
         "code": "valid",
         "diagnosticCount": 0,
         "diagnostics": [],
-        "generation": "docspec",
     }
     counts = receipt["counts"]
     assert counts["requestedUniverseCount"] == 200
