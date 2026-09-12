@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -30,7 +32,7 @@ def _planned_store(
     logical_partition: str = "000",
 ) -> DocumentStore:
     item = SourceItem(item_id, "v1", (CandidateFile("primary", f"{item_id}.txt", "text/plain"),))
-    entry = DocumentEntry.create(item, ChangeKind.ADDED, StagePolicy(("text-v1",), "paragraph-v1"))
+    entry = DocumentEntry.create(item, ChangeKind.ADDED, StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()))
     return DocumentStore.planned(
         plan_id=plan_id,
         logical_partition=logical_partition,
@@ -240,7 +242,7 @@ def test_document_store_repository_moves_large_entry_ledgers_to_bounded_members(
         max_revision_bytes=128 * 1024,
         max_inline_bytes=2 * 1024,
     )
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     entries = tuple(
         DocumentEntry.create(
             SourceItem(

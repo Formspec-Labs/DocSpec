@@ -94,6 +94,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from docspec.domain.content import Representation
 from docspec.domain.identity import identity_digest, require_sha256, require_text
 from docspec.errors import IntegrityError
 from docspec.processing.artifacts import (
@@ -974,7 +975,11 @@ class BoundedSegmenter:
 
     @property
     def policy_digest(self) -> str:
+        _require_matching_counter(self._settings, self._counter)
         return self._settings.policy_digest
+
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self.segmenter_id, self.policy_digest
 
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         return self.segment_bounded(representation).payloads

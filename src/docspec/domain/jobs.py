@@ -310,7 +310,7 @@ class DocumentStore:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": "docspec-document-store",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "storeId": self.store_id,
             "planId": self.plan_id,
             "logicalPartition": self.logical_partition,
@@ -339,7 +339,7 @@ class DocumentStore:
             "deliveryReceipt",
             "verdict",
         }
-        if set(value) != expected or value["format"] != "docspec-document-store" or value["formatVersion"] != "1.0":
+        if set(value) != expected or value["format"] != "docspec-document-store" or value["formatVersion"] != "2.0":
             raise ValueError("document store has an unknown format or invalid closed shape")
         return cls(
             value["storeId"],

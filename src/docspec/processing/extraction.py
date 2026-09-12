@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from io import BytesIO
 from typing import Any
 from xml.etree import ElementTree
@@ -20,6 +21,7 @@ from docspec.domain.identity import (
     thaw_json,
 )
 from docspec.errors import IntegrityError
+from docspec.ports.extractor import Extractor
 from docspec.processing.artifacts import (
     IDENTITY_TRANSFORM,
     PDF_PAGE_TEXT_TRANSFORM,
@@ -38,8 +40,10 @@ XML_EXTRACTOR_ID = "docspec.xml-source/v1"
 JSON_EXTRACTOR_ID = "docspec.json-source/v1"
 IMAGE_EXTRACTOR_ID = "docspec.image-passthrough/v1"
 DEFAULT_EXTRACTOR_REGISTRY_ID = "docspec.default-extractors/v1"
+PYPDF_EXTRACTOR_ID = "docspec.pypdf-adapter/v1"
 EXTRACTION_RECEIPT_FORMAT = "docspec-extraction-receipt"
 EXTRACTION_RECEIPT_FORMAT_VERSION = "1.0"
+_SOURCE_NATIVE_CONFIGURATION_DIGEST = identity_digest({"mode": "source-native-passthrough"})
 
 
 class ExtractionError(IntegrityError):
@@ -176,13 +180,21 @@ class ExtractionResult:
 class TextExtractor:
     """Validate UTF-8 text and retain its exact source bytes."""
 
+    extractor_id = TEXT_EXTRACTOR_ID
+    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self.extractor_id, self.configuration_digest
+
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         text = decode_utf8(source_bytes, label="captured text")
         metadata = {
             "unicodeCodepointCount": len(text),
             "lineCount": len(text.splitlines()) if text else 0,
         }
-        return _passthrough_result(captured, source_bytes, TEXT_EXTRACTOR_ID, "text", metadata)
+        return _passthrough_result(
+            captured, source_bytes, self.extractor_id, self.configuration_digest, "text", metadata
+        )
 
 
 class _HtmlFacts(HTMLParser):
@@ -224,6 +236,12 @@ class _HtmlFacts(HTMLParser):
 class HtmlExtractor:
     """Validate HTML with the standard parser and retain source-native markup."""
 
+    extractor_id = HTML_EXTRACTOR_ID
+    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self.extractor_id, self.configuration_digest
+
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         text = decode_utf8(source_bytes, label="captured HTML")
         parser = _HtmlFacts()
@@ -237,11 +255,19 @@ class HtmlExtractor:
             "elementCount": parser.element_count,
             "visibleUnicodeCodepointCount": len(visible),
         }
-        return _passthrough_result(captured, source_bytes, HTML_EXTRACTOR_ID, "html", metadata)
+        return _passthrough_result(
+            captured, source_bytes, self.extractor_id, self.configuration_digest, "html", metadata
+        )
 
 
 class XmlExtractor:
     """Validate XML with ElementTree and retain exact source-native XML."""
+
+    extractor_id = XML_EXTRACTOR_ID
+    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         text = decode_utf8(source_bytes, label="captured XML")
@@ -253,11 +279,19 @@ class XmlExtractor:
             "rootTag": root.tag,
             "elementCount": sum(1 for _ in root.iter()),
         }
-        return _passthrough_result(captured, source_bytes, XML_EXTRACTOR_ID, "xml", metadata)
+        return _passthrough_result(
+            captured, source_bytes, self.extractor_id, self.configuration_digest, "xml", metadata
+        )
 
 
 class JsonExtractor:
     """Validate closed JSON and retain its exact UTF-8 source bytes."""
+
+    extractor_id = JSON_EXTRACTOR_ID
+    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         text = decode_utf8(source_bytes, label="captured JSON")
@@ -267,11 +301,19 @@ class JsonExtractor:
             "rootKind": root_kind,
             "recordCount": len(value) if isinstance(value, list) else 1,
         }
-        return _passthrough_result(captured, source_bytes, JSON_EXTRACTOR_ID, "json", metadata)
+        return _passthrough_result(
+            captured, source_bytes, self.extractor_id, self.configuration_digest, "json", metadata
+        )
 
 
 class ImageExtractor:
     """Retain an exact image and report header-derived metadata when available."""
+
+    extractor_id = IMAGE_EXTRACTOR_ID
+    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         _verify_media_prefix(captured, "image/")
@@ -284,7 +326,8 @@ class ImageExtractor:
         return _passthrough_result(
             captured,
             source_bytes,
-            IMAGE_EXTRACTOR_ID,
+            self.extractor_id,
+            self.configuration_digest,
             "image",
             metadata,
             coordinate_system="source-byte-range",
@@ -296,29 +339,50 @@ class LazyPypdfExtractor:
     """Extract one text representation per PDF page through the optional profile.
 
     Importing DocSpec or this module never imports ``pypdf``. The dependency is
-    resolved only when a worker actually selects this extractor.
+    imported only when a worker actually selects this extractor. Distribution
+    metadata pins its availability and version when the stage is configured.
     """
+
+    extractor_id = PYPDF_EXTRACTOR_ID
 
     def __init__(self, *, page_separator: str = "\n\f\n", strip_page_whitespace: bool = False) -> None:
         if not page_separator:
             raise ValueError("PDF page separator must be non-empty")
         self.page_separator = page_separator
         self.strip_page_whitespace = strip_page_whitespace
+        try:
+            self._provider_version: str | None = distribution_version("pypdf")
+        except PackageNotFoundError:
+            self._provider_version = None
+        if self._provider_version is not None:
+            require_text(self._provider_version, "pypdf distribution version")
+
+    @property
+    def configuration_digest(self) -> str:
+        return identity_digest({
+            "provider": "pypdf",
+            "providerVersion": self._provider_version,
+            "available": self._provider_version is not None,
+            "pageSeparator": self.page_separator,
+            "stripPageWhitespace": self.strip_page_whitespace,
+        })
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        _verify_media(captured_file, "application/pdf")
+        return f"docspec.pypdf/{self._require_provider_version()}", self.configuration_digest
+
+    def _require_provider_version(self) -> str:
+        if self._provider_version is None:
+            raise ExtractionError("the pypdf extraction profile requires the docspec[pdf] extra")
+        return self._provider_version
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         _verify_captured_bytes(captured, source_bytes)
-        _verify_media(captured, "application/pdf")
-        pages, provider_version = self._read_pages(source_bytes)
+        extractor_id, configuration_digest = self.selected_identity(captured)
+        pages, _ = self._read_pages(source_bytes)
         page_bytes = tuple(page.encode("utf-8") for page in pages)
         separator = self.page_separator.encode("utf-8")
         content = separator.join(page_bytes)
-        configuration_digest = identity_digest(
-            {
-                "pageSeparator": self.page_separator,
-                "stripPageWhitespace": self.strip_page_whitespace,
-            }
-        )
-        extractor_id = f"docspec.pypdf/{provider_version}"
         mappings: list[EvidenceMapping] = []
         position = 0
         for page, payload in enumerate(page_bytes, start=1):
@@ -360,6 +424,8 @@ class LazyPypdfExtractor:
         expected_id = f"docspec.pypdf/{provider_version}"
         if result.payload.representation.extractor_id != expected_id:
             raise IntegrityError("PDF representation names a different parser version")
+        if result.payload.representation.configuration_digest != self.configuration_digest:
+            raise IntegrityError("PDF representation names different extraction settings")
         verify_representation_evidence(
             result.payload,
             source_bytes,
@@ -386,11 +452,14 @@ class LazyPypdfExtractor:
         return resolve
 
     def _read_pages(self, source_bytes: bytes) -> tuple[tuple[str, ...], str]:
+        expected_version = self._require_provider_version()
         try:
             provider = import_module("pypdf")
         except (ImportError, ModuleNotFoundError) as error:
             raise ExtractionError("the pypdf extraction profile requires the docspec[pdf] extra") from error
-        provider_version = str(getattr(provider, "__version__", "unknown"))
+        provider_version = getattr(provider, "__version__", None)
+        if provider_version != expected_version:
+            raise ExtractionError("loaded pypdf version differs from the configured distribution version")
         try:
             reader = provider.PdfReader(BytesIO(source_bytes), strict=False)
             if bool(getattr(reader, "is_encrypted", False)):
@@ -406,19 +475,43 @@ class LazyPypdfExtractor:
 
 
 class DefaultExtractorRegistry:
-    """Dispatch common media types without exposing a provider type."""
+    """Dispatch common media types without exposing a provider type.
+
+    The dispatcher ID versions the media-matching rules in ``_select``; its
+    configuration digest binds the implementations assigned to those routes.
+    """
 
     extractor_id = DEFAULT_EXTRACTOR_REGISTRY_ID
 
-    def __init__(self, *, pdf: Any | None = None) -> None:
+    def __init__(self, *, pdf: Extractor[ExtractionResult] | None = None) -> None:
         self._text = TextExtractor()
         self._html = HtmlExtractor()
         self._xml = XmlExtractor()
         self._json = JsonExtractor()
         self._image = ImageExtractor()
-        self._pdf = pdf or LazyPypdfExtractor()
+        self._pdf = pdf if pdf is not None else LazyPypdfExtractor()
+
+    @property
+    def configuration_digest(self) -> str:
+        children = {
+            "text": self._text, "html": self._html, "xml": self._xml,
+            "json": self._json, "image": self._image, "pdf": self._pdf,
+        }
+        return identity_digest({
+            "dispatcher": self.extractor_id,
+            "children": {
+                route: {"extractorId": child.extractor_id, "configurationDigest": child.configuration_digest}
+                for route, child in children.items()
+            },
+        })
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        return self._select(captured_file).selected_identity(captured_file)
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
+        return self._select(captured).extract(captured, source_bytes)
+
+    def _select(self, captured: CapturedFile) -> Extractor[ExtractionResult]:
         media_type = _base_media_type(captured.media_type)
         if media_type == "text/html":
             extractor = self._html
@@ -434,13 +527,14 @@ class DefaultExtractorRegistry:
             extractor = self._text
         else:
             raise ExtractionError(f"no extractor is registered for media type {captured.media_type!r}")
-        return extractor.extract(captured, source_bytes)
+        return extractor
 
 
 def _passthrough_result(
     captured: CapturedFile,
     source_bytes: bytes,
     extractor_id: str,
+    configuration_digest: str,
     kind: str,
     metadata: Mapping[str, Any],
     *,
@@ -448,7 +542,6 @@ def _passthrough_result(
     region: Mapping[str, Any] | None = None,
 ) -> ExtractionResult:
     _verify_captured_bytes(captured, source_bytes)
-    configuration_digest = identity_digest({"mode": "source-native-passthrough"})
     evidence = EvidenceCoordinate(
         coordinate_system=coordinate_system,
         source_digest=captured.blob.digest,

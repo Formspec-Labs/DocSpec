@@ -15,7 +15,7 @@ from docspec.adapters.storage import (
 from docspec.application.execution import StoreExecutionService
 from docspec.domain.content import AcquisitionDisposition, SourceItem
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode, StoreState
-from docspec.domain.plans import ProcessingPlan, StagePolicy
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
@@ -122,11 +122,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     broad_plan = _plan(source_ref, base_release, processors, retry, accepted)
     plan = _with_processor_cost(broad_plan, 4)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    requested = StagePolicy(
-        plan.stages.extractor_ids,
-        plan.stages.segmenter_id,
-        (changed_root.description.processor_id, changed_dependent.description.processor_id),
-    )
+    requested = replace(plan.stages, processor_ids=(changed_root.description.processor_id, changed_dependent.description.processor_id))
     planned = DocumentStore.planned(
         plan_id=plan.plan_id,
         logical_partition="bucket-00000/store-00000000",

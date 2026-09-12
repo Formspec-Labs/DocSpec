@@ -53,7 +53,7 @@ def _planning_plan(
         base_release=None,
         profiles=profile_set(),
         limits=WorkLimits(max_entries, 100, 10, 10, 100, 100, 60),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=bucket_count,
         selection={},

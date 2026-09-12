@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 3 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 4 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -291,7 +291,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d13"></a>
 
-- [ ] **D13 · P0 · Expose processor, extractor, and segmenter injection.** Provide
+- [x] **D13 · P0 · Expose processor, extractor, and segmenter injection.** Provide
   explicit composition of chosen implementations through D04, with convenient
   defaults. Validate that the declared plan and actual implementations match.
   **Done when:** a contributor runs a custom processor and replaces extraction or
@@ -299,19 +299,21 @@ to defer a conditional item is a documented deferral, not completed implementati
   result validation, and optional imports. An unrestricted dynamic plugin loader
   is not needed to satisfy this outcome. See [extensions](extensions.md).
 
-  **Agreed approach:** extend the existing stage policy with effective extractor
-  and segmenter configuration digests derived from their actual implementations.
-  Registry digests include dispatch choices and child identities; leaf output
-  identities keep their existing meaning. Check those pins before planning,
-  checkpoint reuse, and sealed-result reuse. The architect rejected a worker-only
-  check because unchanged stage names can cause the planner to skip work.
-  Preserve lazy optional imports. Correct invalidation comes first; reuse of
-  captures or representations after stage changes remains D15.
-
-  **Runtime progress:** custom processors now run through the public Python
-  factory, with their complete descriptions checked against the plan. CLI
-  retention can retain these results without reconstructing the custom
-  processor. Extractor and segmenter injection still await the stage pins above.
+  **Completed September 11:** `stage_policy` derives the existing plan value
+  from selected objects; `prepare_local_run` injects processors, extractors, and
+  segmenters through the supported API. Stage IDs and effective settings affect
+  plan identity and reuse decisions. Registries retain their selected children's
+  output identities, including empty segmentation. Configuration changes refuse
+  stale recovery before work; a newly pinned plan uses existing full repair.
+  PDF versions are pinned without importing the optional parser during setup.
+  The [architecture decision](history/2026-09-11-stage-injection-architecture.md)
+  records the chosen interface and rejected alternatives; the
+  [independent review](history/2026-09-11-stage-injection-review.md) records its
+  assessment separately from execution evidence. The full local suite passed
+  972 tests, including custom-stage execution/recovery through an isolated wheel;
+  one live integration test was deselected. Ruff passed. Plans, stores, and
+  ordinary segmentation receipts use format `2.0`, with no legacy readers.
+  Finer reuse after extraction/segmentation changes remains D15.
 
 <a id="d14"></a>
 
@@ -343,6 +345,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   retains verified base blob roots for a zero-work stateful result, while a
   stateless result keeps no inherited roots/layers. These cases do not establish
   changed-extractor or changed-segmenter reuse, which remains open.
+
+  D13 now gives stage settings their own plan pins and proves unchanged-stage
+  reuse plus changed-stage full rebuilding. Changing one stage still refetches
+  captured content; this establishes correct invalidation, not the finer reuse
+  required to complete D15.
 
 <a id="d16"></a>
 
@@ -404,8 +411,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   refuse recovery before fetching; unchanged settings reuse completed work.
   Fifteen new identity cases and 61 related workspace, CLI, acquisition, and
   Dagster checks pass. This closes the existing local reconstruction gap;
-  configurable extraction/segmentation and the full D04 interruption workflow
-  remain open. Commit `c41b00b`.
+  the full D04 interruption workflow remains open. Configurable stages are
+  tracked in D13. Commit `c41b00b`.
 
   **Runtime progress:** public task execution now admits the exact initial
   reference from the verified planned-store ledger before loading or executing
@@ -415,6 +422,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   operations refuse recovery; admission rechecks the deadline before execution.
   Zero-task runs need no lookup, and failure/context exit releases scratch.
   Active cancellation and aggregate concurrent scratch accounting remain open.
+
+  D13 adds actual stage configuration checks before direct execution,
+  checkpoint admission, completed-task reuse, and zero-task execution. Tests
+  refuse changed live settings and mismatched selected-child evidence. These
+  checks preserve the existing checkpoint and cumulative-budget tests; they do
+  not complete active cancellation or the whole interruption exercise.
 
 <a id="d21"></a>
 
@@ -661,6 +674,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   942 passing full-suite tests from one stale-selector failure, then records all
   25 focused checks passing after that selector mapping was corrected. Ruff and
   diff checks pass. This does not complete whole-workflow acceptance or D39.
+
+  The [stage-injection review](history/2026-09-11-stage-injection-review.md)
+  covers D13's configured stages and current producer migrations. The complete
+  local suite passed 972 tests with one live integration test deselected,
+  including the updated installed-wheel probe. Its architecture decision and
+  review preserve the distinction between correct full rebuilding and the finer
+  selective reuse still required by D15.
 
 <a id="d40"></a>
 

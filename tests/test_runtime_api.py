@@ -17,7 +17,7 @@ from docspec.domain.receipts import RunReceipt
 from docspec.errors import IntegrityError, LimitExceededError, ProfileError
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.profile_registry import ProfileRegistry
-from docspec.runtime import prepare_local_run
+from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
 from tests.support.profiles import _seeded_local_run
 
@@ -97,7 +97,7 @@ def test_invalid_runtime_choices_refuse_before_storage_or_planning(arguments, ch
     elif change == "completion_clock":
         arguments["completed_at"] = "not-a-clockZ"
     elif change == "extractor":
-        arguments["plan"] = _changed_plan(plan, stages=replace(plan.stages, extractor_ids=("custom-extractor",)))
+        arguments["plan"] = _changed_plan(plan, stages=replace(plan.stages, extractor_id="custom-extractor"))
     elif change == "segmenter":
         arguments["plan"] = _changed_plan(plan, stages=replace(plan.stages, segmenter_id="custom-segmenter"))
     elif change == "missing_processor":
@@ -195,3 +195,62 @@ def test_task_recovery_executes_only_an_unfinished_real_store(arguments, monkeyp
             assert len(delivery_calls) == 1
             assert delivery_calls[0].revision > current.revision
             assert result.output_store.revision > delivery_calls[0].revision
+
+
+@pytest.mark.parametrize("changed_stage", ["extractor", "segmenter"])
+def test_injected_stages_run_and_recover_only_with_their_pinned_settings(arguments, changed_stage: str) -> None:
+    from docspec.domain.identity import identity_digest
+    from docspec.processing.extraction import TextExtractor
+    from docspec.processing.segmentation import ParagraphSegmenter
+    from tests.support.processors import _CountingExtractor, _CountingSegmenter
+
+    extractor = _CountingExtractor(TextExtractor())
+    segmenter = _CountingSegmenter(ParagraphSegmenter())
+    original = arguments["plan"]
+    arguments["plan"] = _changed_plan(original, stages=stage_policy(
+        extractor=extractor, segmenter=segmenter, processor_ids=original.stages.processor_ids,
+    ))
+    arguments.update(
+        extractor=extractor, segmenter=segmenter,
+        content_fetcher=SharedFixtureContentFetcher(arguments["workspace"].roots["sourceContent"]),
+    )
+    with prepare_local_run(**arguments) as prepared:
+        task = next(prepared.task_source(prepared.handoff))
+        result = prepared.execute_task(prepared.handoff, task)
+        handoff_ref = prepared.handoff_ref
+    assert extractor.calls == segmenter.calls == 1
+    with prepare_local_run(**arguments, handoff_ref=handoff_ref) as recovered:
+        assert recovered.execute_task(recovered.handoff, task) == result
+    assert extractor.calls == segmenter.calls == 1
+    if changed_stage == "extractor":
+        extractor.delegate.configuration_digest = identity_digest({"different": "extraction"})
+    else:
+        segmenter.delegate.policy_digest = identity_digest({"different": "segmentation"})
+    with pytest.raises(ProfileError, match="settings differ"):
+        prepare_local_run(**arguments, handoff_ref=handoff_ref)
+    assert extractor.calls == segmenter.calls == 1
+
+
+def test_zero_task_recovery_still_checks_stage_configuration(arguments, tmp_path: Path) -> None:
+    from docspec.domain.content import SourceItem, SourceItemState
+    from docspec.domain.identity import identity_digest
+    from docspec.processing.extraction import TextExtractor
+    from docspec.processing.segmentation import ParagraphSegmenter
+    from tests.helpers import write_shared_source_catalog
+    from docspec.workspace import LocalWorkspace
+
+    root = tmp_path / "deleted-source-catalog"
+    source = write_shared_source_catalog(root, (SourceItem("deleted", "1", (), state=SourceItemState.DELETED),))
+    workspace = arguments["workspace"]
+    arguments["workspace"] = LocalWorkspace(workspace.root, workspace.roots | {"sourceCatalog": root})
+    extractor, segmenter = TextExtractor(), ParagraphSegmenter()
+    arguments["plan"] = _changed_plan(arguments["plan"], source_catalog=source, selection={"excludeItemIds": ["deleted"]}, stages=stage_policy(
+        extractor=extractor, segmenter=segmenter, processor_ids=arguments["plan"].stages.processor_ids,
+    ))
+    arguments.update(extractor=extractor, segmenter=segmenter)
+    with prepare_local_run(**arguments) as prepared:
+        assert prepared.handoff.expected_task_count == 0
+        handoff_ref = prepared.handoff_ref
+    extractor.configuration_digest = identity_digest({"different": "zero-task-settings"})
+    with pytest.raises(ProfileError, match="settings differ"):
+        prepare_local_run(**arguments, handoff_ref=handoff_ref)

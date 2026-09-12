@@ -58,7 +58,7 @@ helpers used by other local storage adapters.
 
 ## What happens to it?
 
-1. A `ProcessingPlan` pins the catalog, profiles, processor graph, policies,
+1. A `ProcessingPlan` pins the catalog, profiles, configured stages, processor graph, policies,
    and work limits. `RunPlanner` creates bounded document jobs and seals their
    complete task population.
 2. `StoreExecutionService` captures exact source bytes, extracts a representation,

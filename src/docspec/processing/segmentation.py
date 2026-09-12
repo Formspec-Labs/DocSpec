@@ -7,8 +7,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from docspec.domain.identity import identity_digest, require_text
+from docspec.domain.content import Representation
+from docspec.domain.identity import identity_digest, require_sha256, require_text
 from docspec.errors import IntegrityError
+from docspec.ports.segmenter import Segmenter
 from docspec.processing.artifacts import (
     PDF_PAGE_TEXT_TRANSFORM,
     RepresentationPayload,
@@ -26,22 +28,24 @@ RECORD_SEGMENTER_ID = "docspec.json-record/v1"
 WHOLE_IMAGE_SEGMENTER_ID = "docspec.whole-image/v1"
 DEFAULT_SEGMENTER_REGISTRY_ID = "docspec.default-segmenters/v1"
 SEGMENTATION_RECEIPT_FORMAT = "docspec-segmentation-receipt"
-SEGMENTATION_RECEIPT_FORMAT_VERSION = "1.0"
+SEGMENTATION_RECEIPT_FORMAT_VERSION = "2.0"
 
 _PARAGRAPH_GAP = re.compile(r"(?:\r?\n)[ \t]*(?:\r?\n)")
 
 
 @dataclass(frozen=True, slots=True)
 class SegmentationReceipt:
-    """Recomputable evidence for one segmenter invocation."""
+    """The selected child's identity and results, including an empty result."""
 
     representation_id: str
     segmenter_id: str
+    policy_digest: str
     segment_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
         require_text(self.representation_id, "segmentation receipt representation_id")
         require_text(self.segmenter_id, "segmentation receipt segmenter_id")
+        require_sha256(self.policy_digest, "segmentation receipt policy_digest")
         if not isinstance(self.segment_ids, tuple):
             raise ValueError("segmentation receipt segment_ids must be an immutable tuple")
         for segment_id in self.segment_ids:
@@ -55,12 +59,13 @@ class SegmentationReceipt:
             "formatVersion": SEGMENTATION_RECEIPT_FORMAT_VERSION,
             "representationId": self.representation_id,
             "segmenterId": self.segmenter_id,
+            "policyDigest": self.policy_digest,
             "segments": list(self.segment_ids),
         }
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> SegmentationReceipt:
-        expected = {"format", "formatVersion", "representationId", "segmenterId", "segments"}
+        expected = {"format", "formatVersion", "representationId", "segmenterId", "policyDigest", "segments"}
         if not isinstance(value, Mapping) or set(value) != expected:
             raise ValueError("segmentation receipt has an invalid closed shape")
         if value["format"] != SEGMENTATION_RECEIPT_FORMAT:
@@ -73,6 +78,7 @@ class SegmentationReceipt:
         return cls(
             representation_id=value["representationId"],
             segmenter_id=value["segmenterId"],
+            policy_digest=value["policyDigest"],
             segment_ids=tuple(segments),
         )
 
@@ -93,6 +99,9 @@ class ParagraphSegmenter:
             "trimOuterWhitespace": True,
         }
     )
+
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self.segmenter_id, self.policy_digest
 
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         text = decode_utf8(representation.content, label="paragraph representation")
@@ -124,6 +133,9 @@ class PageSegmenter:
             "includeEmptyPages": True,
         }
     )
+
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self.segmenter_id, self.policy_digest
 
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         if representation.representation.kind != "pdf-text":
@@ -160,6 +172,9 @@ class RecordSegmenter:
         }
     )
 
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self.segmenter_id, self.policy_digest
+
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         if representation.representation.kind != "json":
             raise IntegrityError("record segmentation requires a JSON representation")
@@ -187,6 +202,9 @@ class WholeImageSegmenter:
     segmenter_id = WHOLE_IMAGE_SEGMENTER_ID
     policy_digest = identity_digest({"policy": "whole-image", "version": 1})
 
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self.segmenter_id, self.policy_digest
+
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         if representation.representation.kind != "image":
             raise IntegrityError("whole-image segmentation requires an image representation")
@@ -206,6 +224,9 @@ class WholeImageSegmenter:
 
 class DefaultSegmenterRegistry:
     """Select deterministic source-grounded segmentation from representation kind.
+
+    The dispatcher ID versions the kind-matching rules in ``_select``; its
+    policy digest binds the children and optional bounded-text routing.
 
     Five segmenters are registered here. Four are exact and unbounded, and one
     is bounded: `BoundedSegmenter` needs an injected token counter, so it is
@@ -237,18 +258,40 @@ class DefaultSegmenterRegistry:
             registered[self._bounded.segmenter_id] = self._bounded.policy_digest
         return registered
 
+    @property
+    def policy_digest(self) -> str:
+        children = {
+            "paragraph": self._paragraph, "page": self._page,
+            "record": self._record, "image": self._image, "bounded": self._bounded,
+        }
+        return identity_digest({
+            "dispatcher": self.segmenter_id,
+            "boundedTextKinds": sorted(BOUNDED_TEXT_KINDS) if self._bounded is not None else [],
+            "children": {
+                route: {"segmenterId": child.segmenter_id, "policyDigest": child.policy_digest}
+                if child is not None else None
+                for route, child in children.items()
+            },
+        })
+
+    def selected_identity(self, representation: Representation) -> tuple[str, str]:
+        return self._select(representation).selected_identity(representation)
+
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
-        kind = representation.representation.kind
+        return self._select(representation.representation).segment(representation)
+
+    def _select(self, representation: Representation) -> Segmenter[RepresentationPayload, SegmentPayload]:
+        kind = representation.kind
         if self._bounded is not None and kind in BOUNDED_TEXT_KINDS:
-            return self._bounded.segment(representation)
+            return self._bounded
         if kind in {"text", "html", "xml"}:
-            return self._paragraph.segment(representation)
+            return self._paragraph
         if kind == "pdf-text":
-            return self._page.segment(representation)
+            return self._page
         if kind == "json":
-            return self._record.segment(representation)
+            return self._record
         if kind == "image":
-            return self._image.segment(representation)
+            return self._image
         raise IntegrityError(f"no segmenter is registered for representation kind {kind!r}")
 
 

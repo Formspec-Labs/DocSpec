@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
+from docspec.runtime import stage_policy
+
 import json
 import subprocess
 import sys
@@ -34,8 +38,6 @@ from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests.helpers import (
     document_release_producer,
     write_shared_source_catalog,
@@ -130,7 +132,7 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
         "baseRelease": None,
         "profiles": _profile_set().to_dict(),
         "limits": WorkLimits(10, 1000, 100, 200, 300, 4000, 60, 2).to_dict(),
-        "stages": StagePolicy(("text-v1",), "paragraph-v1", ()).to_dict(),
+        "stages": StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()).to_dict(),
         "processors": ProcessorSet(()).to_dict(),
         "partitionCount": 8,
         "selection": {"kind": "all"},
@@ -337,10 +339,7 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(2, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-        ),
+        stages=stage_policy(),
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},

@@ -17,10 +17,13 @@ from docspec.errors import IntegrityError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.control_repository import ControlRepository
 from docspec.ports.extractor import Extractor
+from docspec.ports.segmenter import Segmenter
+from docspec.processing.artifacts import RepresentationPayload, SegmentPayload
 from docspec.processing.extraction import ExtractionReceipt, ExtractionResult
 from docspec.processing.segmentation import SegmentationReceipt
 
 from .processor_rules import projected_segment_byte_size, validate_processor_result
+from .stage_identity import verify_extraction_identity, verify_segment_identity, verify_stage_implementations
 from .work_budget import WorkBudget
 
 
@@ -44,11 +47,13 @@ class EntryCheckpointVerifier:
         controls: ControlRepository,
         blobs: BlobStore,
         extractor: Extractor[ExtractionResult],
+        segmenter: Segmenter[RepresentationPayload, SegmentPayload],
         retry_policy: RetryPolicy,
     ) -> None:
         self._controls = controls
         self._blobs = blobs
         self._extractor = extractor
+        self._segmenter = segmenter
         self._retry_policy = retry_policy
 
     def verify_terminal_entry(
@@ -97,6 +102,7 @@ class EntryCheckpointVerifier:
     ) -> VerifiedEntryCheckpoint:
         """Verify a terminal entry or a coarse, restartable processing frontier."""
 
+        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
         if entry.requested_stages != plan.stages and entry.execution_mode is EntryExecutionMode.FULL:
             raise IntegrityError("document entry stages differ from the processing plan")
         loaded_receipts = self._load_stage_receipts(entry)
@@ -131,17 +137,13 @@ class EntryCheckpointVerifier:
             raise IntegrityError("checkpoint must stop at a candidate capture or extraction frontier")
         for representation in entry.representations:
             captured = files.get(representation.file_id)
-            extractor_registry_id = getattr(self._extractor, "extractor_id", None)
             if (
                 captured is None
                 or representation.source_item_id != entry.source_item.item_id
                 or representation.file_digest != captured.blob.digest
-                or (
-                    representation.extractor_id not in plan.stages.extractor_ids
-                    and extractor_registry_id not in plan.stages.extractor_ids
-                )
             ):
                 raise IntegrityError("checkpoint representation has broken source-file lineage")
+            verify_extraction_identity(self._extractor, captured, representation)
             if any(
                 mapping.evidence.end is not None and mapping.evidence.end > captured.blob.byte_size
                 for mapping in representation.evidence_mappings
@@ -183,6 +185,14 @@ class EntryCheckpointVerifier:
         segments = {item.segment_id: item for item in entry.segments}
         if len(segments) != len(entry.segments):
             raise IntegrityError("checkpoint repeats a segment identity")
+        segmented_representations = {segment.representation_id for segment in entry.segments} | {
+            receipt.representation_id for receipt in segmentation_receipts
+        }
+        selected_segmenters = {
+            identifier: self._segmenter.selected_identity(representation)
+            for identifier, representation in representations.items()
+            if identifier in segmented_representations
+        }
         for segment in entry.segments:
             representation = representations.get(segment.representation_id)
             if (
@@ -192,6 +202,7 @@ class EntryCheckpointVerifier:
                 or segment.evidence.source_digest != representation.file_digest
             ):
                 raise IntegrityError("checkpoint segment has broken representation or source lineage")
+            verify_segment_identity(segment, selected_segmenters[segment.representation_id])
             try:
                 expected_evidence = representation.evidence_for_range(
                     segment.representation_start,
@@ -215,8 +226,8 @@ class EntryCheckpointVerifier:
         if receipted_segment_ids != tuple(segments):
             raise IntegrityError("checkpoint segmentation receipts differ from its ordered segments")
         for receipt in segmentation_receipts:
-            if receipt.segmenter_id != plan.stages.segmenter_id:
-                raise IntegrityError("checkpoint segmentation receipt differs from the processing plan")
+            if (receipt.segmenter_id, receipt.policy_digest) != selected_segmenters[receipt.representation_id]:
+                raise IntegrityError("checkpoint segmentation receipt differs from the selected segmenter policy")
             if any(segments[segment_id].representation_id != receipt.representation_id for segment_id in receipt.segment_ids):
                 raise IntegrityError("checkpoint segmentation receipt includes an unrelated segment")
         segmentation_complete = extraction_complete and len(segmentation_receipts) == len(entry.representations)

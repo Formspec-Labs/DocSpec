@@ -25,7 +25,8 @@ from docspec.adapters.storage import (
 )
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
-from docspec.errors import ProfileError
+from docspec.errors import IntegrityError, ProfileError
+from docspec.application.stage_identity import verify_stage_implementations
 from docspec.runtime.storage import _local_profiles, _local_storage
 from docspec.runtime.fetcher import _BoundContentFetcher, _content_fetcher_identity
 from docspec.workspace import LocalWorkspace
@@ -41,9 +42,12 @@ from docspec.domain.profiles import ProfileRole
 from docspec.domain.references import ArtifactRef
 from docspec.domain.storage import PartitionPolicy
 from docspec.ports.content_fetcher import ContentFetcher
+from docspec.ports.extractor import Extractor
+from docspec.ports.segmenter import Segmenter
+from docspec.processing.artifacts import RepresentationPayload, SegmentPayload
 from docspec.ports.processor import Processor
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
-from docspec.processing.extraction import DefaultExtractorRegistry
+from docspec.processing.extraction import DefaultExtractorRegistry, ExtractionResult
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
 
@@ -119,10 +123,6 @@ def _verified_processors(
     processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]] | None = None,
 ) -> dict[str, Processor[ProcessorPayload, ProcessorResult]]:
     _verify_plan_policies(plan, retry_policy, accepted_failure_policy)
-    if plan.stages.extractor_ids != (DefaultExtractorRegistry.extractor_id,):
-        raise ProfileError("local composition requires the pinned default extractor registry")
-    if plan.stages.segmenter_id != DefaultSegmenterRegistry.segmenter_id:
-        raise ProfileError("local composition requires the pinned default segmenter registry")
     if processors is None:
         statistics = ContentStatisticsProcessor(retry_policy=retry_policy)
         available = {statistics.description.processor_id: statistics}
@@ -152,6 +152,16 @@ def _utc_instant(value: object, *, label: str) -> str:
     return value
 
 
+def _stage_implementations(
+    extractor: Extractor[ExtractionResult] | None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
+) -> tuple[Extractor[ExtractionResult], Segmenter[RepresentationPayload, SegmentPayload]]:
+    return (
+        DefaultExtractorRegistry() if extractor is None else extractor,
+        DefaultSegmenterRegistry() if segmenter is None else segmenter,
+    )
+
+
 def _compose_local_run(
     plan: ProcessingPlan,
     workspace: LocalWorkspace,
@@ -166,9 +176,16 @@ def _compose_local_run(
     partition_policy_id: str,
     result_sink_id: str,
     content_fetcher: ContentFetcher | None,
+    extractor: Extractor[ExtractionResult] | None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
     processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]] | None,
     source_catalog: ImmutableSourceCatalogReader | None,
 ) -> _LocalRunComposition:
+    extractor, segmenter = _stage_implementations(extractor, segmenter)
+    try:
+        verify_stage_implementations(plan.stages, extractor=extractor, segmenter=segmenter)
+    except IntegrityError as error:
+        raise ProfileError(str(error)) from error
     profiles = _local_profiles(plan, workspace)
     processors = _verified_processors(plan, retry_policy, accepted_failure_policy, processors)
     if type(deadline_epoch_seconds) is not int or deadline_epoch_seconds < 1:
@@ -232,8 +249,8 @@ def _compose_local_run(
         document_catalog=catalog,
         blobs=blobs,
         fetcher=bound_fetcher,
-        extractor=DefaultExtractorRegistry(),
-        segmenter=DefaultSegmenterRegistry(),
+        extractor=extractor,
+        segmenter=segmenter,
         processors=processors,
         retry_policy=retry_policy,
         accepted_failure_policy=accepted_failure_policy,

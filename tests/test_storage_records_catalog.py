@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -210,7 +212,7 @@ def _committed_catalog_state(tmp_path: Path):
             key=lambda item: item.layer_kind,
         )
     )
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     source = SourceCatalogRef(
         "urn:docspec:test:catalog:" + "1" * 64,
         "external/catalog.json",

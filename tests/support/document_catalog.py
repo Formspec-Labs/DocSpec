@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -147,7 +149,7 @@ def _save_run(
             key=lambda item: item.layer_kind,
         )
     )
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     source_digest = sha256_digest(run_tag.encode())
     source = SourceCatalogRef(
         f"urn:docspec:test:catalog:{source_digest.removeprefix('sha256:')}",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Iterator, cast
 
 from docspec.domain.content import AcquisitionDisposition, SourceItem, SourceItemState
@@ -105,11 +105,7 @@ class _PlanImpact:
     processor_only: bool = False
 
     def requested_stages(self, plan: ProcessingPlan) -> StagePolicy:
-        return StagePolicy(
-            plan.stages.extractor_ids,
-            plan.stages.segmenter_id,
-            self.processor_ids,
-        )
+        return replace(plan.stages, processor_ids=self.processor_ids)
 
 
 def _source_item_digest(item: SourceItem) -> str:
@@ -510,10 +506,8 @@ class RunPlanner:
     def _non_processor_governing_content(plan: ProcessingPlan) -> dict[str, Any]:
         content = plan.governing_content()
         content.pop("processors")
-        content["stages"] = {
-            "extractorIds": list(plan.stages.extractor_ids),
-            "segmenterId": plan.stages.segmenter_id,
-        }
+        content["stages"] = plan.stages.to_dict()
+        content["stages"].pop("processorIds")
         return content
 
     def _planned_changes(

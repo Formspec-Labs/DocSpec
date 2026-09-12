@@ -1,6 +1,8 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 import importlib
 import json
 import os
@@ -26,13 +28,11 @@ from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.jobs import StoreState
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests import helpers as _helpers
 from tests.support import cli as _cli_helpers
 from tests.support import incremental as _equivalence
@@ -121,10 +121,7 @@ def _seed(root: Path) -> _Arm:
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(1, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-        ),
+        stages=stage_policy(),
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},

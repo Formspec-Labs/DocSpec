@@ -36,6 +36,32 @@ invocation, retries, and caching. Exercise
 [data-use restrictions](../tests/test_policy_security.py), and
 [reprocessing](../tests/test_processor_reprocessing.py) when changing this path.
 
+## Replace extraction or segmentation
+
+Implement the [extractor](../src/docspec/ports/extractor.py) or
+[segmenter](../src/docspec/ports/segmenter.py) interface. An extractor exposes
+`extractor_id`, `configuration_digest`, and `extract()`; a segmenter exposes
+`segmenter_id`, `policy_digest`, and `segment()`. Each also implements
+`selected_identity(input)`, returning the output implementation's ID and digest.
+An ordinary implementation returns its own pair. A registry selects a child
+using captured-file or representation metadata and shares that selection logic
+with execution.
+
+Use `docspec.runtime.stage_policy` to derive the plan's stage settings from the
+actual objects, then pass those objects to `prepare_local_run`. The
+[Python guide](python-runs.md#choose-extraction-and-segmentation) shows that path;
+[the installed probe](../tests/support/installed_runtime_probe.py) demonstrates
+small custom implementations without private application imports. Credentials
+belong in live dependencies, not retained settings. Output-affecting changes,
+including parser/tokenizer versions, must change the relevant digest.
+
+Representations and extraction receipts retain the selected extractor's identity.
+Segments and segmentation receipts retain the selected segmenter's identity and
+policy, including an invocation that returns no segments. DocSpec checks these
+values before accepting outputs and when saved entries are opened as checkpoints,
+along with the existing source, byte, and evidence checks. The registry's aggregate settings remain in
+the plan; they do not replace the identities of individual outputs.
+
 ## Make cache reuse conditional on verified evidence
 
 The [cache interface](../src/docspec/ports/processor_cache.py) returns immutable

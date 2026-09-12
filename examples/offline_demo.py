@@ -7,6 +7,8 @@ synthetic source-shaped metadata, with an explicit adapter for local bytes.
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 import argparse
 import json
 from contextlib import redirect_stdout
@@ -22,12 +24,10 @@ from docspec.runtime import prepare_local_run
 from docspec.domain.execution import ExecutionLimits
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.ports.content_fetcher import FetchStream
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from docspec.profile_registry import ProfileRegistry
 from docspec.workspace import LocalWorkspace
 from docspec.source_catalog import (
@@ -185,7 +185,7 @@ def run_example(output: Path) -> None:
         base_release=None,
         profiles=profiles,
         limits=WorkLimits(2, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy((DefaultExtractorRegistry.extractor_id,), DefaultSegmenterRegistry.segmenter_id),
+        stages=stage_policy(),
         processors=ProcessorSet(()),
         partition_count=2,
         selection={},

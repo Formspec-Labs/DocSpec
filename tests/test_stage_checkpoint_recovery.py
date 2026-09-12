@@ -58,6 +58,13 @@ class _CrashAfterExtractionOnce:
     def calls(self) -> int:
         return self._delegate.calls
 
+    @property
+    def configuration_digest(self):
+        return self._delegate.configuration_digest
+
+    def selected_identity(self, captured):
+        return self._delegate.selected_identity(captured)
+
     def extract(self, captured: Any, source_bytes: bytes) -> Any:
         result = self._delegate.extract(captured, source_bytes)
         if self._armed:

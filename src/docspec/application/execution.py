@@ -56,6 +56,7 @@ from .processor_rules import (
 )
 from .processor_runtime import ProcessorRuntime
 from .store_state import load_latest_store
+from .stage_identity import verify_extraction_identity, verify_segment_identity, verify_stage_implementations
 from .work_budget import MemoryScope, WorkBudget
 
 
@@ -107,11 +108,12 @@ class StoreExecutionService:
             controls=controls,
             blobs=blobs,
             extractor=extractor,
+            segmenter=segmenter,
             retry_policy=retry_policy,
         )
 
     def execute_store(self, planned_document_store_ref: StoreRef) -> StoreRef:
-        plan = self._load_plan()
+        plan = self.verify_configuration()
         current_ref, store = load_latest_store(self._stores, planned_document_store_ref)
         if store.plan_id != plan.plan_id:
             raise IntegrityError("document store belongs to another processing plan")
@@ -175,9 +177,12 @@ class StoreExecutionService:
             raise IntegrityError("processor-only reprocessing requires a pinned base release")
         return self._document_catalog.open_reader(plan.base_release)
 
-    def _load_plan(self) -> ProcessingPlan:
+    def verify_configuration(self) -> ProcessingPlan:
+        """Check effective implementations before executing or reusing saved work."""
+
         self._controls.verify(self._plan_ref)
         plan = ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
+        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
         if plan.retry_policy_digest != self._retry_policy.digest:
             raise IntegrityError("injected retry policy differs from the processing plan")
         if plan.accepted_failure_policy_digest != self._accepted_failure_policy.digest:
@@ -300,17 +305,11 @@ class StoreExecutionService:
                             memory,
                             source_memory,
                         )
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
                         extraction = self._extractor.extract(captured_file, source_bytes)
                         budget.check_duration()
-                        extractor_registry_id = getattr(self._extractor, "extractor_id", None)
-                        actual_extractor_id = extraction.payload.representation.extractor_id
-                        if (
-                            actual_extractor_id not in plan.stages.extractor_ids
-                            and extractor_registry_id not in plan.stages.extractor_ids
-                        ):
-                            raise IntegrityError(
-                                f"extractor {actual_extractor_id} is not pinned by the processing plan"
-                            )
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        verify_extraction_identity(self._extractor, captured_file, extraction.payload.representation)
                         representation_id = extraction.payload.representation.representation_id
                         representation_unit = budget.stage_unit_id(
                             entry.entry_id,
@@ -352,28 +351,32 @@ class StoreExecutionService:
 
             if not checkpoint.segmentation_complete:
                 try:
-                    segmenter_registry_id = getattr(self._segmenter, "segmenter_id", None)
-                    if segmenter_registry_id != plan.stages.segmenter_id:
-                        raise IntegrityError("injected segmenter registry differs from the processing plan")
                     while representation_payloads:
                         representation, representation_unit = representation_payloads.popleft()
                         budget.check_duration()
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        selected_identity = self._segmenter.selected_identity(representation.representation)
                         results = self._segmenter.segment(representation)
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        if self._segmenter.selected_identity(representation.representation) != selected_identity:
+                            raise IntegrityError("segmenter selection changed during execution")
                         representation_id = representation.representation.representation_id
                         budget.charge_segments(representation_unit, len(results))
                         for result in results:
+                            verify_segment_identity(result.segment, selected_identity)
                             verify_segment_representation(result, representation)
                             memory.reserve(
                                 f"segment:{representation_unit}:{result.segment.segment_id}",
                                 len(result.content),
                             )
+                        for result in results:
                             persisted = self._persist_segment(result, plan)
                             segment_payloads.append(persisted)
                             segments.append(persisted.segment)
                         memory.release(f"representation:{representation_unit}")
                         segmentation_receipt = SegmentationReceipt(
                             representation_id,
-                            plan.stages.segmenter_id,
+                            *selected_identity,
                             tuple(result.segment.segment_id for result in results),
                         )
                         receipt_refs.append(

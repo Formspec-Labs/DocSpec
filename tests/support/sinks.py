@@ -2,24 +2,21 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from collections.abc import Mapping
 from dataclasses import replace
 from typing import Any
 
 from docspec.domain.content import AcquisitionDisposition, CandidateFile, SourceItem
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore
-from docspec.domain.plans import StagePolicy, WorkLimits
+from docspec.domain.plans import WorkLimits
 from docspec.domain.references import ArtifactRef
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests.helpers import artifact
 
 NOW = "2026-08-05T12:00:00Z"
 
-STAGES = StagePolicy(
-    (DefaultExtractorRegistry.extractor_id,),
-    DefaultSegmenterRegistry.segmenter_id,
-)
+STAGES = stage_policy()
 
 
 def _clock() -> str:

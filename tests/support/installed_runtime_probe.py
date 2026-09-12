@@ -13,19 +13,19 @@ import sys
 
 from rulespec_artifacts import Producer
 
-from docspec.adapters.storage import LocalJsonControlRepository
+from docspec.adapters.storage import LocalJsonControlRepository, LocalJsonlRecordStorage
 from docspec.domain.execution import ExecutionLimits
 from docspec.domain.identity import identity_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.receipts import RunReceipt
-from docspec.errors import IntegrityError
-from docspec.processing.extraction import DefaultExtractorRegistry
+from docspec.errors import IntegrityError, ProfileError
+from docspec.processing.extraction import TextExtractor
 from docspec.processing.processors import ContentStatisticsProcessor
-from docspec.processing.segmentation import DefaultSegmenterRegistry
+from docspec.processing.segmentation import ParagraphSegmenter
 from docspec.profile_registry import ProfileRegistry
-from docspec.runtime import prepare_local_run
+from docspec.runtime import prepare_local_run, stage_policy
 from docspec.source_catalog import (
     FederalRegisterCatalogPolicy,
     LocalSourceCatalogStore,
@@ -61,14 +61,33 @@ def main() -> None:
             return super().process(*args, **kwargs)
 
     processor = CountingProcessor(retry_policy=retry)
+
+    class InstalledExtractor(TextExtractor):
+        extractor_id = "tests.installed-source-text/v1"
+        configuration_digest = identity_digest({"mode": "retain-exact-source"})
+        calls = 0
+
+        def extract(self, *args):
+            self.calls += 1
+            return super().extract(*args)
+
+    class InstalledSegmenter(ParagraphSegmenter):
+        segmenter_id = "tests.installed-paragraphs/v1"
+        policy_digest = identity_digest({"policy": "blank-line-paragraphs"})
+        calls = 0
+
+        def segment(self, *args):
+            self.calls += 1
+            return super().segment(*args)
+
+    extractor, segmenter = InstalledExtractor(), InstalledSegmenter()
     plan = ProcessingPlan.create(
         source_catalog=catalog.reference,
         base_release=None,
         profiles=ProfileRegistry.builtin().local_profiles(),
         limits=WorkLimits(2, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,), DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
+        stages=stage_policy(
+            extractor=extractor, segmenter=segmenter, processor_ids=(processor.description.processor_id,),
         ),
         processors=ProcessorSet((processor.description,)),
         partition_count=2,
@@ -101,16 +120,16 @@ def main() -> None:
         deadline_epoch_seconds=4_000_000_000,
         completed_at=example["COMPLETED_AT"],
         content_fetcher=fetcher,
+        extractor=extractor,
+        segmenter=segmenter,
         processors={processor.description.processor_id: processor},
     )
     prepared = prepare_local_run(plan, workspace, **settings)
     first = prepared.run()
-    assert fetcher.calls == 1
-    assert processor.calls == 1
+    assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
     recovered = prepare_local_run(plan, workspace, handoff_ref=prepared.handoff_ref, **settings)
     assert recovered.run() == first
-    assert fetcher.calls == 1
-    assert processor.calls == 1
+    assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
 
     # Unified result inspection remains separate work. Inspect real retained
     # output through the existing public storage adapter in this qualification.
@@ -119,6 +138,27 @@ def main() -> None:
     assert run.selected_item_count == 1
     assert counts["files"] == counts["representations"] == counts["segments"] == 1
     assert counts["failures"] == 0
+    records = LocalJsonlRecordStorage(workspace.roots["recordStorage"])
+    for layer in run.staged_layers:
+        if layer.layer_kind == "representations":
+            row = tuple(records.stream(layer))[0]["payload"]
+            assert (row["extractorId"], row["configurationDigest"]) == (
+                extractor.extractor_id, extractor.configuration_digest,
+            )
+        elif layer.layer_kind == "segments":
+            row = tuple(records.stream(layer))[0]["payload"]
+            assert (row["segmenterId"], row["policyDigest"]) == (segmenter.segmenter_id, segmenter.policy_digest)
+
+    for stage, attribute in ((extractor, "configuration_digest"), (segmenter, "policy_digest")):
+        original = getattr(stage, attribute)
+        setattr(stage, attribute, identity_digest({"differentStageSettings": True}))
+        try:
+            prepare_local_run(plan, workspace, handoff_ref=prepared.handoff_ref, **settings)
+        except ProfileError:
+            pass
+        else:
+            raise AssertionError("changed stage settings reused a saved handoff")
+        setattr(stage, attribute, original)
 
     original_digest = fetcher.configuration_digest
     fetcher.configuration_digest = identity_digest({"differentConfiguration": True})
@@ -138,7 +178,7 @@ def main() -> None:
         pass
     else:
         raise AssertionError("changed storage root reused a saved handoff")
-    assert fetcher.calls == 1
+    assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
     assert not (Path.cwd() / "plan.json").exists()
     assert not (Path.cwd() / "run-request.json").exists()
     print("installed runtime: captured once, recovered unchanged work, refused changed worker settings")

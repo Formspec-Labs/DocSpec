@@ -68,6 +68,9 @@ def test_stdlib_extractors_preserve_exact_source_and_are_retry_stable(
     assert metadata_key in first.receipt.metadata
     assert first.payload.representation.representation_id == second.payload.representation.representation_id
     assert first.receipt.receipt_digest == second.receipt.receipt_digest
+    assert extractor.selected_identity(captured) == (  # type: ignore[attr-defined]
+        first.receipt.extractor_id, first.receipt.configuration_digest
+    )
     verify_representation_evidence(first.payload, content)
 
 
@@ -106,7 +109,12 @@ def test_default_media_dispatch_uses_source_specific_extractors() -> None:
         (b'{"value":1}', "application/ld+json", "json"),
     ]
     for content, media_type, kind in cases:
-        assert registry.extract(_captured(content, media_type), content).payload.representation.kind == kind
+        captured = _captured(content, media_type)
+        representation = registry.extract(captured, content).payload.representation
+        assert representation.kind == kind
+        assert registry.selected_identity(captured) == (
+            representation.extractor_id, representation.configuration_digest
+        )
 
     with pytest.raises(ExtractionError, match="no extractor"):
         registry.extract(_captured(b"bytes", "application/octet-stream"), b"bytes")
@@ -136,10 +144,14 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
         return provider
 
     monkeypatch.setattr("docspec.processing.extraction.import_module", import_provider)
+    monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: provider.__version__)
     extractor = LazyPypdfExtractor()
     assert imports == []
     source = b"%PDF-fixture-bytes"
     result = extractor.extract(_captured(source, "application/pdf"), source)
+    assert result.receipt.extractor_id == "docspec.pypdf/6.1.0-fixture"
+    assert result.receipt.configuration_digest == extractor.configuration_digest
+    assert extractor.extractor_id != result.receipt.extractor_id
     persisted_representation = type(result.payload.representation).from_dict(
         result.payload.representation.to_dict()
     )
@@ -170,6 +182,7 @@ def test_missing_optional_pdf_profile_has_one_actionable_failure(monkeypatch: py
         raise ModuleNotFoundError("pypdf")
 
     monkeypatch.setattr("docspec.processing.extraction.import_module", missing)
+    monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: "6.1.0-fixture")
     extractor = LazyPypdfExtractor()
     source = b"%PDF-fixture-bytes"
     with pytest.raises(ExtractionError, match=r"docspec\[pdf\]"):

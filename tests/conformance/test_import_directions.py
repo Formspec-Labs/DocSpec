@@ -28,7 +28,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "errors": set(),
     "domain": {"domain", "errors"},
     "ports": {"ports", "domain", "errors"},
-    "processing": {"processing", "domain", "errors"},
+    "processing": {"processing", "ports", "domain", "errors"},
     "profile_registry": {"domain", "errors"},
     "workspace": {"profile_registry"},
     # The DocumentRelease 2.0 wire primitives: a leaf that reads DocSpec's byte

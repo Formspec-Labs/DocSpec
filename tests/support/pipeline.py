@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from pathlib import Path
 
 from docspec.adapters.execution import LocalExecutionBackend
@@ -23,7 +25,7 @@ from docspec.domain.execution import (
     summarize_store_tasks,
 )
 from docspec.domain.identity import sha256_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import StoreRef
@@ -66,11 +68,7 @@ def _plan(
         base_release=base,
         profiles=local_profile_set(),
         limits=WorkLimits(max_entries, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
-        ),
+        stages=stage_policy(processor_ids=(processor.description.processor_id,)),
         processors=ProcessorSet((processor.description,)),
         partition_count=buckets,
         selection={},

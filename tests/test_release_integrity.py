@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from collections import defaultdict
 from copy import deepcopy
 from dataclasses import replace
@@ -18,7 +20,7 @@ from docspec.domain.content import (
 from docspec.domain.delivery import iter_delivery_records, verify_logical_release_layers
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore
-from docspec.domain.plans import StagePolicy, WorkLimits
+from docspec.domain.plans import WorkLimits
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError
 from docspec.processing import ContentStatisticsProcessor, ParagraphSegmenter, TextExtractor
@@ -61,7 +63,7 @@ def _release_layers() -> dict[str, list[dict]]:
         (),
     ).derived_records[0]
     entry = replace(
-        DocumentEntry.create(source, ChangeKind.ADDED, StagePolicy((captured.downloader_id,), segment.segment.segmenter_id)),
+        DocumentEntry.create(source, ChangeKind.ADDED, stage_policy(extractor=TextExtractor(), segmenter=ParagraphSegmenter())),
         captured_files=(captured,),
         representations=(extraction.payload.representation,),
         segments=(segment.segment,),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -154,13 +154,14 @@ def _plan(
     *,
     selection: dict | None = None,
     partition_count: int = 4,
+    stages: StagePolicy | None = None,
 ) -> ProcessingPlan:
     return ProcessingPlan.create(
         source_catalog=source,
         base_release=base,
         profiles=profile_set(),
         limits=WorkLimits(10, 1000, 100, 100, 1000, 1000, 60),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=stages or StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=partition_count,
         selection={} if selection is None else selection,
@@ -179,6 +180,7 @@ def _planned_update(
     previous_selection: dict | None = None,
     partitions: tuple[str, ...] = (),
     failed_item_ids: tuple[str, ...] = (),
+    current_stages: StagePolicy | None = None,
 ) -> tuple[tuple, MemoryDocumentCatalog]:
     controls = MemoryControls()
     stores = MemoryStores()
@@ -208,7 +210,7 @@ def _planned_update(
     )
     release_ref = release.reference("memory://releases/base", sha256_digest(release.file_bytes))
     current_source = _source_reference("current")
-    plan = _plan(current_source, release_ref, selection=selection)
+    plan = _plan(current_source, release_ref, selection=selection, stages=current_stages)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     catalog = MemoryDocumentCatalog(
         release_ref,
@@ -285,7 +287,7 @@ def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_pat
         base_release=None,
         profiles=profile_set(),
         limits=WorkLimits(2, 100, 10, 10, 20, 100, 20),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=1,
         selection={"excludeItemIds": ["item-4"]},
@@ -569,3 +571,16 @@ def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> N
     assert catalog.reader_calls == 1
     # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
+
+
+@pytest.mark.parametrize("configuration_field", ["extractor_configuration_digest", "segmenter_policy_digest"])
+def test_stage_configuration_change_rebuilds_unchanged_input(configuration_field: str) -> None:
+    item = _source_item("same-item")
+    stages = _plan(_source_reference("fixture"), None).stages
+    unchanged, _ = _planned_update((item,), (item,), current_stages=stages)
+    assert unchanged == ()
+    changed_stages = replace(stages, **{configuration_field: sha256_digest(b"changed-settings")})
+    rebuilt, _ = _planned_update((item,), (item,), current_stages=changed_stages)
+    assert len(rebuilt) == 1
+    assert rebuilt[0].execution_mode is EntryExecutionMode.FULL
+    assert rebuilt[0].requested_stages == changed_stages

@@ -34,11 +34,16 @@ See [stage recovery](../tests/test_stage_checkpoint_recovery.py) and
 
 For a saved execution handoff, local task execution and reconciliation also
 compare the reconstructed worker with its retained description. Storage roots,
-fetcher identity/configuration, acceptance policies, sink, partition settings,
+fetcher identity/configuration, extraction and segmentation settings, acceptance policies, sink, partition settings,
 and the fixed evidence timestamp must match. The
 [worker recovery tests](../tests/test_local_worker_identity.py) exercise refusal
-before fetching when those values change. Broader injected extractor/segmenter
-configuration pins remain part of the public lifecycle work.
+before fetching when those values change. The
+[stage tests](../tests/test_runtime_stages.py) also cover configuration changes
+after preparation, including completed-task reuse and zero-task successors.
+When saved entries are opened as checkpoints, each stage output must match the
+selected implementation and its settings. Completed-task retries check current
+settings and the existing delivery receipt without replaying extraction or
+segmentation.
 
 ## Deliver and reconcile before publishing
 

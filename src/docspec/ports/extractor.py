@@ -10,4 +10,14 @@ ExtractionResult_co = TypeVar("ExtractionResult_co", covariant=True)
 
 
 class Extractor(Protocol[ExtractionResult_co]):
+    @property
+    def extractor_id(self) -> str: ...
+
+    @property
+    def configuration_digest(self) -> str: ...
+
+    def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        """Return the selected output extractor ID and configuration digest without reading bytes."""
+        ...
+
     def extract(self, captured_file: CapturedFile, source_bytes: bytes) -> ExtractionResult_co: ...

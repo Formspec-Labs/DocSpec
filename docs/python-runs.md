@@ -52,8 +52,8 @@ run_reference = prepared.run()
 The plan's retry and failure policies must agree with those supplied here. Its
 processor descriptions must match the supplied objects. Omit `processors` to
 use the built-in processors selected by the plan; an explicit empty mapping
-supplies no processors. Extraction and segmentation currently use the default
-registries pinned by the plan.
+supplies no processors. Extraction and segmentation use the default registries
+unless the caller supplies other implementations with matching plan pins.
 
 Omit `content_fetcher` to read local files under the workspace's `sourceContent`
 root. An injected fetcher supplies a nonempty `downloader_id` and a SHA-256
@@ -66,6 +66,51 @@ The runner's network allowance must cover one planned store's byte allowance.
 `completed_at` is the fixed evidence timestamp for this attempt, distinct from
 the wall-clock execution deadline. Producer acceptance is never inferred from
 the input artifact's labels.
+
+## Choose extraction and segmentation
+
+Select the objects before constructing the plan. `stage_policy` derives their
+identities and settings for the plan's `stages` field:
+
+```python
+from docspec.processing.extraction import TextExtractor
+from docspec.processing.segmentation import ParagraphSegmenter
+from docspec.runtime import stage_policy
+
+extractor = TextExtractor()
+segmenter = ParagraphSegmenter()
+stages = stage_policy(
+    extractor=extractor,
+    segmenter=segmenter,
+    processor_ids=(processor.description.processor_id,),
+)
+# Supply stages to ProcessingPlan.create alongside its other required inputs.
+# Pass the same configured objects when preparing or recovering that plan.
+settings.update(extractor=extractor, segmenter=segmenter)
+```
+
+Omitting these choices in both calls uses the same default constructors. A
+registry is one configured stage that selects among individual implementations.
+Its plan digest includes its routing and child settings; retained representations
+and segments keep the identity of the child that actually produced them. Empty
+segmentation also records the selected child's policy.
+
+Custom implementations follow the [extension interfaces](extensions.md). Their
+declared settings must include every choice that affects results. DocSpec checks
+that the objects, emitted results, and recovered results agree with those
+declarations; this does not prove arbitrary plugin code behaves correctly.
+
+Changed settings require a new plan. They currently trigger a full document
+rebuild, including acquisition; reuse of captures after extraction changes, or
+representations after segmentation changes, remains [D15](dataset-experiments-todo.md#d15).
+Unchanged settings allow verified recovery and ordinary unchanged-input reuse.
+
+The default extractor includes PDF support when the optional parser is installed.
+Configuration reads its installed version without importing the parser. PDF
+availability, version, separator, and whitespace settings affect the registry's
+digest, including in a text-only plan using that registry. An explicit
+`TextExtractor` avoids that PDF-dependent registry choice. Missing PDF support or
+a loaded parser version that differs from its pin refuses PDF processing.
 
 ## Resume or dispatch the same work
 
@@ -80,7 +125,7 @@ run_reference = recovered.run()
 ```
 
 Recovery verifies the retained handoff against the reconstructed worker. Changed
-roots, fetcher identity/configuration, policies, accepted producers, partition
+roots, fetcher identity/configuration, stage identities/settings, policies, accepted producers, partition
 settings, result sink, evidence timestamp, execution limits, or deadline are
 refused. Verified completed work is reused. A saved handoff and a `resume`
 planning option are mutually exclusive.
@@ -124,15 +169,16 @@ Keeping it does not select a current application release or create a portable
 export. [Retention and selection](experiments.md) remain explicit operations.
 Unified result inspection and simpler plan construction remain checklist work.
 
-Custom processor and fetcher injection use this public runtime. Custom extractor
-and segmenter injection remains gated on configuration-aware stage pins. An
-empty processor list still performs extraction and segmentation; capture-only
-completion is not yet available.
+Custom processors, fetchers, extractors, and segmenters use this public runtime.
+An empty processor list still performs extraction and segmentation; capture-only
+completion is not yet available. Processing plans, document stores, and ordinary
+segmentation receipts now use format `2.0`. Rebuild plans and prepared work made
+with the superseded shapes; there is no compatibility reader.
 
 The [installed runtime check](../tests/support/installed_runtime_probe.py) reuses
 the offline example's source fixture outside the checkout. It builds a catalog,
-executes a processor, inspects retained layers, resumes without refetching or
-rerunning the processor, and refuses changed worker settings. The
+injects all four kinds of implementation, inspects retained layers and stage
+identities, resumes without repeating their work, and refuses changed settings. The
 [package test](../tests/test_package_boundary.py) installs the built wheel into
 an isolated environment before running that check. This qualifies the bounded
 Python path; broader experiment acceptance remains

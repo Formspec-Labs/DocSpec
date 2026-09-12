@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from pathlib import Path
 
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfileSet
-from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests import helpers as _helpers
 from tests.support import cli as _cli_helpers
 
@@ -56,11 +56,7 @@ def _seeded_local_run(tmp_path: Path, profiles: ProfileSet) -> tuple[Path, dict[
         base_release=None,
         profiles=profiles,
         limits=WorkLimits(2, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
-        ),
+        stages=stage_policy(processor_ids=(processor.description.processor_id,)),
         processors=ProcessorSet((processor.description,)),
         partition_count=4,
         selection={},

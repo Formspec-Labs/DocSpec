@@ -76,10 +76,7 @@ def prepare_base_reprocessing(
     expected_order = tuple(identifier for identifier in plan.stages.processor_ids if identifier in requested_set)
     if requested != expected_order:
         raise IntegrityError("processor-only stages are not an ordered subset of the processing plan")
-    if (
-        entry.requested_stages.extractor_ids != plan.stages.extractor_ids
-        or entry.requested_stages.segmenter_id != plan.stages.segmenter_id
-    ):
+    if replace(entry.requested_stages, processor_ids=plan.stages.processor_ids) != plan.stages:
         raise IntegrityError("processor-only stages changed extraction or segmentation policy")
 
     layer_kinds = {layer.layer_kind for layer in reader.release.active_layers}

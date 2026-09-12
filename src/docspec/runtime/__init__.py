@@ -7,19 +7,36 @@ from collections.abc import Mapping
 from rulespec_artifacts import Producer
 
 from docspec.domain.execution import ExecutionLimits
-from docspec.domain.plans import ProcessingPlan
+from docspec.domain.plans import ProcessingPlan, StagePolicy
+from docspec.application.stage_identity import configured_stage_policy
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorResult
 from docspec.domain.references import ArtifactRef
 from docspec.ports.content_fetcher import ContentFetcher
+from docspec.ports.extractor import Extractor
+from docspec.ports.segmenter import Segmenter
+from docspec.processing.artifacts import RepresentationPayload, SegmentPayload
+from docspec.processing.extraction import ExtractionResult
 from docspec.ports.processor import Processor
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
-from docspec.runtime.composition import _compose_local_run
+from docspec.runtime.composition import _compose_local_run, _stage_implementations
 from docspec.runtime.execution import PreparedLocalRun
 from docspec.runtime.preparation import _load_prepared_local_run, _prepare_local_run
 from docspec.workspace import LocalWorkspace
 
-__all__ = ["PreparedLocalRun", "prepare_local_run"]
+__all__ = ["PreparedLocalRun", "prepare_local_run", "stage_policy"]
+
+
+def stage_policy(
+    *,
+    extractor: Extractor[ExtractionResult] | None = None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None = None,
+    processor_ids: tuple[str, ...] = (),
+) -> StagePolicy:
+    """Pin the selected stage objects, using the same defaults as local execution."""
+    extractor, segmenter = _stage_implementations(extractor, segmenter)
+    return configured_stage_policy(extractor, segmenter, processor_ids)
+
 
 
 def prepare_local_run(
@@ -34,6 +51,8 @@ def prepare_local_run(
     deadline_epoch_seconds: int,
     completed_at: str,
     content_fetcher: ContentFetcher | None = None,
+    extractor: Extractor[ExtractionResult] | None = None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None = None,
     processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]] | None = None,
     source_catalog: ImmutableSourceCatalogReader | None = None,
     partition_policy_id: str = "source-item-sha256-v1",
@@ -47,7 +66,8 @@ def prepare_local_run(
     Source and document producer acceptance are independent explicit choices.
     Injected fetchers declare ``downloader_id`` and ``configuration_digest``;
     injected processor descriptions must exactly match the plan's ProcessorSet.
-    Extraction and segmentation currently use the pinned default registries.
+    Extraction and segmentation objects must match the plan's configuration pins;
+    use ``stage_policy`` to build them from the same objects, or from the defaults.
 
     With ``handoff_ref``, verify the saved handoff against reconstructed services,
     including the same execution limits and deadline; supplied settings cannot
@@ -70,6 +90,8 @@ def prepare_local_run(
         deadline_epoch_seconds=deadline_epoch_seconds,
         completed_at=completed_at,
         content_fetcher=content_fetcher,
+        extractor=extractor,
+        segmenter=segmenter,
         processors=processors,
         source_catalog=source_catalog,
         partition_policy_id=partition_policy_id,

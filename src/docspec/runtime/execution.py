@@ -63,6 +63,7 @@ class PreparedLocalRun:
     def _require_handoff(self, handoff: ExecutionHandoff) -> None:
         if handoff != self.handoff:
             raise IntegrityError("local worker received a different execution handoff")
+        self._composition.executor.verify_configuration()
 
     def task_source(self, handoff: ExecutionHandoff) -> Iterator[StoreTask]:
         """Stream the existing sealed task ledger for this exact handoff."""
