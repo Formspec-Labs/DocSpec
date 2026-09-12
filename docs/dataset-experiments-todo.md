@@ -992,7 +992,21 @@ to defer a conditional item is a documented deferral, not completed implementati
   Both fixes are tracked in destination [Rulespec RS03](../../rulespec/TODO.md#rs03).
   The [decision and retained probe](history/2026-09-12-shared-blob-writer-architecture.md)
   and [independent review](history/2026-09-12-shared-blob-writer-review.md) record
-  the evidence-backed deferral. The broader D31 inventory remains open.
+  the evidence-backed deferral. Shared-writer adoption remains deferred.
+
+  **Inventory follow-up, September 12:** CourtListener now uses the provider's
+  public parser (D42). Atomic directory publication and canonical encoding use
+  Rulespec's existing APIs (D28); retained export uses its container (D29).
+  Rulespec `1.0.12` exposes no equivalent public row-validator helper. DocSpec
+  instead removes its generic compiled-gate class and optional-engine fallback,
+  directly using its required `jsonschema-rs` dependency and existing Python
+  rejection diagnostics. The remaining function adds DocSpec's error meaning. Importing
+  Search's wrapper would add the wrong dependency; creating another shared
+  framework would add more than it removes. [Schema maintenance](schema-maintenance.md)
+  names the engines and differential checks. RS02/SC02 retain any destination
+  work; the demonstrated RS03 writer gap is the remaining adoption dependency.
+  The catalog, publication, installed-provider and package-boundary gate passed
+  **52 tests** in 20.60 seconds. Ruff and lock consistency passed.
 
 <a id="d32"></a>
 

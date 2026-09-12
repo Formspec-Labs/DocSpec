@@ -91,13 +91,12 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
     Pins jsonschema-rs to python-jsonschema on this schema: every row of a real
     built catalog, plus systematic mutations of one (each required key dropped,
     each top-level field type-flipped, an unknown key added), must get the same
-    accept/reject verdict from both engines -- and the gate's own error() must
+    accept/reject verdict from both engines -- and DocSpec's schema check must
     raise exactly when the authority rejects, with the authority's message.
     """
 
-    gate = catalog_schemas._ITEM_VALIDATOR
-    assert gate._fast is not None, "compiled validator failed to build for the item schema"
-    authority = gate._authority
+    compiled = catalog_schemas._ITEM_VALIDATOR
+    authority = catalog_schemas._ITEM_AUTHORITY
 
     source = FakeSource(
         description(),
@@ -111,10 +110,10 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
     assert rows
 
     def verdicts(value: object) -> tuple[bool, bool, bool]:
-        fast_ok = gate._fast.is_valid(value)
+        fast_ok = compiled.is_valid(value)
         authority_ok = not list(authority.iter_errors(value))
         try:
-            gate.error(value, "differential row")
+            catalog_schemas._verify_item_schema(value, "differential row")
             gate_ok = True
         except IntegrityError:
             gate_ok = False

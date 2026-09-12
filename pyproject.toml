@@ -5,12 +5,8 @@ description = "Format-neutral bulk document acquisition, processing, segmentatio
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "jsonschema>=4.23,<5",
-    # Not an accelerator: the sole schema engine every catalog row passes
-    # through in practice. jsonschema alone is ~116x slower on the source-item
-    # schema (1,993 us/row against 17.1 us/row), which is the difference
-    # between minutes and hours over a full corpus, and nothing announced which
-    # engine a build had resolved. jsonschema stays as the refusal authority.
-    # Same spelling and bound SpicySearch already declares.
+    # Required for the per-row acceptance check. Python jsonschema supplies
+    # detailed refusal diagnostics; it is not an alternative execution mode.
     "jsonschema-rs>=0.52,<1",
     "rulespec-artifacts==1.0.12",
 ]

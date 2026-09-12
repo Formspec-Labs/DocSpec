@@ -57,11 +57,11 @@ from docspec.adapters.catalog_artifact.rules import (
     _utf16_key,
 )
 from docspec.adapters.catalog_artifact.schemas import (
-    _ITEM_VALIDATOR,
     _POLICY_VALIDATOR,
     _RECEIPT_VALIDATOR,
     _SCHEMAS,
     _schema_error,
+    _verify_item_schema,
 )
 from docspec.adapters.catalog_artifact.verification import SourceCatalogBuildGateVerifier
 from docspec.domain.identity import require_text
@@ -212,7 +212,7 @@ class _CatalogRowPartitioner:
                 raise IntegrityError("catalog policy produced duplicate or out-of-order sourceItemId values")
             previous = item.source_item_id
             value = item.to_dict()
-            _ITEM_VALIDATOR.error(value, f"source-catalog row {self.item_count}")
+            _verify_item_schema(value, f"source-catalog row {self.item_count}")
             _require_interpretation_order(value)
             payload = canonical_json_bytes(value)
             if len(payload) > MAX_CATALOG_ROW_BYTES:

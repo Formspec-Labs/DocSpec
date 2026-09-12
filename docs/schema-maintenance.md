@@ -6,6 +6,12 @@ existing schema bytes and identities unless the behavior changes intentionally.
 For a deliberate format change, update current producers and readers together.
 Legacy readers and fixture reproduction are not requirements.
 
+Catalog rows use the required `jsonschema-rs` validator directly. Python
+`jsonschema` supplies the detailed rejection messages; it is not a fallback
+execution mode. `tests/test_source_catalog_rows.py` compares both engines on
+real rows and mutations. Keep DocSpec's schemas and error meaning here; the
+existing libraries already provide validation mechanics.
+
 ## Find the authoritative definition
 
 | Family | Edit and generate | Installed location under `docspec/schemas/` | Checks |

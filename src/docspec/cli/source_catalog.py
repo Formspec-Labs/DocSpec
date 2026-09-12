@@ -15,7 +15,6 @@ from docspec.adapters.catalog_artifact.builder import (
     _snapshot_sources,
 )
 from docspec.adapters.catalog_artifact.rules import source_catalog_producer
-from docspec.adapters.catalog_artifact.schemas import source_item_validator_implementation
 from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogPublication,
     LocalSourceCatalogStore,
@@ -215,15 +214,12 @@ def _build(args: argparse.Namespace) -> int:
         blob_store,
         tuple(source_input[0] for source_input in source_inputs),
     )
-    # Record which schema engine will decide every row. jsonschema-rs is a
-    # declared dependency, so this should always name it; if an install ever
-    # loses it, a ~116x slowdown announces itself here instead of being read as
-    # "the build is just slow". Diagnostics use stderr; the build report uses stdout.
+    # Diagnostics use stderr; the build report uses stdout.
     _emit(
         {
             "format": "docspec-source-catalog-build-diagnostic",
             "formatVersion": "1.0",
-            "sourceItemValidator": source_item_validator_implementation(),
+            "sourceItemValidator": "jsonschema-rs",
         },
         error=True,
     )

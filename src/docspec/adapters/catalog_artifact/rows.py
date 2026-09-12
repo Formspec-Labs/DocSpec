@@ -21,7 +21,7 @@ from docspec.adapters.catalog_artifact.rules import (
     _partition_id,
     _utf16_key,
 )
-from docspec.adapters.catalog_artifact.schemas import _ITEM_VALIDATOR
+from docspec.adapters.catalog_artifact.schemas import _verify_item_schema
 from docspec.domain.identity import require_text, trusted_json_input
 from docspec.domain.source_catalog import (
     SourceCatalogCandidate,
@@ -97,7 +97,7 @@ def _iter_partition_stream(
                 )
             except ArtifactVerificationError as error:
                 raise IntegrityError(f"source-catalog row {count} is not canonical: {error}") from error
-            _ITEM_VALIDATOR.error(value, f"source-catalog row {count}")
+            _verify_item_schema(value, f"source-catalog row {count}")
         else:
             # An unvalidated pass only re-reads bytes that a validated pass of
             # the same derivation (or the producer gate) proves canonical and
