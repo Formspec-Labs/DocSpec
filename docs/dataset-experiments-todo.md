@@ -1348,7 +1348,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   [fresh installed Parquet trial](history/2026-09-12-parquet-capacity-observations.md)
   qualifies markup256 within the original time, memory and sampled-storage
   allowances, including completed-prefix recovery, changed-resource reuse and
-  complete clean comparison. Text4096 remains in progress and unqualified.
+  complete clean comparison. Text4096 passed changed-resource processing and the
+  clean run, then exceeded its 300-second complete-comparison allowance (exit
+  124). No completed comparison output was returned. Preserve this failed trial;
+  text4096 and D37 remain unqualified.
 
   **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
   qualify the original `a4a0e05` markup256 case within its declared local scope.

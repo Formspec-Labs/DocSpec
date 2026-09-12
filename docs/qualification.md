@@ -82,7 +82,8 @@ Capacity results apply to their exact installed wheels and workloads. In particu
 grows with the result. [D37](dataset-experiments-todo.md#d37) remains open: the
 original text workload exceeded its changed-resource time limit. The
 [fresh Parquet trial](history/2026-09-12-parquet-capacity-observations.md) qualifies
-markup256; text4096 is still running. Synthetic local tests also do not establish
+markup256; text4096 passed processing but exceeded its complete-comparison time
+limit. Synthetic local tests also do not establish
 live provider reliability or processor semantic quality.
 
 ## Qualify publication

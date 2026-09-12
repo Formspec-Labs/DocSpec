@@ -128,8 +128,9 @@ fresh directory when code or input pins change.
 The [fresh Parquet observations](history/2026-09-12-parquet-capacity-observations.md)
 record a passing markup256 trial on `c898512`. It completed capture, saved-prefix
 recovery, changed-resource reuse and complete clean comparison within the
-original allowances. The fresh text4096 trial remains in progress; it has not
-yet qualified. The report pins the installed wheel and records native operation
+original allowances. Text4096 passed changed-resource processing and the clean
+run, then exceeded the five-minute complete-comparison limit; it remains
+unqualified. The report pins the installed wheel and records native operation
 time, memory, sampled storage and complete fixture evidence.
 
 The [September 12 observations](history/2026-09-12-local-capacity-observations.md)

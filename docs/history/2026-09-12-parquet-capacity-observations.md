@@ -1,6 +1,6 @@
 # Parquet local capacity observations
 
-**The markup256 trial passed. The text4096 trial is still running.** These fresh
+**The markup256 trial passed. Text4096 failed its comparison time limit.** These fresh
 trials measure the Parquet/DuckDB implementation at `c898512`, with the same
 allowances as the [earlier trial](2026-09-12-local-capacity-observations.md).
 That earlier text changed-resource timeout remains a failed observation.
@@ -76,17 +76,49 @@ clean, 1,002,540 KiB for clean and zero for the temporary directory. There were
 no storage sampling errors. Peak resident memory across operations was
 341,098,496 bytes, below the declared 1 GiB allowance.
 
-## Text4096 status
+## Text4096 comparison failure
 
 The trial selects 4,096 documents and excludes 256. Its 4,096 captured files
 contain 83,886,080 bytes and produce 20,480 segments. Catalog construction,
-source verification, capture, both complete fixture checks, completed-prefix
-recovery and fresh inspection have passed. Prefix plus resume took 609.12
-seconds of active time. Resume reached 996,540,416 resident bytes, about 950 MiB;
-the remaining phases must also fit the fixed 1 GiB allowance. Changed-resource
-processing, the clean control and comparison remain unqualified until their
-commands and measurements complete. This is not yet a passing capacity claim
-for text4096.
+source verification, capture, both initial fixture checks, completed-prefix
+recovery, fresh inspection, changed-resource processing and the clean run passed.
+
+| Completed operation | Elapsed seconds | Peak resident bytes |
+| --- | ---: | ---: |
+| Generate fixtures | 0.81 | 89,063,424 |
+| Build catalog | 5.06 | 101,482,496 |
+| Verify source catalog | 1.71 | 96,124,928 |
+| Capture and retain | 127.06 | 380,715,008 |
+| Complete capture check | 30.69 | 228,229,120 |
+| Completed prefix of 16 tasks | 38.75 | 195,723,264 |
+| Resume and retain | 570.37 | 996,540,416 |
+| Fresh inspection and summary | 97.37 | 359,989,248 |
+| Complete initial processing check | 123.97 | 371,654,656 |
+| Changed phrase resource and retain | 684.99 | 985,972,736 |
+| Clean v2 run and retain | 549.63 | 632,242,176 |
+
+Prefix plus resume took 609.12 seconds of active time, with no intervening gap
+at the wrapper's one-second timestamp resolution. Their combined calls were
+4,096 extractions, 4,096 segmentations and 20,480 processor invocations, with no
+fetches. Changed-resource processing invoked only the processor, 20,480 times.
+The clean run fetched, extracted and segmented all 4,096 files and processed all
+20,480 segments. All completed operations fit their time and 1 GiB allowances.
+
+Complete comparison started at 20:38:45 UTC with a 300-second limit and exited
+with timeout status 124. The wrapper finished at 20:44:07 UTC after cleanup.
+Comparison returned no completed output. Its partial native timing file contains
+only a peak-memory-footprint value, a different metric from maximum resident
+memory; no completed elapsed-time/RSS pair is available for this operation.
+The earlier complete initial processing check does not establish changed/clean
+equality. **Text4096 remains unqualified.**
+
+The largest sampled main-plus-temporary allocation was 4,069,812 KiB; clean was
+6,675,008 KiB, both below their separate 8 GiB allowances. A fresh native size
+check after termination recorded 3,530,428 KiB for the main workspace excluding
+clean, 6,169,008 KiB for clean and 7,868 KiB of remaining temporary files. No
+storage sampling errors were recorded. The failed trial, original allowances,
+inputs and code remain preserved; a revised implementation needs a fresh
+qualification.
 
 ## Evidence and limits
 
