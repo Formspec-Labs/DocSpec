@@ -87,9 +87,10 @@ The shared runtime also pins `docspec.runtime.local-worker/v1` as its worker
 implementation. Reprepare handoffs created by the former CLI worker; retained
 plans and results keep their existing references.
 
-A workspace supplies locations only. It does not create a second run ledger,
-change input identities, make an alternate experiment into a resume, or provide
-capture-only completion. The broader public lifecycle remains checklist D04.
+A workspace supplies locations only. Runs use the existing plan and ledger
+identities. The Python runtime also supports [capture-first runs](python-runs.md#capture-first-and-process-later);
+this walkthrough runs all configured stages together. Broader lifecycle
+inspection and simpler plan construction remain checklist D04.
 
 ## Inspect the output
 

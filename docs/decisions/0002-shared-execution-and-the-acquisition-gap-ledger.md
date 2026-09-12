@@ -28,21 +28,19 @@ recorded absence.
 ## What DocSpec is for
 
 **Current-status correction, 2026-09-11:** The owner intent and September 2
-assessment below remain part of this decision's history. The statement that
-every requirement already exists overstates current stage flexibility and reuse.
-[`StagePolicy`](../../src/docspec/domain/plans.py) requires extraction and
-segmentation for a full-processing plan. Current
-[execution](../../src/docspec/application/execution.py) can recover retained
-checkpoints or rerun processors from a verified base release, but a new capture
-opens its fetcher before writing to the content-addressed store. Avoiding
-duplicate stored objects does not by itself avoid another fetch. Convenient
-capture-only completion, later stage selection, and unified attempt inspection
-remain [D24](../dataset-experiments-todo.md#d24),
-[D13–D17](../dataset-experiments-todo.md#d13), and
-[D19](../dataset-experiments-todo.md#d19). The historical population measurements
+assessment below remain part of this decision's history. Current
+[`StagePolicy`](../../src/docspec/domain/plans.py) supports capture, extraction,
+segmentation, and processing prefixes. The
+[Python runtime](../python-runs.md) retains each useful result and processes it
+later. Changed stages reuse verified inputs up to the first changed stage;
+source or other governing changes conservatively require full work. A new
+capture still opens its fetcher before writing to content-addressed storage:
+avoiding duplicate stored objects does not itself avoid another fetch.
+Unified attempt inspection and broader qualification remain
+[D19](../dataset-experiments-todo.md#d19) and
+[D38](../dataset-experiments-todo.md#d38). The historical population measurements
 below do not establish today's qualification. See the
-[current entry points](../../README.md#what-you-can-use-today) and
-[qualification work](../dataset-experiments-todo.md#d37).
+[current entry points](../../README.md#what-you-can-use-today).
 
 The owner's framing, and the reason this record was reorganized around it:
 DocSpec is an experimental dataset runner. You point it at a population, it
@@ -65,6 +63,7 @@ reacquiring anything.
 carried through to a committed catalog is one thousand documents. Ten thousand
 was attempted three times and never completed. That is the gap this record is
 about, and it is why the obligations are ordered the way they are.
+
 
 ## Minting is the mechanism, not the goal
 

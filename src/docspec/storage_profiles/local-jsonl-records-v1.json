@@ -14,7 +14,7 @@
     "docspec-representation-record/1.0",
     "docspec-segment-record/1.0",
     "docspec-derived-record/1.0",
-    "docspec-disposition-record/1.0",
+    "docspec-disposition-record/2.0",
     "docspec-receipt-record/1.0"
   ],
   "physicalMediaTypes": ["application/x-ndjson"],

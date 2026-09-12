@@ -3,8 +3,9 @@
 `docspec.runtime.prepare_local_run` accepts a `ProcessingPlan`, a
 `LocalWorkspace`, and explicit execution choices. It builds the same services
 used by the CLI. Callers do not need to write plan or run-request JSON files.
-The current API captures, extracts, segments, and optionally processes selected
-documents. It returns a checked run receipt reference.
+The API captures selected documents and runs the requested extraction,
+segmentation, and processing stages. It returns a checked run receipt reference;
+`prepared.retain(run_reference)` keeps the result without selecting it as current.
 
 Build or open the input catalog through
 [`docspec.source_catalog`](catalog-evidence.md). A plan pins that catalog, its
@@ -52,8 +53,9 @@ run_reference = prepared.run()
 The plan's retry and failure policies must agree with those supplied here. Its
 processor descriptions must match the supplied objects. Omit `processors` to
 use the built-in processors selected by the plan; an explicit empty mapping
-supplies no processors. Extraction and segmentation use the default registries
-unless the caller supplies other implementations with matching plan pins.
+supplies no processors. Requested extraction and segmentation use the default registries unless the
+caller supplies other implementations with matching plan pins. Unrequested
+stages construct no defaults and refuse supplied implementations.
 
 Omit `content_fetcher` to read local files under the workspace's `sourceContent`
 root. An injected fetcher supplies a nonempty `downloader_id` and a SHA-256
@@ -100,10 +102,12 @@ declared settings must include every choice that affects results. DocSpec checks
 that the objects, emitted results, and recovered results agree with those
 declarations; this does not prove arbitrary plugin code behaves correctly.
 
-Changed settings require a new plan. They currently trigger a full document
-rebuild, including acquisition; reuse of captures after extraction changes, or
-representations after segmentation changes, remains [D15](dataset-experiments-todo.md#d15).
-Unchanged settings allow verified recovery and ordinary unchanged-input reuse.
+Changed settings require a new plan against an explicit retained base. For an
+unchanged source item, changed extraction reuses captures; changed segmentation
+reuses representations; changed processors reuse segments and unaffected
+processor results. Downstream work runs again. Changed source items and other
+governing policies conservatively require full work. A damaged promised prefix
+refuses reuse instead of silently fetching replacement evidence.
 
 The default extractor includes PDF support when the optional parser is installed.
 Configuration reads its installed version without importing the parser. PDF
@@ -111,6 +115,39 @@ availability, version, separator, and whitespace settings affect the registry's
 digest, including in a text-only plan using that registry. An explicit
 `TextExtractor` avoids that PDF-dependent registry choice. Missing PDF support or
 a loaded parser version that differs from its pin refuses PDF processing.
+
+## Capture first and process later
+
+Choose the stopping point when building the plan:
+
+```python
+capture_stages = stage_policy(stop_after="capture")
+extraction_stages = stage_policy(stop_after="extraction", extractor=extractor)
+segmentation_stages = stage_policy(
+    stop_after="segmentation", extractor=extractor, segmenter=segmenter,
+)
+```
+
+A capture plan has no processors and supplies no extractor or segmenter to
+`prepare_local_run`. Run it and retain the result:
+
+```python
+with prepare_local_run(capture_plan, workspace, **capture_settings) as capture:
+    capture_result = capture.retain(capture.run())
+```
+
+Build a new plan with `base_release=capture_result` and the desired stages.
+Prepare that plan with those stage objects and run it through the same API.
+The planner verifies the source selection and reuses captured files, including
+original acquisition evidence. There is no separate delayed-processing ledger.
+A shorter stopping point retains only the requested prefix in its new result;
+the original result remains available with all of its outputs.
+
+Each document's disposition records the full requested stages. This matters
+when a retained result inherits documents completed under different plans.
+A successful capture means every candidate was captured; extraction and
+segmentation require their output receipts only when requested. Empty
+segmentation still needs its selected-policy receipt.
 
 ## Resume or dispatch the same work
 
@@ -170,15 +207,17 @@ export. [Retention and selection](experiments.md) remain explicit operations.
 Unified result inspection and simpler plan construction remain checklist work.
 
 Custom processors, fetchers, extractors, and segmenters use this public runtime.
-An empty processor list still performs extraction and segmentation; capture-only
-completion is not yet available. Processing plans, document stores, and ordinary
-segmentation receipts now use format `2.0`. Rebuild plans and prepared work made
-with the superseded shapes; there is no compatibility reader.
+The default `stage_policy()` still requests extraction and segmentation with no
+processors. Use `stop_after="capture"` to retain only source files. Processing
+plans and document stores use format `3.0`; disposition records use schema `2.0`
+and ordinary segmentation receipts use format `2.0`. Rebuild plans and prepared
+work made with superseded shapes; there is no compatibility reader.
 
 The [installed runtime check](../tests/support/installed_runtime_probe.py) reuses
 the offline example's source fixture outside the checkout. It builds a catalog,
-injects all four kinds of implementation, inspects retained layers and stage
-identities, resumes without repeating their work, and refuses changed settings. The
+injects all four kinds of implementation, retains captures, processes them
+without another fetch, inspects layers and stage identities, resumes without
+repeating work, and refuses changed settings. The
 [package test](../tests/test_package_boundary.py) installs the built wheel into
 an isolated environment before running that check. This qualifies the bounded
 Python path; broader experiment acceptance remains

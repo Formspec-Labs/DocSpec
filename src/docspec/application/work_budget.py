@@ -148,6 +148,14 @@ class WorkBudget:
     ) -> int:
         """Charge an extractor's actual page/frame count when it exposes one."""
 
+        observed = self.extraction_observation(representation_kind=representation_kind, metadata=metadata)
+        self.charge_pages_or_frames(identity, observed)
+        return observed
+
+    @staticmethod
+    def extraction_observation(*, representation_kind: str, metadata: Mapping[str, Any]) -> int:
+        """Read the same actual-work count during execution and receipt recovery."""
+
         observed: int | None = None
         for field in ("pageCount", "frameCount"):
             value = metadata.get(field)
@@ -160,28 +168,34 @@ class WorkBudget:
             observed = value
         if observed is None:
             observed = 1 if representation_kind == "image" else 0
-        self.charge_pages_or_frames(identity, observed)
         return observed
 
     def seed_verified_entries(
         self,
         entries: Iterable[DocumentEntry],
         processor_invocations: Mapping[str, Iterable[str]],
+        extraction_observations: Mapping[str, Mapping[str, int]],
     ) -> None:
         """Restore cumulative counters from verified immutable checkpoints.
 
         The caller verifies both terminal and partial entries before seeding the
         budget. Stable charge identities make a resumed stage idempotent while
-        preserving aggregate limits across worker attempts.
+        preserving aggregate limits across worker attempts. Extraction observations
+        come from verified receipts, indexed by entry and representation identity.
         """
 
         for entry in entries:
+            try:
+                observations = extraction_observations[entry.entry_id]
+            except KeyError as error:
+                raise IntegrityError("verified extraction observations are missing for an entry") from error
             if entry.execution_mode is EntryExecutionMode.FULL:
                 for captured in entry.captured_files:
                     self.charge_source_bytes(
                         self.stage_unit_id(entry.entry_id, "source", captured.file_id),
                         captured.blob.byte_size,
                     )
+            if entry.execution_mode is not EntryExecutionMode.FROM_SEGMENTS:
                 segments_by_representation: dict[str, int] = {}
                 for segment in entry.segments:
                     segments_by_representation[segment.representation_id] = (
@@ -193,13 +207,12 @@ class WorkBudget:
                         "representation",
                         f"{representation.file_id}:{representation.representation_id}",
                     )
-                    if representation.kind == "pdf-text":
-                        pages = {item.page for item in representation.boundaries if item.page is not None}
-                        self.charge_pages_or_frames(unit_id, len(pages))
-                    elif representation.kind == "image":
-                        self.charge_pages_or_frames(unit_id, 1)
-                    else:
-                        self.charge_pages_or_frames(unit_id, 0)
+                    if entry.execution_mode in {EntryExecutionMode.FULL, EntryExecutionMode.FROM_CAPTURES}:
+                        try:
+                            observed = observations[representation.representation_id]
+                        except KeyError as error:
+                            raise IntegrityError("verified extraction observation is missing for a representation") from error
+                        self.charge_pages_or_frames(unit_id, observed)
                     segment_count = segments_by_representation.get(representation.representation_id, 0)
                     if segment_count:
                         self.charge_segments(unit_id, segment_count)

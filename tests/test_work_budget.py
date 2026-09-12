@@ -290,7 +290,18 @@ def test_verified_source_bytes_are_not_double_charged_after_a_transport_retry(tm
     assert [failure.failure_class for failure in entry.failures] == [FailureClass.TRANSIENT_EXTERNAL]
 
     resumed_budget = WorkBudget(_limits(source_bytes=len(content) + 1, memory_bytes=32))
-    resumed_budget.seed_verified_entries(processed.entries, {})
+    controls = LocalJsonControlRepository(tmp_path / "controls")
+    observations = {
+        entry.entry_id: {
+            receipt["representationId"]: WorkBudget.extraction_observation(
+                representation_kind=receipt["kind"], metadata=receipt["metadata"],
+            )
+            for reference in entry.stage_receipts
+            if (receipt := controls.load(reference)).get("format") == "docspec-extraction-receipt"
+        }
+        for entry in processed.entries
+    }
+    resumed_budget.seed_verified_entries(processed.entries, {}, observations)
     assert resumed_budget.usage.source_bytes == len(content)
     assert resumed_budget.usage.segments == 1
     with pytest.raises(LimitExceededError, match="source bytes"):
@@ -316,6 +327,7 @@ def test_resume_accounting_includes_zero_output_processor_invocations() -> None:
     budget.seed_verified_entries(
         (entry,),
         {entry.entry_id: ("urn:docspec:test:abstained-invocation",)},
+        {entry.entry_id: {}},
     )
 
     assert budget.usage.processor_cost == 1

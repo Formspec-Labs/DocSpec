@@ -143,16 +143,17 @@ failure even if a later attempt succeeds.
 
 Changing a processor version or configuration creates a new processing plan
 against an explicit retained base. Each alternative gets its own requested work
-and output evidence. The existing processor-only route can reuse verified
-captures, representations and segments while running the changed processor and
-its affected dependents. The current pointer does not choose that base for the
+and output evidence. Changed processors reuse verified captures, representations, segments, and
+unaffected results while running the changed processor and its affected dependents.
+Changed extraction reuses captures; changed segmentation reuses representations. The current pointer does not choose that base for the
 caller.
 
 Submitting an identical plan to the same stores repository currently reuses its
 work identity. It does not create an independent same-configuration trial.
-Capture-only stopping points and reuse across changed extraction/segmentation
-settings are separate open lifecycle requirements. An empty processor list still
-performs extraction and segmentation today.
+A plan can stop after capture or extraction and retain that result for later
+processing. `stage_policy()` defaults to extraction and segmentation; an empty
+processor list alone does not select capture-only work. See the
+[Python lifecycle](python-runs.md#capture-first-and-process-later).
 
 An application `DocumentReleaseRef` is retained state used by DocSpec's reader and
 planner. It is distinct from the optional portable document export described in

@@ -67,21 +67,40 @@ class WorkLimits:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class StagePolicy:
-    extractor_id: str
-    extractor_configuration_digest: str
-    segmenter_id: str
-    segmenter_policy_digest: str
+    extractor_id: str | None
+    extractor_configuration_digest: str | None
+    segmenter_id: str | None
+    segmenter_policy_digest: str | None
     processor_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.processor_ids, tuple):
             raise ValueError("processor identities must be an immutable tuple")
-        for value in (self.extractor_id, self.segmenter_id, *self.processor_ids):
-            require_text(value, "stage identity")
-        require_sha256(self.extractor_configuration_digest, "extractor configuration digest")
-        require_sha256(self.segmenter_policy_digest, "segmenter policy digest")
+        for label, identifier, digest in (
+            ("extractor configuration", self.extractor_id, self.extractor_configuration_digest),
+            ("segmenter policy", self.segmenter_id, self.segmenter_policy_digest),
+        ):
+            if (identifier is None) != (digest is None):
+                raise ValueError(f"{label} identity and digest must be present together")
+            if identifier is not None:
+                require_text(identifier, f"{label} identity")
+                require_sha256(digest, f"{label} digest")
+        if self.requests_segmentation and not self.requests_extraction:
+            raise ValueError("segmentation requires extraction")
+        if self.processor_ids and not self.requests_segmentation:
+            raise ValueError("processors require extraction and segmentation")
+        for value in self.processor_ids:
+            require_text(value, "processor identity")
         if len(set(self.processor_ids)) != len(self.processor_ids):
             raise ValueError("processor identities must be distinct")
+
+    @property
+    def requests_extraction(self) -> bool:
+        return self.extractor_id is not None
+
+    @property
+    def requests_segmentation(self) -> bool:
+        return self.segmenter_id is not None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -222,7 +241,7 @@ class ProcessingPlan:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return {"format": "docspec-processing-plan", "formatVersion": "2.0", "planId": self.plan_id, **self.identity_content()}
+        return {"format": "docspec-processing-plan", "formatVersion": "3.0", "planId": self.plan_id, **self.identity_content()}
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ProcessingPlan:
@@ -247,7 +266,7 @@ class ProcessingPlan:
             not isinstance(value, dict)
             or set(value) != expected
             or value["format"] != "docspec-processing-plan"
-            or value["formatVersion"] != "2.0"
+            or value["formatVersion"] != "3.0"
         ):
             raise ValueError("processing plan has an unknown format or invalid closed shape")
         return cls(

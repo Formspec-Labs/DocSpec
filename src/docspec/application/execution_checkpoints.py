@@ -31,11 +31,13 @@ from .work_budget import WorkBudget
 class VerifiedEntryCheckpoint:
     """Verified durable frontier for one entry; never serialized as a cursor."""
 
+    capture_complete: bool
     extraction_complete: bool
     segmentation_complete: bool
     completed_processors: tuple[str, ...]
     processor_results: Mapping[tuple[str, str], tuple[ArtifactRef, ProcessorResult]]
     processor_invocations: tuple[str, ...]
+    extraction_observations: Mapping[str, int]
 
 
 class EntryCheckpointVerifier:
@@ -46,8 +48,8 @@ class EntryCheckpointVerifier:
         *,
         controls: ControlRepository,
         blobs: BlobStore,
-        extractor: Extractor[ExtractionResult],
-        segmenter: Segmenter[RepresentationPayload, SegmentPayload],
+        extractor: Extractor[ExtractionResult] | None,
+        segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
         retry_policy: RetryPolicy,
     ) -> None:
         self._controls = controls
@@ -103,7 +105,7 @@ class EntryCheckpointVerifier:
         """Verify a terminal entry or a coarse, restartable processing frontier."""
 
         verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
-        if entry.requested_stages != plan.stages and entry.execution_mode is EntryExecutionMode.FULL:
+        if entry.requested_stages != plan.stages:
             raise IntegrityError("document entry stages differ from the processing plan")
         loaded_receipts = self._load_stage_receipts(entry)
 
@@ -133,8 +135,6 @@ class EntryCheckpointVerifier:
             raise IntegrityError("checkpoint repeats a representation identity")
         if tuple(item.file_id for item in entry.representations) != tuple(files)[: len(entry.representations)]:
             raise IntegrityError("checkpoint representations are not an ordered captured-file prefix")
-        if len(entry.captured_files) - len(entry.representations) not in {0, 1}:
-            raise IntegrityError("checkpoint must stop at a candidate capture or extraction frontier")
         for representation in entry.representations:
             captured = files.get(representation.file_id)
             if (
@@ -163,6 +163,7 @@ class EntryCheckpointVerifier:
                 raise IntegrityError(f"checkpoint stage receipt is invalid: {error}") from error
         if len(extraction_receipts) != len(entry.representations):
             raise IntegrityError("checkpoint extraction receipts do not cover its representations")
+        extraction_observations: dict[str, int] = {}
         for receipt, representation in zip(extraction_receipts, entry.representations, strict=True):
             captured = files[representation.file_id]
             if (
@@ -177,9 +178,18 @@ class EntryCheckpointVerifier:
                 or receipt.warnings != representation.warnings
             ):
                 raise IntegrityError("checkpoint extraction receipt differs from its immutable output")
-        extraction_complete = (
-            len(entry.captured_files) == len(candidates)
-            and len(entry.representations) == len(entry.captured_files)
+            extraction_observations[representation.representation_id] = WorkBudget.extraction_observation(
+                representation_kind=receipt.kind,
+                metadata=receipt.metadata,
+            )
+        if not plan.stages.requests_extraction and (entry.representations or extraction_receipts):
+            raise IntegrityError("checkpoint contains extraction output for an unrequested stage")
+        if not plan.stages.requests_segmentation and (entry.segments or segmentation_receipts):
+            raise IntegrityError("checkpoint contains segmentation output for an unrequested stage")
+        capture_complete = len(entry.captured_files) == len(candidates)
+        extraction_complete = capture_complete and (
+            not plan.stages.requests_extraction
+            or len(entry.representations) == len(entry.captured_files)
         )
 
         segments = {item.segment_id: item for item in entry.segments}
@@ -191,7 +201,7 @@ class EntryCheckpointVerifier:
         selected_segmenters = {
             identifier: self._segmenter.selected_identity(representation)
             for identifier, representation in representations.items()
-            if identifier in segmented_representations
+            if identifier in segmented_representations and self._segmenter is not None
         }
         for segment in entry.segments:
             representation = representations.get(segment.representation_id)
@@ -230,7 +240,10 @@ class EntryCheckpointVerifier:
                 raise IntegrityError("checkpoint segmentation receipt differs from the selected segmenter policy")
             if any(segments[segment_id].representation_id != receipt.representation_id for segment_id in receipt.segment_ids):
                 raise IntegrityError("checkpoint segmentation receipt includes an unrelated segment")
-        segmentation_complete = extraction_complete and len(segmentation_receipts) == len(entry.representations)
+        segmentation_complete = extraction_complete and (
+            not plan.stages.requests_segmentation
+            or len(segmentation_receipts) == len(entry.representations)
+        )
 
         available_inputs = set(segments)
         for record in entry.derived_records:
@@ -250,7 +263,7 @@ class EntryCheckpointVerifier:
         )
         actual_nodes = tuple(processor_results)
         if (
-            entry.execution_mode is EntryExecutionMode.FULL
+            entry.execution_mode is not EntryExecutionMode.FROM_SEGMENTS
             and actual_nodes != expected_nodes[: len(actual_nodes)]
         ):
             raise IntegrityError("checkpoint processor results are not an ordered graph prefix")
@@ -261,7 +274,7 @@ class EntryCheckpointVerifier:
                 actual = expected.intersection(processor_results)
                 if actual == expected:
                     completed_processors.append(description.processor_id)
-                elif entry.execution_mode is EntryExecutionMode.FULL:
+                elif entry.execution_mode is not EntryExecutionMode.FROM_SEGMENTS:
                     break
 
         has_segmentation_progress = bool(entry.segments or segmentation_receipts)
@@ -273,17 +286,17 @@ class EntryCheckpointVerifier:
         if not entry.terminal:
             if has_segmentation_progress and not segmentation_complete:
                 raise IntegrityError("nonterminal checkpoint stops inside segmentation")
-            if entry.execution_mode is EntryExecutionMode.FULL:
+            if entry.execution_mode is not EntryExecutionMode.FROM_SEGMENTS:
                 completed_node_count = len(completed_processors) * len(segments)
                 if len(actual_nodes) != completed_node_count:
                     raise IntegrityError("nonterminal checkpoint stops inside a processor layer")
             elif has_processor_progress:
-                requested = entry.requested_stages.processor_ids
+                requested = entry.processor_ids_to_run
                 completed_requested = tuple(
                     identifier for identifier in requested if identifier in completed_processors
                 )
                 if completed_requested != requested[: len(completed_requested)]:
-                    raise IntegrityError("processor-only checkpoint is not a requested-layer prefix")
+                    raise IntegrityError("segment-reuse checkpoint is not a requested-layer prefix")
                 completed_ids = (
                     set(plan.stages.processor_ids).difference(requested)
                     | set(completed_requested)
@@ -294,7 +307,7 @@ class EntryCheckpointVerifier:
                     for segment_id in segments
                 }
                 if set(actual_nodes) != expected_completed_nodes:
-                    raise IntegrityError("processor-only checkpoint stops inside a requested processor layer")
+                    raise IntegrityError("segment-reuse checkpoint stops inside a requested processor layer")
             result_request_ids = {
                 raw["request"]["requestId"]
                 for _, raw in loaded_receipts
@@ -310,10 +323,10 @@ class EntryCheckpointVerifier:
         if entry.disposition is AcquisitionDisposition.CAPTURED:
             processor_complete = (
                 actual_nodes == expected_nodes
-                if entry.execution_mode is EntryExecutionMode.FULL
+                if entry.execution_mode is not EntryExecutionMode.FROM_SEGMENTS
                 else set(actual_nodes) == set(expected_nodes)
             )
-            if not extraction_complete or not segmentation_complete or not processor_complete:
+            if not capture_complete or not extraction_complete or not segmentation_complete or not processor_complete:
                 raise IntegrityError("captured entry does not cover every planned processing stage")
         elif entry.disposition in {
             AcquisitionDisposition.UNCHANGED,
@@ -329,8 +342,8 @@ class EntryCheckpointVerifier:
             raise IntegrityError("metadata-only terminal entry unexpectedly contains processing output")
 
         checkpoint_invocations = invocation_ids
-        if entry.execution_mode is EntryExecutionMode.PROCESSORS_ONLY:
-            requested_processors = set(entry.requested_stages.processor_ids)
+        if entry.execution_mode is EntryExecutionMode.FROM_SEGMENTS:
+            requested_processors = set(entry.processor_ids_to_run)
             checkpoint_invocations = tuple(
                 sorted(
                     {
@@ -347,11 +360,13 @@ class EntryCheckpointVerifier:
             )
 
         return VerifiedEntryCheckpoint(
+            capture_complete,
             extraction_complete,
             segmentation_complete,
             tuple(completed_processors),
             processor_results,
             checkpoint_invocations,
+            extraction_observations,
         )
 
     def verify_processor_receipts(

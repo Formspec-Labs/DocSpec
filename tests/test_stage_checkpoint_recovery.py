@@ -372,6 +372,7 @@ def _entry_content(entry: DocumentEntry) -> dict[str, Any]:
         "change": entry.change.value,
         "requestedStages": entry.requested_stages.to_dict(),
         "executionMode": entry.execution_mode.value,
+        "processorIdsToRun": list(entry.processor_ids_to_run),
         "capturedFiles": captured,
         "representations": [item.to_dict() for item in entry.representations],
         "segments": [item.to_dict() for item in entry.segments],
@@ -462,7 +463,10 @@ def test_partial_processor_checkpoint_restores_every_cumulative_budget_counter(
     )
     budget = WorkBudget(limits)
 
-    budget.seed_verified_entries((entry,), {entry.entry_id: (invocation_id,)})
+    verified = harness.service()._checkpoints.verify_entry(entry, harness.plan)
+    budget.seed_verified_entries(
+        (entry,), {entry.entry_id: (invocation_id,)}, {entry.entry_id: verified.extraction_observations},
+    )
 
     assert budget.usage.source_bytes == len(harness.content)
     assert budget.usage.pages_or_frames == 0

@@ -12,18 +12,18 @@ from docspec.processing.extraction import ExtractionResult
 
 
 def configured_stage_policy(
-    extractor: Extractor[ExtractionResult],
-    segmenter: Segmenter[RepresentationPayload, SegmentPayload],
+    extractor: Extractor[ExtractionResult] | None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
     processor_ids: tuple[str, ...] = (),
 ) -> StagePolicy:
     """Derive the existing plan value from the objects that will do the work."""
 
     try:
         return StagePolicy(
-            extractor_id=extractor.extractor_id,
-            extractor_configuration_digest=extractor.configuration_digest,
-            segmenter_id=segmenter.segmenter_id,
-            segmenter_policy_digest=segmenter.policy_digest,
+            extractor_id=extractor.extractor_id if extractor is not None else None,
+            extractor_configuration_digest=extractor.configuration_digest if extractor is not None else None,
+            segmenter_id=segmenter.segmenter_id if segmenter is not None else None,
+            segmenter_policy_digest=segmenter.policy_digest if segmenter is not None else None,
             processor_ids=processor_ids,
         )
     except (AttributeError, TypeError, ValueError) as error:
@@ -33,18 +33,20 @@ def configured_stage_policy(
 def verify_stage_implementations(
     stages: StagePolicy,
     *,
-    extractor: Extractor[ExtractionResult],
-    segmenter: Segmenter[RepresentationPayload, SegmentPayload],
+    extractor: Extractor[ExtractionResult] | None,
+    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
 ) -> None:
     if configured_stage_policy(extractor, segmenter, stages.processor_ids) != stages:
         raise IntegrityError("injected extraction or segmentation settings differ from the processing plan")
 
 
 def verify_extraction_identity(
-    extractor: Extractor[ExtractionResult],
+    extractor: Extractor[ExtractionResult] | None,
     captured: CapturedFile,
     representation: Representation,
 ) -> None:
+    if extractor is None:
+        raise IntegrityError("representation exists without a requested extractor")
     if (representation.extractor_id, representation.configuration_digest) != extractor.selected_identity(captured):
         raise IntegrityError("representation differs from the selected extractor identity or settings")
 

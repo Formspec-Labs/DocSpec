@@ -2,13 +2,15 @@
 
 DocSpec supports repeatable document dataset experiments: build a selection
 catalog, capture selected bytes, process retained inputs, and compare results.
-A catalog is useful on its own. The intended workflow also allows capture-only
-completion, processing now or later, and optional export to a consumer.
+A catalog is useful on its own. Runs can stop after capture, extraction,
+segmentation, or their selected processors, and export is optional.
 
-Current application services retain captures and checkpoints and support
-processor-only reruns from a verified base release. A full-processing plan still
-requires extraction and segmentation. Convenient stage completion and unified
-attempt inspection remain [D24](dataset-experiments-todo.md#d24) and
+The [Python runtime](python-runs.md) retains capture and processing results and
+recovers saved work. A later plan reuses valid captured files, representations,
+segments, and unaffected processor results up to the first changed stage.
+The same execution and retention services serve every stopping point. Each
+item records its full requested stages; execution instructions separately name
+processors that need to run. Unified attempt inspection remains
 [D19](dataset-experiments-todo.md#d19); the
 [README](../README.md#what-you-can-use-today) identifies current entry points.
 Dataset meaning belongs to DocSpec. Rulespec provides shared artifact-container

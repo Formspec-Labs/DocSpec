@@ -436,7 +436,8 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
         "captured": 1,
         "deleted": 2,
     }
-    assert view["entries"]["acquisition"] == {"capturedEntries": 1, "newlyCapturedBytes": len(payload)}
+    assert view["formatVersion"] == "2.0"
+    assert view["entries"]["acquisition"] == {"capturedEntries": 1, "capturedBytes": len(payload)}
     assert view["entries"]["processing"] == {"producedEntries": 1}
     assert view["failures"]["totalRecords"] == 1
     assert view["failures"]["byClassAndDiagnosticCode"] == {

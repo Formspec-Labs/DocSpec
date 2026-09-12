@@ -6,7 +6,6 @@ from dataclasses import fields, replace
 
 import pytest
 
-from docspec.application.commit import ReleaseCommitService
 from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.identity import identity_digest, stable_urn
 from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass
@@ -18,6 +17,7 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
 from tests.support.profiles import _seeded_local_run
+from tests.support.incremental import _active_document_state
 
 
 class _ConfiguredText(TextExtractor):
@@ -80,21 +80,13 @@ def stages(tmp_path, monkeypatch):
     return arguments, extractor, segmenter, fetches
 
 
-def _retain(prepared, run_ref):
-    composition = prepared._composition
-    return ReleaseCommitService(
-        plan_ref=composition.plan_ref, controls=composition.controls,
-        records=composition.records, document_catalog=composition.catalog,
-    ).retain_release(None, run_ref)
-
-
 @pytest.mark.parametrize("changed", ["extractor", "segmenter"])
 def test_configured_stage_changes_rebuild_and_matching_settings_reuse(stages, changed):
     arguments, extractor, segmenter, fetches = stages
     with prepare_local_run(**arguments) as initial:
         initial_task = next(initial.task_source(initial.handoff))
         reference = initial.run()
-        base = _retain(initial, reference)
+        base = initial.retain(reference)
         recovered = prepare_local_run(**arguments, handoff_ref=initial.handoff_ref)
         assert recovered.run() == reference
     assert (len(fetches), extractor.calls, segmenter.calls) == (1, 1, 1)
@@ -121,15 +113,21 @@ def test_configured_stage_changes_rebuild_and_matching_settings_reuse(stages, ch
         assert task.input_store.store_id != initial_task.input_store.store_id
         entry = changed_run._composition.stores.load(task.input_store).entries[0]
         assert entry.change is ChangeKind.REPAIR
-        assert entry.execution_mode is EntryExecutionMode.FULL
-        changed_run.run()
+        assert entry.execution_mode is (
+            EntryExecutionMode.FROM_CAPTURES if changed == "extractor" else EntryExecutionMode.FROM_REPRESENTATIONS
+        )
+        changed_release = changed_run.retain(changed_run.run())
+        changed_state = _active_document_state(changed_run._composition.catalog, changed_release)
         result = changed_run.execute_task(changed_run.handoff, task)
         entry = changed_run._composition.stores.load(result.output_store).entries[0]
         assert not entry.failures
         assert entry.representations[0].configuration_digest == extractor.configuration_digest
         assert len(entry.segments) == (1 if segmenter.include else 0)
-    # Stage changes currently rebuild captures too; finer reuse is a separate task.
-    assert (len(fetches), extractor.calls, segmenter.calls) == (2, 2, 2)
+    assert (len(fetches), extractor.calls, segmenter.calls) == ((1, 2, 2) if changed == "extractor" else (1, 1, 2))
+    arguments["plan"] = _replan(arguments["plan"], base_release=None)
+    with prepare_local_run(**arguments) as clean:
+        clean_release = clean.retain(clean.run())
+        assert _active_document_state(clean._composition.catalog, clean_release) == changed_state
 
 
 @pytest.mark.parametrize("completed", [False, True])
@@ -160,7 +158,7 @@ def test_mutated_stage_refuses_before_new_or_sealed_task_work(stages, monkeypatc
 def test_zero_task_run_rechecks_mutated_stage(stages):
     arguments, extractor, _, fetches = stages
     with prepare_local_run(**arguments) as initial:
-        base = _retain(initial, initial.run())
+        base = initial.retain(initial.run())
     arguments["plan"] = _replan(arguments["plan"], base_release=base)
     with prepare_local_run(**arguments) as unchanged:
         assert unchanged.handoff.expected_task_count == 0

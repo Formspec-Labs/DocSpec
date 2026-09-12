@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Literal
 
 from rulespec_artifacts import Producer
 
@@ -29,12 +30,26 @@ __all__ = ["PreparedLocalRun", "prepare_local_run", "stage_policy"]
 
 def stage_policy(
     *,
+    stop_after: Literal["capture", "extraction", "segmentation", "processing"] = "processing",
     extractor: Extractor[ExtractionResult] | None = None,
     segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None = None,
     processor_ids: tuple[str, ...] = (),
 ) -> StagePolicy:
-    """Pin the selected stage objects, using the same defaults as local execution."""
-    extractor, segmenter = _stage_implementations(extractor, segmenter)
+    """Pin requested stages, constructing defaults only for stages that will run.
+
+    ``capture`` retains source files; ``extraction`` also retains representations;
+    ``segmentation`` also retains segments; ``processing`` runs the listed
+    processors. Objects and processor IDs beyond the stopping point are refused.
+    """
+    if stop_after not in {"capture", "extraction", "segmentation", "processing"}:
+        raise ValueError("stop_after must be capture, extraction, segmentation, or processing")
+    if stop_after != "processing" and processor_ids:
+        raise ValueError("processor identities require stop_after='processing'")
+    extractor, segmenter = _stage_implementations(
+        extractor, segmenter,
+        requests_extraction=stop_after != "capture",
+        requests_segmentation=stop_after in {"segmentation", "processing"},
+    )
     return configured_stage_policy(extractor, segmenter, processor_ids)
 
 
@@ -60,14 +75,15 @@ def prepare_local_run(
     resume: bool | None = None,
     handoff_ref: ArtifactRef | None = None,
 ) -> PreparedLocalRun:
-    """Prepare or recover the current full extraction/segmentation/processing flow.
+    """Prepare or recover capture and the processing stages requested by the plan.
 
     Pass existing domain values directly; no request or plan files are needed.
     Source and document producer acceptance are independent explicit choices.
     Injected fetchers declare ``downloader_id`` and ``configuration_digest``;
     injected processor descriptions must exactly match the plan's ProcessorSet.
-    Extraction and segmentation objects must match the plan's configuration pins;
+    Requested extraction and segmentation objects must match the plan's pins;
     use ``stage_policy`` to build them from the same objects, or from the defaults.
+    Unrequested stages reject supplied objects and do not construct defaults.
 
     With ``handoff_ref``, verify the saved handoff against reconstructed services,
     including the same execution limits and deadline; supplied settings cannot

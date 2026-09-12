@@ -350,11 +350,16 @@ class DocumentReleaseVerifier:
         missing = expected - actual
         if missing:
             raise IntegrityError(f"release is missing required active layers: {sorted(missing)}")
-        unexpected_derived = {
-            kind for kind in actual - expected if kind.startswith("derived:")
+        # A selection can inherit other documents processed under earlier plans.
+        # The shared logical verifier checks every row against that document's
+        # own requested processors; an empty extra layer has no such owner.
+        unexplained_empty = {
+            layer.layer_kind for layer in release.active_layers
+            if layer.layer_kind.startswith("derived:")
+            and layer.layer_kind not in expected and layer.record_count == 0
         }
-        if unexpected_derived:
-            raise IntegrityError(f"release contains unplanned derived layers: {sorted(unexpected_derived)}")
+        if unexplained_empty:
+            raise IntegrityError(f"release contains unplanned empty derived layers: {sorted(unexplained_empty)}")
 
     def _verify_blob_roots(self, release: DocumentRelease, plan: ProcessingPlan) -> None:
         blob_profile = plan.profiles.for_role(ProfileRole.BLOB_STORAGE)

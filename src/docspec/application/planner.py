@@ -31,9 +31,9 @@ _SELECTION_FIELDS = frozenset(
     }
 )
 _PLANNING_STORE_ORDER_COLLECTION = "planner:store-order"
-_PLANNING_FAILED_ITEM_COLLECTION = "planner:failed-items"
+_PLANNING_ITEM_STATE_COLLECTION = "planner:item-state"
 _DELIVERY_RECORD_FIELDS = frozenset({"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"})
-_DISPOSITION_PAYLOAD_FIELDS = frozenset({"entryId", "change", "disposition", "warnings"})
+_DISPOSITION_PAYLOAD_FIELDS = frozenset({"entryId", "change", "disposition", "warnings", "requestedStages"})
 _ACQUISITION_DISPOSITIONS = frozenset(item.value for item in AcquisitionDisposition)
 # The two terminal verdicts that mean "this item ended the release in failure".
 _FAILED_DISPOSITIONS = frozenset(
@@ -94,6 +94,7 @@ class _PriorSourceItem:
     item: SourceItem
     deleted: bool
     failed: bool = False
+    stages: StagePolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,10 +103,7 @@ class _PlanImpact:
 
     change_kind: ChangeKind | None
     processor_ids: tuple[str, ...] = ()
-    processor_only: bool = False
-
-    def requested_stages(self, plan: ProcessingPlan) -> StagePolicy:
-        return replace(plan.stages, processor_ids=self.processor_ids)
+    execution_mode: EntryExecutionMode = EntryExecutionMode.FULL
 
 
 def _source_item_digest(item: SourceItem) -> str:
@@ -221,38 +219,37 @@ class _CompiledSelection:
         )
 
 
-def estimate_item(item: SourceItem, limits: WorkLimits, processor_count: int) -> WorkEstimate:
-    """Turn declared estimates into all seven planner admission dimensions."""
+def estimate_item(entry: DocumentEntry, limits: WorkLimits) -> WorkEstimate:
+    """Estimate requested work, excluding stages retained from the pinned base."""
 
+    item = entry.source_item
     if item.state != SourceItemState.ACTIVE:
         return WorkEstimate(0, 0, 0, 0, 1, 1)
+    mode = entry.execution_mode
+    stages = entry.requested_stages
+    capture = mode is EntryExecutionMode.FULL
+    extract = stages.requests_extraction and mode in {EntryExecutionMode.FULL, EntryExecutionMode.FROM_CAPTURES}
+    segment = stages.requests_segmentation and mode is not EntryExecutionMode.FROM_SEGMENTS
+    processor_count = len(entry.processor_ids_to_run)
     declared_sizes = [candidate.expected_size for candidate in item.candidates]
-    if "estimatedBytes" in (item.metadata or {}):
+    if not capture:
+        estimated_bytes = 0
+    elif "estimatedBytes" in (item.metadata or {}):
         estimated_bytes = _metadata_integer(item, "estimatedBytes", 0)
     elif all(value is not None for value in declared_sizes):
         estimated_bytes = sum(cast(int, value) for value in declared_sizes)
     else:
         estimated_bytes = limits.max_estimated_bytes
-    pages = _metadata_integer(item, "estimatedPagesOrFrames", 1)
-    segments = _metadata_integer(item, "expectedSegments", max(1, pages))
-    processor_cost = _metadata_integer(item, "processorCost", max(1, segments * max(1, processor_count)))
-    memory = _metadata_integer(item, "estimatedMemoryBytes", min(max(1, estimated_bytes), limits.max_memory_bytes))
+    pages = _metadata_integer(item, "estimatedPagesOrFrames", 1) if extract else 0
+    segments = _metadata_integer(item, "expectedSegments", max(1, pages)) if segment else 0
+    processor_cost = (
+        _metadata_integer(item, "processorCost", _metadata_integer(item, "expectedSegments", max(1, pages)) * processor_count)
+        if processor_count else 0
+    )
+    default_memory = min(max(1, estimated_bytes), limits.max_memory_bytes) if capture else limits.max_memory_bytes
+    memory = _metadata_integer(item, "estimatedMemoryBytes", default_memory)
     duration = _metadata_integer(item, "estimatedDurationSeconds", 1)
     return WorkEstimate(estimated_bytes, pages, segments, processor_cost, memory, duration)
-
-
-def estimate_processor_reprocessing(
-    item: SourceItem,
-    limits: WorkLimits,
-    processor_count: int,
-) -> WorkEstimate:
-    """Estimate processor work while source, representation, and segment bytes are reused."""
-
-    segments = _metadata_integer(item, "expectedSegments", 1)
-    processor_cost = _metadata_integer(item, "processorCost", segments * processor_count)
-    memory = _metadata_integer(item, "estimatedMemoryBytes", limits.max_memory_bytes)
-    duration = _metadata_integer(item, "estimatedDurationSeconds", 1)
-    return WorkEstimate(0, 0, segments, processor_cost, memory, duration)
 
 
 @dataclass(slots=True)
@@ -311,7 +308,7 @@ class RunPlanner:
         plan_impact = self._plan_impact(base, plan)
         with self._workspace_factory.create() as workspace:
             if base_reader is not None:
-                self._spool_failed_items(base_reader, workspace)
+                self._spool_item_states(base_reader, workspace)
             ledger = self._stores.seal_planned_stores(
                 plan.plan_id,
                 self._plan_store_references(
@@ -338,7 +335,7 @@ class RunPlanner:
 
         touched_partitions: set[int] = set()
         ordinal = 0
-        for item, change, failed in self._planned_changes(
+        for item, change, failed, previous_stages in self._planned_changes(
             source_items,
             base_reader,
             plan_impact.change_kind,
@@ -347,34 +344,28 @@ class RunPlanner:
             bucket = logical_partition(item.item_id, plan.partition_count)
             if not selection.matches(item, logical_bucket=bucket):
                 continue
+            impact = plan_impact
+            if previous_stages is not None and plan_impact.change_kind is None and not failed:
+                impact = self._stage_impact(previous_stages, plan)
+                if change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
+                    change = impact.change_kind or change
             if change == ChangeKind.UNCHANGED:
                 continue
-            # A previously failed item may be missing captured files, representations,
-            # or segments (a capture-stage failure leaves nothing for the processors to
-            # reuse), so it always gets a full redo rather than the plan-driven
-            # processors-only path, even when the plan-level impact would otherwise
-            # allow one. failure_class alone cannot safely tell a capture failure
-            # from a processing failure, so this deliberately does not try.
-            processors_only = change == ChangeKind.REPAIR and plan_impact.processor_only and not failed
-            if processors_only:
-                estimate = estimate_processor_reprocessing(
-                    item,
-                    plan.limits,
-                    len(plan_impact.processor_ids),
-                )
-            else:
-                estimate = estimate_item(item, plan.limits, len(plan.stages.processor_ids))
-            exceeded = estimate.exceeds(plan.limits)
-            if exceeded is not None:
-                raise LimitExceededError(f"source item {item.item_id} exceeds the per-store {exceeded} limit")
+            # A failed item may have an incomplete prefix. Until failed-stage
+            # recovery has its own admission policy, replan it with full work.
+            reuse = change == ChangeKind.REPAIR and not failed
+            mode = impact.execution_mode if reuse else EntryExecutionMode.FULL
             entry = DocumentEntry.create(
                 item,
                 change,
-                plan_impact.requested_stages(plan) if processors_only else plan.stages,
-                execution_mode=(
-                    EntryExecutionMode.PROCESSORS_ONLY if processors_only else EntryExecutionMode.FULL
-                ),
+                plan.stages,
+                execution_mode=mode,
+                processor_ids_to_run=impact.processor_ids if mode is EntryExecutionMode.FROM_SEGMENTS else None,
             )
+            estimate = self._entry_estimate(entry, plan.limits)
+            exceeded = estimate.exceeds(plan.limits)
+            if exceeded is not None:
+                raise LimitExceededError(f"source item {item.item_id} exceeds the per-store {exceeded} limit")
             workspace.add_record(
                 self._partition_collection(bucket),
                 identity=f"{ordinal:020d}",
@@ -415,13 +406,7 @@ class RunPlanner:
 
     @staticmethod
     def _entry_estimate(entry: DocumentEntry, limits: WorkLimits) -> WorkEstimate:
-        if entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY:
-            return estimate_processor_reprocessing(
-                entry.source_item,
-                limits,
-                len(entry.requested_stages.processor_ids),
-            )
-        return estimate_item(entry.source_item, limits, len(entry.requested_stages.processor_ids))
+        return estimate_item(entry, limits)
 
     def _remember_store(
         self,
@@ -477,37 +462,42 @@ class RunPlanner:
             previous = ProcessingPlan.from_dict(self._controls.load(base.processing_plan))
         except (TypeError, ValueError) as error:
             raise IntegrityError(f"base release processing plan is invalid: {error}") from error
-        if previous.governing_content() == plan.governing_content():
-            return _PlanImpact(None)
-        if self._non_processor_governing_content(previous) != self._non_processor_governing_content(plan):
+        if self._non_stage_governing_content(previous) != self._non_stage_governing_content(plan):
             return _PlanImpact(ChangeKind.REPAIR, plan.stages.processor_ids)
+        return _PlanImpact(None)
 
-        previous_by_name = {item.name: item for item in previous.processors.processors}
-        current_by_name = {item.name: item for item in plan.processors.processors}
-        if len(previous_by_name) != len(previous.processors.processors) or len(current_by_name) != len(
-            plan.processors.processors
-        ):
-            raise IntegrityError("processor-only invalidation requires distinct stable processor names")
+    @staticmethod
+    def _stage_impact(previous: StagePolicy, plan: ProcessingPlan) -> _PlanImpact:
+        """Choose the reusable prefix from this item's own retained policy."""
+
+        current = plan.stages
+        if previous == current:
+            return _PlanImpact(None)
+        if not current.requests_extraction or (
+            previous.extractor_id, previous.extractor_configuration_digest
+        ) != (current.extractor_id, current.extractor_configuration_digest):
+            return _PlanImpact(ChangeKind.REPAIR, current.processor_ids, EntryExecutionMode.FROM_CAPTURES)
+        if not current.requests_segmentation or (
+            previous.segmenter_id, previous.segmenter_policy_digest
+        ) != (current.segmenter_id, current.segmenter_policy_digest):
+            return _PlanImpact(ChangeKind.REPAIR, current.processor_ids, EntryExecutionMode.FROM_REPRESENTATIONS)
         changed = tuple(
-            current_by_name[name].processor_id
-            for name in sorted(current_by_name)
-            if name not in previous_by_name or current_by_name[name] != previous_by_name[name]
+            identifier for identifier in current.processor_ids if identifier not in previous.processor_ids
         )
-        removed = set(previous_by_name) - set(current_by_name)
-        if not changed and not removed:
-            return _PlanImpact(ChangeKind.REPAIR, plan.stages.processor_ids)
         return _PlanImpact(
             ChangeKind.REPAIR,
             () if not changed else plan.processors.invalidated_by(changed),
-            processor_only=True,
+            EntryExecutionMode.FROM_SEGMENTS,
         )
 
     @staticmethod
-    def _non_processor_governing_content(plan: ProcessingPlan) -> dict[str, Any]:
+    def _non_stage_governing_content(plan: ProcessingPlan) -> dict[str, Any]:
         content = plan.governing_content()
         content.pop("processors")
-        content["stages"] = plan.stages.to_dict()
-        content["stages"].pop("processorIds")
+        content.pop("stages")
+        # Selection determines which items enter this run. Their exact source
+        # descriptions and per-item policies decide whether their outputs change.
+        content.pop("selection")
         return content
 
     def _planned_changes(
@@ -516,15 +506,15 @@ class RunPlanner:
         base_reader: DocumentCatalogReader | None,
         unchanged_change: ChangeKind | None,
         workspace: RecordWorkspace,
-    ) -> Iterator[tuple[SourceItem, ChangeKind, bool]]:
+    ) -> Iterator[tuple[SourceItem, ChangeKind, bool, StagePolicy | None]]:
         if base_reader is None:
             for item in current_items:
-                yield item, self._classify(item, None, unchanged_change), False
+                yield item, self._classify(item, None, unchanged_change), False, None
             return
 
         yield from self._merge_snapshot(
             current_items,
-            self._previous_source_items(base_reader, self._spooled_failed_item_ids(workspace)),
+            self._previous_source_items(base_reader, self._spooled_item_states(workspace)),
             unchanged_change,
         )
 
@@ -548,9 +538,9 @@ class RunPlanner:
     def _previous_source_items(
         self,
         base_reader: DocumentCatalogReader,
-        failed_item_ids: Iterator[str],
+        item_states: Iterator[tuple[str, bool, StagePolicy]],
     ) -> Iterator[_PriorSourceItem]:
-        """Read the verified base source layer once, joined to its failed items.
+        """Join source items to their terminal status and requested stage policy.
 
         Both inputs are ordered by source-item id — the `source-items` layer
         because its record identity *is* the item id, the spool because it is
@@ -558,46 +548,25 @@ class RunPlanner:
         one cursor and holds one id, never a lookup table of every failed id.
         """
 
-        failed = next(failed_item_ids, None)
+        state = next(item_states, None)
         for record in base_reader.scan(layer_kind="source-items"):
             prior = self._prior_source_item(record)
             item_id = prior.item.item_id
-            if failed is not None and failed < item_id:
-                raise IntegrityError("base release records a failed item that has no source item")
-            if failed != item_id:
-                yield prior
-                continue
-            failed = next(failed_item_ids, None)
-            yield _PriorSourceItem(prior.item, prior.deleted, failed=True)
-        if failed is not None:
-            raise IntegrityError("base release records a failed item that has no source item")
+            if state is None or state[0] != item_id:
+                raise IntegrityError("base disposition population differs from its source items")
+            yield replace(prior, failed=state[1], stages=state[2])
+            state = next(item_states, None)
+        if state is not None:
+            raise IntegrityError("base disposition population differs from its source items")
 
     @staticmethod
-    def _spool_failed_items(base_reader: DocumentCatalogReader, workspace: RecordWorkspace) -> None:
-        """Spool the ids of items that ended the base release in failure.
+    def _spool_item_states(base_reader: DocumentCatalogReader, workspace: RecordWorkspace) -> None:
+        """Spool per-item policy and final outcome in the existing bounded workspace.
 
-        The question a replan must answer is "did this item end the release in
-        failure", not "does this item carry failure evidence": a capture that
-        loses one transport, retries, and succeeds is published CAPTURED and
-        still keeps its retry evidence in the `failures` layer, so keying on
-        that layer would re-admit at FULL execution every item that ever
-        hiccupped and refetch bytes the release already holds. The
-        `dispositions` layer answers the real question directly — the release
-        verifier admits exactly one row per source item (its integrity index
-        keys dispositions by `sourceItemId`) carrying the terminal disposition
-        from the closed `AcquisitionDisposition` vocabulary — so this is one
-        bounded streaming pass over it, keeping only the ids whose disposition
-        is terminal failure.
-
-        Nothing is retained in coordinator memory: matching ids go straight to
-        the run's existing bounded spool, and `_previous_source_items` reads
-        them back as a sorted stream to merge-join against the base
-        `source-items` layer. Time is O(N) in the base release's item
-        population — the same shape as the `source-items` pass the planner
-        already makes, and independent of the selection, which cannot narrow
-        it because an unselected item's classification still has to be
-        correct. Space is O(1) memory and O(K) spool, K being the count of
-        items that actually failed.
+        An inherited item may have a different policy than the latest release
+        plan. Historical retry failures also do not imply terminal failure.
+        Joining dispositions to source items preserves both distinctions in
+        O(N) time, O(1) coordinator memory, and bounded on-disk workspace.
         """
 
         for record in base_reader.scan(layer_kind="dispositions"):
@@ -611,34 +580,48 @@ class RunPlanner:
             disposition = record["payload"]["disposition"]
             if disposition is not None and disposition not in _ACQUISITION_DISPOSITIONS:
                 raise IntegrityError("base disposition record names an unregistered disposition")
-            if disposition in _FAILED_DISPOSITIONS:
-                workspace.add_record(
-                    _PLANNING_FAILED_ITEM_COLLECTION,
-                    identity=source_item_id,
-                    source_item_id=source_item_id,
-                    record={"sourceItemId": source_item_id},
-                )
+            try:
+                stages = StagePolicy.from_dict(record["payload"]["requestedStages"])
+            except (TypeError, ValueError) as error:
+                raise IntegrityError(f"base disposition requested stages are invalid: {error}") from error
+            workspace.add_record(
+                _PLANNING_ITEM_STATE_COLLECTION,
+                identity=source_item_id,
+                source_item_id=source_item_id,
+                record={
+                    "sourceItemId": source_item_id,
+                    "failed": disposition in _FAILED_DISPOSITIONS,
+                    "requestedStages": stages.to_dict(),
+                },
+            )
 
     @staticmethod
-    def _spooled_failed_item_ids(workspace: RecordWorkspace) -> Iterator[str]:
-        """Read the spooled failed-item ids back in source-item-id order."""
+    def _spooled_item_states(workspace: RecordWorkspace) -> Iterator[tuple[str, bool, StagePolicy]]:
+        """Read per-item status and policy back in source-item-id order."""
 
-        for row in workspace.stream_records(_PLANNING_FAILED_ITEM_COLLECTION):
-            if set(row) != {"sourceItemId"} or not isinstance(row["sourceItemId"], str):
-                raise IntegrityError("spooled failed-item record has an invalid closed shape")
-            yield row["sourceItemId"]
+        for row in workspace.stream_records(_PLANNING_ITEM_STATE_COLLECTION):
+            if (
+                set(row) != {"sourceItemId", "failed", "requestedStages"}
+                or not isinstance(row["sourceItemId"], str)
+                or not isinstance(row["failed"], bool)
+            ):
+                raise IntegrityError("spooled item-state record has an invalid closed shape")
+            try:
+                stages = StagePolicy.from_dict(row["requestedStages"])
+            except (TypeError, ValueError) as error:
+                raise IntegrityError(f"spooled requested stages are invalid: {error}") from error
+            yield row["sourceItemId"], row["failed"], stages
 
     def _merge_snapshot(
         self,
         current_items: Iterator[SourceItem],
         previous_items: Iterator[_PriorSourceItem],
         unchanged_change: ChangeKind | None,
-    ) -> Iterator[tuple[SourceItem, ChangeKind, bool]]:
+    ) -> Iterator[tuple[SourceItem, ChangeKind, bool, StagePolicy | None]]:
         """Merge one complete snapshot with prior state using bounded memory.
 
-        The third element of each triple says whether the base release ended
-        this item in failure, which decides its execution mode independently
-        of how it classified.
+        Each result includes the prior terminal-failure flag and item policy,
+        which decide reusable work independently of source-change classification.
         """
 
         current = next(current_items, None)
@@ -646,7 +629,7 @@ class RunPlanner:
         while current is not None or previous is not None:
             if previous is None or (current is not None and current.item_id < previous.item.item_id):
                 assert current is not None
-                yield current, self._classify(current, None, unchanged_change), False
+                yield current, self._classify(current, None, unchanged_change), False, None
                 current = next(current_items, None)
                 continue
             if current is None or previous.item.item_id < current.item_id:
@@ -658,10 +641,10 @@ class RunPlanner:
                         state=SourceItemState.DELETED,
                         metadata=previous.item.metadata,
                     )
-                    yield tombstone, ChangeKind.DELETED, previous.failed
+                    yield tombstone, ChangeKind.DELETED, previous.failed, previous.stages
                 previous = next(previous_items, None)
                 continue
-            yield current, self._classify(current, previous, unchanged_change), previous.failed
+            yield current, self._classify(current, previous, unchanged_change), previous.failed, previous.stages
             current = next(current_items, None)
             previous = next(previous_items, None)
 

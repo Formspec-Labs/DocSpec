@@ -11,11 +11,12 @@ from typing import Self
 
 from docspec.adapters.execution import LocalExecutionBackend
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
+from docspec.application.commit import ReleaseCommitService
 from docspec.application.reconcile import RunReconciler
 from docspec.application.store_state import load_latest_store
 from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.jobs import StoreState
-from docspec.domain.references import ArtifactRef
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.runtime.composition import _LocalRunComposition
 from docspec.runtime.task_membership import _TaskMembershipIndex
@@ -115,6 +116,16 @@ class PreparedLocalRun:
             partition_policy=composition.partition_policy,
             clock=composition.clock,
         ).reconcile_run(results)
+
+    def retain(self, run_ref: ArtifactRef) -> DocumentReleaseRef:
+        """Retain a verified run result without changing the selected release."""
+        composition = self._composition
+        return ReleaseCommitService(
+            plan_ref=composition.plan_ref,
+            controls=composition.controls,
+            records=composition.records,
+            document_catalog=composition.catalog,
+        ).retain_release(composition.plan.base_release, run_ref)
 
     def run(self) -> ArtifactRef:
         """Execute outstanding tasks locally and reconcile their results."""

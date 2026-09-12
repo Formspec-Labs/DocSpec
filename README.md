@@ -35,15 +35,14 @@ mechanisms from missing interfaces and qualification.
 | Task | Current entry point and limits |
 | --- | --- |
 | Build and read a catalog | The public [`docspec.source_catalog`](src/docspec/source_catalog.py) API and `source-catalog` CLI use explicit policies and pinned inputs. The optional installed SpicyDocs adapter reads source-native releases; the offline example supplies its own local source adapter. General supplied-record ergonomics remain [D06](docs/dataset-experiments-todo.md#d06). |
-| Capture, extract, and segment documents | [`docspec.runtime.prepare_local_run`](docs/python-runs.md) accepts a typed plan, workspace, selected fetcher, extractor, segmenter, and processors. `stage_policy` derives plan settings from the selected stage objects. The CLI uses the same services with default extraction and segmentation. |
+| Capture, extract, and segment documents | [`docspec.runtime.prepare_local_run`](docs/python-runs.md) accepts a typed plan, workspace, selected fetcher, extractor, segmenter, and processors. `stage_policy(stop_after=...)` selects capture, extraction, segmentation, or processing and pins the chosen objects. The CLI uses the same services and the plan’s requested stages. |
 | Resume and inspect a run | The Python runtime prepares, executes, reconstructs saved work, and reconciles results without caller-written request files. `run prepare`, `start`, `resume`, `reconcile`, `active`, and `status` provide command access. Simpler plan construction and the complete lifecycle remain [D03](docs/dataset-experiments-todo.md#d03) and [D04](docs/dataset-experiments-todo.md#d04). |
-| Retain and choose alternative results | `document-release retain` keeps a verified result without changing current. `document-catalog select` chooses a retained result against an explicit expected current reference. Alternatives keep their original pinned base; see [experiment identities and selection](docs/experiments.md). |
-| Rerun processors and compare results | Application services support processor-only execution from a verified base release, reusing captured, extracted, and segmented content. `document-catalog compare` compares one logical layer across releases. Unified attempt inspection and the full installed experiment loop remain [D19](docs/dataset-experiments-todo.md#d19) and [D38](docs/dataset-experiments-todo.md#d38). |
+| Retain and choose alternative results | `PreparedLocalRun.retain()` or `document-release retain` keeps a verified result without changing current. `document-catalog select` chooses a retained result against an explicit expected current reference. Alternatives keep their original pinned base; see [experiment identities and selection](docs/experiments.md). |
+| Reuse inputs and compare results | Changed extraction reuses captures; changed segmentation reuses representations; changed processors reuse segments and unaffected processor results from an explicit verified base. `document-catalog compare` compares one logical layer across releases. Unified attempt inspection and the full installed experiment loop remain [D19](docs/dataset-experiments-todo.md#d19) and [D38](docs/dataset-experiments-todo.md#d38). |
 
-Retained captures and checkpoints already support recovery, but a convenient
-capture-only completion path is still [D24](docs/dataset-experiments-todo.md#d24).
-The current full-processing plan requires extraction and segmentation; later
-processor-only execution is narrower than an arbitrary choice of stages.
+Capture-only results can be retained and used by a later processing plan through
+the [Python runtime](docs/python-runs.md#capture-first-and-process-later).
+Each result records its requested stages, and completion checks that prefix.
 Dataset-wide recipes, such as search preparation, remain an
 [extension task](docs/dataset-experiments-todo.md#d48).
 

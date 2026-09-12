@@ -176,7 +176,7 @@ class LocalDocumentStoreRepository:
                 "byteSize": len(entry_payload),
                 "digest": entry_digest,
                 "recordCount": len(store.entries),
-                "schemaId": "docspec-document-store-entry/2.0",
+                "schemaId": "docspec-document-store-entry/3.0",
             },
         }
         root_payload = canonical_json_file_bytes(root)
@@ -252,7 +252,7 @@ class LocalDocumentStoreRepository:
             self.root,
             member,
             media_type="application/x-ndjson",
-            schema_id="docspec-document-store-entry/2.0",
+            schema_id="docspec-document-store-entry/3.0",
         )
         if member["path"] != self._entry_member_locator(member["digest"]):
             raise IntegrityError("document store entry-member locator differs from its digest")

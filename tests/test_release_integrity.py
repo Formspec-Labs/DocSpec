@@ -63,7 +63,7 @@ def _release_layers() -> dict[str, list[dict]]:
         (),
     ).derived_records[0]
     entry = replace(
-        DocumentEntry.create(source, ChangeKind.ADDED, stage_policy(extractor=TextExtractor(), segmenter=ParagraphSegmenter())),
+        DocumentEntry.create(source, ChangeKind.ADDED, stage_policy(extractor=TextExtractor(), segmenter=ParagraphSegmenter(), processor_ids=(processor.description.processor_id,))),
         captured_files=(captured,),
         representations=(extraction.payload.representation,),
         segments=(segment.segment,),
@@ -84,6 +84,18 @@ def _release_layers() -> dict[str, list[dict]]:
 
 def test_logical_release_verifier_accepts_complete_source_lineage() -> None:
     verify_logical_release_layers(_release_layers())
+
+
+def test_dispositions_preserve_requested_stages_and_refuse_missing_stage_evidence() -> None:
+    layers = _release_layers()
+    disposition = layers["dispositions"][0]["payload"]
+    assert disposition["requestedStages"] == stage_policy(
+        extractor=TextExtractor(), segmenter=ParagraphSegmenter(),
+        processor_ids=(ContentStatisticsProcessor().description.processor_id,),
+    ).to_dict()
+    disposition.pop("requestedStages")
+    with pytest.raises(IntegrityError, match="invalid closed payload"):
+        verify_logical_release_layers(layers)
 
 
 def test_logical_release_verifier_visits_every_retained_blob_reference() -> None:
@@ -159,4 +171,11 @@ def test_logical_release_verifier_rejects_segment_without_persisted_mapping() ->
     layers["segments"][0]["payload"] = shifted.to_dict()
 
     with pytest.raises(IntegrityError, match="no persisted reversible representation mapping"):
+        verify_logical_release_layers(layers)
+
+
+def test_derived_output_requires_its_own_documents_requested_processor() -> None:
+    layers = _release_layers()
+    layers["dispositions"][0]["payload"]["requestedStages"]["processorIds"] = []
+    with pytest.raises(IntegrityError, match="not requested by its source item"):
         verify_logical_release_layers(layers)

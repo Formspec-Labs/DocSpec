@@ -123,7 +123,9 @@ def _verified_processors(
     processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]] | None = None,
 ) -> dict[str, Processor[ProcessorPayload, ProcessorResult]]:
     _verify_plan_policies(plan, retry_policy, accepted_failure_policy)
-    if processors is None:
+    if processors is None and not plan.stages.processor_ids:
+        processors = {}
+    elif processors is None:
         statistics = ContentStatisticsProcessor(retry_policy=retry_policy)
         available = {statistics.description.processor_id: statistics}
         try:
@@ -155,10 +157,17 @@ def _utc_instant(value: object, *, label: str) -> str:
 def _stage_implementations(
     extractor: Extractor[ExtractionResult] | None,
     segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
-) -> tuple[Extractor[ExtractionResult], Segmenter[RepresentationPayload, SegmentPayload]]:
+    *,
+    requests_extraction: bool,
+    requests_segmentation: bool,
+) -> tuple[Extractor[ExtractionResult] | None, Segmenter[RepresentationPayload, SegmentPayload] | None]:
+    if not requests_extraction and extractor is not None:
+        raise ProfileError("an extractor was supplied but extraction is not requested")
+    if not requests_segmentation and segmenter is not None:
+        raise ProfileError("a segmenter was supplied but segmentation is not requested")
     return (
-        DefaultExtractorRegistry() if extractor is None else extractor,
-        DefaultSegmenterRegistry() if segmenter is None else segmenter,
+        DefaultExtractorRegistry() if requests_extraction and extractor is None else extractor,
+        DefaultSegmenterRegistry() if requests_segmentation and segmenter is None else segmenter,
     )
 
 
@@ -181,7 +190,11 @@ def _compose_local_run(
     processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]] | None,
     source_catalog: ImmutableSourceCatalogReader | None,
 ) -> _LocalRunComposition:
-    extractor, segmenter = _stage_implementations(extractor, segmenter)
+    extractor, segmenter = _stage_implementations(
+        extractor, segmenter,
+        requests_extraction=plan.stages.requests_extraction,
+        requests_segmentation=plan.stages.requests_segmentation,
+    )
     try:
         verify_stage_implementations(plan.stages, extractor=extractor, segmenter=segmenter)
     except IntegrityError as error:
@@ -255,7 +268,10 @@ def _compose_local_run(
         retry_policy=retry_policy,
         accepted_failure_policy=accepted_failure_policy,
         clock=clock,
-        processor_cache=LocalSqliteProcessorResultCache(_local_processor_cache_path(roots)),
+        processor_cache=(
+            LocalSqliteProcessorResultCache(_local_processor_cache_path(roots))
+            if plan.stages.processor_ids else None
+        ),
     )
     delivery = StoreDeliveryService(stores=stores, controls=controls, sinks={sink.sink_id: sink})
     return _LocalRunComposition(
@@ -275,4 +291,3 @@ def _compose_local_run(
         clock,
         fetcher,
     )
-

@@ -351,7 +351,7 @@
       "selectors": [
         "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
         "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
-        "tests/test_planner.py::test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucket",
+        "tests/test_planner.py::test_changed_selection_reuses_identical_selected_items_without_work",
         "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
         "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
         "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",

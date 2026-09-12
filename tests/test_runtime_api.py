@@ -80,6 +80,43 @@ def test_typed_run_injects_pinned_processor_and_recovers_without_request_files(a
     receipt = RunReceipt.from_dict(LocalJsonControlRepository(arguments["workspace"].roots["controlRepository"]).load(reference))
     assert receipt.selected_item_count == receipt.store_count == 1
     assert receipt.failures == {"counts": {}, "first": None}
+    retained = recovered.retain(reference)
+    assert recovered.retain(reference) == retained
+    assert recovered._composition.catalog.open(retained).run_receipt == reference
+    assert recovered._composition.catalog.current() is None
+
+
+@pytest.mark.parametrize("stop_after", ["capture", "extraction"])
+def test_unrequested_default_stages_are_not_constructed(arguments, monkeypatch, stop_after):
+    stages = stage_policy(stop_after=stop_after)
+    arguments["plan"] = _changed_plan(arguments["plan"], stages=stages, processors=ProcessorSet(()))
+
+    def unexpected():
+        raise AssertionError("an unrequested stage default was constructed")
+
+    monkeypatch.setattr("docspec.runtime.composition.DefaultSegmenterRegistry", unexpected)
+    monkeypatch.setattr("docspec.runtime.composition.ContentStatisticsProcessor", unexpected)
+    monkeypatch.setattr("docspec.runtime.composition.LocalSqliteProcessorResultCache", unexpected)
+    if stop_after == "capture":
+        monkeypatch.setattr("docspec.runtime.composition.DefaultExtractorRegistry", unexpected)
+    assert stage_policy(stop_after=stop_after) == stages
+    with prepare_local_run(**arguments) as prepared:
+        assert prepared.handoff.expected_task_count == 1
+
+
+@pytest.mark.parametrize("supplied", ["extractor", "segmenter"])
+def test_capture_run_refuses_unrequested_stage_objects_before_writing(arguments, supplied):
+    from docspec.processing.extraction import TextExtractor
+    from docspec.processing.segmentation import ParagraphSegmenter
+
+    arguments["plan"] = _changed_plan(
+        arguments["plan"], stages=stage_policy(stop_after="capture"), processors=ProcessorSet(()),
+    )
+    arguments[supplied] = TextExtractor() if supplied == "extractor" else ParagraphSegmenter()
+    with pytest.raises(ProfileError, match="not requested"):
+        prepare_local_run(**arguments)
+    for name in ("controlRepository", "documentStores", "recordStorage", "blobStorage", "documentCatalog", "reconciliation"):
+        assert not arguments["workspace"].roots[name].exists(), name
 
 
 @pytest.mark.parametrize("change", [

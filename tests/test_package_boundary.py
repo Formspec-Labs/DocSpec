@@ -524,5 +524,5 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
         text=True,
     )
     assert runtime_result.returncode == 0, runtime_result.stderr
-    assert "captured once, recovered unchanged work" in runtime_result.stdout
+    assert "retained capture, processed it without refetching, recovered" in runtime_result.stdout
     assert '"profileCount":10' in profile_list.stdout

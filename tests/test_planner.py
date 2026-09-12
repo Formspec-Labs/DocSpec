@@ -59,6 +59,7 @@ class MemoryDocumentCatalog:
     release: DocumentRelease
     items: tuple[SourceItem, ...]
     failed_item_ids: tuple[str, ...] = ()
+    stages: StagePolicy | None = None
     reader_calls: int = 0
     scan_calls: int = 0
     lookup_calls: int = 0
@@ -102,6 +103,7 @@ class MemoryDocumentCatalog:
                 "payload": {
                     "entryId": f"urn:test:entry:{item_id}",
                     "change": "added",
+                    "requestedStages": (self.stages or _plan(self.release.source_catalog, None).stages).to_dict(),
                     "disposition": disposition,
                     "warnings": [],
                 },
@@ -360,7 +362,7 @@ def test_targeted_selection_uses_source_partitions_and_stable_logical_buckets(tm
     assert all(entry.change == ChangeKind.ADDED for entry in entries)
 
 
-def test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucket() -> None:
+def test_changed_selection_reuses_identical_selected_items_without_work() -> None:
     partition_count = 4
     items = tuple(
         _source_item(
@@ -390,8 +392,7 @@ def test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucke
         and logical_partition(item.item_id, partition_count) == selected_bucket
     }
     assert expected
-    assert {entry.source_item.item_id for entry in entries} == expected
-    assert all(entry.change == ChangeKind.REPAIR for entry in entries)
+    assert entries == ()
 
 
 def test_source_partition_selection_rejects_undeclared_partition_before_item_stream(tmp_path: Path) -> None:
@@ -544,7 +545,7 @@ def test_a_failed_disposition_naming_no_source_item_is_refused(ghost: str) -> No
 
     items = (_source_item("item"),)
 
-    with pytest.raises(IntegrityError, match="failed item that has no source item"):
+    with pytest.raises(IntegrityError, match="disposition population differs from its source items"):
         _planned_update(items, items, failed_item_ids=(ghost,))
 
 
@@ -582,5 +583,10 @@ def test_stage_configuration_change_rebuilds_unchanged_input(configuration_field
     changed_stages = replace(stages, **{configuration_field: sha256_digest(b"changed-settings")})
     rebuilt, _ = _planned_update((item,), (item,), current_stages=changed_stages)
     assert len(rebuilt) == 1
-    assert rebuilt[0].execution_mode is EntryExecutionMode.FULL
+    expected_mode = (
+        EntryExecutionMode.FROM_CAPTURES
+        if configuration_field == "extractor_configuration_digest"
+        else EntryExecutionMode.FROM_REPRESENTATIONS
+    )
+    assert rebuilt[0].execution_mode is expected_mode
     assert rebuilt[0].requested_stages == changed_stages

@@ -311,7 +311,7 @@ def test_stage_configuration_pins_change_plan_identity_and_round_trip(field: str
     assert changed.plan_id != original.plan_id
     assert changed.governing_content() != original.governing_content()
     assert ProcessingPlan.from_dict(changed.to_dict()) == changed
-    assert changed.to_dict()["formatVersion"] == "2.0"
+    assert changed.to_dict()["formatVersion"] == "3.0"
 
 
 def test_old_or_incomplete_stage_pins_are_not_accepted() -> None:

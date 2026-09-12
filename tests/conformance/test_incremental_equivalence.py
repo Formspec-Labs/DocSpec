@@ -235,7 +235,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     )
     assert (entries["document-b"].change, entries["document-b"].execution_mode) == (
         ChangeKind.REPAIR,
-        EntryExecutionMode.PROCESSORS_ONLY,
+        EntryExecutionMode.FROM_SEGMENTS,
     )
     assert (entries["document-c"].change, entries["document-c"].execution_mode) == (
         ChangeKind.ADDED,
@@ -512,8 +512,8 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
         for entry in _planned_entries(platform, bumped_plan, second_source, first_release, name="bumped")
     } == {
         "document-broken": (ChangeKind.REPAIR, EntryExecutionMode.FULL),
-        "document-steady-a": (ChangeKind.REPAIR, EntryExecutionMode.PROCESSORS_ONLY),
-        "document-steady-b": (ChangeKind.REPAIR, EntryExecutionMode.PROCESSORS_ONLY),
+        "document-steady-a": (ChangeKind.REPAIR, EntryExecutionMode.FROM_SEGMENTS),
+        "document-steady-b": (ChangeKind.REPAIR, EntryExecutionMode.FROM_SEGMENTS),
     }
 
     # End-to-end confirmation: the repaired item now actually captures and

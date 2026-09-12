@@ -6,7 +6,7 @@ no caller-side plan or run-request files.
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 import runpy
 import sys
@@ -124,8 +124,27 @@ def main() -> None:
         segmenter=segmenter,
         processors={processor.description.processor_id: processor},
     )
+    plan_values = {
+        field.name: getattr(plan, field.name) for field in fields(plan) if field.name != "plan_id"
+    }
+    capture_plan = ProcessingPlan.create(**(plan_values | {
+        "stages": stage_policy(stop_after="capture"), "processors": ProcessorSet(()),
+    }))
+    capture_settings = {key: value for key, value in settings.items() if key not in {"extractor", "segmenter", "processors"}}
+    with prepare_local_run(capture_plan, workspace, **capture_settings) as capture:
+        capture_run = capture.run()
+        captured_base = capture.retain(capture_run)
+        capture_receipt = RunReceipt.from_dict(LocalJsonControlRepository(workspace.roots["controlRepository"]).load(capture_run))
+        captured_counts = {layer.layer_kind: layer.record_count for layer in capture_receipt.staged_layers}
+        assert captured_counts["files"] == 1
+        assert captured_counts["representations"] == captured_counts["segments"] == 0
+    assert fetcher.calls == 1
+    assert extractor.calls == segmenter.calls == processor.calls == 0
+    plan = ProcessingPlan.create(**(plan_values | {"base_release": captured_base}))
     prepared = prepare_local_run(plan, workspace, **settings)
     first = prepared.run()
+    processed_result = prepared.retain(first)
+    assert processed_result != captured_base
     assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
     recovered = prepare_local_run(plan, workspace, handoff_ref=prepared.handoff_ref, **settings)
     assert recovered.run() == first
@@ -181,7 +200,7 @@ def main() -> None:
     assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
     assert not (Path.cwd() / "plan.json").exists()
     assert not (Path.cwd() / "run-request.json").exists()
-    print("installed runtime: captured once, recovered unchanged work, refused changed worker settings")
+    print("installed runtime: retained capture, processed it without refetching, recovered, refused changed settings")
 
 
 if __name__ == "__main__":

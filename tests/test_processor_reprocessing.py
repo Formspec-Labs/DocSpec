@@ -39,6 +39,7 @@ from tests.helpers import (
     write_shared_source_catalog,
 )
 from tests.support.pipeline import _run, _write_source
+from tests.support.incremental import _active_document_state, _platform
 from tests.support.processing import _captured
 from tests.support.processors import (
     _CountingExtractor,
@@ -192,8 +193,8 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
 
     entry = stores.load(planned[0]).entries[0]
     assert entry.change == ChangeKind.REPAIR
-    assert entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY
-    assert set(entry.requested_stages.processor_ids) == {
+    assert entry.execution_mode == EntryExecutionMode.FROM_SEGMENTS
+    assert set(entry.processor_ids_to_run) == {
         changed_root.description.processor_id,
         changed_dependent.description.processor_id,
     }
@@ -240,8 +241,8 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
         partition_policy=partition_policy,
     )
     removal_entry = stores.load(removal_planned[0]).entries[0]
-    assert removal_entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY
-    assert removal_entry.requested_stages.processor_ids == ()
+    assert removal_entry.execution_mode == EntryExecutionMode.FROM_SEGMENTS
+    assert removal_entry.processor_ids_to_run == ()
     assert not any(layer.layer_kind.startswith("derived:") for layer in catalog.open(removal_release).active_layers)
     assert (len(fetcher.calls), extractor.calls, segmenter.calls) == initial_counts[:3]
     assert {
@@ -266,7 +267,7 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
         partition_policy=partition_policy,
     )
     addition_entry = stores.load(addition_planned[0]).entries[0]
-    assert addition_entry.requested_stages.processor_ids == (added.description.processor_id,)
+    assert addition_entry.processor_ids_to_run == (added.description.processor_id,)
     assert len(added.calls) == 2
     assert (len(fetcher.calls), extractor.calls, segmenter.calls) == initial_counts[:3]
 
@@ -287,10 +288,23 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
         partition_policy=partition_policy,
     )
     rename_entry = stores.load(rename_planned[0]).entries[0]
-    assert rename_entry.requested_stages.processor_ids == (renamed.description.processor_id,)
+    assert rename_entry.processor_ids_to_run == (renamed.description.processor_id,)
     rename_layers = {layer.layer_kind for layer in catalog.open(rename_release).active_layers}
     assert f"derived:{added.description.processor_id}" not in rename_layers
     assert f"derived:{renamed.description.processor_id}" in rename_layers
     assert len(added.calls) == 2
     assert len(renamed.calls) == 2
     assert (len(fetcher.calls), extractor.calls, segmenter.calls) == initial_counts[:3]
+
+    clean = _platform(tmp_path / "clean-addition", member_bytes=1024 * 1024)
+    _write_source(clean.sources / "document.txt", "First paragraph.\n\nSecond paragraph.")
+    clean_source = clean.publish_source((item,))
+    clean_processor = _CountingProcessor(added.description)
+    clean_plan = _plan(clean_source, None, (clean_processor,), retry, accepted)
+    _, _, _, _, clean_release = _run(
+        plan=clean_plan, source_catalog=clean.source_catalog, controls=clean.controls,
+        stores=clean.stores, blobs=clean.blobs, records=clean.records, catalog=clean.catalog,
+        fetcher=SharedFixtureContentFetcher(clean.sources), processors=(clean_processor,),
+        partition_policy=clean.partition_policy,
+    )
+    assert _active_document_state(catalog, addition_release) == _active_document_state(clean.catalog, clean_release)

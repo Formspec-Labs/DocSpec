@@ -210,7 +210,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
         _emit(
             {
                 "format": "docspec-run-active-view",
-                "formatVersion": "1.0",
+                "formatVersion": "2.0",
                 "planId": plan.plan_id,
                 "phase": "not-planned",
                 "generatedAt": generated_at,
@@ -292,7 +292,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
     _emit(
         {
             "format": "docspec-run-active-view",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "planId": plan.plan_id,
             "phase": "planned",
             "generatedAt": generated_at,
@@ -315,7 +315,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
                 "byDisposition": dict(sorted(disposition_counts.items())),
                 "acquisition": {
                     "capturedEntries": captured_entries,
-                    "newlyCapturedBytes": captured_bytes,
+                    "capturedBytes": captured_bytes,
                 },
                 "processing": {
                     "producedEntries": produced_entries,

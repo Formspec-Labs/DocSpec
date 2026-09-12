@@ -31,7 +31,9 @@ class ChangeKind(StrEnum):
 
 class EntryExecutionMode(StrEnum):
     FULL = "full"
-    PROCESSORS_ONLY = "processors-only"
+    FROM_CAPTURES = "from-captures"
+    FROM_REPRESENTATIONS = "from-representations"
+    FROM_SEGMENTS = "from-segments"
 
 
 class StoreState(StrEnum):
@@ -106,6 +108,7 @@ class DocumentEntry:
     change: ChangeKind
     requested_stages: StagePolicy
     execution_mode: EntryExecutionMode = EntryExecutionMode.FULL
+    processor_ids_to_run: tuple[str, ...] = ()
     captured_files: tuple[CapturedFile, ...] = ()
     representations: tuple[Representation, ...] = ()
     segments: tuple[Segment, ...] = ()
@@ -122,8 +125,16 @@ class DocumentEntry:
         except ValueError as error:
             raise ValueError("document entry execution mode is not registered") from error
         object.__setattr__(self, "execution_mode", execution_mode)
-        if execution_mode == EntryExecutionMode.PROCESSORS_ONLY and self.change != ChangeKind.REPAIR:
-            raise ValueError("processor-only execution is valid only for a repair entry")
+        if execution_mode is not EntryExecutionMode.FULL and self.change != ChangeKind.REPAIR:
+            raise ValueError("base reuse is valid only for a repair entry")
+        if not isinstance(self.processor_ids_to_run, tuple):
+            raise ValueError("processor identities to run must be an immutable tuple")
+        requested = self.requested_stages.processor_ids
+        ordered_subset = tuple(identifier for identifier in requested if identifier in self.processor_ids_to_run)
+        if self.processor_ids_to_run != ordered_subset:
+            raise ValueError("processors to run must be an ordered subset of the requested stages")
+        if execution_mode is not EntryExecutionMode.FROM_SEGMENTS and self.processor_ids_to_run != requested:
+            raise ValueError("execution before retained segments requires the full processor graph")
         expected = stable_urn(
             "document-entry",
             {
@@ -131,6 +142,7 @@ class DocumentEntry:
                 "change": self.change.value,
                 "requestedStages": self.requested_stages.to_dict(),
                 "executionMode": self.execution_mode.value,
+                "processorIdsToRun": list(self.processor_ids_to_run),
             },
         )
         if self.entry_id != expected:
@@ -144,12 +156,16 @@ class DocumentEntry:
         stages: StagePolicy,
         *,
         execution_mode: EntryExecutionMode = EntryExecutionMode.FULL,
+        processor_ids_to_run: tuple[str, ...] | None = None,
     ) -> DocumentEntry:
+        if processor_ids_to_run is None:
+            processor_ids_to_run = stages.processor_ids
         identity = {
             "sourceItem": source_item.to_dict(),
             "change": change.value,
             "requestedStages": stages.to_dict(),
             "executionMode": execution_mode.value,
+            "processorIdsToRun": list(processor_ids_to_run),
         }
         disposition = None
         if change == ChangeKind.DELETED:
@@ -164,6 +180,7 @@ class DocumentEntry:
             change,
             stages,
             execution_mode,
+            processor_ids_to_run,
             disposition=disposition,
         )
 
@@ -178,6 +195,7 @@ class DocumentEntry:
             "change": self.change.value,
             "requestedStages": self.requested_stages.to_dict(),
             "executionMode": self.execution_mode.value,
+            "processorIdsToRun": list(self.processor_ids_to_run),
             "capturedFiles": [item.to_dict() for item in self.captured_files],
             "representations": [item.to_dict() for item in self.representations],
             "segments": [item.to_dict() for item in self.segments],
@@ -196,6 +214,7 @@ class DocumentEntry:
             "change",
             "requestedStages",
             "executionMode",
+            "processorIdsToRun",
             "capturedFiles",
             "representations",
             "segments",
@@ -207,12 +226,15 @@ class DocumentEntry:
         }
         if set(value) != expected:
             raise ValueError("document entry has an invalid closed shape")
+        if not isinstance(value["processorIdsToRun"], list):
+            raise ValueError("processor identities to run must be an array")
         return cls(
             value["entryId"],
             SourceItem.from_dict(value["sourceItem"]),
             ChangeKind(value["change"]),
             StagePolicy.from_dict(value["requestedStages"]),
             EntryExecutionMode(value["executionMode"]),
+            tuple(value["processorIdsToRun"]),
             tuple(CapturedFile.from_dict(item) for item in value["capturedFiles"]),
             tuple(Representation.from_dict(item) for item in value["representations"]),
             tuple(Segment.from_dict(item) for item in value["segments"]),
@@ -310,7 +332,7 @@ class DocumentStore:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": "docspec-document-store",
-            "formatVersion": "2.0",
+            "formatVersion": "3.0",
             "storeId": self.store_id,
             "planId": self.plan_id,
             "logicalPartition": self.logical_partition,
@@ -339,7 +361,7 @@ class DocumentStore:
             "deliveryReceipt",
             "verdict",
         }
-        if set(value) != expected or value["format"] != "docspec-document-store" or value["formatVersion"] != "2.0":
+        if set(value) != expected or value["format"] != "docspec-document-store" or value["formatVersion"] != "3.0":
             raise ValueError("document store has an unknown format or invalid closed shape")
         return cls(
             value["storeId"],

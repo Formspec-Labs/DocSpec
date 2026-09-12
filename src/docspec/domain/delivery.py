@@ -28,6 +28,7 @@ from docspec.domain.identity import (
     thaw_json,
 )
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, FailureRecord, StoreVerdict
+from docspec.domain.plans import StagePolicy
 from docspec.domain.references import ArtifactRef, BlobRef
 from docspec.domain.storage import RecordSchema
 from docspec.errors import IntegrityError
@@ -38,7 +39,7 @@ _CORE_LAYER_SCHEMA_IDS = {
     "files": "docspec-file-record/1.0",
     "representations": "docspec-representation-record/1.0",
     "segments": "docspec-segment-record/1.0",
-    "dispositions": "docspec-disposition-record/1.0",
+    "dispositions": "docspec-disposition-record/2.0",
     "failures": "docspec-failure-record/1.0",
     "receipts": "docspec-stage-receipt-record/1.0",
 }
@@ -217,11 +218,12 @@ def iter_delivery_records(store: DocumentStore) -> Iterator[DeliveryRecord]:
             store,
             entry,
             layer_kind="dispositions",
-            schema_id="docspec-disposition-record/1.0",
+            schema_id="docspec-disposition-record/2.0",
             record_id=disposition_id,
             payload={
                 "entryId": entry.entry_id,
                 "change": entry.change.value,
+                "requestedStages": entry.requested_stages.to_dict(),
                 "disposition": None if entry.disposition is None else entry.disposition.value,
                 "warnings": list(entry.warnings),
             },
@@ -372,6 +374,11 @@ def _create_release_integrity_schema(connection: sqlite3.Connection) -> None:
             derived_id TEXT NOT NULL,
             input_id TEXT NOT NULL,
             PRIMARY KEY (derived_id, input_id)
+        ) WITHOUT ROWID;
+        CREATE TABLE requested_processors (
+            source_item_id TEXT NOT NULL,
+            processor_id TEXT NOT NULL,
+            PRIMARY KEY (source_item_id, processor_id)
         ) WITHOUT ROWID;
         CREATE TABLE dispositions (
             source_item_id TEXT PRIMARY KEY,
@@ -576,13 +583,18 @@ def _index_release_layer(
             )
         elif layer_kind == "dispositions":
             _require_live_record(deleted, layer_kind)
-            expected = {"entryId", "change", "disposition", "warnings"}
+            expected = {"entryId", "change", "requestedStages", "disposition", "warnings"}
             if set(payload) != expected or not isinstance(payload["warnings"], list):
                 raise IntegrityError("disposition record has an invalid closed payload")
             entry_id = payload["entryId"]
             if not isinstance(entry_id, str) or not entry_id:
                 raise IntegrityError("disposition record has an invalid entry identity")
             ChangeKind(payload["change"])
+            stages = StagePolicy.from_dict(payload["requestedStages"])
+            connection.executemany(
+                "INSERT INTO requested_processors VALUES (?, ?)",
+                ((source_item_id, identifier) for identifier in stages.processor_ids),
+            )
             disposition = payload["disposition"]
             if disposition is not None:
                 disposition = AcquisitionDisposition(disposition).value
@@ -688,6 +700,17 @@ def _verify_release_relationships(connection: sqlite3.Connection) -> None:
             FROM derived_records AS d
             LEFT JOIN sources AS s ON s.source_item_id = d.source_item_id
             WHERE s.source_item_id IS NULL OR s.state != 'active'
+            LIMIT 1
+            """,
+        ),
+        (
+            "derived record was not requested by its source item's processing stages",
+            """
+            SELECT d.derived_id
+            FROM derived_records AS d
+            LEFT JOIN requested_processors AS p
+              ON p.source_item_id = d.source_item_id AND p.processor_id = d.processor_id
+            WHERE p.processor_id IS NULL
             LIMIT 1
             """,
         ),

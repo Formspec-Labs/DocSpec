@@ -26,11 +26,10 @@ same change as the behavior or file move they describe.
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
 | Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
 
-A catalog can be used without document acquisition or search. Captures,
-checkpoints, record layers, and run receipts are retained working state;
-convenient stage completion and unified attempt inspection remain checklist
-items [D24](dataset-experiments-todo.md#d24) and
-[D19](dataset-experiments-todo.md#d19). The offline walkthrough exercises one
+A catalog can be used without document acquisition or search. The Python runtime
+retains capture, extraction, segmentation, and processing results for later use.
+Checkpoints and receipts describe completed and unfinished work; unified attempt
+inspection remains [D19](dataset-experiments-todo.md#d19). The offline walkthrough exercises one
 application release, without demonstrating every intended stopping point or
 the complete iterative workflow.
 

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 4 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 6 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -170,16 +170,23 @@ to defer a conditional item is a documented deferral, not completed implementati
   implementations. The CLI and Python callers use that one path. Keep core
   application services independent of concrete adapters; do not add another
   workspace model, run ledger, or plugin loader. A solutions architect approved
-  this direction. Capture-only completion and result inspection still need
-  their own implementation; moving composition alone does not complete D04.
+  this direction. Capture-only completion was the next implementation step;
+  moving composition alone did not complete D04.
 
   **Runtime progress:** `prepare_local_run` and `PreparedLocalRun` now provide
   preparation, local execution, task dispatch, reconciliation, and saved-handoff
   recovery. CLI execution and the offline example use this same path. The
   superseded CLI-local composition/execution modules were removed. Existing
   plans, ledgers, handoffs, and receipts remain the saved state. Independent
-  architecture and code reviews approved this bounded extraction; inspection,
-  capture-only completion, and simpler catalog/plan composition remain open.
+  architecture and code reviews approved this bounded extraction.
+
+  **Capture-first progress:** `stage_policy(stop_after=...)` now requests a
+  contiguous prefix; `PreparedLocalRun.retain()` keeps its result through the
+  existing finalization path. A later plan reuses verified captures or
+  representations and runs the remaining stages. The superseded processor-only
+  execution loop was removed; one checkpointed loop serves all prefixes.
+  Inspection, export convenience, and simpler catalog/plan composition remain
+  open; see the [architecture decision](history/2026-09-11-capture-prefix-architecture.md).
 
 <a id="d05"></a>
 
@@ -304,7 +311,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   segmenters through the supported API. Stage IDs and effective settings affect
   plan identity and reuse decisions. Registries retain their selected children's
   output identities, including empty segmentation. Configuration changes refuse
-  stale recovery before work; a newly pinned plan uses existing full repair.
+  stale recovery before work; at this milestone a newly pinned plan used full
+  repair. D15 below records the subsequent prefix-reuse implementation.
   PDF versions are pinned without importing the optional parser during setup.
   The [architecture decision](history/2026-09-11-stage-injection-architecture.md)
   records the chosen interface and rejected alternatives; the
@@ -312,8 +320,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   assessment separately from execution evidence. The full local suite passed
   972 tests, including custom-stage execution/recovery through an isolated wheel;
   one live integration test was deselected. Ruff passed. Plans, stores, and
-  ordinary segmentation receipts use format `2.0`, with no legacy readers.
-  Finer reuse after extraction/segmentation changes remains D15.
+  ordinary segmentation receipts used format `2.0` at this milestone. The
+  capture-first revision advances plans/stores to `3.0` and dispositions to
+  schema `2.0`; ordinary segmentation receipts remain `2.0`. No legacy reader
+  is provided.
 
 <a id="d14"></a>
 
@@ -328,7 +338,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d15"></a>
 
-- [ ] **D15 · P0 · Prove selective reuse across experiments.** Trace which source
+- [x] **D15 · P0 · Prove selective reuse across experiments.** Trace which source
   selections, captured bytes, extraction settings, segmentation settings,
   processor versions/configuration, resource pins, prerequisites, and applicable
   policy affect each result. Simplify duplicate identity bookkeeping where
@@ -346,10 +356,20 @@ to defer a conditional item is a documented deferral, not completed implementati
   stateless result keeps no inherited roots/layers. These cases do not establish
   changed-extractor or changed-segmenter reuse, which remains open.
 
-  D13 now gives stage settings their own plan pins and proves unchanged-stage
-  reuse plus changed-stage full rebuilding. Changing one stage still refetches
-  captured content; this establishes correct invalidation, not the finer reuse
-  required to complete D15.
+  **Completed September 11:** changed extraction reuses captures, changed
+  segmentation reuses representations, and processor changes reuse segments and
+  unaffected results. Every entry keeps its full requested stages and separately
+  names processors that need to run. The planner reads each inherited document's
+  policy, so mixed-stage results do not inherit the latest plan's stage choices
+  accidentally. Selection chooses items without invalidating unchanged inputs.
+  Other governing policy changes and previously failed items still use full
+  repair. See [the recorded approach](history/2026-09-11-capture-prefix-architecture.md).
+  Changed extraction, segmentation, and added/replaced processors now compare
+  against clean active-document state. Exact capture provenance remains distinct
+  from newly acquired evidence. The [independent review and executed checks](history/2026-09-11-capture-prefix-review.md)
+  support this acceptance: 1,025 full-suite passes, two stale test-metadata
+  failures corrected, then all 15 focused follow-up checks passed. The full
+  suite deselected one live integration test; failed-item repair remains D16.
 
 <a id="d16"></a>
 
@@ -423,6 +443,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   Zero-task runs need no lookup, and failure/context exit releases scratch.
   Active cancellation and aggregate concurrent scratch accounting remain open.
 
+  **Capture-prefix progress:** multi-candidate capture recovery and recovery
+  after new extraction/segmentation of reused inputs now use the same verifier
+  and execution loop. Cumulative page/frame costs come from verified extraction
+  receipts rather than being inferred from output boundaries. Reused prefix
+  work is excluded from new-work counters; resumed new work charges once.
+
   D13 adds actual stage configuration checks before direct execution,
   checkpoint admission, completed-task reuse, and zero-task execution. Tests
   refuse changed live settings and mismatched selected-child evidence. These
@@ -467,13 +493,26 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d24"></a>
 
-- [ ] **D24 · P0 · Simplify durable state updates and finalization.** Trace which
+- [x] **D24 · P0 · Simplify durable state updates and finalization.** Trace which
   current commit, reconciliation, and publication steps are needed at each useful
   stopping point. Reuse existing verified transitions behind D04. **Done when:**
   a usable capture or processing attempt can be retained without mandatory
   portable export; incomplete state is recognizable; immutable writes and
   concurrent base checks prevent silent replacement of another result. Depends
   on D02 and D20; see [commit](../src/docspec/application/commit.py).
+
+  **Completed September 11:** capture and processing results use the existing
+  reconciliation, immutable retention, and explicit selection operations.
+  Completion checks only the requested prefix. Each disposition records that
+  request; inherited processor records must match their own document's request.
+  Shortening selected documents removes their superseded descendants while
+  preserving other documents, including across later generations. Requested
+  processors retain an empty layer when no records are produced. No separate
+  capture ledger, export requirement, or publication step was added.
+  The [review and execution evidence](history/2026-09-11-capture-prefix-review.md)
+  cover incomplete-request refusal, mixed-result preservation, guarded selection,
+  installed capture/retain/later-process/retain, and recovery without refetching.
+  D20's active cancellation remains separate unfinished work.
 
 <a id="d25"></a>
 
@@ -679,8 +718,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   covers D13's configured stages and current producer migrations. The complete
   local suite passed 972 tests with one live integration test deselected,
   including the updated installed-wheel probe. Its architecture decision and
-  review preserve the distinction between correct full rebuilding and the finer
-  selective reuse still required by D15.
+  review record the full-rebuild behavior at that milestone. The subsequent
+  capture-prefix work extends D15 reuse; its separate review and execution
+  evidence appear in the [capture-prefix review](history/2026-09-11-capture-prefix-review.md).
+  That review approved D15 and D24 after resolving inherited-output ownership,
+  unused-cache construction, receipt-based accounting, and the missing
+  processor-addition clean comparison. Local checks are recorded there;
+  broader D39 acceptance remains open.
 
 <a id="d40"></a>
 
