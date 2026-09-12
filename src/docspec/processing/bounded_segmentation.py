@@ -1,89 +1,35 @@
-"""Bounded segmentation: a token budget that refuses, overlap, and a coverage sweep.
+"""Bound processor inputs while preserving exact text spans and coverage.
 
-Reused with adoption under REF-048 §4.4 from the sibling regulations document
-pipeline's `docpipeline/segments.py` at source commit
-fc24e06ade915ead1209483733b1aec5cd824d1c, where it implements the
-`structure-overlap-1800` policy the bounded fair comparison selected on
-2026-07-24. Every boundary rule, budget rule, refusal, and coverage number
-below is that module's; what changed is named under "What was adapted".
+A paragraph or page can exceed a processor's input limit. This segmenter keeps
+regions whole when they fit, splits oversized regions, and refuses a budget
+that cannot hold the text. It never discards text merely to meet the limit.
+The caller injects the token counter; its identity must match the settings.
 
-Why DocSpec needs it
---------------------
-The four segmenters beside this one in `segmentation.py` are exact and
-deterministic and have no size bound at all: a paragraph, a page, a record, or
-an image is whatever the source made it. `docs/decisions/0001-document-release-2-0.md`
-requires the opposite for `data/search-segments.jsonl` -- **bounded** segments,
-a declared `maxSegmentBytes`, a `segmenterDigest` beside the `segmenterId`, and
-the coverage identity `segmentedByteTotal + excludedByteTotal ==
-representationByteTotal` per text body. That is this module.
+The algorithm was adopted under REF-048 section 4.4 from the regulations
+pipeline's `docpipeline/segments.py` at commit
+fc24e06ade915ead1209483733b1aec5cd824d1c. Its default structure-overlap settings
+come from that pipeline's July 24, 2026 comparison. This implementation adapts
+those rules to DocSpec's representations and source evidence:
 
-The rules kept, and where each one lives
-----------------------------------------
-* **A region within budget stays whole.** Only a region that is itself
-  oversized is split, into leaves of `BoundedSegmentSettings.leaf_budget`
-  tokens (`_leaf_spans`). Each later leaf reaches backward at most
-  `overlap_tokens` tokens and never past the start of its own region
-  (`_overlap_start`) -- that is what "limited overlap only when one structural
-  element is itself oversized" means.
-* **A split leaf occupies its own segment.** Whole regions pack greedily
-  against the hard budget (`_pack`). There is no same-field break.
-* **The budget refuses rather than truncates.** A built segment over
-  `max_tokens` raises `BoundedSegmentationError`; so does a budget that cannot
-  hold one source character. This policy never drops text to fit.
-* **The token counter is injected.** This module names no tokenizer package.
-  A provider counter lives in `adapters/`, and settings that name a different
-  tokenizer than the counter doing the counting are refused
-  (`_require_matching_counter`).
-* **Context is not evidence.** Heading text lives on `SegmentContext`. It is
-  not in a segment's byte range, not in its token count, and not in its
-  identity.
-* **Coverage is recomputed, never remembered.** `_coverage` sweeps the emitted
-  spans and the excluded ledger and reports covered, duplicated, excluded, and
-  uncovered bytes, so a check cannot pass by trusting a number that no longer
-  describes the segments beside it.
+* `_regions` finds blank-line blocks and ATX headings. Headings are excluded
+  spans that remain readable in the representation and appear as context;
+  they are outside segment byte ranges, token counts, and identities.
+* `_units` splits an oversized region into leaves with bounded overlap inside
+  that region. Whole regions pack greedily in `_pack`; split leaves stay alone.
+* Each segment is one contiguous range, including any separator bytes between
+  packed regions. Token limits apply to the actual emitted text.
+* Boundary calculations use character positions. `utf8_byte_offsets` converts
+  them to UTF-8 byte coordinates once; `_char_index` rejects offsets inside a
+  character. Segment identity comes from the existing `Segment` model.
+* `_coverage` recomputes covered, duplicated, excluded, and uncovered bytes from
+  emitted spans. Those counts describe retained text, not semantic quality.
 
-What was adapted
-----------------
-* **Byte coordinates, not character coordinates.** The source addresses Python
-  codepoints. DocSpec addresses UTF-8 bytes, and ADR 0001 binds every span with
-  `end > start` on a UTF-8 character boundary. The boundary machinery still
-  runs in character space -- a token counter counts text, and `rfind("\\n\\n")`
-  is a character operation -- and every emitted coordinate is converted once,
-  at the edge, through `utf8_byte_offsets`, whose entries are character
-  boundaries by construction. `_char_index` converts the other way and refuses
-  a byte offset that is not one.
-* **One contiguous range per segment, not a group of slices.** A DocSpec
-  `Segment` is one exact half-open representation range. A packed group of
-  adjacent whole regions therefore becomes the one range that spans them, so
-  the separator bytes between them are inside the segment rather than lost, and
-  the budget is measured on the bytes actually emitted rather than on a
-  newline-join of the parts.
-* **Heading regions are excluded, not carried.** The source keeps a heading
-  region in its processing text for frozen-baseline parity and marks the slice
-  context-only, recording the removal as a follow-up. With one contiguous range
-  per segment there is no context-only slice to mark, so the follow-up is taken
-  here: a heading is an `ExcludedRegion`, its bytes stay readable in the
-  representation, and `SegmentContext.headings` carries it as context for the
-  segments beneath it.
-* **Regions come from the representation.** The source consumes a
-  source-native region stream with real structure. DocSpec has no structural
-  record yet -- ADR 0001 deviation row 7 adds `structuralNode`, and this port
-  does not pre-empt it -- so regions here are blank-line blocks, and a heading
-  is the one unambiguous form: an ATX line (`#` through `######`). When the
-  structural record lands, `_regions` is the one function that changes.
-* **Identity-mapped representations only.** `Segment` resolves its evidence
-  through `Representation.evidence_for_range`, and a derived mapping (PDF page
-  text) resolves only at its own declared boundary. A bounded segment inside
-  such a page has no reversible coordinate, so this segmenter refuses a
-  representation carrying one instead of minting a segment that cannot be
-  proven.
-
-Left behind deliberately: the parquet table and its column list, the artifact
-and fragment vocabulary, the two-identity scheme (`segment_id` plus
-`content_digest` -- DocSpec's `Segment.create` already mints one identity from
-the same semantic inputs), the `contains_span` gold-containment helpers, and
-the run-level `CheckResult` reporting, which belongs to that pipeline's runtime
-rather than to a segmenter.
+Only identity-mapped text representations support these arbitrary byte spans.
+A derived mapping, such as a PDF page's extracted text, resolves evidence at its
+whole declared boundary; this segmenter refuses it. Choose whole-block
+segmentation for those representations. `_bound` keeps boundary construction
+and byte accounting together. Artifact publication, tabular outputs, evaluation
+metrics, and run management belong to their existing owners.
 """
 
 from __future__ import annotations
