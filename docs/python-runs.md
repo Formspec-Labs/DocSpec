@@ -325,7 +325,8 @@ Keeping it does not select a current application release or create a portable
 export. [Retention and selection](experiments.md) remain explicit operations.
 [Inspect and compare results](inspection.md) through `open_local_inspection`.
 `prepare_local_experiment` constructs plans from typed source references and
-injected implementations. Portable export convenience remains checklist work.
+injected implementations. Use [`export_local_result`](result-exports.md) to make
+a retained result independently readable through `open_result_export`.
 
 Custom processors, fetchers, extractors, and segmenters use this public runtime.
 The default `stage_policy()` still requests extraction and segmentation with no
@@ -341,5 +342,7 @@ without another fetch, inspects layers and stage identities, resumes without
 repeating work, and refuses changed settings. The
 [package test](../tests/test_package_boundary.py) installs the built wheel into
 an isolated environment before running that check. This qualifies the bounded
-Python path; broader experiment acceptance remains
-[D38](dataset-experiments-todo.md#d38).
+Python path. The [offline walkthrough](offline-walkthrough.md) additionally checks
+catalog growth, repair, changed settings and reference data, and exact quote
+evidence against an installed wheel. Independent review and the unfamiliar-human
+exercise remain [D39–D40](dataset-experiments-todo.md#d39).

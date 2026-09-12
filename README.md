@@ -38,7 +38,7 @@ mechanisms from missing interfaces and qualification.
 | Choose fetchers and repair failures | [Configure local, HTTPS, S3, or custom fetchers](docs/fetchers.md). [Retry selected failed work](docs/repairing-failures.md) from verified completed stages; unchanged permanent failures remain visible until explicitly retried or relevant inputs change. |
 | Resume and inspect a run | The Python runtime prepares, executes, reconstructs saved work, and reconciles results without caller-written request files. `run prepare`, `start`, `resume`, `reconcile`, `active`, and `status` provide command access. |
 | Retain and choose alternative results | `PreparedLocalRun.retain()` or `document-release retain` keeps a verified result without changing current. `document-catalog select` chooses a retained result against an explicit expected current reference. Alternatives keep their original pinned base; see [experiment identities and selection](docs/experiments.md). |
-| Reuse inputs and compare results | Changed extraction reuses captures; changed segmentation reuses representations; changed processors reuse segments and unaffected processor results from an explicit verified base. [`open_local_inspection` and `docspec inspect`](docs/inspection.md) explain scheduled work, complete results, reuse, failures, and differences. The full installed experiment exercise remains [D38](docs/dataset-experiments-todo.md#d38). |
+| Reuse inputs and compare results | Changed extraction reuses captures; changed segmentation reuses representations; changed processors reuse segments and unaffected processor results from an explicit verified base. [`open_local_inspection` and `docspec inspect`](docs/inspection.md) explain scheduled work, complete results, reuse, failures, and differences. The [offline walkthrough](docs/offline-walkthrough.md) exercises this locally and against an installed wheel. |
 | Export and independently read a dataset | [`export_local_result` and `open_result_export`](docs/result-exports.md) preserve active records, captured and derived bytes, and processing evidence without executing work again. Choose retained evidence or require nonempty text; both preserve complete outcome accounting. |
 
 Capture-only results can be retained and used by a later processing plan through
@@ -71,7 +71,7 @@ Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
 [documentation index](docs/documentation.md) links to maintained guides for
 catalog evidence, extensions, and operations.
 Then run the [offline walkthrough](docs/offline-walkthrough.md). It builds a
-catalog of four supplied records, retains captures, repairs a missing-file
+catalog from supplied records, grows it, retains captures, repairs a missing-file
 failure, and compares a pinned phrase processor's settings and reference data.
 Later processing reuses captured bytes. It needs no network during execution;
 portable export and large datasets have separate qualification.

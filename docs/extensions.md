@@ -5,12 +5,31 @@ inside adapters and connect them in composition code. The
 [architecture guide](architecture.md) explains the dependency direction;
 [CONTRIBUTING](../CONTRIBUTING.md#find-a-bounded-change) maps changes to tests.
 
+## Add a source or fetcher at its existing interface
+
+Start with [supplied records or the installed source reader](catalog-inputs.md).
+Small metadata mappings can use `SuppliedRecordSource` and its existing policy,
+as the [GAO example](gao-topics.md) does. A new provider adapter implements
+`SourceNativeRecordSource`: `describe()` identifies the admitted source, and
+`iter_records()` / `iter_renditions()` stream its records and candidate files.
+These types are public imports from `docspec.source_catalog`. Keep source
+validation and publisher parsing in the provider; choose dataset interpretation
+through `SourceCatalogPolicy` only when the supplied-record mapping is insufficient.
+
+A document fetcher implements `ContentFetcher` and returns bounded `FetchStream`
+bytes and acquisition facts. Pass it directly to `prepare_local_experiment` or
+inject it through a native Dagster resource. The [fetcher guide](fetchers.md)
+defines identities and lifetime; the [GovInfo bill example](govinfo-bill-example.md)
+shows an installed provider and later processing after the source client closes.
+
 ## Add a processor with explicit inputs and stable identity
 
 1. Implement the [processor interface](../src/docspec/ports/processor.py).
    [`ContentStatisticsProcessor`](../src/docspec/processing/processors.py) is a
    small working example. Its `description` declares its identity; `process()`
    receives the request, permitted payload, and prerequisite results.
+   The [phrase processor example](phrase-matching-example.md) shows configuration,
+   pinned reference data, and literal quote evidence in a complete experiment.
 2. Build a [`ProcessorDescription`](../src/docspec/domain/processors.py) with the
    implementation version, configuration, accepted inputs, output schemas,
    resource identities, cache policy, data-use policy digest, and item limits.

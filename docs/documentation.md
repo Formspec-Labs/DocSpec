@@ -20,6 +20,8 @@ same change as the behavior or file move they describe.
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
 | Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
 | Build a catalog from provider data or bounded supplied records | [Catalog inputs](catalog-inputs.md) |
+| Filter retained publisher topics without fetching documents | [GAO topics](gao-topics.md) |
+| Inject provider acquisition and process retained XML later | [GovInfo bill example](govinfo-bill-example.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
 | Inject components through native resources and execute with Dagster | [Dagster experiment](dagster-experiment.md) |
@@ -27,7 +29,7 @@ same change as the behavior or file move they describe.
 | Configure document transports and understand acquisition evidence | [Fetchers](fetchers.md) |
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
 | Understand SDK requests, item attempts, and native task retries | [Retry ownership](retry-ownership.md) |
-| Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
+| Add a source, fetcher, processor, Dagster resource, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Export active results and read them without the original workspace | [Result exports](result-exports.md) |
 | Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |

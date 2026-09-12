@@ -40,6 +40,8 @@ for independent consumers.
 
 | Task | Start here | Representative implementation and focused checks | Preserve |
 | --- | --- | --- | --- |
+| Add a source adapter | `ports/source_catalog.py`, [catalog inputs](docs/catalog-inputs.md) | `adapters/spicy_docs_source_native.py`, `adapters/supplied_records.py`; `tests/test_spicy_docs_source_native.py`, `tests/test_local_catalogs.py`, `tests/test_source_catalog_installed_wheel.py` | Admitted source identity, literal fields, collection outcomes, bounded evidence |
+| Add a fetcher | `ports/content_fetcher.py`, [fetchers](docs/fetchers.md) | `examples/govinfo_bill_fetcher.py`; `tests/test_runtime_fetchers.py`, `tests/test_govinfo_bill_installed_wheel.py` | Bounded streams, source and transport identity, exact bytes, cleanup, retained failure evidence |
 | Extract a format | `ports/extractor.py`, `processing/extraction.py` | `processing/visible_text.py`; `tests/test_visible_text.py`, `tests/test_processing_pipeline.py` | Exact source bytes, byte offsets, extraction identity, evidence round trips |
 | Change segmentation | `ports/segmenter.py`, `processing/segmentation.py` | `processing/bounded_segmentation.py`; `tests/test_bounded_segmentation.py`, `tests/conformance/test_segmentation.py` | Deterministic order, size bounds, source coordinates |
 | Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog/`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
@@ -61,7 +63,7 @@ For catalog and result changes, choose the suite for the behavior:
 | Catalog source admission, policy rows, and row encoding | `test_source_catalog_policy.py`, `test_source_catalog_rows.py` |
 | Catalog filesystem safety, publication recovery, and pointer advancement | `test_source_catalog_storage.py`, `test_source_catalog_build_safety.py`, `test_source_catalog_succession.py` |
 | Serial and spawned-worker catalog derivation | `test_source_catalog_workers.py` |
-| Catalog command builds and verification receipts | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
+| Catalog command builds and artifact verification | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
 | Regulations.gov joins/provenance, selection, and comments | `test_regulations_gov_catalog.py`, `test_regulations_gov_selection.py`, `test_regulations_gov_comments.py` |
 | Result export, complete active population and independent reading | `test_result_export.py` |
 | Product evidence after shared container admission | `test_result_export_admission.py` |

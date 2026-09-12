@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 39 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 40 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1137,13 +1137,24 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d36"></a>
 
-- [ ] **D36 · P1 · Keep one contributor path through the new workflow.** Update
+- [x] **D36 · P1 · Keep one contributor path through the new workflow.** Update
   the walkthrough, extension guide, task-to-code map, operations guide, schema
   instructions, and decision index as their corresponding changes land.
   **Done when:** a contributor can add a source adapter, fetcher, or processor;
   run a later attempt; inspect results; and find the relevant checks using
   maintained documentation. Retire superseded instructions and keep historical
   measurements labeled with their revisions. Depends on the interfaces above.
+
+  **Completed locally September 12:** the README and contributor task map lead
+  to the supplied-record, source-reader, fetcher, processor and native Dagster
+  examples and their focused checks. The extension guide starts with the existing
+  source/fetcher interfaces; the documentation index includes GAO metadata and
+  bill acquisition. Removed stale statements that installed experiment checks
+  and export convenience are still unimplemented. The schema guide names the
+  current validators, and operations cover recovery, retention and selection.
+  All **494 maintained-document local file targets** resolve. Installed examples
+  exercise the documented APIs; the unfamiliar-human contribution remains D40,
+  and independent review remains D39.
 
 ## 7. Verify user value and qualify the claims we keep
 
