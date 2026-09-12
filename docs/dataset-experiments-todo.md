@@ -1629,7 +1629,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d52"></a>
 
-- [ ] **D52 · P1 · Build a catalog from retained SpicyRegs public-comment data.**
+- [x] **D52 · P1 · Build a catalog from retained SpicyRegs public-comment data.**
   Implement the DocSpec adapter/example over a bounded retained table input.
   Preserve exact input identity, field provenance, coverage assumptions, and
   distinctions from other Regulations.gov representations. **Done when:** the
@@ -1639,6 +1639,23 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   pipeline. Provider requirements live in [SpicyRegs SR02](../../spicy-regs/PLAN.md#sr02)
   and applicable source coverage in [SpicyDocs S09–S10](../../spicy-docs/docs/simplification-todo.md#s09).
   Depends on D06–D08/D43 and the selected public input API; no package move is required.
+
+  **Completed September 12:** the [comment-table example](spicyregs-comments.md)
+  uses the existing pinned SpicyDocs `0.3.0` public profile, retained Parquet
+  evidence and bounded supplied-record policy. It preserves all 16 logical
+  fields, nulls, diagnostics, original input pins and provider-declared attachment
+  locations. Exact docket filtering and catalog preview create no document run
+  or attachment capture. A missing comment identity refuses the whole source
+  without fabricating a partial catalog or row-rejection ledger.
+  The same five behavior tests run locally and outside the checkout against
+  installed wheels; the focused gate passed **7 tests** in 13.58 seconds. Core
+  and reader dependency-absence checks run before installing the provider's
+  optional Parquet extra. Ruff and lock consistency passed.
+  [Independent review](history/2026-09-12-spicyregs-comments-review.md) approved
+  the workflow. Its observed upstream attachment-index limitation is tracked in
+  [SpicyDocs P01](../../spicy-docs/docs/simplification-todo.md#public-comment-attachment-provenance);
+  DocSpec preserves provider declarations and adds no local parser correction.
+  This qualifies the bounded synthetic example, not live coverage or capacity.
 
 <a id="d53"></a>
 

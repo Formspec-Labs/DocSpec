@@ -21,6 +21,7 @@ same change as the behavior or file move they describe.
 | Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
 | Build a catalog from provider data or bounded supplied records | [Catalog inputs](catalog-inputs.md) |
 | Filter retained publisher topics without fetching documents | [GAO topics](gao-topics.md) |
+| Inspect retained comment fields and attachment candidates | [SpicyRegs comments](spicyregs-comments.md) |
 | Inject provider acquisition and process retained XML later | [GovInfo bill example](govinfo-bill-example.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |

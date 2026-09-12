@@ -88,6 +88,11 @@ The [GAO topic example](gao-topics.md) maps admitted source fields and evidence
 into supplied records, then applies an exact-label filter without body capture
 or a new processor type.
 
+The [SpicyRegs comment example](spicyregs-comments.md) preserves retained table
+fields, nulls, diagnostics and attachment candidates, then filters by docket ID
+before any document is fetched. Its Parquet fixture uses the provider's optional
+table dependencies; the admitted source reader remains independently usable.
+
 The existing source port streams already admitted records and renditions. The
 optional SpicyDocs adapter uses the installed provider reader; importing DocSpec
 does not import that package. Supply its exact artifact pin and independently

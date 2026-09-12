@@ -136,6 +136,22 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert gao.returncode == 0, gao.stdout + gao.stderr
+    # The comment-table example needs the provider's existing Parquet extra.
+    # Keep the core/reader-only absence checks above, and reuse this wheel/env.
+    install_tables = subprocess.run(
+        [uv, "pip", "install", "--python", str(environment_python),
+         str(runtime_rulespec), f"{runtime_spicy_docs}[public-table]"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert install_tables.returncode == 0, install_tables.stderr
+    shutil.copy2(ROOT / "examples/spicyregs_comments.py", examples_root / "spicyregs_comments.py")
+    shutil.copy2(ROOT / "tests/test_spicyregs_comments_example.py", tests_root / "test_spicyregs_comments_example.py")
+    comments = subprocess.run(
+        [environment_python, "-I", "-m", "pytest", "-q", "-o", f"pythonpath={runtime_root}",
+         str(tests_root / "test_spicyregs_comments_example.py")],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert comments.returncode == 0, comments.stdout + comments.stderr
     # The reader-only check above stays independent of acquisition. This next
     # fixture explicitly chooses the existing HTTP extra for its body fetch.
     install_http = subprocess.run(

@@ -36,9 +36,10 @@ dagster = [
 ]
 [dependency-groups]
 dev = [
-    # Exercise the source adapter against the same wheel as the optional extra.
-    # This is a development dependency; the installed core remains independent.
-    "spicy-docs==0.3.0",
+    # Exercise the source adapter and retained Parquet example against the same
+    # provider wheel. The installed core and reader extra remain independent
+    # of the provider's optional table dependencies.
+    "spicy-docs[public-table]==0.3.0",
     "httpx>=0.27,<1",
     # Optional accelerator for rulespec-artifacts' canonical encoder, which
     # imports it defensively and falls back to json.dumps when it is absent.
