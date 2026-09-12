@@ -38,8 +38,7 @@ class _ExecutionProfileBinding:
             raise IntegrityError(f"execution profile reference is invalid: {error}") from error
         if resolved != self.profile:
             raise IntegrityError("execution profile reference resolves to different profile content")
-        for reference in resolved.control_artifacts:
-            self._controls.verify(reference)
+        self._controls.verify(resolved.worker_composition)
         if handoff.worker_composition != self.profile.worker_composition:
             raise IntegrityError("execution handoff and profile name different worker compositions")
         self.require_active_deadline()

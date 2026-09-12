@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 
 from rulespec_artifacts import Producer
 from typing import Any
@@ -73,10 +72,6 @@ class _LocalRunComposition:
     delivery: StoreDeliveryService
     clock: Callable[[], str]
     content_fetcher: ContentFetcher
-
-
-def _local_processor_cache_path(roots: dict[str, Path]) -> Path:
-    return roots["reconciliation"] / "processor-results.sqlite3"
 
 
 def _worker_composition_value(composition: _LocalRunComposition) -> dict[str, Any]:
@@ -262,7 +257,7 @@ def _compose_local_run(
         accepted_failure_policy=accepted_failure_policy,
         clock=clock,
         processor_cache=(
-            LocalSqliteProcessorResultCache(_local_processor_cache_path(roots))
+            LocalSqliteProcessorResultCache(roots["reconciliation"] / "processor-results.sqlite3")
             if plan.stages.processor_ids else None
         ),
     )

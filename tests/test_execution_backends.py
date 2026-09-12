@@ -32,13 +32,11 @@ def _artifact(name: str, value: object | None = None) -> ArtifactRef:
     )
 
 
-def _profile(*, with_cache: bool = False) -> ExecutionProfile:
+def _profile() -> ExecutionProfile:
     return ExecutionProfile(
         _artifact("worker-composition"),
         1_000_000,
         2_000_000_000,
-        _artifact("cache-profile") if with_cache else None,
-        _artifact("cache-state") if with_cache else None,
     )
 
 
@@ -100,26 +98,7 @@ def _persisted_profile(tmp_path, profile: ExecutionProfile):
         artifact_id=profile.worker_composition.artifact_id,
         value={"name": "worker-composition"},
     )
-    cache_profile = None
-    cache_state = None
-    if profile.cache_profile is not None:
-        cache_profile = controls.put(
-            kind="processor-cache-profiles",
-            artifact_id=profile.cache_profile.artifact_id,
-            value={"name": "cache-profile"},
-        )
-        assert profile.cache_state is not None
-        cache_state = controls.put(
-            kind="processor-cache-states",
-            artifact_id=profile.cache_state.artifact_id,
-            value={"name": "cache-state", "profile": cache_profile.to_dict()},
-        )
-    profile = replace(
-        profile,
-        worker_composition=worker,
-        cache_profile=cache_profile,
-        cache_state=cache_state,
-    )
+    profile = replace(profile, worker_composition=worker)
     reference = controls.put(
         kind="execution-profiles",
         artifact_id=profile.profile_id,
@@ -285,12 +264,11 @@ def test_backend_verifies_the_complete_profile_reference_before_work(tmp_path) -
     assert called is False
 
 
-def test_backend_verifies_nested_cache_state_before_work(tmp_path) -> None:
-    profile = _profile(with_cache=True)
+def test_backend_verifies_worker_composition_before_work(tmp_path) -> None:
+    profile = _profile()
     controls, profile, _ = _persisted_profile(tmp_path, profile)
-    assert profile.cache_state is not None
-    tampered_state = replace(profile.cache_state, digest=sha256_digest(b"different cache state"))
-    tampered_profile = replace(profile, cache_state=tampered_state)
+    tampered_worker = replace(profile.worker_composition, digest=sha256_digest(b"different worker composition"))
+    tampered_profile = replace(profile, worker_composition=tampered_worker)
     profile_reference = controls.put(
         kind="execution-profiles",
         artifact_id=tampered_profile.profile_id,
@@ -353,13 +331,15 @@ def test_worker_profile_has_no_scheduler_claim_and_rejects_the_superseded_shape(
 
     profile = _profile()
     value = profile.to_dict()
-    assert value["formatVersion"] == "2.0"
+    assert value["formatVersion"] == "3.0"
     assert set(value) == {
         "format", "formatVersion", "profileId", "workerComposition", "maxTaskIndexBytes",
-        "deadlineEpochSeconds", "cacheProfile", "cacheState",
+        "deadlineEpochSeconds",
     }
     assert replace(profile, max_task_index_bytes=2_000_000).profile_id != profile.profile_id
     with pytest.raises(ProfileError, match="unknown format"):
-        ExecutionProfile.from_dict(value | {"formatVersion": "1.0"})
+        ExecutionProfile.from_dict(value | {"formatVersion": "2.0"})
     with pytest.raises(ProfileError, match="closed shape"):
         ExecutionProfile.from_dict(value | {"schedulerConfiguration": _artifact("scheduler").to_dict()})
+    with pytest.raises(ProfileError, match="closed shape"):
+        ExecutionProfile.from_dict(value | {"cacheProfile": None, "cacheState": None})

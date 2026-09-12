@@ -377,8 +377,7 @@ class RunReconciler:
             raise IntegrityError(f"run execution controls are invalid: {error}") from error
         if profile.profile_id != self._execution_profile_ref.artifact_id:
             raise IntegrityError("execution profile identity differs from its artifact reference")
-        for reference in profile.control_artifacts:
-            self._controls.verify(reference)
+        self._controls.verify(profile.worker_composition)
         if handoff.handoff_id != self._execution_handoff_ref.artifact_id:
             raise IntegrityError("execution handoff identity differs from its artifact reference")
         if (

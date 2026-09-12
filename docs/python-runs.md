@@ -295,8 +295,10 @@ the handoff, execution profile, task, and result to native events. The saved
 handoff remains independent of Dagster run IDs, so native reexecution can use
 the same prepared work.
 
-Execution profile format `2.0` pins the actual worker composition, task-index
-bound, deadline, and cache references. It makes no claim to preserve or enforce
+Execution profile format `3.0` pins the actual worker composition, task-index
+bound, and deadline. The processor-result cache is a disposable local lookup;
+verified immutable results remain authoritative, so no cache-description or
+cache-state artifact participates in the execution profile. It makes no claim to preserve or enforce
 Dagster's scheduler configuration. Native events and configuration provide that
 evidence. Local-run request format `3.0` accepts `maxWorkers`, `maxInFlight`,
 `maxTaskIndexBytes`, and required `deadlineEpochSeconds` execution settings.

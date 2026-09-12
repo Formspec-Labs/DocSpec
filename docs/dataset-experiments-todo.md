@@ -1015,6 +1015,18 @@ to defer a conditional item is a documented deferral, not completed implementati
   Independent code review of this slice remains pending because the subagents
   reached their usage limit; the broader cache/declaration inventory is open.
 
+  **Cache cleanup, September 12:** execution-profile format `3.0` removes
+  configuration-only cache profile/state artifacts. They did not configure or
+  restore the cache and were emitted even for capture-only runs. The existing
+  result cache and verified processor-result evidence remain; worker references
+  are verified directly at execution, recovery, reconciliation, and retention.
+  The [decision](history/2026-09-12-profile-simplification-architecture.md#remove-cache-declarations-that-do-not-control-the-cache)
+  distinguishes this removal from useful cache behavior. The focused gate
+  passed **76 tests**, including actual installed local and native Dagster runs,
+  cache hits, invalid-result repair, and cache outages. The earlier unused
+  `NullProcessorResultCache` removal is committed as `3adc7fc`. Remaining
+  declaration inventory and independent review keep D32 open.
+
 <a id="d33"></a>
 
 - [ ] **D33 · P2 · Review current file and function outliers by responsibility.**

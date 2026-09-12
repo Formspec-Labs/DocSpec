@@ -11,7 +11,7 @@ from docspec.domain.execution import (
 from docspec.domain.identity import stable_urn
 from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError
-from docspec.runtime.composition import _LocalRunComposition, _local_processor_cache_path, _worker_composition_value
+from docspec.runtime.composition import _LocalRunComposition, _worker_composition_value
 from docspec.runtime.execution import PreparedLocalRun
 
 
@@ -55,39 +55,10 @@ def _prepare_local_run(
         artifact_id=stable_urn("worker-composition", worker_composition_value),
         value=worker_composition_value,
     )
-    cache_profile_value = {
-        "format": "docspec-processor-result-cache-profile",
-        "formatVersion": "1.0",
-        "adapterId": "docspec.local-sqlite-processor-result-cache",
-        "adapterVersion": "1.0.0",
-        "lookupSemantics": "exact-reuse-key-to-immutable-result-reference",
-        "resultAuthority": "control-repository",
-        "failureBehavior": "execute-processor",
-    }
-    cache_profile = controls.put(
-        kind="processor-cache-profiles",
-        artifact_id=stable_urn("processor-cache-profile", cache_profile_value),
-        value=cache_profile_value,
-    )
-    cache_state_value = {
-        "format": "docspec-processor-result-cache-state",
-        "formatVersion": "1.0",
-        "cacheProfile": cache_profile.to_dict(),
-        "databasePath": _local_processor_cache_path(roots).as_posix(),
-        "observedAt": composition.clock(),
-        "verificationScope": "configuration-only",
-    }
-    cache_state = controls.put(
-        kind="processor-cache-states",
-        artifact_id=stable_urn("processor-cache-state", cache_state_value),
-        value=cache_state_value,
-    )
     execution_profile = ExecutionProfile(
         worker_composition,
         composition.execution_limits.max_task_index_bytes,
         composition.deadline_epoch_seconds,
-        cache_profile,
-        cache_state,
     )
     execution_profile_ref = controls.put(
         kind="execution-profiles",
@@ -134,13 +105,11 @@ def _load_prepared_local_run(
     ):
         raise IntegrityError("saved execution settings differ from the reconstructed local worker")
     expected_worker = _worker_composition_value(composition)
-    for reference in profile.control_artifacts:
-        value = composition.controls.load(reference)
-        if reference == profile.worker_composition and (
-            value != expected_worker
-            or reference.artifact_id != stable_urn("worker-composition", expected_worker)
-        ):
-            raise IntegrityError("saved worker composition differs from the reconstructed local worker")
+    if (
+        composition.controls.load(profile.worker_composition) != expected_worker
+        or profile.worker_composition.artifact_id != stable_urn("worker-composition", expected_worker)
+    ):
+        raise IntegrityError("saved worker composition differs from the reconstructed local worker")
     planned_ledger = composition.stores.planned_store_ledger(composition.plan.plan_id)
     if (
         handoff.processing_plan != composition.plan_ref

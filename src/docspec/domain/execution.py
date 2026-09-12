@@ -25,7 +25,7 @@ HANDOFF_FORMAT = "docspec-execution-handoff"
 TASK_FORMAT = "docspec-store-task"
 RESULT_FORMAT = "docspec-store-task-result"
 FORMAT_VERSION = "1.0"
-PROFILE_FORMAT_VERSION = "2.0"
+PROFILE_FORMAT_VERSION = "3.0"
 EXECUTE_AND_DELIVER_OPERATION_ID = "execute-and-deliver-store/v1"
 MAX_PROFILE_BYTES = 32 * 1024
 MAX_HANDOFF_BYTES = 64 * 1024
@@ -98,14 +98,10 @@ class ExecutionProfile:
     worker_composition: ArtifactRef
     max_task_index_bytes: int
     deadline_epoch_seconds: int
-    cache_profile: ArtifactRef | None = None
-    cache_state: ArtifactRef | None = None
 
     def __post_init__(self) -> None:
         _integer(self.max_task_index_bytes, "max_task_index_bytes")
         _integer(self.deadline_epoch_seconds, "deadline_epoch_seconds")
-        if (self.cache_profile is None) != (self.cache_state is None):
-            raise ProfileError("cache profile and initial cache state must both be present or both be absent")
         _bounded(self.to_dict(), MAX_PROFILE_BYTES, "execution profile")
 
     def identity_content(self) -> dict[str, Any]:
@@ -113,16 +109,7 @@ class ExecutionProfile:
             "workerComposition": self.worker_composition.to_dict(),
             "maxTaskIndexBytes": self.max_task_index_bytes,
             "deadlineEpochSeconds": self.deadline_epoch_seconds,
-            "cacheProfile": None if self.cache_profile is None else self.cache_profile.to_dict(),
-            "cacheState": None if self.cache_state is None else self.cache_state.to_dict(),
         }
-
-    @property
-    def control_artifacts(self) -> tuple[ArtifactRef, ...]:
-        """List every immutable control artifact required to execute this profile."""
-
-        optional = () if self.cache_profile is None else (self.cache_profile, self.cache_state)
-        return (self.worker_composition, *optional)
 
     @property
     def profile_id(self) -> str:
@@ -158,8 +145,6 @@ class ExecutionProfile:
             "workerComposition",
             "maxTaskIndexBytes",
             "deadlineEpochSeconds",
-            "cacheProfile",
-            "cacheState",
         }
         if set(value) != expected or value["format"] != PROFILE_FORMAT or value["formatVersion"] != PROFILE_FORMAT_VERSION:
             raise ProfileError("execution profile has an unknown format or invalid closed shape")
@@ -167,8 +152,6 @@ class ExecutionProfile:
             ArtifactRef.from_dict(value["workerComposition"]),
             value["maxTaskIndexBytes"],
             value["deadlineEpochSeconds"],
-            None if value["cacheProfile"] is None else ArtifactRef.from_dict(value["cacheProfile"]),
-            None if value["cacheState"] is None else ArtifactRef.from_dict(value["cacheState"]),
         )
         if value["profileId"] != result.profile_id:
             raise ProfileError("execution profile identity differs")

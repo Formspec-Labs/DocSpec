@@ -73,7 +73,7 @@ inspect these through Dagster. Local Python worker settings do not constrain
 Dagster's worker pool.
 
 DocSpec's saved execution profile describes its prepared worker, enforced task
-lookup bound, deadline, and cache references. Native events link that evidence
+lookup bound, and deadline. Native events link that evidence
 to the actual Dagster run. The handoff identity stays independent of the native
 run ID, allowing native re-execution to use the same document checkpoints.
 

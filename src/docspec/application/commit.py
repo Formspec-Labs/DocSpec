@@ -37,8 +37,7 @@ def _verify_execution_evidence(
         raise IntegrityError(f"run execution controls are invalid: {error}") from error
     if profile.profile_id != run.execution_profile.artifact_id:
         raise IntegrityError("run execution-profile identity differs from its reference")
-    for reference in profile.control_artifacts:
-        controls.verify(reference)
+    controls.verify(profile.worker_composition)
     if handoff.handoff_id != run.execution_handoff.artifact_id:
         raise IntegrityError("run execution-handoff identity differs from its reference")
     if (
