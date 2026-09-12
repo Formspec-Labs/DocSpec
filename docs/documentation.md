@@ -26,6 +26,7 @@ same change as the behavior or file move they describe.
 | Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |
 | Configure document transports and understand acquisition evidence | [Fetchers](fetchers.md) |
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
+| Understand SDK requests, item attempts, and native task retries | [Retry ownership](retry-ownership.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |

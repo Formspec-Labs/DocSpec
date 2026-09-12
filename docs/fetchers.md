@@ -54,6 +54,12 @@ clients after an individual fetch; it closes each returned stream when needed.
 Authenticated sources can use caller-supplied fetchers, keeping credentials
 outside retained configuration.
 
+`AnonymousS3ContentFetcher.from_boto3` defaults to one native SDK request per
+HEAD or GET operation. Its `sdk_total_attempts` setting includes the first call;
+additional SDK retries are an explicit choice. Injected clients own their actual
+retry behavior. See [retry ownership](retry-ownership.md) for how SDK requests,
+document attempts, and Dagster task retries are counted separately.
+
 ## What a custom fetcher must report
 
 A configured fetcher declares a nonempty `downloader_id` and a SHA-256

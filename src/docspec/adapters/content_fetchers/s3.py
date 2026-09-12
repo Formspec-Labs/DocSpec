@@ -33,7 +33,7 @@ class AnonymousS3ContentFetcherConfig:
     chunk_size: int = 1024 * 1024
     connect_timeout_seconds: int = 30
     read_timeout_seconds: int = 30
-    sdk_max_attempts: int = 3
+    sdk_total_attempts: int = 1
     max_pool_connections: int = 16
     anonymous: bool = True
 
@@ -46,7 +46,7 @@ class AnonymousS3ContentFetcherConfig:
             "chunk_size",
             "connect_timeout_seconds",
             "read_timeout_seconds",
-            "sdk_max_attempts",
+            "sdk_total_attempts",
             "max_pool_connections",
         ):
             value = getattr(self, name)
@@ -58,14 +58,14 @@ class AnonymousS3ContentFetcherConfig:
     def identity_content(self) -> dict[str, Any]:
         return {
             "format": "docspec-anonymous-s3-content-fetcher-config",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "bucket": self.bucket,
             "prefix": self.prefix,
             "regionName": self.region_name,
             "chunkSize": self.chunk_size,
             "connectTimeoutSeconds": self.connect_timeout_seconds,
             "readTimeoutSeconds": self.read_timeout_seconds,
-            "sdkMaxAttempts": self.sdk_max_attempts,
+            "sdkTotalAttempts": self.sdk_total_attempts,
             "maxPoolConnections": self.max_pool_connections,
             "anonymous": self.anonymous,
         }
@@ -162,7 +162,11 @@ class AnonymousS3ContentFetcher:
 
     @classmethod
     def from_boto3(cls, config: AnonymousS3ContentFetcherConfig) -> Self:
-        """Create an unsigned client without importing boto3 in the core package."""
+        """Create an unsigned client with native SDK total-attempt limits.
+
+        The count includes the first request for each HEAD or GET operation.
+        Manually supplied clients remain responsible for their own retries.
+        """
 
         try:
             import boto3  # type: ignore[import-not-found]
@@ -178,7 +182,7 @@ class AnonymousS3ContentFetcher:
                     signature_version=UNSIGNED,
                     connect_timeout=config.connect_timeout_seconds,
                     read_timeout=config.read_timeout_seconds,
-                    retries={"max_attempts": config.sdk_max_attempts, "mode": "standard"},
+                    retries={"total_max_attempts": config.sdk_total_attempts, "mode": "standard"},
                     max_pool_connections=config.max_pool_connections,
                 ),
             )

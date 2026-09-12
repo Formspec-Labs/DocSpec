@@ -136,8 +136,9 @@ configuration. Source-aware fetchers remain optional integrations.
 See [fetcher composition and evidence](fetchers.md) for supported routing and
 the distinction between required pins and observed transport versions.
 
-Execution limits bound the runner; the plan's `WorkLimits` bound document work.
-The runner's network allowance must cover one planned store's byte allowance.
+Execution limits bound local concurrency and the task membership index; the
+plan's `WorkLimits` bound document work. These are logical work limits, not
+network-transfer or billing limits. See [retry ownership](retry-ownership.md).
 `completed_at` is the fixed evidence timestamp for this attempt, distinct from
 the wall-clock execution deadline. Producer acceptance is never inferred from
 the input artifact's labels.

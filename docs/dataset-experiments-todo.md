@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 21 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 22 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -715,14 +715,30 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d23"></a>
 
-- [ ] **D23 · P1 · Assign retries and outcome accounting to explicit owners.**
+- [x] **D23 · P1 · Assign retries and outcome accounting to explicit owners.**
   Review nested transport, processor, and scheduler retry loops; give each layer
-  a bounded purpose under one effective run policy. **Done when:** repeated
+  a bounded purpose through explicit native and item policies. **Done when:** repeated
   attempts consume the expected budget and produce attributable outcomes.
   Acquisition observations, selected documents, scheduled tasks, and exported
   text retain their distinct counts and meanings. Share common mechanics where
   useful without forcing every failure into one universal ledger. Depends on
   D08, D16, and D20; informs D22.
+
+  **Completed September 11:** the [retry guide](retry-ownership.md) identifies
+  SDK requests, item attempts, native Dagster task retries, and source collection
+  outcomes separately. S3 configuration 2.0 uses native `total_max_attempts`
+  through `sdk_total_attempts`, defaulting to one request including the initial
+  call. It replaces the option that silently permitted an additional request.
+  Existing item loops remain because they record attributable attempts and
+  accepted document failures; Dagster retains task retry ownership. The stale
+  runner-network-allowance claim was removed. No universal transfer, billing,
+  or cross-re-execution budget is claimed. All 102 focused checks passed,
+  including real local HTTP requests through the SDK, combined item/SDK attempt
+  counts, terminal replay without requests, processor receipts, logical charging,
+  and native mapped-task retry. Independent
+  [architecture](history/2026-09-11-retry-ownership-architecture.md) and
+  [review](history/2026-09-11-retry-ownership-review.md) approved the correction
+  without another retry service.
 
 <a id="d24"></a>
 
