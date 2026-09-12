@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 29 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 30 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1235,7 +1235,7 @@ caller lives; moving imports between modules does not remove a package cycle.
 
 <a id="d45"></a>
 
-- [ ] **D45 · P1 · Package DocSpec's public APIs and optional provider integration.**
+- [x] **D45 · P1 · Package DocSpec's public APIs and optional provider integration.**
   Publish the selected D04/D09/D11/D13/D19/D21/D29 APIs through DocSpec's wheel;
   record its version, source revision, and exact wheel digest. Declare the
   optional provider integration without a circular package dependency. **Done
@@ -1247,6 +1247,17 @@ caller lives; moving imports between modules does not remove a package cycle.
   source-tool dataset loops lives in [S31](../../spicy-docs/docs/simplification-todo.md#s31).
   Use existing offline reading without requiring unrelated analytics/server
   dependencies. Do not require every optional stage at once.
+
+  **Completed September 12:** DocSpec `0.3.0` exposes the selected public APIs
+  and adds the optional `docspec[spicy-docs]` reader. Core dependencies are
+  unchanged; the optional extra selects SpicyDocs `0.2.0` without acquisition,
+  analytics, PDF, or Dagster packages. Installation and tests share the same
+  provider wheel in `vendor/`. The package gate passed 12 tests, including
+  isolated core and provider installations. A separate clean installation of
+  the built release passed dependency and public-import checks. The
+  [wheel qualification](history/2026-09-12-wheel-qualification.md) records exact
+  build and dependency identities. This is a locally built and qualified wheel,
+  not an external registry publication. Final independent review remains D39.
 
 <a id="d46"></a>
 
