@@ -13,8 +13,10 @@ Legacy readers and fixture reproduction are not requirements.
 | Source catalog 1.0 | `source_catalog_schemas()` in `src/docspec/domain/source_catalog.py`; serialize with `canonical_json_file_bytes` | `source_catalog/1.0/` | `tests/test_package_boundary.py` compares all three files byte for byte with domain generation and checks the wheel |
 | Scale profile 2.0 and scale result 1.0 | Dataclasses in `domain/scale.py` plus explicit constraints in `tools/generate_scale_profile_schema.py` | `scale_profile/2.0/`, `scale_result/1.0/` | `tests/test_machine_files.py` compares generator output, `conformance/` copies, and installed-source copies; package-boundary checks inspect the wheel |
 
-Profiles under `src/docspec/storage_profiles/` are maintained machine descriptions, not generated
-schemas. `tests/test_machine_files.py` checks their implementation strings,
+Profiles under `src/docspec/storage_profiles/` are maintained machine descriptions
+in `docspec-storage-profile` format `2.0`, not generated schemas. The format
+records concrete settings and omits unenforced governance labels.
+`tests/test_machine_files.py` checks their implementation strings,
 roles, references, and conformance mapping. Update descriptions deliberately
 when supported behavior changes, not merely because an internal file moved.
 

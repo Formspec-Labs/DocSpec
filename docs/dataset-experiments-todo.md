@@ -1004,6 +1004,17 @@ to defer a conditional item is a documented deferral, not completed implementati
   identity. Native Dagster configuration is authoritative for managed workers.
   The broader profile/governance/cache review remains open.
 
+  **Profile cleanup, September 12:** storage-description format `2.0` removes
+  `ProfileGovernance`, five repeated placeholder labels and the registry
+  allowlist/API arguments. Those values were parsed and hashed but never
+  enforced. Physical settings, limits, dependencies, secret checks and the
+  implemented plan policies remain. The architect approved this narrow
+  [decision](history/2026-09-12-profile-simplification-architecture.md).
+  All 89 focused profile, conformance, CLI, workspace, worker and package checks
+  passed, including the actual isolated installed runtime/export probe.
+  Independent code review of this slice remains pending because the subagents
+  reached their usage limit; the broader cache/declaration inventory is open.
+
 <a id="d33"></a>
 
 - [ ] **D33 · P2 · Review current file and function outliers by responsibility.**

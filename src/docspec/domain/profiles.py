@@ -20,57 +20,6 @@ class ProfileRole(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ProfileGovernance:
-    """Policy identities a physical profile requires its deployment to resolve."""
-
-    access_policy_id: str
-    encryption_policy_id: str
-    region_policy_id: str
-    retention_policy_id: str
-    redistribution_policy_id: str
-
-    def __post_init__(self) -> None:
-        for label, value in (
-            ("access policy", self.access_policy_id),
-            ("encryption policy", self.encryption_policy_id),
-            ("region policy", self.region_policy_id),
-            ("retention policy", self.retention_policy_id),
-            ("redistribution policy", self.redistribution_policy_id),
-        ):
-            require_text(value, label)
-            if not value.startswith("urn:"):
-                raise ProfileError(f"{label} identity must be a URN")
-
-    def to_dict(self) -> dict[str, str]:
-        return {
-            "accessPolicyId": self.access_policy_id,
-            "encryptionPolicyId": self.encryption_policy_id,
-            "regionPolicyId": self.region_policy_id,
-            "retentionPolicyId": self.retention_policy_id,
-            "redistributionPolicyId": self.redistribution_policy_id,
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> ProfileGovernance:
-        expected = {
-            "accessPolicyId",
-            "encryptionPolicyId",
-            "regionPolicyId",
-            "retentionPolicyId",
-            "redistributionPolicyId",
-        }
-        if not isinstance(value, dict) or set(value) != expected:
-            raise ProfileError("profile governance has an invalid closed shape")
-        return cls(
-            access_policy_id=value["accessPolicyId"],
-            encryption_policy_id=value["encryptionPolicyId"],
-            region_policy_id=value["regionPolicyId"],
-            retention_policy_id=value["retentionPolicyId"],
-            redistribution_policy_id=value["redistributionPolicyId"],
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class ProfileDescription:
     role: ProfileRole
     profile_id: str
@@ -81,7 +30,6 @@ class ProfileDescription:
     media_types: tuple[str, ...]
     capabilities: tuple[str, ...]
     limits: dict[str, Any]
-    governance: ProfileGovernance
     requires: tuple[str, ...] = ()
     verifier_id: str = "docspec-profile-verifier/v1"
 
@@ -98,8 +46,6 @@ class ProfileDescription:
             ("verifier_id", self.verifier_id),
         ):
             require_text(value, label)
-        if not isinstance(self.governance, ProfileGovernance):
-            raise ProfileError("profile governance must use ProfileGovernance")
         if not isinstance(self.configuration, dict) or not isinstance(self.limits, dict):
             raise ProfileError("profile configuration and limits must be JSON objects")
         if not self.schemas or not self.media_types or not self.capabilities:
@@ -151,7 +97,6 @@ class ProfileDescription:
             "mediaTypes": list(self.media_types),
             "capabilities": list(self.capabilities),
             "limits": self.limits,
-            "governance": self.governance.to_dict(),
             "requires": list(self.requires),
             "verifierId": self.verifier_id,
         }

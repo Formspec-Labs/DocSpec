@@ -1,6 +1,6 @@
 {
   "format": "docspec-storage-profile",
-  "formatVersion": "1.0",
+  "formatVersion": "2.0",
   "profileId": "urn:docspec:profile:result-delivery:durable-dataset:1",
   "role": "ResultDeliveryProfile",
   "version": "1.0.0",
@@ -27,13 +27,6 @@
   "limits": {
     "deliveryUnit": "one-bounded-document-store",
     "recordLimitsSource": "active-document-store-work-limits"
-  },
-  "governancePolicies": {
-    "accessPolicyId": "urn:docspec:policy:access:deployment-supplied:1",
-    "encryptionPolicyId": "urn:docspec:policy:encryption:deployment-supplied:1",
-    "regionPolicyId": "urn:docspec:policy:region:deployment-supplied:1",
-    "retentionPolicyId": "urn:docspec:policy:retention:plan-pinned:1",
-    "redistributionPolicyId": "urn:docspec:policy:redistribution:source-catalog-pinned:1"
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",

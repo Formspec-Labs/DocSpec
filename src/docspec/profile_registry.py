@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from docspec.domain.identity import identity_digest, parse_closed_json, thaw_json
-from docspec.domain.profiles import ProfileDescription, ProfileGovernance, ProfileRole, ProfileSet
+from docspec.domain.profiles import ProfileDescription, ProfileRole, ProfileSet
 from docspec.errors import ProfileError
 from docspec.domain.security import require_secret_free
 
@@ -26,20 +26,9 @@ _FIELDS = {
     "physicalMediaTypes",
     "capabilities",
     "limits",
-    "governancePolicies",
     "compatibility",
     "verifier",
 }
-
-DEFAULT_GOVERNANCE_POLICY_IDS = frozenset(
-    {
-        "urn:docspec:policy:access:deployment-supplied:1",
-        "urn:docspec:policy:encryption:deployment-supplied:1",
-        "urn:docspec:policy:region:deployment-supplied:1",
-        "urn:docspec:policy:retention:plan-pinned:1",
-        "urn:docspec:policy:redistribution:source-catalog-pinned:1",
-    }
-)
 
 BUILTIN_PROFILE_DIRECTORY = Path(__file__).with_name("storage_profiles")
 
@@ -72,7 +61,6 @@ def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
             "physicalMediaTypes",
             "capabilities",
             "limits",
-            "governancePolicies",
             "compatibility",
         )
     } | {"verifierTestId": value["verifier"]["testId"]}
@@ -111,31 +99,17 @@ class ProfileRegistry:
         return self.select(LOCAL_PROFILE_IDS)
 
     @classmethod
-    def from_directory(
-        cls,
-        root: Path,
-        *,
-        governance_policy_ids: frozenset[str] = DEFAULT_GOVERNANCE_POLICY_IDS,
-    ) -> ProfileRegistry:
+    def from_directory(cls, root: Path) -> ProfileRegistry:
         root = Path(root)
         if not root.is_dir() or root.is_symlink():
             raise ProfileError(f"profile directory is missing or unsafe: {root}")
         files = sorted(root.glob("*.json"))
         if not files:
             raise ProfileError("profile directory contains no JSON descriptions")
-        return cls(
-            tuple(
-                cls.from_file(path, governance_policy_ids=governance_policy_ids)
-                for path in files
-            )
-        )
+        return cls(tuple(cls.from_file(path) for path in files))
 
     @staticmethod
-    def from_file(
-        path: Path,
-        *,
-        governance_policy_ids: frozenset[str] = DEFAULT_GOVERNANCE_POLICY_IDS,
-    ) -> RegisteredProfile:
+    def from_file(path: Path) -> RegisteredProfile:
         """Load and verify one closed machine-readable profile description."""
 
         path = Path(path)
@@ -145,7 +119,7 @@ class ProfileRegistry:
         if not isinstance(value, dict) or set(value) != _FIELDS:
             raise ProfileError(f"{path.name} has an invalid closed profile shape")
         require_secret_free(value, label=f"profile {path.name}")
-        if value["format"] != "docspec-storage-profile" or value["formatVersion"] != "1.0":
+        if value["format"] != "docspec-storage-profile" or value["formatVersion"] != "2.0":
             raise ProfileError(f"{path.name} has an unknown profile format")
         if value["implementationStatus"] not in {"specified", "implemented"}:
             raise ProfileError(f"{path.name} has an unknown implementation status")
@@ -184,11 +158,6 @@ class ProfileRegistry:
         verifier = value["verifier"]
         if not isinstance(verifier, dict) or set(verifier) != {"status", "testId"}:
             raise ProfileError(f"{path.name} has an invalid verifier")
-        governance = ProfileGovernance.from_dict(value["governancePolicies"])
-        selected_policy_ids = frozenset(governance.to_dict().values())
-        unknown_policies = selected_policy_ids - governance_policy_ids
-        if unknown_policies:
-            raise ProfileError(f"{path.name} names unknown governance policies: {sorted(unknown_policies)}")
         description = ProfileDescription(
             role=ProfileRole(value["role"]),
             profile_id=value["profileId"],
@@ -199,7 +168,6 @@ class ProfileRegistry:
             media_types=tuple(media_types),
             capabilities=tuple(sorted(name for name, enabled in capabilities.items() if enabled)),
             limits=limits,
-            governance=governance,
             requires=tuple(requires),
         )
         if description.configuration_digest != value["configurationDigest"]:

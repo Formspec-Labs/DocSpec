@@ -73,13 +73,17 @@ Use the same request, input, resource, policy, and result checks as uncached
 execution. A cache outage can cause more work; it must not make an invalid result
 acceptable. [Cache tests](../tests/test_processor_cache.py) cover this boundary.
 
-## Add an execution backend without moving processing rules
+## Inject implementations through Dagster resources
 
-An [execution backend](../src/docspec/ports/execution_backend.py) takes an
-`ExecutionHandoff` and its `StoreTask` population and returns `StoreTaskResult`
-objects. The [task model](../src/docspec/domain/execution.py) carries immutable
-references and identity pins. Serialized dispatchers exchange those messages;
-worker-local Python objects and document bytes do not belong in task messages.
+[`build_dagster_definitions`](../src/docspec/adapters/dagster.py) accepts native
+resource definitions. The `docspec_runtime` resource supplies a prepared run;
+other resources inject its fetcher, processors, workspace and settings. Native
+Dagster configuration controls execution, retries and cancellation. See the
+[installed example](dagster-experiment.md) for resource construction and cleanup.
+
+The [task model](../src/docspec/domain/execution.py) carries immutable references
+and identity pins. Worker-local Python objects and document bytes stay inside
+their resources. The small direct local runner uses the same task handler.
 
 The [profile registry](../src/docspec/profile_registry.py) validates and selects
 machine descriptions; it does not import or instantiate their implementations.
@@ -88,6 +92,12 @@ services. Keep profile implementation strings, actual composition, and
 installed-package checks aligned when moving code. Keep optional imports at the
 adapter that selects them. A valid profile object alone does not demonstrate
 that a deployed worker enforces its declared resource limits.
+
+Storage-description format `2.0` retains concrete implementation settings and
+limits. It removes the five placeholder governance labels: those labels never
+enforced access, encryption, location, retention or redistribution. Configure
+deployment controls through the actual storage implementation. DocSpec's
+implemented plan data-use and retention policies remain separate.
 
 Keep task scheduling separate from document meaning. A successful task result
 identifies durable output; reconciliation still verifies it against the complete

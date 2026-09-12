@@ -1,6 +1,6 @@
 {
   "format": "docspec-storage-profile",
-  "formatVersion": "1.0",
+  "formatVersion": "2.0",
   "profileId": "urn:docspec:profile:document-store-persistence:local-json:1",
   "role": "DocumentStorePersistenceProfile",
   "version": "1.0.0",
@@ -31,13 +31,6 @@
     "maxPlannedStoreCount": 10000000,
     "maxPlannedStoreLedgerBytes": 4294967296,
     "maxPlannedStoreRecordBytes": 65536
-  },
-  "governancePolicies": {
-    "accessPolicyId": "urn:docspec:policy:access:deployment-supplied:1",
-    "encryptionPolicyId": "urn:docspec:policy:encryption:deployment-supplied:1",
-    "regionPolicyId": "urn:docspec:policy:region:deployment-supplied:1",
-    "retentionPolicyId": "urn:docspec:policy:retention:plan-pinned:1",
-    "redistributionPolicyId": "urn:docspec:policy:redistribution:source-catalog-pinned:1"
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",

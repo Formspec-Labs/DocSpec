@@ -58,7 +58,7 @@ from docspec.domain.processors import (
     ProcessorResourceKind,
     ProcessorSet,
 )
-from docspec.domain.profiles import ProfileDescription, ProfileGovernance, ProfilePin, ProfileRole, ProfileSet
+from docspec.domain.profiles import ProfileDescription, ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import CatalogCommitReceipt, DeliveryReceipt, RunReceipt
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
@@ -112,7 +112,6 @@ __all__ = [
     "ProcessorResourceKind",
     "ProcessorSet",
     "ProfileDescription",
-    "ProfileGovernance",
     "ProfilePin",
     "ProfileRole",
     "ProfileSet",

@@ -30,7 +30,6 @@ _IDENTITY_FIELDS = (
     "capabilities",
     "compatibility",
     "configuration",
-    "governancePolicies",
     "implementationId",
     "implementationModule",
     "limits",

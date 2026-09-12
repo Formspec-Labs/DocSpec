@@ -6,7 +6,7 @@ import pytest
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.release import RELEASE_LOGICAL_SCHEMA
 from docspec.errors import ProfileError
-from docspec.profile_registry import DEFAULT_GOVERNANCE_POLICY_IDS, ProfileRegistry
+from docspec.profile_registry import ProfileRegistry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,34 +50,22 @@ def test_profile_pin_identifies_the_complete_machine_description(tmp_path: Path)
     )
 
 
-def test_profile_governance_is_closed_declared_and_identity_bearing(tmp_path: Path) -> None:
-    original_path = ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json"
-    original = ProfileRegistry.from_file(original_path)
-    governance = original.description.governance
-
-    assert governance.access_policy_id.startswith("urn:docspec:policy:access:")
-    assert governance.encryption_policy_id.startswith("urn:docspec:policy:encryption:")
-    assert governance.region_policy_id.startswith("urn:docspec:policy:region:")
-    assert governance.retention_policy_id.startswith("urn:docspec:policy:retention:")
-    assert governance.redistribution_policy_id.startswith("urn:docspec:policy:redistribution:")
-
-    changed_value = json.loads(original_path.read_text(encoding="utf-8"))
-    test_region_policy = "urn:docspec:policy:region:test-deployment:1"
-    changed_value["governancePolicies"]["regionPolicyId"] = test_region_policy
-    changed_path = tmp_path / "changed-governance.json"
-    changed_path.write_text(json.dumps(changed_value), encoding="utf-8")
-    with pytest.raises(ProfileError, match="unknown governance policies"):
-        ProfileRegistry.from_file(changed_path)
-    changed = ProfileRegistry.from_file(
-        changed_path,
-        governance_policy_ids=DEFAULT_GOVERNANCE_POLICY_IDS | {test_region_policy},
-    )
-    assert changed.description_digest != original.description_digest
-
-    changed_value["governancePolicies"]["unknownPolicyId"] = "urn:docspec:policy:unknown:1"
-    changed_path.write_text(json.dumps(changed_value), encoding="utf-8")
-    with pytest.raises(ProfileError, match="closed shape"):
-        ProfileRegistry.from_file(changed_path)
+@pytest.mark.parametrize("obsolete", ["version", "governance"])
+def test_profile_registry_refuses_superseded_descriptions(tmp_path: Path, obsolete: str) -> None:
+    path = ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json"
+    value = json.loads(path.read_text(encoding="utf-8"))
+    assert value["formatVersion"] == "2.0"
+    assert "governancePolicies" not in value
+    if obsolete == "version":
+        value["formatVersion"] = "1.0"
+        reason = "unknown profile format"
+    else:
+        value["governancePolicies"] = {"accessPolicyId": "urn:test:unenforced"}
+        reason = "closed profile shape"
+    changed = tmp_path / "profile.json"
+    changed.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ProfileError, match=reason):
+        ProfileRegistry.from_file(changed)
 
 
 @pytest.mark.parametrize("field", ("logicalSchemas", "physicalMediaTypes"))
