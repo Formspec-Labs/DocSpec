@@ -577,14 +577,13 @@ class LocalJsonlRecordStorage:
         partition_value: str | None = None,
     ) -> dict[str, Any] | None:
         require_text(record_id, "record_id")
-        root = self._load_root(reference)
-        schema = self._schema_from_root(root)
-        partitions = None
+        root, schema, policy = self._verified_root(reference)
+        members = root["members"]
         if partition_value is not None:
             require_text(partition_value, "partition_value")
-            policy = self._policy_from_root(root)
-            partitions = frozenset({self._bucket(partition_value, policy.bucket_count)})
-        for record in self.stream(reference, partitions=partitions):
+            partition = self._bucket(partition_value, policy.bucket_count)
+            members = [member for member in members if member["partition"] == partition]
+        for record in self._stream_selected_members(members, schema, policy):
             identity = record[schema.identity_field]
             if identity == record_id:
                 return record
@@ -598,10 +597,10 @@ class LocalJsonlRecordStorage:
         partition_value: str,
     ) -> Iterator[dict[str, Any]]:
         require_text(partition_value, "partition_value")
-        root = self._load_root(reference)
-        policy = self._policy_from_root(root)
+        root, schema, policy = self._verified_root(reference)
         partition = self._bucket(partition_value, policy.bucket_count)
-        yield from self.stream(reference, partitions=frozenset({partition}))
+        members = [member for member in root["members"] if member["partition"] == partition]
+        yield from self._stream_selected_members(members, schema, policy)
 
     def identity_field(self, reference: LayerRef) -> str:
         _, schema, _ = self._verified_root(reference)

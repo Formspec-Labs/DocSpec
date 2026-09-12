@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 import docspec.adapters.storage.files as storage_module
+import docspec.adapters.storage.records as records_module
 from docspec.adapters.storage import (
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
@@ -173,6 +174,44 @@ def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) 
     (storage.root / root["members"][0]["path"]).write_bytes(b'{"recordId":"a"}\n')
     with pytest.raises(IntegrityError):
         storage.verify(layer)
+
+
+@pytest.mark.parametrize("operation", ["lookup", "lookup-partition", "scan"])
+@pytest.mark.parametrize("corruption", ["root", "member"])
+def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str, corruption: str,
+) -> None:
+    storage = LocalJsonlRecordStorage(tmp_path / "records")
+    record = {"recordId": "a", "sourceItemId": "source-a", "value": 1}
+    layer = storage.write_layer(
+        [record], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
+    )
+    root_path = storage.root / layer.state_ref
+    root = json.loads(root_path.read_bytes())
+    root_reads = []
+    read_exact = records_module._read_exact
+
+    def observed_read(root, locator):
+        if locator == layer.state_ref:
+            root_reads.append(locator)
+        return read_exact(root, locator)
+
+    monkeypatch.setattr(records_module, "_read_exact", observed_read)
+
+    def read():
+        if operation == "scan":
+            return list(storage.scan_partition_value(layer, "source-a"))
+        partition_value = "source-a" if operation == "lookup-partition" else None
+        return [storage.lookup(layer, "a", partition_value=partition_value)]
+
+    assert read() == [record]
+    assert root_reads == [layer.state_ref]
+    path = root_path if corruption == "root" else storage.root / root["members"][0]["path"]
+    original = path.read_bytes()
+    path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+    with pytest.raises(IntegrityError):
+        read()
+    assert root_reads == [layer.state_ref, layer.state_ref]
 
 
 def _committed_catalog_state(tmp_path: Path):
