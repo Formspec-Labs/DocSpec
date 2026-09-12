@@ -1206,15 +1206,17 @@ to defer a conditional item is a documented deferral, not completed implementati
   processor-addition clean comparison. Local checks are recorded there;
   broader D39 acceptance remains open.
 
-  **Latest local qualification, September 12:** the combined suite at `0cfae80`
-  passed **1,065 tests**, with one live integration test deselected, in 234.67
-  seconds and no warnings. This includes the optional provider package, catalog
-  growth, retained publisher-body processing, simplified profiles, catalog
+  **Latest local qualification, September 12:** the combined suite for
+  implementation `86badb3` passed **1,064 tests**, with one live integration test
+  deselected, in 236.26 seconds and no warnings. This includes the optional
+  SpicyDocs `0.3.0` reader, catalog growth, retained bill/XML processing, provider
+  source refusals, shared CourtListener parsing, simplified profiles, catalog
   admission through one verifier, and installed native Dagster recovery. The
-  lower test count reflects removal of the superseded command-receipt checks;
-  current catalog behavior retains direct coverage under D35. Ruff and lock
-  consistency passed; 414 maintained-guide local file targets passed at the
-  preceding milestone. Independent review of the newest implementation is
+  preceding bill handoff at `03df308` passed 1,066 tests; the parser change replaces
+  redundant source-grammar tests with DocSpec candidate, refusal and selection
+  checks. Ruff, lock consistency and 477 maintained-document local file targets
+  passed. The installed provider's 92 package files match the shared wheel bytes.
+  Independent review of the newest implementation is
   pending because all three reviewers reached their usage limit; these local
   checks are not a substitute for that review or remote CI.
 
