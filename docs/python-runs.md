@@ -250,7 +250,8 @@ an identical plan in the same stores recovers that work; it does not create an
 independent identical trial. See [experiment identities](experiments.md).
 
 External schedulers can use the same prepared object. Keep it open until all
-workers have stopped, then release its temporary task lookup:
+workers have stopped, then release its temporary task lookup and admitted base
+reader:
 
 ```python
 with prepared:
@@ -260,6 +261,13 @@ with prepared:
     )
     run_reference = prepared.reconcile(results)
 ```
+
+Tasks in one prepared execution share a fully admitted reader for their exact
+retained base. They still check the record members, bytes and receipts they use.
+Closing the prepared object discards the reader; later execution and newly
+constructed workers admit the base again. This avoids checking the entire base
+for every task. It does not continuously check unrelated base objects while a
+run is open; fresh admission and final retention perform complete checks.
 
 For Dagster, pass native resource definitions to `build_dagster_definitions`.
 The `docspec_runtime` resource yields the prepared run directly; its native

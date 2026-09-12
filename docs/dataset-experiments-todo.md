@@ -1256,6 +1256,20 @@ to defer a conditional item is a documented deferral, not completed implementati
   retries. Ruff, lock consistency and all 522 maintained-document local targets
   passed. CI configuration is updated; no remote CI run is claimed.
 
+  **Measured repetition corrected, September 12:** a 128-document diagnostic
+  profile recorded 128 full admissions of the same retained base, consuming
+  161.344 seconds of its instrumented 214.627-second run. One prepared execution
+  now shares one successfully admitted base reader and clears it on close.
+  Fresh workers re-admit; used record members, blobs and receipts keep their
+  existing checks. The [architecture decision](history/2026-09-12-base-reader-lifetime-architecture.md)
+  and [independent review](history/2026-09-12-base-reader-lifetime-review.md)
+  describe that observation boundary and approve the correction.
+  All **12** new cases passed; the complete strict suite then passed **1,095
+  tests**, with one live integration test deselected, in 274.61 seconds. Ruff,
+  lock consistency and maintained-document local targets passed.
+  The profile establishes repeated work, not unprofiled performance or the
+  proposed 4,096-document capacity. Representative capacity remains open.
+
 <a id="d38"></a>
 
 - [x] **D38 · P0 · Prove the complete experiment loop through installed packages.**

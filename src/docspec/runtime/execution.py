@@ -32,7 +32,8 @@ class PreparedLocalRun:
     ``execute_task`` to a scheduler. Reconcile its result stream through this
     same object. Reconstruct it with ``prepare_local_run(..., handoff_ref=...)``.
     Direct task callers must close this object after their workers stop, or use
-    it as a context manager. Closing releases scratch; later use rebuilds it.
+    it as a context manager. Closing releases scratch and the admitted base
+    reader; later work rebuilds scratch and re-admits its base when needed.
     """
 
     execution_profile: ExecutionProfile
@@ -66,8 +67,11 @@ class PreparedLocalRun:
         self.close()
 
     def close(self) -> None:
-        """Release task-admission scratch after active workers have stopped."""
-        self._membership.close()
+        """Release scratch and the admitted base after active workers have stopped."""
+        try:
+            self._membership.close()
+        finally:
+            self._composition.executor.close()
 
     def _require_handoff(self, handoff: ExecutionHandoff) -> None:
         if handoff != self.handoff:

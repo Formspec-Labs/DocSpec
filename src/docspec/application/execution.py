@@ -6,6 +6,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from threading import Lock
 from typing import Any
 
 from docspec.domain.content import (
@@ -32,7 +33,7 @@ from docspec.domain.processors import (
     ProcessorResult,
     ProcessorSet,
 )
-from docspec.domain.references import ArtifactRef, StoreRef
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.content_fetcher import ContentFetcher
@@ -86,6 +87,8 @@ class StoreExecutionService:
         self._controls = controls
         self._stores = stores
         self._document_catalog = document_catalog
+        self._base_reader: tuple[DocumentReleaseRef, DocumentCatalogReader] | None = None
+        self._base_reader_lock = Lock()
         self._blobs = blobs
         self._fetcher = fetcher
         self._extractor = extractor
@@ -179,7 +182,21 @@ class StoreExecutionService:
             return None
         if plan.base_release is None:
             raise IntegrityError("prefix reuse requires a pinned base release")
-        return self._document_catalog.open_reader(plan.base_release)
+        # The prepared worker owns one admission of this immutable view. Each
+        # task still verifies the record members, controls and blobs it uses.
+        with self._base_reader_lock:
+            if self._base_reader is None:
+                reader = self._document_catalog.open_reader(plan.base_release)
+                self._base_reader = (plan.base_release, reader)
+            reference, reader = self._base_reader
+            if reference != plan.base_release:
+                raise IntegrityError("execution service base release differs from its admitted reference")
+            return reader
+
+    def close(self) -> None:
+        """Release the admitted base view after workers stop; future work re-admits it."""
+        with self._base_reader_lock:
+            self._base_reader = None
 
     def verify_configuration(self) -> ProcessingPlan:
         """Check effective implementations before executing or reusing saved work."""
