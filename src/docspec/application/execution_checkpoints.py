@@ -10,7 +10,7 @@ from docspec.domain.jobs import DocumentEntry, EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import RetryPolicy
 from docspec.domain.processors import ProcessorResult
-from docspec.domain.references import ArtifactRef
+from docspec.domain.references import ArtifactRef, BlobRef
 from docspec.errors import IntegrityError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.control_repository import ControlRepository
@@ -77,6 +77,13 @@ class EntryCheckpointVerifier:
         if entry.requested_stages != plan.stages:
             raise IntegrityError("document entry stages differ from the processing plan")
         loaded_receipts = load_stage_receipts(self._controls, entry.stage_receipts)
+        verified_blobs: set[BlobRef] = set()
+
+        def verify_blob(reference: BlobRef) -> None:
+            # Share identical bytes only within this admission, never across checkpoints.
+            if reference not in verified_blobs:
+                self._blobs.verify(reference)
+                verified_blobs.add(reference)
 
         files = {item.file_id: item for item in entry.captured_files}
         if len(files) != len(entry.captured_files):
@@ -97,7 +104,7 @@ class EntryCheckpointVerifier:
                 or (candidate.expected_size is not None and captured.blob.byte_size != candidate.expected_size)
             ):
                 raise IntegrityError("checkpoint captured file names a different source item")
-            self._blobs.verify(captured.blob)
+            verify_blob(captured.blob)
 
         representations = {item.representation_id: item for item in entry.representations}
         if len(representations) != len(entry.representations):
@@ -118,7 +125,7 @@ class EntryCheckpointVerifier:
                 for mapping in representation.evidence_mappings
             ):
                 raise IntegrityError("checkpoint representation evidence exceeds its captured file")
-            self._blobs.verify(representation.blob)
+            verify_blob(representation.blob)
 
         extraction_receipts, segmentation_receipts = verify_stage_receipt_outputs(
             entry.captured_files, entry.representations, entry.segments, loaded_receipts,
@@ -169,7 +176,7 @@ class EntryCheckpointVerifier:
                 raise IntegrityError("checkpoint segment has no reversible representation mapping") from error
             if segment.evidence != expected_evidence:
                 raise IntegrityError("checkpoint segment evidence differs from its representation mapping")
-            self._blobs.verify(segment.content)
+            verify_blob(segment.content)
 
         for receipt in segmentation_receipts:
             if (receipt.segmenter_id, receipt.policy_digest) != selected_segmenters[receipt.representation_id]:
