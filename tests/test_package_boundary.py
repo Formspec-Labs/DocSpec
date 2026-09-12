@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import json
 import re
 import shutil
 import subprocess
@@ -513,8 +514,11 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
 
     # Reuse the documented source fixture, but execute the typed API from the
     # installed wheel, outside the checkout and without a caller JSON request.
-    shutil.copy2(ROOT / "examples/offline_demo.py", tmp_path / "offline_demo.py")
-    shutil.copytree(ROOT / "examples/offline", tmp_path / "offline")
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    for filename in ("offline_demo.py", "phrase_match_processor.py"):
+        shutil.copy2(ROOT / "examples" / filename, examples / filename)
+    shutil.copytree(ROOT / "examples/offline", examples / "offline")
     shutil.copy2(ROOT / "tests/support/installed_runtime_probe.py", tmp_path / "runtime_probe.py")
     runtime_result = subprocess.run(
         [environment_python, "-I", str(tmp_path / "runtime_probe.py"), sha256_digest(wheel.read_bytes())],
@@ -525,4 +529,19 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
     )
     assert runtime_result.returncode == 0, runtime_result.stderr
     assert "retained capture, processed it without refetching, recovered" in runtime_result.stdout
+    # Only copied example files enter the isolated interpreter's import path.
+    example_result = subprocess.run(
+        [environment_python, "-I", "-c",
+         "import runpy, sys; "
+         f"sys.path.insert(0, {str(tmp_path)!r}); "
+         f"sys.argv = ['examples.offline_demo', '--output', {str(tmp_path / 'reference-experiment')!r}]; "
+         "runpy.run_module('examples.offline_demo', run_name='__main__')"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert example_result.returncode == 0, example_result.stderr
+    example_summary = json.loads(example_result.stdout)
+    assert example_summary["catalogItems"] == 4
+    assert example_summary["initialFailures"] == 1 and example_summary["repairedFailures"] == 0
+    assert example_summary["matchCounts"] == {"original": 4, "case-sensitive": 3, "resource-v2": 5}
+    assert example_summary["savedHandoffRecovered"] and example_summary["cleanOutputValuesAgree"]
     assert '"profileCount":10' in profile_list.stdout

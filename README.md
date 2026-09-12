@@ -77,10 +77,10 @@ Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
 [documentation index](docs/documentation.md) links to maintained guides for
 catalog evidence, extensions, and operations.
 Then run the [offline walkthrough](docs/offline-walkthrough.md). It builds a
-catalog from one synthetic record, injects a local fetcher, extracts and segments
-one document, and commits and verifies the application release. It needs no
-network during execution. It does not demonstrate a later processing attempt,
-portable export, or a large dataset.
+catalog of four supplied records, retains captures, repairs a missing-file
+failure, and compares a pinned phrase processor's settings and reference data.
+Later processing reuses captured bytes. It needs no network during execution;
+portable export and large datasets have separate qualification.
 
 ```sh
 uv sync --frozen --python 3.12

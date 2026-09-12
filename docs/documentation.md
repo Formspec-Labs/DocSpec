@@ -15,7 +15,8 @@ same change as the behavior or file move they describe.
 | --- | --- |
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
-| Build a synthetic catalog and verify one local application release | [Offline walkthrough](offline-walkthrough.md) |
+| Capture, repair, process and compare a small supplied-record experiment | [Offline walkthrough](offline-walkthrough.md) |
+| Implement a pinned local processor with literal quote evidence | [Phrase matching example](phrase-matching-example.md) |
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
 | Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
 | Build a catalog from provider data or bounded supplied records | [Catalog inputs](catalog-inputs.md) |
@@ -34,9 +35,9 @@ same change as the behavior or file move they describe.
 A catalog can be used without document acquisition or search. The Python runtime
 retains capture, extraction, segmentation, and processing results for later use.
 The [inspection API and commands](inspection.md) explain completed and unfinished
-work through existing checkpoints and receipts. The offline walkthrough exercises one
-application release, without demonstrating every intended stopping point or
-the complete iterative workflow.
+work through existing checkpoints and receipts. The offline walkthrough exercises
+capture-first work, failure repair, later processing and retained alternatives.
+Broader scale and acceptance exercises remain separate.
 
 Choose the output guide before choosing a verifier. Application release state
 and portable document bundles currently both use version `2.0`, with different

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 13 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 15 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -225,12 +225,24 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d05"></a>
 
-- [ ] **D05 · P0 · Establish a small reference experiment.** Extend the offline
+- [x] **D05 · P0 · Establish a small reference experiment.** Extend the offline
   walkthrough with several documents, a selected exclusion, a recoverable failure,
   and a useful processor. Build it through D04 as a running example while the
   remaining items land. **Done when:** the installed package demonstrates initial
   capture and a later processing attempt, with understandable output and explicit
   remaining limitations. D38 supplies the complete acceptance exercise.
+
+  **Completed September 11:** the [offline walkthrough](offline-walkthrough.md)
+  uses four supplied documents, real local-file acquisition, an explicit run
+  exclusion, a retained missing-file failure, and selective repair. It processes
+  retained captures later, recovers a saved handoff, and compares configuration
+  and resource alternatives with a clean result. The old synthetic source and
+  fetcher classes and manual CLI setup were removed; current callers use public
+  supplied records and local transport. All 33 focused checks passed, including
+  the actual copied example running against an isolated installed wheel.
+  Independent [architecture](history/2026-09-11-reference-experiment-architecture.md)
+  and [code review](history/2026-09-11-reference-experiment-review.md) approved the
+  bounded example. D38's complete growth/interruption exercise remains open.
 
 ## 2. Build catalogs and acquire inputs through clear interfaces
 
@@ -428,7 +440,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d14"></a>
 
-- [ ] **D14 · P0 · Demonstrate a meaningful optional processor.** Add a small
+- [x] **D14 · P0 · Demonstrate a meaningful optional processor.** Add a small
   example that produces inspectable results beyond byte/word statistics. A
   processor using pinned RefSpec resources is a suitable candidate; choose the
   actual use and resource before committing to an integration. **Done when:**
@@ -436,6 +448,19 @@ to defer a conditional item is a documented deferral, not completed implementati
   resource pin, and run a new attempt. Domain interpretation stays in the
   processor; local fixtures are clearly distinguished from live-resource proof.
   Depends on D13.
+
+  **Completed September 11:** the example-scoped
+  [phrase matcher](phrase-matching-example.md) accepts exact pinned reference
+  bytes through the existing processor interface. It returns literal quotes,
+  original segment byte offsets, and unchanged enclosing source evidence.
+  Case and resource changes produce four, three, and five matches in the
+  walkthrough while reusing captures, representations, and segments. Bounds
+  refuse overflow; an empty match list remains a successful result. The 33-case
+  focused/installed gate checks real result admission, Unicode and overlap,
+  resource identity, invalid inputs, bounded output, and the full example.
+  Ruff and documentation link checks passed. Independent review approved it;
+  this synthetic vocabulary does not qualify a live RefSpec resource or add a
+  production classification service to DocSpec.
 
 <a id="d15"></a>
 

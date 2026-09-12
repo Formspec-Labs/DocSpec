@@ -1,0 +1,3 @@
+Access reviews protect account records.
+
+The team documents an access review before changing permissions.

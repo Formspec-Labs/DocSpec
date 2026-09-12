@@ -1,49 +1,69 @@
-"""Run the documented contributor command with network connections forbidden."""
-
-from __future__ import annotations
+"""Run the documented reference experiment with network access forbidden."""
 
 import json
 import runpy
 import socket
 import sys
-from pathlib import Path
+from collections import Counter
 
 import pytest
 
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
+from docspec.processing import ParagraphSegmenter, TextExtractor
+from examples.phrase_match_processor import PhraseMatchProcessor
 
-def test_documented_example_publishes_and_verifies_without_network(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
-) -> None:
+
+def test_reference_experiment_repairs_and_compares_without_repeating_upstream_work(tmp_path, monkeypatch, capfd):
     def reject_network(*args, **kwargs):
         pytest.fail("the contributor example attempted a network connection")
 
     monkeypatch.setattr(socket.socket, "connect", reject_network)
     monkeypatch.setattr(socket, "create_connection", reject_network)
+    fetches, extractions, segmentations, invocations = [], [], [], []
+
+    def observe(cls, method, calls):
+        original = getattr(cls, method)
+
+        def counted(self, *args, **kwargs):
+            calls.append(args[0])
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(cls, method, counted)
+
+    observe(LocalFileContentFetcher, "fetch", fetches)
+    observe(TextExtractor, "extract", extractions)
+    observe(ParagraphSegmenter, "segment", segmentations)
+    observe(PhraseMatchProcessor, "process", invocations)
     output = tmp_path / "example"
     monkeypatch.setattr(sys, "argv", ["examples.offline_demo", "--output", str(output)])
     with pytest.raises(SystemExit) as completed:
         runpy.run_module("examples.offline_demo", run_name="__main__")
     assert completed.value.code == 0
     summary = json.loads(capfd.readouterr().out)
-    assert summary == {
-        "verdict": "pass",
-        "recordCounts": {
-            "dispositions": 1,
-            "failures": 0,
-            "files": 1,
-            "receipts": 2,
-            "representations": 1,
-            "segments": 1,
-            "source-items": 1,
-        },
+    assert summary["verdict"] == "pass"
+    assert summary["catalogItems"] == 4 and summary["excludedDocuments"] == 1
+    assert summary["initialFailures"] == 1 and summary["repairedFailures"] == 0
+    assert summary["matchCounts"] == {"original": 4, "case-sensitive": 3, "resource-v2": 5}
+    assert summary["processedSegments"] == 6
+    assert summary["savedHandoffRecovered"] and summary["cleanOutputValuesAgree"]
+    # Two initial captures + one absent-file refusal, one repair acquisition,
+    # then three fresh comparison acquisitions. No attempt touches the exclusion.
+    assert Counter(candidate.locator for candidate in fetches) == {
+        "privacy.txt": 2, "security.txt": 2, "late-arrival.txt": 3,
     }
-    verification = json.loads((output / "verification.json").read_text())
-    reference_bytes = (output / "release-reference.json").read_bytes()
-    assert verification["reference"] == json.loads(reference_bytes)
-    assert (output / "implementation.json").is_file()
-
-    # Repeating the documented command refuses before changing the first run.
+    assert len(extractions) == len(segmentations) == 6
+    assert len(invocations) == 24  # six segments, original + two alternatives + clean run
+    original = json.loads((output / "processed.json").read_bytes())
+    resource = json.loads((output / "resource-v2.json").read_bytes())
+    assert original["plan"]["planId"] != resource["plan"]["planId"]
+    assert original["release"] != resource["release"]
+    assert resource["inspection"]["work"]["counts"]["newSegments"] == 0
+    preview = json.loads((output / "catalog-preview.json").read_bytes())
+    assert sum(not item["selectedInRun"] for item in preview["items"]) == 1
+    comparisons = json.loads((output / "comparisons.json").read_bytes())
+    assert all(value["configurationChanges"] and value["result"]["changeCount"] for value in comparisons.values())
+    saved = (output / "experiment-summary.json").read_bytes()
     with pytest.raises(SystemExit) as repeated:
         runpy.run_module("examples.offline_demo", run_name="__main__")
     assert repeated.value.code == 2
-    assert (output / "release-reference.json").read_bytes() == reference_bytes
+    assert (output / "experiment-summary.json").read_bytes() == saved

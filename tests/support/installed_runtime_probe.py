@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-import runpy
 import sys
 
 from rulespec_artifacts import Producer
 
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
-from docspec.domain.identity import identity_digest
+from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.plans import WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.errors import IntegrityError, ProfileError
@@ -23,7 +23,7 @@ from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
 from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, prepare_local_run
 from docspec.source_catalog import (
-    FederalRegisterCatalogPolicy,
+    SourceCatalogCandidate,
     SuppliedRecordCatalogPolicy,
     SuppliedRecordSource,
 )
@@ -31,8 +31,17 @@ from docspec.workspace import LocalWorkspace
 
 
 def main() -> None:
-    example = runpy.run_path(str(Path.cwd() / "offline_demo.py"))
-    source = example["ExampleSource"]()
+    source_root = Path.cwd() / "examples" / "offline"
+    source_bytes = (source_root / "notice.html").read_bytes()
+    namespace = "urn:example:installed-markup"
+    source = SuppliedRecordSource(({
+        "recordId": "notice", "sourceIssuedVersion": "fixture1", "title": "Local contributor example",
+        "metadata": {"synthetic": True}, "candidateRenditions": [SourceCatalogCandidate(
+            "body", "text/html", "immutable-object", "notice.html",
+            expected_sha256=sha256_digest(source_bytes), expected_byte_size=len(source_bytes),
+        ).to_dict()],
+    },), source_system_id=namespace, source_system_version="1", source_state_scope="complete-snapshot",
+        max_records=1, max_bytes=4096)
     implementation_id = "urn:docspec:installed-runtime-test:" + sys.argv[1]
     source_producer = Producer(
         "docspec", implementation_id, "urn:docspec:verifier:source-catalog", "1.0.0", implementation_id,
@@ -41,7 +50,7 @@ def main() -> None:
     workspace = LocalWorkspace(Path.cwd() / "dataset")
     catalog = build_local_catalog(
         (source,), workspace,
-        policy=FederalRegisterCatalogPolicy(example["SOURCE_SYSTEM"]),
+        policy=SuppliedRecordCatalogPolicy(namespace, "1"),
         catalog_id="urn:docspec:installed-runtime-test:catalog", producer=source_producer,
         max_scratch_bytes=8 * 1024**2,
     )
@@ -87,20 +96,20 @@ def main() -> None:
 
     extractor, segmenter = InstalledExtractor(), InstalledSegmenter()
 
-    class CountingFetcher(example["ExampleFetcher"]):
+    class CountingFetcher(LocalFileContentFetcher):
         calls = 0
 
         def fetch(self, candidate, **kwargs):
             self.calls += 1
             return super().fetch(candidate, **kwargs)
 
-    fetcher = CountingFetcher(source)
+    fetcher = CountingFetcher(source_root)
     experiment_settings = dict(
         limits=WorkLimits(2, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
         source_catalog_producer=source_producer,
         document_release_producer=release_producer,
         deadline_epoch_seconds=4_000_000_000,
-        completed_at=example["COMPLETED_AT"],
+        completed_at="2026-09-11T12:00:00Z",
         content_fetcher=fetcher,
     )
     with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", **experiment_settings) as capture:
@@ -149,7 +158,7 @@ def main() -> None:
     representation = Representation.from_dict(tuple(inspected.records("representations"))[0]["payload"])
     source_bytes = b"".join(inspected.read_blob(captured.blob, max_bytes=captured.blob.byte_size))
     content = b"".join(inspected.read_blob(representation.blob, max_bytes=representation.blob.byte_size))
-    assert source_bytes == source.payload
+    assert source_bytes == (source_root / "notice.html").read_bytes()
     assert b"<html" not in content and "café".encode() in content
     assert (representation.extractor_id, representation.configuration_digest) == extractor.selected_identity(captured)
     assert representation.extractor_id != extractor.extractor_id
@@ -182,15 +191,15 @@ def main() -> None:
         else:
             raise AssertionError("changed stage settings reused a saved handoff")
 
-    original_digest = fetcher.configuration_digest
-    fetcher.configuration_digest = identity_digest({"differentConfiguration": True})
+    original_chunk_size = fetcher.chunk_size
+    fetcher.chunk_size //= 2
     try:
         prepare_local_run(plan, workspace, handoff_ref=prepared.handoff_ref, **settings)
     except IntegrityError:
         pass
     else:
         raise AssertionError("changed fetcher configuration reused a saved handoff")
-    fetcher.configuration_digest = original_digest
+    fetcher.chunk_size = original_chunk_size
     changed_workspace = LocalWorkspace(
         workspace.root, overrides={"reconciliation": workspace.root / "different-reconciliation"},
     )

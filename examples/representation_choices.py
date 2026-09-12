@@ -15,21 +15,19 @@ from typing import Any
 
 from rulespec_artifacts import Producer
 
+from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.identity import sha256_digest
 from docspec.domain.plans import WorkLimits
 from docspec.domain.references import BlobRef
 from docspec.processing import HtmlExtractor, ParagraphSegmenter
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import open_local_inspection, prepare_local_experiment
+from docspec.runtime import build_local_catalog, open_local_inspection, prepare_local_experiment
 from docspec.source_catalog import (
-    FederalRegisterCatalogPolicy,
-    LocalSourceCatalogStore,
-    SourceCatalogBuilder,
-    SourceCatalogBuildRequest,
-    SqliteCatalogPolicyWorkspace,
+    SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource,
 )
 from docspec.workspace import LocalWorkspace
-from examples.offline_demo import COMPLETED_AT, INPUT_ROOT, SOURCE_SYSTEM, ExampleFetcher, ExampleSource
+COMPLETED_AT = "2026-09-11T12:00:00Z"
+INPUT_ROOT = Path(__file__).with_name("offline")
 
 
 def run_example(output: Path, representation: str = "visible-text") -> dict[str, Any]:
@@ -38,19 +36,24 @@ def run_example(output: Path, representation: str = "visible-text") -> dict[str,
         raise ValueError("choose markup or visible-text")
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    source = ExampleSource()
+    payload = (INPUT_ROOT / "notice.html").read_bytes()
+    namespace = "urn:docspec:example:representation-source"
+    source = SuppliedRecordSource(({
+        "recordId": "notice", "sourceIssuedVersion": "fixture1", "title": "Local contributor example",
+        "metadata": {"synthetic": True}, "candidateRenditions": [SourceCatalogCandidate(
+            "body", "text/html", "immutable-object", "notice.html",
+            expected_sha256=sha256_digest(payload), expected_byte_size=len(payload),
+        ).to_dict()],
+    },), source_system_id=namespace, source_system_version="1", source_state_scope="complete-snapshot",
+        max_records=1, max_bytes=4096)
     implementation = "urn:docspec:example:representation-choices:" + sha256_digest(Path(__file__).read_bytes())
     source_producer = Producer(
         "docspec", implementation, "urn:docspec:verifier:source-catalog", "1.0.0", implementation,
     )
     release_producer = replace(source_producer, verifier_id="urn:docspec:verifier:document-release")
     workspace = LocalWorkspace(output, {"sourceContent": INPUT_ROOT})
-    catalog = SourceCatalogBuilder(
-        store=LocalSourceCatalogStore(workspace.roots["sourceCatalog"]),
-        policy=FederalRegisterCatalogPolicy(SOURCE_SYSTEM),
-        request=SourceCatalogBuildRequest("urn:docspec:example:representation-catalog", source_producer),
-        workspace_factory=SqliteCatalogPolicyWorkspace,
-    ).build((source,))
+    catalog = build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
+        catalog_id="urn:docspec:example:representation-catalog", producer=source_producer, max_scratch_bytes=8 * 1024**2)
     extractor = VisibleTextExtractor() if representation == "visible-text" else HtmlExtractor()
     segmenter = VisibleTextBlockSegmenter() if representation == "visible-text" else ParagraphSegmenter()
     with prepare_local_experiment(
@@ -59,7 +62,7 @@ def run_example(output: Path, representation: str = "visible-text") -> dict[str,
         source_catalog_producer=source_producer, document_release_producer=release_producer,
         deadline_epoch_seconds=4_000_000_000, completed_at=COMPLETED_AT,
         stop_after="segmentation",
-        content_fetcher=ExampleFetcher(source), extractor=extractor, segmenter=segmenter,
+        content_fetcher=LocalFileContentFetcher(INPUT_ROOT), extractor=extractor, segmenter=segmenter,
     ) as prepared:
         release = prepared.retain(prepared.run())
         plan = prepared.plan

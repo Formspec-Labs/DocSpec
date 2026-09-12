@@ -154,7 +154,7 @@ def test_visible_experiment_recovery_uses_saved_stage_pins_without_refetch(tmp_p
     actual_prepare = representation_choices.prepare_local_experiment
     prepared_call = {}
     fetches = []
-    actual_fetch = representation_choices.ExampleFetcher.fetch
+    actual_fetch = representation_choices.LocalFileContentFetcher.fetch
 
     def observe_prepare(*args, **kwargs):
         prepared = actual_prepare(*args, **kwargs)
@@ -166,7 +166,7 @@ def test_visible_experiment_recovery_uses_saved_stage_pins_without_refetch(tmp_p
         return actual_fetch(self, candidate, **kwargs)
 
     monkeypatch.setattr(representation_choices, "prepare_local_experiment", observe_prepare)
-    monkeypatch.setattr(representation_choices.ExampleFetcher, "fetch", observe_fetch)
+    monkeypatch.setattr(representation_choices.LocalFileContentFetcher, "fetch", observe_fetch)
     representation_choices.run_example(tmp_path / "visible")
     initial = prepared_call["prepared"]
     settings = {**prepared_call["kwargs"], "handoff_ref": initial.handoff_ref}
