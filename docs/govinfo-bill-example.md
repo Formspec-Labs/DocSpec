@@ -10,8 +10,8 @@ document capture, processing, evidence, and reuse.
 From this checkout, use the pinned provider wheel and a new absolute output path:
 
 ```sh
-uv run --frozen --extra dagster --extra s3 \
-  --find-links ./vendor --with './vendor/spicy_docs-0.3.0-py3-none-any.whl[acquisition]' \
+uv run --frozen \
+  --find-links ./vendor --with './vendor/spicy_docs-0.6.0-py3-none-any.whl[acquisition]' \
   python -m examples.govinfo_bills \
   --package-id BILLS-119hr6028ih --output /tmp/my-bill-experiment
 ```
@@ -41,6 +41,8 @@ The workspace also retains its ordinary content-addressed blobs and records.
 The bill XML stays byte-for-byte intact. The normalized text is a separate
 representation; each segment points back to an enclosing span of original XML.
 Phrase offsets refer to segment bytes, not exact offsets within XML markup.
+The source version is the native BILLS package ID. Capture hashes remain evidence
+pins; the fetcher leaves transport version absent instead of inventing one.
 
 ## Change the experiment
 

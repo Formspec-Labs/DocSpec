@@ -112,6 +112,46 @@ def test_metadata_filter_reuses_catalog_and_does_not_treat_null_or_empty_as_text
     assert {p: (p.stat().st_mtime_ns, p.read_bytes()) for p in output.rglob("*") if p.is_file()} == before
 
 
+def test_mixed_attachment_formats_keep_original_positions_and_exact_parquet(tmp_path, monkeypatch):
+    import polars as pl
+
+    rows = pl.read_parquet(BytesIO(example.fixture_partition())).to_dicts()
+    formats = [None, {"url": example.ATTACHMENT, "format": "pdf", "size": 123},
+               {"url": 42, "format": "txt"},
+               {"url": example.ATTACHMENT.replace(".pdf", ".json"), "format": "JSON"}]
+    attachments = json.dumps([{"title": "Supporting comment", "formats": formats}])
+    rows[0]["attachments_json"] = attachments
+    frame = pl.DataFrame(rows, schema={name: pl.String for name in rows[0]})
+    buffer = BytesIO()
+    frame.write_parquet(buffer)
+    partition = buffer.getvalue()
+    monkeypatch.setattr(example, "fixture_partition", lambda **kwargs: partition)
+    output = tmp_path / "mixed"
+    report = example.run_example(output)
+    item = next(row for row in _catalog(report, output).iter_mappings()
+                if row["documentId"] == "EPA-2026-0001-0001")
+    metadata = item["sourceNativeFacts"][0]["fields"]["metadata"]
+    assert metadata["record"]["record"]["attachments_json"] == attachments
+    assert metadata["record"]["fieldDiagnostics"]
+    assert [row["sourceField"] for row in metadata["renditions"]] == [
+        "attachments_json[0].formats[1]", "attachments_json[0].formats[3]",
+    ]
+    assert [row["renditionId"] for row in item["candidateRenditions"]] == [
+        "attachment-0000-0001", "attachment-0000-0003",
+    ]
+    assert [row["mediaType"] for row in item["candidateRenditions"]] == ["application/pdf", "application/json"]
+    assert (output / "input.parquet").read_bytes() == partition
+    source = SpicyDocsSourceNativeAdapter.from_local(Path(report["sourceRoot"]),
+        blob_root=Path(report["sourceBlobRoot"]), profile=SPICY_REGS_PUBLIC_COMMENT_PROFILE,
+        logical_id=report["sourceResult"]["logicalId"], artifact_digest=report["sourceResult"]["artifactDigest"],
+        accepted_verifier_implementation_ids=frozenset({
+            example.NAMESPACE + ":provider:" + report["provider"]["installedFilesSha256"],
+        }))
+    pack = source.read_evidence(metadata["evidence"]["evidenceBlobRef"], max_bytes=example.MAX_BYTES)
+    with ZipFile(BytesIO(pack)) as archive:
+        assert archive.read(PARTITION_ENTRY) == partition
+
+
 def test_invalid_row_refuses_the_partition_without_fabricating_a_partial_catalog(tmp_path):
     output = tmp_path / "invalid"
     report = example.run_example(output, invalid_row=True)

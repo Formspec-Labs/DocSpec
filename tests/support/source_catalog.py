@@ -51,7 +51,7 @@ def record(identity: str, *, malformed_rin: bool = False, agencies: bool = True)
         "sourceRecordId": identity,
         "scopeId": "federal-register-documents",
         "schemaName": "federal-register-document",
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1",
         "schemaDigest": _SHA_C,
         "record": {
             "document_number": identity,

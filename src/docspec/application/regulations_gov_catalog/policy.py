@@ -10,6 +10,7 @@ from docspec.application.catalog_policy import (
     http_url as _http_url,
     utf16_key as _utf16_key,
 )
+from docspec.application.federal_register_catalog import _RENDITION_ORDER as _FEDERAL_REGISTER_RENDITION_ORDER
 from docspec.domain.identity import canonical_json_bytes, closed_mapping, sha256_digest
 from docspec.domain.source_catalog import (
     CatalogDisposition,
@@ -41,6 +42,7 @@ from .records import (
     _DOCUMENT_SCHEMA,
     _DOCUMENT_SCOPE,
     _FEDERAL_REGISTER_SCHEMA,
+    _FEDERAL_REGISTER_SCHEMA_VERSION,
     _FEDERAL_REGISTER_SCOPE,
     _NORMALIZED_FIELDS,
     _PUBLISHER_WITHHOLDING_CODES,
@@ -81,24 +83,25 @@ class RegulationsGovCatalogPolicy:
     _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:regulations-gov:1"
-    policy_version = "1.2.0"
+    policy_version = "1.3.0"
 
     def __post_init__(self) -> None:
         expected = (
-            (self.document_input, _DOCUMENT_SCOPE, _DOCUMENT_SCHEMA),
-            (self.docket_input, _DOCKET_SCOPE, _DOCKET_SCHEMA),
-            (self.comment_input, _COMMENT_SCOPE, _COMMENT_SCHEMA),
+            (self.document_input, _DOCUMENT_SCOPE, _DOCUMENT_SCHEMA, _SCHEMA_VERSION),
+            (self.docket_input, _DOCKET_SCOPE, _DOCKET_SCHEMA, _SCHEMA_VERSION),
+            (self.comment_input, _COMMENT_SCOPE, _COMMENT_SCHEMA, _SCHEMA_VERSION),
             (
                 self.federal_register_input,
                 _FEDERAL_REGISTER_SCOPE,
                 _FEDERAL_REGISTER_SCHEMA,
+                _FEDERAL_REGISTER_SCHEMA_VERSION,
             ),
         )
-        for selector, scope_id, schema_name in expected:
+        for selector, scope_id, schema_name, schema_version in expected:
             if selector is not None and (
                 selector.scope_id != scope_id
                 or selector.schema_name != schema_name
-                or selector.schema_version != _SCHEMA_VERSION
+                or selector.schema_version != schema_version
             ):
                 raise ValueError("Regulations.gov catalog input selector differs from its source family")
         names = dict(self.agency_names)
@@ -167,6 +170,9 @@ class RegulationsGovCatalogPolicy:
             },
             "rinNormalization": "federal-register-rin-syntax/1",
             "renditionPreference": list(_RENDITION_ORDER),
+            "federalRegisterRenditionPreference": list(_FEDERAL_REGISTER_RENDITION_ORDER),
+            "federalRegisterMaxCandidates": 1,
+            "federalRegisterAcquisitionFailureFallback": False,
             "sourceKindRenditionPreference": {
                 "comments": ["regulations-gov-file", "regulations-gov-record"],
                 "dockets": ["regulations-gov-record"],
@@ -329,6 +335,9 @@ class RegulationsGovCatalogPolicy:
                 "requiredNormalizedFieldsBySourceKind",
                 "rinNormalization",
                 "renditionPreference",
+                "federalRegisterRenditionPreference",
+                "federalRegisterMaxCandidates",
+                "federalRegisterAcquisitionFailureFallback",
                 "sourceKindRenditionPreference",
                 "joins",
                 "samplingSourceKinds",
@@ -341,6 +350,11 @@ class RegulationsGovCatalogPolicy:
             "Regulations.gov catalog policy configuration",
             error=ValueError,
         )
+        if (
+            type(configuration["federalRegisterMaxCandidates"]) is not int
+            or type(configuration["federalRegisterAcquisitionFailureFallback"]) is not bool
+        ):
+            raise ValueError("Regulations.gov catalog policy differs from the installed policy version")
 
         def selector(raw: object) -> SourceInputSelector | None:
             return None if raw is None else SourceInputSelector.from_dict(raw)

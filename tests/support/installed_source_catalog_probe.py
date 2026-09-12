@@ -124,6 +124,7 @@ def document(number: str, *, changed: bool) -> dict[str, object]:
     return {
         "agencies": [],
         "body_html_url": None,
+        "full_text_xml_url": None,
         "document_number": number,
         "html_url": f"https://www.federalregister.gov/d/{number}",
         "pdf_url": None,
@@ -471,7 +472,7 @@ def regulations_policy() -> RegulationsGovCatalogPolicy:
             FEDERAL_REGISTER_PROFILE.source_system_version,
             "federal-register-documents",
             "federal-register-document",
-            "1.0",
+            "1.1",
         ),
         {"EPA": "Environmental Protection Agency"},
         comment_input=SourceInputSelector(
@@ -561,12 +562,14 @@ assert public_catalog.summary.disposition_counts["failed"] == len(DOCUMENT_IDS)
 # A successful provider record enters the ordinary public runtime. The real
 # HTTPS fetcher reads controlled publisher bytes once; later processing uses
 # the retained capture, including its exact source and byte evidence.
-body_url = "https://www.federalregister.gov/documents/full_text/2026-00001.html"
-body = (RUN_ROOT / "notice.html").read_bytes()
+body_url = "https://www.federalregister.gov/documents/full_text/2026-00001.xml"
+body = b"<RULE><HD>Notice</HD><P>Public access.</P><P>Machine readable documents.</P></RULE>"
 body_fixture = publish_federal_source(RUN_ROOT / "source-with-body", changed_id=None, records=(
     document(DOCUMENT_IDS[0], changed=False) | {
         "agencies": [{"slug": "environmental-protection-agency", "name": "Environmental Protection Agency"}],
-        "body_html_url": body_url,
+        "full_text_xml_url": body_url,
+        "body_html_url": body_url.replace(".xml", ".html"),
+        "pdf_url": body_url.replace(".xml", ".pdf"),
     },
 ))
 body_source = SpicyDocsSourceNativeAdapter.from_local(
@@ -581,13 +584,18 @@ body_catalog = build_local_catalog((body_source,), body_workspace,
     policy=FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
     catalog_id="urn:docspec:installed-body-catalog", producer=catalog_producer(), max_scratch_bytes=16 * 1024**2)
 assert body_catalog.summary.disposition_counts["selected"] == 1
+body_item, = open_local_catalog(body_catalog.reference, body_workspace, producer=catalog_producer()).iter_mappings()
+assert body_item["candidateRenditions"][0]["locator"] == body_url
+assert body_item["candidateRenditions"][0]["mediaType"] == "application/xml"
+assert body_item["sourceNativeFacts"][0]["fields"]["body_html_url"] == body_url.replace(".xml", ".html")
+assert body_item["sourceNativeFacts"][0]["fields"]["pdf_url"] == body_url.replace(".xml", ".pdf")
 requests = []
 
 
 def serve_body(request):
     assert request.method == "GET" and str(request.url) == body_url
     requests.append(str(request.url))
-    return httpx.Response(200, stream=httpx.ByteStream(body), headers={"Content-Type": "text/html; charset=utf-8"})
+    return httpx.Response(200, stream=httpx.ByteStream(body), headers={"Content-Type": "application/xml; charset=utf-8"})
 
 
 retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)

@@ -79,6 +79,21 @@ the resulting member contains its sealed identity and settings. Use the
 Catalog build and verification commands live in
 [`cli/source_catalog.py`](../src/docspec/cli/source_catalog.py).
 
+Federal Register policy `1.1.0` accepts source schema `1.1` and selects the first
+usable family: publisher-stated XML, body HTML, landing-page HTML, then PDF.
+All offered families and source fields remain evidence; `html_url` remains the
+normalized landing-page reference. HTML/PDF are alternatives when XML is absent,
+not automatic retries after an XML download fails. No XML URL is constructed.
+Regulations.gov policy `1.3.0` still uses raw schema `1.0` for its own records and
+requires schema `1.1` for its optional Federal Register lookup. Previous policy
+members are refused; rebuild them under the installed policy before new runs.
+
+Regulations.gov files take priority over a joined Federal Register document.
+When that lookup supplies the body, the catalog selects one representation using
+the same XML-first order. Every usable offer stays in the catalog evidence;
+only the selected body enters the fetch list. Ambiguous Federal Register filings
+remain unmatched. A failed download does not trigger another format automatically.
+
 ## Preserve evidence across acquisition, extraction, and segmentation
 
 A [content fetcher](../src/docspec/ports/content_fetcher.py) supplies a stream

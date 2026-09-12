@@ -15,11 +15,11 @@ dependencies = [
 
 [tool.uv.sources]
 rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" }
-spicy-docs = { path = "vendor/spicy_docs-0.3.0-py3-none-any.whl" }
+spicy-docs = { path = "vendor/spicy_docs-0.6.0-py3-none-any.whl" }
 
 [project.optional-dependencies]
 spicy-docs = [
-    "spicy-docs==0.3.0",
+    "spicy-docs==0.6.0",
 ]
 http = [
     "httpx>=0.27,<1",
@@ -40,7 +40,7 @@ dagster = [
 dev = [
     # Exercise the source adapter and retained Parquet example against the same
     # provider wheel. DuckDB and Arrow also power retained record storage.
-    "spicy-docs[public-table]==0.3.0",
+    "spicy-docs[public-table]==0.6.0",
     "httpx>=0.27,<1",
     # Optional accelerator for rulespec-artifacts' canonical encoder, which
     # imports it defensively and falls back to json.dumps when it is absent.

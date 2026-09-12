@@ -18,27 +18,24 @@ from rulespec_artifacts import Producer
 from spicy_docs.sources.congress.bill_acquisition import BillAcquirer, BillAcquisitionBudget
 from spicy_docs.sources.congress.bill_status import BillIdentity, bill_status_locator, bill_xml_locator, select_bill_xml
 
-from docspec.domain.identity import canonical_json_bytes, identity_digest, sha256_digest
+from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.plans import WorkLimits
 from docspec.domain.policies import RetryPolicy
-from docspec.domain.processors import ProcessorResourceIdentity, ProcessorResourceKind
 from docspec.domain.references import BlobRef
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment
+from docspec.runtime import build_local_catalog, open_local_catalog, prepare_local_experiment
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
 from docspec.workspace import LocalWorkspace
 from examples.provider_identity import provider_installation
-from examples.govinfo_bill_fetcher import BillContentFetcher, capture_facts, retain_refusal
-from examples.phrase_match_processor import PhraseMatchProcessor
+from examples.govinfo_bill_fetcher import BillContentFetcher
+from examples.dataset_example_support import (
+    capture_facts, finish_run, matches, phrase_processor, retain_refusal, write_json,
+)
 
 FIXTURES = Path(__file__).with_name("bill_fixtures")
 FIXTURE_IDENTITY = BillIdentity(119, "hr", 6028)
 FIXTURE_TIME = datetime(2026, 9, 12, 12, tzinfo=UTC)
 BILL_HEADINGS = {"header": 2}
-
-
-def _write(path: Path, value: object) -> None:
-    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def fixture_transport(requests: list[str]) -> httpx.MockTransport:
@@ -58,41 +55,6 @@ def fixture_transport(requests: list[str]) -> httpx.MockTransport:
                               headers={"Content-Type": "application/xml"})
 
     return httpx.MockTransport(respond)
-
-
-def _processor(revision: str, phrases: tuple[str, ...], retry: RetryPolicy, output: Path) -> PhraseMatchProcessor:
-    raw = canonical_json_bytes({"terms": [{"id": phrase.replace(" ", "-"), "label": phrase,
-                                            "phrases": [phrase]} for phrase in phrases]})
-    (output / f"phrases-{revision}.json").write_bytes(raw)
-    return PhraseMatchProcessor(ProcessorResourceIdentity(
-        "urn:docspec:example:bill-phrases", ProcessorResourceKind.REFERENCE_DATA, revision, sha256_digest(raw),
-    ), raw, retry_policy=retry)
-
-
-def _finish(prepared, workspace, source_producer, release_producer, name: str, output: Path, views: ExitStack):
-    run = prepared.run()
-    with open_local_inspection(prepared.plan, workspace, document_release_producer=release_producer,
-                                 source_catalog_producer=source_producer, run_ref=run) as view:
-        report = {
-            "plan": prepared.plan.to_dict(), "run": run.to_dict(), "result": None,
-            "handoff": prepared.handoff_ref.to_dict(), "inspection": view.summary(),
-        }
-        _write(output / f"{name}.json", report)
-        failures = list(view.records("failures"))
-        if failures:
-            _write(output / f"{name}-failures.json", failures)
-            raise RuntimeError(f"{name} recorded {len(failures)} failure(s); inspect {output / f'{name}-failures.json'} "
-                               f"and {output / 'source-evidence'}")
-    result = prepared.retain(run)
-    view = views.enter_context(open_local_inspection(prepared.plan, workspace, document_release_producer=release_producer,
-                                 source_catalog_producer=source_producer, release_ref=result))
-    _write(output / f"{name}.json", report | {"result": result.to_dict(), "inspection": view.summary()})
-    return result, view
-
-
-def _matches(view, processor: PhraseMatchProcessor) -> list[dict]:
-    return [match for row in view.records("derived:" + processor.description.processor_id)
-            for match in row["payload"]["value"]["matches"]]
 
 
 def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTURE_IDENTITY,
@@ -121,7 +83,7 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             (evidence / "bill-status.xml").write_bytes(status.capture.body)
             status_receipt = {"capture": capture_facts(status.capture), "requestCount": status.request_count,
                               "budget": asdict(status.budget), "provider": provider, "synthetic": not live}
-            _write(evidence / "bill-status-acquisition.json", status_receipt)
+            write_json(evidence / "bill-status-acquisition.json", status_receipt)
             try:
                 selected, rendition = select_bill_xml(status.status, package_id)
             except Exception as error:
@@ -130,7 +92,7 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             namespace = "urn:docspec:example:govinfo-bills"
             source = SuppliedRecordSource(({
                 "recordId": f"{identity.congress}/{identity.bill_type}/{identity.number}",
-                "sourceIssuedVersion": package_id + ":" + status.capture.sha256,
+                "sourceIssuedVersion": package_id,
                 "title": status.status.title,
                 "metadata": {"billStatus": asdict(status.status), "statusAcquisition": status_receipt,
                              "selectedPackageId": package_id, "selectedTextVersion": asdict(selected)},
@@ -143,6 +105,7 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
                 "provider": provider, "example": sha256_digest(Path(__file__).read_bytes()),
                 "fetcher": sha256_digest(Path(__file__).with_name("govinfo_bill_fetcher.py").read_bytes()),
                 "processor": sha256_digest(Path(__file__).with_name("phrase_match_processor.py").read_bytes()),
+                "support": sha256_digest(Path(__file__).with_name("dataset_example_support.py").read_bytes()),
             })
             source_producer = Producer("docspec-example", implementation,
                                       "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
@@ -152,10 +115,12 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
                 catalog_id="urn:docspec:example:govinfo-bills:catalog", producer=source_producer,
                 max_scratch_bytes=16 * 1024**2)
             rows = list(open_local_catalog(catalog.reference, workspace, producer=source_producer).iter_mappings())
-            _write(output / "catalog-preview.json", {"reference": catalog.reference.to_dict(), "items": rows})
+            write_json(output / "catalog-preview.json", {"reference": catalog.reference.to_dict(), "items": rows})
             retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
-            first = _processor("1", ("public access",), retry, output)
-            second = _processor("2", ("public access", "machine readable"), retry, output)
+            first = phrase_processor("1", ("public access",), retry, output,
+                                     resource_id="urn:docspec:example:bill-phrases")
+            second = phrase_processor("2", ("public access", "machine readable"), retry, output,
+                                      resource_id="urn:docspec:example:bill-phrases")
             fetcher = BillContentFetcher(acquirer, status, package_id, evidence, clock=clock)
             settings = {
                 "limits": WorkLimits(1, 2 * 1024**2, 500, 500, 1000, 32 * 1024**2, 120, 1),
@@ -168,7 +133,7 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             run_time = clock().isoformat().replace("+00:00", "Z")
             with prepare_local_experiment(catalog.reference, workspace, processors=(first,),
                                           completed_at=run_time, **settings) as prepared:
-                base, initial = _finish(prepared, workspace, source_producer, release_producer, "processed", output, views)
+                base, initial = finish_run(prepared, workspace, source_producer, release_producer, "processed", output, views)
 
         # The provider client is now closed. This independent run must reuse the
         # retained capture/representation/segments when only its phrases change.
@@ -176,7 +141,7 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
         with prepare_local_experiment(catalog.reference, workspace, processors=(second,), base_release=base,
                                       completed_at=run_time,
                                       **settings) as prepared:
-            retained, later = _finish(prepared, workspace, source_producer, release_producer, "reprocessed", output, views)
+            retained, later = finish_run(prepared, workspace, source_producer, release_producer, "reprocessed", output, views)
         layers = ("files", "representations", "segments")
         preserved = all([row["payload"] for row in initial.records(kind)] ==
                         [row["payload"] for row in later.records(kind)] for kind in layers)
@@ -195,13 +160,13 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             "offeredFormats": sum(len(version.formats) for version in status.status.text_versions),
             "selectedXmlUrl": rendition.url, "capturedSha256": captured["blob"]["digest"],
             "capturedByteSize": len(original), "visibleText": visible.decode("utf-8"),
-            "matches": {"first": _matches(initial, first), "later": _matches(later, second)},
+            "matches": {"first": matches(initial, first), "later": matches(later, second)},
             "retainedResult": retained.to_dict(), "originalLayersPreserved": preserved,
             "reprocessingNewCaptureCount": counts["newCapturedFiles"],
             "fixtureRequests": requests if not live else None,
             "interpretation": "literal phrase occurrences, not legal meaning or applicability",
         }
-        _write(output / "bill-example-summary.json", summary)
+        write_json(output / "bill-example-summary.json", summary)
         return summary
 
 

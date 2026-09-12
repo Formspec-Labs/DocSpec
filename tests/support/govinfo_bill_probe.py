@@ -21,7 +21,8 @@ from docspec.domain.content import CandidateFile
 from docspec.domain.references import BlobRef
 from examples import govinfo_bills as example
 from examples.provider_identity import provider_installation
-from examples.govinfo_bill_fetcher import BillContentFetcher, retain_refusal
+from examples.govinfo_bill_fetcher import BillContentFetcher
+from examples.dataset_example_support import retain_refusal
 
 
 def reject_network(*args, **kwargs):
@@ -42,7 +43,7 @@ def main():
     original = (example.FIXTURES / "introduced.xml").read_bytes()
     status = (example.FIXTURES / "status.xml").read_bytes()
     completed, text_calls, closed = [], [], []
-    finish, acquire_text, close = example._finish, BillAcquirer.acquire_text, BillAcquirer.close
+    finish, acquire_text, close = example.finish_run, BillAcquirer.acquire_text, BillAcquirer.close
 
     def observed_text(client, *args, **kwargs):
         assert client not in closed, "reprocessing called the closed source client"
@@ -59,6 +60,8 @@ def main():
         result, view = finish(*args)
         files = list(view.records("files"))
         assert len(files) == 1
+        assert files[0]["payload"]["transportVersion"] is None
+        assert files[0]["payload"]["sourceVersion"] == "BILLS-119hr6028ih"
         assert b"".join(view.read_blob(BlobRef.from_dict(files[0]["payload"]["blob"]), max_bytes=4096)) == original
         segments = {row["recordId"]: row["payload"] for row in view.records("segments")}
         processor_ids = args[0].plan.to_dict()["processors"]["processors"]
@@ -79,7 +82,7 @@ def main():
     with patch.object(socket.socket, "connect", reject_network), patch.object(socket, "create_connection", reject_network):
         output = root / "experiment"
         with patch.object(BillAcquirer, "acquire_text", observed_text), patch.object(BillAcquirer, "close", observed_close), \
-                patch.object(example, "_finish", inspected_finish):
+                patch.object(example, "finish_run", inspected_finish):
             summary = example.run_example(output, package_id="BILLS-119hr6028ih")
         assert len(completed) == 2 and text_calls == ["BILLS-119hr6028ih"]
         assert summary["offeredTextVersions"] == 2 and summary["offeredFormats"] == 5
@@ -95,6 +98,7 @@ def main():
         assert (output / "source-evidence/bill-status.xml").read_bytes() == status
         assert receipt["capture"]["sha256"] == sha256_digest(status)
         preview = json.loads((output / "catalog-preview.json").read_text())
+        assert preview["items"][0]["sourceIssuedVersion"] == "BILLS-119hr6028ih"
         source_facts = json.dumps(preview)
         for label in ("BILLS-119hr6028eh", "BILLS-119hr6028ih", "Formatted Text", "PDF"):
             assert label in source_facts
@@ -166,6 +170,7 @@ def main():
             stream = fetcher.fetch(CandidateFile("example", fetcher.locator, "application/xml"),
                                    max_bytes=2048, task_id="task", attempt_id="attempt")
             assert b"".join(stream.chunks) == original
+            assert stream.metadata.transport_version is None
             assert stream.metadata.acquisition_started_at == "2026-09-12T11:59:59Z"
             receipt = json.loads(next((root / "budget-receipts").glob("*.json")).read_text())
             assert receipt["capture"]["observedAt"] == "2026-09-12T12:00:00Z"

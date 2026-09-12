@@ -10,42 +10,17 @@ from pathlib import Path
 
 from spicy_docs.sources.congress.bill_acquisition import BillAcquirer, BillStatusAcquisition
 from spicy_docs.sources.congress.bill_status import select_bill_xml
-from spicy_docs.transport.capture import CapturedBodyResponse
 
 from docspec.domain.content import CandidateFile
-from docspec.domain.identity import identity_digest, sha256_digest
+from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError
 from docspec.ports.content_fetcher import FetchMetadata, FetchStream
 from examples.provider_identity import provider_installation
+from examples.dataset_example_support import capture_facts, retain_refusal
 
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
-
-
-def capture_facts(capture: CapturedBodyResponse) -> dict:
-    return {
-        "requestedUrl": capture.requested_url, "resolvedUrl": capture.resolved_url,
-        "statusCode": capture.status_code, "contentType": capture.content_type,
-        "observedAt": capture.observed_at, "byteSize": capture.byte_size, "sha256": capture.sha256,
-    }
-
-
-def retain_refusal(error: Exception, destination: Path) -> None:
-    """Keep bounded publisher evidence before normal exception handling continues."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    receipt = {"errorType": type(error).__name__, "message": str(error),
-               "acquisition": getattr(error, "bill_acquisition", None)}
-    refused = getattr(error, "refused_response", None)
-    if refused is not None:
-        receipt["response"] = {"requestKey": refused.request_key, "stage": refused.stage,
-                               "mediaType": refused.media_type, "unavailableReason": refused.unavailable_reason,
-                               "observedByteSize": refused.observed_byte_size}
-        if refused.response_bytes is not None:
-            body = destination.with_suffix(".body")
-            body.write_bytes(refused.response_bytes)
-            receipt["response"].update({"bodyFile": body.name, "sha256": sha256_digest(refused.response_bytes)})
-    destination.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -94,6 +69,6 @@ class BillContentFetcher:
         (self.evidence_root / f"{receipt_name}.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
         return FetchStream(
             FetchMetadata(self.downloader_id, self.configuration_digest,
-                          self.package_id + ":" + capture.sha256, started_at, task_id, attempt_id),
+                          None, started_at, task_id, attempt_id),
             iter((capture.body,)),
         )
