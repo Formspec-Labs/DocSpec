@@ -16,7 +16,7 @@ PRODUCTION_ROOT = ROOT / "src" / "docspec"
 # Each production area therefore declares the complete set of areas it may
 # import. "errors" and "domain" sit at the bottom; "ports" speak only domain
 # records; "processing" is DocSpec's own deterministic content implementation
-# (vendor software enters it only through a lazily selected extractor, proven
+# (parser software enters it only through a lazily selected extractor, proven
 # by test_pypdf_is_loaded_only_when_selected_and_pages_round_trip); application
 # services compose ports, domain records, and processing receipts; adapters
 # may depend on the whole core; runtime wires the local lifecycle for Python
@@ -194,10 +194,14 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
     assert importers_of_cli == {"docspec.entrypoint", "docspec.cli.__main__"}
 
 
-def test_importing_the_complete_core_loads_no_vendor_software() -> None:
-    """Prove at runtime what the static walk proves at rest: core imports stay
-    stdlib-and-docspec even through lazy indirection, with every optional
-    dependency installed and importable in this environment."""
+def test_importing_the_complete_core_loads_only_the_shared_artifact_dependency() -> None:
+    """Core imports may load the shared encoder and its own dependencies.
+
+    Establish that baseline through its public import, including any optional
+    accelerator installed here. The remaining core must introduce no other
+    foreign package. The static package guard permits this import only in the
+    domain identity gateway.
+    """
 
     core_modules = sorted(
         module for module in _production_modules() if _area(module) in _CORE_AREAS
@@ -206,11 +210,12 @@ def test_importing_the_complete_core_loads_no_vendor_software() -> None:
     assert "docspec.processing.extraction" in core_modules
     probe = (
         "import importlib, json, sys\n"
-        "interpreter_baseline = {name.partition('.')[0] for name in sys.modules}\n"
+        "from rulespec_artifacts import canonical_json_bytes\n"
+        "shared_baseline = {name.partition('.')[0] for name in sys.modules}\n"
         f"for name in {core_modules!r}:\n"
         "    importlib.import_module(name)\n"
         "loaded = {name.partition('.')[0] for name in sys.modules}\n"
-        "foreign = loaded - interpreter_baseline - set(sys.stdlib_module_names) - {'docspec'}\n"
+        "foreign = loaded - shared_baseline - set(sys.stdlib_module_names) - {'docspec'}\n"
         "print(json.dumps(sorted(foreign)))\n"
     )
     result = subprocess.run(

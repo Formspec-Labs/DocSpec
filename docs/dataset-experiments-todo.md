@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 20 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 21 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -810,7 +810,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d28"></a>
 
-- [ ] **D28 · P1 · Adopt the agreed shared canonical encoder in DocSpec.**
+- [x] **D28 · P1 · Adopt the agreed shared canonical encoder in DocSpec.**
   Supply required source/processor value cases to the encoding decision in
   [Rulespec RS01](../../rulespec/TODO.md#rs01), including arbitrary integers and
   Unicode key ordering. Retain DocSpec's useful domain conversion and validation
@@ -822,6 +822,21 @@ to defer a conditional item is a documented deferral, not completed implementati
   emission, record the evidence and defer adoption. Rulespec owns the common
   implementation; [SpicyDocs S30](../../spicy-docs/docs/simplification-todo.md#s30)
   owns source-producer adoption. See [identity](../src/docspec/domain/identity.py).
+
+  **Completed September 11:** DocSpec now uses the installed Rulespec Artifacts
+  1.0.12 canonical emitter for identity JSON and framed records. The selected
+  domain is exact safe integers and UTF-16 key ordering; unsupported metadata
+  refuses without rounding or stringification. Exact captured document bytes
+  remain unchanged. Both local emitters, the unused batch framer, and redundant
+  portable integer walk were removed. Domain conversion and incremental framing
+  retain their distinct useful purposes. The [guide](canonical-json.md),
+  [architecture](history/2026-09-11-canonical-json-architecture.md), and
+  [independent review](history/2026-09-11-canonical-json-review.md) record the
+  intentional shared dependency and identity change. The combined gate passed
+  138 checks, including installed raw-capture and source checks, with a stale
+  textual-boundary assertion subsequently corrected. Follow-up import/package
+  checks passed 13 checks; the remaining new export-facade allowance belongs to
+  the concurrent D26 implementation. This does not claim a new full regression.
 
 <a id="d29"></a>
 

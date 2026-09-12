@@ -21,7 +21,7 @@
         "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
         "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
         "tests/conformance/test_import_directions.py::test_command_and_runtime_surfaces_are_explicit_composition_roots",
-        "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_no_vendor_software"
+        "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_only_the_shared_artifact_dependency"
       ],
       "plannedTestModule": null
     },

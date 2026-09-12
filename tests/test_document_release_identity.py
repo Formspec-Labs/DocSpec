@@ -54,6 +54,20 @@ def test_the_wire_contract_digest_is_the_unqualified_spelling_of_docspec_identit
     assert sha256_digest(canonical_json_bytes(value)) == f"sha256:{canonical_sha256(value)}"
 
 
+@pytest.mark.parametrize("jsonl", [False, True])
+def test_portable_readers_refuse_unsafe_integers_with_file_context(tmp_path: Path, jsonl: bool) -> None:
+    path = tmp_path / ("records.jsonl" if jsonl else "release.json")
+    path.write_bytes(b'{"metadata":{"count":9007199254740992}}' + (b"\n" if jsonl else b""))
+    read = load_strict_canonical_jsonl if jsonl else load_strict_canonical_json
+    with pytest.raises(ValueError, match=path.name):
+        read(path)
+
+
+def test_portable_emission_uses_the_same_safe_integer_boundary() -> None:
+    with pytest.raises(ValueError, match="safe"):
+        canonical_json_bytes({"count": 2**53})
+
+
 def test_the_file_digest_is_the_unqualified_spelling_of_the_files_own_bytes() -> None:
     path = DOCSPEC_FIXTURE_ROOT / "valid" / "release.json"
 

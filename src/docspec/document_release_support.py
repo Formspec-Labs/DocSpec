@@ -40,10 +40,6 @@ from docspec.domain.identity import (
 )
 from docspec.errors import IntegrityError
 
-# The largest integer a conforming JSON reader is guaranteed to carry without
-# loss. A release whose counts or byte offsets exceed it cannot be exchanged.
-MAX_SAFE_INTEGER = (1 << 53) - 1
-
 # The shared member-manifest protocol both release roots write. These are wire
 # facts, not DocSpec preferences, so they are stated once and compared, never
 # derived.
@@ -72,28 +68,9 @@ def packaged_schema_root(format_version: str = "2.0") -> Path:
     return Path(str(root))
 
 
-def _require_json_safe_integers(value: Any, path: str = "$") -> None:
-    """Refuse an integer no conforming JSON reader can carry back unchanged."""
-
-    if isinstance(value, bool):
-        return
-    if isinstance(value, int):
-        if abs(value) > MAX_SAFE_INTEGER:
-            raise ValueError(f"{path} integer is outside the JSON safe range")
-        return
-    if isinstance(value, list):
-        for index, member in enumerate(value):
-            _require_json_safe_integers(member, f"{path}/{index}")
-        return
-    if isinstance(value, dict):
-        for key, member in value.items():
-            _require_json_safe_integers(member, f"{path}/{key}")
-
-
 def canonical_json_bytes(value: Any) -> bytes:
     """Encode one identity-bearing value as platform canonical JSON."""
 
-    _require_json_safe_integers(value)
     try:
         return _identity_canonical_json_bytes(value)
     except IntegrityError as exc:  # pragma: no cover - defensive translation
@@ -116,7 +93,6 @@ def load_strict_canonical_json(path: Path) -> Any:
         value = thaw_json(parse_canonical_json(raw, label=path.name, file_form=False))
     except IntegrityError as exc:
         raise ValueError(str(exc)) from exc
-    _require_json_safe_integers(value)
     return value
 
 
@@ -153,7 +129,6 @@ def load_strict_canonical_jsonl(path: Path) -> list[Any]:
             )
         except IntegrityError as exc:
             raise ValueError(str(exc)) from exc
-        _require_json_safe_integers(value)
         rows.append(value)
     return rows
 
@@ -365,7 +340,6 @@ def member_path(bundle: Path, object_key: str) -> Path:
 __all__ = [
     "LOGICAL_ROW_EXCLUSIONS",
     "MANIFEST_REFERENCE_FIELDS",
-    "MAX_SAFE_INTEGER",
     "MEMBER_DESCRIPTOR_FIELDS",
     "MEMBER_MANIFEST_FORMAT",
     "MEMBER_MANIFEST_VERSION",

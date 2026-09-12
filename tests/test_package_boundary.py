@@ -42,6 +42,8 @@ OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
 # This module names a URN namespace reserved for a registry DocSpec does not
 # own. It is data the catalog refuses to mint, not an import of that product.
 RESERVED_NAMESPACE_ROOTS = frozenset({"src/docspec/application/catalog_policy.py"})
+# This one core module delegates canonical JSON to the shared public package.
+SHARED_CANONICAL_GATEWAY = "src/docspec/domain/identity.py"
 # An absolute path whose first segment is a home-directory root belongs to one
 # developer's machine, so it can only reach code this repository does not own.
 HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
@@ -165,7 +167,7 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
     assert working_directories == REPOSITORY_ROOTED_WORKING_DIRECTORIES
 
 
-def test_project_declares_a_stdlib_core_and_one_command() -> None:
+def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == __version__
@@ -277,12 +279,17 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     assert files, "the installed DocSpec package must contain production modules"
 
     violations: list[str] = []
+    shared_imports = {(SHARED_CANONICAL_GATEWAY, "rulespec_artifacts")}
+    observed_shared_imports: set[tuple[str, str]] = set()
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
         is_composition_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py", "runtime"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
+            edge = (path.relative_to(ROOT).as_posix(), imported)
+            if edge in shared_imports:
+                observed_shared_imports.add(edge)
             if not is_adapter and not is_composition_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
             if (
@@ -290,14 +297,16 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
                 and not is_composition_surface
                 and root_name != "docspec"
                 and root_name not in sys.stdlib_module_names
+                and edge not in shared_imports
             ):
-                violations.append(f"{path.relative_to(ROOT)} imports non-stdlib core dependency {imported}")
+                violations.append(f"{path.relative_to(ROOT)} imports undeclared core dependency {imported}")
             if imported.startswith("docspec."):
                 area = imported.split(".", 2)[1]
                 if area in ARCHIVED_PRODUCT_AREAS:
                     violations.append(f"{path.relative_to(ROOT)} imports archived area {imported}")
 
     assert violations == []
+    assert observed_shared_imports == shared_imports
 
 
 def test_non_docspec_product_areas_are_absent_from_production() -> None:
@@ -314,6 +323,8 @@ def test_non_docspec_product_areas_are_absent_from_production() -> None:
             if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicy_docs":
                 continue
             if relative in RESERVED_NAMESPACE_ROOTS and word == "refspec":
+                continue
+            if relative == SHARED_CANONICAL_GATEWAY and word == "rulespec":
                 continue
             if re.search(rf"\b{re.escape(word.casefold())}\b", source):
                 violations.append(f"{path.relative_to(ROOT)} names {word}")

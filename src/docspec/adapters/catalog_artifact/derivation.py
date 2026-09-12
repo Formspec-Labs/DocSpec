@@ -9,6 +9,8 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
+from rulespec_artifacts import canonical_json_bytes
+
 from docspec.adapters.catalog_artifact.accounting import _accumulate_join_coverage, _DispositionTally
 from docspec.adapters.catalog_artifact.digests import (
     _DerivedCatalog,
@@ -22,9 +24,6 @@ from docspec.adapters.catalog_artifact.digests import (
 )
 from docspec.adapters.catalog_artifact.rows import _iter_catalog_rows, _iter_partition_stream
 from docspec.adapters.catalog_artifact.rules import _SELECTED_DISPOSITION, _CatalogPartition, _utf16_key
-from docspec.adapters.framing import (
-    canonical_record_payload as _canonical_record_payload,
-)
 from docspec.domain.source_catalog import (
     SOURCE_CATALOG_MAX_JOIN_IDS,
 )
@@ -78,7 +77,7 @@ def _row_digest_payloads(
     source_item_id = row["sourceItemId"]
     disposition = row["selection"]["disposition"]
     selected_payload = (
-        _canonical_record_payload({"sourceItemId": source_item_id, "documentId": row["documentId"]})
+        canonical_json_bytes({"sourceItemId": source_item_id, "documentId": row["documentId"]})
         if disposition == _SELECTED_DISPOSITION
         else None
     )
@@ -87,17 +86,17 @@ def _row_digest_payloads(
         # Carry the identity and outcome out with the payload. The worker used
         # to recover joinId by json.loads-ing bytes it had just serialized from
         # a record that held it.
-        joined.append((_canonical_record_payload(record), str(record["outcome"]), str(record["joinId"])))
+        joined.append((canonical_json_bytes(record), str(record["outcome"]), str(record["joinId"])))
     return (
         raw,
-        _canonical_record_payload({"sourceItemId": source_item_id}),
+        canonical_json_bytes({"sourceItemId": source_item_id}),
         selected_payload,
-        _canonical_record_payload({"sourceItemId": source_item_id, "disposition": disposition}),
-        _canonical_record_payload({"sourceItemId": source_item_id, "reason": row["selection"]["reason"]}),
-        _canonical_record_payload(_rendition_choice_record(row)),
-        [_canonical_record_payload(r) for r in _normalized_field_records_for(row)],
+        canonical_json_bytes({"sourceItemId": source_item_id, "disposition": disposition}),
+        canonical_json_bytes({"sourceItemId": source_item_id, "reason": row["selection"]["reason"]}),
+        canonical_json_bytes(_rendition_choice_record(row)),
+        [canonical_json_bytes(r) for r in _normalized_field_records_for(row)],
         joined,
-        [_canonical_record_payload(r) for r in _interpretation_records_for(row)],
+        [canonical_json_bytes(r) for r in _interpretation_records_for(row)],
     )
 
 

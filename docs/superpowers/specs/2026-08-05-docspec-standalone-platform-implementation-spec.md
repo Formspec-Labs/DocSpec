@@ -284,8 +284,13 @@ commands / Python callers -> runtime composition -> application services
                              concrete adapters -> DocSpec ports and domain
 ```
 
-Application services and domain records MUST NOT import adapters or vendor
-software. Shared runtime composition MUST select and inject concrete run
+Application services and domain records MUST NOT import concrete adapters,
+transport clients, parsers or processor implementations. The domain identity
+gateway uses the public `rulespec_artifacts.canonical_json_bytes` implementation
+for the shared safe-integer and UTF-16 JSON domain; this is the one declared
+core dependency outside DocSpec and the standard library. See
+[canonical JSON](../../canonical-json.md) for the supported values and exact
+source-byte boundary. Shared runtime composition MUST select and inject concrete run
 adapters for commands and Python callers. This outer assembly layer MAY import
 adapters and application services; core services MUST NOT import it. Request
 parsing MUST NOT create a second run composition path. Source-catalog and other
@@ -2248,7 +2253,7 @@ digests.
 | Test ID | Required proof |
 | --- | --- |
 | `CORE-INSTALL` | A built wheel installs, imports, and shows help in an empty environment |
-| `BOUNDARY-IMPORT` | Core code depends only on DocSpec ports and domain records; vendor and concrete processing types remain in adapters; the optional SpicyRegs adapter loads only at the CLI composition root |
+| `BOUNDARY-IMPORT` | Core depends on DocSpec ports and domain records plus the shared canonical JSON implementation at its identity gateway; concrete transport, parser and processor dependencies remain in adapters or load when selected; optional source providers load at the outer composition root |
 | `BOUNDARY-CODE` | Git history, package boundaries, static checks, and focused behavior fixtures prove production code contains no copied predecessor implementation; no project-owned source archive or fingerprint corpus exists |
 | `SOURCE-CATALOG-CONTRACT` | The DocSpec builder, reader, and semantic verifier pass the sole complete-snapshot form, closed input/payload roles, multi-source sets, policy, migration-fixture identity, every field and disposition, source-URL and immutable-object candidates, exact decision-order/sampling/join/rendition/topic-recovery differential, Federal Register malformed-RIN and missing-agency/rendition isolation, the pinned 30-row empty-topic interpretation, exact shared framed `catalogStateDigest`, `U`, and `S` projections including empty-set and duplicate cases, deterministic partitions, unchanged `blobRef` reuse, reconciled byte writes, changed-state identity, legacy change-set refusal, consumer receipt verification without a second full semantic pass or prior-catalog replay, logical-versus-physical identity, immutability, and bounded streaming |
 | `PROFILE-DESCRIPTION` | Every selected profile has a closed, versioned, digest-pinned description with declared capabilities and limits |

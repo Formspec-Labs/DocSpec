@@ -91,6 +91,25 @@ def test_empty_supplied_snapshot_is_an_explicit_empty_catalog(tmp_path):
     assert tuple(open_local_catalog(result.reference, workspace, producer=producer()).iter_mappings()) == ()
 
 
+@pytest.mark.parametrize("number", [2**53, -(2**53), 2**63])
+def test_supplied_metadata_refuses_unsupported_integers_and_closes_input(tmp_path, number):
+    raw = _record()
+    raw["metadata"]["reportedCount"] = number
+    closed = []
+
+    def records():
+        try:
+            yield raw
+        finally:
+            closed.append(True)
+
+    workspace = LocalWorkspace(tmp_path / "unsupported")
+    with pytest.raises(ValueError, match="safe"):
+        _build(_source(records()), workspace)
+    assert closed == [True]
+    assert not workspace.root.exists()
+
+
 def test_supplied_record_example_uses_only_catalog_storage(tmp_path):
     output = tmp_path / "example"
     result = demonstrate(output)

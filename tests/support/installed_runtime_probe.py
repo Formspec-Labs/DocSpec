@@ -11,10 +11,11 @@ from pathlib import Path
 import sys
 
 from rulespec_artifacts import Producer
+from rulespec_artifacts.resources import canonical_json_corpus
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
-from docspec.domain.identity import identity_digest, sha256_digest
+from docspec.domain.identity import canonical_json_bytes, identity_digest, sha256_digest
 from docspec.domain.plans import WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.errors import IntegrityError, ProfileError
@@ -31,13 +32,17 @@ from docspec.workspace import LocalWorkspace
 
 
 def main() -> None:
+    for case in canonical_json_corpus()["encodeAccepted"]:
+        assert canonical_json_bytes(case["value"]) == bytes.fromhex(case["canonicalHex"])
     source_root = Path.cwd() / "examples" / "offline"
-    source_bytes = (source_root / "notice.html").read_bytes()
+    source_bytes = (source_root / "notice.html").read_bytes() + b'\n<!-- {"wide":9223372036854775808} -->\n'
+    numeric_document = source_root / "numeric-evidence.html"
+    numeric_document.write_bytes(source_bytes)
     namespace = "urn:example:installed-markup"
     source = SuppliedRecordSource(({
         "recordId": "notice", "sourceIssuedVersion": "fixture1", "title": "Local contributor example",
         "metadata": {"synthetic": True}, "candidateRenditions": [SourceCatalogCandidate(
-            "body", "text/html", "immutable-object", "notice.html",
+            "body", "text/html", "immutable-object", numeric_document.name,
             expected_sha256=sha256_digest(source_bytes), expected_byte_size=len(source_bytes),
         ).to_dict()],
     },), source_system_id=namespace, source_system_version="1", source_state_scope="complete-snapshot",
@@ -158,7 +163,8 @@ def main() -> None:
     representation = Representation.from_dict(tuple(inspected.records("representations"))[0]["payload"])
     source_bytes = b"".join(inspected.read_blob(captured.blob, max_bytes=captured.blob.byte_size))
     content = b"".join(inspected.read_blob(representation.blob, max_bytes=representation.blob.byte_size))
-    assert source_bytes == (source_root / "notice.html").read_bytes()
+    assert source_bytes == numeric_document.read_bytes()
+    assert b'{"wide":9223372036854775808}' in source_bytes
     assert b"<html" not in content and "café".encode() in content
     assert (representation.extractor_id, representation.configuration_digest) == extractor.selected_identity(captured)
     assert representation.extractor_id != extractor.extractor_id
