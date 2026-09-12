@@ -12,32 +12,34 @@ from pathlib import Path
 import docspec
 
 ROOT = Path(__file__).resolve().parents[1]
-RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.11-py3-none-any.whl"
-RULESPEC_WHEEL_SHA256 = "bedd8ee4799d9633963272714a30258f505404155732480ad5cb1dde2d7cbf4f"
+RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.12-py3-none-any.whl"
+RULESPEC_WHEEL_SHA256 = "3f6c946c60ff2ddbe854fce7f74f4358ddb21e3ba3f6ad10caa8a0d8d59fd0a5"
 SPICY_DOCS_WHEEL = (
     ROOT
     / "tests"
     / "fixtures"
     / "installed_wheels"
-    / "spicy_docs-0.1.0-py3-none-any.whl"
+    / "spicy_docs-0.2.0-py3-none-any.whl"
 )
-SPICY_DOCS_WHEEL_SHA256 = "6b5e87ca598bc20fd7f474d56e3324853fd7746227500b95a7a5815a45f59c7d"
+SPICY_DOCS_VERSION = "0.2.0"
+SPICY_DOCS_WHEEL_SHA256 = "ecaa5ebc15df7cad12952e5fdeb8e1cef71614471dfb81b5f43316049d246c4e"
+SPICY_DOCS_REVISION = "296f20d05e0c32419ebae9d43cdfd19fe054238b"
 
 
-# spicy-docs is the platform's source-native producer, and 0.1.0 is not
-# published to a package index. This is the exact producer wheel built from
-# spicy-docs commit 4cf1e8231ce7b5883f3c11be65eed62593007495, used to publish
-# and verify the bounded source-native fixtures. It is test input, not a
-# DocSpec dependency. Different wheel bytes require a new spicy-docs version
-# and a new explicit digest pin; this test never rebuilds it.
+# This exact current producer wheel publishes and verifies the bounded source
+# fixtures. Its version, source revision and digest are independent of the data
+# pins produced below. It is test input, not a DocSpec dependency, and this test
+# never rebuilds it. Update these pins when accepting a new provider release.
 _INSTALLED_PROBE = r'''
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
 import subprocess
 import sys
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,6 +74,8 @@ from spicy_docs.regulations_gov_source_native import (
     iter_regulations_gov_docket_pages,
 )
 from spicy_docs.source_native import (
+    CURRENT_PRODUCER_PRODUCT,
+    FORMAT_VERSION,
     VERIFIER_ID,
     VERIFIER_VERSION,
     SourceNativeReleaseBuild,
@@ -96,6 +100,22 @@ REGULATIONS_DOCUMENT_ID = "EPA-2026-0001-0001"
 REGULATIONS_DOCKET_ID = "EPA-2026-0001"
 REGULATIONS_COMMENT_ID = "EPA-2026-0001-9001"
 REGULATIONS_FR_DOCUMENT_ID = DOCUMENT_IDS[0]
+
+provider_wheel = RUN_ROOT / "wheelhouse" / "spicy_docs-__SPICY_DOCS_VERSION__-py3-none-any.whl"
+provider_root = Path(spicy_docs.__file__).resolve(strict=True).parent
+assert "site-packages" in provider_root.parts
+assert importlib.metadata.version("spicy-docs") == "__SPICY_DOCS_VERSION__"
+assert CURRENT_PRODUCER_PRODUCT == "spicy-docs"
+assert FORMAT_VERSION == VERIFIER_VERSION == "2.0"
+assert hashlib.sha256(provider_wheel.read_bytes()).hexdigest() == "__SPICY_DOCS_WHEEL_SHA256__"
+with zipfile.ZipFile(provider_wheel) as archive:
+    provider_members = [
+        name for name in archive.namelist()
+        if name.startswith("spicy_docs/") and not name.endswith("/")
+    ]
+    assert provider_members
+    for name in provider_members:
+        assert (provider_root.parent / name).read_bytes() == archive.read(name), name
 
 
 @dataclass(frozen=True, slots=True)
@@ -512,8 +532,8 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
 
 assert sys.version_info[:2] == (3, 12)
 assert importlib.metadata.version("docspec") == "__DOCSPEC_VERSION__"
-assert importlib.metadata.version("rulespec-artifacts") == "1.0.11"
-assert importlib.metadata.version("spicy-docs") == "0.1.0"
+assert importlib.metadata.version("rulespec-artifacts") == "1.0.12"
+assert importlib.metadata.version("spicy-docs") == "__SPICY_DOCS_VERSION__"
 assert not any(
     requirement.lower().startswith("spicy-docs")
     for requirement in (importlib.metadata.requires("docspec") or ())
@@ -801,6 +821,30 @@ proof = {
     "sysPath": list(sys.path),
     "moduleOrigins": module_origins,
     "directUrls": direct_urls,
+    "provider": {
+        "version": "__SPICY_DOCS_VERSION__",
+        "sourceRevision": "__SPICY_DOCS_REVISION__",
+        "wheelSha256": "__SPICY_DOCS_WHEEL_SHA256__",
+        "verifiedPackageMembers": len(provider_members),
+        "currentProducerProduct": CURRENT_PRODUCER_PRODUCT,
+        "sourceNativeFormatVersion": FORMAT_VERSION,
+        "verifierVersion": VERIFIER_VERSION,
+        "profiles": {
+            name: {
+                "sourceSystemId": profile.source_system_id,
+                "sourceSystemVersion": profile.source_system_version,
+                "sourceStateScope": profile.source_state_scope,
+                "acquisitionPolicyVersion": profile.acquisition_policy_version,
+                "sourceSchemaKey": profile.source_schema_key,
+            }
+            for name, profile in (
+                ("federal-register", FEDERAL_REGISTER_PROFILE),
+                ("regulations-gov-documents", REGULATIONS_GOV_DOCUMENT_PROFILE),
+                ("regulations-gov-dockets", REGULATIONS_GOV_DOCKET_PROFILE),
+                ("regulations-gov-comments", REGULATIONS_GOV_COMMENT_PROFILE),
+            )
+        },
+    },
     "sourceNativePins": [
         source.release.artifact.pin.as_dict()
         for source in (
@@ -911,7 +955,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             "install",
             "--python",
             str(environment_python),
-            "--no-deps",
+            str(runtime_rulespec),
             str(runtime_spicy_docs),
         ],
         cwd=tmp_path,
@@ -920,6 +964,14 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert install_producer.returncode == 0, install_producer.stderr
+    dependency_check = subprocess.run(
+        [uv, "pip", "check", "--python", str(environment_python)],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert dependency_check.returncode == 0, dependency_check.stderr
 
     probe_path = runtime_root / "installed_source_catalog_probe.py"
     proof_path = runtime_root / "installed_source_catalog_proof.json"
@@ -929,7 +981,11 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     # check silently stale -- a literal describing changing code, which is
     # the same defect the version bump existed to fix.
     probe_path.write_text(
-        _INSTALLED_PROBE.replace("__DOCSPEC_VERSION__", docspec.__version__), encoding="utf-8"
+        _INSTALLED_PROBE.replace("__DOCSPEC_VERSION__", docspec.__version__)
+        .replace("__SPICY_DOCS_VERSION__", SPICY_DOCS_VERSION)
+        .replace("__SPICY_DOCS_WHEEL_SHA256__", SPICY_DOCS_WHEEL_SHA256)
+        .replace("__SPICY_DOCS_REVISION__", SPICY_DOCS_REVISION),
+        encoding="utf-8",
     )
     probe = subprocess.run(
         [

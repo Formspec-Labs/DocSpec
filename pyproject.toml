@@ -12,11 +12,11 @@ dependencies = [
     # engine a build had resolved. jsonschema stays as the refusal authority.
     # Same spelling and bound SpicySearch already declares.
     "jsonschema-rs>=0.52,<1",
-    "rulespec-artifacts==1.0.11",
+    "rulespec-artifacts==1.0.12",
 ]
 
 [tool.uv.sources]
-rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl" }
+rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" }
 
 [project.optional-dependencies]
 http = [

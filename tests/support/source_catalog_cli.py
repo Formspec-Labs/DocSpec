@@ -61,7 +61,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     package.__path__ = []  # type: ignore[attr-defined]
     module = ModuleType(module_name)
     profiles_module = ModuleType(profiles_module_name)
-    module.SUPPORTED_PRODUCER_PRODUCTS = frozenset({"spicy-regs", "spicy-docs"})  # type: ignore[attr-defined]
+    module.CURRENT_PRODUCER_PRODUCT = "spicy-docs"  # type: ignore[attr-defined]
     module.SourceNativeReleaseReader = FakeReader  # type: ignore[attr-defined]
     profiles_module.FEDERAL_REGISTER_PROFILE = fake_profile  # type: ignore[attr-defined]
     profiles_module.REGULATIONS_GOV_DOCUMENT_PROFILE = object()  # type: ignore[attr-defined]

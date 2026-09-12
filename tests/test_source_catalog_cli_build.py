@@ -71,7 +71,7 @@ def test_spicyregs_adapter_pins_the_source_blob_root_across_streams(
 
     module_name = "spicy_docs.source_native"
     source_native = ModuleType(module_name)
-    source_native.SUPPORTED_PRODUCER_PRODUCTS = frozenset({"spicy-regs", "spicy-docs"})  # type: ignore[attr-defined]
+    source_native.CURRENT_PRODUCER_PRODUCT = "spicy-docs"  # type: ignore[attr-defined]
     source_native.SourceNativeReleaseReader = FakeReader  # type: ignore[attr-defined]
     monkeypatch.setattr(
         "docspec.adapters.spicy_docs_source_native.import_module",

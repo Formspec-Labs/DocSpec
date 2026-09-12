@@ -360,7 +360,7 @@ def test_installed_adapter_exposes_comment_profile_and_propagates_upstream_tie_r
             raise ValueError("upstream source-version tie")
 
     source_native = SimpleNamespace(
-        SUPPORTED_PRODUCER_PRODUCTS=frozenset({"spicy-regs", "spicy-docs"}),
+        CURRENT_PRODUCER_PRODUCT="spicy-docs",
         SourceNativeReleaseReader=RefusingReader,
     )
     monkeypatch.setattr(spicy_docs_adapter_module, "import_module", lambda _: source_native)

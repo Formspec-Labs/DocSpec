@@ -16,21 +16,21 @@ from tests.support.source_catalog_cli import source_catalog_build_arguments
 _READER_MODULE_NAME = "spicy_docs.source_native"
 
 
-def _reader(*, products: frozenset[str] | None) -> types.ModuleType:
+def _reader(*, product: str | None) -> types.ModuleType:
     module = types.ModuleType(_READER_MODULE_NAME)
-    if products is not None:
-        module.SUPPORTED_PRODUCER_PRODUCTS = products
+    if product is not None:
+        module.CURRENT_PRODUCER_PRODUCT = product
     return module
 
 
 def test_resolves_the_current_reader(monkeypatch: pytest.MonkeyPatch) -> None:
-    reader = _reader(products=adapter_module.ACCEPTED_PRODUCER_PRODUCTS)
+    reader = _reader(product="spicy-docs")
     monkeypatch.setitem(sys.modules, _READER_MODULE_NAME, reader)
 
     resolved = adapter_module._resolve_producer_module("source_native")
 
     assert resolved is reader
-    assert adapter_module._require_accepted_reader(resolved) is resolved
+    assert adapter_module._require_current_reader(resolved) is resolved
 
 
 def test_resolves_the_profiles_module_and_one_named_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -41,12 +41,12 @@ def test_resolves_the_profiles_module_and_one_named_profile(monkeypatch: pytest.
     assert adapter_module.spicy_docs_source_profile("federal-register") is profiles.FEDERAL_REGISTER_PROFILE
 
 
-@pytest.mark.parametrize("products", [frozenset({"spicy-regs"}), None])
-def test_refuses_a_reader_that_cannot_admit_all_pinned_producers(products: frozenset[str] | None) -> None:
-    reader = _reader(products=products)
+@pytest.mark.parametrize("product", ["spicy-regs", "another-producer", None])
+def test_refuses_a_reader_without_the_selected_current_producer(product: str | None) -> None:
+    reader = _reader(product=product)
 
-    with pytest.raises(RuntimeError, match=_READER_MODULE_NAME):
-        adapter_module._require_accepted_reader(reader)
+    with pytest.raises(adapter_module.SourceNativeReaderError, match="CURRENT_PRODUCER_PRODUCT 'spicy-docs'"):
+        adapter_module._require_current_reader(reader)
 
 
 @pytest.mark.parametrize("missing", ["spicy_docs", _READER_MODULE_NAME])

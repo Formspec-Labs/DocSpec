@@ -1,8 +1,8 @@
 """Read source-native artifacts through the installed SpicyDocs reader.
 
-The package stays optional and is loaded only at this adapter boundary. Artifact
-producer labels are independent of the reader package: pinned releases from
-both accepted producers remain readable through the current SpicyDocs owner.
+The package stays optional and is loaded only at this adapter boundary. This
+adapter selects the current SpicyDocs producer; the installed reader admits
+the caller's pinned release under its independently accepted verifier identity.
 """
 
 from __future__ import annotations
@@ -18,10 +18,7 @@ from rulespec_artifacts import ArtifactPin, LocalBlobSource, LocalMemberSource, 
 from docspec.errors import DocSpecError, IntegrityError
 from docspec.ports.source_catalog import SourceNativeDescription
 
-#: Producer products DocSpec's source-native adapter accepts. A reader module
-#: whose SUPPORTED_PRODUCER_PRODUCTS is missing or a strict subset of this set
-#: is refused: it would silently hard-refuse releases from the other producer.
-ACCEPTED_PRODUCER_PRODUCTS: frozenset[str] = frozenset({"spicy-regs", "spicy-docs"})
+ACCEPTED_PRODUCER_PRODUCT = "spicy-docs"
 
 
 class SourceNativeReaderError(RuntimeError, DocSpecError):
@@ -41,14 +38,13 @@ def _resolve_producer_module(module_name: str) -> ModuleType:
         ) from error
 
 
-def _require_accepted_reader(module: ModuleType) -> ModuleType:
-    """Refuse a reader module that cannot serve every accepted producer product."""
+def _require_current_reader(module: ModuleType) -> ModuleType:
+    """Require the selected current producer without a predecessor fallback."""
 
-    supported = getattr(module, "SUPPORTED_PRODUCER_PRODUCTS", None)
-    if supported is None or not ACCEPTED_PRODUCER_PRODUCTS.issubset(supported):
+    if getattr(module, "CURRENT_PRODUCER_PRODUCT", None) != ACCEPTED_PRODUCER_PRODUCT:
         raise SourceNativeReaderError(
-            f"{module.__name__} does not declare SUPPORTED_PRODUCER_PRODUCTS covering "
-            f"{sorted(ACCEPTED_PRODUCER_PRODUCTS)}"
+            f"{module.__name__} does not declare CURRENT_PRODUCER_PRODUCT "
+            f"{ACCEPTED_PRODUCER_PRODUCT!r}"
         )
     return module
 
@@ -80,7 +76,7 @@ class SpicyDocsSourceNativeAdapter:
         expected_pin: ArtifactPin | None,
         accepted_verifier_implementation_ids: frozenset[str],
     ) -> None:
-        module = _require_accepted_reader(_resolve_producer_module("source_native"))
+        module = _require_current_reader(_resolve_producer_module("source_native"))
         reader_type = getattr(module, "SourceNativeReleaseReader", None)
         if reader_type is None:
             raise SourceNativeReaderError(f"{module.__name__} has no SourceNativeReleaseReader")

@@ -174,10 +174,10 @@ def test_project_declares_a_stdlib_core_and_one_command() -> None:
         # actually checked by, and jsonschema alone is ~116x slower on that
         # schema. See the comment beside it in pyproject.toml.
         "jsonschema-rs>=0.52,<1",
-        "rulespec-artifacts==1.0.11",
+        "rulespec-artifacts==1.0.12",
     ]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
-        "path": "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl"
+        "path": "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl"
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
@@ -439,7 +439,7 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_artifacts-1.0.11-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_artifacts-1.0.12-py3-none-any.whl"),
             str(wheel),
         ],
         cwd=ROOT,

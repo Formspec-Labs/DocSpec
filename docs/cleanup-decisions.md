@@ -105,13 +105,16 @@ one tool supersedes another.
 
 `SpicyDocsSourceNativeAdapter` in `adapters/spicy_docs_source_native.py` now loads
 only `spicy_docs`. The predecessor `spicy_regs` fallback and old adapter names
-are removed, with current imports and tests updated directly. Accepted artifact
-producer labels still include `spicy-regs` and `spicy-docs`: those recorded data
-labels are separate from the installed reader's ownership.
+are removed, with current imports and tests updated directly. The adapter requires
+the installed reader's public `CURRENT_PRODUCER_PRODUCT` to be `spicy-docs`.
+The current reader owns source format and policy admission; callers independently
+supply the source artifact pin and accepted verifier implementation IDs. Historical
+producer labels do not enable a compatibility path.
 
-Expected reader-admission failures use `SourceNativeReaderError`, which the CLI
-reports as a structured error. Import failures inside an installed reader retain
-their original cause and are not mistaken for an absent package.
+Reader selection failures use `SourceNativeReaderError`, which the CLI reports
+as a structured error. Source admission failures retain the provider's exception.
+Import failures inside an installed reader retain their original cause and are
+not mistaken for an absent package.
 
 ## Dormant public helpers
 

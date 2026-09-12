@@ -266,6 +266,18 @@ to defer a conditional item is a documented deferral, not completed implementati
   producer. No automatic migration layer or SpicyRegs code move is required.
   Depends on D08; coordinates with SpicyDocs S05.
 
+  **Current producer progress, September 11:** the adapter now selects the public
+  `CURRENT_PRODUCER_PRODUCT = "spicy-docs"` reader, which owns current source
+  format/policy admission. The exact SpicyDocs `0.2.0` wheel from `296f20d` and
+  Rulespec Artifacts `1.0.12` are pinned in the installed-package test. Ordinary
+  installation resolves both packages' dependencies; installed bytes match the
+  provider wheel. The isolated test publishes Federal Register and Regulations.gov
+  document/docket/comment releases, builds and reuses catalogs, and verifies them
+  in a separate environment without SpicyDocs. All 41 focused integration and
+  package checks passed. D10 remains open for D08's partial-input handling;
+  updating the shared wheel does not complete D28's encoder or D31's writer
+  adoption. Receiver qualification and upstream publication remain distinct.
+
 <a id="d11"></a>
 
 - [ ] **D11 · P0 · Make fetcher injection practical.** Expose explicit selection
