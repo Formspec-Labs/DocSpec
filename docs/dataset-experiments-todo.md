@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 28 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 29 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1198,7 +1198,7 @@ caller lives; moving imports between modules does not remove a package cycle.
 
 <a id="d43"></a>
 
-- [ ] **D43 · P1 · Consume public source releases and outcomes.** Adapt DocSpec
+- [x] **D43 · P1 · Consume public source releases and outcomes.** Adapt DocSpec
   to supported provider access for profiles, pinned descriptions, records,
   renditions, outcomes, and bounded evidence/failure inspection. **Done when:**
   D06/D08/D10 use these APIs without implementation imports or internal ledgers.
@@ -1207,6 +1207,20 @@ caller lives; moving imports between modules does not remove a package cycle.
   and [S26](../../spicy-docs/docs/simplification-todo.md#s26); retained public-table
   facts/API work is in [SpicyRegs SR02](../../spicy-regs/PLAN.md#sr02). Reuse the
   current public reader instead of inventing another solely to rename a package.
+
+  **Completed September 12, reusing D06/D08/D10:** the optional
+  `SpicyDocsSourceNativeAdapter` calls the installed public source reader and
+  profile API. It retains exact admitted descriptions and delegates records,
+  renditions, per-record observations, bounded failures and evidence reads.
+  The provider owns traversal and source-release admission; DocSpec adds no
+  source-ledger parser or full replay. Missing outcome APIs refuse directly.
+  The installed-wheel source test covers current source kinds, empty/partial/
+  total outcomes, evidence bounds, source refusals and independent admission.
+  It passed in the 1,071-test final regression for the export retirement.
+  See [source-outcome review](history/2026-09-11-source-outcomes-review.md) and
+  [catalog inputs](catalog-inputs.md). The proposed successful provider-body
+  processing exercise remains D38/D46; optional dependency packaging remains
+  D45. Reusing the completed public-reader work closes D43 without new code.
 
 <a id="d44"></a>
 
