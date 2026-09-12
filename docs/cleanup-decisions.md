@@ -185,9 +185,9 @@ even when a direct-call search finds no caller.
 
 ## Large modules reviewed by responsibility
 
-The remaining outlier assessment distinguishes declarations from execution
-flow. These decisions follow inspection of the implementation, its callers and
-tests, with independent architecture review.
+The first refactor's outlier assessment distinguished declarations from execution
+flow. The following decisions had independent architecture review; sizes in this
+table describe that review revision.
 
 | Module at review | Decision and contribution boundary |
 | --- | --- |
@@ -207,6 +207,31 @@ between operations; they are deliberate behavior, not duplicate convenience code
 These are justified size exceptions, not a waiver for unrelated additions.
 Review a new responsibility on its own merits and retain the governing rules,
 measurements, and failure explanations when moving code.
+
+### September 12 follow-up
+
+The catalog CLI now has 399 lines, down from 858 after removing its second
+verification path. The existing catalog reader supplies that behavior. The
+installed source probe is ordinary Python, separate from environment setup.
+These changes remove duplicate work and make the remaining code easier to inspect.
+
+At `722e0ce`, five production functions have at least 200 lines. The root agent
+reviewed their responsibilities and traced the execution functions' callers and
+behavioral tests. This follow-up is not an independent review; D39 remains open.
+
+| Function | Decision and evidence |
+| --- | --- |
+| [`source_catalog_schemas`](../src/docspec/domain/source_catalog.py) — 694 lines | Keep the closed declarations with their typed rows. The module is now 1,097 lines; the prior reason for co-location still applies. [`test_package_boundary.py`](../tests/test_package_boundary.py) checks packaged schemas against their generated definitions. |
+| [`EntryCheckpointVerifier.verify_entry`](../src/docspec/application/execution_checkpoints.py) — 241 lines | Keep the ordered verification of one saved entry together: capture, representations, segments, processor dependencies, completion, and budget accounting. `execute_store` calls it before accepting or saving resumed work. The [checkpoint tests](../tests/test_stage_checkpoint_recovery.py) check exact reuse, cumulative limits, and refusal before any new work when evidence is altered. |
+| [`prepare_base_reprocessing`](../src/docspec/application/base_reprocessing.py) — 236 lines | Keep this one transition from a verified retained result to a current entry. It validates the reusable prefix and processor graph before writing new receipts. The [reprocessing test](../tests/test_processor_reprocessing.py) checks unchanged work is reused and replaced processor layers disappear; the [recovery test](../tests/test_processor_only_checkpoint_recovery.py) interrupts that path and checks only the remaining changed processor runs. |
+| [`StoreExecutionService._execute_entry`](../src/docspec/application/execution.py) — 228 lines | Keep the per-document output state, memory lifetime, checkpoints, and failure snapshot visible together. Fetching, extraction, segmentation, and processor implementations already have separate owners. Further stage wrappers would need to shuttle that mutable state between helpers. The checkpoint and reprocessing tests cover the useful interruption boundaries. Dagster continues to own worker execution and retries. |
+| [`_index_release_layer`](../src/docspec/domain/delivery.py) — 225 lines | Keep the finite layer-to-SQLite translation together. Its caller selects supported layers and then checks relationships across the resulting index. A handler registry would add a second dispatch structure. [Release-integrity tests](../tests/test_release_integrity.py) reject broken file and processor lineage and missing evidence mappings; the [composed check](../tests/conformance/test_document_release_integrity.py) alters every retained object category and requires admission to fail. |
+
+The separate scale declarations (1,560 lines) and bounded segmentation algorithm
+(1,055 lines) retain the responsibilities recorded above. Their length does not
+justify a new schema framework or another segmentation implementation. Revisit
+these decisions when a concrete change crosses responsibilities or requires
+unrelated state; there is no target line count to satisfy by adding wrappers.
 
 ## Source-policy boundaries
 

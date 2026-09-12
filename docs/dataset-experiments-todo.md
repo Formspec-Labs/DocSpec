@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 38 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 39 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1039,7 +1039,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d33"></a>
 
-- [ ] **D33 · P2 · Review current file and function outliers by responsibility.**
+- [x] **D33 · P2 · Review current file and function outliers by responsibility.**
   Reassess catalog CLI coordination, checkpoint verification, base reprocessing,
   delivery indexing, and execution control flow after workflow changes settle.
   Review large schemas and segmentation algorithms separately. **Done when:**
@@ -1053,7 +1053,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   identifies the existing artifact reader as its replacement. The installed
   source test now separates environment setup from its executable probe; the
   probe is ordinary Python that editors and Ruff can inspect (`d97bdab`).
-  Review of the remaining execution, schema, and algorithm outliers is open.
+  The [current responsibility review](cleanup-decisions.md#september-12-follow-up)
+  covers all five production functions of at least 200 lines. Checkpoint
+  verification, retained-base preparation, per-document execution, and release
+  indexing each keep one related state transition together; the closed schema
+  declarations remain beside their typed rows. The scale and segmentation
+  decisions remain applicable. No additional wrappers or dispatch framework are
+  warranted by line count alone. This completes the local responsibility review;
+  fresh independent review remains D39.
 
 <a id="d34"></a>
 
@@ -1207,14 +1214,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   broader D39 acceptance remains open.
 
   **Latest local qualification, September 12:** the combined suite for
-  implementation `86badb3` passed **1,064 tests**, with one live integration test
-  deselected, in 236.26 seconds and no warnings. This includes the optional
+  implementation `722e0ce` passed **1,071 tests**, with one live integration test
+  deselected, in 230.08 seconds and no warnings. This includes the optional
   SpicyDocs `0.3.0` reader, catalog growth, retained bill/XML processing, provider
   source refusals, shared CourtListener parsing, simplified profiles, catalog
-  admission through one verifier, and installed native Dagster recovery. The
-  preceding bill handoff at `03df308` passed 1,066 tests; the parser change replaces
-  redundant source-grammar tests with DocSpec candidate, refusal and selection
-  checks. Ruff, lock consistency and 477 maintained-document local file targets
+  admission through one verifier, installed native Dagster recovery, and the GAO
+  topic example. GAO checks run both locally and from an installed DocSpec wheel
+  using the same behavioral test. The focused installed-provider, GAO and package
+  boundary gate passed **20 tests** in 23.69 seconds. Ruff and lock consistency
   passed. The installed provider's 92 package files match the shared wheel bytes.
   Independent review of the newest implementation is
   pending because all three reviewers reached their usage limit; these local
