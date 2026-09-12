@@ -1323,6 +1323,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   tests. Ruff and lock checks passed. The revised recipe also passed installed
   text16 recovery and clean comparison; a measurement-only edit no longer forces
   dataset rebuilding, while processor-byte drift still refuses.
+  [Installed metadata/audit measurements](capacity-workloads.md#metadata-opening-and-full-audit-are-separate-operations)
+  on `3eced2f` returned identical release references and declared counts: opening
+  the 4,096-document result took 0.11 seconds; auditing its complete retained data
+  took 53.34 seconds. This measures separate scopes on a shared host, not a full
+  workload qualification of the newer revision.
 
   **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
   qualify the original `a4a0e05` markup256 case within its declared local scope.

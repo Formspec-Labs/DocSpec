@@ -137,3 +137,34 @@ These observations precede the later metadata/audit split, PDF and checkpoint
 cleanup, and revised recipe. They do not establish those newer revisions'
 performance. Exact inputs, commands, native measurements and qualification limits
 remain with the frozen trials.
+
+## Metadata opening and full audit are separate operations
+
+The isolated core wheel from `3eced2f` opened the already retained markup256 and
+text4096 processing results from those frozen trials. Each operation ran in a
+fresh Python 3.12.13 process under `/usr/bin/time -l`, including imports and local
+adapter setup. It called the public catalog API directly, without an inspection
+summary scan. The reader explicitly accepted the original results' recorded
+producer identity; their bytes and references remained unchanged.
+
+| Retained result | Metadata open, seconds | Open peak resident bytes | Full audit, seconds | Audit peak resident bytes |
+| --- | ---: | ---: | ---: | ---: |
+| Markup256: 16,512 logical records | 0.23 | 43,040,768 | 8.29 | 78,200,832 |
+| Text4096: 106,496 logical records | 0.11 | 35,389,440 | 53.34 | 94,175,232 |
+
+All four commands succeeded. For each result, opening and auditing returned
+identical release references, logical-state digests and declared counts.
+[Opening checks metadata and linked controls](retained-catalog.md); auditing also
+checks the complete retained data. These timings measure different requested
+work, not a faster implementation of the same full audit. Ordinary reads check
+the records and blobs they consume. Retention, export and maintenance still
+require complete checks.
+
+The wheel SHA-256 is
+`95de0784cfda0c3e51a9e7fbe5ddc92459757a7b2ed2d7e8f653eca22f7983d5`.
+Exact source, installed dependencies, input references, diagnostic script and
+native measurements remain under
+`/Users/mikewolfd/Work/corpora/docspec-metadata-audit-2026-09-12-3eced2f`.
+These observations used the same shared host, overlapped the frozen text trial's
+changed-resource run and had uncontrolled OS cache. They do not qualify a
+complete workload on the newer revision or establish repeatable latency.
