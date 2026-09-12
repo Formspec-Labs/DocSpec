@@ -396,8 +396,6 @@ def test_source_catalog_cli_accepts_the_comment_profile_choice() -> None:
             "git+https://example.test/docspec@" + "1" * 40,
             "--destination",
             "catalog",
-            "--receipt",
-            "receipt.json",
         ]
     )
     assert args.source_native_profile == ["regulations-gov-comments"]
