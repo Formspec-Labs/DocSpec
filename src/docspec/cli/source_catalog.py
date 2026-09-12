@@ -17,6 +17,7 @@ from docspec.adapters.catalog_artifact.reader import (
 from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
     SourceCatalogBuilder,
+    _snapshot_sources,
 )
 from docspec.adapters.catalog_artifact.rules import (
     source_catalog_producer,
@@ -36,6 +37,10 @@ from docspec.domain.identity import (
     stable_urn,
 )
 from docspec.domain.references import SourceCatalogRef
+from docspec.domain.source_outcomes import (
+    DEFAULT_ACCEPTED_RECORD_OUTCOMES, RECORD_OUTCOMES, accepted_record_outcomes, require_accepted_outcome,
+)
+from docspec.ports.source_catalog import SourceNativeDescription
 from docspec.domain.source_catalog import CatalogDisposition
 from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
@@ -162,6 +167,7 @@ def _validate_receipt_identity(receipt: dict[str, Any], *, label: str) -> None:
         receipt,
         {
             "acceptedSourceVerifierImplementationIds",
+            "acceptedRecordOutcomes",
             "blobStore",
             "byteMeasurements",
             "catalog",
@@ -189,7 +195,7 @@ def _validate_receipt_identity(receipt: dict[str, Any], *, label: str) -> None:
     )
     if (
         receipt["format"] != "docspec-source-catalog-build-command-receipt"
-        or receipt["formatVersion"] != "1.0"
+        or receipt["formatVersion"] != "2.0"
         or receipt["operation"] != "source-catalog.build"
         or receipt["verdict"] != "pass"
     ):
@@ -205,33 +211,42 @@ def _validate_receipt_identity(receipt: dict[str, Any], *, label: str) -> None:
         raise SourceCatalogCliError(f"{label} receiptId does not match its content")
 
 
+def _command_source_description(value: object) -> SourceNativeDescription:
+    if not isinstance(value, dict):
+        raise SourceCatalogCliError("command source input must be an object")
+    try:
+        return SourceNativeDescription.from_dict({
+            key: item for key, item in value.items() if key not in {"locator", "blobStore", "profile"}
+        })
+    except (TypeError, ValueError) as error:
+        raise SourceCatalogCliError(f"command source input description is invalid: {error}") from error
+
+
 def _validate_receipt_sources(receipt: dict[str, Any], *, label: str) -> None:
     raw_inputs = receipt["sourceNativeInputs"]
     if not isinstance(raw_inputs, list) or not raw_inputs:
         raise SourceCatalogCliError(f"{label} sourceNativeInputs must be a non-empty array")
     input_pins: list[tuple[str, str]] = []
-    for index, raw_input in enumerate(raw_inputs):
-        source_input = _receipt_object(
-            raw_input,
-            {"artifactDigest", "blobStore", "locator", "logicalId", "profile"},
-            nested_label=f"{label} sourceNativeInputs[{index}]",
-        )
-        _receipt_absolute_path(source_input["locator"], nested_label=f"{label} source-native locator")
+    try:
+        accepted = accepted_record_outcomes(receipt["acceptedRecordOutcomes"])
+        if receipt["acceptedRecordOutcomes"] != sorted(accepted):
+            raise ValueError("accepted record outcomes must be sorted and distinct")
+    except (TypeError, ValueError) as error:
+        raise SourceCatalogCliError(str(error)) from error
+    for source_input in raw_inputs:
+        description = _command_source_description(source_input)
+        _receipt_absolute_path(source_input.get("locator"), nested_label=f"{label} source-native locator")
         _receipt_absolute_path(
-            source_input["blobStore"],
+            source_input.get("blobStore"),
             nested_label=f"{label} source-native blob store",
         )
-        _receipt_text(source_input["logicalId"], nested_label=f"{label} source-native logicalId")
         try:
-            require_sha256(
-                source_input["artifactDigest"],
-                f"{label} source-native artifactDigest",
-            )
+            require_accepted_outcome(description.collection_outcome, accepted)
         except ValueError as error:
             raise SourceCatalogCliError(str(error)) from error
-        if source_input["profile"] not in _SOURCE_NATIVE_PROFILES:
+        if source_input.get("profile") not in _SOURCE_NATIVE_PROFILES:
             raise SourceCatalogCliError(f"{label} contains an unsupported source-native profile")
-        input_pins.append((source_input["logicalId"], source_input["artifactDigest"]))
+        input_pins.append((description.logical_id, description.artifact_digest))
     if len(set(input_pins)) != len(input_pins):
         raise SourceCatalogCliError(f"{label} source-native input pins must be distinct")
 
@@ -516,15 +531,16 @@ def _verify(args: argparse.Namespace) -> int:
             receipt["selectedSourceSetDigest"],
         ),
         "selectionPolicy": (dict(summary.selection_policy), receipt["catalogPolicy"]),
+        "acceptedRecordOutcomes": (sorted(summary.accepted_record_outcomes), receipt["acceptedRecordOutcomes"]),
         "sourceNativeInputs": (
-            {
-                (value["logicalId"], value["artifactDigest"])
-                for value in summary.source_native_inputs
-            },
-            {
-                (value["logicalId"], value["artifactDigest"])
-                for value in receipt["sourceNativeInputs"]
-            },
+            canonical_json_file_bytes(sorted(
+                (SourceNativeDescription.from_dict(value).to_dict() for value in summary.source_native_inputs),
+                key=lambda value: (value["logicalId"], value["artifactDigest"]),
+            )),
+            canonical_json_file_bytes(sorted(
+                (_command_source_description(value).to_dict() for value in receipt["sourceNativeInputs"]),
+                key=lambda value: (value["logicalId"], value["artifactDigest"]),
+            )),
         ),
     }
     for name, (actual, expected) in comparisons.items():
@@ -551,7 +567,8 @@ def _verify(args: argparse.Namespace) -> int:
             "partitionPolicy": dict(summary.partition_policy),
             "joinCoverage": [dict(value) for value in summary.join_coverage],
             "diagnosticDigests": dict(summary.diagnostic_digests),
-            "sourceNativeInputs": [dict(value) for value in summary.source_native_inputs],
+            "sourceNativeInputs": [SourceNativeDescription.from_dict(value).to_dict() for value in summary.source_native_inputs],
+            "acceptedRecordOutcomes": sorted(summary.accepted_record_outcomes),
             "byteMeasurements": dict(summary.byte_measurements),
             "verdict": "pass",
         }
@@ -583,6 +600,9 @@ def _build(args: argparse.Namespace) -> int:
     else:
         raise SourceCatalogCliError("catalog policy is not implemented by this DocSpec version")
     accepted_verifiers = frozenset(args.accepted_source_verifier_implementation_id)
+    accepted_outcomes = accepted_record_outcomes(
+        DEFAULT_ACCEPTED_RECORD_OUTCOMES if args.accepted_record_outcome is None else args.accepted_record_outcome
+    )
 
     # Import the producer adapter only after the operator selects it. Help and
     # verification do not require the producer package.
@@ -616,6 +636,7 @@ def _build(args: argparse.Namespace) -> int:
         )
         for locator, digest, blob_root, profile_name in source_inputs
     )
+    sources = _snapshot_sources(sources, accepted_outcomes)
     descriptions = tuple(source.describe() for source in sources)
     catalog_id = stable_urn(
         "source-catalog-series",
@@ -655,7 +676,7 @@ def _build(args: argparse.Namespace) -> int:
         result = SourceCatalogBuilder(
             store=catalog_store,
             policy=policy,
-            request=SourceCatalogBuildRequest(catalog_id, producer),
+            request=SourceCatalogBuildRequest(catalog_id, producer, accepted_record_outcomes=accepted_outcomes),
             workspace_factory=lambda: (
                 SqliteCatalogPolicyWorkspace(path=args.resume_workspace)
                 if args.resume_workspace is not None
@@ -681,13 +702,13 @@ def _build(args: argparse.Namespace) -> int:
         content = {
             "operation": "source-catalog.build",
             "acceptedSourceVerifierImplementationIds": sorted(accepted_verifiers),
+            "acceptedRecordOutcomes": sorted(accepted_outcomes),
             "sourceNativeInputs": [
                 {
                     "locator": Path(locator).resolve(strict=True).as_posix(),
                     "blobStore": Path(blob_root).resolve(strict=True).as_posix(),
                     "profile": profile_name,
-                    "logicalId": description.logical_id,
-                    "artifactDigest": description.artifact_digest,
+                    **description.to_dict(),
                 }
                 for (locator, _, blob_root, profile_name), description in zip(
                     source_inputs,
@@ -719,7 +740,7 @@ def _build(args: argparse.Namespace) -> int:
         }
         receipt = {
             "format": "docspec-source-catalog-build-command-receipt",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "receiptId": stable_urn("source-catalog-build-command-receipt", content),
             **content,
         }
@@ -752,6 +773,10 @@ def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
         choices=_SOURCE_NATIVE_PROFILES,
     )
     source_build.add_argument("--accepted-source-verifier-implementation-id", action="append", required=True)
+    source_build.add_argument(
+        "--accepted-record-outcome", action="append", choices=sorted(RECORD_OUTCOMES),
+        help="Repeat for each accepted provider outcome; defaults to empty and no-record-rejections",
+    )
     source_build.add_argument("--catalog-policy", type=Path, required=True)
     source_build.add_argument("--implementation-id", required=True)
     source_build.add_argument("--verifier-implementation-id", required=True)

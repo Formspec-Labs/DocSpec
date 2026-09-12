@@ -60,7 +60,10 @@ from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPol
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceInputSelector
-from docspec.runtime import build_local_catalog, open_local_catalog
+from docspec.runtime import (
+    build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog,
+)
+from docspec.domain.plans import WorkLimits
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
 from docspec.workspace import LocalWorkspace
 from rulespec_artifacts import Producer
@@ -213,9 +216,11 @@ def catalog_producer() -> Producer:
     )
 
 
-def publish_federal_source(destination: Path, *, changed_id: str | None) -> SourceFixture:
+def publish_federal_source(
+    destination: Path, *, changed_id: str | None, records: tuple[dict[str, object], ...] | None = None,
+) -> SourceFixture:
     payload = response(
-        *(document(value, changed=value == changed_id) for value in DOCUMENT_IDS)
+        *(tuple(document(value, changed=value == changed_id) for value in DOCUMENT_IDS) if records is None else records)
     )
     blob_store = RUN_ROOT / "source-native-blobs"
     release = SourceNativeReleasePublisher(
@@ -579,6 +584,111 @@ assert {row["sourceItemId"] for row in public_rows} == {
     row["sourceRecordId"] for row in public_source.iter_records()
 }
 assert {path.name for path in public_workspace.root.iterdir()} == {"sourceCatalog"}
+assert public_source.describe().collection_outcome["recordOutcome"] == "no-record-rejections"
+assert public_source.describe().collection_outcome["failedRecordCount"] == 0
+# This older fixture deliberately has empty agency lists: the provider accepts
+# those raw records, while DocSpec's required-metadata interpretation refuses.
+assert public_catalog.summary.disposition_counts["failed"] == len(DOCUMENT_IDS)
+
+# The actual installed provider owns classification and evidence admission.
+# DocSpec retains its public report and makes acceptance a separate choice.
+collection_proof = {}
+for outcome_name, records in (
+    ("empty", ()),
+    ("partial-rejection", (document(DOCUMENT_IDS[0], changed=False) | {
+        "agencies": [{"slug": "environmental-protection-agency", "name": "Environmental Protection Agency"}],
+    }, {})),
+    ("total-rejection", ({},)),
+):
+    fixture = publish_federal_source(RUN_ROOT / f"source-{outcome_name}", changed_id=None, records=records)
+    adapter = SpicyDocsSourceNativeAdapter.from_local(
+        fixture.release.root, blob_root=fixture.blob_store,
+        logical_id=fixture.release.artifact.pin.logical_id, artifact_digest=fixture.release.artifact.pin.artifact_digest,
+        profile=FEDERAL_REGISTER_PROFILE, accepted_verifier_implementation_ids=frozenset({SPICY_DOCS_IMPLEMENTATION}),
+    )
+    reported = adapter.describe().to_dict()["collectionOutcome"]
+    assert reported["recordOutcome"] == outcome_name
+    assert reported["discoveredRecordCount"] == len(records)
+    assert reported["publishedRecordCount"] == int(outcome_name == "partial-rejection")
+    assert reported["failedRecordCount"] == int(outcome_name != "empty")
+    assert reported["transientFailureCount"] == reported["unclassedFailureCount"] == 0
+    assert list(adapter.iter_failures(limit=0)) == []
+    failures = list(adapter.iter_failures(limit=1))
+    assert len(failures) == reported["failedRecordCount"]
+    if failures:
+        raw = response(*records)
+        evidence_ref = failures[0]["evidenceBlobRef"]
+        assert adapter.read_evidence(evidence_ref, max_bytes=len(raw)) == raw
+        assert hashlib.sha256(raw).hexdigest() == evidence_ref.removeprefix("sha256:")
+        assert adapter.record_evidence(failures[0]["sourceRecordId"]) is None
+        try:
+            adapter.read_evidence(evidence_ref, max_bytes=len(raw) - 1)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("provider evidence byte limit was ignored")
+    for published in adapter.iter_records():
+        assert adapter.record_evidence(published["sourceRecordId"])["failure"] is None
+    try:
+        adapter.read_evidence("sha256:" + "f" * 64, max_bytes=1024)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("unknown provider evidence was accepted")
+    chosen_workspace = LocalWorkspace(RUN_ROOT / f"catalog-{outcome_name}")
+    settings = {
+        "policy": FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
+        "catalog_id": "urn:docspec:installed-collection-outcome", "producer": catalog_producer(),
+        "max_scratch_bytes": 16 * 1024**2,
+    }
+    if outcome_name != "empty":
+        try:
+            build_local_catalog((adapter,), chosen_workspace, **settings)
+        except ValueError as error:
+            assert outcome_name in str(error)
+        else:
+            raise AssertionError("record rejection was accepted without an explicit choice")
+        assert not chosen_workspace.root.exists()
+    if outcome_name == "total-rejection":
+        try:
+            build_local_catalog((adapter,), chosen_workspace, **settings,
+                accepted_record_outcomes=frozenset({"empty", "no-record-rejections", "partial-rejection"}))
+        except ValueError as error:
+            assert "total-rejection" in str(error)
+        else:
+            raise AssertionError("partial acceptance authorized total rejection")
+        assert not chosen_workspace.root.exists()
+    result = build_local_catalog((adapter,), chosen_workspace, **settings,
+        accepted_record_outcomes=frozenset({"empty", "no-record-rejections", outcome_name}))
+    preview = preview_local_catalog(result.reference, chosen_workspace, producer=catalog_producer())
+    assert preview["catalog"]["sourceNativeInputs"][0]["collectionOutcome"] == reported
+    assert preview["catalog"]["catalogSelection"]["counts"]["failed"] == 0
+    with prepare_local_experiment(
+        result.reference, chosen_workspace, stop_after="capture", limits=WorkLimits(10, 1024**2, 100, 100, 100, 16 * 1024**2, 60),
+        source_catalog_producer=catalog_producer(), document_release_producer=catalog_producer(),
+        completed_at="2026-09-11T00:00:00Z", deadline_epoch_seconds=4102444800,
+    ) as prepared:
+        inspection = open_local_inspection(prepared.plan, chosen_workspace,
+            source_catalog_producer=catalog_producer(), document_release_producer=catalog_producer()).summary()
+    assert inspection["source"]["sourceNativeInputs"][0]["collectionOutcome"] == reported
+    collection_proof[outcome_name] = reported
+
+unresolved_destination = RUN_ROOT / "source-unresolved"
+try:
+    SourceNativeReleasePublisher(FEDERAL_REGISTER_PROFILE,
+        blob_store=LocalSourceNativeBlobStore(RUN_ROOT / "source-native-blobs"), clock=completed_at,
+    ).publish(
+        (pages(response(document(DOCUMENT_IDS[0], changed=False)))[0],
+         pages(response(document(DOCUMENT_IDS[1], changed=False)))[1]),
+        build=SourceNativeReleaseBuild(query_scope=QUERY_SCOPE, producer=producer(), started_at="2026-08-25T00:00:00Z"),
+        destination=unresolved_destination,
+    )
+except ValueError as error:
+    assert "stable consecutive traversals" in str(error)
+    assert error.failed_acquisition["retainedPageEvidence"]["count"] == 2
+else:
+    raise AssertionError("unresolved provider collection published a release")
+assert not (unresolved_destination / "release.json").exists()
 document_source = publish_regulations_source(
     RUN_ROOT / "source-native-regulations-documents",
     profile=REGULATIONS_GOV_DOCUMENT_PROFILE,
@@ -839,6 +949,7 @@ assert regulations_item_scopes == {
 }
 
 proof = {
+    "collectionOutcomes": collection_proof,
     "publicCatalogReference": public_catalog.reference.to_dict(),
     "pythonVersion": ".".join(str(value) for value in sys.version_info[:3]),
     "sysPath": list(sys.path),
@@ -1118,6 +1229,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         "regulations-gov-comments",
     ]
     assert len(proof["sourceNativePins"]) == 5
+    assert set(proof["collectionOutcomes"]) == {"empty", "partial-rejection", "total-rejection"}
     assert len(proof["commandReceipts"]) == 4
     assert len(proof["admissions"]) == 4
     assert proof["existingDestinationRefusal"]["returnCode"] == 2

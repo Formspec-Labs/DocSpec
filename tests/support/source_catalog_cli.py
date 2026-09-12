@@ -43,6 +43,20 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
             self.source_system_version = description().source_system_version
             self.source_state_digest = description().source_state_digest
             self.source_native_schema_set_digest = description().source_native_schema_set_digest
+            self.collection_outcome = {
+                "recordOutcome": "no-record-rejections", "sourceStateScope": self.source_state_scope,
+                "publishedRecordCount": 1, "failedRecordCount": 0,
+                "requestedScope": {"providerQuery": {"page": 1}},
+            }
+
+        def record_evidence(self, source_record_id):
+            return None
+
+        def iter_failures(self, *, limit=100):
+            yield from ()
+
+        def read_evidence(self, blob_ref, *, max_bytes):
+            raise ValueError("fixture has no provider evidence blobs")
 
         def iter_records(self):
             yield record("2026-00001")

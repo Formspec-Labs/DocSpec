@@ -20,6 +20,7 @@ from rulespec_artifacts import (
 
 from docspec.adapters.catalog_artifact import derivation
 from docspec.adapters.catalog_artifact.accounting import _reconcile_reason_counts
+from docspec.adapters.catalog_artifact.digests import _source_schema_set_digest, _source_system_set_digest
 from docspec.adapters.catalog_artifact.rows import _read_small
 from docspec.adapters.catalog_artifact.rules import (
     _CATALOG_SPEC_FIELDS,
@@ -48,9 +49,11 @@ from docspec.domain.source_catalog import (
     CatalogDisposition,
 )
 from docspec.errors import IntegrityError
+from docspec.domain.source_outcomes import accepted_record_outcomes, require_accepted_outcome
 from docspec.ports.source_catalog import (
     SourceCatalogBlobSource,
     SourceCatalogSnapshotSummary,
+    SourceNativeDescription,
 )
 
 
@@ -133,8 +136,22 @@ class SourceCatalogArtifactVerifier:
         expected_inputs = [
             {"logicalId": value.logical_id, "artifactDigest": value.artifact_digest} for value in artifact.inputs
         ]
-        if receipt["sourceNativeInputs"] != expected_inputs:
+        try:
+            descriptions = tuple(SourceNativeDescription.from_dict(value) for value in receipt["sourceNativeInputs"])
+            accepted = accepted_record_outcomes(receipt["acceptedRecordOutcomes"])
+            if receipt["acceptedRecordOutcomes"] != sorted(accepted):
+                raise ValueError("accepted record outcomes must have canonical order")
+            for description in descriptions:
+                require_accepted_outcome(description.collection_outcome, accepted)
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"catalog input description or acceptance is invalid: {error}") from error
+        if [{"logicalId": value.logical_id, "artifactDigest": value.artifact_digest} for value in descriptions] != expected_inputs:
             raise IntegrityError("catalog build receipt source-native inputs differ from the root")
+        if (
+            _source_system_set_digest(descriptions) != spec["sourceSystemSetDigest"]
+            or _source_schema_set_digest(descriptions) != spec["sourceNativeSchemaSetDigest"]
+        ):
+            raise IntegrityError("catalog source description digests differ from the root")
         if (
             policy["policyId"] != spec["selectionPolicyId"]
             or policy["policyVersion"] != spec["selectionPolicyVersion"]
@@ -236,6 +253,7 @@ class SourceCatalogArtifactVerifier:
             join_coverage=tuple(dict(value) for value in receipt["joinCoverage"]),
             diagnostic_digests={name: receipt[name] for name in _DIAGNOSTIC_DIGEST_FIELDS},
             source_native_inputs=tuple(dict(value) for value in receipt["sourceNativeInputs"]),
+            accepted_record_outcomes=accepted,
             byte_measurements=dict(receipt["byteMeasurements"]),
             succession=(None if "supersedes" not in root else _source_catalog_succession(root["supersedes"])),
         )

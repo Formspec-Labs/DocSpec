@@ -26,7 +26,7 @@ from tests.support.source_catalog_cli import (
 )
 
 
-def test_spicyregs_adapter_pins_the_source_blob_root_across_streams(
+def test_spicy_docs_adapter_pins_the_source_blob_root_across_streams(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -60,6 +60,20 @@ def test_spicyregs_adapter_pins_the_source_blob_root_across_streams(
             self.source_system_version = description().source_system_version
             self.source_state_digest = description().source_state_digest
             self.source_native_schema_set_digest = description().source_native_schema_set_digest
+            self.collection_outcome = {"recordOutcome": "empty", "sourceStateScope": self.source_state_scope}
+
+        def record_evidence(self, source_record_id):
+            return None
+
+        def iter_failures(self, *, limit=100):
+            return iter(())
+
+        def read_evidence(self, reference, *, max_bytes):
+            with self._blob_source.open(reference) as stream:
+                value = stream.read(max_bytes + 1)
+            if len(value) > max_bytes:
+                raise ValueError("fixture evidence exceeds its byte limit")
+            return value
 
         def iter_records(self):
             with self._blob_source.open(blob_ref) as stream:

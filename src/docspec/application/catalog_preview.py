@@ -7,7 +7,7 @@ from contextlib import closing
 from typing import Any
 
 from docspec.domain.identity import canonical_json_bytes
-from docspec.ports.source_catalog import SourceCatalogSnapshotSummary
+from docspec.ports.source_catalog import SourceCatalogSnapshotSummary, SourceNativeDescription
 
 from .catalog_policy import utf16_key
 from .comparison import json_changes, json_equal, paired_rows
@@ -27,7 +27,8 @@ def _summary(summary: SourceCatalogSnapshotSummary) -> dict[str, Any]:
         "itemCount": summary.item_count,
         "selectionPolicy": dict(summary.selection_policy),
         "partitions": list(summary.partitions), "partitionPolicy": dict(summary.partition_policy),
-        "sourceNativeInputs": [dict(value) for value in summary.source_native_inputs],
+        "sourceNativeInputs": [SourceNativeDescription.from_dict(value).to_dict() for value in summary.source_native_inputs],
+        "acceptedRecordOutcomes": sorted(summary.accepted_record_outcomes),
         "catalogSelection": {
             "counts": dict(summary.disposition_counts),
             "reasons": [dict(value) for value in summary.reason_counts],

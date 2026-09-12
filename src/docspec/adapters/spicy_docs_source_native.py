@@ -87,6 +87,22 @@ class SpicyDocsSourceNativeAdapter:
             expected_pin=expected_pin,
             accepted_verifier_implementation_ids=accepted_verifier_implementation_ids,
         )
+        outcome = getattr(self._reader, "collection_outcome", None)
+        if not isinstance(outcome, Mapping) or not all(
+            callable(getattr(self._reader, name, None))
+            for name in ("record_evidence", "iter_failures", "read_evidence")
+        ):
+            raise SourceNativeReaderError("the installed spicy-docs reader lacks the required public collection outcome API")
+        self._description = SourceNativeDescription(
+            logical_id=self._reader.pin.logical_id,
+            artifact_digest=self._reader.pin.artifact_digest,
+            source_system_id=self._reader.source_system_id,
+            source_system_version=self._reader.source_system_version,
+            source_state_scope=self._reader.source_state_scope,
+            source_state_digest=self._reader.source_state_digest,
+            source_native_schema_set_digest=self._reader.source_native_schema_set_digest,
+            collection_outcome=outcome,
+        )
 
     @classmethod
     def from_local(
@@ -111,15 +127,19 @@ class SpicyDocsSourceNativeAdapter:
         return adapter
 
     def describe(self) -> SourceNativeDescription:
-        return SourceNativeDescription(
-            logical_id=self._reader.pin.logical_id,
-            artifact_digest=self._reader.pin.artifact_digest,
-            source_system_id=self._reader.source_system_id,
-            source_system_version=self._reader.source_system_version,
-            source_state_scope=self._reader.source_state_scope,
-            source_state_digest=self._reader.source_state_digest,
-            source_native_schema_set_digest=self._reader.source_native_schema_set_digest,
-        )
+        return self._description
+
+    def record_evidence(self, source_record_id: str) -> Mapping[str, Any] | None:
+        """Read the provider's admitted observation for one published record."""
+        return self._reader.record_evidence(source_record_id)
+
+    def iter_failures(self, *, limit: int = 100) -> Iterator[Mapping[str, Any]]:
+        """Stream at most limit provider record rejections; IDs may be placeholders."""
+        yield from self._reader.iter_failures(limit=limit)
+
+    def read_evidence(self, blob_ref: str, *, max_bytes: int) -> bytes:
+        """Read bounded original provider evidence with its own membership checks."""
+        return self._reader.read_evidence(blob_ref, max_bytes=max_bytes)
 
     def iter_records(self) -> Iterator[Mapping[str, Any]]:
         yield from self._reader.iter_records()

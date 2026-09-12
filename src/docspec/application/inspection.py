@@ -18,7 +18,7 @@ from docspec.ports.document_catalog import DocumentCatalog
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_storage import RecordStorage
 from docspec.ports.record_workspace import RecordWorkspaceFactory
-from docspec.ports.source_catalog import SourceCatalogSnapshotSummary
+from docspec.ports.source_catalog import SourceCatalogSnapshotSummary, SourceNativeDescription
 
 from .inspection_evidence import ENTRY_COUNT_KEYS, entry_evidence
 from .inspection_runs import load_run, work_stores
@@ -158,6 +158,11 @@ class InspectionView:
                 "itemCount": self._source_summary.item_count,
                 "dispositionCounts": dict(self._source_summary.disposition_counts),
                 "reasonCounts": [dict(row) for row in self._source_summary.reason_counts],
+                "sourceNativeInputs": [
+                    SourceNativeDescription.from_dict(value).to_dict() for value in self._source_summary.source_native_inputs
+                ],
+                "acceptedRecordOutcomes": sorted(self._source_summary.accepted_record_outcomes),
+                "collectionEvidenceScope": "provider-reported; bound to the source input pin, without upstream re-admission",
             }
         return {
             "format": "docspec-inspection", "formatVersion": "1.0", "phase": self.phase,

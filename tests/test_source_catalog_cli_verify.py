@@ -110,6 +110,7 @@ def test_cli_verify_requires_one_closed_build_command_receipt(
         ("catalog-state", "catalogStateDigest"),
         ("source-logical-id", "sourceNativeInputs"),
         ("source-artifact-digest", "sourceNativeInputs"),
+        ("source-outcome-json-type", "sourceNativeInputs"),
         ("byte-measurements", "byteMeasurements"),
     ],
 )
@@ -142,6 +143,8 @@ def test_cli_verify_rejects_a_self_consistent_command_summary_tamper(
         command_receipt["sourceNativeInputs"][0]["logicalId"] = "urn:test:different-source"
     elif changed_fact == "source-artifact-digest":
         command_receipt["sourceNativeInputs"][0]["artifactDigest"] = "sha256:" + "f" * 64
+    elif changed_fact == "source-outcome-json-type":
+        command_receipt["sourceNativeInputs"][0]["collectionOutcome"]["requestedScope"]["providerQuery"]["page"] = True
     else:
         command_receipt["byteMeasurements"]["payloadBytesRead"] += 1
         command_receipt["byteMeasurements"]["payloadBytesWritten"] += 1

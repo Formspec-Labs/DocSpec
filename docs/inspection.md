@@ -50,6 +50,12 @@ catalog with its independently accepted producer. DocSpec does not borrow docume
 producer acceptance or infer acceptance from an artifact's own labels. Without
 that choice, the report explicitly marks source coverage unavailable.
 
+The source section includes the catalog's retained input descriptions and
+accepted collection outcomes. Reported upstream rejection counts stay separate
+from scheduled document failures. These are provider-reported facts bound to
+source pins; opening a catalog does not re-admit the provider. An unreported
+outcome is explicit `null`, including for caller-supplied records.
+
 ## Read one item's evidence and output
 
 ```python

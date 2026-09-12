@@ -14,6 +14,12 @@ for located in catalog.iter_located_mappings():
 ```
 
 `catalog.summary` identifies the artifact and its recorded completeness evidence.
+Its `source_native_inputs` retain full source descriptions, including the
+provider's reported collection outcome or explicit `null` when unreported.
+`accepted_record_outcomes` records which outcomes this build allowed. The reader
+checks these descriptions against the catalog's source pins and saved acceptance;
+it does not independently repeat upstream collection admission. See
+[input acceptance and original evidence access](catalog-inputs.md#decide-whether-to-accept-rejected-source-records).
 Use `catalog.iter_mappings()` when locations are unnecessary, or
 `catalog.open_snapshot()` for the existing `SourceCatalogSnapshot` object stream.
 Each call opens a fresh stream. Returned dictionaries belong to the caller;

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 17 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 19 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -309,7 +309,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d08"></a>
 
-- [ ] **D08 · P1 · Carry source collection outcomes into the dataset.** Consume
+- [x] **D08 · P1 · Carry source collection outcomes into the dataset.** Consume
   the provider's public outcomes and retain them in DocSpec's source description.
   DocSpec owns the explicit policy for accepting partial input. **Done when:**
   empty observations, rejected records, unresolved collection, and successful
@@ -318,6 +318,20 @@ to defer a conditional item is a documented deferral, not completed implementati
   document-processing failures. Provider implementation lives in
   [SpicyDocs S01](../../spicy-docs/docs/simplification-todo.md#s01) and
   [S09](../../spicy-docs/docs/simplification-todo.md#s09).
+
+  **Completed September 11:** catalog receipt 2.0 retains the provider's exact
+  immutable description, reported outcome, and explicit acceptance choices.
+  Partial and total record rejection require separate opt-ins before source
+  iteration or output creation. Preview and source inspection preserve these
+  observations separately from catalog-policy and document-processing failures.
+  The current provider refuses unresolved collection before publication;
+  DocSpec propagates that refusal. Supplied records report no invented outcome.
+  The [architecture decision](history/2026-09-11-source-outcomes-architecture.md)
+  and [independent review](history/2026-09-11-source-outcomes-review.md) cover
+  exact evidence, bounded descriptions, saved recovery, and the consequence of
+  omitted records in a full successor catalog. The combined gate passed 121
+  checks with one installed-fixture failure; the corrected installed gate then
+  passed both checks. D10 records the actual package boundary.
 
 <a id="d09"></a>
 
@@ -342,7 +356,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d10"></a>
 
-- [ ] **D10 · P1 · Qualify the current installed source integration.** Coordinate
+- [x] **D10 · P1 · Qualify the current installed source integration.** Coordinate
   source schema, policy, receipt fields, and producer-label acceptance with the
   actual SpicyDocs release being tested. Replace the old integration wheel pin
   deliberately and retire historical acceptance branches where unnecessary.
@@ -362,6 +376,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   package checks passed. D10 remains open for D08's partial-input handling;
   updating the shared wheel does not complete D28's encoder or D31's writer
   adoption. Receiver qualification and upstream publication remain distinct.
+
+  **Completed September 11:** the isolated SpicyDocs 0.2.0 / Rulespec Artifacts
+  1.0.12 check now publishes and consumes actual empty, partial-rejection and
+  total-rejection sources, follows bounded original evidence, and refuses
+  unresolved traversal. It distinguishes provider rejections from independently
+  failed DocSpec metadata rules. Partial input requires explicit acceptance;
+  unsupported reader capabilities refuse clearly. Both installed-package checks
+  passed after correcting a new fixture's missing agency metadata. The normal
+  installation and separate reader environment still require no sibling checkout.
 
 <a id="d11"></a>
 

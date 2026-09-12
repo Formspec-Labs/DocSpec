@@ -99,6 +99,9 @@ class MemorySourceCatalog:
                 {
                     "logicalId": "urn:test:source-native",
                     "artifactDigest": reference.digest,
+                    "sourceSystemId": "urn:test:source-native", "sourceSystemVersion": "1",
+                    "sourceStateScope": "complete-snapshot", "sourceStateDigest": reference.digest,
+                    "sourceNativeSchemaSetDigest": reference.digest, "collectionOutcome": None,
                 },
             ),
             byte_measurements={

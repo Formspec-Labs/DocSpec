@@ -117,3 +117,48 @@ def test_missing_producer_is_a_structured_cli_failure_before_publication(
     assert attempted == ["spicy_docs.source_native_profiles"]
     assert not destination.exists()
     assert not receipt.exists()
+
+
+def test_reader_without_public_outcomes_is_refused_before_catalog_publication(tmp_path, monkeypatch, capsys):
+    from tests.support.source_catalog_cli import install_fake_source_native
+
+    install_fake_source_native(monkeypatch)
+    reader = sys.modules[_READER_MODULE_NAME].SourceNativeReleaseReader
+    original_init = reader.__init__
+
+    def initialize_without_outcomes(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        del self.collection_outcome
+
+    monkeypatch.setattr(reader, "__init__", initialize_without_outcomes)
+    destination = tmp_path / "catalog"
+    receipt = destination / "source-catalog-build-command-receipt.json"
+    assert main(source_catalog_build_arguments(tmp_path, destination=destination, receipt_path=receipt)) == 2
+    failure = json.loads(capsys.readouterr().err)
+    assert failure["errorType"] == "SourceNativeReaderError"
+    assert "required public collection outcome API" in failure["message"]
+    assert not destination.exists()
+
+
+def test_cli_requires_and_records_explicit_partial_input_acceptance(tmp_path, monkeypatch, capsys):
+    from tests.support.source_catalog_cli import install_fake_source_native
+
+    install_fake_source_native(monkeypatch)
+    reader = sys.modules[_READER_MODULE_NAME].SourceNativeReleaseReader
+    original_init = reader.__init__
+
+    def initialize_partial(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        self.collection_outcome.update(recordOutcome="partial-rejection", failedRecordCount=1)
+
+    monkeypatch.setattr(reader, "__init__", initialize_partial)
+    destination = tmp_path / "catalog"
+    receipt = destination / "source-catalog-build-command-receipt.json"
+    arguments = source_catalog_build_arguments(tmp_path, destination=destination, receipt_path=receipt)
+    assert main(arguments) == 2
+    assert "partial-rejection" in capsys.readouterr().err
+    assert not destination.exists()
+    assert main(arguments + ["--accepted-record-outcome", "partial-rejection"]) == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["acceptedRecordOutcomes"] == ["partial-rejection"]
+    assert saved["sourceNativeInputs"][0]["collectionOutcome"]["failedRecordCount"] == 1

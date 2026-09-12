@@ -106,6 +106,66 @@ installed-provider test uses a pinned SpicyDocs wheel and bounded fixtures;
 it does not establish live provider completeness. Other admitted sources can
 implement `SourceNativeRecordSource` and supply their own matching policy.
 
+## Decide whether to accept rejected source records
+
+The current installed SpicyDocs reader reports collection outcomes separately
+from document acquisition and processing. `source.describe().collection_outcome`
+preserves that report; `source.describe().to_dict()` returns a mutable JSON copy.
+The saved catalog retains the complete description under `sourceNativeInputs`,
+along with the build's `acceptedRecordOutcomes`. Ordinary catalog opening,
+preview, and separately authorized source inspection expose this evidence.
+
+By default, a build accepts `empty` and `no-record-rejections`. An empty
+observation does not prove publisher-wide absence. To accept a published subset
+whose provider rejected some records, make that choice explicit:
+
+```python
+from docspec.source_catalog import DEFAULT_ACCEPTED_RECORD_OUTCOMES
+
+result = build_local_catalog(
+    (source,), workspace, policy=policy, catalog_id=catalog_id,
+    producer=catalog_output_producer, max_scratch_bytes=128 * 1024**2,
+    accepted_record_outcomes=DEFAULT_ACCEPTED_RECORD_OUTCOMES | {"partial-rejection"},
+)
+```
+
+This still refuses `total-rejection`, which contains no published records.
+Include that outcome separately only when you intend to accept it. The CLI's
+repeatable `--accepted-record-outcome` sets the complete accepted set when used;
+repeat it for `empty`, `no-record-rejections`, and `partial-rejection` to match
+the Python example. Acceptance is checked before creating build output and is
+part of existing resume identity. It does not change the interpretation policy.
+
+Accepting a partial or totally rejected input still builds a full dataset
+snapshot. With a base result, omitted prior items enter planning as deletions,
+subject to selection filters. Acceptance does not request append semantics or
+preserve records that the input no longer publishes.
+
+The report retains the provider's original requested scope, collection policy,
+warnings, and count names. For the qualified provider, discovered records equal
+input observations plus failed records; input observations equal published
+records plus discarded observations. Those units describe upstream collection,
+not selected documents or processing attempts. The provider validates its count
+arithmetic, traversal, and evidence; DocSpec preserves its reported evidence,
+bound to the original source pin, without repeating that semantic admission.
+
+Supplied records report `collectionOutcome: null`: no upstream collection outcome
+was observed. The current provider refuses unresolved traversal and transient or
+unclassed collection failures instead of publishing an admissible release.
+DocSpec preserves that refusal boundary; an accepted partial release represents
+deterministic record rejection, not unresolved collection or permanent absence.
+
+Use `source.record_evidence(source_record_id)` for a published record's original
+observation, `source.iter_failures(limit=20)` for a bounded rejection sample, and
+`source.read_evidence(blob_ref, max_bytes=...)` for its original bytes. These methods
+delegate to the provider's existing membership and byte checks. Failure IDs may
+be provider-assigned placeholders for unclassifiable records. A limit bounds
+returned failures, not necessarily the number of ledger rows scanned. Exhaust
+or close iterators promptly. The catalog retains the source pin and report;
+reading raw provider evidence later requires that original provider artifact,
+its blobs, and independent verifier acceptance. No duplicate failure ledger is
+stored in the dataset.
+
 ## Reopen, resume, or process
 
 `open_local_catalog` requires existing storage and creates no directories. It
@@ -115,8 +175,8 @@ pin refuses. Full producer-diagnostic recomputation remains the explicit
 `SourceCatalogArtifactReader.verify_snapshot` operation.
 
 An optional absolute `resume_workspace` path reuses the builder's existing SQLite
-recovery state after interruption. Identical source pins, policy, producer, and
-catalog identity are required. The supplied path remains after completion;
+recovery state after interruption. Identical source descriptions, outcome
+acceptance, policy, producer, and catalog identity are required. The supplied path remains after completion;
 ordinary temporary scratch is removed on success or failure. `max_scratch_bytes`
 reserves database and rollback-journal space, separately from staged/published
 catalog bytes and other concurrent work. Supplied-record memory is separately

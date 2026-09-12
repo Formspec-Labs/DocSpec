@@ -14,10 +14,11 @@ from typing import Any, Self
 
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import closed_mapping, freeze_json, require_sha256, require_text, thaw_json
+from docspec.domain.source_outcomes import RECORD_OUTCOMES
 
 SOURCE_CATALOG_ITEM_SCHEMA_ID = "urn:docspec:schema:source-catalog-item:1.0"
 SOURCE_CATALOG_POLICY_SCHEMA_ID = "urn:docspec:schema:source-catalog-policy:1.0"
-SOURCE_CATALOG_RECEIPT_SCHEMA_ID = "urn:docspec:schema:source-catalog-build-receipt:1.0"
+SOURCE_CATALOG_RECEIPT_SCHEMA_ID = "urn:docspec:schema:source-catalog-build-receipt:2.0"
 SOURCE_CATALOG_MAX_JOIN_IDS = 256
 
 
@@ -894,6 +895,7 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             "selectionPolicyVersion",
             "selectionPolicyDigest",
             "sourceNativeInputs",
+            "acceptedRecordOutcomes",
             "catalogStateDigest",
             "requestedUniverseSetDigest",
             "selectedSourceSetDigest",
@@ -917,7 +919,7 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
         ],
         "properties": {
             "format": {"const": "docspec-source-catalog-build-receipt"},
-            "formatVersion": {"const": "1.0"},
+            "formatVersion": {"const": "2.0"},
             "catalogId": {"type": "string", "minLength": 1},
             "catalogSchemaDigest": digest,
             "sourceSystemSetDigest": digest,
@@ -925,6 +927,9 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
             "selectionPolicyId": text,
             "selectionPolicyVersion": text,
             "selectionPolicyDigest": digest,
+            "acceptedRecordOutcomes": {
+                "type": "array", "uniqueItems": True, "items": {"enum": sorted(RECORD_OUTCOMES)},
+            },
             "sourceNativeInputs": {
                 "type": "array",
                 "minItems": 1,
@@ -932,8 +937,17 @@ def source_catalog_schemas() -> dict[str, dict[str, Any]]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["logicalId", "artifactDigest"],
-                    "properties": {"logicalId": text, "artifactDigest": digest},
+                    "required": [
+                        "logicalId", "artifactDigest", "sourceSystemId", "sourceSystemVersion",
+                        "sourceStateScope", "sourceStateDigest", "sourceNativeSchemaSetDigest", "collectionOutcome",
+                    ],
+                    "properties": {
+                        "logicalId": text, "artifactDigest": digest,
+                        "sourceSystemId": text, "sourceSystemVersion": text,
+                        "sourceStateScope": {"enum": ["complete-snapshot", "observed-crawl"]},
+                        "sourceStateDigest": digest, "sourceNativeSchemaSetDigest": digest,
+                        "collectionOutcome": {"type": ["object", "null"]},
+                    },
                 },
             },
             "catalogStateDigest": digest,

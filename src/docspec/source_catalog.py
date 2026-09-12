@@ -53,8 +53,11 @@ from docspec.ports.source_catalog import (
     SourceNativeRecordSource,
     SourceNativeRow,
 )
+from docspec.domain.source_outcomes import DEFAULT_ACCEPTED_RECORD_OUTCOMES, RECORD_OUTCOMES
 
 __all__ = [
+    "DEFAULT_ACCEPTED_RECORD_OUTCOMES",
+    "RECORD_OUTCOMES",
     "AdmittedSourceCatalog",
     "CatalogPolicyInputs",
     "CatalogPolicyWorkspace",
