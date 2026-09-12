@@ -214,28 +214,13 @@ class ReleaseCompactionReceipt:
                 raise ValueError(f"{label} must be sorted and distinct")
         if set(self.rewritten_layer_kinds) & set(self.reused_layer_kinds):
             raise ValueError("compaction layer classifications overlap")
-        expected_evidence = {
-            "logicalRecordCount",
-            "logicalRecordReadCount",
-            "logicalScanPassCount",
-            "explicitCatalogOpenCount",
-            "boundedStreaming",
-        }
+        expected_evidence = {"logicalRecordCount", "logicalRecordReadCount"}
         if set(self.verification_evidence) != expected_evidence:
             raise ValueError("compaction verification evidence has an invalid closed shape")
-        for name in expected_evidence - {"boundedStreaming"}:
+        for name in expected_evidence:
             value = self.verification_evidence[name]
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError("compaction verification counts must be non-negative integers")
-        if self.verification_evidence["boundedStreaming"] is not True:
-            raise ValueError("compaction verification must declare bounded streaming")
-        if self.verification_evidence["logicalScanPassCount"] != 3:
-            raise ValueError("compaction must evidence source digest, rewrite, and successor digest scans")
-        if self.verification_evidence["logicalRecordReadCount"] != (
-            self.verification_evidence["logicalRecordCount"]
-            * self.verification_evidence["logicalScanPassCount"]
-        ):
-            raise ValueError("compaction logical record-read evidence does not reconcile")
         object.__setattr__(
             self,
             "verification_evidence",

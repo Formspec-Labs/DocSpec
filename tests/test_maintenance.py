@@ -267,9 +267,6 @@ def test_compaction_commits_a_zero_task_successor_with_exact_logical_state(tmp_p
     assert receipt.verification_evidence == {
         "logicalRecordCount": logical_record_count,
         "logicalRecordReadCount": logical_record_count * 3,
-        "logicalScanPassCount": 3,
-        "explicitCatalogOpenCount": 2,
-        "boundedStreaming": True,
     }
     assert _revision_files(platform.stores) == source_revisions
     assert {

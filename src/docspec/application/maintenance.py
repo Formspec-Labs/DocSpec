@@ -563,11 +563,6 @@ class ReleaseCompactionService:
                 "logicalRecordReadCount": (
                     source_digest_reads + rewrite_reads + successor_digest_reads
                 ),
-                "logicalScanPassCount": 3,
-                # Direct service opens: the source and the verified successor.
-                # Catalog-internal admission during current()/commit is separate.
-                "explicitCatalogOpenCount": 2,
-                "boundedStreaming": True,
             },
         )
         return self._controls.put(
