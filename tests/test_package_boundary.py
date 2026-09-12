@@ -54,9 +54,10 @@ HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
 # Every expression this repository passes as a subprocess working directory.
 # `ROOT` and `REPO_ROOT` are this checkout; `root` is a parameter its callers
 # bind to this checkout or to a temporary copy of it;
-# `tmp_path` is the pytest temporary directory. A crossing returns as a new
+# `tmp_path` is the pytest temporary directory; `RUN_ROOT` is the isolated wheel
+# probe directory supplied by its test under `tmp_path`. A crossing returns as a new
 # name here, which fails until someone adds it deliberately.
-REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "root", "tmp_path"})
+REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "RUN_ROOT", "root", "tmp_path"})
 
 ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
     {
