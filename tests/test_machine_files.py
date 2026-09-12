@@ -56,7 +56,7 @@ def test_profile_descriptions_are_closed_and_cover_every_role() -> None:
         assert description.schemas
         assert description.media_types
         assert description.capabilities
-        assert description.limits
+        assert isinstance(description.limits, dict)
         assert set(description.requires).issubset(profile_ids)
         assert item.profile_set_id
         assert item.verifier_test_id in required_test_ids

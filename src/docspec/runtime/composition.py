@@ -36,7 +36,7 @@ from docspec.domain.identity import (
 )
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
-from docspec.domain.processors import ProcessorPayload, ProcessorResult, ProcessorSet
+from docspec.domain.processors import ProcessorCacheMode, ProcessorPayload, ProcessorResult, ProcessorSet
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.references import ArtifactRef
 from docspec.domain.storage import PartitionPolicy
@@ -258,7 +258,10 @@ def _compose_local_run(
         clock=clock,
         processor_cache=(
             LocalSqliteProcessorResultCache(roots["reconciliation"] / "processor-results.sqlite3")
-            if plan.stages.processor_ids else None
+            if any(
+                description.cache_policy.mode is ProcessorCacheMode.EXACT_INPUTS
+                for description in plan.processors.processors
+            ) else None
         ),
     )
     delivery = StoreDeliveryService(stores=stores, controls=controls, sinks={sink.sink_id: sink})

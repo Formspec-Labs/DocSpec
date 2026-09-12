@@ -58,7 +58,8 @@ def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable
         assert all(component.isdigit() for component in (major, minor, patch))
         assert description.configuration_digest == identity_digest(description.configuration)
         assert description.capabilities == tuple(sorted(description.capabilities))
-        assert description.capabilities and description.limits
+        assert description.capabilities
+        assert isinstance(description.limits, dict)
         assert registered.description_digest.startswith("sha256:")
 
         value = json.loads(path.read_text(encoding="utf-8"))

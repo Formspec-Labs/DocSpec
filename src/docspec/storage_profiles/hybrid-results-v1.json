@@ -26,11 +26,7 @@
     "replaySafe": true,
     "returnedResults": true
   },
-  "limits": {
-    "deliveryUnit": "one-bounded-document-store",
-    "maxInFlightReturnedRecords": 1,
-    "recordLimitsSource": "active-document-store-work-limits"
-  },
+  "limits": {},
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": [

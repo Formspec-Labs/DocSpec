@@ -79,7 +79,7 @@ Inspected tests support these expected outcomes; none were executed by this revi
 | Structurally valid but false segment evidence | `tests/test_result_export_admission.py:82` | The newly mapped adversarial test reseals the shared container and still requires semantic refusal of wrong representation-slice bytes. |
 | Installed public API and packaged descriptions | `tests/test_package_boundary.py:217–350` | The renamed test retains exact packaged profile/schema checks, clean installation, core imports, CLI and the installed public runtime probe. The shared session fixture changes build ownership, not isolated installation behavior. |
 
-The parent will provide full strict-suite/JUnit execution evidence after integrating the final candidate. This certificate does not reuse the earlier 1,071-pass suite as proof of the new strict gate.
+The coordinating parent reports the final strict run completed with **1,076 passed, one live integration deselected, and no warnings in 249.91 seconds**, with no runtime/source changes during execution. I independently inspected its native JUnit file (`/tmp/docspec-native-regression.xml`): 1,076 test cases, zero failures, zero errors and zero skipped cases. The console footer in `/tmp/docspec-native-regression.log` records `1076 passed, 1 deselected in 249.91s`. These are parent-executed results, not tests run by this reviewer. The earlier 1,071-pass suite is not substituted for the new strict-gate evidence.
 
 ## 5. Findings and hypotheses
 
@@ -93,4 +93,4 @@ The parent will provide full strict-suite/JUnit execution evidence after integra
 
 ## 6. Conclusion
 
-**VERDICT: APPROVE.** Coverage of the changed integration: **ADEQUATE**. Confidence: **HIGH** on the inspected coverage, phase, profile-identity and composition boundaries. The coordinating parent retains responsibility for executing the final strict suite, committing the reviewed candidate and qualifying remote CI. D37's representative capacity work remains open, as documented.
+**VERDICT: APPROVE.** Coverage of the changed integration: **ADEQUATE**. Confidence: **HIGH** on the inspected coverage, phase, profile-identity and composition boundaries. The parent supplied the final strict-suite evidence described above; committing the reviewed candidate and qualifying remote CI remain separate boundaries. D37's representative capacity work remains open, as documented.

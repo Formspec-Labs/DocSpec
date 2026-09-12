@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 42 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 43 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1017,7 +1017,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d32"></a>
 
-- [ ] **D32 · P1 · Remove configuration that repeats facts or promises no enforcement.**
+- [x] **D32 · P1 · Remove configuration that repeats facts or promises no enforcement.**
   Review role/profile declarations, governance identifiers, provider metadata,
   and optional cache settings after D03 and D13. Derive facts from selected
   implementations where possible; keep output-affecting identities and enforced
@@ -1040,8 +1040,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   [decision](history/2026-09-12-profile-simplification-architecture.md).
   All 89 focused profile, conformance, CLI, workspace, worker and package checks
   passed, including the actual isolated installed runtime/export probe.
-  Independent code review of this slice remains pending because the subagents
-  reached their usage limit; the broader cache/declaration inventory is open.
+  Final independent review of this earlier slice is tracked under D39; its
+  broader cache/declaration inventory is completed below.
 
   **Cache cleanup, September 12:** execution-profile format `3.0` removes
   configuration-only cache profile/state artifacts. They did not configure or
@@ -1052,8 +1052,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   distinguishes this removal from useful cache behavior. The focused gate
   passed **76 tests**, including actual installed local and native Dagster runs,
   cache hits, invalid-result repair, and cache outages. The earlier unused
-  `NullProcessorResultCache` removal is committed as `3adc7fc`. Remaining
-  declaration inventory and independent review keep D32 open.
+  `NullProcessorResultCache` removal is committed as `3adc7fc`. The completed
+  inventory appears below; D39 consolidates the independent reviews.
 
   Implementation: `7188e34`. The combined full suite subsequently passed
   **1,072 tests** with one live integration test deselected in 239.01 seconds.
@@ -1065,6 +1065,21 @@ to defer a conditional item is a documented deferral, not completed implementati
   dependency selection, and conformance test references remain. The existing
   profile, workspace, worker, runtime and installed-package gate passed **92
   tests** in 19.33 seconds; Ruff passed. Fresh independent review remains D39.
+
+  **Completed locally September 12:** the final inventory removes handwritten
+  verifier status and the three sink profiles' descriptive, unenforced limits.
+  Actual storage bounds, synchronous acknowledgement behavior, processor
+  dependencies and resource/stage identities remain. Runtime composition now
+  opens SQLite only when a selected processor enables exact-input caching.
+  All-disabled processing retains and recovers output without constructing a
+  cache; a mixed processor set reuses the enabled processor and reruns the
+  disabled one. The focused cache/profile/sink gate passed **37 tests**; the
+  complete strict suite passed **1,078 tests**, with one live integration
+  deselected, in 247.07 seconds and no warnings. The subsequent mixed-policy
+  test strengthening passed both lifecycle tests in 1.70 seconds. No production
+  code changed after the full run. The
+  [final profile/cache review](history/2026-09-12-final-profile-cache-review.md)
+  approves this slice with no material findings. Review consolidation remains D39.
 
 <a id="d33"></a>
 
@@ -1567,12 +1582,12 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d49"></a>
 
-- [ ] **D49 · P1 · Qualify DocSpec's host API with an installed search recipe.**
+- [ ] **D49 · P1 · Qualify native Dagster composition with an installed search recipe.**
   Use the supplied recipe to check D48's generic input/output references, full
   requested catalog population (including records not selected for body capture),
-  global dependencies, and result reuse. **Done when:** DocSpec runs and records
-  the build without search policy in its core and retains inputs for a later
-  attempt. Record DocSpec runner identity separately from the recipe's semantic
+  global dependencies, and result reuse. **Done when:** the native job uses
+  DocSpec's public readers and retains inputs for a later attempt, with search
+  policy owned by its recipe. Record execution identity separately from the recipe's semantic
   producer identity. Search implements the recipe in
   [SC04](../../spicysearch/PLAN.md#sc04); Engine admission is tracked in
   [EC02](../../spicyengine/PLAN.md#ec02). Depends on D09, D48, and the supplied

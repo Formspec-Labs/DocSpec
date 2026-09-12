@@ -22,11 +22,7 @@
     "idempotencyKeys": true,
     "replaySafe": true
   },
-  "limits": {
-    "deliveryUnit": "one-bounded-document-store",
-    "maxInFlightRecords": 1,
-    "recordLimitsSource": "active-document-store-work-limits"
-  },
+  "limits": {},
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": [
