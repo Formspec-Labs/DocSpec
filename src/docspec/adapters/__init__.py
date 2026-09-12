@@ -26,7 +26,6 @@ _EXPORTS = {
     "LocalSourceCatalogStore": "docspec.adapters.source_catalog_store",
     "LocalSqliteProcessorResultCache": "docspec.adapters.processor_cache",
     "LocalSqliteReconciliationWorkspaceFactory": "docspec.adapters.reconciliation",
-    "NullProcessorResultCache": "docspec.adapters.processor_cache",
     "RootOnlyBlobProfileStateReachability": "docspec.adapters.storage",
     "RoutingContentFetcher": "docspec.adapters.content_fetchers",
     "S3ContentFetcherError": "docspec.adapters.content_fetchers",

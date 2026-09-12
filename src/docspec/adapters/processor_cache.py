@@ -10,22 +10,6 @@ from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError
 
 
-class NullProcessorResultCache:
-    """Reasonable no-reuse default for compositions that do not configure a cache."""
-
-    def lookup(self, reuse_key: str) -> ArtifactRef | None:
-        require_text(reuse_key, "processor result reuse key")
-        return None
-
-    def put_if_absent(self, reuse_key: str, result: ArtifactRef) -> ArtifactRef:
-        require_text(reuse_key, "processor result reuse key")
-        return result
-
-    def discard(self, reuse_key: str, expected: ArtifactRef) -> bool:
-        require_text(reuse_key, "processor result reuse key")
-        return False
-
-
 class LocalSqliteProcessorResultCache:
     """Persist only reuse-key to immutable-result-reference mappings."""
 
