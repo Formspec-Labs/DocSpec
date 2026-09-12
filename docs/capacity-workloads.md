@@ -125,6 +125,13 @@ fresh directory when code or input pins change.
 
 ## Pinned larger workload measurements
 
+The [fresh Parquet observations](history/2026-09-12-parquet-capacity-observations.md)
+record a passing markup256 trial on `c898512`. It completed capture, saved-prefix
+recovery, changed-resource reuse and complete clean comparison within the
+original allowances. The fresh text4096 trial remains in progress; it has not
+yet qualified. The report pins the installed wheel and records native operation
+time, memory, sampled storage and complete fixture evidence.
+
 The [September 12 observations](history/2026-09-12-local-capacity-observations.md)
 record a passing 256-document markup trial against the frozen `a4a0e05` wheel
 and original recipe. Capture, completed-prefix recovery, changed-resource reuse,

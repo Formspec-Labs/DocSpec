@@ -79,10 +79,11 @@ to govern execution. There is no replacement DocSpec capacity report format.
 
 Capacity results apply to their exact installed wheels and workloads. In particular,
 `DocumentReleaseVerifier.verify` keeps a set of distinct blob identities that
-grows with the result. [D37](dataset-experiments-todo.md#d37) remains open: the frozen
-text workload exceeded its changed-resource time limit and needs correction and
-fresh qualification. Synthetic local tests also do not establish live provider reliability
-or processor semantic quality.
+grows with the result. [D37](dataset-experiments-todo.md#d37) remains open: the
+original text workload exceeded its changed-resource time limit. The
+[fresh Parquet trial](history/2026-09-12-parquet-capacity-observations.md) qualifies
+markup256; text4096 is still running. Synthetic local tests also do not establish
+live provider reliability or processor semantic quality.
 
 ## Qualify publication
 

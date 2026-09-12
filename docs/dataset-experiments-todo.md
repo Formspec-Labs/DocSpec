@@ -1344,7 +1344,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   approved the final adapter and resource lifetimes. All **1,129** strict local
   tests passed, with one live integration deselected, in **265.08 seconds**;
   **66** focused storage/runtime checks and Ruff also passed. Installed-package
-  examples passed within that suite. A fresh larger capacity trial remains open.
+  examples passed within that suite. The
+  [fresh installed Parquet trial](history/2026-09-12-parquet-capacity-observations.md)
+  qualifies markup256 within the original time, memory and sampled-storage
+  allowances, including completed-prefix recovery, changed-resource reuse and
+  complete clean comparison. Text4096 remains in progress and unqualified.
 
   **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
   qualify the original `a4a0e05` markup256 case within its declared local scope.
