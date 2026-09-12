@@ -1027,6 +1027,9 @@ to defer a conditional item is a documented deferral, not completed implementati
   `NullProcessorResultCache` removal is committed as `3adc7fc`. Remaining
   declaration inventory and independent review keep D32 open.
 
+  Implementation: `7188e34`. The combined full suite subsequently passed
+  **1,072 tests** with one live integration test deselected in 239.01 seconds.
+
 <a id="d33"></a>
 
 - [ ] **D33 · P2 · Review current file and function outliers by responsibility.**
@@ -1059,6 +1062,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   and public interfaces without making internal moves expensive. Keep selectors
   and installed-package probes current. Do not add tests solely to justify small,
   reversible file moves or deletions.
+
+  **Progress, September 12:** D38's package check runs the same copied behavioral
+  test as the local walkthrough, replacing duplicate summary assertions. The
+  full suite at `7188e34` exposed two warnings from crash tests using `os.fork`
+  after threaded tests. Those tests now use Python's standard `spawn` process
+  mode, still terminate with `os._exit`, and retain the before/after-publication
+  byte and retry assertions. A bounded join prevents a stuck child from hanging
+  the suite. The affected execution/storage gate passed **27 tests** with
+  deprecation warnings treated as errors. Broader test-ownership review is open.
 
 <a id="d36"></a>
 
@@ -1122,6 +1134,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   the direct walkthrough passed separately. These fixture checks do not establish
   live publisher reliability or semantic quality. Final independent review is D39.
 
+  Implementation: `8476f88`.
+
 <a id="d39"></a>
 
 - [ ] **D39 · P1 · Obtain independent architecture and code review of the implementation.**
@@ -1157,6 +1171,16 @@ to defer a conditional item is a documented deferral, not completed implementati
   unused-cache construction, receipt-based accounting, and the missing
   processor-addition clean comparison. Local checks are recorded there;
   broader D39 acceptance remains open.
+
+  **Latest local qualification, September 12:** the combined suite at `7188e34`
+  passed **1,072 tests**, with one live integration test deselected, in 239.01
+  seconds. This includes the optional provider package, catalog growth, retained
+  publisher-body processing, simplified profiles, and installed native Dagster
+  recovery. Its two process-fork warnings were then addressed by D35's focused
+  crash-test update. Ruff, lock consistency, and 414 maintained-guide local file
+  targets also passed. Independent review of the newest implementation is
+  pending because all three reviewers reached their usage limit; these local
+  checks are not a substitute for that review or remote CI.
 
 <a id="d40"></a>
 
