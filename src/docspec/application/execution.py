@@ -201,7 +201,6 @@ class StoreExecutionService:
     def verify_configuration(self) -> ProcessingPlan:
         """Check effective implementations before executing or reusing saved work."""
 
-        self._controls.verify(self._plan_ref)
         plan = ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
         verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
         if plan.retry_policy_digest != self._retry_policy.digest:

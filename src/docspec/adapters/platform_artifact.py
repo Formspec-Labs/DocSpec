@@ -471,7 +471,6 @@ class DocumentReleaseArtifactVerifier:
             if not supersedes.reason.strip():
                 raise IntegrityError("document release supersedes reason must be nonempty")
 
-        self._controls.verify(release.processing_plan)
         try:
             plan = ProcessingPlan.from_dict(self._controls.load(release.processing_plan))
         except (TypeError, ValueError) as error:

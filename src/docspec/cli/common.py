@@ -230,7 +230,6 @@ def _load_receipt_value(
     controls = object.__new__(LocalJsonControlRepository)
     controls.root = _existing_root(control_root, label="control repository root")
     controls.max_artifact_bytes = _MAX_JSON_BYTES
-    controls.verify(reference)
     return parser(controls.load(reference))
 
 

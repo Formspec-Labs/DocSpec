@@ -107,7 +107,6 @@ class RunReconciler:
         task_results: Iterable[StoreTaskResult],
         workspace: ReconciliationWorkspace,
     ) -> ArtifactRef:
-        self._controls.verify(self._plan_ref)
         plan = ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
         if plan.source_catalog != self._source_catalog_ref or plan.base_release != self._base_release_ref:
             raise IntegrityError("reconciler inputs differ from the sealed processing plan")
@@ -403,7 +402,6 @@ class RunReconciler:
 
     def _delivery_receipt(self, store: DocumentStore, plan: ProcessingPlan) -> DeliveryReceipt:
         assert store.delivery_receipt is not None
-        self._controls.verify(store.delivery_receipt)
         try:
             receipt = DeliveryReceipt.from_dict(self._controls.load(store.delivery_receipt))
         except (TypeError, ValueError) as error:

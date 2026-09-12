@@ -303,7 +303,6 @@ class RunPlanner:
     ) -> Iterator[StoreRef]:
         """Stream saved planned-store references; source items never enter scheduler messages."""
 
-        self._controls.verify(plan_ref)
         plan = ProcessingPlan.from_dict(self._controls.load(plan_ref))
         if plan.source_catalog != source_catalog_ref or plan.base_release != base_document_release_ref:
             raise IntegrityError("plan inputs differ from the requested source catalog or base release")
@@ -477,7 +476,6 @@ class RunPlanner:
     def _plan_impact(self, base: DocumentRelease | None, plan: ProcessingPlan) -> _PlanImpact:
         if base is None:
             return _PlanImpact(None)
-        self._controls.verify(base.processing_plan)
         try:
             previous = ProcessingPlan.from_dict(self._controls.load(base.processing_plan))
         except (TypeError, ValueError) as error:

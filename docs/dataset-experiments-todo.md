@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 44 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 45 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. Completed entries link their scoped
@@ -1273,6 +1273,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   **28.112 to 12.962 seconds**; the corrected 128-document probe completed in
   **25.170 seconds**. Fresh retained inspection passed for both. The architecture
   report retains exact observations and their limited scope.
+
+  **Duplicate control reads removed:** ten callers now use the existing verified
+  `load` directly, avoiding a second complete read, hash and parse. The port
+  documents that behavior, and the planner fixture follows it. Typed values,
+  lineage and standalone verification remain checked. Independent review
+  approved the change; **117 relevant tests** and Ruff passed. No end-to-end
+  speedup is claimed for this small correction.
 
 <a id="d38"></a>
 

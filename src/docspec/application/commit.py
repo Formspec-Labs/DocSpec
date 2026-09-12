@@ -501,11 +501,9 @@ class ReleaseCommitService:
         return retained
 
     def _load_plan(self) -> ProcessingPlan:
-        self._controls.verify(self._plan_ref)
         return ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
 
     def _load_run(self, reference: ArtifactRef) -> RunReceipt:
-        self._controls.verify(reference)
         try:
             return RunReceipt.from_dict(self._controls.load(reference))
         except (TypeError, ValueError) as error:
