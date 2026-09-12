@@ -1467,6 +1467,12 @@ derives the actual role set from the manifests and checks it against this
 vocabulary. An unknown role cannot authorize itself through artifact-authored
 metadata.
 
+The local manifest catalog MUST publish exactly one product member:
+`release.json` with role `release-state`. Its immutable record layers remain in
+the selected record store; the release container MUST NOT mirror those logical
+rows. Every ordinary catalog open and retention admission MUST still run the
+full `DocumentReleaseVerifier` over the referenced state and its dependencies.
+
 The installed package MUST generate and ship
 `docspec/schemas/document_release/2.0/document-release.schema.json` from the
 same typed domain records used by the serializer and parser. A checked-in

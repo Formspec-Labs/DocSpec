@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 import os
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -38,7 +37,6 @@ from rulespec_artifacts import (
 
 from docspec.application.commit import DocumentReleaseVerifier
 from docspec.domain.identity import (
-    canonical_json_bytes,
     identity_digest,
     parse_canonical_json,
     require_sha256,
@@ -47,21 +45,17 @@ from docspec.domain.identity import (
     thaw_json,
 )
 from docspec.domain.plans import ProcessingPlan
-from docspec.domain.references import BlobRef, LayerRef
+from docspec.domain.references import BlobRef
 from docspec.domain.release import DocumentRelease
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.control_repository import ControlRepository
-from docspec.ports.record_storage import RecordStorage
 
 RELEASE_STATE_KEY = "release.json"
 ARTIFACT_ROOT_KEY = ROOT_OBJECT_KEY
 RELEASE_STATE_ROLE = "release-state"
-RECORDS_ROLE = "records"
 RELEASE_STATE_MEDIA_TYPE = "application/vnd.docspec.document-release+json"
-RECORDS_MEDIA_TYPE = "application/x-ndjson"
 _RELEASE_BYTE_LIMIT = 1024 * 1024
-_RECORD_BYTE_LIMIT = 8 * 1024 * 1024
 
 
 def admit_local_artifact(
@@ -216,10 +210,6 @@ class DerivationSpec:
         }
 
 
-def record_member_key(layer: LayerRef) -> str:
-    return f"records/{hashlib.sha256(layer.layer_id.encode('utf-8')).hexdigest()}.jsonl"
-
-
 def derivation_spec(plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> DerivationSpec:
     """Map one processing plan to the logical fields owned by the shared spec."""
 
@@ -246,7 +236,7 @@ def derivation_spec(plan: ProcessingPlan, partition_policy: Mapping[str, object]
         parameters_digest=identity_digest(parameters),
         partitioning_id=stable_urn("partitioning", partitioning),
         partitioning_digest=identity_digest(partitioning),
-        expected_output_roles=(RECORDS_ROLE, RELEASE_STATE_ROLE),
+        expected_output_roles=(RELEASE_STATE_ROLE,),
     )
 
 
@@ -275,30 +265,15 @@ def derivation_logical_id(plan: ProcessingPlan, partition_policy: Mapping[str, o
 def write_release_members(
     root: Path,
     release: DocumentRelease,
-    records: RecordStorage,
 ) -> tuple[DerivationMember, ...]:
-    """Materialize final logical layers once, in bounded record streams."""
+    """Write release state with references to its independently verified layers."""
 
     root = Path(root)
-    (root / "records").mkdir()
     with (root / RELEASE_STATE_KEY).open("xb") as handle:
         handle.write(release.file_bytes)
         handle.flush()
         os.fsync(handle.fileno())
-    members = [DerivationMember(RELEASE_STATE_KEY, RELEASE_STATE_ROLE, RELEASE_STATE_MEDIA_TYPE)]
-    for layer in release.active_layers:
-        object_key = record_member_key(layer)
-        count = 0
-        with (root / object_key).open("xb") as handle:
-            for row in records.stream(layer):
-                handle.write(canonical_json_bytes(row) + b"\n")
-                count += 1
-            handle.flush()
-            os.fsync(handle.fileno())
-        if count != layer.record_count:
-            raise IntegrityError(f"release layer {layer.layer_kind!r} changed while it was materialized")
-        members.append(DerivationMember(object_key, RECORDS_ROLE, RECORDS_MEDIA_TYPE, count))
-    return tuple(sorted(members, key=lambda item: item.object_key))
+    return (DerivationMember(RELEASE_STATE_KEY, RELEASE_STATE_ROLE, RELEASE_STATE_MEDIA_TYPE),)
 
 
 @contextmanager
@@ -407,12 +382,10 @@ class DocumentReleaseArtifactVerifier:
         *,
         verifier: DocumentReleaseVerifier,
         controls: ControlRepository,
-        records: RecordStorage,
         producer: Producer,
     ) -> None:
         self._verifier = verifier
         self._controls = controls
-        self._records = records
         self._producer = producer
 
     @staticmethod
@@ -444,10 +417,9 @@ class DocumentReleaseArtifactVerifier:
         if artifact.root["producer"] != self._producer.as_dict():
             raise IntegrityError("document release producer differs from the installed implementation")
         descriptors = self._descriptors(artifact, source)
-        release_member = descriptors.get(RELEASE_STATE_KEY)
-        if release_member is None:
-            raise IntegrityError("a DocSpec derivation must contain its release state")
-        release = self._release(source, release_member)
+        if set(descriptors) != {RELEASE_STATE_KEY}:
+            raise IntegrityError("a DocSpec derivation must contain only its release state")
+        release = self._release(source, descriptors[RELEASE_STATE_KEY])
         if release.release_id != artifact.pin.logical_id:
             raise IntegrityError("document release identity differs from the shared derivation")
         raw_supersedes = artifact.root.get("supersedes")
@@ -480,31 +452,8 @@ class DocumentReleaseArtifactVerifier:
         if artifact.root["spec"] != expected_spec.as_dict() or artifact.inputs != expected_inputs:
             raise IntegrityError("derivation identity fields differ from the document processing plan")
 
-        expected_keys = {RELEASE_STATE_KEY, *(record_member_key(layer) for layer in release.active_layers)}
-        if set(descriptors) != expected_keys:
-            raise IntegrityError("derivation members differ from the complete document release")
-        for layer in release.active_layers:
-            member = descriptors[record_member_key(layer)]
-            if (
-                member.role != RECORDS_ROLE
-                or member.media_type != RECORDS_MEDIA_TYPE
-                or member.record_count != layer.record_count
-            ):
-                raise IntegrityError(f"release layer {layer.layer_kind!r} has the wrong member description")
-            self._compare_layer(layer, member, source)
         self._verifier.verify(release)
         return release
-
-    def _compare_layer(self, layer: LayerRef, member: MemberDescriptor, source: MemberSource) -> None:
-        with source.open(member.object_key) as stream:
-            for row in self._records.stream(layer):
-                actual = stream.readline(_RECORD_BYTE_LIMIT + 2)
-                if len(actual) > _RECORD_BYTE_LIMIT + 1:
-                    raise LimitExceededError(f"release layer {layer.layer_kind!r} contains an oversized record")
-                if actual != canonical_json_bytes(row) + b"\n":
-                    raise IntegrityError(f"release layer {layer.layer_kind!r} differs from its published member")
-            if stream.read(1):
-                raise IntegrityError(f"release layer {layer.layer_kind!r} contains an extra record")
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
         self.read(artifact, source)
@@ -521,6 +470,5 @@ __all__ = [
     "derivation_inputs",
     "derivation_logical_id",
     "derivation_spec",
-    "record_member_key",
     "write_release_members",
 ]

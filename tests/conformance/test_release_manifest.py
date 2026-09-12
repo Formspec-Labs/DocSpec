@@ -10,9 +10,19 @@ from rulespec_artifacts import (
     LocalMemberSource,
     admit_artifact,
     canonical_json_bytes,
+    iter_member_descriptors,
 )
 
-from docspec.adapters.platform_artifact import RELEASE_STATE_KEY
+from docspec.adapters.platform_artifact import (
+    RELEASE_STATE_KEY,
+    RELEASE_STATE_MEDIA_TYPE,
+    RELEASE_STATE_ROLE,
+    DerivationMember,
+    LocalDerivationBuilder,
+    derivation_inputs,
+    derivation_spec,
+)
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.profiles import ProfileRole
 from docspec.domain.references import DocumentReleaseRef
 from docspec.errors import IntegrityError, LimitExceededError
@@ -42,10 +52,16 @@ def test_every_catalog_profile_publishes_the_canonical_release_root(tmp_path: Pa
         expected_pin=ArtifactPin(reference.release_id, reference.digest),
     )
     assert artifact.root["kind"] == "derivation"
-    assert RELEASE_STATE_KEY in set(LocalMemberSource(distribution).keys())
+    assert artifact.root["spec"]["expectedOutputRoles"] == [RELEASE_STATE_ROLE]
+    member, = iter_member_descriptors(artifact, LocalMemberSource(distribution))
+    assert (member.object_key, member.role, member.media_type) == (
+        RELEASE_STATE_KEY, RELEASE_STATE_ROLE, RELEASE_STATE_MEDIA_TYPE,
+    )
 
     release = catalog.open(reference)
     assert release.release_id == artifact.pin.logical_id == reference.release_id
+    assert member.byte_size == len(release.file_bytes)
+    assert list(catalog.open_reader(reference).scan(layer_kind=_catalog_contract.LAYER_KIND)) == list(BASE_ROWS)
     manifest_profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.RELEASE_MANIFEST)
     assert manifest_profiles
     assert release.profiles.for_role(ProfileRole.RELEASE_MANIFEST).profile_id in {
@@ -110,6 +126,34 @@ def test_unknown_and_incomplete_roots_are_rejected(tmp_path: Path, tamper: str) 
         release_path.write_bytes(release_bytes)
         extra.unlink(missing_ok=True)
     assert catalog.current() == reference
+
+
+def test_resealed_extra_member_is_not_another_authoritative_release_copy(tmp_path: Path) -> None:
+    _, platform, committed = _committed_platform(tmp_path)
+    catalog = platform.catalog
+    release = catalog.open(committed.reference)
+    plan = ProcessingPlan.from_dict(platform.controls.load(release.processing_plan))
+    working = tmp_path / "extra-member"
+    working.mkdir()
+    members = []
+    for key in (RELEASE_STATE_KEY, "other-release.json"):
+        (working / key).write_bytes(release.file_bytes)
+        members.append(DerivationMember(key, RELEASE_STATE_ROLE, RELEASE_STATE_MEDIA_TYPE))
+    # The common container is valid, including both declared member hashes.
+    artifact = LocalDerivationBuilder(catalog.producer, lambda *_: None).seal(
+        working, spec=derivation_spec(plan, release.partition_policy),
+        inputs=derivation_inputs(plan), members=members,
+    )
+    assert artifact.pin.logical_id == committed.reference.release_id
+    destination = catalog.root / catalog._artifact_directory("releases", artifact.pin.artifact_digest)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    working.rename(destination)
+    reference = DocumentReleaseRef(
+        artifact.pin.logical_id, catalog._release_locator(artifact.pin.artifact_digest), artifact.pin.artifact_digest,
+    )
+    with pytest.raises(IntegrityError, match="must contain only its release state"):
+        catalog.open(reference)
+    assert catalog.open(committed.reference) == release
 
 
 def test_release_root_references_fail_closed_for_locator_drift_and_absence(tmp_path: Path) -> None:

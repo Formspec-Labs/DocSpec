@@ -1295,6 +1295,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   approved the change; **117 relevant tests** and Ruff passed. No end-to-end
   speedup is claimed for this small correction.
 
+  **Redundant local row copies removed:** retained artifacts now contain one
+  `release.json` member pointing to existing immutable layers. The unused
+  mirrored rows and their comparison pass are gone; ordinary open still fully
+  verifies original records, blobs, controls and lineage. Portable export keeps
+  its independent copy. **64 focused tests** passed, including capture, retained
+  reuse, original-data corruption, exact membership and mixed-plan exports.
+  The [architecture guide](architecture.md) records the new local layout;
+  derivation identities change with its declared output roles.
+
 <a id="d38"></a>
 
 - [x] **D38 · P0 · Prove the complete experiment loop through installed packages.**

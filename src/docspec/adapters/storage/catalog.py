@@ -140,7 +140,6 @@ class LocalManifestDocumentCatalog:
         self.artifact_verifier = DocumentReleaseArtifactVerifier(
             verifier=self.verifier,
             controls=controls,
-            records=records,
             producer=producer,
         )
         self.artifact_builder = LocalDerivationBuilder(producer, self.artifact_verifier)
@@ -258,7 +257,7 @@ class LocalManifestDocumentCatalog:
         staging_root = _contained(self.root, "document-catalog/.staging/placeholder", create_parents=True).parent
         working = Path(tempfile.mkdtemp(prefix="derivation-", dir=staging_root))
         try:
-            members = write_release_members(working, release, self.records)
+            members = write_release_members(working, release)
             artifact = self.artifact_builder.seal(
                 working,
                 spec=derivation_spec(plan, release.partition_policy),

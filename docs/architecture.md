@@ -138,6 +138,13 @@ the active dataset without the original workspace.
 | Application release state | `domain.release.DocumentRelease`: plan, source catalog, active record layers, blob roots, receipts, and publication state; committed by `ReleaseCommitService` | `application.commit.DocumentReleaseVerifier`, with injected record, blob, control, and catalog access |
 | Independent result export | `docspec-result-export` in a shared `spicy-artifact/1.0` container: active rows, exact captured/derived bytes, stage receipts, processor results, and their owning plans; produced by `export_local_result` | `open_result_export` delegates generic verification to Rulespec, then checks DocSpec's active records, typed evidence and explicit content requirement |
 
+The local retained-release container has exactly one product member,
+`release.json`, alongside the shared root and manifest. It references the existing
+immutable record layers and blobs. Every catalog open still performs full
+`DocumentReleaseVerifier` admission of that state. Removing the former copied
+logical-row members changes derivation identities and avoids writing and
+comparing a second copy of each layer.
+
 The [export guide](result-exports.md) defines the two content choices, exact
 evidence scope, bounds, and repeat/interruption behavior. Export copies verified
 results without acquiring or processing documents again. Its independent reader

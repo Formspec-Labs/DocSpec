@@ -35,6 +35,7 @@
   ],
   "RELEASE-MANIFEST": [
     "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
+    "tests/conformance/test_release_manifest.py::test_resealed_extra_member_is_not_another_authoritative_release_copy",
     "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
     "tests/conformance/test_release_manifest.py::test_release_root_references_fail_closed_for_locator_drift_and_absence",
     "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
