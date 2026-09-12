@@ -5,6 +5,10 @@ Pass a configured fetcher as `content_fetcher` to
 the workspace's `sourceContent` root. The selected catalog still determines the
 documents and candidate files; the fetcher supplies bytes and acquisition facts.
 
+The [GovInfo bill example](govinfo-bill-example.md) injects an installed SpicyDocs
+fetcher for one explicitly selected XML version, then processes retained bytes
+again after closing the source client.
+
 `RoutingContentFetcher` accepts any nonempty combination of `local`, `https`, and
 `s3`. Unconfigured schemes refuse. It applies the smaller of the task's remaining
 byte allowance and an optional `max_object_bytes` allowance.

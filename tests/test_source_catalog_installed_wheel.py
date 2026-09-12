@@ -14,10 +14,11 @@ import docspec
 ROOT = Path(__file__).resolve().parents[1]
 RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.12-py3-none-any.whl"
 RULESPEC_WHEEL_SHA256 = "3f6c946c60ff2ddbe854fce7f74f4358ddb21e3ba3f6ad10caa8a0d8d59fd0a5"
-SPICY_DOCS_WHEEL = ROOT / "vendor" / "spicy_docs-0.2.0-py3-none-any.whl"
-SPICY_DOCS_VERSION = "0.2.0"
-SPICY_DOCS_WHEEL_SHA256 = "ecaa5ebc15df7cad12952e5fdeb8e1cef71614471dfb81b5f43316049d246c4e"
-SPICY_DOCS_REVISION = "296f20d05e0c32419ebae9d43cdfd19fe054238b"
+PROVIDER = json.loads((ROOT / "vendor/spicy_docs.json").read_text(encoding="utf-8"))
+SPICY_DOCS_WHEEL = ROOT / "vendor" / PROVIDER["filename"]
+SPICY_DOCS_VERSION = PROVIDER["version"]
+SPICY_DOCS_WHEEL_SHA256 = PROVIDER["sha256"]
+SPICY_DOCS_REVISION = PROVIDER["sourceRevision"]
 
 
 # This exact current producer wheel publishes and verifies the bounded source

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import configparser
+import json
 import re
 import shutil
 import subprocess
@@ -173,6 +174,7 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
 
 def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    provider = json.loads((ROOT / "vendor/spicy_docs.json").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
@@ -187,7 +189,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
         "path": "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl"
     }
     assert project["tool"]["uv"]["sources"]["spicy-docs"] == {
-        "path": "vendor/spicy_docs-0.2.0-py3-none-any.whl"
+        "path": "vendor/" + provider["filename"]
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts", "spicy-docs"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
@@ -202,7 +204,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     }
 
     extras = project["project"]["optional-dependencies"]
-    assert extras["spicy-docs"] == ["spicy-docs==0.2.0"]
+    assert extras["spicy-docs"] == ["spicy-docs==" + provider["version"]]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
     assert any(requirement.startswith("pymupdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])

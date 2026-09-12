@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE bill PUBLIC "-//US Congress//DTDs/bill.dtd//EN" "bill.dtd">
+<bill bill-stage="Introduced-in-House" dtd-version="3.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <metadata><dublinCore><dc:title>119 HR 6028 IH: Synthetic public access example</dc:title></dublinCore></metadata>
+  <form><congress>119th CONGRESS</congress><session>2d Session</session><legis-num>H. R. 6028</legis-num></form>
+  <legis-body>
+    <section id="s1"><enum>1.</enum><header>Public access</header>
+      <text>The example library shall publish <emphasis>machine readable</emphasis> records &amp; résumé metadata.</text>
+    </section>
+  </legis-body>
+</bill>

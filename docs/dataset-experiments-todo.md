@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 31 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 35 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -437,7 +437,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d12"></a>
 
-- [ ] **D12 · P1 · Connect source-specific body validation when a route needs it.**
+- [x] **D12 · P1 · Connect source-specific body validation when a route needs it.**
   For a selected Federal Register/GovInfo route, assess and reuse SpicyDocs'
   existing identity and soft-404 checks alongside bounded transport and capture.
   DocSpec still chooses the candidate. **Done when:** a demonstrated route accepts
@@ -445,6 +445,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   retaining needed evidence. If no current experiment needs this route, record
   the deferral. Do not move source code into SpicyRegs to complete this item.
   Depends on D11; coordinates with SpicyDocs S19.
+
+  **Completed September 12:** D53 supplies the selected GovInfo bill XML route.
+  The installed SpicyDocs acquirer checks the offered version and body identity
+  within the task's byte allowance. DocSpec retains exact accepted XML or the
+  available refusal body and failure explanation. Installed checks refuse a
+  different bill, an HTTP 200 HTML placeholder, and an unavailable response;
+  each leaves an inspectable failed run. No local publisher validator was added.
 
 ## 3. Make processing repeatable, replaceable, and useful
 
@@ -1302,13 +1309,13 @@ caller lives; moving imports between modules does not remove a package cycle.
   total outcomes, evidence bounds, source refusals and independent admission.
   It passed in the 1,071-test final regression for the export retirement.
   See [source-outcome review](history/2026-09-11-source-outcomes-review.md) and
-  [catalog inputs](catalog-inputs.md). The proposed successful provider-body
-  processing exercise remains D38/D46; optional dependency packaging remains
-  D45. Reusing the completed public-reader work closes D43 without new code.
+  [catalog inputs](catalog-inputs.md). D38/D46 now qualify successful provider-body
+  processing; D45 supplies optional dependency packaging. Reusing the completed
+  public-reader work closes D43 without new code.
 
 <a id="d44"></a>
 
-- [ ] **D44 · P2 · Adapt provider acquisition to DocSpec fetcher injection.**
+- [x] **D44 · P2 · Adapt provider acquisition to DocSpec fetcher injection.**
   Where an experiment needs a publisher-specific route, connect the installed
   provider's locators, identity checks, and bounded acquisition to DocSpec's
   fetcher interface. **Done when:** D11/D12 use a thin adapter without copied
@@ -1316,6 +1323,13 @@ caller lives; moving imports between modules does not remove a package cycle.
   selection, effective budgets, and experiment state here. Provider wheel and
   route implementation lives in [SpicyDocs S19](../../spicy-docs/docs/simplification-todo.md#s19).
   Depends on D41.
+
+  **Completed September 12 for the selected bill route:** D53's
+  `BillContentFetcher` delegates selection checks and bounded acquisition to
+  the installed provider. It maps the result into `FetchStream` and saves source
+  facts in caller-owned evidence files. The example uses ordinary experiment
+  APIs and retains the existing catalog, capture, and processing ownership.
+  Provider parsing, HTTP, retries and storage frameworks were not copied.
 
 <a id="d45"></a>
 
@@ -1343,9 +1357,15 @@ caller lives; moving imports between modules does not remove a package cycle.
   build and dependency identities. This is a locally built and qualified wheel,
   not an external registry publication. Final independent review remains D39.
 
+  **Current dependency, September 12:** D53 advances the single optional provider
+  wheel to SpicyDocs `0.3.0`. Source reading and bill acquisition share
+  [one manifest](../vendor/spicy_docs.json); the old wheel and separate bill-test
+  wheel are removed. The provider's acquisition extra is required only for the
+  bill example. The core wheel still installs without SpicyDocs.
+
 <a id="d46"></a>
 
-- [ ] **D46 · P1 · Prove the wheel handoff, then remove replaced code.** Run a
+- [x] **D46 · P1 · Prove the wheel handoff, then remove replaced code.** Run a
   small captured-source fixture through the installed provider and DocSpec:
   read outcomes, build the catalog, acquire a selected document through the
   supplied fetcher where needed, and process retained content. **Done when:**
@@ -1355,6 +1375,15 @@ caller lives; moving imports between modules does not remove a package cycle.
   checks; if the provider later moves to SpicyRegs, rerun this same handoff and
   switch current imports directly without a legacy fallback chain. Depends on
   D42–D45 for the capabilities actually selected.
+
+  **Completed September 12 for the current reader and bill fetcher:** the
+  combined installed-wheel gate passed **24 tests in 22.43 seconds**. It covers
+  source outcomes/evidence, catalog building and admission, successful body
+  processing, explicit bill selection, source refusals, and later processing
+  after closing the source client. The same provider wheel serves both paths;
+  core imports remain provider-independent. D42 separately owns adoption and
+  removal of the older CourtListener listing parser. This qualification does
+  not claim live availability or collection-wide coverage.
 
 ## 9. Share search-catalog construction with the experiment workflow
 
@@ -1437,6 +1466,35 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   pipeline. Provider requirements live in [SpicyRegs SR02](../../spicy-regs/PLAN.md#sr02)
   and applicable source coverage in [SpicyDocs S09–S10](../../spicy-docs/docs/simplification-todo.md#s09).
   Depends on D06–D08/D43 and the selected public input API; no package move is required.
+
+<a id="d53"></a>
+
+- [x] **D53 · P1 · Demonstrate an explicit GovInfo bill XML experiment.**
+  Consume an installed SpicyDocs wheel, retain BILLSTATUS and every offered text
+  version/format URL, select one package explicitly, and build a supplied-record
+  catalog. Inject the provider fetcher, retain exact XML, and run a changed
+  processor against those bytes after closing acquisition. **Delivered locally:**
+  [the example and guide](govinfo-bill-example.md) implement this composition;
+  [installed-wheel qualification](../tests/test_govinfo_bill_installed_wheel.py)
+  checks offline reuse, source spans, selection, refusals, and provider identity.
+  Qualified with SpicyDocs 0.3.0 from source `8e485fe`, pinned in the
+  [wheel manifest](../vendor/spicy_docs.json).
+  The originating worktree passed **11 installed-wheel and package-boundary
+  checks**, its documented offline command, and changed-file Ruff. Its independent
+  semi-formal review approved after distinguishing acquisition start from response
+  observation. Integration reuses one provider wheel for bill acquisition and
+  source-release reading; current-branch qualification is recorded below. This
+  example does not complete GAO/public-comment work, collection-wide acquisition,
+  or legal interpretation.
+
+  Current-branch installed qualification passed **24 tests in 22.43 seconds**,
+  including wrong-bill and placeholder refusals. The original
+  [independent review](history/2026-09-12-govinfo-bill-handoff-review.md) covers
+  the imported example at `4df1b44`; its provenance note distinguishes these
+  later integration checks from that review.
+  The current documented command also passed: two initial phrase matches,
+  three after changing the phrase resource, and zero new captures in the later
+  run. This is an offline fixture qualification, not a live publisher claim.
 
 ## Suggested delivery order
 

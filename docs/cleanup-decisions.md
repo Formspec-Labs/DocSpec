@@ -127,6 +127,21 @@ as a structured error. Source admission failures retain the provider's exception
 Import failures inside an installed reader retain their original cause and are
 not mistaken for an absent package.
 
+The GovInfo bill example uses that same optional SpicyDocs wheel for acquisition.
+The provider owns offered-version checks, bill/XML identity, HTTP bounds and
+source refusals. The example chooses one version, maps the response to the
+existing fetcher interface, and retains source observations before using normal
+DocSpec capture and processing. Its later run changes only the phrase resource
+and reuses the retained upstream layers after the provider closes.
+
+Keep this composition in the example: a provider registry or general source
+runner has no additional caller here. Promote a shared adapter only when another
+actual workflow needs the same mapping. One current wheel and manifest qualify
+both source reading and acquisition; the former reader wheel and a separate bill
+test wheel have no continuing role. The imported example has an
+[independent review](history/2026-09-12-govinfo-bill-handoff-review.md); the later
+single-wheel integration is locally tested and awaits fresh independent review.
+
 ## Dormant public helpers
 
 The same repository and known-consumer searches covered these candidates,
