@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 25 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 28 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -595,14 +595,28 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d18"></a>
 
-- [ ] **D18 · P1 · Replace weak quality proxies with justified checks.** Review
+- [x] **D18 · P1 · Replace weak quality proxies with justified checks.** Review
   portable retention floors and other text-quality gates against concrete bad
   extractions. Separate observed extraction quality from the user's policy for
-  continuing an experiment or exporting results. **Done when:** useful checks
-  distinguish empty, truncated, and misleading extraction for supported formats;
+  continuing an experiment or exporting results. **Done when:** concrete cases
+  establish which empty, truncated or misleading outputs byte and mapping
+  checks detect, and which remain unknown;
   removed thresholds have a recorded rationale and replacement evidence. Preserve
   failure accounting; reduced validation must not silently imply completeness.
   Depends on D17 and informs D26.
+
+  **Completed September 12:** the old retention-floor implementation and
+  calibration chain are removed. Seven concrete quality cases show why a
+  markup/text ratio cannot prove completeness: complete useful text can occupy
+  under 1% of markup, while output missing a critical block can retain over 90%.
+  Existing exact pins and named mapping checks still catch changed bytes and
+  false declared slices; empty visible output remains explicit. An unpinned
+  upstream omission remains unknowable from its shorter capture alone.
+  The PDF case injects known pages to test evidence handling, not real parser
+  completeness. The [export guide](result-exports.md) and
+  [independent review](history/2026-09-12-portable-removal-review.md) record the
+  revised, bounded acceptance: content suitability is explicit and semantic
+  completeness is not established. No replacement scoring system was added.
 
 <a id="d19"></a>
 
@@ -842,7 +856,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d27"></a>
 
-- [ ] **D27 · P1 · Adopt the shared generic artifact implementation.** Compare
+- [x] **D27 · P1 · Adopt the shared generic artifact implementation.** Compare
   DocSpec's portable builder/verifier needs with Rulespec's existing container.
   Delegate generic membership, byte integrity, and structural checks when they
   meet the required behavior; retain document semantics and coverage checks here.
@@ -852,6 +866,17 @@ to defer a conditional item is a documented deferral, not completed implementati
   [Rulespec RS02](../../rulespec/TODO.md#rs02); consumer changes are owned by
   [SpicySearch SC01](../../spicysearch/PLAN.md#sc01). Depends on D26's design and
   D28; see [artifact adapter](../src/docspec/adapters/platform_artifact.py).
+
+  **Completed September 12:** result exports use Rulespec's public root,
+  manifest, membership, identity, byte verification and no-replace publication.
+  The old portable verifier/support subtree and its exclusive schemas are
+  removed. Current `platform_artifact.py` remains because retained workspace
+  results use its DocSpec mapping through that same shared library. Document
+  semantics reuse current logical and receipt validators. Shared admission
+  checks actual manifest descriptor totals before opening payloads; no second
+  local manifest validator was needed. D26's adversarial and installed checks
+  and the [removal review](history/2026-09-12-portable-removal-review.md) establish
+  this replacement; retained-state capacity qualification remains D37.
 
 <a id="d28"></a>
 
@@ -909,7 +934,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d30"></a>
 
-- [ ] **D30 · P2 · Retire superseded tools and their exclusive support code.**
+- [x] **D30 · P2 · Retire superseded tools and their exclusive support code.**
   Reassess the historical release builder, sample tools, and fixture restamper
   after D26. Integrate reusable production behavior into its package owner;
   retain a research tool only when it serves a current experiment need.
@@ -917,6 +942,19 @@ to defer a conditional item is a documented deferral, not completed implementati
   route per task and superseded implementations are removed with provenance
   preserved in Git. The owner's September 12 clarification retires historical
   byte-for-byte reproduction and legacy consumer compatibility as requirements.
+
+  **Completed September 12:** removed the fixed portable builder, calibration,
+  PDF floor-population draw, campaign pin helper, fixture restamper, and their
+  exclusive schemas, input pins, fixture trees and tests. The attachment sampler
+  loses the floor-only branch and keeps its current unavailable-document sample.
+  The [tool inventory](../tools/README.md) retains the remaining research, source,
+  attachment and schema tools by actual purpose. Current retained-state,
+  capture/processing, failure and independent export checks remain. Git preserves
+  the retired implementation and data provenance; current docs and Decision
+  0001's status direct contributors to the maintained workflow. See the
+  [independent review and execution evidence](history/2026-09-12-portable-removal-review.md).
+  Final regression: 1,071 passed, one live case deselected, and two existing
+  fork-in-threaded-process warnings; Ruff, diff and 429 local-link checks passed.
 
 ## 6. Simplify code ownership and contributor effort
 

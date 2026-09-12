@@ -27,8 +27,9 @@ Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
 the adapter you are exercising. Core imports must work without them.
 
-Run the [offline walkthrough](docs/offline-walkthrough.md) to see a complete
-catalog → processing → publication → verification flow using one local document.
+Run the [offline walkthrough](docs/offline-walkthrough.md) to build a four-record
+catalog, capture documents, repair a failure, and compare later processing
+attempts. Use [result exports](docs/result-exports.md) for independent consumers.
 
 ## Find a bounded change
 
@@ -40,13 +41,14 @@ catalog → processing → publication → verification flow using one local doc
 | Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
 | Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
 | Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `runtime/` connects local services for commands and Python callers; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
-| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_document_release_schema_bundle.py` | Closed shapes, canonical bytes, version/identity rules, predecessor fixtures |
+| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py` | Closed shapes, canonical bytes, current version/identity rules |
+| Change result export or consumer admission | [Result exports](docs/result-exports.md), `adapters/result_export/` | `tests/test_result_export.py`, `tests/test_result_export_admission.py` | Complete outcomes, exact bytes and typed evidence, shared generic verification, independent reading |
 
 Source paths in this table are relative to `src/docspec/`. Shared test setup
 lives in focused `tests/support/` modules and `tests/helpers.py`. Import setup
 from there; test modules should not import other test modules.
 
-For catalog and portable-release changes, choose the suite for the behavior:
+For catalog and result changes, choose the suite for the behavior:
 
 | Behavior | Focused suites under `tests/` |
 | --- | --- |
@@ -56,21 +58,22 @@ For catalog and portable-release changes, choose the suite for the behavior:
 | Serial and spawned-worker catalog derivation | `test_source_catalog_workers.py` |
 | Catalog command builds and verification receipts | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
 | Regulations.gov joins/provenance, selection, and comments | `test_regulations_gov_catalog.py`, `test_regulations_gov_selection.py`, `test_regulations_gov_comments.py` |
-| Portable release admission and complete diagnostics | `test_document_release_verify.py` |
-| Portable identity, digest rules, and canonical encoding | `test_document_release_identity.py` |
-| Minted portable rows and declared format | `test_document_release_wire_format.py` |
-| Comment/attachment accounting and indexed byte ownership | `test_document_release_text_bodies.py`, `test_document_release_member_index.py` |
+| Result export, complete active population and independent reading | `test_result_export.py` |
+| Product evidence after shared container admission | `test_result_export_admission.py` |
+| Canonical identity values and framing | `test_canonical_encoding_equivalence.py`, `test_framing.py` |
+| Extraction quality limits and concrete misleading outputs | `test_extraction_quality.py` |
 
 Each suite imports only the setup it needs. Family setup lives in
 `tests/support/source_catalog_builds.py`, `source_catalog_cli.py`,
-`document_release.py`, and `regulations_gov.py`. Shared pytest fixtures are
+`exports.py`, and `regulations_gov.py`. Shared pytest fixtures are
 registered explicitly in the suites that use them.
 
-For an embedded local runner, `docspec.runtime.prepare_local_run` accepts a typed
-plan, workspace, policies, fetcher, and processors. Its prepared object executes
-or recovers the same work used by CLI commands. See [Python runs](docs/python-runs.md).
-Other runtime helpers remain implementation details; import the public factory
-and `PreparedLocalRun` from the package entry point.
+For a local experiment, `docspec.runtime.prepare_local_experiment` builds the
+plan from a catalog, workspace, selected implementations and explicit limits.
+Advanced callers can supply a plan to `prepare_local_run`. Their prepared object
+executes or recovers the same work used by CLI commands. Import supported catalog,
+inspection, retention and export operations from the runtime package entry point;
+see [Python runs](docs/python-runs.md) and the [guide index](docs/documentation.md).
 
 ## Organize code for its reader
 

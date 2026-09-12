@@ -209,12 +209,14 @@ separate simplification; keep those changes reviewable independently.
 
 - [x] **D1 · P2 · Separate shared document-release rules from verification.**
   Split the 3,316-line
-  [release verifier](../src/docspec/adapters/document_release/verify.py) into
+  `adapters/document_release/verify.py` into
   coherent identity/format rules, member reading, coverage calculations, and
-  validation. The [builder](../tools/build_document_release.py#L102) and fixture
+  validation. The `tools/build_document_release.py` and fixture
   restamper should consume the shared rules directly. **Done when:** one owner
   defines each rule; builder and verifier retain independent entry points;
   release IDs, digests, accepted/rejected fixtures, and diagnostics remain stable.
+  **Superseded September 12:** D26–D30 replace and remove this entire portable
+  route; its earlier split remains historical refactor evidence in Git.
 
 - [x] **D2 · P2 · Separate source-catalog artifact responsibilities.** Split the
   2,511-line [artifact module](../src/docspec/adapters/catalog_artifact/)

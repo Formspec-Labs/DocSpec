@@ -6,6 +6,10 @@ this evidence does not establish remote CI, a merge, publication, or full
 conformance. The pre-existing catalogue-cleaning findings
 under `docs/history/` remain separate work.
 
+The later dataset refactor retires the old portable implementation and its
+fixture/calibration chain. The checks below describe their recorded revisions;
+current contributor commands live in the maintained guides.
+
 ## Completed outcomes
 
 | Items | Outcome and evidence |

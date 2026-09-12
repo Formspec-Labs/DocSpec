@@ -31,16 +31,11 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "processing": {"processing", "ports", "domain", "errors"},
     "profile_registry": {"domain", "errors"},
     "workspace": {"profile_registry"},
-    # The DocumentRelease 2.0 wire primitives: a leaf that reads DocSpec's byte
-    # rules and adds the spellings that contract needs. It imports nothing that
-    # could import it back.
-    "document_release_support": {"domain", "errors"},
     "conformance": {"conformance", "domain", "errors", "__init__"},
     "application": {"application", "ports", "domain", "processing", "errors"},
     "adapters": {
         "adapters",
         "application",
-        "document_release_support",
         "ports",
         "domain",
         "processing",

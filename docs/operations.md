@@ -4,7 +4,7 @@ DocSpec records planned work and durable evidence so another process can verify
 what happened. Follow immutable references through that evidence before retrying,
 publishing, compacting, or assessing scale. See the
 [architecture guide](architecture.md) for the distinction between application
-release state and portable document bundles. The lifecycle and maintenance
+retained state and independent result exports. The lifecycle and maintenance
 services below operate on application release state.
 
 Start with the [inspection API or commands](inspection.md) for saved progress,

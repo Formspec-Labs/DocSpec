@@ -6,34 +6,25 @@ lines preserve useful ownership. The maintainer subsequently clarified that
 legacy compatibility is not required; current workflows still govern which
 behaviors belong here.
 
-## Retire compatibility-only import paths
+## Keep one current export path
 
-Removed `adapters.source_catalog_artifact` and
-`adapters.document_release_verify` after redirecting every current code, tool,
-test, and installed-wheel probe to the implementation owners. The public
-`docspec.source_catalog` API now imports those owners directly. Portable bundle
-verification lives at `adapters.document_release.verify.verify_document_release`.
+The former compatibility imports `adapters.source_catalog_artifact` and
+`adapters.document_release_verify` were removed during the first refactor.
+`docspec.source_catalog` imports the current catalog owners directly.
 
-The application release lifecycle and portable bundle lifecycle both serve
-current callers. Both advertise `2.0`, and their structures differ; removing an
-old import path does not make either current workflow obsolete. Predecessor
-portable-format handling is retired as described below.
+The September 12 simplification retires the entire campaign-specific portable
+builder/verifier, its retention-floor calibration, exclusive schemas and tests,
+and fixture restamping chain. The owner explicitly removed historical
+reproduction and legacy consumers from the requirements. Git retains the
+implementation and fixture provenance.
 
-## Retire the predecessor portable reader
-
-The portable verifier accepts the current eight-schema shape, strict JSONL
-members, framed set digests, and content-based release identity. Removed schema
-aliases, generation inference, JSON-array member parsing, and predecessor digest
-rules no longer create a second validation path. Current per-kind accounting,
-retention floors, source versions, and indexed-byte ownership checks remain.
-
-Decision 0001 explicitly made the predecessor reader temporary until restamping.
-The current restamper produces the supported corpus and does not read the old
-DocumentRelease corpus. Both frozen fixture trees remain sealed provenance;
-`source_catalog_release_v1/valid` remains a required input to the current recipe.
-No packaged schema or sealed fixture bytes changed. The
-[dated retirement note](decisions/0001-document-release-2-0.md#migration-and-the-builders-obligations)
-supersedes the earlier promise to accept both portable generations.
+Use [result exports](result-exports.md) to copy a retained active dataset through
+Rulespec's shared artifact container. Existing document identities, outcomes,
+coordinates and typed processing evidence keep their established validators.
+The current retained-state adapter `platform_artifact.py` remains necessary for
+later processing and already uses Rulespec; it is separate from the removed
+portable verifier. Current visible-text and segmentation implementations remain
+usable through injected processing stages.
 
 ## Retire the unused application wrapper
 
@@ -70,7 +61,6 @@ released after local execution or when the caller closes the prepared worker.
 
 | Candidate | Decision and reason |
 | --- | --- |
-| Builder/restamper member descriptors | One `member_descriptor` in `document_release_support.py` now derives the same seven fields from the actual member file. Both builders use it; sealed fixture identities remain the check. |
 | Source policies' `to_member` | Retain each small explicit serialization method. It sits beside that policy's inverse reader and names its own version and configuration. A generic serialization function would add parameters and indirection without reducing the code needed to understand either policy. The shared domain schema checks both shapes. |
 | Source policies' cached `policy_digest` | Retain the short per-instance cache. Lazy calculation preserves configuration-error timing and avoids hashing the whole configuration for each item. A shared mutation helper or inheritance layer would obscure ownership of the frozen policy's cache. The Regulations.gov method retains the measurements that explain why this cache matters. |
 | Retained-catalog research readers | Seven tools now share manifest ordering, plain/gzip JSONL reading, and receipt path formatting in `tools/catalog_sample_support.py`. Sampling rules and receipt meanings stay with their callers. This helper reads research inputs; package verification still governs publication. |
@@ -87,19 +77,11 @@ The former `tools/write_catalog_policy_member.py` entry point is removed.
 Source-catalog command handling also moved into `cli/source_catalog.py`, so
 contributors can find command code in one tree.
 
-Retain `build_document_release.py` and `fr_mirrulations_pin.py` as historical
-FR/Mirrulations reproduction recipes. Their campaign-specific inputs, empty
-comment output, document-body assumptions, and refusal behavior do not define
-a general installed writer. No current product caller was found. The portable
-format remains supported, and shared identity and verification rules already
-have package owners. The application release service produces a different
-representation and does not supersede this reproduction recipe.
-
-Research tools, the CourtListener population proof, schema generation, and
-fixture restamping keep their distinct roles. Removed the unused `MINOR_TYPES`
-constant and obsolete three-argument sample-worker input; both current callers
-use the four-argument shape. A similar filename alone does not establish that
-one tool supersedes another.
+The superseded portable mint and calibration tools are removed. The inventory
+records the remaining research, source-selection, schema and reporting tools by
+their current caller and purpose. Shared package code owns behavior used by the
+normal workflow; tools retain only experiment-specific choices. A historical
+filename or a previous measurement alone does not justify maintaining a tool.
 
 ## Require the current installed source reader
 

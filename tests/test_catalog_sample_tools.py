@@ -16,7 +16,6 @@ from tools import (
     description_prevalence,
     draw_docabstract_companion,
     draw_docabstract_sample,
-    draw_pdf_floor_population,
     fr_topic_receipt,
     select_attachment_sample,
 )
@@ -138,10 +137,6 @@ def test_research_consumers_keep_distinct_predicates_and_outside_home_receipts(t
     assert selection["frame"]["catalogRoot"] == str(root)
     assert {row["documentId"] for row in selection["rows"]} == {"EPA-0", "EPA-2", "EPA-3"}
     assert {row["partitionId"] for row in selection["rows"]} == {"00"}
-    pdf_rows, counts = draw_pdf_floor_population.draw(catalog_root=root, blob_store=blobs, salt="test", size=10, workers=1)
-    assert [row["documentId"] for row in pdf_rows] == ["EPA-1"]
-    assert pdf_rows[0]["partitionId"] == "00"
-    assert counts["selectedWithPdf"] == 1
 
     monkeypatch.setattr(fr_topic_receipt, "fetch_live", lambda number, timeout: {
         "status": 200, "topicsKeyPresent": True, "liveTopics": ["Air"] if number == "0" else [],
@@ -156,7 +151,7 @@ def test_research_consumers_keep_distinct_predicates_and_outside_home_receipts(t
 
 @pytest.mark.parametrize("name", [
     "description_coverage", "description_prevalence", "draw_docabstract_sample",
-    "draw_docabstract_companion", "select_attachment_sample", "draw_pdf_floor_population", "fr_topic_receipt",
+    "draw_docabstract_companion", "select_attachment_sample", "fr_topic_receipt",
 ])
 def test_research_tool_direct_script_entry_points_still_import(name: str, tmp_path: Path) -> None:
     script = Path(__file__).resolve().parents[1] / "tools" / f"{name}.py"

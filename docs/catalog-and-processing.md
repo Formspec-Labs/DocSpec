@@ -91,21 +91,12 @@ capture verification at their respective owners.
 Extraction turns captured bytes into a representation and coordinates that
 trace back to those bytes. See [representation choices](representations.md) for
 supported defaults, visible-text experiments, PDF/image limits, and coordinate
-inspection. There are two compositions in this repository:
-
-| Composition | Extraction and segmentation |
-| --- | --- |
-| Application execution | `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image, or lazy PDF extraction. An experiment can instead choose `VisibleTextExtractor` with `VisibleTextBlockSegmenter`; the executor uses the pinned implementations. |
-| Historical portable mint recipe | `tools/build_document_release.py` selects visible-text extraction, retention-floor checks, and bounded text segmentation for its recorded campaign workflow. |
-
-The portable recipe is a repository tool, not an installed generic build API.
-Application release output does not replace historical portable mints
-byte-for-byte; see the separate release representations in the architecture guide.
-
-The default registry does not register `HtmlVisibleTextExtractor` or
-`XmlVisibleTextExtractor`. Adding those to general execution requires explicit
-adaptation to `ExtractionResult` and its evidence model. An import or registry
-entry alone does not establish equivalent extraction.
+inspection. `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image,
+or lazy PDF extraction. An experiment can choose `VisibleTextExtractor` with
+`VisibleTextBlockSegmenter`; the executor records the injected implementations.
+That adapter already connects the lower-level HTML/XML parsers to current
+`ExtractionResult` evidence. Export reads retained outputs and does not run a
+second extraction pipeline.
 
 Text segments use half-open UTF-8 byte ranges: the start is included and the end
 is excluded. Preserve exact coordinate round trips for non-ASCII text, tokenizer
