@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
@@ -121,6 +122,8 @@ def test_default_media_dispatch_uses_source_specific_extractors() -> None:
 
 
 def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    parsed_sources: list[bytes] = []
+
     class FakePage:
         def __init__(self, text: str | None) -> None:
             self._text = text
@@ -131,8 +134,8 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
     class FakeReader:
         is_encrypted = False
 
-        def __init__(self, stream: object, *, strict: bool) -> None:
-            assert stream is not None
+        def __init__(self, stream: BytesIO, *, strict: bool) -> None:
+            parsed_sources.append(stream.read())
             assert strict is False
             self.pages = [FakePage("Page one §"), FakePage(""), FakePage("Page three 🧪")]
 
@@ -149,6 +152,8 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
     assert imports == []
     source = b"%PDF-fixture-bytes"
     result = extractor.extract(_captured(source, "application/pdf"), source)
+    assert parsed_sources == [source]
+    assert imports == ["pypdf"]
     assert result.receipt.extractor_id == "docspec.pypdf/6.1.0-fixture"
     assert result.receipt.configuration_digest == extractor.configuration_digest
     assert extractor.extractor_id != result.receipt.extractor_id
@@ -161,7 +166,6 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
         for segment in DefaultSegmenterRegistry().segment(persisted_payload)
     )
 
-    assert imports
     assert [segment.content.decode() for segment in segments] == ["Page one §", "", "Page three 🧪"]
     assert [segment.segment.evidence.page for segment in segments] == [1, 2, 3]
     assert [mapping.transformation for mapping in persisted_representation.evidence_mappings] == [
@@ -175,6 +179,34 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
     assert [segment.segment.segment_id for segment in segments] == [
         segment.segment.segment_id for segment in DefaultSegmenterRegistry().segment(persisted_payload)
     ]
+
+    assert parsed_sources == [source, source]  # The standalone resolver reparses too.
+    extractor.verify(result, source)
+    assert parsed_sources == [source] * 3
+
+    first, *remaining = persisted_representation.evidence_mappings
+    wrong_mapping = replace(first, evidence=replace(
+        first.evidence, page=3, region={"kind": "whole-page", "page": 3},
+    ))
+    wrong_representation = type(persisted_representation).create(
+        source_item_id=persisted_representation.source_item_id,
+        file_id=persisted_representation.file_id,
+        file_digest=persisted_representation.file_digest,
+        kind=persisted_representation.kind,
+        blob=persisted_representation.blob,
+        extractor_id=persisted_representation.extractor_id,
+        configuration_digest=persisted_representation.configuration_digest,
+        evidence_mappings=(wrong_mapping, *remaining),
+        warnings=persisted_representation.warnings,
+    )
+    wrong_result = replace(
+        result,
+        payload=RepresentationPayload(wrong_representation, persisted_payload.content),
+        receipt=replace(result.receipt, representation_id=wrong_representation.representation_id),
+    )
+    with pytest.raises(IntegrityError, match="round-trip"):
+        extractor.verify(wrong_result, source)
+    assert parsed_sources == [source] * 4
 
 
 def test_missing_optional_pdf_profile_has_one_actionable_failure(monkeypatch: pytest.MonkeyPatch) -> None:

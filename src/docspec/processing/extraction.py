@@ -414,7 +414,11 @@ class LazyPypdfExtractor:
             metadata={"pageCount": len(pages), "emptyPageCount": sum(not page for page in pages)},
         )
         result = ExtractionResult(payload, receipt)
-        self.verify(result, source_bytes)
+        verify_representation_evidence(
+            result.payload,
+            source_bytes,
+            derived_resolver=self.evidence_resolver(source_bytes, pages=pages),
+        )
         return result
 
     def verify(self, result: ExtractionResult, source_bytes: bytes) -> None:
