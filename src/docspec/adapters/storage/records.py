@@ -104,6 +104,7 @@ class LocalJsonlRecordStorage:
         max_open_members: int = 32,
         max_merge_scratch_bytes: int = 128 * 1024**3,
         merge_scratch_root: Path | None = None,
+        create: bool = True,
     ) -> None:
         if min(
             max_member_bytes,
@@ -113,19 +114,20 @@ class LocalJsonlRecordStorage:
             max_merge_scratch_bytes,
         ) <= 0:
             raise ValueError("record storage limits must be positive")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.max_member_bytes = max_member_bytes
         self.max_record_bytes = max_record_bytes
         self.max_root_bytes = max_root_bytes
         self.max_open_members = max_open_members
         self.max_merge_scratch_bytes = max_merge_scratch_bytes
         self.merge_scratch_root = (
-            None if merge_scratch_root is None else _storage_root(merge_scratch_root)
+            None if merge_scratch_root is None else _storage_root(merge_scratch_root, create=create)
         )
         self.last_write_peak_open_members = 0
         self.last_read_peak_open_members = 0
-        self._staging = _contained(self.root, ".staging/records", create_parents=True).parent
-        self._staging.mkdir(exist_ok=True)
+        self._staging = _contained(self.root, ".staging/records", create_parents=create).parent
+        if create:
+            self._staging.mkdir(exist_ok=True)
 
     @staticmethod
     def _bucket(value: str, count: int) -> int:

@@ -56,6 +56,8 @@ def _local_storage(
     roots: dict[str, Path],
     profiles: dict[ProfileRole, RegisteredProfile],
     producer: Producer,
+    *,
+    create: bool = True,
 ) -> tuple[
     LocalJsonControlRepository,
     LocalDocumentStoreRepository,
@@ -63,19 +65,12 @@ def _local_storage(
     LocalContentAddressedBlobStore,
     LocalManifestDocumentCatalog,
 ]:
-    controls = LocalJsonControlRepository(roots["controlRepository"])
-    store_profile = profiles[ProfileRole.DOCUMENT_STORE]
-    stores = LocalDocumentStoreRepository(
-        roots["documentStores"],
-        max_revision_bytes=_profile_limit(store_profile, "maxLedgerMemberBytes"),
-        max_inline_bytes=_profile_limit(store_profile, "maxInlineBytes"),
-        max_plan_ledger_bytes=_profile_limit(store_profile, "maxPlannedStoreLedgerBytes"),
-        max_plan_record_bytes=_profile_limit(store_profile, "maxPlannedStoreRecordBytes"),
-        max_plan_store_count=_profile_limit(store_profile, "maxPlannedStoreCount"),
-    )
+    controls = LocalJsonControlRepository(roots["controlRepository"], create=create)
+    stores = _local_stores(roots["documentStores"], profiles[ProfileRole.DOCUMENT_STORE], create=create)
     record_profile = profiles[ProfileRole.RECORD_STORAGE]
     records = LocalJsonlRecordStorage(
         roots["recordStorage"],
+        create=create,
         max_member_bytes=_profile_limit(record_profile, "maxMemberBytes"),
         max_record_bytes=_profile_limit(record_profile, "maxRecordBytes"),
         max_root_bytes=_profile_limit(record_profile, "maxRootBytes"),
@@ -84,6 +79,7 @@ def _local_storage(
     )
     blobs = LocalContentAddressedBlobStore(
         roots["blobStorage"],
+        create=create,
         max_blob_bytes=_profile_limit(profiles[ProfileRole.BLOB_STORAGE], "maxObjectBytes"),
         stream_chunk_bytes=_profile_limit(profiles[ProfileRole.BLOB_STORAGE], "streamChunkBytes"),
     )
@@ -91,6 +87,7 @@ def _local_storage(
     catalog_limit = _profile_limit(profiles[ProfileRole.DOCUMENT_CATALOG], "maxManifestBytes")
     catalog = LocalManifestDocumentCatalog(
         roots["documentCatalog"],
+        create=create,
         records=records,
         stores=stores,
         controls=controls,
@@ -101,3 +98,13 @@ def _local_storage(
     return controls, stores, records, blobs, catalog
 
 
+def _local_stores(root: Path, profile: RegisteredProfile, *, create: bool = True) -> LocalDocumentStoreRepository:
+    """Open just saved jobs when observation does not need other output stores."""
+    return LocalDocumentStoreRepository(
+        root, create=create,
+        max_revision_bytes=_profile_limit(profile, "maxLedgerMemberBytes"),
+        max_inline_bytes=_profile_limit(profile, "maxInlineBytes"),
+        max_plan_ledger_bytes=_profile_limit(profile, "maxPlannedStoreLedgerBytes"),
+        max_plan_record_bytes=_profile_limit(profile, "maxPlannedStoreRecordBytes"),
+        max_plan_store_count=_profile_limit(profile, "maxPlannedStoreCount"),
+    )

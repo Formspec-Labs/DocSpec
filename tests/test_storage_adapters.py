@@ -84,6 +84,20 @@ def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Pat
         store.verify(linked)
 
 
+@pytest.mark.parametrize("allowance, error", [(8, LimitExceededError), (16, IntegrityError)])
+def test_blob_read_never_yields_growth_past_its_allowance_or_reference(tmp_path, allowance, error):
+    store = LocalContentAddressedBlobStore(tmp_path / "objects")
+    reference = store.put_if_absent([b"12345678"], media_type="text/plain")
+    chunks = store.read(reference, chunk_size=4, max_bytes=allowance)
+    received = next(chunks)
+    with (store.root / reference.locator).open("ab") as stream:
+        stream.write(b"unexpected growth")
+    received += next(chunks)
+    with pytest.raises(error):
+        next(chunks)
+    assert received == b"12345678"
+
+
 def test_control_repository_uses_canonical_immutable_json(tmp_path: Path) -> None:
     repository = LocalJsonControlRepository(tmp_path / "control")
     reference = repository.put(kind="plans", artifact_id="plan-1", value={"z": 1, "a": "two"})
@@ -106,6 +120,23 @@ def test_control_repository_uses_canonical_immutable_json(tmp_path: Path) -> Non
     )
     with pytest.raises(IntegrityError, match="duplicate key"):
         repository.load(duplicate_reference)
+
+
+def test_control_read_refuses_actual_oversized_file_before_open(tmp_path, monkeypatch):
+    repository = LocalJsonControlRepository(tmp_path / "control", max_artifact_bytes=1024)
+    reference = repository.put(kind="plans", artifact_id="plan-1", value={"small": True})
+    path = repository.root / reference.locator
+    path.write_bytes(b"x" * 1025)
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == path:
+            pytest.fail("oversized control artifact was opened before enforcing its bound")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(LimitExceededError):
+        repository.load(reference)
 
 
 def test_document_store_repository_saves_immutable_revisions(tmp_path: Path) -> None:
@@ -138,6 +169,25 @@ def test_document_store_latest_reads_only_the_newest_revision_while_revisions_va
     assert repository.latest(planned.store_id) == running_ref
     with pytest.raises(IntegrityError):
         repository.revisions(planned.store_id)
+
+
+@pytest.mark.parametrize("operation", ["latest", "revisions"])
+def test_revision_discovery_refuses_oversized_bytes_before_reading(tmp_path, monkeypatch, operation):
+    repository = LocalDocumentStoreRepository(tmp_path / "jobs")
+    planned = _planned_store()
+    reference = repository.save(planned)
+    path = repository.root / reference.locator
+    repository.max_revision_bytes = path.stat().st_size - 1
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == path:
+            pytest.fail("oversized revision was opened before enforcing its bound")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(LimitExceededError):
+        getattr(repository, operation)(planned.store_id)
 
 
 def test_revision_writes_stage_crash_debris_outside_the_declared_revision_set(

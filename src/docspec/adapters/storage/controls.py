@@ -22,10 +22,10 @@ from docspec.errors import IntegrityError, LimitExceededError
 class LocalJsonControlRepository:
     """Persist small closed control artifacts as immutable canonical JSON."""
 
-    def __init__(self, root: Path, *, max_artifact_bytes: int = 8 * 1024**2) -> None:
+    def __init__(self, root: Path, *, max_artifact_bytes: int = 8 * 1024**2, create: bool = True) -> None:
         if max_artifact_bytes <= 0:
             raise ValueError("max_artifact_bytes must be positive")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.max_artifact_bytes = max_artifact_bytes
 
     def put(self, *, kind: str, artifact_id: str, value: Mapping[str, Any]) -> ArtifactRef:
@@ -53,7 +53,7 @@ class LocalJsonControlRepository:
     def load(self, reference: ArtifactRef) -> dict[str, Any]:
         if reference.byte_size > self.max_artifact_bytes:
             raise LimitExceededError(f"control artifact exceeds the {self.max_artifact_bytes}-byte limit")
-        payload = _read_exact(self.root, reference.locator)
+        payload = _read_exact(self.root, reference.locator, max_bytes=self.max_artifact_bytes)
         _verify_artifact_bytes(reference, payload)
         root = thaw_json(parse_canonical_json(payload, label=reference.artifact_id))
         expected = {"format", "formatVersion", "kind", "artifactId", "value"}

@@ -122,10 +122,11 @@ class LocalManifestDocumentCatalog:
         producer: Producer,
         blobs: BlobStore | None = None,
         max_release_bytes: int = 1024**2,
+        create: bool = True,
     ) -> None:
         if max_release_bytes <= 0:
             raise ValueError("max_release_bytes must be positive")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.records = records
         self.stores = stores
         self.controls = controls
