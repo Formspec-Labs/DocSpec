@@ -33,7 +33,7 @@ from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
-from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, identity_digest, sha256_digest
+from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest
 from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.processors import ProcessorResourceIdentity, ProcessorResourceKind
@@ -74,7 +74,6 @@ def _save(path, value):
 def _implementation(wheel):
     return {
         "docspecVersion": version("docspec"), "wheelSha256": sha256_digest(wheel.read_bytes()),
-        "recipeSha256": sha256_digest(Path(__file__).read_bytes()),
         "processorSha256": sha256_digest(Path(phrase_module.__file__).read_bytes()),
     }
 
@@ -130,7 +129,8 @@ def _generate(args):
     source_root.mkdir(parents=True)
     saved = {"workload": args.workload, "wheel": str(args.wheel.resolve()),
              "completedAt": args.completed_at, "deadlineEpochSeconds": args.deadline,
-             "implementation": _implementation(args.wheel)}
+             "implementation": _implementation(args.wheel),
+             "recipeSha256": sha256_digest(Path(__file__).read_bytes())}
     _save(args.root / "arguments.json", saved)
     markup = args.workload.startswith("markup")
     with (args.root / "supplied-records.jsonl").open("xb") as output:
@@ -159,7 +159,7 @@ def _environment(root, saved, phase="process"):
     workspace = original if phase != "clean" else LocalWorkspace(root / "clean", {
         "sourceCatalog": original.roots["sourceCatalog"], "sourceContent": original.roots["sourceContent"],
     })
-    implementation = "urn:docspec:capacity:implementation:" + identity_digest(saved["implementation"])
+    implementation = "urn:docspec:capacity:implementation:" + saved["implementation"]["wheelSha256"]
     source = Producer("docspec-capacity", implementation, "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
     return workspace, source, replace(source, verifier_id="urn:docspec:verifier:document-release")
 
@@ -279,9 +279,8 @@ def _view(root, saved, phase):
         release_ref=DocumentReleaseRef.from_dict(_read(root / phase / "release.json")))
 
 
-def _check(root, saved, phase):
+def _check(root, saved, phase, view):
     """Check complete fixture inputs and outputs, excluding execution provenance."""
-    view = _view(root, saved, phase)
     summary = view.summary(sample_limit=0)
     inventory = _inventory(saved["workload"])
     layers = summary["result"]["layers"]
@@ -426,7 +425,7 @@ def main():
     else:
         assert not any((args.workload, args.wheel, args.completed_at, args.deadline)), "generation arguments are already saved"
         saved = _read(args.root / "arguments.json")
-        assert _implementation(Path(saved["wheel"])) == saved["implementation"], "recipe, wheel, or processor changed"
+        assert _implementation(Path(saved["wheel"])) == saved["implementation"], "wheel or processor changed"
         if args.operation == "build":
             result = _build(args.root, saved)
         elif args.operation == "verify":
@@ -442,12 +441,13 @@ def main():
         elif args.operation == "inspect":
             result = _view(args.root, saved, args.phase).summary(sample_limit=0)
         elif args.operation == "check":
-            result = _check(args.root, saved, args.phase)
+            result = _check(args.root, saved, args.phase, _view(args.root, saved, args.phase))
         else:
-            changed, clean = (_check(args.root, saved, phase) for phase in ("changed", "clean"))
+            changed_view, clean_view = (_view(args.root, saved, phase) for phase in ("changed", "clean"))
+            changed = _check(args.root, saved, "changed", changed_view)
+            clean = _check(args.root, saved, "clean", clean_view)
             assert changed == clean, "full clean and reused value/evidence streams differ"
-            result = {"checked": changed, "comparison": _view(args.root, saved, "changed").compare(
-                _view(args.root, saved, "clean"), sample_limit=0)}
+            result = {"checked": changed, "comparison": changed_view.compare(clean_view, sample_limit=0)}
     print(canonical_json_file_bytes(result).decode(), end="")
 
 

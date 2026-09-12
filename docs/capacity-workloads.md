@@ -12,6 +12,19 @@ there, preserving the processor's `examples/` directory. Record the wheel,
 dependencies and interpreter actually installed. Use a new output directory for
 each workload. Set `TMPDIR` before starting Python when measuring temporary files.
 
+Generation records the recipe's whole-file digest in `arguments.json` as
+reproduction evidence. Source and retained-result producer identities use the
+DocSpec wheel digest; processing identities remain in the existing pinned stage
+and processor descriptions, configuration and vocabulary resources. Later
+operations still refuse changed wheel or processor bytes. An edit to measurement
+or checking code alone does not invalidate those dataset pins.
+
+Record the recipe actually invoked alongside each operation's native measurement
+output, for example with `shasum -a 256 capacity_experiment.py`. Keep the original
+copied recipe and saved arguments with completed trials. A revised recipe's
+results need their own recorded digest; the generation digest does not describe
+later edits.
+
 For example, from that copied directory with its environment active:
 
 ```sh
@@ -39,6 +52,10 @@ source files and catalog input, with separate result storage and processor cache
 Checks compare every selected source, captured byte sequence, representation,
 segment and derived value, including quote positions and source associations.
 Observed component calls also establish which upstream work was reused.
+The compare operation opens one inspection view for each result, checks both
+complete fixture outputs, then passes those same views to the native comparison.
+Record and blob reads retain their checks; this avoids repeating full admission
+solely to construct another view in the same operation.
 
 | Workload | Selected documents | Captured files | Captured bytes | Segments |
 | --- | ---: | ---: | ---: | ---: |
