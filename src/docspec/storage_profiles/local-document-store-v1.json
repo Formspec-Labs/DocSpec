@@ -39,7 +39,7 @@
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": [
       "urn:docspec:profile:blob-storage:local-content-addressed:1",
-      "urn:docspec:profile:record-storage:local-jsonl:1"
+      "urn:docspec:profile:record-storage:local-parquet:1"
     ]
   },
   "verifierTestId": "DOCUMENT-STORE"

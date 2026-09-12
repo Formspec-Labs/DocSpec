@@ -18,7 +18,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.cli import main
@@ -64,8 +64,8 @@ class _Arm:
         return LocalDocumentStoreRepository(Path(self.roots["documentStores"]))
 
     @property
-    def records(self) -> LocalJsonlRecordStorage:
-        return LocalJsonlRecordStorage(Path(self.roots["recordStorage"]))
+    def records(self) -> LocalParquetRecordStorage:
+        return LocalParquetRecordStorage(Path(self.roots["recordStorage"]))
 
     @property
     def catalog(self) -> LocalManifestDocumentCatalog:

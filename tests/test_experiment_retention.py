@@ -8,7 +8,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.domain.content import SourceItem
@@ -42,7 +42,7 @@ def test_two_processor_alternatives_retain_the_same_base_without_refetching(tmp_
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog", records=records, stores=stores, controls=controls,
         producer=document_release_producer(), blobs=blobs,

@@ -1336,7 +1336,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   while retaining the same byte/scalar checks. Both changes received independent
   approval. The final strict suite passed **1,112 tests**, with one live
   integration deselected, in 221.94 seconds; focused checks and Ruff passed.
-  Repeated per-source partition scanning remains under architectural review.
+  Repeated per-source partition scanning prompted the
+  [Parquet and DuckDB replacement](record-storage.md). The
+  [direct-query prototype](capacity-workloads.md#direct-parquet-query-prototype)
+  preserved all 106,496 input rows; its layout differs from the production
+  adapter, so its timings do not qualify that replacement. Independent review
+  approved the final adapter and resource lifetimes. All **1,129** strict local
+  tests passed, with one live integration deselected, in **265.08 seconds**;
+  **66** focused storage/runtime checks and Ruff also passed. Installed-package
+  examples passed within that suite. A fresh larger capacity trial remains open.
 
   **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
   qualify the original `a4a0e05` markup256 case within its declared local scope.

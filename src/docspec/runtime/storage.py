@@ -8,7 +8,7 @@ from rulespec_artifacts import Producer
 
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore, LocalDocumentStoreRepository, LocalJsonControlRepository,
-    LocalJsonlRecordStorage, LocalManifestDocumentCatalog,
+    LocalParquetRecordStorage, LocalManifestDocumentCatalog,
 )
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.identity import stable_urn
@@ -24,7 +24,7 @@ _LOCAL_PROFILE_SET_ID = "urn:docspec:profile-set:portable-local:1"
 _LOCAL_PROFILE_MODULES = {
     ProfileRole.RELEASE_MANIFEST: "docspec.domain.release:DocumentRelease",
     ProfileRole.DOCUMENT_CATALOG: "docspec.adapters.storage:LocalManifestDocumentCatalog",
-    ProfileRole.RECORD_STORAGE: "docspec.adapters.storage:LocalJsonlRecordStorage",
+    ProfileRole.RECORD_STORAGE: "docspec.adapters.storage:LocalParquetRecordStorage",
     ProfileRole.BLOB_STORAGE: "docspec.adapters.storage:LocalContentAddressedBlobStore",
     ProfileRole.DOCUMENT_STORE: "docspec.adapters.storage:LocalDocumentStoreRepository",
     ProfileRole.RESULT_DELIVERY: "docspec.adapters.sinks:DurableDatasetSink",
@@ -71,20 +71,19 @@ def _local_storage(
 ) -> tuple[
     LocalJsonControlRepository,
     LocalDocumentStoreRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalContentAddressedBlobStore,
     LocalManifestDocumentCatalog,
 ]:
     controls = LocalJsonControlRepository(roots["controlRepository"], create=create)
     stores = _local_stores(roots["documentStores"], profiles[ProfileRole.DOCUMENT_STORE], create=create)
     record_profile = profiles[ProfileRole.RECORD_STORAGE]
-    records = LocalJsonlRecordStorage(
+    records = LocalParquetRecordStorage(
         roots["recordStorage"],
         create=create,
         max_member_bytes=_profile_limit(record_profile, "maxMemberBytes"),
         max_record_bytes=_profile_limit(record_profile, "maxRecordBytes"),
         max_root_bytes=_profile_limit(record_profile, "maxRootBytes"),
-        max_open_members=_profile_limit(record_profile, "maxOpenMembers"),
         max_merge_scratch_bytes=_profile_limit(record_profile, "maxMergeScratchBytes"),
     )
     blobs = LocalContentAddressedBlobStore(

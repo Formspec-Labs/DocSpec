@@ -13,7 +13,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.commit import ReleaseCommitService
@@ -195,7 +195,7 @@ def test_sink_receipt_uses_the_terminal_store_verdict(
 def test_durable_and_hybrid_sinks_replay_to_the_same_immutable_layers(tmp_path: Path) -> None:
     store = _terminal_store()
     expected = tuple(iter_delivery_records(store))
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     blob_root = artifact("blob-root")
     durable = DurableDatasetSink(
         sink_id="urn:docspec:test:sink:durable",
@@ -339,7 +339,7 @@ def _plan(source: SourceCatalogRef, retry: RetryPolicy, accepted: AcceptedFailur
 
 def test_stateless_returned_run_cannot_advance_the_document_catalog(tmp_path: Path) -> None:
     controls = LocalJsonControlRepository(tmp_path / "controls")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
@@ -503,7 +503,7 @@ def test_worker_restart_reuses_the_verified_entry_checkpoint(tmp_path: Path) -> 
     durable_stores = LocalDocumentStoreRepository(tmp_path / "stores")
     stores = _InterruptingStoreRepository(durable_stores)
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
         records=records,

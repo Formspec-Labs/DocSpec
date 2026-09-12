@@ -86,7 +86,8 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     assert install_core.returncode == 0, install_core.stderr
     core_only = subprocess.run(
         [environment_python, "-I", "-c",
-         "import docspec.runtime, importlib.util; assert importlib.util.find_spec('spicy_docs') is None"],
+         "import docspec.runtime, duckdb, pyarrow, importlib.util; "
+         "assert importlib.util.find_spec('spicy_docs') is None"],
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert core_only.returncode == 0, core_only.stderr
@@ -111,7 +112,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         [environment_python, "-I", "-c",
          "import docspec.source_catalog, spicy_docs.source_native, importlib.util; "
          "assert all(importlib.util.find_spec(name) is None for name in "
-         "('boto3', 'httpx', 'polars', 'pyarrow', 'dagster', 'pypdf'))"],
+         "('boto3', 'httpx', 'polars', 'dagster', 'pypdf'))"],
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert reader_only.returncode == 0, reader_only.stderr

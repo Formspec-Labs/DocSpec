@@ -8,8 +8,9 @@ record members, or content blobs. Counts in this metadata are declarations bound
 to the release, not a fresh recount of its dataset.
 
 This makes an intact release descriptor browsable even when an unused content
-object is unavailable. A reader checks each record member it consumes. Content
-reads check their blob references; exhaust a stream to complete its byte checks,
+object is unavailable. On the first read of a layer, a reader checks all of its
+pinned Parquet files once. Later queries use DuckDB to select and validate the
+needed rows. Content reads check their blob references; exhaust a stream to complete its byte checks,
 or close it when stopping early. Opening metadata does not establish that every
 referenced object is available or that all saved rows agree with one another.
 
@@ -58,4 +59,10 @@ an independently pre-existing destination receives its own audit. Re-reading the
 published metadata confirms the pin without repeating the full data scan in the
 same operation. These operations do not lock external record or blob storage.
 An audit observes the data it reads, not a permanent guarantee against later
-mutation. Later reads and new audit/publication calls check their own inputs.
+mutation. An existing record reader does not freeze Parquet files: external
+in-place changes after admission can affect a later query without another file
+hash. Each query still checks its root and consumed logical rows. A fresh reader
+or explicit audit checks physical pins again; publication always performs a
+fresh audit. Blob and control checks remain attached to their reads.
+
+See [record storage](record-storage.md) for the format and query boundaries.

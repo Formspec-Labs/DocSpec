@@ -19,7 +19,7 @@ from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.adapters.storage import (
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.delivery import StoreDeliveryService
@@ -62,7 +62,7 @@ class _LocalRunComposition:
     plan: ProcessingPlan
     controls: LocalJsonControlRepository
     stores: LocalDocumentStoreRepository
-    records: LocalJsonlRecordStorage
+    records: LocalParquetRecordStorage
     catalog: LocalManifestDocumentCatalog
     source_catalog: ImmutableSourceCatalogReader
     partition_policy: PartitionPolicy

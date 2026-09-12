@@ -59,5 +59,5 @@ def test_read_composition_opens_and_compares_real_retained_output_without_worksp
     assert tuple(catalog.compare(result, result, layer_kind="segments")) == ()
     ledger = stores.planned_store_ledger(arguments["plan"].plan_id)
     assert len(tuple(stores.stream_planned_stores(ledger))) == 1
-    assert records.max_open_members > 0
+    records.close()
     assert _snapshot(tmp_path) == before

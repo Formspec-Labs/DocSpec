@@ -10,7 +10,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.processor_rules import validate_processor_result
@@ -125,7 +125,7 @@ def test_changed_processor_reuses_content_and_runs_only_it_and_dependents(tmp_pa
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     partition_policy = PartitionPolicy("source-item-sha256-v1", 8)
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "document-catalog",

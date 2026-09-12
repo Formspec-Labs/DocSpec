@@ -23,6 +23,12 @@ repository behavior from upstream acquisition work and historical receipts.
 | [0005: publisher withholding](0005-publisher-declared-withholding.md) | Explicit withholding reason and receipt reason counts | Regulations.gov policy version `1.2.0` implements withholding interpretation; source-policy and catalog tests exercise it. Withholding evidence must not become a guess that an unavailable body never existed. |
 | [0006: publication with recorded failures](0006-publishable-releases-with-recorded-failures.md) | A source-native release may carry enumerated deterministic failures; transient failures still prevent publication | Accepted, with upstream implementation still unverified here. DocSpec delegates source-native verification to the installed producer reader; it does not implement the four producer-side changes named in this decision. Keep the recorded unimplemented status until producer code, tests, and a pinned release establish completion. A failure describes one attempt and policy version, never permanent absence. |
 
+The September 12 greenfield [record-storage decision](../record-storage.md)
+replaces the old default-JSONL/optional-Parquet implementation rule with one
+Parquet backend queried by DuckDB. Local implementation passed independent
+review and 1,129 strict tests. Larger workload qualification remains open; the
+original failed capacity trial remains historical evidence.
+
 When implementing a decision, update this index with code/check pointers and
 state separately whether local implementation, qualification, and publication
 have happened. Preserve original dated text and corrections in the decision;

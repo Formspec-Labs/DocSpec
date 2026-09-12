@@ -72,7 +72,7 @@ def test_every_one_per_role_combination_composes_or_registers_its_incompatibilit
 def test_a_specified_but_unimplemented_profile_refuses_selection(tmp_path: Path) -> None:
     directory = tmp_path / "profiles"
     shutil.copytree(PROFILE_ROOT, directory)
-    target = directory / "local-jsonl-records-v1.json"
+    target = directory / "local-parquet-records-v1.json"
     value = json.loads(target.read_text(encoding="utf-8"))
     value["implementationStatus"] = "specified"
     value["implementationModule"] = None
@@ -84,7 +84,7 @@ def test_a_specified_but_unimplemented_profile_refuses_selection(tmp_path: Path)
             (
                 "urn:docspec:profile:release-manifest:canonical-json:1",
                 "urn:docspec:profile:document-catalog:local-manifest:1",
-                "urn:docspec:profile:record-storage:local-jsonl:1",
+                "urn:docspec:profile:record-storage:local-parquet:1",
                 "urn:docspec:profile:blob-storage:local-content-addressed:1",
                 "urn:docspec:profile:document-store-persistence:local-json:1",
                 "urn:docspec:profile:result-delivery:durable-dataset:1",
@@ -101,7 +101,7 @@ def test_an_incompatible_selection_fails_run_start_before_any_planning_state(
     selected_ids = (
         "urn:docspec:profile:release-manifest:canonical-json:1",
         "urn:docspec:profile:document-catalog:local-manifest:1",
-        "urn:docspec:profile:record-storage:local-jsonl:1",
+        "urn:docspec:profile:record-storage:local-parquet:1",
         "urn:docspec:profile:blob-storage:amazon-s3-content-addressed:1",
         "urn:docspec:profile:document-store-persistence:local-json:1",
         "urn:docspec:profile:result-delivery:durable-dataset:1",

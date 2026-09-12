@@ -11,7 +11,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.reconcile import RunReconciler
@@ -58,7 +58,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     partition_policy = PartitionPolicy("source-item-sha256-v1", 16)
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "document-catalog",
@@ -213,7 +213,7 @@ def test_reconciler_matches_the_exact_planned_terminal_store_set(
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     partition_policy = PartitionPolicy("source-item-sha256-v1", 1)
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "document-catalog",

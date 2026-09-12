@@ -20,7 +20,7 @@ _EXPORTS = {
     "LocalExecutionBackend": "docspec.adapters.execution",
     "LocalFileContentFetcher": "docspec.adapters.content_fetchers",
     "LocalJsonControlRepository": "docspec.adapters.storage",
-    "LocalJsonlRecordStorage": "docspec.adapters.storage",
+    "LocalParquetRecordStorage": "docspec.adapters.storage",
     "LocalManifestDocumentCatalog": "docspec.adapters.storage",
     "LocalSourceCatalogCurrentPointer": "docspec.adapters.source_catalog_store",
     "LocalSourceCatalogStore": "docspec.adapters.source_catalog_store",

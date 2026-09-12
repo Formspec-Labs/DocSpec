@@ -71,7 +71,10 @@ class PreparedLocalRun:
         try:
             self._membership.close()
         finally:
-            self._composition.executor.close()
+            try:
+                self._composition.executor.close()
+            finally:
+                self._composition.records.close()
 
     def _require_handoff(self, handoff: ExecutionHandoff) -> None:
         if handoff != self.handoff:

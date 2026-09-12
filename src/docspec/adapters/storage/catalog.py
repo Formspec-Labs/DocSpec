@@ -6,8 +6,9 @@ import os
 import shutil
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from rulespec_artifacts import Producer, Supersedes
@@ -76,6 +77,16 @@ class _LocalDocumentCatalogReader:
     def __init__(self, release: DocumentRelease, records: RecordStorage) -> None:
         self._release = release
         self._records = records
+        self._admitted: set[LayerRef] = set()
+        self._admission_lock = Lock()
+
+    def _layer(self, layer_kind: str) -> LayerRef:
+        reference = _release_layer(self._release, layer_kind)
+        with self._admission_lock:
+            if reference not in self._admitted:
+                self._records.verify_members(reference)
+                self._admitted.add(reference)
+        return reference
 
     @property
     def release(self) -> DocumentRelease:
@@ -84,13 +95,13 @@ class _LocalDocumentCatalogReader:
     def lookup(self, *, layer_kind: str, record_id: str) -> dict[str, Any] | None:
         partition_value = record_id if layer_kind == "source-items" else None
         return self._records.lookup(
-            _release_layer(self._release, layer_kind),
+            self._layer(layer_kind),
             record_id,
             partition_value=partition_value,
         )
 
     def scan(self, *, layer_kind: str) -> Iterator[dict[str, Any]]:
-        yield from self._records.stream(_release_layer(self._release, layer_kind))
+        yield from self._records.stream(self._layer(layer_kind))
 
     def scan_source(
         self,
@@ -99,14 +110,14 @@ class _LocalDocumentCatalogReader:
         source_item_id: str,
     ) -> Iterator[dict[str, Any]]:
         require_text(source_item_id, "source_item_id")
-        for record in self._records.scan_partition_value(
-            _release_layer(self._release, layer_kind),
-            source_item_id,
-        ):
-            if "sourceItemId" not in record:
-                raise IntegrityError(f"release layer {layer_kind!r} does not carry source-item identity")
-            if record["sourceItemId"] == source_item_id:
-                yield record
+        with closing(self._records.scan_partition_value(
+            self._layer(layer_kind), source_item_id,
+        )) as rows:
+            for record in rows:
+                if "sourceItemId" not in record:
+                    raise IntegrityError(f"release layer {layer_kind!r} does not carry source-item identity")
+                if record["sourceItemId"] == source_item_id:
+                    yield record
 
 
 class LocalManifestDocumentCatalog:
@@ -191,7 +202,7 @@ class LocalManifestDocumentCatalog:
         return artifact, self.artifact_verifier.audit(artifact, source)
 
     def open_reader(self, reference: DocumentReleaseRef) -> _LocalDocumentCatalogReader:
-        """Admit metadata once; the reader verifies each record member it consumes."""
+        """Admit metadata now and each immutable layer once when first consumed."""
 
         return _LocalDocumentCatalogReader(self.open(reference), self.records)
 
@@ -222,28 +233,29 @@ class LocalManifestDocumentCatalog:
         new_identity = self.records.identity_field(new_layer)
         if old_identity != new_identity:
             raise IntegrityError("cannot compare layers with different logical identity fields")
-        old_records = iter(self.records.stream(old_layer))
-        new_records = iter(self.records.stream(new_layer))
-        old_record = next(old_records, None)
-        new_record = next(new_records, None)
-        while old_record is not None or new_record is not None:
-            if old_record is None:
-                yield new_record[new_identity], "added"
-                new_record = next(new_records, None)
-            elif new_record is None:
-                yield old_record[old_identity], "deleted"
-                old_record = next(old_records, None)
-            elif old_record[old_identity] < new_record[new_identity]:
-                yield old_record[old_identity], "deleted"
-                old_record = next(old_records, None)
-            elif old_record[old_identity] > new_record[new_identity]:
-                yield new_record[new_identity], "added"
-                new_record = next(new_records, None)
-            else:
-                if canonical_json_bytes(old_record) != canonical_json_bytes(new_record):
-                    yield old_record[old_identity], "changed"
-                old_record = next(old_records, None)
-                new_record = next(new_records, None)
+        for layer in {old_layer, new_layer}:
+            self.records.verify_members(layer)
+        with closing(self.records.stream(old_layer)) as old_records, closing(self.records.stream(new_layer)) as new_records:
+            old_record = next(old_records, None)
+            new_record = next(new_records, None)
+            while old_record is not None or new_record is not None:
+                if old_record is None:
+                    yield new_record[new_identity], "added"
+                    new_record = next(new_records, None)
+                elif new_record is None:
+                    yield old_record[old_identity], "deleted"
+                    old_record = next(old_records, None)
+                elif old_record[old_identity] < new_record[new_identity]:
+                    yield old_record[old_identity], "deleted"
+                    old_record = next(old_records, None)
+                elif old_record[old_identity] > new_record[new_identity]:
+                    yield new_record[new_identity], "added"
+                    new_record = next(new_records, None)
+                else:
+                    if canonical_json_bytes(old_record) != canonical_json_bytes(new_record):
+                        yield old_record[old_identity], "changed"
+                    old_record = next(old_records, None)
+                    new_record = next(new_records, None)
 
     def stage(self, release: DocumentRelease) -> ArtifactRef:
         plan, _, _ = self.verifier.verify_metadata(release)

@@ -175,18 +175,18 @@ def run_example(reference: Path, output: Path) -> dict:
             with dagster.build_resources(definitions, resource_config=config, instance=instance) as resources:
                 prepared = resources.docspec_runtime
                 base = prepared.retain(prepared.reconcile(results))
-                view = open_local_inspection(prepared.plan, resources.workspace,
-                    document_release_producer=_producers(reference)[1], release_ref=base)
-                phases[phase] = {"dagsterRunId": native_run, "handoff": prepared.handoff_ref.to_dict(),
-                                 "release": base.to_dict(), "inspection": view.summary()}
-                if phase == "processing":
-                    actual = _phrase_values(view, resources.processor)
-                    source_digests = {sha256_digest((resources.workspace.roots["sourceContent"] / f"{name}.txt").read_bytes())
-                                      for name in ("privacy", "security")}
-                    expected = [value for value in _read(reference / "matches.json")["resource-v2"]
-                                if value["enclosingSourceEvidence"]["sourceDigest"] in source_digests]
-                    assert actual == expected
-                    assert phases[phase]["inspection"]["work"]["counts"]["newCapturedFiles"] == 0
+                with open_local_inspection(prepared.plan, resources.workspace,
+                    document_release_producer=_producers(reference)[1], release_ref=base) as view:
+                    phases[phase] = {"dagsterRunId": native_run, "handoff": prepared.handoff_ref.to_dict(),
+                                     "release": base.to_dict(), "inspection": view.summary()}
+                    if phase == "processing":
+                        actual = _phrase_values(view, resources.processor)
+                        source_digests = {sha256_digest((resources.workspace.roots["sourceContent"] / f"{name}.txt").read_bytes())
+                                          for name in ("privacy", "security")}
+                        expected = [value for value in _read(reference / "matches.json")["resource-v2"]
+                                    if value["enclosingSourceEvidence"]["sourceDigest"] in source_digests]
+                        assert actual == expected
+                        assert phases[phase]["inspection"]["work"]["counts"]["newCapturedFiles"] == 0
     summary = {"verdict": "pass", "tasksPerPhase": 2, "cleanOutputValuesAgree": True, "phases": phases}
     (output / "dagster-example.json").write_bytes(canonical_json_file_bytes(summary))
     return summary

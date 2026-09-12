@@ -446,6 +446,8 @@ def _logical_layers_state_digest(
 def logical_release_state_digest(records: RecordStorage, release: DocumentRelease) -> str:
     """Digest exact logical records without including their physical layer roots."""
 
+    for layer in release.active_layers:
+        records.verify_members(layer)
     digest, _ = _logical_layers_state_digest(records, release.active_layers)
     return digest
 

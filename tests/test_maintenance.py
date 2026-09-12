@@ -6,15 +6,18 @@ from pathlib import Path
 from threading import Event
 
 import pytest
+import pyarrow.parquet as pq
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.storage import (
     LocalDocumentStoreRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
     RootOnlyBlobProfileStateReachability,
 )
-from docspec.application.maintenance import BlobRetentionSetService, ReleaseCompactionService
+from docspec.application.maintenance import (
+    BlobRetentionSetService, ReleaseCompactionService, logical_release_state_digest,
+)
 from docspec.application.reconcile import RunReconciler
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
@@ -54,6 +57,23 @@ def _blob_references(platform: _Platform) -> set[tuple[str, str, int, str]]:
             )
     assert release.blob_roots
     return references
+
+
+def test_standalone_logical_digest_admits_physical_files_before_reading(tmp_path: Path) -> None:
+    platform = _platform(tmp_path, document_count=1, member_bytes=64 * 1024)
+    release = platform.catalog.open(platform.release)
+    logical_release_state_digest(platform.records, release)
+    layer = next(layer for layer in release.active_layers if layer.layer_kind == "files")
+    root = json.loads((platform.records.root / layer.state_ref).read_bytes())
+    path = platform.records.root / root["members"][0]["path"]
+    table = pq.read_table(path)
+    original = path.read_bytes()
+    pq.write_table(table.replace_schema_metadata({b"fixture": b"changed physical encoding"}), path)
+    assert path.read_bytes() != original
+    assert pq.read_table(path).equals(table, check_metadata=False)
+    with pytest.raises(IntegrityError):
+        logical_release_state_digest(platform.records, release)
+    platform.records.close()
 
 
 def test_retention_set_is_derived_from_verified_release_store_and_profile_roots(tmp_path: Path) -> None:
@@ -176,7 +196,7 @@ def test_retention_set_rejects_conflicting_metadata_for_one_root_and_locator(tmp
         )
 
 
-def _member_counts(records: LocalJsonlRecordStorage, reference: DocumentReleaseRef, catalog) -> dict[str, int]:
+def _member_counts(records: LocalParquetRecordStorage, reference: DocumentReleaseRef, catalog) -> dict[str, int]:
     release = catalog.open(reference)
     return {
         layer.layer_kind: len(json.loads((records.root / layer.state_ref).read_text())["members"])
@@ -202,8 +222,8 @@ def _compaction_service(
     platform: _Platform,
     *,
     clock,
-) -> tuple[ReleaseCompactionService, LocalJsonlRecordStorage, LocalManifestDocumentCatalog]:
-    records = LocalJsonlRecordStorage(
+) -> tuple[ReleaseCompactionService, LocalParquetRecordStorage, LocalManifestDocumentCatalog]:
+    records = LocalParquetRecordStorage(
         platform.records.root,
         max_member_bytes=1024 * 1024,
     )

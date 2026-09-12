@@ -10,10 +10,10 @@ from docspec.cli.common import _release_reference
 from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.cli_io import emit, read_object
 from docspec.domain.references import ArtifactRef
-from docspec.runtime import InspectionView, open_local_inspection
+from docspec.runtime import LocalInspectionView, open_local_inspection
 
 
-def _open_view(args: argparse.Namespace, prefix: str = "") -> InspectionView:
+def _open_view(args: argparse.Namespace, prefix: str = "") -> LocalInspectionView:
     def value(name: str):
         return getattr(args, prefix + name)
 
@@ -33,23 +33,24 @@ def _open_view(args: argparse.Namespace, prefix: str = "") -> InspectionView:
 def _cmd_inspect(args: argparse.Namespace) -> int:
     if args.sample_limit < 0:
         raise ValueError("sample limit must be non-negative")
-    view = _open_view(args)
-    if args.inspection_command == "summary":
-        report = view.summary(sample_limit=args.sample_limit)
-    elif args.inspection_command == "source":
-        report = view.source(args.source_item_id, sample_limit=args.sample_limit)
-    elif args.inspection_command == "compare":
-        report = view.compare(_open_view(args, "other_"), sample_limit=args.sample_limit)
-    else:
-        rows = view.records(args.layer_kind, source_item_id=args.source_item_id)
-        try:
-            sample = list(islice(rows, args.sample_limit + 1))
-        finally:
-            rows.close()
-        report = {
-            "layerKind": args.layer_kind, "sourceItemId": args.source_item_id,
-            "records": sample[:args.sample_limit], "truncated": len(sample) > args.sample_limit,
-        }
+    with _open_view(args) as view:
+        if args.inspection_command == "summary":
+            report = view.summary(sample_limit=args.sample_limit)
+        elif args.inspection_command == "source":
+            report = view.source(args.source_item_id, sample_limit=args.sample_limit)
+        elif args.inspection_command == "compare":
+            with _open_view(args, "other_") as other:
+                report = view.compare(other, sample_limit=args.sample_limit)
+        else:
+            rows = view.records(args.layer_kind, source_item_id=args.source_item_id)
+            try:
+                sample = list(islice(rows, args.sample_limit + 1))
+            finally:
+                rows.close()
+            report = {
+                "layerKind": args.layer_kind, "sourceItemId": args.source_item_id,
+                "records": sample[:args.sample_limit], "truncated": len(sample) > args.sample_limit,
+            }
     emit(report)
     return 0
 

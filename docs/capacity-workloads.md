@@ -200,3 +200,46 @@ input bytes, commands and observations remain under
 comparison is not an installed-workload or repeatable-throughput claim. These
 diagnostics and checkout tests overlapped the frozen text trial on the shared
 host; its activity log records those conditions.
+
+## Direct Parquet query prototype
+
+After the frozen text4096 changed-resource operation exceeded 1,800 seconds, a
+disposable prototype converted its eight already-retained layers to Parquet.
+It used Python 3.12.13, DuckDB 1.5.5 and PyArrow 25.0.1 outside the checkout.
+All 106,496 complete logical records matched their originals. Input member
+digests, sizes and counts were checked during conversion. JSONL member bytes
+totaled 153,821,952; the prototype's Parquet files totaled 23,571,669 bytes.
+
+The prototype stored four typed delivery fields and a canonical JSON payload,
+sorted by source and record identity, with one file per layer and 2,048-row
+groups. Conversion used Arrow batches capped at 512 rows and 4 MiB of input
+bytes. Conversion plus complete parity checking took 12.22 seconds and peaked
+at 351,191,040 resident bytes. The independent parity checker kept per-layer
+record hashes in memory; that checker is not the production bounded reader.
+
+Direct queries of files, segments and receipts returned the same 73,728 complete
+selected values in both query patterns:
+
+| Query pattern across 4,096 sources | Measured query-loop seconds |
+| --- | ---: |
+| One source per query | 13.217 |
+| 128 sources per query | 1.523 |
+
+Each loop decoded and hashed returned payloads; no whole-file hash ran per
+query. Each process owned one DuckDB connection, with one native thread, a
+512 MB memory setting and a 2 GB temporary-storage setting. These settings are
+not process-memory guarantees. The host and operating-system cache were shared
+and uncontrolled. These are single observations, not repeatable speed claims.
+
+The selected [record backend](record-storage.md) instead stores generic routing
+columns and complete JSON row bytes, with existing bucket and shard boundaries.
+The prototype's layout and timings therefore do not measure that implementation.
+They support direct Parquet queries and batching as a direction; complete
+installed lifecycle, concurrency, corruption and capacity checks remain required.
+The original failed trial stays unchanged.
+
+Exact scripts, inputs, versions, file pins and native measurements remain in
+`/Users/mikewolfd/Work/corpora/docspec-parquet-duckdb-prototype-2026-09-12`.
+DuckDB documents [direct Parquet filtering and projection](https://duckdb.org/docs/current/data/parquet/overview)
+and [the benefit of larger queries](https://duckdb.org/docs/current/guides/performance/how_to_tune_workloads).
+Neither documentation nor this prototype establishes DocSpec's capacity.

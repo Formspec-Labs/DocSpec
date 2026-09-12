@@ -5,6 +5,7 @@ from tests.helpers import EMPTY_DIGEST
 import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from pathlib import Path
 from threading import Event, Lock
 from typing import Any
@@ -16,7 +17,7 @@ import docspec.adapters.storage.records as records_module
 from docspec.adapters.storage import (
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.commit import (
@@ -26,7 +27,7 @@ from docspec.application.commit import (
 )
 from docspec.domain.content import SourceItem, SourceItemState
 from docspec.domain.delivery import core_delivery_schemas
-from docspec.domain.identity import ordered_json_sequence_digest, sha256_digest
+from docspec.domain.identity import canonical_json_bytes, ordered_json_sequence_digest, sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, StoreVerdict
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
@@ -65,7 +66,7 @@ def _bucket(value: str) -> int:
 
 
 def test_record_layer_streams_stably_and_reuses_untouched_partitions(tmp_path: Path) -> None:
-    storage = LocalJsonlRecordStorage(tmp_path / "records", max_member_bytes=10_000)
+    storage = LocalParquetRecordStorage(tmp_path / "records", max_member_bytes=10_000)
     initial_records = [
         {"recordId": "a", "sourceItemId": "source-a", "value": 1},
         {"recordId": "b", "sourceItemId": "source-b", "value": 2},
@@ -110,7 +111,7 @@ def test_identical_record_layer_roots_publish_atomically_under_concurrency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    storage = LocalJsonlRecordStorage(tmp_path / "records")
+    storage = LocalParquetRecordStorage(tmp_path / "records")
     first_writer_entered = Event()
     release_first_writer = Event()
     call_lock = Lock()
@@ -149,10 +150,67 @@ def test_identical_record_layer_roots_publish_atomically_under_concurrency(
 
     assert first_reference == second_reference
     storage.verify(first_reference)
+    storage.verify_members(first_reference)
+    assert list(storage.stream(first_reference)) == []
+    assert list(storage.scan_partition_value(first_reference, "missing")) == []
+    assert storage.lookup(first_reference, "missing") is None
+
+
+def test_parquet_preserves_arbitrary_payloads_and_exact_partition_routing(tmp_path: Path) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records")
+    records = [
+        {"recordId": "a", "sourceItemId": "z", "value": {"mixed": [None, 1, True, "café 🧪"], "nested": {}}},
+        {"recordId": "b", "sourceItemId": "a", "value": {"optional": None}},
+        {"recordId": "c", "sourceItemId": "z", "value": {}},
+    ]
+    # One physical bucket makes the source filter prove exact routing rather
+    # than returning every peer in the selected bucket.
+    layer = storage.write_layer(records, layer_kind="test-records", schema=SCHEMA,
+                                partition_policy=PartitionPolicy("single", 1))
+    assert [canonical_json_bytes(row) for row in storage.stream(layer)] == [canonical_json_bytes(row) for row in records]
+    assert list(storage.scan_partition_value(layer, "z")) == [records[0], records[2]]
+    assert storage.lookup(layer, "a", partition_value="a") is None
+    assert storage.lookup(layer, "a", partition_value="z") == records[0]
+    storage.close()
+
+
+def test_workspace_names_do_not_override_physical_routing_columns(tmp_path: Path) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "partition_value=shadow" / "record_identity=shadow" / "quote's")
+    row = {"recordId": "actual-id", "sourceItemId": "actual-source", "value": 1}
+    layer = storage.write_layer([row], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
+    storage.verify(layer)
+    assert list(storage.stream(layer)) == [row]
+    assert storage.lookup(layer, "actual-id", partition_value="actual-source") == row
+    storage.close()
+
+
+def test_parquet_live_streams_and_concurrent_point_reads_do_not_clobber_results(tmp_path: Path) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records")
+    records = [{"recordId": f"record-{index:05d}", "sourceItemId": f"source-{index % 3}", "value": index}
+               for index in range(4097)]
+    layer = storage.write_layer(records, layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
+    storage.verify_members(layer)
+    with closing(storage.stream(layer)) as left, closing(storage.stream(layer)) as right:
+        assert next(left) == next(right) == records[0]
+        with ThreadPoolExecutor(max_workers=4) as workers:
+            def lookup(index):
+                row = records[index]
+                return storage.lookup(layer, row["recordId"], partition_value=row["sourceItemId"])
+
+            indices = (0, 37, 2048, 4096)
+            assert list(workers.map(lookup, indices)) == [records[index] for index in indices]
+        for expected in records[1:]:
+            assert next(left) == expected
+            assert next(right) == expected
+        assert next(left, None) is next(right, None) is None
+    storage.close()
+    # The adapter lazily opens a fresh native connection after explicit close.
+    assert list(storage.stream(layer)) == records
+    storage.close()
 
 
 def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) -> None:
-    storage = LocalJsonlRecordStorage(tmp_path / "records")
+    storage = LocalParquetRecordStorage(tmp_path / "records")
     with pytest.raises(IntegrityError, match="strictly ordered"):
         storage.write_layer(
             [
@@ -171,7 +229,9 @@ def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) 
         partition_policy=POLICY,
     )
     root = json.loads((storage.root / layer.state_ref).read_text())
-    (storage.root / root["members"][0]["path"]).write_bytes(b'{"recordId":"a"}\n')
+    path = storage.root / root["members"][0]["path"]
+    original = path.read_bytes()
+    path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
     with pytest.raises(IntegrityError):
         storage.verify(layer)
 
@@ -181,7 +241,7 @@ def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) 
 def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str, corruption: str,
 ) -> None:
-    storage = LocalJsonlRecordStorage(tmp_path / "records")
+    storage = LocalParquetRecordStorage(tmp_path / "records")
     record = {"recordId": "a", "sourceItemId": "source-a", "value": 1}
     layer = storage.write_layer(
         [record], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
@@ -191,10 +251,10 @@ def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
     root_reads = []
     read_exact = records_module._read_exact
 
-    def observed_read(root, locator):
+    def observed_read(root, locator, **kwargs):
         if locator == layer.state_ref:
             root_reads.append(locator)
-        return read_exact(root, locator)
+        return read_exact(root, locator, **kwargs)
 
     monkeypatch.setattr(records_module, "_read_exact", observed_read)
 
@@ -210,12 +270,15 @@ def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
     original = path.read_bytes()
     path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
     with pytest.raises(IntegrityError):
-        read()
+        if corruption == "member":
+            storage.verify_members(layer)
+        else:
+            read()
     assert root_reads == [layer.state_ref, layer.state_ref]
 
 
 def _committed_catalog_state(tmp_path: Path):
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     stores = LocalDocumentStoreRepository(
         tmp_path / "stores",
         verification_scratch=tmp_path / "verification-scratch",

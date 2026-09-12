@@ -16,7 +16,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
     RootOnlyBlobProfileStateReachability,
 )
@@ -493,7 +493,7 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     commit_operation = json.loads(capfd.readouterr().out)
     release_reference = DocumentReleaseRef.from_dict(json.loads(release_reference_path.read_text()))
     stores = LocalDocumentStoreRepository(Path(roots["documentStores"]))
-    records = LocalJsonlRecordStorage(Path(roots["recordStorage"]))
+    records = LocalParquetRecordStorage(Path(roots["recordStorage"]))
     catalog = LocalManifestDocumentCatalog(
         Path(roots["documentCatalog"]),
         records=records,
@@ -588,7 +588,7 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         platform,
         completed_at="2026-08-05T16:00:00Z",
     )
-    compacted_records = LocalJsonlRecordStorage(
+    compacted_records = LocalParquetRecordStorage(
         platform.records.root,
         max_member_bytes=1024 * 1024,
     )

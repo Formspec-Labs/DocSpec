@@ -19,13 +19,13 @@ def test_machine_profiles_load_and_select_one_implemented_local_set() -> None:
     selected = (
         "urn:docspec:profile:release-manifest:canonical-json:1",
         "urn:docspec:profile:document-catalog:local-manifest:1",
-        "urn:docspec:profile:record-storage:local-jsonl:1",
+        "urn:docspec:profile:record-storage:local-parquet:1",
         "urn:docspec:profile:blob-storage:local-content-addressed:1",
         "urn:docspec:profile:document-store-persistence:local-json:1",
         "urn:docspec:profile:result-delivery:durable-dataset:1",
     )
     profile_set = registry.select(selected)
-    assert profile_set.for_role(ProfileRole.RECORD_STORAGE).profile_id.endswith("local-jsonl:1")
+    assert profile_set.for_role(ProfileRole.RECORD_STORAGE).profile_id.endswith("local-parquet:1")
 
 
 def test_profile_selection_fails_before_work_when_a_requirement_is_missing() -> None:
@@ -52,7 +52,7 @@ def test_profile_pin_identifies_the_complete_machine_description(tmp_path: Path)
 
 @pytest.mark.parametrize("obsolete", ["version", "governance"])
 def test_profile_registry_refuses_superseded_descriptions(tmp_path: Path, obsolete: str) -> None:
-    path = ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json"
+    path = ROOT / "src" / "docspec" / "storage_profiles" / "local-parquet-records-v1.json"
     value = json.loads(path.read_text(encoding="utf-8"))
     assert value["formatVersion"] == "2.0"
     assert "governancePolicies" not in value
@@ -73,7 +73,7 @@ def test_profile_registry_rejects_string_values_where_arrays_are_required(
     tmp_path: Path,
     field: str,
 ) -> None:
-    value = json.loads((ROOT / "src" / "docspec" / "storage_profiles" / "local-jsonl-records-v1.json").read_text(encoding="utf-8"))
+    value = json.loads((ROOT / "src" / "docspec" / "storage_profiles" / "local-parquet-records-v1.json").read_text(encoding="utf-8"))
     value[field] = "docspec-not-an-array/1"
     path = tmp_path / f"invalid-{field}.json"
     path.write_text(json.dumps(value), encoding="utf-8")

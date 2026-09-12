@@ -439,15 +439,17 @@ def main():
             result = _run(args.root, saved, phase, prefix=args.prefix_tasks if args.operation == "prefix" else None,
                 recover=args.operation == "resume")
         elif args.operation == "inspect":
-            result = _view(args.root, saved, args.phase).summary(sample_limit=0)
+            with _view(args.root, saved, args.phase) as view:
+                result = view.summary(sample_limit=0)
         elif args.operation == "check":
-            result = _check(args.root, saved, args.phase, _view(args.root, saved, args.phase))
+            with _view(args.root, saved, args.phase) as view:
+                result = _check(args.root, saved, args.phase, view)
         else:
-            changed_view, clean_view = (_view(args.root, saved, phase) for phase in ("changed", "clean"))
-            changed = _check(args.root, saved, "changed", changed_view)
-            clean = _check(args.root, saved, "clean", clean_view)
-            assert changed == clean, "full clean and reused value/evidence streams differ"
-            result = {"checked": changed, "comparison": changed_view.compare(clean_view, sample_limit=0)}
+            with _view(args.root, saved, "changed") as changed_view, _view(args.root, saved, "clean") as clean_view:
+                changed = _check(args.root, saved, "changed", changed_view)
+                clean = _check(args.root, saved, "clean", clean_view)
+                assert changed == clean, "full clean and reused value/evidence streams differ"
+                result = {"checked": changed, "comparison": changed_view.compare(clean_view, sample_limit=0)}
     print(canonical_json_file_bytes(result).decode(), end="")
 
 

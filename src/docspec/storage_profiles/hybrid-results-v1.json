@@ -31,7 +31,7 @@
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": [
       "urn:docspec:profile:document-store-persistence:local-json:1",
-      "urn:docspec:profile:record-storage:local-jsonl:1"
+      "urn:docspec:profile:record-storage:local-parquet:1"
     ]
   },
   "verifierTestId": "RESULT-SINK"

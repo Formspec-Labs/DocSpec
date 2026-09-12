@@ -1,12 +1,12 @@
 {
   "format": "docspec-storage-profile",
   "formatVersion": "2.0",
-  "profileId": "urn:docspec:profile:record-storage:local-jsonl:1",
+  "profileId": "urn:docspec:profile:record-storage:local-parquet:1",
   "role": "RecordStorageProfile",
   "version": "1.0.0",
   "implementationStatus": "implemented",
-  "implementationId": "docspec.record-storage.local-jsonl.v1",
-  "implementationModule": "docspec.adapters.storage:LocalJsonlRecordStorage",
+  "implementationId": "docspec.record-storage.local-parquet.v1",
+  "implementationModule": "docspec.adapters.storage:LocalParquetRecordStorage",
   "configuration": {},
   "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
   "logicalSchemas": [
@@ -18,22 +18,19 @@
     "docspec-receipt-record/1.0"
   ],
   "physicalMediaTypes": [
-    "application/x-ndjson"
+    "application/vnd.apache.parquet"
   ],
   "capabilities": {
     "boundedExternalMerge": true,
-    "boundedReadFanIn": true,
     "boundedStreaming": true,
     "closedSchemas": true,
     "incrementalPartitionReuse": true,
     "independentVerification": true,
-    "orderedPartitionSharding": true,
     "partitionDirectedLookup": true,
     "partitionPruning": true,
     "stableLogicalPartitioning": true
   },
   "limits": {
-    "maxOpenMembers": 64,
     "maxMemberBytes": 268435456,
     "maxRecordBytes": 8388608,
     "maxRootBytes": 33554432,

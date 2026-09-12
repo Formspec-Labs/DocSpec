@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import ExitStack
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
@@ -123,106 +124,107 @@ def run_example(output: Path) -> dict:
         "selection": selection,
     }
 
-    def finish(prepared, name):
-        run = prepared.run()
-        release = prepared.retain(run)
-        view = open_local_inspection(prepared.plan, workspace,
-            document_release_producer=release_producer, source_catalog_producer=source_producer, release_ref=release)
-        report = {"plan": prepared.plan.to_dict(), "run": run.to_dict(), "release": release.to_dict(),
-                  "handoff": prepared.handoff_ref.to_dict(), "inspection": view.summary()}
-        _write(output / f"{name}.json", report)
-        return release, view, report
+    with ExitStack() as views:
+        def finish(prepared, name):
+            run = prepared.run()
+            release = prepared.retain(run)
+            view = views.enter_context(open_local_inspection(prepared.plan, workspace,
+                document_release_producer=release_producer, source_catalog_producer=source_producer, release_ref=release))
+            report = {"plan": prepared.plan.to_dict(), "run": run.to_dict(), "release": release.to_dict(),
+                      "handoff": prepared.handoff_ref.to_dict(), "inspection": view.summary()}
+            _write(output / f"{name}.json", report)
+            return release, view, report
 
-    with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", **settings) as prepared:
-        failed_base, failed_view, failed = finish(prepared, "initial-capture")
-    assert failed["inspection"]["result"]["layers"]["files"] == 2
-    assert failed["inspection"]["result"]["layers"]["failures"] == 1
-    (input_root / "late-arrival.txt").write_bytes(payloads["late-arrival"])
-    repair_settings = settings | {"selection": selection | {"retryFailures": "transient"}}
-    with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", base_release=failed_base,
-                                  **repair_settings) as prepared:
-        captured_base, _, repaired = finish(prepared, "repaired-capture")
-    assert repaired["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
-    assert repaired["inspection"]["result"]["layers"]["files"] == 3
-    assert repaired["inspection"]["result"]["layers"]["failures"] == 0
-    assert len(tuple(failed_view.records("failures"))) == 1
-    processor = PhraseMatchProcessor(*resources["v1"], retry_policy=retry)
-    stages = {"extractor": TextExtractor(), "segmenter": ParagraphSegmenter()}
-    processing_settings = settings | stages | {"processors": (processor,), "base_release": captured_base}
-    with prepare_local_experiment(catalog.reference, workspace, **processing_settings) as prepared:
-        processed_base, processed_view, processed = finish(prepared, "processed")
-        handoff = prepared.handoff_ref
-        run = prepared.run()
-    with prepare_local_experiment(catalog.reference, workspace, handoff_ref=handoff, **processing_settings) as recovered:
-        assert recovered.run() == run
-    values = {"original": _phrase_values(processed_view, processor)}
-    comparisons = {}
-    base_prefix = {
-        kind: tuple(row["payload"] for row in processed_view.records(kind))
-        for kind in ("files", "representations", "segments")
-    }
-    for name, candidate in (
-        ("case-sensitive", PhraseMatchProcessor(*resources["v1"], case_sensitive=True, retry_policy=retry)),
-        ("resource-v2", PhraseMatchProcessor(*resources["v2"], retry_policy=retry)),
-    ):
-        with prepare_local_experiment(catalog.reference, workspace, **(settings | stages),
-                                      processors=(candidate,), base_release=processed_base) as prepared:
-            alternative_base, view, report = finish(prepared, name)
-        assert all(tuple(row["payload"] for row in view.records(kind)) == records for kind, records in base_prefix.items())
-        counts = report["inspection"]["work"]["counts"]
-        assert counts["newCapturedFiles"] == counts["newRepresentations"] == counts["newSegments"] == 0
-        values[name], comparisons[name] = _phrase_values(view, candidate), processed_view.compare(view)
+        with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", **settings) as prepared:
+            failed_base, failed_view, failed = finish(prepared, "initial-capture")
+        assert failed["inspection"]["result"]["layers"]["files"] == 2
+        assert failed["inspection"]["result"]["layers"]["failures"] == 1
+        (input_root / "late-arrival.txt").write_bytes(payloads["late-arrival"])
+        repair_settings = settings | {"selection": selection | {"retryFailures": "transient"}}
+        with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", base_release=failed_base,
+                                      **repair_settings) as prepared:
+            captured_base, _, repaired = finish(prepared, "repaired-capture")
+        assert repaired["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
+        assert repaired["inspection"]["result"]["layers"]["files"] == 3
+        assert repaired["inspection"]["result"]["layers"]["failures"] == 0
+        assert len(tuple(failed_view.records("failures"))) == 1
+        processor = PhraseMatchProcessor(*resources["v1"], retry_policy=retry)
+        stages = {"extractor": TextExtractor(), "segmenter": ParagraphSegmenter()}
+        processing_settings = settings | stages | {"processors": (processor,), "base_release": captured_base}
+        with prepare_local_experiment(catalog.reference, workspace, **processing_settings) as prepared:
+            processed_base, processed_view, processed = finish(prepared, "processed")
+            handoff = prepared.handoff_ref
+            run = prepared.run()
+        with prepare_local_experiment(catalog.reference, workspace, handoff_ref=handoff, **processing_settings) as recovered:
+            assert recovered.run() == run
+        values = {"original": _phrase_values(processed_view, processor)}
+        comparisons = {}
+        base_prefix = {
+            kind: tuple(row["payload"] for row in processed_view.records(kind))
+            for kind in ("files", "representations", "segments")
+        }
+        for name, candidate in (
+            ("case-sensitive", PhraseMatchProcessor(*resources["v1"], case_sensitive=True, retry_policy=retry)),
+            ("resource-v2", PhraseMatchProcessor(*resources["v2"], retry_policy=retry)),
+        ):
+            with prepare_local_experiment(catalog.reference, workspace, **(settings | stages),
+                                          processors=(candidate,), base_release=processed_base) as prepared:
+                alternative_base, view, report = finish(prepared, name)
+            assert all(tuple(row["payload"] for row in view.records(kind)) == records for kind, records in base_prefix.items())
+            counts = report["inspection"]["work"]["counts"]
+            assert counts["newCapturedFiles"] == counts["newRepresentations"] == counts["newSegments"] == 0
+            values[name], comparisons[name] = _phrase_values(view, candidate), processed_view.compare(view)
 
-    payloads["added-note"] = (INPUT_ROOT / "added-note.txt").read_bytes()
-    (input_root / "added-note.txt").write_bytes(payloads["added-note"])
-    grown_catalog = build_catalog(payloads, supersedes=Supersedes(
-        catalog.reference.catalog_id, catalog.reference.digest, "Add one review note",
-    ))
-    growth = preview_local_catalog(grown_catalog.reference, workspace, producer=source_producer,
-        previous_ref=catalog.reference)
-    assert growth["comparison"]["counts"] == {"added": 1, "removedFromCatalog": 0, "changed": 0, "unchanged": 4}
-    _write(output / "catalog-growth.json", growth)
-    with prepare_local_experiment(grown_catalog.reference, workspace, **(settings | stages),
-                                  processors=(candidate,), base_release=alternative_base) as prepared:
-        _, grown_view, grown = finish(prepared, "grown")
-    assert grown["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
-    values["grown"] = _phrase_values(grown_view, candidate)
-    clean_workspace = LocalWorkspace(output / "clean-comparison", {
-        "sourceCatalog": workspace.roots["sourceCatalog"], "sourceContent": input_root,
-    })
-    with prepare_local_experiment(grown_catalog.reference, clean_workspace, **(settings | stages),
-                                  processors=(candidate,)) as clean:
-        clean_release = clean.retain(clean.run())
-        clean_view = open_local_inspection(clean.plan, clean_workspace,
-            document_release_producer=release_producer, release_ref=clean_release)
-    assert _phrase_values(clean_view, candidate) == values["grown"]
-    clean_comparison = grown_view.compare(clean_view)
-    assert not clean_comparison["result"]["sampleTruncated"]
-    assert all(not change[f"{kind}Changed"] for change in clean_comparison["result"]["sample"]
-               for kind in ("input", "content", "configuration"))
-    # Inspection's outcome digest includes the plan's add/update classification.
-    # Compare actual dispositions and failures separately: a clean run adds
-    # every item, while an incremental run updates the existing items.
-    def outcomes(view):
-        return {row["sourceItemId"]: {key: value for key, value in row["payload"].items()
-                if key not in {"entryId", "change"}} for row in view.records("dispositions")}
+        payloads["added-note"] = (INPUT_ROOT / "added-note.txt").read_bytes()
+        (input_root / "added-note.txt").write_bytes(payloads["added-note"])
+        grown_catalog = build_catalog(payloads, supersedes=Supersedes(
+            catalog.reference.catalog_id, catalog.reference.digest, "Add one review note",
+        ))
+        growth = preview_local_catalog(grown_catalog.reference, workspace, producer=source_producer,
+            previous_ref=catalog.reference)
+        assert growth["comparison"]["counts"] == {"added": 1, "removedFromCatalog": 0, "changed": 0, "unchanged": 4}
+        _write(output / "catalog-growth.json", growth)
+        with prepare_local_experiment(grown_catalog.reference, workspace, **(settings | stages),
+                                      processors=(candidate,), base_release=alternative_base) as prepared:
+            _, grown_view, grown = finish(prepared, "grown")
+        assert grown["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
+        values["grown"] = _phrase_values(grown_view, candidate)
+        clean_workspace = LocalWorkspace(output / "clean-comparison", {
+            "sourceCatalog": workspace.roots["sourceCatalog"], "sourceContent": input_root,
+        })
+        with prepare_local_experiment(grown_catalog.reference, clean_workspace, **(settings | stages),
+                                      processors=(candidate,)) as clean:
+            clean_release = clean.retain(clean.run())
+            clean_view = views.enter_context(open_local_inspection(clean.plan, clean_workspace,
+                document_release_producer=release_producer, release_ref=clean_release))
+        assert _phrase_values(clean_view, candidate) == values["grown"]
+        clean_comparison = grown_view.compare(clean_view)
+        assert not clean_comparison["result"]["sampleTruncated"]
+        assert all(not change[f"{kind}Changed"] for change in clean_comparison["result"]["sample"]
+                   for kind in ("input", "content", "configuration"))
+        # Inspection's outcome digest includes the plan's add/update classification.
+        # Compare actual dispositions and failures separately: a clean run adds
+        # every item, while an incremental run updates the existing items.
+        def outcomes(view):
+            return {row["sourceItemId"]: {key: value for key, value in row["payload"].items()
+                    if key not in {"entryId", "change"}} for row in view.records("dispositions")}
 
-    assert outcomes(grown_view) == outcomes(clean_view)
-    assert list(grown_view.records("failures")) == list(clean_view.records("failures")) == []
-    _write(output / "clean-comparison.json", clean_comparison)
-    _write(output / "matches.json", values)
-    _write(output / "comparisons.json", comparisons)
-    summary = {
-        "verdict": "pass", "initialCatalogItems": len(rows), "catalogItems": len(payloads),
-        "selectedDocuments": 4, "excludedDocuments": 1, "addedDocuments": 1,
-        "initialFailures": 1, "repairedFailures": 0, "originalFailureStillInspectable": True,
-        "capturedDocuments": 4, "processedSegments": len(values["grown"]),
-        "matchCounts": {name: sum(len(value["matches"]) for value in result) for name, result in values.items()},
-        "savedHandoffRecovered": True, "alternativesReuseUpstream": True, "cleanOutputValuesAgree": True,
-        "limitations": "Synthetic literal-mention examples; no semantic classification or live-resource verification.",
-    }
-    _write(output / "experiment-summary.json", summary)
-    return summary
+        assert outcomes(grown_view) == outcomes(clean_view)
+        assert list(grown_view.records("failures")) == list(clean_view.records("failures")) == []
+        _write(output / "clean-comparison.json", clean_comparison)
+        _write(output / "matches.json", values)
+        _write(output / "comparisons.json", comparisons)
+        summary = {
+            "verdict": "pass", "initialCatalogItems": len(rows), "catalogItems": len(payloads),
+            "selectedDocuments": 4, "excludedDocuments": 1, "addedDocuments": 1,
+            "initialFailures": 1, "repairedFailures": 0, "originalFailureStillInspectable": True,
+            "capturedDocuments": 4, "processedSegments": len(values["grown"]),
+            "matchCounts": {name: sum(len(value["matches"]) for value in result) for name, result in values.items()},
+            "savedHandoffRecovered": True, "alternativesReuseUpstream": True, "cleanOutputValuesAgree": True,
+            "limitations": "Synthetic literal-mention examples; no semantic classification or live-resource verification.",
+        }
+        _write(output / "experiment-summary.json", summary)
+        return summary
 
 
 def main() -> int:

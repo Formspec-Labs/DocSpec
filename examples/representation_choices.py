@@ -67,33 +67,33 @@ def run_example(output: Path, representation: str = "visible-text") -> dict[str,
         release = prepared.retain(prepared.run())
         plan = prepared.plan
 
-    view = open_local_inspection(
+    with open_local_inspection(
         plan, workspace, document_release_producer=release_producer, release_ref=release,
-    )
-    # This fixture has exactly one file and representation. Dataset callers
-    # should stream these iterators instead of collecting a whole population.
-    captured = tuple(view.records("files"))[0]["payload"]
-    derived = tuple(view.records("representations"))[0]["payload"]
-    capture_bytes = b"".join(view.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=1024 * 1024))
-    text_bytes = b"".join(view.read_blob(BlobRef.from_dict(derived["blob"]), max_bytes=1024 * 1024))
-    result = {
-        "representationKind": derived["kind"],
-        "capturedDigest": captured["blob"]["digest"],
-        "representationDigest": derived["blob"]["digest"],
-        "capturedText": capture_bytes.decode("utf-8"),
-        "representationText": text_bytes.decode("utf-8"),
-        "segments": [
-            {
-                "representationStart": row["payload"]["representationStart"],
-                "representationEnd": row["payload"]["representationEnd"],
-                "evidence": row["payload"]["evidence"],
-            }
-            for row in view.records("segments")
-        ],
-        "counts": view.summary()["result"]["layers"],
-    }
-    (output / "representation-inspection.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    return result
+    ) as view:
+        # This fixture has exactly one file and representation. Dataset callers
+        # should stream these iterators instead of collecting a whole population.
+        captured = tuple(view.records("files"))[0]["payload"]
+        derived = tuple(view.records("representations"))[0]["payload"]
+        capture_bytes = b"".join(view.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=1024 * 1024))
+        text_bytes = b"".join(view.read_blob(BlobRef.from_dict(derived["blob"]), max_bytes=1024 * 1024))
+        result = {
+            "representationKind": derived["kind"],
+            "capturedDigest": captured["blob"]["digest"],
+            "representationDigest": derived["blob"]["digest"],
+            "capturedText": capture_bytes.decode("utf-8"),
+            "representationText": text_bytes.decode("utf-8"),
+            "segments": [
+                {
+                    "representationStart": row["payload"]["representationStart"],
+                    "representationEnd": row["payload"]["representationEnd"],
+                    "evidence": row["payload"]["evidence"],
+                }
+                for row in view.records("segments")
+            ],
+            "counts": view.summary()["result"]["layers"],
+        }
+        (output / "representation-inspection.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+        return result
 
 
 def main() -> None:

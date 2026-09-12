@@ -419,8 +419,8 @@ def local_profile_set(*, result_profile_id: str = "urn:docspec:profile:result-de
             "docspec.document-catalog.local-manifest.v1",
         ),
         ProfileRole.RECORD_STORAGE: (
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "docspec.record-storage.local-jsonl.v1",
+            "urn:docspec:profile:record-storage:local-parquet:1",
+            "docspec.record-storage.local-parquet.v1",
         ),
         ProfileRole.BLOB_STORAGE: (
             "urn:docspec:profile:blob-storage:local-content-addressed:1",

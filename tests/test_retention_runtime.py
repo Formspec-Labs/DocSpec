@@ -3,7 +3,7 @@
 import pytest
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from docspec.adapters.storage import LocalJsonControlRepository, LocalJsonlRecordStorage
+from docspec.adapters.storage import LocalJsonControlRepository, LocalParquetRecordStorage
 from docspec.domain.maintenance import BlobRetentionSet
 from docspec.domain.plans import WorkLimits
 from docspec.errors import IntegrityError
@@ -78,7 +78,7 @@ def _inventory(workspace, plan, reference, **options):
 
 def _locators(workspace, reference):
     controls = LocalJsonControlRepository(workspace.roots["controlRepository"], create=False)
-    records = LocalJsonlRecordStorage(workspace.roots["recordStorage"], create=False)
+    records = LocalParquetRecordStorage(workspace.roots["recordStorage"], create=False)
     retained = BlobRetentionSet.from_dict(controls.load(reference))
     return retained, {row["locator"] for row in records.stream(retained.references)}
 

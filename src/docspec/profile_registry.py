@@ -35,7 +35,7 @@ BUILTIN_PROFILE_DIRECTORY = Path(__file__).with_name("storage_profiles")
 LOCAL_PROFILE_IDS = (
     "urn:docspec:profile:release-manifest:canonical-json:1",
     "urn:docspec:profile:document-catalog:local-manifest:1",
-    "urn:docspec:profile:record-storage:local-jsonl:1",
+    "urn:docspec:profile:record-storage:local-parquet:1",
     "urn:docspec:profile:blob-storage:local-content-addressed:1",
     "urn:docspec:profile:document-store-persistence:local-json:1",
     "urn:docspec:profile:result-delivery:durable-dataset:1",

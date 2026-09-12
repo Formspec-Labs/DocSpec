@@ -6,6 +6,7 @@ import argparse
 import time
 from collections import Counter
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -42,15 +43,15 @@ from docspec.runtime.composition import _verify_plan_policies
 def _cmd_local_run_prepare(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     request = _local_run_request(args.request)
-    prepared = prepare_local_run(**_local_run_arguments(request), resume=False)
-    receipt = _write_artifact_and_receipt(
-        operation="run.prepare",
-        request_path=args.request,
-        destination=args.destination,
-        receipt_path=args.receipt,
-        artifact_id=prepared.handoff_ref.artifact_id,
-        payload=canonical_json_file_bytes(prepared.handoff_ref.to_dict()),
-    )
+    with prepare_local_run(**_local_run_arguments(request), resume=False) as prepared:
+        receipt = _write_artifact_and_receipt(
+            operation="run.prepare",
+            request_path=args.request,
+            destination=args.destination,
+            receipt_path=args.receipt,
+            artifact_id=prepared.handoff_ref.artifact_id,
+            payload=canonical_json_file_bytes(prepared.handoff_ref.to_dict()),
+        )
     _emit(receipt)
     return 0
 
@@ -122,7 +123,8 @@ def _cmd_local_run_reconcile(args: argparse.Namespace) -> int:
     with prepare_local_run(
         **_local_run_arguments(_local_run_request(run_request_path)), handoff_ref=handoff_ref,
     ) as prepared:
-        reference = prepared.reconcile(_iter_task_result_file(results_path))
+        with closing(_iter_task_result_file(results_path)) as results:
+            reference = prepared.reconcile(results)
     receipt = _write_artifact_and_receipt(
         operation="run.reconcile",
         request_path=args.request,

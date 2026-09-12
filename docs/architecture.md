@@ -79,9 +79,11 @@ helpers used by other local storage adapters.
 
 These steps exchange small immutable references so that local execution and
 external workers use the same application services. Dagster is an optional
-executor, not a source of document meaning. SQLite workspaces, streaming readers,
-bounded merges, and checkpoints keep large runs within declared resource limits;
-their extra steps are part of the behavior a refactor must preserve.
+executor, not a source of document meaning. Retained record layers use Parquet;
+DuckDB queries the files and handles external sorting. Bounded input batches and
+native memory and temporary-storage settings limit working storage. SQLite still
+serves mutable caches and scratch bookkeeping. See [record storage](record-storage.md)
+for the scope and limitations of these bounds.
 
 [`docspec.runtime`](../src/docspec/runtime/) connects the local adapters and
 application services for both Python callers and commands. `composition` checks
@@ -141,8 +143,9 @@ the active dataset without the original workspace.
 The local retained-release container has exactly one product member,
 `release.json`, alongside the shared root and manifest. It references the existing
 immutable record layers and blobs. Ordinary catalog opening admits pinned
-metadata and linked small controls; consumed record members and content retain
-their own checks. Explicit audit, retention, selection, export, maintenance and
+metadata and linked small controls. A reader verifies each layer's Parquet
+files once before querying it, then checks consumed rows; content keeps its own
+checks. Explicit audit, retention, selection, export, maintenance and
 comprehensive inspection validate the complete retained state. The
 [retained catalog guide](retained-catalog.md) defines these observation scopes.
 The container does not write or compare a second copy of each logical layer.

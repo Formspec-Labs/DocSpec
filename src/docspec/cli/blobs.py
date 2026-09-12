@@ -42,14 +42,15 @@ def _cmd_blob_store_gc(args: argparse.Namespace) -> int:
     if not args.dry_run:
         raise CliError("blob-store gc currently requires --dry-run")
     run_request_path = _absolute_request_path(args.run_request.as_posix(), label="local run request")
-    request, plan, controls, _, records, blobs, _ = _local_storage_for_run_request(run_request_path)
     reference = ArtifactRef.from_dict(
         _read_canonical_object(args.retention_set, label="blob retention-set reference")
     )
-    _emit(preview_blob_inventory(
-        reference, plan=plan, controls=controls, records=records, blobs=blobs,
-        index_root=request["roots"]["reconciliation"] / "blob-gc",
-        max_index_bytes=args.max_index_bytes, minimum_age_seconds=args.minimum_age_seconds,
-        sample_limit=args.sample_limit, index_cache_kib=args.index_cache_kib,
-    ))
+    with _local_storage_for_run_request(run_request_path) as (request, plan, controls, _, records, blobs, _):
+        report = preview_blob_inventory(
+            reference, plan=plan, controls=controls, records=records, blobs=blobs,
+            index_root=request["roots"]["reconciliation"] / "blob-gc",
+            max_index_bytes=args.max_index_bytes, minimum_age_seconds=args.minimum_age_seconds,
+            sample_limit=args.sample_limit, index_cache_kib=args.index_cache_kib,
+        )
+    _emit(report)
     return 0

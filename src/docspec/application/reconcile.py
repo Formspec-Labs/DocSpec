@@ -506,6 +506,7 @@ class RunReconciler:
             if current is not None and not touched:
                 continue
             if current is not None:
+                self._records.verify_members(current)
                 workspace.retain_records(
                     _layer_collection(kind),
                     self._records.stream(current, partitions=touched),

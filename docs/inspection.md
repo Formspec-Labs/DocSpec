@@ -13,14 +13,18 @@ For metadata-only browsing and the explicit audit command, see the
 ```python
 from docspec.runtime import open_local_inspection
 
-view = open_local_inspection(
+with open_local_inspection(
     plan,
     workspace,
     document_release_producer=accepted_document_producer,
     release_ref=result_reference,
-)
-report = view.summary(sample_limit=10)
+) as view:
+    report = view.summary(sample_limit=10)
 ```
+
+Use the returned `LocalInspectionView` as a context manager, or call `close()`
+after its active iterators stop, to release DuckDB and temporary files. The query
+examples below assume a view inside that lifetime.
 
 The plan must match the chosen result exactly. The workspace locates existing
 storage and the plan's installed profile descriptions. Missing roots are a path

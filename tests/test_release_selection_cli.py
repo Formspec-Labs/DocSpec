@@ -58,35 +58,35 @@ def test_cli_retains_alternatives_then_selects_with_explicit_current(tmp_path: P
         })
 
     first = retain("first")
-    *_, catalog = _local_storage_for_run_request(run_request)
-    assert catalog.current() is None
-    assert catalog.open(first).previous_release is None
+    with _local_storage_for_run_request(run_request) as (*_, catalog):
+        assert catalog.current() is None
+        assert catalog.open(first).previous_release is None
 
-    def select(name: str, candidate: DocumentReleaseRef, expected_current, *, expected: int = 0):
-        return _operation(tmp_path, capfd, name, "document-catalog", "select", {
-            "format": "docspec-local-catalog-select-request", "formatVersion": "1.0",
-            "runRequest": str(run_request), "release": candidate.to_dict(),
-            "expectedCurrent": None if expected_current is None else expected_current.to_dict(),
-        }, expected=expected)
+        def select(name: str, candidate: DocumentReleaseRef, expected_current, *, expected: int = 0):
+            return _operation(tmp_path, capfd, name, "document-catalog", "select", {
+                "format": "docspec-local-catalog-select-request", "formatVersion": "1.0",
+                "runRequest": str(run_request), "release": candidate.to_dict(),
+                "expectedCurrent": None if expected_current is None else expected_current.to_dict(),
+            }, expected=expected)
 
-    assert select("choose-first", first, None) == first
-    # Change an actual work setting, keeping the same source and base. The
-    # second result must be retained without first changing current selection.
-    plan_path = Path(json.loads(run_request.read_bytes())["plan"])
-    plan = ProcessingPlan.from_dict(json.loads(plan_path.read_bytes()))
-    plan_arguments = {field.name: getattr(plan, field.name) for field in fields(plan) if field.name != "plan_id"}
-    plan_arguments["limits"] = replace(plan.limits, max_segments=plan.limits.max_segments + 1)
-    _write(plan_path, ProcessingPlan.create(**plan_arguments).to_dict())
-    second = retain("second")
-    assert second != first
-    assert catalog.current() == first
-    assert catalog.open(second).previous_release is None
-    assert select("choose-second", second, first) == second
-    assert catalog.current() == second
-    # A stale caller cannot replace the user's latest explicit choice.
-    select("stale-choice", first, None, expected=2)
-    assert catalog.current() == second
-    assert catalog.open(first).previous_release is None
+        assert select("choose-first", first, None) == first
+        # Change an actual work setting, keeping the same source and base. The
+        # second result must be retained without first changing current selection.
+        plan_path = Path(json.loads(run_request.read_bytes())["plan"])
+        plan = ProcessingPlan.from_dict(json.loads(plan_path.read_bytes()))
+        plan_arguments = {field.name: getattr(plan, field.name) for field in fields(plan) if field.name != "plan_id"}
+        plan_arguments["limits"] = replace(plan.limits, max_segments=plan.limits.max_segments + 1)
+        _write(plan_path, ProcessingPlan.create(**plan_arguments).to_dict())
+        second = retain("second")
+        assert second != first
+        assert catalog.current() == first
+        assert catalog.open(second).previous_release is None
+        assert select("choose-second", second, first) == second
+        assert catalog.current() == second
+        # A stale caller cannot replace the user's latest explicit choice.
+        select("stale-choice", first, None, expected=2)
+        assert catalog.current() == second
+        assert catalog.open(first).previous_release is None
 
 
 @pytest.mark.parametrize("change", [
@@ -128,6 +128,6 @@ def test_cli_can_retain_a_python_injected_processor_result(tmp_path: Path, capfd
         "format": "docspec-local-release-retain-request", "formatVersion": "1.0",
         "runRequest": str(request_path), "runReceipt": str(run_receipt), "baseRelease": None,
     })
-    *_, catalog = _local_storage_for_run_request(request_path)
-    assert catalog.open(retained).run_receipt == run
-    assert catalog.current() is None
+    with _local_storage_for_run_request(request_path) as (*_, catalog):
+        assert catalog.open(retained).run_receipt == run
+        assert catalog.current() is None

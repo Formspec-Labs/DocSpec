@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 from typing import Literal
 
@@ -39,12 +40,13 @@ def export_local_result(
     if admission not in ADMISSIONS:
         raise ValueError(f"admission must be one of {ADMISSIONS}")
     profiles = _local_profiles(plan, workspace)
-    controls, _, _, blobs, catalog = _local_storage(
+    controls, _, records, blobs, catalog = _local_storage(
         workspace.roots, profiles, document_release_producer, create=False,
     )
-    release = catalog.audit(release_ref)
-    if release.processing_plan.artifact_id != plan.plan_id:
-        raise IntegrityError("export retained result belongs to another processing plan")
-    reader = catalog.open_reader(release_ref)
-    return export_result(reader, controls, blobs, release_ref, destination,
-        admission=admission, producer=export_producer, max_output_bytes=max_output_bytes)
+    with closing(records):
+        release = catalog.audit(release_ref)
+        if release.processing_plan.artifact_id != plan.plan_id:
+            raise IntegrityError("export retained result belongs to another processing plan")
+        reader = catalog.open_reader(release_ref)
+        return export_result(reader, controls, blobs, release_ref, destination,
+            admission=admission, producer=export_producer, max_output_bytes=max_output_bytes)

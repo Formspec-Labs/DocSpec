@@ -23,7 +23,7 @@ from docspec.runtime.catalogs import build_local_catalog, open_local_catalog, pr
 from docspec.runtime.defaults import local_execution_limits
 from docspec.runtime.execution import PreparedLocalRun
 from docspec.runtime.experiments import prepare_local_experiment, stage_policy
-from docspec.runtime.inspection import open_local_inspection
+from docspec.runtime.inspection import LocalInspectionView, open_local_inspection
 from docspec.runtime.exports import export_local_result
 from docspec.runtime.maintenance import build_local_retention_set, preview_local_blob_inventory
 from docspec.application.inspection import InspectionView
@@ -31,7 +31,7 @@ from docspec.runtime.preparation import _load_prepared_local_run, _prepare_local
 from docspec.workspace import LocalWorkspace
 
 __all__ = [
-    "export_local_result",
+    "export_local_result", "LocalInspectionView",
     "InspectionView", "PreparedLocalRun", "build_local_catalog", "local_execution_limits", "open_local_catalog", "open_local_inspection",
     "prepare_local_experiment", "prepare_local_run", "preview_local_catalog", "stage_policy",
     "build_local_retention_set", "preview_local_blob_inventory",
@@ -98,6 +98,10 @@ def prepare_local_run(
         partition_policy_id=partition_policy_id,
         result_sink_id=result_sink_id,
     )
-    if handoff_ref is not None:
-        return _load_prepared_local_run(composition, handoff_ref)
-    return _prepare_local_run(composition, resume=resume)
+    try:
+        if handoff_ref is not None:
+            return _load_prepared_local_run(composition, handoff_ref)
+        return _prepare_local_run(composition, resume=resume)
+    except BaseException:
+        composition.records.close()
+        raise

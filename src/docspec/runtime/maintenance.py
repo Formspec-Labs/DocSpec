@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import closing
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Any
@@ -42,17 +43,18 @@ def build_local_retention_set(
     controls, stores, records, blobs, catalog = _local_storage(
         workspace.roots, profiles, document_release_producer, create=False,
     )
-    factory = LocalSqliteReconciliationWorkspaceFactory(
-        Path(gettempdir()).resolve(), max_spooled_bytes=max_spooled_bytes,
-    )
-    return BlobRetentionSetService(
-        controls=controls, stores=stores, records=records, blobs=blobs, document_catalog=catalog,
-        profile_state_reachability=RootOnlyBlobProfileStateReachability(), workspace_factory=factory,
-        partition_policy=PartitionPolicy("source-item-sha256-v1", plan.partition_count),
-    ).build(
-        blob_profile_state=_put_blob_profile_state(controls, plan, blobs),
-        retained_releases=retained_releases, retained_stores=retained_stores, retained_plans=retained_plans,
-    )
+    with closing(records):
+        factory = LocalSqliteReconciliationWorkspaceFactory(
+            Path(gettempdir()).resolve(), max_spooled_bytes=max_spooled_bytes,
+        )
+        return BlobRetentionSetService(
+            controls=controls, stores=stores, records=records, blobs=blobs, document_catalog=catalog,
+            profile_state_reachability=RootOnlyBlobProfileStateReachability(), workspace_factory=factory,
+            partition_policy=PartitionPolicy("source-item-sha256-v1", plan.partition_count),
+        ).build(
+            blob_profile_state=_put_blob_profile_state(controls, plan, blobs),
+            retained_releases=retained_releases, retained_stores=retained_stores, retained_plans=retained_plans,
+        )
 
 
 def preview_local_blob_inventory(
@@ -77,8 +79,9 @@ def preview_local_blob_inventory(
     controls, _, records, blobs, _ = _local_storage(
         workspace.roots, profiles, document_release_producer, create=False,
     )
-    return preview_blob_inventory(
-        retention_reference, plan=plan, controls=controls, records=records, blobs=blobs,
-        index_root=Path(gettempdir()).resolve(), max_index_bytes=max_spooled_bytes,
-        minimum_age_seconds=minimum_age_seconds, sample_limit=sample_limit,
-    )
+    with closing(records):
+        return preview_blob_inventory(
+            retention_reference, plan=plan, controls=controls, records=records, blobs=blobs,
+            index_root=Path(gettempdir()).resolve(), max_index_bytes=max_spooled_bytes,
+            minimum_age_seconds=minimum_age_seconds, sample_limit=sample_limit,
+        )

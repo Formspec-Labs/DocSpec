@@ -7,7 +7,7 @@ from typing import Any
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.storage import (
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.maintenance import ReleaseCompactionService, logical_release_state_digest
@@ -365,7 +365,7 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
     )
     assert (len(targeted_fetcher.calls), targeted_extractor.calls, targeted_segmenter.calls) == (1, 1, 1)
 
-    compacted_records = LocalJsonlRecordStorage(
+    compacted_records = LocalParquetRecordStorage(
         evolving.records.root,
         max_member_bytes=1024 * 1024,
     )

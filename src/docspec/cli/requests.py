@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -172,11 +173,14 @@ def _local_run_arguments(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@contextmanager
 def _local_storage_for_run_request(path: Path):
-    """Parse one request and open its verified storage without preparing tasks."""
+    """Own one command's storage until its readers and writers finish."""
     request = _local_run_request(path)
     arguments = _local_run_arguments(request)
     plan, workspace = arguments["plan"], arguments["workspace"]
     _verify_plan_policies(plan, arguments["retry_policy"], arguments["accepted_failure_policy"])
     profiles = _local_profiles(plan, workspace)
-    return request, plan, *_local_storage(workspace.roots, profiles, arguments["document_release_producer"])
+    storage = _local_storage(workspace.roots, profiles, arguments["document_release_producer"])
+    with closing(storage[2]):
+        yield request, plan, *storage

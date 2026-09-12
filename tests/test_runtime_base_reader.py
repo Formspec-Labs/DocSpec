@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields, replace
 import json
+from pathlib import Path
 from threading import Barrier
 
 import pytest
@@ -135,6 +136,53 @@ def test_failed_initial_admission_is_not_cached_or_saved_as_task_progress(retain
         assert opened == [base, base]
 
 
+def test_reader_admits_each_physical_layer_once_and_fresh_reader_checks_again(retained_experiment, monkeypatch):
+    prepare, base = retained_experiment
+    with prepare() as prepared:
+        records = prepared._composition.records
+        admitted = []
+        verify_members = records.verify_members
+
+        def observed(reference):
+            admitted.append(reference)
+            verify_members(reference)
+
+        monkeypatch.setattr(records, "verify_members", observed)
+        reader = prepared._composition.catalog.open_reader(base)
+        assert not admitted  # Metadata open remains cheap.
+        expected = list(reader.scan(layer_kind="files"))
+        with ThreadPoolExecutor(max_workers=3) as workers:
+            found = list(workers.map(lambda row: list(reader.scan_source(
+                layer_kind="files", source_item_id=row["sourceItemId"],
+            )), expected))
+        assert found == [[row] for row in expected]
+        assert len(admitted) == 1
+        fresh = prepared._composition.catalog.open_reader(base)
+        assert list(fresh.scan(layer_kind="files")) == expected
+        assert len(admitted) == 2 and admitted[0] == admitted[1]
+
+
+def test_failed_physical_admission_remains_retryable(retained_experiment, monkeypatch):
+    prepare, base = retained_experiment
+    with prepare() as prepared:
+        records = prepared._composition.records
+        verify_members = records.verify_members
+        attempts = []
+
+        def fail_once(reference):
+            attempts.append(reference)
+            if len(attempts) == 1:
+                raise IntegrityError("interrupted member admission")
+            verify_members(reference)
+
+        monkeypatch.setattr(records, "verify_members", fail_once)
+        reader = prepared._composition.catalog.open_reader(base)
+        with pytest.raises(IntegrityError, match="interrupted member admission"):
+            list(reader.scan(layer_kind="files"))
+        assert len(list(reader.scan(layer_kind="files"))) == 3
+        assert len(attempts) == 2 and attempts[0] == attempts[1]
+
+
 @pytest.mark.parametrize("new_resource", [False, True])
 def test_close_and_fresh_prepared_resources_readmit_before_unfinished_work(
     retained_experiment, monkeypatch, new_resource,
@@ -173,7 +221,7 @@ def test_cached_admission_is_bound_to_every_field_of_the_base_reference(retained
         assert opened == [base]
 
 
-@pytest.mark.parametrize("evidence", ["blob", "receipt", "record_member"])
+@pytest.mark.parametrize("evidence", ["blob", "receipt"])
 def test_used_base_evidence_is_rechecked_after_admission(retained_experiment, monkeypatch, evidence):
     prepare, base = retained_experiment
     with prepare() as prepared:
@@ -188,20 +236,74 @@ def test_used_base_evidence_is_rechecked_after_admission(retained_experiment, mo
         if evidence == "blob":
             reference = BlobRef.from_dict(row["payload"]["blob"])
             path = prepared._composition.workspace.roots["blobStorage"] / reference.locator
-        elif evidence == "receipt":
+        else:
             reference = ArtifactRef.from_dict(row["payload"]["artifact"])
             path = prepared._composition.controls.root / reference.locator
-        else:
-            files, = (item for item in reader.release.active_layers if item.layer_kind == "files")
-            records = prepared._composition.records
-            root = json.loads((records.root / files.state_ref).read_text())
-            member, = root["members"]  # This three-document fixture uses one record partition.
-            path = records.root / member["path"]
         original = path.read_bytes()
         path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
         with pytest.raises(IntegrityError):
             prepared.execute_task(prepared.handoff, tasks[1])
         assert opened == [base]  # The used-byte check, not another metadata admission, refused it.
+
+
+def test_fresh_reader_and_full_audit_recheck_files_after_prior_admission(retained_experiment):
+    prepare, base = retained_experiment
+    with prepare() as prepared:
+        catalog = prepared._composition.catalog
+        records = prepared._composition.records
+        reader = catalog.open_reader(base)
+        assert len(list(reader.scan(layer_kind="files"))) == 3
+        files = next(layer for layer in reader.release.active_layers if layer.layer_kind == "files")
+        root = json.loads((records.root / files.state_ref).read_bytes())
+        path = records.root / root["members"][0]["path"]
+        original = path.read_bytes()
+        path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        # An admitted reader does not freeze external files or repeat physical
+        # hashes per query. A new lifetime and an explicit audit must recheck.
+        with pytest.raises(IntegrityError):
+            list(catalog.open_reader(base).scan(layer_kind="files"))
+        with pytest.raises(IntegrityError):
+            catalog.audit(base)
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_public_inspection_releases_native_resources_on_close_or_audit_refusal(
+    retained_experiment, monkeypatch, corrupt,
+):
+    prepare, base = retained_experiment
+    with prepare() as prepared:
+        composition = prepared._composition
+        release = composition.catalog.open(base)
+        plan = ProcessingPlan.from_dict(composition.controls.load(release.processing_plan))
+        if corrupt:
+            files = next(layer for layer in release.active_layers if layer.layer_kind == "files")
+            root = json.loads((composition.records.root / files.state_ref).read_bytes())
+            path = composition.records.root / root["members"][0]["path"]
+            original = path.read_bytes()
+            path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        closed = []
+        close = type(composition.records).close
+
+        def observed(storage):
+            closed.append((storage, None if storage._scratch is None else Path(storage._scratch.name)))
+            close(storage)
+
+        monkeypatch.setattr(type(composition.records), "close", observed)
+
+        def open_view():
+            return open_local_inspection(plan, composition.workspace,
+                document_release_producer=composition.catalog.producer, release_ref=base)
+
+        if corrupt:
+            with pytest.raises(IntegrityError):
+                open_view()
+        else:
+            with open_view() as view:
+                assert len(list(view.records("files"))) == 3
+        assert len(closed) == 1
+        storage, scratch = closed[0]
+        assert storage._connection is None and storage._scratch is None
+        assert scratch is not None and not scratch.exists()
 
 
 def test_changed_reused_bytes_refuse_before_saving_the_prefix_checkpoint(retained_experiment, monkeypatch):

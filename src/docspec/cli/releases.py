@@ -45,20 +45,20 @@ def _cmd_document_release_save(args: argparse.Namespace) -> int:
         raise CliError(f"{label} has an unknown format")
     run_request_path = _absolute_request_path(value["runRequest"], label="local run request")
     run_receipt_path = _absolute_request_path(value["runReceipt"], label="run receipt reference")
-    _, plan, controls, _, records, _, catalog = _local_storage_for_run_request(run_request_path)
-    base_release = None if value["baseRelease"] is None else DocumentReleaseRef.from_dict(value["baseRelease"])
-    if base_release != plan.base_release:
-        raise CliError("release base differs from the processing plan")
-    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    run_receipt = ArtifactRef.from_dict(_read_canonical_object(run_receipt_path, label="run receipt reference"))
-    service = ReleaseCommitService(
-        plan_ref=plan_ref,
-        controls=controls,
-        records=records,
-        document_catalog=catalog,
-    )
-    save = service.retain_release if action == "retain" else service.commit_release
-    reference = save(base_release, run_receipt)
+    with _local_storage_for_run_request(run_request_path) as (_, plan, controls, _, records, _, catalog):
+        base_release = None if value["baseRelease"] is None else DocumentReleaseRef.from_dict(value["baseRelease"])
+        if base_release != plan.base_release:
+            raise CliError("release base differs from the processing plan")
+        plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
+        run_receipt = ArtifactRef.from_dict(_read_canonical_object(run_receipt_path, label="run receipt reference"))
+        service = ReleaseCommitService(
+            plan_ref=plan_ref,
+            controls=controls,
+            records=records,
+            document_catalog=catalog,
+        )
+        save = service.retain_release if action == "retain" else service.commit_release
+        reference = save(base_release, run_receipt)
     receipt = _write_artifact_and_receipt(
         operation=args.operation,
         request_path=args.request,
@@ -87,27 +87,27 @@ def _local_release_compaction_request(path: Path) -> tuple[Path, DocumentRelease
 def _cmd_document_release_compact(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     run_request_path, source_reference = _local_release_compaction_request(args.request)
-    request, plan, controls, stores, records, _, catalog = _local_storage_for_run_request(
-        run_request_path
-    )
-    source = catalog.open(source_reference)
-    try:
-        source_plan = ProcessingPlan.from_dict(controls.load(source.processing_plan))
-    except (TypeError, ValueError) as error:
-        raise CliError(f"source release processing plan is invalid: {error}") from error
-    if source_plan != plan or source.profiles != plan.profiles:
-        raise CliError("compaction run composition differs from the source release")
+    with _local_storage_for_run_request(run_request_path) as (
+        request, plan, controls, stores, records, _, catalog,
+    ):
+        source = catalog.open(source_reference)
+        try:
+            source_plan = ProcessingPlan.from_dict(controls.load(source.processing_plan))
+        except (TypeError, ValueError) as error:
+            raise CliError(f"source release processing plan is invalid: {error}") from error
+        if source_plan != plan or source.profiles != plan.profiles:
+            raise CliError("compaction run composition differs from the source release")
 
-    reference = ReleaseCompactionService(
-        controls=controls,
-        records=records,
-        stores=stores,
-        document_catalog=catalog,
-        clock=lambda: request["completedAt"],
-    ).compact(source_reference)
-    compaction = ReleaseCompactionReceipt.from_dict(controls.load(reference))
-    if compaction.receipt_id != reference.artifact_id or compaction.source_release != source_reference:
-        raise CliError("saved compaction receipt differs from its immutable reference")
+        reference = ReleaseCompactionService(
+            controls=controls,
+            records=records,
+            stores=stores,
+            document_catalog=catalog,
+            clock=lambda: request["completedAt"],
+        ).compact(source_reference)
+        compaction = ReleaseCompactionReceipt.from_dict(controls.load(reference))
+        if compaction.receipt_id != reference.artifact_id or compaction.source_release != source_reference:
+            raise CliError("saved compaction receipt differs from its immutable reference")
     receipt = _write_artifact_and_receipt(
         operation="document-release.compact",
         request_path=args.request,
