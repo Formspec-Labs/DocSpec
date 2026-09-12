@@ -88,9 +88,8 @@ def test_missing_producer_is_a_structured_cli_failure_before_publication(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     destination = tmp_path / "catalog"
-    receipt = destination / "source-catalog-build-command-receipt.json"
     arguments = source_catalog_build_arguments(
-        tmp_path, destination=destination, receipt_path=receipt,
+        tmp_path, destination=destination,
     )
     attempted: list[str] = []
 
@@ -116,7 +115,6 @@ def test_missing_producer_is_a_structured_cli_failure_before_publication(
     }
     assert attempted == ["spicy_docs.source_native_profiles"]
     assert not destination.exists()
-    assert not receipt.exists()
 
 
 def test_reader_without_public_outcomes_is_refused_before_catalog_publication(tmp_path, monkeypatch, capsys):
@@ -132,8 +130,7 @@ def test_reader_without_public_outcomes_is_refused_before_catalog_publication(tm
 
     monkeypatch.setattr(reader, "__init__", initialize_without_outcomes)
     destination = tmp_path / "catalog"
-    receipt = destination / "source-catalog-build-command-receipt.json"
-    assert main(source_catalog_build_arguments(tmp_path, destination=destination, receipt_path=receipt)) == 2
+    assert main(source_catalog_build_arguments(tmp_path, destination=destination)) == 2
     failure = json.loads(capsys.readouterr().err)
     assert failure["errorType"] == "SourceNativeReaderError"
     assert "required public collection outcome API" in failure["message"]
@@ -153,8 +150,7 @@ def test_cli_requires_and_records_explicit_partial_input_acceptance(tmp_path, mo
 
     monkeypatch.setattr(reader, "__init__", initialize_partial)
     destination = tmp_path / "catalog"
-    receipt = destination / "source-catalog-build-command-receipt.json"
-    arguments = source_catalog_build_arguments(tmp_path, destination=destination, receipt_path=receipt)
+    arguments = source_catalog_build_arguments(tmp_path, destination=destination)
     assert main(arguments) == 2
     assert "partial-rejection" in capsys.readouterr().err
     assert not destination.exists()

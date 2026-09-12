@@ -1040,6 +1040,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   and any split reduces the context needed for a change. Follow the existing
   length review guidelines; avoid chains of tiny wrappers or shared-state mixins.
 
+  **Progress, September 12:** catalog CLI coordination fell from 858 to 399
+  lines by removing the second command-receipt validation path, rather than
+  spreading it across smaller modules. The [decision](cleanup-decisions.md#verify-the-catalog-once)
+  identifies the existing artifact reader as its replacement. The installed
+  source test now separates environment setup from its executable probe; the
+  probe is ordinary Python that editors and Ruff can inspect (`d97bdab`).
+  Review of the remaining execution, schema, and algorithm outliers is open.
+
 <a id="d34"></a>
 
 - [ ] **D34 · P2 · Remove superseded paths, declarations, and dependencies.**
@@ -1050,6 +1058,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   removed path has a named replacement or an explicit retirement decision,
   unused dependencies leave packaging, and dynamic hooks remain functional.
   Move active experiment choices into DocSpec only where they have a local consumer.
+
+  **Progress, September 12:** removed the superseded source-catalog command
+  receipt, validator, extra identity and CLI arguments, plus its unused
+  root-file writer and failure-report hooks. The catalog's sealed build receipt,
+  native-source admission, atomic publication, and full artifact reader remain.
+  Source, tools, tests, and selector searches found no remaining runtime caller
+  of the removed path. Older draft requirements are explicitly superseded by
+  the maintained decision. Invocation details remain in the build report.
   Source-side declaration removal is [SpicyDocs S12](../../spicy-docs/docs/simplification-todo.md#s12);
   this task removes only DocSpec code and dependencies.
 
@@ -1071,6 +1087,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   byte and retry assertions. A bounded join prevents a stuck child from hanging
   the suite. The affected execution/storage gate passed **27 tests** with
   deprecation warnings treated as errors. Broader test-ownership review is open.
+
+  The catalog CLI cleanup replaces receipt-shape and duplicate-summary tests
+  with direct pin, producer, tampering, read-only, relocation, and Python-built
+  catalog checks. Existing publication-failure, concurrent-winner, shared-blob,
+  and installed-provider checks still pass. The focused gate passed **78 tests
+  in 25.96 seconds**, including actual installed wheels. Broader review is open.
 
 <a id="d36"></a>
 

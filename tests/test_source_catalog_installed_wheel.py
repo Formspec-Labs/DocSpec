@@ -222,10 +222,10 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     verify_references = runtime_root / "verify-references"
     verify_references.mkdir()
     docspec_implementation = "git+https://example.test/docspec@" + "1" * 40
-    for index, command_receipt in enumerate(proof["commandReceipts"]):
+    for index, build_report in enumerate(proof["buildReports"]):
         reference_path = verify_references / f"catalog-{index}.json"
         reference_path.write_text(
-            json.dumps(command_receipt["catalog"], sort_keys=True),
+            json.dumps(build_report["catalog"], sort_keys=True),
             encoding="utf-8",
         )
         verification = subprocess.run(
@@ -234,11 +234,9 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
                 "source-catalog",
                 "verify",
                 "--root",
-                command_receipt["destination"],
+                build_report["destination"],
                 "--reference",
                 str(reference_path),
-                "--expected-command-receipt-id",
-                command_receipt["receiptId"],
                 "--implementation-id",
                 docspec_implementation,
                 "--verifier-implementation-id",
@@ -263,10 +261,10 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     ]
     assert len(proof["sourceNativePins"]) == 5
     assert set(proof["collectionOutcomes"]) == {"empty", "partial-rejection", "total-rejection"}
-    assert len(proof["commandReceipts"]) == 4
+    assert len(proof["buildReports"]) == 4
     assert len(proof["admissions"]) == 4
     assert proof["existingDestinationRefusal"]["returnCode"] == 2
-    initial, successor, physical_rebuild, regulations = proof["commandReceipts"]
+    initial, successor, physical_rebuild, regulations = proof["buildReports"]
     assert initial["catalog"]["catalogId"] == physical_rebuild["catalog"]["catalogId"]
     assert initial["catalog"]["digest"] != physical_rebuild["catalog"]["digest"]
     assert initial["catalog"]["catalogId"] != successor["catalog"]["catalogId"]

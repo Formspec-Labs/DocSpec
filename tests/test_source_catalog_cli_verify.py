@@ -1,302 +1,83 @@
-"""Closed command receipts and explicit source-catalog CLI admission."""
+"""CLI admission uses the pinned catalog's existing bytes and semantic checks."""
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any
 
 import pytest
 
-from docspec.domain.identity import canonical_json_file_bytes, stable_urn
+from docspec.domain.identity import canonical_json_file_bytes
 from docspec.entrypoint import main
+from tests.support.source_catalog import FakeSource, description, record, renditions
+from tests.support.source_catalog_builds import build
 from tests.support.source_catalog_cli import (
-    install_fake_source_native,
-    source_catalog_build_arguments,
+    install_fake_source_native, source_catalog_build_arguments, source_catalog_verify_arguments,
 )
 
 
-def _verify_source_catalog_arguments(
-    destination: Path,
-    reference_path: Path,
-    expected_command_receipt_id: str,
-) -> list[str]:
-    implementation_id = "git+https://example.test/docspec@" + "1" * 40
-    return [
-        "source-catalog",
-        "verify",
-        "--root",
-        str(destination),
-        "--reference",
-        str(reference_path),
-        "--expected-command-receipt-id",
-        expected_command_receipt_id,
-        "--implementation-id",
-        implementation_id,
-        "--verifier-implementation-id",
-        implementation_id,
-    ]
-
-
-def _rewrite_command_receipt(
-    receipt_path: Path,
-    receipt: dict[str, Any],
-    *,
-    recompute_id: bool,
-) -> None:
-    if recompute_id:
-        content = {
-            key: value
-            for key, value in receipt.items()
-            if key not in {"format", "formatVersion", "receiptId"}
-        }
-        receipt["receiptId"] = stable_urn(
-            "source-catalog-build-command-receipt",
-            content,
-        )
-    receipt_path.write_bytes(canonical_json_file_bytes(receipt))
-
-
-@pytest.mark.parametrize("change", ["missing", "unknown-field"])
-def test_cli_verify_requires_one_closed_build_command_receipt(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-    change: str,
-) -> None:
+@pytest.fixture
+def published_catalog(tmp_path, monkeypatch, capfd):
     install_fake_source_native(monkeypatch)
     destination = tmp_path / "catalog-store"
-    receipt_path = destination / "source-catalog-build-command-receipt.json"
-    assert (
-        main(
-            source_catalog_build_arguments(
-                tmp_path,
-                destination=destination,
-                receipt_path=receipt_path,
-            )
-        )
-        == 0
-    )
-    command_receipt = json.loads(capfd.readouterr().out)
-    reference_path = tmp_path / "source-catalog-ref.json"
-    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
-
-    if change == "missing":
-        receipt_path.unlink()
-    else:
-        command_receipt["unknown"] = True
-        _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
-
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                command_receipt["receiptId"],
-            )
-        )
-        == 2
-    )
-    error = capfd.readouterr().err
-    if change == "missing":
-        assert "must be a regular, non-symlink file" in error
-    else:
-        assert "invalid closed shape" in error
+    assert main(source_catalog_build_arguments(tmp_path, destination=destination)) == 0
+    report = json.loads(capfd.readouterr().out)
+    reference_path = tmp_path / "reference.json"
+    reference_path.write_bytes(canonical_json_file_bytes(report["catalog"]))
+    return destination, reference_path, report["catalog"]
 
 
-@pytest.mark.parametrize(
-    ("changed_fact", "expected_label"),
-    [
-        ("catalog-state", "catalogStateDigest"),
-        ("source-logical-id", "sourceNativeInputs"),
-        ("source-artifact-digest", "sourceNativeInputs"),
-        ("source-outcome-json-type", "sourceNativeInputs"),
-        ("byte-measurements", "byteMeasurements"),
-    ],
-)
-def test_cli_verify_rejects_a_self_consistent_command_summary_tamper(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-    changed_fact: str,
-    expected_label: str,
-) -> None:
-    install_fake_source_native(monkeypatch)
+def test_cli_verifies_a_catalog_without_its_original_build_location(published_catalog, tmp_path, capfd):
+    destination, reference_path, reference = published_catalog
+    moved = tmp_path / "moved-catalog"
+    destination.rename(moved)
+    before = {path: path.stat().st_mtime_ns for path in moved.rglob("*")}
+    assert main(source_catalog_verify_arguments(moved, reference_path)) == 0
+    result = json.loads(capfd.readouterr().out)
+    assert result["logicalId"] == reference["catalogId"] and result["artifactDigest"] == reference["digest"]
+    assert result["verdict"] == "pass" and result["itemCount"] == 1
+    assert {path: path.stat().st_mtime_ns for path in moved.rglob("*")} == before
+
+
+def test_cli_verifies_a_catalog_built_without_the_cli(tmp_path, capfd):
     destination = tmp_path / "catalog-store"
-    receipt_path = destination / "source-catalog-build-command-receipt.json"
-    assert (
-        main(
-            source_catalog_build_arguments(
-                tmp_path,
-                destination=destination,
-                receipt_path=receipt_path,
-            )
-        )
-        == 0
-    )
-    command_receipt = json.loads(capfd.readouterr().out)
-    reference_path = tmp_path / "source-catalog-ref.json"
-    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
-    if changed_fact == "catalog-state":
-        command_receipt["catalogStateDigest"] = "sha256:" + "f" * 64
-    elif changed_fact == "source-logical-id":
-        command_receipt["sourceNativeInputs"][0]["logicalId"] = "urn:test:different-source"
-    elif changed_fact == "source-artifact-digest":
-        command_receipt["sourceNativeInputs"][0]["artifactDigest"] = "sha256:" + "f" * 64
-    elif changed_fact == "source-outcome-json-type":
-        command_receipt["sourceNativeInputs"][0]["collectionOutcome"]["requestedScope"]["providerQuery"]["page"] = True
-    else:
-        command_receipt["byteMeasurements"]["payloadBytesRead"] += 1
-        command_receipt["byteMeasurements"]["payloadBytesWritten"] += 1
-    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
-
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                command_receipt["receiptId"],
-            )
-        )
-        == 2
-    )
-    assert f"{expected_label} differs from the admitted catalog" in capfd.readouterr().err
+    source = FakeSource(description(), (record("2026-00001"),), renditions("2026-00001"))
+    _, result = build(destination, source)
+    reference_path = tmp_path / "reference.json"
+    reference_path.write_bytes(canonical_json_file_bytes(result.reference.to_dict()))
+    assert main(source_catalog_verify_arguments(destination, reference_path)) == 0
+    verification = json.loads(capfd.readouterr().out)
+    assert verification["verdict"] == "pass" and verification["itemCount"] == 1
+    assert verification["artifactDigest"] == result.reference.digest
 
 
-def test_cli_verify_requires_the_expected_command_receipt_identity(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    install_fake_source_native(monkeypatch)
-    destination = tmp_path / "catalog-store"
-    receipt_path = destination / "source-catalog-build-command-receipt.json"
-    assert (
-        main(
-            source_catalog_build_arguments(
-                tmp_path,
-                destination=destination,
-                receipt_path=receipt_path,
-            )
-        )
-        == 0
-    )
-    command_receipt = json.loads(capfd.readouterr().out)
-    expected_receipt_id = command_receipt["receiptId"]
-    reference_path = tmp_path / "source-catalog-ref.json"
-    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
-    command_receipt["acceptedSourceVerifierImplementationIds"] = [
-        "urn:test:different-source-verifier"
-    ]
-    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
-
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                expected_receipt_id,
-            )
-        )
-        == 2
-    )
-    assert "differs from the expected receipt identity" in capfd.readouterr().err
-
-
-def test_cli_verify_binds_the_selected_source_profile_to_the_receipt_id(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    install_fake_source_native(monkeypatch)
-    destination = tmp_path / "catalog-store"
-    receipt_path = destination / "source-catalog-build-command-receipt.json"
-    assert (
-        main(
-            source_catalog_build_arguments(
-                tmp_path,
-                destination=destination,
-                receipt_path=receipt_path,
-            )
-        )
-        == 0
-    )
-    command_receipt = json.loads(capfd.readouterr().out)
-    reference_path = tmp_path / "source-catalog-ref.json"
-    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
-    command_receipt["sourceNativeInputs"][0]["profile"] = "regulations-gov-documents"
-    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=False)
-
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                command_receipt["receiptId"],
-            )
-        )
-        == 2
-    )
-    assert "receiptId does not match its content" in capfd.readouterr().err
-
-    command_receipt["sourceNativeInputs"][0]["profile"] = "unregistered"
-    _rewrite_command_receipt(receipt_path, command_receipt, recompute_id=True)
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                command_receipt["receiptId"],
-            )
-        )
-        == 2
-    )
-    assert "unsupported source-native profile" in capfd.readouterr().err
-
-
-@pytest.mark.parametrize("changed_pin", ["destination", "reference"])
-def test_cli_verify_binds_the_command_receipt_to_the_explicit_admission_request(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capfd: pytest.CaptureFixture[str],
-    changed_pin: str,
-) -> None:
-    install_fake_source_native(monkeypatch)
-    destination = tmp_path / "catalog-store"
-    receipt_path = destination / "source-catalog-build-command-receipt.json"
-    assert (
-        main(
-            source_catalog_build_arguments(
-                tmp_path,
-                destination=destination,
-                receipt_path=receipt_path,
-            )
-        )
-        == 0
-    )
-    command_receipt = json.loads(capfd.readouterr().out)
-    reference = dict(command_receipt["catalog"])
-    reference_path = tmp_path / "source-catalog-ref.json"
-    if changed_pin == "destination":
-        moved_destination = tmp_path / "moved-catalog-store"
-        destination.rename(moved_destination)
-        destination = moved_destination
-    else:
-        reference["catalogId"] = "urn:test:different-catalog"
+@pytest.mark.parametrize("changed_pin", ["catalogId", "digest"])
+def test_cli_verify_refuses_a_different_catalog_pin(published_catalog, capfd, changed_pin):
+    destination, reference_path, reference = published_catalog
+    reference[changed_pin] = "urn:test:different-catalog" if changed_pin == "catalogId" else "sha256:" + "f" * 64
     reference_path.write_bytes(canonical_json_file_bytes(reference))
+    assert main(source_catalog_verify_arguments(destination, reference_path)) == 2
+    captured = capfd.readouterr()
+    assert captured.out == "" and json.loads(captured.err)["verdict"] == "fail"
 
-    assert (
-        main(
-            _verify_source_catalog_arguments(
-                destination,
-                reference_path,
-                command_receipt["receiptId"],
-            )
-        )
-        == 2
-    )
-    error = capfd.readouterr().err
-    if changed_pin == "destination":
-        assert "destination differs from the explicit store root" in error
-    else:
-        assert "reference differs from the published build command receipt" in error
+
+def test_cli_verify_refuses_an_unaccepted_producer(published_catalog, capfd):
+    destination, reference_path, _ = published_catalog
+    arguments = source_catalog_verify_arguments(destination, reference_path)
+    arguments[arguments.index("--verifier-implementation-id") + 1] = "urn:test:different-verifier"
+    assert main(arguments) == 2
+    captured = capfd.readouterr()
+    assert captured.out == "" and json.loads(captured.err)["verdict"] == "fail"
+
+
+@pytest.mark.parametrize("member", ["artifact.json", "catalog-build-receipt.json"])
+def test_cli_verify_refuses_changed_catalog_bytes_without_repairing_them(published_catalog, capfd, member):
+    destination, reference_path, reference = published_catalog
+    path = destination / reference["digest"].removeprefix("sha256:") / member
+    changed = path.read_bytes() + b" "
+    path.write_bytes(changed)
+    before = {path: path.stat().st_mtime_ns for path in destination.rglob("*")}
+    assert main(source_catalog_verify_arguments(destination, reference_path)) == 2
+    captured = capfd.readouterr()
+    assert captured.out == "" and json.loads(captured.err)["verdict"] == "fail"
+    assert path.read_bytes() == changed
+    assert {path: path.stat().st_mtime_ns for path in destination.rglob("*")} == before

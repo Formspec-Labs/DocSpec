@@ -32,7 +32,7 @@ def test_local_source_catalog_publication_pins_the_destination_parent(
     replacement.mkdir()
 
     with LocalSourceCatalogPublication(parent / "catalog") as publication:
-        publication.write_file("receipt.json", b"complete\n")
+        (publication.root / 'receipt.json').write_bytes(b"complete\n")
         parent.rename(retained)
         parent.symlink_to(replacement, target_is_directory=True)
 
@@ -67,9 +67,9 @@ def test_local_source_catalog_publication_store_refuses_a_replaced_parent(
 
 def _publish_and_exit(destination: Path, published: bool) -> None:
     publication = LocalSourceCatalogPublication(destination)
-    publication.write_file("artifact.json", b"artifact\n" if published else b"unpublished\n")
+    (publication.root / 'artifact.json').write_bytes(b"artifact\n" if published else b"unpublished\n")
     if published:
-        publication.write_file("source-catalog-build-command-receipt.json", b"receipt\n")
+        (publication.root / 'note.txt').write_bytes(b"receipt\n")
         publication.publish()
     # Deliberately bypass cleanup to test actual process loss, not an exception.
     os._exit(23 if published else 31)
@@ -94,7 +94,7 @@ def test_local_source_catalog_publication_survives_process_exit_after_rename(
     destination = tmp_path / "catalog"
     _crash_publication(destination, published=True)
     assert (destination / "artifact.json").read_bytes() == b"artifact\n"
-    assert (destination / "source-catalog-build-command-receipt.json").read_bytes() == b"receipt\n"
+    assert (destination / "note.txt").read_bytes() == b"receipt\n"
 
 
 def test_local_source_catalog_publication_process_exit_before_rename_leaves_no_root_and_retry_succeeds(
@@ -107,11 +107,8 @@ def test_local_source_catalog_publication_process_exit_before_rename_leaves_no_r
     assert len(unpublished) == 1
 
     with LocalSourceCatalogPublication(destination) as publication:
-        publication.write_file("artifact.json", b"published\n")
-        publication.write_file(
-            "source-catalog-build-command-receipt.json",
-            b"receipt\n",
-        )
+        (publication.root / 'artifact.json').write_bytes(b"published\n")
+        (publication.root / 'note.txt').write_bytes(b"receipt\n")
         publication.publish()
 
     assert (destination / "artifact.json").read_bytes() == b"published\n"

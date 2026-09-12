@@ -1991,6 +1991,13 @@ of the same logical release, not a new logical release.
 
 ## 12. Operator interface
 
+**Source-catalog CLI update, September 12:** the command-receipt requirements in
+this draft are superseded by [the maintained cleanup decision](../../cleanup-decisions.md#verify-the-catalog-once).
+Current builds emit an invocation report; verification admits the pinned catalog
+directly and supports relocated or Python-built catalogs. The installed optional
+source reader is SpicyDocs. See [current catalog inputs](../../catalog-inputs.md#cli-build-reports-and-verification)
+for the supported arguments and evidence boundaries.
+
 One `docspec` command MUST expose the lifecycle:
 
 ```text

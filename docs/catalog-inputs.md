@@ -197,4 +197,27 @@ and process documents now or later. A local-file fetcher resolves `notes.txt`
 under the workspace's `sourceContent` root; building this catalog does not create
 that file. Catalog succession uses the explicit existing `supersedes` argument.
 Neither building nor opening silently selects a current catalog or document
-result. The CLI retains its destination publication checks and command receipts.
+result. The CLI uses the same catalog artifact and retains its atomic destination
+publication checks.
+
+## CLI build reports and verification
+
+`docspec source-catalog build` emits a `docspec-source-catalog-build-report` on
+standard output after successful publication. Save that output when you need
+the invocation's source paths, accepted source-verifier IDs, selected provider
+profiles, or actual serial/parallel execution details. Its `catalog` field is
+the ordinary `SourceCatalogRef` containing the logical ID, digest, and locator.
+The command requires no `--receipt` path and creates no second command receipt.
+
+`docspec source-catalog verify` takes `--root`, a `--reference` JSON file, and the
+accepted `--implementation-id` and `--verifier-implementation-id`. It verifies
+the catalog's exact pinned bytes and semantics through the existing reader.
+It works after relocation and with catalogs built through Python. It does not
+require the provider package, original source directories, or a saved build
+report. Its `docspec-source-catalog-verification` output uses format `2.0`.
+
+The artifact retains its sealed policy, source descriptions and outcomes,
+counts, diagnostics, byte measurements, and build receipt. Verification checks
+those values against the catalog rows. Invocation-specific logs remain separate
+from that dataset evidence. This replaces the redundant command-receipt path;
+see the [cleanup decision](cleanup-decisions.md#verify-the-catalog-once).

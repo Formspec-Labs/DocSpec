@@ -396,7 +396,6 @@ def build_catalog_arguments(
     sources: tuple[SourceFixture, ...],
     policy: object,
     destination: Path,
-    receipt: Path,
     blob_store: Path,
 ) -> list[str]:
     policy_path = destination.parent / f"{destination.name}-policy.json"
@@ -435,8 +434,6 @@ def build_catalog_arguments(
             DOCSPEC_IMPLEMENTATION,
             "--destination",
             str(destination),
-            "--receipt",
-            str(receipt),
             "--blob-store",
             str(blob_store),
         ]
@@ -448,10 +445,9 @@ def build_catalog(
     sources: tuple[SourceFixture, ...],
     policy: object,
     destination: Path,
-    receipt: Path,
     blob_store: Path,
 ) -> dict[str, object]:
-    return run(build_catalog_arguments(sources, policy, destination, receipt, blob_store))
+    return run(build_catalog_arguments(sources, policy, destination, blob_store))
 
 
 def regulations_policy() -> RegulationsGovCatalogPolicy:
@@ -488,9 +484,9 @@ def regulations_policy() -> RegulationsGovCatalogPolicy:
     )
 
 
-def admit_catalog(command_receipt: dict[str, object], destination: Path, name: str) -> dict[str, object]:
+def admit_catalog(build_report: dict[str, object], destination: Path, name: str) -> dict[str, object]:
     reference_path = RUN_ROOT / f"{name}-reference.json"
-    reference_path.write_bytes(canonical_json_file_bytes(command_receipt["catalog"]))
+    reference_path.write_bytes(canonical_json_file_bytes(build_report["catalog"]))
     return run(
         [
             str(Path(sys.executable).parent / "docspec"),
@@ -500,8 +496,6 @@ def admit_catalog(command_receipt: dict[str, object], destination: Path, name: s
             str(destination),
             "--reference",
             str(reference_path),
-            "--expected-command-receipt-id",
-            command_receipt["receiptId"],
             "--implementation-id",
             DOCSPEC_IMPLEMENTATION,
             "--verifier-implementation-id",
@@ -781,61 +775,45 @@ destination_a = RUN_ROOT / "catalog-a"
 destination_b = RUN_ROOT / "catalog-b"
 destination_c = RUN_ROOT / "catalog-physical-rebuild"
 destination_regulations = RUN_ROOT / "catalog-regulations"
-receipt_path_a = destination_a / "source-catalog-build-command-receipt.json"
-receipt_path_b = destination_b / "source-catalog-build-command-receipt.json"
-receipt_path_c = destination_c / "source-catalog-build-command-receipt.json"
-receipt_path_regulations = (
-    destination_regulations / "source-catalog-build-command-receipt.json"
-)
 federal_policy = FederalRegisterCatalogPolicy(
     FEDERAL_REGISTER_PROFILE.source_system_id
 )
-command_a = build_catalog(
+report_a = build_catalog(
     (source_a,),
     federal_policy,
     destination_a,
-    receipt_path_a,
     blob_store,
 )
-command_b = build_catalog(
+report_b = build_catalog(
     (source_b,),
     federal_policy,
     destination_b,
-    receipt_path_b,
     blob_store,
 )
-command_c = build_catalog(
+report_c = build_catalog(
     (source_a,),
     federal_policy,
     destination_c,
-    receipt_path_c,
     blob_store,
 )
-command_regulations = build_catalog(
+report_regulations = build_catalog(
     (document_source, docket_source, comment_source, source_a),
     regulations_policy(),
     destination_regulations,
-    receipt_path_regulations,
     blob_store,
 )
-assert command_a == json.loads(receipt_path_a.read_text(encoding="utf-8"))
-assert command_b == json.loads(receipt_path_b.read_text(encoding="utf-8"))
-assert command_c == json.loads(receipt_path_c.read_text(encoding="utf-8"))
-assert command_regulations == json.loads(
-    receipt_path_regulations.read_text(encoding="utf-8")
-)
 assert {
-    command_a["verdict"],
-    command_b["verdict"],
-    command_c["verdict"],
-    command_regulations["verdict"],
+    report_a["verdict"],
+    report_b["verdict"],
+    report_c["verdict"],
+    report_regulations["verdict"],
 } == {"pass"}
-for command_receipt, expected_profiles in (
-    (command_a, ["federal-register"]),
-    (command_b, ["federal-register"]),
-    (command_c, ["federal-register"]),
+for build_report, expected_profiles in (
+    (report_a, ["federal-register"]),
+    (report_b, ["federal-register"]),
+    (report_c, ["federal-register"]),
     (
-        command_regulations,
+        report_regulations,
         [
             "regulations-gov-documents",
             "regulations-gov-dockets",
@@ -844,24 +822,22 @@ for command_receipt, expected_profiles in (
         ],
     ),
 ):
-    assert command_receipt["acceptedSourceVerifierImplementationIds"] == [
+    assert build_report["acceptedSourceVerifierImplementationIds"] == [
         SPICY_DOCS_IMPLEMENTATION
     ]
     assert [
-        value["profile"] for value in command_receipt["sourceNativeInputs"]
+        value["profile"] for value in build_report["sourceNativeInputs"]
     ] == expected_profiles
 
 artifact_root_a = (
-    destination_a / command_a["catalog"]["digest"].removeprefix("sha256:")
+    destination_a / report_a["catalog"]["digest"].removeprefix("sha256:")
 )
 root_before_refusal = (artifact_root_a / "artifact.json").read_bytes()
-refusal_receipt = destination_a / "source-catalog-build-command-receipt.json"
 refusal = subprocess.run(
     build_catalog_arguments(
         (source_a,),
         federal_policy,
         destination_a,
-        refusal_receipt,
         blob_store,
     ),
     cwd=RUN_ROOT,
@@ -873,21 +849,21 @@ refusal = subprocess.run(
 assert refusal.returncode == 2
 assert "refusing to replace existing artifact" in refusal.stderr
 assert (artifact_root_a / "artifact.json").read_bytes() == root_before_refusal
-assert json.loads(refusal_receipt.read_text(encoding="utf-8")) == command_a
+assert refusal.stdout == ""
 
 artifact_receipts = []
-for command_receipt, destination in (
-    (command_a, destination_a),
-    (command_b, destination_b),
-    (command_c, destination_c),
-    (command_regulations, destination_regulations),
+for build_report, destination in (
+    (report_a, destination_a),
+    (report_b, destination_b),
+    (report_c, destination_c),
+    (report_regulations, destination_regulations),
 ):
-    artifact_root = destination / command_receipt["catalog"]["digest"].removeprefix("sha256:")
+    artifact_root = destination / build_report["catalog"]["digest"].removeprefix("sha256:")
     artifact_receipt = json.loads(
         (artifact_root / "catalog-build-receipt.json").read_text(encoding="utf-8")
     )
-    assert command_receipt["byteMeasurements"] == artifact_receipt["byteMeasurements"]
-    assert command_receipt["blobStore"] == {
+    assert build_report["byteMeasurements"] == artifact_receipt["byteMeasurements"]
+    assert build_report["blobStore"] == {
         "accountingStatus": "complete",
         "path": str(blob_store.resolve(strict=True)),
         "payloadBytesReused": artifact_receipt["byteMeasurements"]["payloadBytesReused"],
@@ -938,34 +914,33 @@ assert rebuilt_receipt["byteMeasurements"]["payloadBytesWritten"] == 0
 assert rebuilt_receipt["byteMeasurements"]["payloadBytesReused"] == sum(
     value["byteSize"] for value in initial_partitions.values()
 )
-assert command_c["catalog"]["catalogId"] == command_a["catalog"]["catalogId"]
-assert command_c["catalog"]["digest"] != command_a["catalog"]["digest"]
-assert command_b["catalog"]["catalogId"] != command_a["catalog"]["catalogId"]
+assert report_c["catalog"]["catalogId"] == report_a["catalog"]["catalogId"]
+assert report_c["catalog"]["digest"] != report_a["catalog"]["digest"]
+assert report_b["catalog"]["catalogId"] != report_a["catalog"]["catalogId"]
 assert regulations_receipt["itemCount"] == 3
 
-admission_a = admit_catalog(command_a, destination_a, "catalog-a")
-admission_b = admit_catalog(command_b, destination_b, "catalog-b")
-admission_c = admit_catalog(command_c, destination_c, "catalog-physical-rebuild")
+admission_a = admit_catalog(report_a, destination_a, "catalog-a")
+admission_b = admit_catalog(report_b, destination_b, "catalog-b")
+admission_c = admit_catalog(report_c, destination_c, "catalog-physical-rebuild")
 admission_regulations = admit_catalog(
-    command_regulations,
+    report_regulations,
     destination_regulations,
     "catalog-regulations",
 )
-for admission, command_receipt, item_count in (
-    (admission_a, command_a, len(DOCUMENT_IDS)),
-    (admission_b, command_b, len(DOCUMENT_IDS)),
-    (admission_c, command_c, len(DOCUMENT_IDS)),
-    (admission_regulations, command_regulations, 3),
+for admission, build_report, item_count in (
+    (admission_a, report_a, len(DOCUMENT_IDS)),
+    (admission_b, report_b, len(DOCUMENT_IDS)),
+    (admission_c, report_c, len(DOCUMENT_IDS)),
+    (admission_regulations, report_regulations, 3),
 ):
-    assert admission["commandReceiptId"] == command_receipt["receiptId"]
-    assert admission["logicalId"] == command_receipt["catalog"]["catalogId"]
-    assert admission["artifactDigest"] == command_receipt["catalog"]["digest"]
+    assert admission["logicalId"] == build_report["catalog"]["catalogId"]
+    assert admission["artifactDigest"] == build_report["catalog"]["digest"]
     assert admission["itemCount"] == item_count
 
 regulations_snapshot = SourceCatalogArtifactReader(
     LocalSourceCatalogStore(destination_regulations, create=False),
     producer=catalog_producer(),
-).open_snapshot(SourceCatalogRef.from_dict(command_regulations["catalog"]))
+).open_snapshot(SourceCatalogRef.from_dict(report_regulations["catalog"]))
 regulations_located = tuple(regulations_snapshot.located_items)
 regulations_items = tuple(value.item for value in regulations_located)
 assert [item.source_item_id for item in regulations_items] == sorted(
@@ -1047,7 +1022,7 @@ proof = {
             comment_source,
         )
     ],
-    "commandReceipts": [command_a, command_b, command_c, command_regulations],
+    "buildReports": [report_a, report_b, report_c, report_regulations],
     "admissions": [
         admission_a,
         admission_b,

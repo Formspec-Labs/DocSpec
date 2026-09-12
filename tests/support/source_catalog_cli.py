@@ -92,7 +92,6 @@ def source_catalog_build_arguments(
     tmp_path: Path,
     *,
     destination: Path,
-    receipt_path: Path,
     blob_store: Path | None = None,
 ) -> list[str]:
     source_root = tmp_path / "source-native"
@@ -127,9 +126,15 @@ def source_catalog_build_arguments(
         implementation_id,
         "--destination",
         str(destination),
-        "--receipt",
-        str(receipt_path),
     ]
     if blob_store is not None:
         arguments.extend(("--blob-store", str(blob_store)))
     return arguments
+
+
+def source_catalog_verify_arguments(destination: Path, reference_path: Path) -> list[str]:
+    implementation_id = "git+https://example.test/docspec@" + "1" * 40
+    return [
+        "source-catalog", "verify", "--root", str(destination), "--reference", str(reference_path),
+        "--implementation-id", implementation_id, "--verifier-implementation-id", implementation_id,
+    ]

@@ -26,6 +26,35 @@ later processing and already uses Rulespec; it is separate from the removed
 portable verifier. Current visible-text and segmentation implementations remain
 usable through injected processing stages.
 
+## Verify the catalog once
+
+The catalog CLI now verifies the caller's `SourceCatalogRef` directly through
+`SourceCatalogArtifactReader.verify_snapshot`. That reader admits the shared
+artifact, verifies its exact pin and producer, and recomputes the catalog's
+digests, counts, policy diagnostics, and byte accounting. Both Python-built and
+relocated catalogs use this path.
+
+The former command receipt repeated those facts in another file, added a second
+identity and closed-shape validator, and required the original destination path
+during verification. It did not replace the reader's full verification. Remove
+that receipt, its `--receipt` and `--expected-command-receipt-id` arguments, and
+the now-unused publication root-file writer. The artifact's sealed
+`catalog-build-receipt.json` remains part of its own evidence and verification.
+
+Build output still reports source locations, the chosen provider profiles and
+source-verifier acceptance, and actual execution diagnostics. Those describe
+the invocation; they are emitted on standard output for callers or Dagster to
+retain as logs. They are not another required dataset artifact. A failed
+publication emits no success report, and an existing destination is never
+replaced. The exact artifact remains authoritative if output logging fails.
+
+Keeping the second file but sharing its validators would retain unnecessary
+identity and location dependencies. Removing it makes verification work for
+catalogs created through either public entry point and eliminates roughly 500
+lines of production code without adding a new schema, reader, or run ledger.
+This is the primary agent's architecture judgment; independent review is pending
+because the reviewers reached their usage limit.
+
 ## Retire the unused application wrapper
 
 `DocSpecApplication` and `docspec.application.service` have been removed.
