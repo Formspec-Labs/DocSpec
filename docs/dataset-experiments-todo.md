@@ -7,13 +7,12 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 43 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 44 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
-`dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
-capabilities below have been implemented or validated. Some already exist inside
-application services; those items call for making them usable and proving the
-whole workflow, not rebuilding them.
+`dd18fb364acdc383643bacf52a108c92e0173aef`. Completed entries link their scoped
+implementation and validation evidence; open entries state what remains to be
+proved or supplied. A plan entry alone does not establish working behavior.
 
 The later [search-catalog investigation](history/2026-09-11-search-catalog-consolidation.md)
 adds D47–D50 using the inspected SpicySearch and SpicyEngine candidate branches.
@@ -1064,7 +1063,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   also checks the configuration digest once. Actual storage bounds, module and
   dependency selection, and conformance test references remain. The existing
   profile, workspace, worker, runtime and installed-package gate passed **92
-  tests** in 19.33 seconds; Ruff passed. Fresh independent review remains D39.
+  tests** in 19.33 seconds; Ruff passed. Independent review is consolidated in D39.
 
   **Completed locally September 12:** the final inventory removes handwritten
   verifier status and the three sink profiles' descriptive, unenforced limits.
@@ -1079,7 +1078,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   test strengthening passed both lifecycle tests in 1.70 seconds. No production
   code changed after the full run. The
   [final profile/cache review](history/2026-09-12-final-profile-cache-review.md)
-  approves this slice with no material findings. Review consolidation remains D39.
+  approves this slice with no material findings. D39 records the completed review consolidation.
 
 <a id="d33"></a>
 
@@ -1104,7 +1103,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   declarations remain beside their typed rows. The scale and segmentation
   decisions remain applicable. No additional wrappers or dispatch framework are
   warranted by line count alone. This completes the local responsibility review;
-  fresh independent review remains D39.
+  independent review is consolidated in D39.
 
 <a id="d34"></a>
 
@@ -1142,7 +1141,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   publication, worker, identity, segmentation and extraction gate passed
   **164 tests** in 19.53 seconds, including installed-package checks. Ruff and
   the updated 79-package lock pass. Vulture is a one-off audit tool, not a new
-  project dependency or blanket CI gate. Independent review remains D39.
+  project dependency or blanket CI gate. Independent review is consolidated in D39.
 
 <a id="d35"></a>
 
@@ -1214,7 +1213,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   current validators, and operations cover recovery, retention and selection.
   All **494 maintained-document local file targets** resolve. Installed examples
   exercise the documented APIs; the unfamiliar-human contribution remains D40,
-  and independent review remains D39.
+  and independent review is consolidated in D39.
 
 ## 7. Verify user value and qualify the claims we keep
 
@@ -1292,7 +1291,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d39"></a>
 
-- [ ] **D39 · P1 · Obtain independent architecture and code review of the implementation.**
+- [x] **D39 · P1 · Obtain independent architecture and code review of the implementation.**
   Give reviewers the clarified purpose, changed interfaces, and acceptance
   evidence. Use a solutions architect for judgment and independent semi-formal
   code reviews for implemented changes. **Done when:** findings on ownership,
@@ -1300,48 +1299,38 @@ to defer a conditional item is a documented deferral, not completed implementati
   explicitly recorded, and the final approach distinguishes consensus from open
   disagreement. Review throughout implementation, then consolidate the result.
 
-  **Progress:** the [foundation review](history/2026-09-11-experiment-foundation-review.md)
-  records independent approval of the bounded documentation, profiles,
-  workspace, retained alternatives, catalog-reader, and recovery changes through
-  `c41b00b`. Review findings were resolved. The combined local suite passed
-  907 tests, with one live integration test deselected; Ruff passed. Subsequent
-  API and lifecycle work still requires independent review and acceptance.
+  **Completed locally September 12 for the implemented scope through `d3acc8f`:**
+  the [review coverage map](history/2026-09-12-final-review-coverage.md) connects
+  the implemented slices to their independent certificates. It identified and
+  closed two remaining historical review gaps: the
+  [configuration/catalog cleanup](history/2026-09-12-configuration-catalog-cleanup-review.md)
+  and the [installed experiment loop](history/2026-09-12-installed-experiment-loop-review.md).
+  The former also independently approves the typed-fixture cleanup. The
+  [native regression integration](history/2026-09-12-native-regression-integration-review.md)
+  and [final cache/profile cleanup](history/2026-09-12-final-profile-cache-review.md)
+  have separate approvals. No material finding remains unresolved in these slices.
 
-  The [public runtime review](history/2026-09-11-public-runtime-review.md) records
-  independent approval of the next extraction, injected dependency checks, exact
-  task membership, and installed-caller coverage. Its execution record separates
-  942 passing full-suite tests from one stale-selector failure, then records all
-  25 focused checks passing after that selector mapping was corrected. Ruff and
-  diff checks pass. This does not complete whole-workflow acceptance or D39.
+  Architecture consensus keeps dataset meaning, retained evidence and reuse in
+  DocSpec; native Dagster owns managed execution, and shared libraries own their
+  existing publication/encoding functions. The
+  [recipe scope review](history/2026-09-12-native-recipe-scope-review.md) defers a
+  generic host until a concrete caller demonstrates a missing rule. Search SC04
+  now records native composition first in its destination repo. The measured
+  shared-writer gap remains an explicit upstream dependency rather than a local
+  workaround.
 
-  The [stage-injection review](history/2026-09-11-stage-injection-review.md)
-  covers D13's configured stages and current producer migrations. The complete
-  local suite passed 972 tests with one live integration test deselected,
-  including the updated installed-wheel probe. Its architecture decision and
-  review record the full-rebuild behavior at that milestone. The subsequent
-  capture-prefix work extends D15 reuse; its separate review and execution
-  evidence appear in the [capture-prefix review](history/2026-09-11-capture-prefix-review.md).
-  That review approved D15 and D24 after resolving inherited-output ownership,
-  unused-cache construction, receipt-based accounting, and the missing
-  processor-addition clean comparison. Local checks are recorded there;
-  broader D39 acceptance remains open.
+  The final production changes passed **1,078 tests**, with one live integration
+  deselected, in 247.07 seconds and no warnings. A subsequent test-only
+  mixed-cache extension passed both affected lifecycle tests in 1.70 seconds;
+  production code did not change after the full run. Ruff, the dependency lock
+  and diff checks passed. Each review distinguishes static analysis from these
+  parent-executed results. Earlier progress notes describe their own revisions;
+  this consolidation is the current review status.
 
-  **Latest local qualification, September 12:** the combined suite for
-  implementation `722e0ce` passed **1,071 tests**, with one live integration test
-  deselected, in 230.08 seconds and no warnings. This includes the optional
-  SpicyDocs `0.3.0` reader, catalog growth, retained bill/XML processing, provider
-  source refusals, shared CourtListener parsing, simplified profiles, catalog
-  admission through one verifier, installed native Dagster recovery, and the GAO
-  topic example. GAO checks run both locally and from an installed DocSpec wheel
-  using the same behavioral test. The focused installed-provider, GAO and package
-  boundary gate passed **20 tests** in 23.69 seconds. Ruff and lock consistency
-  passed. The installed provider's 92 package files match the shared wheel bytes.
-  The [source-integration review](history/2026-09-12-source-integration-review.md)
-  now independently approves `03df308^..722e0ce` without actionable findings.
-  The [cleanup review](history/2026-09-12-latest-cleanup-review.md) independently
-  approves `722e0ce..1d73408`. Both are scoped static reviews, not remote CI or
-  acceptance of later changes. The regression replacement and final review
-  consolidation remain in progress.
+  This completes review of implemented DocSpec work. D37's capacity measurements,
+  D40's unfamiliar-human exercise, and conditional destination integrations keep
+  their own acceptance criteria. No remote CI, publication, deployment or live
+  provider reliability is claimed.
 
 <a id="d40"></a>
 
@@ -1511,7 +1500,7 @@ caller lives; moving imports between modules does not remove a package cycle.
   the built release passed dependency and public-import checks. The
   [wheel qualification](history/2026-09-12-wheel-qualification.md) records exact
   build and dependency identities. This is a locally built and qualified wheel,
-  not an external registry publication. Final independent review remains D39.
+  not an external registry publication. Final independent review is consolidated in D39.
 
   **Current dependency, September 12:** D53 advances the single optional provider
   wheel to SpicyDocs `0.3.0`. Source reading and bill acquisition share
@@ -1636,7 +1625,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   source fixtures come unchanged from SpicyDocs `8e485fe`. GAO and bill examples
   share the existing provider-identity helper; its function body is unchanged.
   This qualifies synthetic offline inputs, not live availability or full GAO
-  coverage. Fresh independent review remains D39.
+  coverage. Independent review is consolidated in D39.
 
 <a id="d52"></a>
 

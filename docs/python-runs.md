@@ -344,5 +344,6 @@ repeating work, and refuses changed settings. The
 an isolated environment before running that check. This qualifies the bounded
 Python path. The [offline walkthrough](offline-walkthrough.md) additionally checks
 catalog growth, repair, changed settings and reference data, and exact quote
-evidence against an installed wheel. Independent review and the unfamiliar-human
-exercise remain [D39–D40](dataset-experiments-todo.md#d39).
+evidence against an installed wheel. [D39](dataset-experiments-todo.md#d39)
+records completed independent review of the implemented workflow. The
+unfamiliar-human exercise remains [D40](dataset-experiments-todo.md#d40).
