@@ -59,6 +59,8 @@ class InspectionView:
         self._controls, self._stores, self._records = controls, stores, records
         self._blobs, self._catalog, self._workspace_factory = blobs, catalog, workspace_factory
         self.release_ref = release_ref
+        if release_ref is not None:
+            catalog.audit(release_ref)
         self._reader = None if release_ref is None else catalog.open_reader(release_ref)
         if self._reader is not None:
             release = self._reader.release

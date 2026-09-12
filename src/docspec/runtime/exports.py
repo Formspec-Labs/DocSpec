@@ -42,8 +42,9 @@ def export_local_result(
     controls, _, _, blobs, catalog = _local_storage(
         workspace.roots, profiles, document_release_producer, create=False,
     )
-    reader = catalog.open_reader(release_ref)
-    if reader.release.processing_plan.artifact_id != plan.plan_id:
+    release = catalog.audit(release_ref)
+    if release.processing_plan.artifact_id != plan.plan_id:
         raise IntegrityError("export retained result belongs to another processing plan")
+    reader = catalog.open_reader(release_ref)
     return export_result(reader, controls, blobs, release_ref, destination,
         admission=admission, producer=export_producer, max_output_bytes=max_output_bytes)

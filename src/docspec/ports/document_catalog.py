@@ -11,7 +11,7 @@ from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 
 
 class DocumentCatalogReader(Protocol):
-    """A verified, immutable release view reusable for one application operation."""
+    """Pinned release metadata with member verification on reads, not a full audit."""
 
     @property
     def release(self) -> DocumentRelease: ...
@@ -33,7 +33,13 @@ class DocumentCatalog(Protocol):
 
     def release_id(self, plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str: ...
 
-    def open(self, reference: DocumentReleaseRef) -> DocumentRelease: ...
+    def open(self, reference: DocumentReleaseRef) -> DocumentRelease:
+        """Admit pinned metadata and linked small controls; inventory is declared."""
+        ...
+
+    def audit(self, reference: DocumentReleaseRef) -> DocumentRelease:
+        """Verify the complete retained data, lineage and execution evidence."""
+        ...
 
     def open_reader(self, reference: DocumentReleaseRef) -> DocumentCatalogReader: ...
 

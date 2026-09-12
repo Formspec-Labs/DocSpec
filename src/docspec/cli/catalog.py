@@ -22,6 +22,7 @@ from docspec.cli.requests import _absolute_request_path, _local_storage_for_run_
 from docspec.cli_io import CliError, read_object
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import DocumentReleaseRef
+from docspec.domain.release import DocumentRelease
 from docspec.cli_io import (
     emit as _emit,
 )
@@ -51,9 +52,9 @@ def _local_document_catalog(args: argparse.Namespace) -> LocalManifestDocumentCa
     )
 
 
-def _cmd_document_catalog_open(args: argparse.Namespace) -> int:
-    reference = _release_reference(args.reference)
-    release = _local_document_catalog(args).open(reference)
+def _emit_catalog_release(
+    reference: DocumentReleaseRef, release: DocumentRelease, *, verification_scope: str, verdict: str,
+) -> None:
     _emit(
         {
             "format": "docspec-document-catalog-open-result",
@@ -61,9 +62,23 @@ def _cmd_document_catalog_open(args: argparse.Namespace) -> int:
             "reference": reference.to_dict(),
             "logicalStateDigest": release.logical_state_digest,
             "release": release.to_dict(),
-            "verdict": "pass",
+            "verificationScope": verification_scope,
+            "verdict": verdict,
         }
     )
+
+
+def _cmd_document_catalog_open(args: argparse.Namespace) -> int:
+    reference = _release_reference(args.reference)
+    _emit_catalog_release(reference, _local_document_catalog(args).open(reference),
+        verification_scope="pinned-metadata-and-linked-controls", verdict="metadata-valid")
+    return 0
+
+
+def _cmd_document_catalog_audit(args: argparse.Namespace) -> int:
+    reference = _release_reference(args.reference)
+    _emit_catalog_release(reference, _local_document_catalog(args).audit(reference),
+        verification_scope="complete-retained-state", verdict="pass")
     return 0
 
 
@@ -88,6 +103,7 @@ def _cmd_document_catalog_compare(args: argparse.Namespace) -> int:
             "changeCounts": dict(sorted(counts.items())),
             "sample": sample,
             "sampleTruncated": change_count > len(sample),
+            "verificationScope": "pinned-metadata-and-selected-record-layer",
             "verdict": "pass",
         }
     )

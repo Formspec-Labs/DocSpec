@@ -57,7 +57,7 @@ ZERO_DIGEST = "sha256:" + "0" * 64
     [
         ("source-catalog", ("build", "verify")),
         ("profile", ("list", "verify")),
-        ("document-catalog", ("open", "compare", "select")),
+        ("document-catalog", ("open", "audit", "compare", "select")),
         ("plan", ("create",)),
         ("document-store", ("create", "verify")),
         ("run", ("prepare", "start", "resume", "reconcile", "status", "active")),

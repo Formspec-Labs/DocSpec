@@ -23,12 +23,8 @@ from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_storage import RecordStorage
 
 
-def _verify_execution_evidence(
-    controls: ControlRepository,
-    records: RecordStorage,
-    run: RunReceipt,
-) -> None:
-    """Verify one execution profile, handoff, and task-result ledger without buffering them."""
+def _verify_execution_controls(controls: ControlRepository, run: RunReceipt) -> ExecutionHandoff:
+    """Admit linked execution controls without reading task or store members."""
 
     try:
         profile = ExecutionProfile.from_dict(controls.load(run.execution_profile))
@@ -50,6 +46,14 @@ def _verify_execution_evidence(
     ):
         raise IntegrityError("run execution evidence differs from its receipt inputs")
 
+    return handoff
+
+
+def _verify_execution_evidence(
+    controls: ControlRepository, records: RecordStorage, run: RunReceipt,
+) -> None:
+    """Verify execution controls and task/store agreement without buffering them."""
+    handoff = _verify_execution_controls(controls, run)
     task_rows = records.stream(run.task_result_ledger)
     store_rows = records.stream(run.store_ledger)
     count = 0
@@ -184,26 +188,53 @@ class DocumentReleaseVerifier:
         self._stores = stores
         self._blobs = blobs
 
-    def verify(self, release: DocumentRelease) -> None:
+    def verify_metadata(self, release: DocumentRelease) -> tuple[ProcessingPlan, RunReceipt, PartitionPolicy]:
+        """Admit linked small controls and declared inventory without reading data members."""
         plan = self._load_plan(release.processing_plan)
         run = self._load_run(release.run_receipt)
         commit = self._load_commit(release.catalog_commit_receipt)
         policy = self._release_partition_policy(release.partition_policy)
 
         self._verify_receipt_links(release, plan, run, commit, policy)
+        _verify_execution_controls(self._controls, run)
         verify_expected_layers(release.active_layers, plan)
-        self._verify_run_ledgers(plan, run, policy)
-        self._verify_active_layers(release, plan, policy)
+        document_store_profile = plan.profiles.for_role(ProfileRole.DOCUMENT_STORE)
+        if run.planned_store_ledger.profile_id != document_store_profile.profile_id:
+            raise IntegrityError("planned-store ledger uses a profile not pinned by the processing plan")
+        record_profile = plan.profiles.for_role(ProfileRole.RECORD_STORAGE)
+        for layer, expected_kind in (
+            (run.store_ledger, "run-store-receipts"),
+            (run.selection_ledger, "run-selection"),
+            (run.task_result_ledger, "execution-task-results"),
+        ):
+            if layer.layer_kind != expected_kind:
+                raise IntegrityError(f"run receipt {expected_kind} ledger has an unexpected logical kind")
+            if layer.profile_id != record_profile.profile_id:
+                raise IntegrityError(f"run receipt {expected_kind} ledger uses an unpinned record profile")
+        for layer in release.active_layers:
+            if layer.profile_id != record_profile.profile_id:
+                raise IntegrityError(f"release layer {layer.layer_kind} uses an unpinned record profile")
         self._verify_blob_roots(release, plan)
-        verified_blobs: set[tuple[str, str, int]] = set()
+        counts = complete_release_counts(release.active_layers, release.blob_roots)
+        if release.counts != counts:
+            raise IntegrityError("release counts differ from its active layers and blob roots")
+        if release.coverage != complete_release_coverage(run.coverage, counts):
+            raise IntegrityError("release coverage differs from its linked run and active source layer")
+        return plan, run, policy
+
+    def verify(self, release: DocumentRelease) -> ProcessingPlan:
+        """Audit all retained data and return the admitted plan."""
+        plan, run, policy = self.verify_metadata(release)
+        self._verify_run_ledgers(plan, run, policy)
+        self._verify_active_layers(release, policy)
+        verified_blobs: set[BlobRef] = set()
 
         def verify_retained_blob(reference: BlobRef) -> None:
             if not release.blob_roots:
                 raise IntegrityError("release retains content without a declared blob root")
             if self._blobs is None:
                 raise IntegrityError("release retains content without an injected blob store verifier")
-            identity = (reference.locator, reference.digest, reference.byte_size)
-            if identity in verified_blobs:
+            if reference in verified_blobs:
                 return
             try:
                 self._blobs.verify(reference)
@@ -211,7 +242,7 @@ class DocumentReleaseVerifier:
                 raise IntegrityError(
                     f"release retained blob {reference.digest} failed verification: {error}"
                 ) from error
-            verified_blobs.add(identity)
+            verified_blobs.add(reference)
 
         verify_logical_release_layers(
             {layer.layer_kind: self._records.stream(layer) for layer in release.active_layers},
@@ -222,13 +253,9 @@ class DocumentReleaseVerifier:
         store_digest = self._verified_store_digest(plan, run)
         if store_digest != release.store_receipt_set_digest:
             raise IntegrityError("release store receipt-set digest differs from its verified store ledger")
-        counts = complete_release_counts(release.active_layers, release.blob_roots)
-        if release.counts != counts:
-            raise IntegrityError("release counts differ from its active layers and blob roots")
-        if release.coverage != complete_release_coverage(run.coverage, counts):
-            raise IntegrityError("release coverage differs from its linked run and active source layer")
         if release.failures != complete_release_failure_summary(self._records, release.active_layers):
             raise IntegrityError("release failure summary differs from its active failure layer")
+        return plan
 
     def _load_plan(self, reference: ArtifactRef) -> ProcessingPlan:
         try:
@@ -326,23 +353,15 @@ class DocumentReleaseVerifier:
         run: RunReceipt,
         policy: PartitionPolicy,
     ) -> None:
-        document_store_profile = plan.profiles.for_role(ProfileRole.DOCUMENT_STORE)
         if run.planned_store_ledger != self._stores.planned_store_ledger(plan.plan_id):
             raise IntegrityError("run receipt names a planned-store ledger from another plan")
-        if run.planned_store_ledger.profile_id != document_store_profile.profile_id:
-            raise IntegrityError("planned-store ledger uses a profile not pinned by the processing plan")
 
-        record_profile = plan.profiles.for_role(ProfileRole.RECORD_STORAGE)
         for layer, expected_kind in (
             (run.store_ledger, "run-store-receipts"),
             (run.selection_ledger, "run-selection"),
             (run.task_result_ledger, "execution-task-results"),
         ):
-            if layer.layer_kind != expected_kind:
-                raise IntegrityError(f"run receipt {expected_kind} ledger has an unexpected logical kind")
             self._records.verify(layer)
-            if layer.profile_id != record_profile.profile_id:
-                raise IntegrityError(f"run receipt {expected_kind} ledger uses an unpinned record profile")
             if self._records.partition_policy(layer) != policy:
                 raise IntegrityError(f"run receipt {expected_kind} ledger uses a different partition policy")
         _verify_execution_evidence(self._controls, self._records, run)
@@ -350,14 +369,10 @@ class DocumentReleaseVerifier:
     def _verify_active_layers(
         self,
         release: DocumentRelease,
-        plan: ProcessingPlan,
         policy: PartitionPolicy,
     ) -> None:
-        record_profile = plan.profiles.for_role(ProfileRole.RECORD_STORAGE)
         for layer in release.active_layers:
             self._records.verify(layer)
-            if layer.profile_id != record_profile.profile_id:
-                raise IntegrityError(f"release layer {layer.layer_kind} uses an unpinned record profile")
             if self._records.partition_policy(layer) != policy:
                 raise IntegrityError(f"release layer {layer.layer_kind} uses a different partition policy")
 

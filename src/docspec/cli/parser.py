@@ -7,7 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from docspec.cli.blobs import _cmd_blob_store_gc, _cmd_blob_store_verify
-from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select
+from docspec.cli.catalog import (
+    _cmd_document_catalog_audit, _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select,
+)
 from docspec.cli.common import _write_failure_receipt
 from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
 from docspec.cli.inspection import add_inspection_command
@@ -82,17 +84,21 @@ def build_parser() -> argparse.ArgumentParser:
     profile_verify.add_argument("profile", type=Path)
     profile_verify.set_defaults(func=_cmd_profile_verify)
 
-    document_catalog = commands.add_parser("document-catalog", help="Open, compare, and select retained results")
+    document_catalog = commands.add_parser("document-catalog", help="Open, audit, compare, and select retained results")
     catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")
     _add_mutating_paths(
         catalog_commands.add_parser("select", help="Select a retained result if current still matches the request"),
         operation="document-catalog.select",
         func=_cmd_document_catalog_select,
     )
-    catalog_open = catalog_commands.add_parser("open", help="Verify and open an explicit release reference")
-    _add_local_catalog_arguments(catalog_open)
-    catalog_open.add_argument("--reference", type=Path, required=True)
-    catalog_open.set_defaults(func=_cmd_document_catalog_open)
+    for name, help_text, handler in (
+        ("open", "Open pinned metadata without scanning retained data", _cmd_document_catalog_open),
+        ("audit", "Verify all retained records, bytes and execution evidence", _cmd_document_catalog_audit),
+    ):
+        command = catalog_commands.add_parser(name, help=help_text)
+        _add_local_catalog_arguments(command)
+        command.add_argument("--reference", type=Path, required=True)
+        command.set_defaults(func=handler)
     catalog_compare = catalog_commands.add_parser("compare", help="Compare one logical layer across two releases")
     _add_local_catalog_arguments(catalog_compare)
     catalog_compare.add_argument("--older-reference", type=Path, required=True)

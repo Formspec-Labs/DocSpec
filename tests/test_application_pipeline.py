@@ -198,7 +198,7 @@ def test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases(tmp_p
     original_bytes = retained_path.read_bytes()
     retained_path.write_bytes(bytes([original_bytes[0] ^ 1]) + original_bytes[1:])
     with pytest.raises(IntegrityError, match="retained blob.*failed verification"):
-        catalog.open(release_v3_ref)
+        catalog.audit(release_v3_ref)
 
 
 def test_reconciler_matches_the_exact_planned_terminal_store_set(

@@ -261,7 +261,7 @@ def _save_run(
         reference = save(base, run_ref)
     finally:
         platform.catalog.stage = original_stage  # type: ignore[method-assign]
-    platform.catalog.open(reference)
+    platform.catalog.audit(reference)
     assert len(staged) == 1
     return _SavedRun(reference, plan_ref, run_ref, planned_job_ref, job_ref, staged[0])
 

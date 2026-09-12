@@ -1470,8 +1470,16 @@ metadata.
 The local manifest catalog MUST publish exactly one product member:
 `release.json` with role `release-state`. Its immutable record layers remain in
 the selected record store; the release container MUST NOT mirror those logical
-rows. Every ordinary catalog open and retention admission MUST still run the
-full `DocumentReleaseVerifier` over the referenced state and its dependencies.
+rows. Ordinary catalog open MUST admit the exact container and release metadata,
+accepted producer, linked plan/run/commit and execution controls, profile pins,
+and declared inventory without scanning the entire dataset. Consumed members
+and blobs MUST retain their on-use checks. Explicit catalog audit, staging,
+retention, selection, export, maintenance and comprehensive inspection MUST run
+the full `DocumentReleaseVerifier` over the referenced state and dependencies.
+A successful audit may be reused within the same exclusive publication operation
+when only its already-audited directory is renamed; metadata readback MUST still
+confirm the published pin. An independently pre-existing destination MUST be
+audited. These checks do not promise continuing availability after observation.
 
 The installed package MUST generate and ship
 `docspec/schemas/document_release/2.0/document-release.schema.json` from the
@@ -2022,6 +2030,7 @@ docspec source-catalog verify
 docspec profile list
 docspec profile verify
 docspec document-catalog open
+docspec document-catalog audit
 docspec document-catalog compare
 docspec plan create
 docspec document-store create

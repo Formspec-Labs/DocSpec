@@ -139,3 +139,8 @@ The regression map declares required tests, not capacity or publication status.
 A focused test, synthetic timing run, or historical receipt does not establish
 capacity for a later release. Keep local validation, remote CI, qualification,
 and publication status separate in reviews and run reports.
+
+For inexpensive retained metadata browsing, use `document-catalog open`. Use
+`document-catalog audit` to verify the entire retained dataset; the
+[retained catalog guide](retained-catalog.md) explains the different evidence
+scopes and the complete checks required before publication and maintenance.

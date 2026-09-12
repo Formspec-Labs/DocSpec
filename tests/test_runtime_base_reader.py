@@ -1,4 +1,4 @@
-"""A prepared worker admits its immutable base once and keeps checking used evidence."""
+"""A prepared worker admits base metadata once and keeps checking used evidence."""
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields, replace
@@ -201,7 +201,7 @@ def test_used_base_evidence_is_rechecked_after_admission(retained_experiment, mo
         path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
         with pytest.raises(IntegrityError):
             prepared.execute_task(prepared.handoff, tasks[1])
-        assert opened == [base]  # The used-byte check, not another full admission, refused it.
+        assert opened == [base]  # The used-byte check, not another metadata admission, refused it.
 
 
 def test_changed_reused_bytes_refuse_before_saving_the_prefix_checkpoint(retained_experiment, monkeypatch):

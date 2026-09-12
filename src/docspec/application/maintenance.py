@@ -255,7 +255,7 @@ class BlobRetentionSetService:
         workspace: RecordWorkspace,
         metrics: dict[str, Any],
     ) -> DocumentReleaseRef | None:
-        release = self._document_catalog.open(reference)
+        release = self._document_catalog.audit(reference)
         metrics["catalogVerifiedReleaseCount"] += 1
         plan = self._remember_plan(release.processing_plan, workspace)
         if plan.base_release != release.previous_release:
@@ -469,7 +469,7 @@ class ReleaseCompactionService:
         self._clock = clock
 
     def compact(self, source_reference: DocumentReleaseRef) -> ArtifactRef:
-        source = self._document_catalog.open(source_reference)
+        source = self._document_catalog.audit(source_reference)
         source_digest, source_digest_reads = _logical_layers_state_digest(
             self._records,
             source.active_layers,
@@ -585,7 +585,7 @@ class ReleaseCompactionService:
         source_digest: str,
         compacted_digest: str,
     ) -> str:
-        successor = self._document_catalog.open(successor_reference)
+        successor = self._document_catalog.audit(successor_reference)
         if (
             successor.previous_release != source_reference
             or successor.active_layers != compacted_layers

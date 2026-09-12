@@ -291,7 +291,7 @@ class RunReconciler:
         return self._controls.put(kind="run-receipts", artifact_id=receipt.run_id, value=receipt.to_dict())
 
     def _base_state(self) -> tuple[dict[str, LayerRef], dict[str, ArtifactRef]]:
-        """Carry verified base storage with inherited layers, including zero-work runs."""
+        """Carry pinned base storage with inherited layers, including zero-work runs."""
 
         if self._base_release_ref is None:
             return {}, {}

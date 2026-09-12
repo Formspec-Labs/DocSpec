@@ -57,7 +57,7 @@ def _committed_release(root: Path):
         processors=(processor,),
         partition_policy=platform.partition_policy,
     )
-    return platform, reference, platform.catalog.open(reference)
+    return platform, reference, platform.catalog.audit(reference)
 
 
 def _layer_paths(records_root: Path, state_ref: str) -> set[Path]:
@@ -106,7 +106,7 @@ def _retained_object_paths(platform, reference: DocumentReleaseRef, release) -> 
 def test_composed_verification_covers_every_retained_authoritative_object(tmp_path: Path) -> None:
     """Flip bytes in each persisted object the release references -- root,
     control artifacts, layer state and members, sealed stores, and retained
-    blobs -- and require the composed open to fail closed every time."""
+    blobs -- and require the complete audit to fail closed every time."""
 
     platform, reference, release = _committed_release(tmp_path / "platform")
     assert release.blob_roots, "a release retaining content must declare its blob roots"
@@ -123,12 +123,12 @@ def test_composed_verification_covers_every_retained_authoritative_object(tmp_pa
             path.write_bytes(b"\x00" + original[1:])
             try:
                 with pytest.raises(DocSpecError):
-                    platform.catalog.open(reference)
+                    platform.catalog.audit(reference)
             finally:
                 path.write_bytes(original)
             swept += 1
     assert swept == sum(len(paths) for paths in categories.values())
-    assert platform.catalog.open(reference) == release, "the sweep must leave the committed state intact"
+    assert platform.catalog.audit(reference) == release, "the sweep must leave the committed state intact"
 
 
 def test_missing_retained_source_bytes_fail_the_composed_verification(tmp_path: Path) -> None:
@@ -140,7 +140,7 @@ def test_missing_retained_source_bytes_fail_the_composed_verification(tmp_path: 
 
     blob_path.unlink()
     with pytest.raises(IntegrityError, match="blob"):
-        platform.catalog.open(reference)
+        platform.catalog.audit(reference)
 
     blob_path.write_bytes(original)
-    assert platform.catalog.open(reference) == release
+    assert platform.catalog.audit(reference) == release

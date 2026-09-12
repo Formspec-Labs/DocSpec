@@ -49,7 +49,6 @@ from docspec.domain.references import BlobRef
 from docspec.domain.release import DocumentRelease
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.blob_store import BlobStore
-from docspec.ports.control_repository import ControlRepository
 
 RELEASE_STATE_KEY = "release.json"
 ARTIFACT_ROOT_KEY = ROOT_OBJECT_KEY
@@ -381,11 +380,9 @@ class DocumentReleaseArtifactVerifier:
         self,
         *,
         verifier: DocumentReleaseVerifier,
-        controls: ControlRepository,
         producer: Producer,
     ) -> None:
         self._verifier = verifier
-        self._controls = controls
         self._producer = producer
 
     @staticmethod
@@ -411,7 +408,7 @@ class DocumentReleaseArtifactVerifier:
             raise IntegrityError(f"the document release member is invalid: {error}") from error
         return release
 
-    def read(self, artifact: VerifiedArtifact, source: MemberSource) -> DocumentRelease:
+    def _read_state(self, artifact: VerifiedArtifact, source: MemberSource) -> DocumentRelease:
         if artifact.root["kind"] != DerivationSpec.kind:
             raise IntegrityError("document release reference names a different artifact kind")
         if artifact.root["producer"] != self._producer.as_dict():
@@ -442,21 +439,31 @@ class DocumentReleaseArtifactVerifier:
                 raise IntegrityError("document release supersedes differs from previousRelease")
             if not supersedes.reason.strip():
                 raise IntegrityError("document release supersedes reason must be nonempty")
+        return release
 
-        try:
-            plan = ProcessingPlan.from_dict(self._controls.load(release.processing_plan))
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"document release processing plan is invalid: {error}") from error
+    @staticmethod
+    def _verify_plan_binding(artifact: VerifiedArtifact, release: DocumentRelease, plan: ProcessingPlan) -> None:
         expected_spec = derivation_spec(plan, release.partition_policy)
         expected_inputs = derivation_inputs(plan)
         if artifact.root["spec"] != expected_spec.as_dict() or artifact.inputs != expected_inputs:
             raise IntegrityError("derivation identity fields differ from the document processing plan")
 
-        self._verifier.verify(release)
+    def read(self, artifact: VerifiedArtifact, source: MemberSource) -> DocumentRelease:
+        """Admit pinned release metadata and its linked small controls."""
+        release = self._read_state(artifact, source)
+        plan, _, _ = self._verifier.verify_metadata(release)
+        self._verify_plan_binding(artifact, release, plan)
+        return release
+
+    def audit(self, artifact: VerifiedArtifact, source: MemberSource) -> DocumentRelease:
+        """Audit the complete retained state in addition to its metadata."""
+        release = self._read_state(artifact, source)
+        plan = self._verifier.verify(release)
+        self._verify_plan_binding(artifact, release, plan)
         return release
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
-        self.read(artifact, source)
+        self.audit(artifact, source)
 
 
 __all__ = [

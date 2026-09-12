@@ -3,7 +3,10 @@
 Use `docspec.runtime.open_local_inspection` to see what a plan scheduled, what
 the saved attempt produced or reused, and what its retained dataset contains.
 The same view supplies the `docspec inspect` commands. Reading a result requires
-no fetcher, processor, extractor, segmenter, or execution deadline.
+no fetcher, processor, extractor, segmenter, or execution deadline. This
+comprehensive view audits the complete retained state before reporting it.
+For metadata-only browsing and the explicit audit command, see the
+[retained catalog guide](retained-catalog.md).
 
 ## Choose the evidence to inspect
 

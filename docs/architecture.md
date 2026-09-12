@@ -140,10 +140,12 @@ the active dataset without the original workspace.
 
 The local retained-release container has exactly one product member,
 `release.json`, alongside the shared root and manifest. It references the existing
-immutable record layers and blobs. Every catalog open still performs full
-`DocumentReleaseVerifier` admission of that state. Removing the former copied
-logical-row members changes derivation identities and avoids writing and
-comparing a second copy of each layer.
+immutable record layers and blobs. Ordinary catalog opening admits pinned
+metadata and linked small controls; consumed record members and content retain
+their own checks. Explicit audit, retention, selection, export, maintenance and
+comprehensive inspection validate the complete retained state. The
+[retained catalog guide](retained-catalog.md) defines these observation scopes.
+The container does not write or compare a second copy of each logical layer.
 
 The [export guide](result-exports.md) defines the two content choices, exact
 evidence scope, bounds, and repeat/interruption behavior. Export copies verified
