@@ -55,6 +55,12 @@ splits or documentation consolidation without a new, concrete problem.
   resources or another implementation. DocSpec records and executes it; the
   processor owns its domain meaning. Dagster schedules tasks; DocSpec determines
   the work and checks the results.
+- **Use Dagster's execution facilities.** Scheduling, worker retries,
+  cancellation, run monitoring, and executor/process management belong to
+  Dagster. Keep the direct local path small. DocSpec owns document selection,
+  verified stage checkpoints, retained input/output evidence, and reuse across
+  dataset experiments; those rules must survive native Dagster interruption and
+  re-execution. Do not build a parallel execution-control platform.
 - **Judge complexity by the work it saves or the errors it prevents.** Retain
   bounded execution, verifiable reuse, attributable evidence, complete failure
   accounting, and safe publication. Simplify configuration, repeated validation,
@@ -567,6 +573,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   reaches active work where the backend promises it. Reuse the existing recovery
   tests and add only missing cases introduced by D04.
 
+  **Execution ownership, September 11:** use native Dagster cancellation and
+  re-execution for managed runs. Qualify DocSpec's checkpoint recovery through
+  that integration alongside D21. The proposed custom local stop-event layer
+  was removed before commit following the user's direction; it is not a
+  prerequisite. Keep complete writes recoverable and preserve interruptions
+  through resource cleanup without creating another run-control mechanism.
+
   **Progress:** local preparation and saved-handoff loading now derive one
   worker description from the actual fetcher, roots, policies, accepted
   producers, sink, partition settings, and evidence timestamp. Changed settings
@@ -606,8 +619,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   same logical results as local execution, including processing retained inputs.
   Injected resources reconstruct in workers; locking, stage completion, active
   cancellation, and source-refusal meaning survive dispatch.
-  State backend-specific limits; avoid a second dataset state model. Depends on
-  D04, D13, and D20; see [the adapter](../src/docspec/adapters/dagster.py).
+  Use Dagster's native scheduling, retries, cancellation, event storage, and
+  worker management. State backend-specific limits; avoid a second dataset
+  state or execution-control model. Depends on D04 and D13; qualify interruption
+  and recovery jointly with D20. See [the adapter](../src/docspec/adapters/dagster.py).
 
 <a id="d22"></a>
 
