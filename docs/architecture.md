@@ -10,8 +10,8 @@ recovers saved work. A later plan reuses valid captured files, representations,
 segments, and unaffected processor results up to the first changed stage.
 The same execution and retention services serve every stopping point. Each
 item records its full requested stages; execution instructions separately name
-processors that need to run. Unified attempt inspection remains
-[D19](dataset-experiments-todo.md#d19); the
+processors that need to run. The [inspection API](inspection.md) reads existing
+evidence and compares scheduled work separately from complete results. The
 [README](../README.md#what-you-can-use-today) identifies current entry points.
 Dataset meaning belongs to DocSpec. Rulespec provides shared artifact-container
 utilities, while the separate portable bundle still has DocSpec structural

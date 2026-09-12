@@ -204,7 +204,8 @@ The returned `ArtifactRef` identifies a `RunReceipt`: it accounts for planned
 tasks, selected items, retained layers, byte references, failures, and coverage.
 Keeping it does not select a current application release or create a portable
 export. [Retention and selection](experiments.md) remain explicit operations.
-Unified result inspection and simpler plan construction remain checklist work.
+[Inspect and compare results](inspection.md) through `open_local_inspection`.
+Simpler plan construction and portable export convenience remain checklist work.
 
 Custom processors, fetchers, extractors, and segmenters use this public runtime.
 The default `stage_policy()` still requests extraction and segmentation with no

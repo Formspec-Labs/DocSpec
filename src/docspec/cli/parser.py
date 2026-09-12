@@ -11,6 +11,7 @@ from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_cat
 from docspec.cli.common import _write_failure_receipt
 from docspec.cli.conformance import _cmd_conformance_report, _cmd_conformance_run
 from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
+from docspec.cli.inspection import add_inspection_command
 from docspec.cli.plans import _cmd_document_store_create, _cmd_document_store_verify, _cmd_plan_create
 from docspec.cli.profiles import (
     _cmd_profile_list,
@@ -73,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = _subcommands(parser, dest="command")
 
     add_source_catalog_command(commands)
+    add_inspection_command(commands)
 
     profile = commands.add_parser("profile", help="Inspect storage and delivery profile descriptions")
     profile_commands = _subcommands(profile, dest="profile_command")
@@ -187,6 +189,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum stalled store ids to list; stalledStoreCount is always exact",
     )
     run_active.set_defaults(func=_cmd_run_active)
+    run_active.add_argument(
+        "--failure-sample-limit", type=int, default=20,
+        help="Maximum diagnostic signatures to count separately; class totals stay exact",
+    )
 
     task = commands.add_parser("task", help="Execute portable serialized DocumentStore tasks")
     task_commands = _subcommands(task, dest="task_command")

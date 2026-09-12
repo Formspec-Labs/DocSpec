@@ -13,19 +13,17 @@ import sys
 
 from rulespec_artifacts import Producer
 
-from docspec.adapters.storage import LocalJsonControlRepository, LocalJsonlRecordStorage
 from docspec.domain.execution import ExecutionLimits
 from docspec.domain.identity import identity_digest
 from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
-from docspec.domain.receipts import RunReceipt
 from docspec.errors import IntegrityError, ProfileError
 from docspec.processing.extraction import TextExtractor
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.segmentation import ParagraphSegmenter
 from docspec.profile_registry import ProfileRegistry
-from docspec.runtime import prepare_local_run, stage_policy
+from docspec.runtime import open_local_inspection, prepare_local_run, stage_policy
 from docspec.source_catalog import (
     FederalRegisterCatalogPolicy,
     LocalSourceCatalogStore,
@@ -134,8 +132,10 @@ def main() -> None:
     with prepare_local_run(capture_plan, workspace, **capture_settings) as capture:
         capture_run = capture.run()
         captured_base = capture.retain(capture_run)
-        capture_receipt = RunReceipt.from_dict(LocalJsonControlRepository(workspace.roots["controlRepository"]).load(capture_run))
-        captured_counts = {layer.layer_kind: layer.record_count for layer in capture_receipt.staged_layers}
+        captured_view = open_local_inspection(
+            capture_plan, workspace, document_release_producer=release_producer, release_ref=captured_base,
+        )
+        captured_counts = captured_view.summary()["result"]["layers"]
         assert captured_counts["files"] == 1
         assert captured_counts["representations"] == captured_counts["segments"] == 0
     assert fetcher.calls == 1
@@ -150,22 +150,28 @@ def main() -> None:
     assert recovered.run() == first
     assert fetcher.calls == extractor.calls == segmenter.calls == processor.calls == 1
 
-    # Unified result inspection remains separate work. Inspect real retained
-    # output through the existing public storage adapter in this qualification.
-    run = RunReceipt.from_dict(LocalJsonControlRepository(workspace.roots["controlRepository"]).load(first))
-    counts = {layer.layer_kind: layer.record_count for layer in run.staged_layers}
-    assert run.selected_item_count == 1
+    inspected = open_local_inspection(
+        plan, workspace, document_release_producer=release_producer,
+        source_catalog_producer=source_producer, release_ref=processed_result,
+    )
+    summary = inspected.summary()
+    counts = summary["result"]["layers"]
+    assert summary["work"]["counts"]["scheduledItems"] == 1
+    assert summary["work"]["counts"]["newCapturedFiles"] == 0
+    assert summary["work"]["counts"]["reusedCapturedFiles"] == 1
+    assert summary["source"]["itemCount"] == 1
     assert counts["files"] == counts["representations"] == counts["segments"] == 1
     assert counts["failures"] == 0
-    records = LocalJsonlRecordStorage(workspace.roots["recordStorage"])
-    for layer in run.staged_layers:
-        if layer.layer_kind == "representations":
-            row = tuple(records.stream(layer))[0]["payload"]
+    comparison = captured_view.compare(inspected)
+    assert comparison["configurationChanges"]
+    assert comparison["result"]["changeCount"] == 1
+    for kind in ("representations", "segments"):
+        row = tuple(inspected.records(kind))[0]["payload"]
+        if kind == "representations":
             assert (row["extractorId"], row["configurationDigest"]) == (
                 extractor.extractor_id, extractor.configuration_digest,
             )
-        elif layer.layer_kind == "segments":
-            row = tuple(records.stream(layer))[0]["payload"]
+        else:
             assert (row["segmenterId"], row["policyDigest"]) == (segmenter.segmenter_id, segmenter.policy_digest)
 
     for stage, attribute in ((extractor, "configuration_digest"), (segmenter, "policy_digest")):

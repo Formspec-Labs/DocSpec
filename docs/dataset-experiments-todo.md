@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 6 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 7 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -185,8 +185,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   existing finalization path. A later plan reuses verified captures or
   representations and runs the remaining stages. The superseded processor-only
   execution loop was removed; one checkpointed loop serves all prefixes.
-  Inspection, export convenience, and simpler catalog/plan composition remain
-  open; see the [architecture decision](history/2026-09-11-capture-prefix-architecture.md).
+  Export convenience and simpler catalog/plan composition remain open; see the
+  [architecture decision](history/2026-09-11-capture-prefix-architecture.md).
+
+  **Inspection progress:** `open_local_inspection` opens current saved work,
+  exact reconciled runs, or retained results using existing storage. The CLI
+  uses the same application view. It provides summary, per-source evidence,
+  streamed records/bytes, and comparisons without reconstructing execution
+  plugins. D19 records the delivered acceptance and validation.
 
 <a id="d05"></a>
 
@@ -416,7 +422,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d19"></a>
 
-- [ ] **D19 · P0 · Let users inspect and compare attempts.** Provide bounded
+- [x] **D19 · P0 · Let users inspect and compare attempts.** Provide bounded
   summaries and result access for selection, capture, extraction, processor
   outputs, failures, reuse, and relevant costs. Compare attempts by stable input
   identity and effective configuration; expose detailed evidence on demand.
@@ -424,6 +430,31 @@ to defer a conditional item is a documented deferral, not completed implementati
   two results differ without reading internal files. A useful CLI/API is enough;
   a dashboard is optional. Depends on D02 and D15; incorporate D08's source
   outcomes when available and label unavailable source facts explicitly.
+
+  **Completed September 11:** the supported [inspection API and commands](inspection.md)
+  separate admitted source coverage, scheduled work, and complete active results.
+  They expose capture/extraction/segmentation progress, derived output, failures,
+  verified reuse, recorded processor calls and elapsed time, and result-reported
+  resource use by origin. Unsupported selection totals, money, token counts,
+  lost work, and total run duration remain explicitly unavailable. Source coverage
+  requires independent producer acceptance.
+
+  Comparisons join stable source IDs and separate input, configuration, content
+  and recorded input associations, outcomes, and exact provenance. Per-source
+  evidence explains mixed-stage inherited results. Exact run references use
+  pinned revisions; rejected/stateless runs remain incomplete; complete result
+  claims require existing logical checks. No new dataset ledger or plugin loader
+  was added. The [architecture decision](history/2026-09-11-inspection-architecture.md)
+  records the choices and the [independent review](history/2026-09-11-inspection-review.md)
+  records their assessment.
+
+  Local validation passed 1,059 full-suite tests, with one live integration test
+  deselected. A final partition-setting check and adversarial regression then
+  passed all 28 focused checks; Ruff and diff checks passed. The installed wheel
+  probe now uses this API to inspect and compare capture-first/later-processing
+  results without internal storage assembly. Storage opening and hard read
+  bounds were committed separately as `6521e69`. This proves the bounded fixture
+  workflows, not large-corpus qualification, remote CI, or publication.
 
 ## 4. Keep execution reliable while reducing repeated machinery
 
@@ -689,6 +720,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   claims have pinned resource/recovery evidence, and missing qualification stays
   visible. Changing the scope cannot be reported as passing an unrun check.
   See [the recorded conformance report](history/2026-09-11-maintainability-conformance.json).
+
+  **Inspection follow-up:** D19's fixture checks establish read behavior and
+  bounded samples/joins, not capacity at corpus scale. Full retained admission
+  still uses the existing `DocumentReleaseVerifier.verify` set of distinct blob
+  identities, which grows with the result. Measure that memory and verification
+  cost when selecting representative capacity claims; replace the set with an
+  appropriately bounded implementation if the supported workload requires it.
 
 <a id="d38"></a>
 

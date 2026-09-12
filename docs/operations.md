@@ -7,6 +7,10 @@ publishing, compacting, or assessing scale. See the
 release state and portable document bundles. The lifecycle and maintenance
 services below operate on application release state.
 
+Start with the [inspection API or commands](inspection.md) for saved progress,
+per-document evidence, or differences between results. They open existing state
+without constructing execution services.
+
 ## Recover the planned work and its verified progress
 
 [`RunPlanner`](../src/docspec/application/planner.py) seals an explicit run ledger

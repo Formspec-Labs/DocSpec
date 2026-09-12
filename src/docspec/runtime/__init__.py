@@ -22,10 +22,12 @@ from docspec.ports.processor import Processor
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 from docspec.runtime.composition import _compose_local_run, _stage_implementations
 from docspec.runtime.execution import PreparedLocalRun
+from docspec.runtime.inspection import open_local_inspection
+from docspec.application.inspection import InspectionView
 from docspec.runtime.preparation import _load_prepared_local_run, _prepare_local_run
 from docspec.workspace import LocalWorkspace
 
-__all__ = ["PreparedLocalRun", "prepare_local_run", "stage_policy"]
+__all__ = ["InspectionView", "PreparedLocalRun", "open_local_inspection", "prepare_local_run", "stage_policy"]
 
 
 def stage_policy(

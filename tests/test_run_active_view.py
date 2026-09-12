@@ -215,7 +215,9 @@ def test_run_active_reports_absence_before_any_planning(
         retry=retry,
         accepted=accepted,
     )
+    before = {str(path.relative_to(tmp_path)): path.stat().st_mtime_ns for path in tmp_path.rglob("*")}
     view = _run_active(run_request, capfd)
+    assert {str(path.relative_to(tmp_path)): path.stat().st_mtime_ns for path in tmp_path.rglob("*")} == before
     assert view["format"] == "docspec-run-active-view"
     assert view["phase"] == "not-planned"
     assert view["planId"] == plan.plan_id
@@ -482,6 +484,14 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
     assert capped_view["progress"]["stalledStoreCount"] == 1
     assert capped_view["progress"]["stalledStoreSample"] == []
     assert capped_view["progress"]["stalledSampleTruncated"] is True
+    failure_view = _run_active(run_request, capfd, "--failure-sample-limit", "0")
+    assert failure_view["failures"] == {
+        "totalRecords": 1,
+        "byClassAndDiagnosticCode": {},
+        "byClass": {"transient-external": 1},
+        "unsampledRecordCount": 1,
+        "diagnosticSampleTruncated": True,
+    }
 
 
 def test_run_active_reports_sensibly_for_a_finished_run(

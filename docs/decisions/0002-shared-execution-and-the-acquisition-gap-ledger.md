@@ -36,8 +36,8 @@ later. Changed stages reuse verified inputs up to the first changed stage;
 source or other governing changes conservatively require full work. A new
 capture still opens its fetcher before writing to content-addressed storage:
 avoiding duplicate stored objects does not itself avoid another fetch.
-Unified attempt inspection and broader qualification remain
-[D19](../dataset-experiments-todo.md#d19) and
+[Unified inspection](../inspection.md) now exposes saved work, complete results,
+and differences. Broader qualification remains
 [D38](../dataset-experiments-todo.md#d38). The historical population measurements
 below do not establish today's qualification. See the
 [current entry points](../../README.md#what-you-can-use-today).

@@ -6,6 +6,9 @@ Saving a result does not select it. This is a foundation for the experiment
 workflow; the remaining lifecycle work is tracked in
 [D03–D04](dataset-experiments-todo.md#d03).
 
+Use the supported [inspection API and commands](inspection.md) to compare
+scheduled work separately from each complete retained result.
+
 ## What the names mean
 
 | Name | Meaning | Existing reference or state |

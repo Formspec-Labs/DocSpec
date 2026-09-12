@@ -21,6 +21,7 @@ same change as the behavior or file move they describe.
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Prepare, execute, and recover a run using typed Python objects | [Python runs](python-runs.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
+| Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
@@ -28,8 +29,8 @@ same change as the behavior or file move they describe.
 
 A catalog can be used without document acquisition or search. The Python runtime
 retains capture, extraction, segmentation, and processing results for later use.
-Checkpoints and receipts describe completed and unfinished work; unified attempt
-inspection remains [D19](dataset-experiments-todo.md#d19). The offline walkthrough exercises one
+The [inspection API and commands](inspection.md) explain completed and unfinished
+work through existing checkpoints and receipts. The offline walkthrough exercises one
 application release, without demonstrating every intended stopping point or
 the complete iterative workflow.
 

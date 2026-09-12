@@ -102,6 +102,27 @@ def catalog_commit_token_digest(
     )
 
 
+def verify_expected_layers(layers: tuple[LayerRef, ...], plan: ProcessingPlan) -> None:
+    """Require the complete active layer set; inherited rows keep per-item policy checks."""
+    expected = set(core_delivery_schemas()) | {
+        f"derived:{processor_id}" for processor_id in plan.stages.processor_ids
+    }
+    actual = {layer.layer_kind for layer in layers}
+    missing = expected - actual
+    if missing:
+        raise IntegrityError(f"release is missing required active layers: {sorted(missing)}")
+    # A selection can inherit other documents processed under earlier plans.
+    # The shared logical verifier checks every row against that document's
+    # own requested processors; an empty extra layer has no such owner.
+    unexplained_empty = {
+        layer.layer_kind for layer in layers
+        if layer.layer_kind.startswith("derived:")
+        and layer.layer_kind not in expected and layer.record_count == 0
+    }
+    if unexplained_empty:
+        raise IntegrityError(f"release contains unplanned empty derived layers: {sorted(unexplained_empty)}")
+
+
 def complete_release_counts(
     layers: tuple[LayerRef, ...],
     blob_roots: tuple[ArtifactRef, ...],
@@ -171,7 +192,7 @@ class DocumentReleaseVerifier:
         policy = self._release_partition_policy(release.partition_policy)
 
         self._verify_receipt_links(release, plan, run, commit, policy)
-        self._verify_expected_layers(release, plan)
+        verify_expected_layers(release.active_layers, plan)
         self._verify_run_ledgers(plan, run, policy)
         self._verify_active_layers(release, plan, policy)
         self._verify_blob_roots(release, plan)
@@ -340,26 +361,6 @@ class DocumentReleaseVerifier:
                 raise IntegrityError(f"release layer {layer.layer_kind} uses an unpinned record profile")
             if self._records.partition_policy(layer) != policy:
                 raise IntegrityError(f"release layer {layer.layer_kind} uses a different partition policy")
-
-    @staticmethod
-    def _verify_expected_layers(release: DocumentRelease, plan: ProcessingPlan) -> None:
-        expected = set(core_delivery_schemas()) | {
-            f"derived:{processor_id}" for processor_id in plan.stages.processor_ids
-        }
-        actual = {layer.layer_kind for layer in release.active_layers}
-        missing = expected - actual
-        if missing:
-            raise IntegrityError(f"release is missing required active layers: {sorted(missing)}")
-        # A selection can inherit other documents processed under earlier plans.
-        # The shared logical verifier checks every row against that document's
-        # own requested processors; an empty extra layer has no such owner.
-        unexplained_empty = {
-            layer.layer_kind for layer in release.active_layers
-            if layer.layer_kind.startswith("derived:")
-            and layer.layer_kind not in expected and layer.record_count == 0
-        }
-        if unexplained_empty:
-            raise IntegrityError(f"release contains unplanned empty derived layers: {sorted(unexplained_empty)}")
 
     def _verify_blob_roots(self, release: DocumentRelease, plan: ProcessingPlan) -> None:
         blob_profile = plan.profiles.for_role(ProfileRole.BLOB_STORAGE)
