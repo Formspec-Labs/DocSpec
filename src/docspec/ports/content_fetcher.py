@@ -84,7 +84,12 @@ class FetchStream:
         exception: BaseException | None,
         traceback: object | None,
     ) -> bool:
-        self.close()
+        try:
+            self.close()
+        except BaseException as close_error:
+            if exception is None:
+                raise
+            exception.add_note(f"Fetch stream cleanup also failed: {close_error!r}")
         return False
 
 

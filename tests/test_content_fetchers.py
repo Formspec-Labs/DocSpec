@@ -30,6 +30,36 @@ from docspec.ports.content_fetcher import FetchMetadata, FetchStream
 LAST_MODIFIED = "2026-08-06T12:00:00Z"
 
 
+@pytest.mark.parametrize("original", [KeyboardInterrupt("worker stopped"), IntegrityError("bad source")])
+def test_stream_cleanup_preserves_an_active_interruption_or_source_failure(original):
+    closes = []
+
+    def close():
+        closes.append(True)
+        raise OSError("fixture close failed")
+
+    stream = FetchStream(FetchMetadata("fixture", identity_digest({}), None,
+        LAST_MODIFIED, "task", "attempt"), iter(()), close)
+    with pytest.raises(type(original)) as caught:
+        with stream:
+            raise original
+    assert caught.value is original
+    assert "fixture close failed" in caught.value.__notes__[0]
+    stream.close()
+    assert closes == [True]
+
+
+def test_stream_cleanup_error_without_an_active_failure_still_refuses():
+    def close():
+        raise OSError("fixture close failed")
+
+    stream = FetchStream(FetchMetadata("fixture", identity_digest({}), None,
+        LAST_MODIFIED, "task", "attempt"), iter(()), close)
+    with pytest.raises(OSError, match="fixture close failed"):
+        with stream:
+            pass
+
+
 class _S3Error(Exception):
     def __init__(self, code: str, status: int) -> None:
         super().__init__(f"provider error {code}")
