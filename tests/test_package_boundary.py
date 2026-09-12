@@ -42,6 +42,9 @@ OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
 # This module names a URN namespace reserved for a registry DocSpec does not
 # own. It is data the catalog refuses to mint, not an import of that product.
 RESERVED_NAMESPACE_ROOTS = frozenset({"src/docspec/application/catalog_policy.py"})
+# The independent result facade names the shared container owner in its public
+# API documentation; it imports only DocSpec's adapter, never a sibling checkout.
+SHARED_CONTAINER_FACADES = frozenset({"src/docspec/result_export.py"})
 # This one core module delegates canonical JSON to the shared public package.
 SHARED_CANONICAL_GATEWAY = "src/docspec/domain/identity.py"
 # An absolute path whose first segment is a home-directory root belongs to one
@@ -323,6 +326,8 @@ def test_non_docspec_product_areas_are_absent_from_production() -> None:
             if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicy_docs":
                 continue
             if relative in RESERVED_NAMESPACE_ROOTS and word == "refspec":
+                continue
+            if relative in SHARED_CONTAINER_FACADES and word == "rulespec":
                 continue
             if relative == SHARED_CANONICAL_GATEWAY and word == "rulespec":
                 continue

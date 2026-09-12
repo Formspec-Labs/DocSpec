@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 22 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 25 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -51,6 +51,9 @@ splits or documentation consolidation without a new, concrete problem.
   that improves the product; update current producers and consumers together.
   Preserve exact source evidence and useful history. Compatibility retirement
   does not require deleting retained datasets.
+  Historical reproduction alone is not a reason to maintain an old code path;
+  keep its provenance in Git and remove superseded implementations, fixtures,
+  schemas, and instructions together.
 - **Keep interpretation with its processor.** A processor may use RefSpec
   resources or another implementation. DocSpec records and executes it; the
   processor owns its domain meaning. Dagster schedules tasks; DocSpec determines
@@ -182,7 +185,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d04"></a>
 
-- [ ] **D04 · P0 · Expose the lifecycle through a supported application API.**
+- [x] **D04 · P0 · Expose the lifecycle through a supported application API.**
   Connect existing services behind clear operations for catalog construction,
   capture, processing retained inputs, resume, inspection, and export. Compose
   the CLI and executors through that same supported path. **Done when:** a caller
@@ -225,6 +228,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   Catalog-only work creates no document-processing state. D06 records the
   public supplied-record and installed-provider checks. Export convenience
   remains open under D26; catalog setup is now supported.
+
+  **Completed September 12:** D26 adds the remaining public export operation.
+  Catalog construction/reading, direct plan setup, capture, later processing,
+  saved recovery, inspection, retention and export now have supported runtime
+  entry points. The CLI uses that runtime for execution and inspection; export
+  is available through Python. The isolated installed probe exercises the
+  public lifecycle and independent export reading. D38 still owns the complete
+  provider/growth acceptance exercise; D04 does not claim that qualification.
 
 <a id="d05"></a>
 
@@ -800,7 +811,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d26"></a>
 
-- [ ] **D26 · P1 · Build optional exports from retained experiment results.**
+- [x] **D26 · P1 · Build optional exports from retained experiment results.**
   Replace the campaign-specific route for normal use with a maintained export
   operation that reads verified retained state. Give internal experiment state
   and portable output distinct names and unambiguous format identities.
@@ -810,6 +821,24 @@ to defer a conditional item is a documented deferral, not completed implementati
   dataset. Repeat or interrupted export has explicit behavior. Export remains
   an optional stage.
   Depends on D17–D18 and D24.
+
+  **Completed September 12:** `export_local_result` copies the complete active
+  dataset and typed evidence through Rulespec's shared container. Explicit
+  `retained-evidence` and `nonempty-text` choices preserve all outcomes or refuse
+  with counted, bounded reasons. Exact source-result pins distinguish different
+  outcomes of one plan. Repeat export admits identical output; interrupted
+  staging publishes nothing and no-replace publication protects a different
+  destination. No execution or export checkpoint service was added. See the
+  [guide](result-exports.md),
+  [architecture](history/2026-09-12-result-export-architecture.md), and
+  [independent review](history/2026-09-12-result-export-review.md).
+
+  The final focused gate passed 79 tests covering independent reading, complete
+  mixed-result populations, inherited owning plans, byte/metadata limits,
+  resealed semantic corruption, interruption, existing evidence/recovery and
+  extraction-quality characterization. The actual isolated installed probe
+  passed separately with the original workspace and source unavailable and no
+  repeated stage calls. D18/D27/D30 retain the old-path removal work.
 
 <a id="d27"></a>
 
@@ -856,7 +885,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d29"></a>
 
-- [ ] **D29 · P1 · Provide public document-result admission and reading.** Expose
+- [x] **D29 · P1 · Provide public document-result admission and reading.** Expose
   a supported, bounded reader for D26's exports. Return verifiable identity
   information instead of requiring manual transcription of a verification claim.
   **Done when:** installed DocSpec APIs admit and read a fresh exported dataset,
@@ -866,16 +895,28 @@ to defer a conditional item is a documented deferral, not completed implementati
   private-import removal are tracked. No legacy import shim is required.
   Depends on D26–D28.
 
+  **Completed September 12:** `open_result_export` returns the shared verified
+  pin, summary, streamed unchanged layer rows, verified blob streams/bytes, and
+  exact typed evidence. It reads independently of the original workspace and
+  execution plugins. The reader shares current logical/stage/processor checks,
+  verifies exact segment slices and identity mappings, and reports named
+  derived transformations as not replayed. Per-evidence reads currently require
+  at most 64 MiB; large capture-only blobs stream within the caller's total
+  artifact limit. D26's focused and installed checks include missing, extra,
+  changed and resealed inconsistent members, wrong pin/producer, early iterator
+  closure, and later tampering. These are bounded fixtures, not a corpus-capacity
+  qualification or a semantic-completeness claim. Search adoption remains SC01.
+
 <a id="d30"></a>
 
-- [ ] **D30 · P2 · Retire tools only after their current purpose is replaced.**
+- [ ] **D30 · P2 · Retire superseded tools and their exclusive support code.**
   Reassess the historical release builder, sample tools, and fixture restamper
   after D26. Integrate reusable production behavior into its package owner;
-  retain necessary research or reproduction tools with explicit scope.
+  retain a research tool only when it serves a current experiment need.
   **Done when:** the [tool inventory](../tools/README.md) identifies one supported
-  route per task and genuinely superseded implementations are removed with
-  provenance preserved in Git. A normal export does not automatically replace
-  a historical reproduction recipe or fixture generator.
+  route per task and superseded implementations are removed with provenance
+  preserved in Git. The owner's September 12 clarification retires historical
+  byte-for-byte reproduction and legacy consumer compatibility as requirements.
 
 ## 6. Simplify code ownership and contributor effort
 

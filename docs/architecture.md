@@ -13,9 +13,8 @@ item records its full requested stages; execution instructions separately name
 processors that need to run. The [inspection API](inspection.md) reads existing
 evidence and compares scheduled work separately from complete results. The
 [README](../README.md#what-you-can-use-today) identifies current entry points.
-Dataset meaning belongs to DocSpec. Rulespec provides shared artifact-container
-utilities, while the separate portable bundle still has DocSpec structural
-checks, described under [outputs](#what-comes-out).
+Dataset meaning belongs to DocSpec. Rulespec provides the shared artifact
+container, canonical JSON, membership checks, and publication primitives.
 
 This maintained guide describes the code, with executable checks linked below.
 Use the [decision index](decisions/README.md) for accepted changes and migration
@@ -131,24 +130,19 @@ match.
 
 ## What comes out?
 
-There are two release representations in the current code. **Both advertise
-version `2.0`; their shapes and verifiers differ.** A version string alone does
-not identify which reader to use.
+Retained state supports further experiments. An optional export gives consumers
+the active dataset without the original workspace.
 
 | Representation | Contents and owner | Verification |
 | --- | --- | --- |
 | Application release state | `domain.release.DocumentRelease`: plan, source catalog, active record layers, blob roots, receipts, and publication state; committed by `ReleaseCommitService` | `application.commit.DocumentReleaseVerifier`, with injected record, blob, control, and catalog access |
-| Portable document bundle | Root plus a closed member manifest, document/disposition rows, text bodies, evidence, and embedded schemas; produced by `tools/build_document_release.py` | `adapters.document_release.verify.verify_document_release`, reading the bundle itself |
+| Independent result export | `docspec-result-export` in a shared `spicy-artifact/1.0` container: active rows, exact captured/derived bytes, stage receipts, processor results, and their owning plans; produced by `export_local_result` | `open_result_export` delegates generic verification to Rulespec, then checks DocSpec's active records, typed evidence and explicit content requirement |
 
-[Decision 0001](decisions/0001-document-release-2-0.md) governs the portable
-publication format. The builder and sealed fixtures implement that format, but
-the application state model remains a separate path. A cleanup must preserve
-each path's identities and readers; converting the application lifecycle into
-the portable publication workflow requires an explicit integration change.
-Recorded local mint receipts establish local builds, not external publication.
-The portable builder remains a historical mint recipe in `tools/`, with
-campaign-specific assumptions. It is not an installed generic build API, and
-application release output does not replace its historical mints byte-for-byte.
+The [export guide](result-exports.md) defines the two content choices, exact
+evidence scope, bounds, and repeat/interruption behavior. Export copies verified
+results without acquiring or processing documents again. Its independent reader
+checks bytes and declared relationships; nonempty text does not establish
+semantic completeness. Capturing and retaining a result never requires export.
 
 Catalog, plan, and release artifacts use Rulespec's generic container. Consumers
 verify their pinned bytes and DocSpec meaning before reading them. Search,

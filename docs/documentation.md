@@ -29,6 +29,7 @@ same change as the behavior or file move they describe.
 | Understand SDK requests, item attempts, and native task retries | [Retry ownership](retry-ownership.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
+| Export active results and read them without the original workspace | [Result exports](result-exports.md) |
 | Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
@@ -43,12 +44,11 @@ work through existing checkpoints and receipts. The offline walkthrough exercise
 capture-first work, failure repair, later processing and retained alternatives.
 Broader scale and acceptance exercises remain separate.
 
-Choose the output guide before choosing a verifier. Application release state
-and portable document bundles currently both use version `2.0`, with different
-shapes and checks. The [architecture comparison](architecture.md#what-comes-out)
-names each path. Optional export and shared structural verification are open
-work in [D26–D27](dataset-experiments-todo.md#d26), so an application commit does
-not imply that a portable bundle was produced.
+Retain results in the workspace for later experiments. Use the optional
+[result export](result-exports.md) when another consumer needs an independent
+dataset. Both use Rulespec's shared artifact checks; DocSpec checks the document
+meaning. The [architecture comparison](architecture.md#what-comes-out) identifies
+their different purposes and readers.
 
 The [decision index](decisions/README.md) distinguishes accepted rules, later
 amendments, and implementation gaps. Code and executable checks establish

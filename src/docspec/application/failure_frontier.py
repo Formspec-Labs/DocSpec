@@ -18,7 +18,7 @@ from docspec.ports.document_catalog import DocumentCatalogReader
 from docspec.ports.record_workspace import RecordWorkspace
 
 from .execution_evidence import (
-    load_stage_receipts, verify_processor_attempt_receipt, verify_processor_receipts, verify_stage_receipt_outputs,
+    load_stage_receipts, verify_processor_receipts, verify_retained_stage_outputs, verify_unfinished_processor_attempts,
 )
 
 _ROW_FIELDS = {"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"}
@@ -107,31 +107,15 @@ def failed_item_frontier(
     """
     candidates = {candidate.candidate_id: candidate for candidate in item.candidates}
     try:
-        files_by_candidate = {}
-        for raw in _payloads(workspace, item.item_id, "files", len(candidates)):
-            captured = CapturedFile.from_dict(raw)
-            if captured.candidate_id in files_by_candidate or captured.candidate_id not in candidates:
-                raise IntegrityError("base capture repeats or names an unknown source candidate")
-            if captured.source_item_id != item.item_id or captured.source_version != item.version:
-                raise IntegrityError("base capture belongs to another source item")
-            files_by_candidate[captured.candidate_id] = captured
-        files = tuple(files_by_candidate[key] for key in candidates if key in files_by_candidate)
-        file_order = {value.file_id: ordinal for ordinal, value in enumerate(files)}
+        files = tuple(CapturedFile.from_dict(raw) for raw in _payloads(
+            workspace, item.item_id, "files", len(candidates),
+        ))
         representations = tuple(Representation.from_dict(raw) for raw in _payloads(
             workspace, item.item_id, "representations", len(candidates),
         ))
-        if any(value.file_id not in file_order or value.source_item_id != item.item_id for value in representations):
-            raise IntegrityError("base representation has no matching captured source")
-        representations = tuple(sorted(representations, key=lambda value: file_order[value.file_id]))
-        if len({value.file_id for value in representations}) != len(representations):
-            raise IntegrityError("base repeats a representation for one captured file")
-        representation_order = {value.representation_id: ordinal for ordinal, value in enumerate(representations)}
         segments = tuple(Segment.from_dict(raw) for raw in _payloads(
             workspace, item.item_id, "segments", plan.limits.max_segments,
         ))
-        if any(value.representation_id not in representation_order or value.source_item_id != item.item_id for value in segments):
-            raise IntegrityError("base segment has no matching source representation")
-        segments = tuple(sorted(segments, key=lambda value: (representation_order[value.representation_id], value.ordinal)))
         maximum_receipts = 2 * len(candidates) + plan.limits.max_segments * len(stages.processor_ids) * (plan.limits.max_attempts + 1)
         references = []
         for raw in _payloads(workspace, item.item_id, "receipts", maximum_receipts):
@@ -139,15 +123,9 @@ def failed_item_frontier(
                 raise IntegrityError("base receipt belongs to another source-item attempt")
             references.append(ArtifactRef.from_dict(raw["artifact"]))
         loaded = load_stage_receipts(controls, tuple(references))
-        stage_receipts = sorted(
-            (pair for pair in loaded if pair[1]["format"] in _STAGE_FORMATS),
-            key=lambda pair: (pair[1]["format"], representation_order.get(pair[1].get("representationId"), -1)),
+        files, representations, segments, extraction, segmentation = verify_retained_stage_outputs(
+            item, stages, files, representations, segments, loaded,
         )
-        extraction, segmentation = verify_stage_receipt_outputs(files, representations, segments, tuple(stage_receipts))
-        if not stages.requests_extraction and (representations or extraction):
-            raise IntegrityError("base contains unrequested extraction")
-        if not stages.requests_segmentation and (segments or segmentation):
-            raise IntegrityError("base contains unrequested segmentation")
         capture_complete = len(files) == len(candidates)
         extraction_complete = capture_complete and len(representations) == len(files)
         segmentation_complete = extraction_complete and len(segmentation) == len(representations)
@@ -178,7 +156,7 @@ def _completed_processors(
             with closing(workspace.stream_records(_collection(item_id, f"derived:{identifier}"))) as outputs:
                 if next(outputs, None) is not None:
                     raise IntegrityError("base derived output has no processor invocation receipt")
-        _verify_unfinished_attempts(receipts, entry_id, processor_order, segment_order)
+        verify_unfinished_processor_attempts(receipts, entry_id, processor_order, segment_order)
         return stages.processor_ids if not segments else ()
     requests = tuple(ProcessorRequest.from_dict(raw["request"]) for raw in invocations)
     plan_ref = requests[0].plan
@@ -207,23 +185,3 @@ def _completed_processors(
     return tuple(identifier for identifier in stages.processor_ids if all(
         (identifier, segment.segment_id) in results for segment in segments
     ))
-
-
-def _verify_unfinished_attempts(
-    receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...], entry_id: str,
-    processors: dict[str, int], segments: dict[str, int],
-) -> None:
-    """An attempt with no result supplies no owning-plan reference or reusable output."""
-    grouped: dict[tuple[str, str, str], set[int]] = {}
-    for _, raw in receipts:
-        processor, segment, request, _, attempt, outcome = verify_processor_attempt_receipt(
-            raw, entry_id=entry_id, processor_ids=processors, segment_ids=segments, max_attempts=None,
-        )
-        if outcome != "failed":
-            raise IntegrityError("base unfinished processor attempt has no result or failure")
-        key = processor, segment, request
-        if attempt in grouped.setdefault(key, set()):
-            raise IntegrityError("base repeats an unfinished processor attempt")
-        grouped[key].add(attempt)
-    if any(sorted(attempts) != list(range(1, len(attempts) + 1)) for attempts in grouped.values()):
-        raise IntegrityError("base unfinished processor attempts are not contiguous")

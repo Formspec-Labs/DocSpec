@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 from typing import Any
 
-from docspec.domain.content import AcquisitionDisposition, CapturedFile, DerivedRecord, Representation, Segment
+from docspec.domain.content import AcquisitionDisposition, CapturedFile, DerivedRecord, Representation, Segment, SourceItem
 from docspec.domain.identity import identity_digest, stable_urn
 from docspec.domain.jobs import FailureClass, FailureRecord
-from docspec.domain.plans import ProcessingPlan
+from docspec.domain.plans import ProcessingPlan, StagePolicy
 from docspec.domain.processors import ProcessorRecordRef, ProcessorRequest, ProcessorResult
 from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError, LimitExceededError
@@ -137,6 +137,71 @@ def verify_stage_receipt_outputs(
         ):
             raise IntegrityError("checkpoint segmentation receipt differs from its segment policy")
     return extraction_receipts, segmentation_receipts
+
+
+def verify_retained_stage_outputs(
+    item: SourceItem, stages: StagePolicy, files: tuple[CapturedFile, ...],
+    representations: tuple[Representation, ...], segments: tuple[Segment, ...],
+    loaded_receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...],
+) -> tuple[
+    tuple[CapturedFile, ...], tuple[Representation, ...], tuple[Segment, ...],
+    list[ExtractionReceipt], list[SegmentationReceipt],
+]:
+    """Order bounded retained rows and bind their receipts without live stages.
+
+    A retained layer is ordered by record identity, unlike a worker checkpoint.
+    Restore candidate/representation/segment order before applying the shared
+    checkpoint checks. Callers own population bounds and completion decisions.
+    """
+    candidates = {candidate.candidate_id: candidate for candidate in item.candidates}
+    by_candidate = {value.candidate_id: value for value in files}
+    if len(by_candidate) != len(files) or not set(by_candidate) <= set(candidates):
+        raise IntegrityError("base capture repeats or names an unknown source candidate")
+    if any(value.source_item_id != item.item_id or value.source_version != item.version for value in files):
+        raise IntegrityError("base capture belongs to another source item")
+    files = tuple(by_candidate[key] for key in candidates if key in by_candidate)
+    file_order = {value.file_id: ordinal for ordinal, value in enumerate(files)}
+    if any(value.file_id not in file_order or value.source_item_id != item.item_id for value in representations):
+        raise IntegrityError("base representation has no matching captured source")
+    representations = tuple(sorted(representations, key=lambda value: file_order[value.file_id]))
+    if len({value.file_id for value in representations}) != len(representations):
+        raise IntegrityError("base repeats a representation for one captured file")
+    representation_order = {value.representation_id: ordinal for ordinal, value in enumerate(representations)}
+    if any(value.representation_id not in representation_order or value.source_item_id != item.item_id for value in segments):
+        raise IntegrityError("base segment has no matching source representation")
+    segments = tuple(sorted(segments, key=lambda value: (representation_order[value.representation_id], value.ordinal)))
+    stage_receipts = tuple(sorted(
+        (pair for pair in loaded_receipts if pair[1]["format"] in {
+            "docspec-extraction-receipt", "docspec-segmentation-receipt",
+        }),
+        key=lambda pair: (pair[1]["format"], representation_order.get(pair[1].get("representationId"), -1)),
+    ))
+    extraction, segmentation = verify_stage_receipt_outputs(files, representations, segments, stage_receipts)
+    if not stages.requests_extraction and (representations or extraction):
+        raise IntegrityError("base contains unrequested extraction")
+    if not stages.requests_segmentation and (segments or segmentation):
+        raise IntegrityError("base contains unrequested segmentation")
+    return files, representations, segments, extraction, segmentation
+
+
+def verify_unfinished_processor_attempts(
+    receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...], entry_id: str,
+    processors: Collection[str], segments: Collection[str],
+) -> None:
+    """An attempt without a result supplies no owning plan or reusable output."""
+    grouped: dict[tuple[str, str, str], set[int]] = {}
+    for _, raw in receipts:
+        processor, segment, request, _, attempt, outcome = verify_processor_attempt_receipt(
+            raw, entry_id=entry_id, processor_ids=processors, segment_ids=segments, max_attempts=None,
+        )
+        if outcome != "failed":
+            raise IntegrityError("base unfinished processor attempt has no result or failure")
+        key = processor, segment, request
+        if attempt in grouped.setdefault(key, set()):
+            raise IntegrityError("base repeats an unfinished processor attempt")
+        grouped[key].add(attempt)
+    if any(sorted(attempts) != list(range(1, len(attempts) + 1)) for attempts in grouped.values()):
+        raise IntegrityError("base unfinished processor attempts are not contiguous")
 
 
 def verify_processor_attempt_receipt(

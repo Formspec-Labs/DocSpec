@@ -50,6 +50,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
     # Stable public assembly surface. It re-exports explicit constructors but
     # selects and instantiates none of them.
     "source_catalog": {"adapters", "application", "domain", "ports"},
+    "result_export": {"adapters"},
     "runtime": {
         "runtime", "adapters", "application", "domain", "ports", "processing",
         "profile_registry", "workspace", "errors",
@@ -75,9 +76,9 @@ _ALLOWED_INTERNAL_IMPORTS = {
 
 # Areas whose modules the core must never import back: concrete adapters and
 # the operator command are the outermost ring.
-_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "cli_io", "runtime"}
+_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "result_export", "cli_io", "runtime"}
 _CORE_AREAS = set(_ALLOWED_INTERNAL_IMPORTS) - _OUTER_AREAS
-_PUBLIC_FACADE_MODULES = {"docspec.source_catalog"}
+_PUBLIC_FACADE_MODULES = {"docspec.source_catalog", "docspec.result_export"}
 
 
 def _module_name(path: Path) -> str:
@@ -164,6 +165,7 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
         "docspec.runtime.catalogs",
         "docspec.runtime.composition", "docspec.runtime.execution", "docspec.runtime.inspection",
         "docspec.runtime.maintenance",
+        "docspec.runtime.exports",
         "docspec.runtime.preparation", "docspec.runtime.storage",
         "docspec.runtime.task_membership",
         "docspec.cli.plans",

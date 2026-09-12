@@ -17,12 +17,15 @@ from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.identity import canonical_json_bytes, identity_digest, sha256_digest
 from docspec.domain.plans import WorkLimits
+from docspec.domain.references import ArtifactRef
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.errors import IntegrityError, ProfileError
 from docspec.processing.artifacts import RepresentationPayload, SegmentPayload, verify_representation_evidence, verify_segment_evidence
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
 from docspec.runtime import local_execution_limits, build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, prepare_local_run
+from docspec.runtime import export_local_result
+from docspec.result_export import open_result_export
 from docspec.source_catalog import (
     SourceCatalogCandidate,
     SuppliedRecordCatalogPolicy,
@@ -217,6 +220,46 @@ def main() -> None:
         raise AssertionError("changed storage root reused a saved handoff")
     assert fetcher.calls == len(extraction_calls) == segmenter.calls == 1
     assert processor.calls == 3
+    export_producer = replace(release_producer, verifier_id="urn:docspec:verifier:result-export")
+    destination = Path.cwd() / "independent-result"
+    export_options = {
+        "document_release_producer": release_producer, "export_producer": export_producer,
+        "max_output_bytes": 16 * 1024**2, "admission": "nonempty-text",
+    }
+    pin = export_local_result(plan, workspace, processed_result, destination, **export_options)
+    assert export_local_result(plan, workspace, processed_result, destination, **export_options) == pin
+    assert fetcher.calls == len(extraction_calls) == segmenter.calls == 1
+    assert processor.calls == 3
+    prepared.close()
+    recovered.close()
+    workspace.root.rename(workspace.root.with_name("original-dataset-unavailable"))
+    numeric_document.rename(numeric_document.with_suffix(".unavailable"))
+    with open_result_export(destination, expected_pin=pin, producer=export_producer,
+        max_output_bytes=16 * 1024**2) as exported:
+        assert exported.pin == pin
+        assert exported.summary["counts"]["selectedItems"] == 1
+        assert exported.summary["semanticCompleteness"] == "not-established"
+        for kind, count in counts.items():
+            assert len(tuple(exported.records(kind))) == count
+        assert exported.read_blob(captured.blob, max_bytes=captured.blob.byte_size) == source_bytes
+        assert exported.read_blob(representation.blob, max_bytes=representation.blob.byte_size) == content
+        invocations = 0
+        for row in exported.records("receipts"):
+            evidence = exported.read_evidence(ArtifactRef.from_dict(row["payload"]["artifact"]))
+            if evidence["format"] == "docspec-processor-invocation-receipt":
+                invocations += 1
+                assert exported.read_evidence(ArtifactRef.from_dict(evidence["request"]["plan"]))["planId"] == plan.plan_id
+                assert exported.read_evidence(ArtifactRef.from_dict(evidence["result"]))["resultId"]
+        assert invocations == processor.calls
+    # A new reader also refuses changed exported bytes with the source absent.
+    blob_path = destination / captured.blob.locator
+    blob_path.write_bytes(b"!" + source_bytes[1:])
+    try:
+        open_result_export(destination, expected_pin=pin, producer=export_producer, max_output_bytes=16 * 1024**2)
+    except IntegrityError:
+        pass
+    else:
+        raise AssertionError("independent result reader accepted a mutated source blob")
     assert not (Path.cwd() / "plan.json").exists()
     assert not (Path.cwd() / "run-request.json").exists()
     print("installed runtime: small configuration retained capture, processed it without refetching, recovered, refused changed settings")
