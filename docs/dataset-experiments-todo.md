@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 45 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 45 of 53 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. Completed entries link their scoped
@@ -730,6 +730,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   refusal. Existing checkpoint/finalization and package/budget gates provide
   adjacent regression checks. These are local qualification results, not
   remote CI, publication or deployment evidence.
+
+  **Further simplification, September 12:** this qualifies the existing native
+  wrapper, whose inner DocSpec task still owns execution revisions, stage loops
+  and processor retries. The [new tooling review](tooling-simplification-review.md)
+  identifies a stronger ownership boundary. D54 owns the native stage/batch
+  replacement and its measured recovery tradeoff; these earlier checks do not
+  qualify that replacement.
 
 <a id="d22"></a>
 
@@ -1791,6 +1798,39 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   The current documented command also passed: two initial phrase matches,
   three after changing the phrase resource, and zero new captures in the later
   run. This is an offline fixture qualification, not a live publisher claim.
+
+<a id="d54"></a>
+
+- [ ] **D54 · P1 · Replace redundant execution and processor evidence machinery
+  with native stages and batch results.** Implement the
+  [reviewed smaller design](tooling-simplification-review.md) through a decisive
+  installed prototype, then adopt the path that preserves useful dataset
+  behavior with less maintained code and durable state. Native Dagster stages
+  and resources should own dependencies, retries and progress; DocSpec keeps
+  source facts, requested inputs, outcome accounting and retained alternatives.
+  Group processor output/outcome rows instead of publishing three per-invocation
+  control files. Preserve current computation keys until callback inputs are
+  narrowed separately. Catalog/reader use must stay independent of an active
+  Dagster instance.
+
+  **Done when:** the selected implementation removes the replaced dispatch,
+  handoff, store-revision, inner retry and receipt-graph paths; installed checks
+  prove capture now/process later, changed resources, catalog growth, A→B→A
+  retained results, successful empty output, failed-input repair and native
+  interruption/recovery. Compare complete values, source associations and
+  coordinates with a clean result. Measure time, memory, files/durability calls
+  and actual component calls, including unfinished-batch replay. Keep expensive
+  external-call guarantees explicit. Independent reviews must approve the final
+  implementation and contributor documentation. A prototype alone does not
+  complete this item, and a batch wrapper around the old state machine does not
+  satisfy it. If a candidate fails, preserve the measured reason and improve the
+  design instead of claiming an unmeasured migration is simpler or faster.
+
+  **In progress September 12:** separate agents own the native-stage prototype
+  and independent acceptance harness in a disposable workspace. The smaller
+  Arrow-reader-to-DuckDB writer experiment is isolated from that workflow
+  comparison. Frozen `c898512` capacity evidence remains unchanged. D21/D23/D24
+  document the existing implementation; D54 tracks this new replacement scope.
 
 ## Suggested delivery order
 
