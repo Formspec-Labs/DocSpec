@@ -1037,6 +1037,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   Implementation: `7188e34`. The combined full suite subsequently passed
   **1,072 tests** with one live integration test deselected in 239.01 seconds.
 
+  **Declaration follow-up, September 12:** removed the unused storage-profile
+  `verifier_id`, `recommendedMemberBytes`, and `maxOpenStagingCommits` fields.
+  No runtime selected that verifier or enforced those settings. Profile loading
+  also checks the configuration digest once. Actual storage bounds, module and
+  dependency selection, and conformance test references remain. The existing
+  profile, workspace, worker, runtime and installed-package gate passed **92
+  tests** in 19.33 seconds; Ruff passed. Fresh independent review remains D39.
+
 <a id="d33"></a>
 
 - [x] **D33 · P2 · Review current file and function outliers by responsibility.**

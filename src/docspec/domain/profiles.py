@@ -31,7 +31,6 @@ class ProfileDescription:
     capabilities: tuple[str, ...]
     limits: dict[str, Any]
     requires: tuple[str, ...] = ()
-    verifier_id: str = "docspec-profile-verifier/v1"
 
     def __post_init__(self) -> None:
         try:
@@ -43,7 +42,6 @@ class ProfileDescription:
             ("profile_id", self.profile_id),
             ("version", self.version),
             ("implementation_id", self.implementation_id),
-            ("verifier_id", self.verifier_id),
         ):
             require_text(value, label)
         if not isinstance(self.configuration, dict) or not isinstance(self.limits, dict):
@@ -98,7 +96,6 @@ class ProfileDescription:
             "capabilities": list(self.capabilities),
             "limits": self.limits,
             "requires": list(self.requires),
-            "verifierId": self.verifier_id,
         }
 
 

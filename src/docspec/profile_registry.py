@@ -170,8 +170,6 @@ class ProfileRegistry:
             limits=limits,
             requires=tuple(requires),
         )
-        if description.configuration_digest != value["configurationDigest"]:
-            raise ProfileError(f"{path.name} configuration pin differs")
         return RegisteredProfile(
             description,
             identity_digest(_description_identity(value)),

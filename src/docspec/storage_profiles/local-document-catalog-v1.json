@@ -22,8 +22,7 @@
     "stagedWrites": true
   },
   "limits": {
-    "maxManifestBytes": 1048576,
-    "maxOpenStagingCommits": 1024
+    "maxManifestBytes": 1048576
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",

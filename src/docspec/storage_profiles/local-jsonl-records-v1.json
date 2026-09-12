@@ -35,8 +35,7 @@
     "maxMemberBytes": 268435456,
     "maxRecordBytes": 8388608,
     "maxRootBytes": 33554432,
-    "maxMergeScratchBytes": 137438953472,
-    "recommendedMemberBytes": 67108864
+    "maxMergeScratchBytes": 137438953472
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
