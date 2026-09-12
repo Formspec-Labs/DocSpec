@@ -31,33 +31,22 @@ jobs:
         run: uv lock --check
 
       - name: Install core and development dependencies
-        # --extra dagster is required so tests/test_dagster_adapter.py's one real
-        # native-execution test (gated only by `pytest.importorskip("dagster")`) runs
-        # here instead of silently skipping. Development includes the optional
-        # source reader; the core wheel stays provider-independent, as verified
-        # by the isolated package tests.
-        run: uv sync --frozen --extra dagster
+        # These extras exercise native Dagster workers and local S3 SDK retries.
+        # Isolated package tests separately check the core without extras.
+        run: uv sync --frozen --extra dagster --extra s3
 
       - name: Check source and machine files
-        run: uv run --frozen --extra dagster ruff check .
+        run: uv run --frozen --extra dagster --extra s3 ruff check .
 
-      - name: Run the default suite
-        run: uv run --frozen --extra dagster pytest
-
-      - name: Record required-selector conformance evidence
-        # The required matrix retains partial items even when their selectors pass.
-        # Some evidence, including ordered scale campaigns and a published package,
-        # cannot come from this CI job. `conformance run` exits nonzero until every
-        # required item passes with complete evidence. Record that verdict on each
-        # push; drop continue-on-error once the matrix reaches "pass".
-        run: >
-          uv run --frozen --extra dagster docspec conformance run
-          --root .
-          --specification conformance/specification.json
-          --matrix conformance/test-matrix.json
-          --output "$RUNNER_TEMP/conformance-report.json"
-          --class core
-        continue-on-error: true
+      - name: Run regression checks once and retain pytest evidence
+        env:
+          PYTEST_ADDOPTS: ""
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run --frozen --extra dagster --extra s3 pytest --require-regression-map \
+            --junitxml="$RUNNER_TEMP/pytest.xml" 2>&1 | tee "$RUNNER_TEMP/pytest.log"
+          test -s "$RUNNER_TEMP/pytest.xml"
 
       - name: Build distributions
         run: uv build --out-dir dist
@@ -71,3 +60,14 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/docspec-wheel/bin/python" vendor/rulespec_artifacts-*.whl dist/docspec-*.whl
           "$RUNNER_TEMP/docspec-wheel/bin/python" -c "import docspec"
           "$RUNNER_TEMP/docspec-wheel/bin/docspec" --help
+
+      - name: Retain regression evidence and built wheels
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regression-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/pytest.xml
+            ${{ runner.temp }}/pytest.log
+            uv.lock
+            dist/*.whl

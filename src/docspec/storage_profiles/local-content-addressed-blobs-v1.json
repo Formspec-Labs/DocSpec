@@ -9,8 +9,12 @@
   "implementationModule": "docspec.adapters.storage:LocalContentAddressedBlobStore",
   "configuration": {},
   "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "logicalSchemas": ["docspec-blob-reference/1.0"],
-  "physicalMediaTypes": ["application/octet-stream"],
+  "logicalSchemas": [
+    "docspec-blob-reference/1.0"
+  ],
+  "physicalMediaTypes": [
+    "application/octet-stream"
+  ],
   "capabilities": {
     "boundedStreamingReads": true,
     "boundedStreamingWrites": true,
@@ -28,8 +32,5 @@
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
     "requires": []
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "BLOB-STORE-CONTRACT"
-  }
+  "verifierTestId": "BLOB-STORE-CONTRACT"
 }

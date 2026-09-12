@@ -133,10 +133,9 @@ the [scale model](../src/docspec/domain/scale.py) checks pins, workload declarat
 inputs, limits, and reported evidence, while the qualification workflow must
 produce and verify the actual artifacts.
 
-The [conformance matrix](../conformance/test-matrix.json) currently declares the
-scale requirement partial. The [specification](../conformance/specification.json)
-requires ordered campaigns at 100,000, 1,000,000, and at least 5,000,000 items,
-along with the applicable clean-revision and package evidence. A focused test,
-synthetic timing run, or historical receipt does not establish that those
-campaigns completed for a later release. Keep local validation, remote CI,
-qualification, and publication status separate in reviews and run reports.
+The [qualification guide](qualification.md) defines native pytest regression
+evidence and the separate measurements needed for a representative workload.
+The regression map declares required tests, not capacity or publication status.
+A focused test, synthetic timing run, or historical receipt does not establish
+capacity for a later release. Keep local validation, remote CI, qualification,
+and publication status separate in reviews and run reports.

@@ -12,22 +12,20 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_installed_native_dagster_resources_recover_document_checkpoints(tmp_path):
+def test_installed_native_dagster_resources_recover_document_checkpoints(tmp_path, docspec_wheel):
     pytest.importorskip("dagster")
     uv = shutil.which("uv")
     assert uv is not None
 
-    def command(arguments, *, root=tmp_path, timeout=120):
-        result = subprocess.run(arguments, cwd=root, capture_output=True, text=True, timeout=timeout, check=False)
+    def command(arguments, *, timeout=120):
+        result = subprocess.run(arguments, cwd=tmp_path, capture_output=True, text=True, timeout=timeout, check=False)
         assert result.returncode == 0, result.stdout + result.stderr
         return result
 
-    command([uv, "build", "--wheel", "--out-dir", str(tmp_path)], root=ROOT)
-    wheel = next(tmp_path.glob("docspec-*.whl"))
     environment = tmp_path / "environment"
     command([uv, "venv", "--python", sys.executable, str(environment)])
     python = environment / "bin/python"
-    command([uv, "pip", "install", "--python", str(python), str(wheel),
+    command([uv, "pip", "install", "--python", str(python), str(docspec_wheel),
              str(ROOT / "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl"), f"dagster=={version('dagster')}"])
     examples = tmp_path / "examples"
     examples.mkdir()

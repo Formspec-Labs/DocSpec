@@ -15,8 +15,12 @@
     "sizeMetadataKey": "docspec-byte-size"
   },
   "configurationDigest": "sha256:83ed20663e5e59d477c66b5e8fc16c5e942e62f0ce5e26713f60c2830692f2fb",
-  "logicalSchemas": ["docspec-blob-reference/1.0"],
-  "physicalMediaTypes": ["application/octet-stream"],
+  "logicalSchemas": [
+    "docspec-blob-reference/1.0"
+  ],
+  "physicalMediaTypes": [
+    "application/octet-stream"
+  ],
   "capabilities": {
     "amazonS3": true,
     "conditionalCreate": true,
@@ -37,8 +41,5 @@
     "profileSetId": "urn:docspec:profile-set:amazon-s3:1",
     "requires": []
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "BLOB-STORE-CONTRACT"
-  }
+  "verifierTestId": "BLOB-STORE-CONTRACT"
 }

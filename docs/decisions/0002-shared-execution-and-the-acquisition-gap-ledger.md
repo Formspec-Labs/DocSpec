@@ -38,9 +38,16 @@ capture still opens its fetcher before writing to content-addressed storage:
 avoiding duplicate stored objects does not itself avoid another fetch.
 [Unified inspection](../inspection.md) now exposes saved work, complete results,
 and differences. Broader qualification remains
-[D38](../dataset-experiments-todo.md#d38). The historical population measurements
+[D37](../dataset-experiments-todo.md#d37) and independent review remains
+[D39](../dataset-experiments-todo.md#d39). The installed experiment proof in D38
+is complete locally. The historical population measurements
 below do not establish today's qualification. See the
 [current entry points](../../README.md#what-you-can-use-today).
+
+**Qualification correction, 2026-09-12:** The former conformance wrapper and
+hand-edited test statuses described below are retired. Native pytest and CI
+retain regression evidence. The [qualification guide](../qualification.md)
+records the scope decisions and the capacity measurements still required.
 
 The owner's framing, and the reason this record was reorganized around it:
 DocSpec is an experimental dataset runner. You point it at a population, it

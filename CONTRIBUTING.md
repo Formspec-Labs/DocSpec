@@ -121,21 +121,17 @@ the [CI workflow](.github/workflows/ci.yml) as the command authority:
 
 ```sh
 uv lock --check
-uv sync --frozen --extra dagster
-uv run --frozen --extra dagster ruff check .
-uv run --frozen --extra dagster pytest
-uv run --frozen --extra dagster docspec conformance run --root . \
-  --specification conformance/specification.json \
-  --matrix conformance/test-matrix.json \
-  --output /tmp/docspec-conformance-report.json --class core
+uv sync --frozen --extra dagster --extra s3
+uv run --frozen --extra dagster --extra s3 ruff check .
+uv run --frozen --extra dagster --extra s3 pytest --require-regression-map \
+  --junitxml=/tmp/docspec-pytest.xml
 uv build --out-dir dist
 ```
 
-The conformance command currently returns a nonzero status when required
-evidence is incomplete; CI records it with `continue-on-error`. Read the report.
-The required matrix still includes partial scale and package-release checks.
-Local tests cannot substitute for ordered qualification campaigns or publication
-evidence from an exact clean commit. Do not relabel missing evidence as a pass.
+CI runs pytest once, requires all mapped regression cases to complete, and
+retains native JUnit, console output, the lockfile, and built wheels for that
+checkout. The [qualification guide](docs/qualification.md) distinguishes these
+checks from actual capacity measurements and publication evidence.
 
 To reproduce CI's installed-wheel check in an empty environment:
 

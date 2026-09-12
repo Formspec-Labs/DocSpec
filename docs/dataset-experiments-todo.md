@@ -745,6 +745,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   acceptance evidence exists. Independent source publishing stays usable.
   Depends on D20–D21; no SpicyRegs move is required.
 
+  **Scope review, September 12:** SpicyDocs S21/S31 currently defer caller
+  replacement until a named workflow needs it. Keep this integration deferred
+  until that task and its ordering, lock, cancellation and resume requirements
+  are supplied. Existing native Dagster document execution is supporting
+  evidence, not acquisition-campaign acceptance. No new executor is justified
+  by the current callers.
+
 <a id="d23"></a>
 
 - [x] **D23 · P1 · Assign retries and outcome accounting to explicit owners.**
@@ -1152,6 +1159,17 @@ to defer a conditional item is a documented deferral, not completed implementati
   stale comment-profile parser test using the removed CLI option; `78e9a40`
   updates that caller while retaining its profile-selection assertion.
 
+  **Current simplification, September 12:** independent review identified
+  historical-symbol and archive absence checks that made deliberate deletions
+  expensive without proving current behavior. Removing them retains actual
+  import boundaries, lazy optional imports, personal/sibling checkout path
+  refusal and isolated wheel/resource checks. The seven remaining package
+  tests passed in 11.97 seconds. Four installed suites now share one wheel
+  build per pytest session while keeping separate environments, dependency
+  absence checks and copied behavioral probes. The combined strict regression
+  gate passed **1,076 tests**, with one live integration test deselected, in
+  249.91 seconds and no warnings. Typed Python fixture setup remains to simplify.
+
 <a id="d36"></a>
 
 - [x] **D36 · P1 · Keep one contributor path through the new workflow.** Update
@@ -1193,6 +1211,26 @@ to defer a conditional item is a documented deferral, not completed implementati
   identities, which grows with the result. Measure that memory and verification
   cost when selecting representative capacity claims; replace the set with an
   appropriately bounded implementation if the supported workload requires it.
+
+  **Regression simplification, September 12:** the
+  [qualification guide](qualification.md) records all nine scope dispositions.
+  Retired the custom pytest subprocess/report runner and duplicate test-status
+  declarations. CI now runs one strict native pytest suite and retains JUnit,
+  logs, the lockfile and wheels; mapped tests must all execute successfully.
+  Profile descriptions name their verifier test ID without a hand-maintained
+  verdict. The [architecture review](history/2026-09-12-regression-qualification-architecture.md)
+  approves this approach, and the [hook review](history/2026-09-12-regression-hook-review.md)
+  approves the native collection/report checks. The focused gate passed
+  **35 tests** in 3.31 seconds. Representative capacity measurements, including
+  retained-admission memory use, remain open; this scope revision claims no
+  unrun workload result.
+
+  The complete strict suite passed **1,076 tests**, with one live integration
+  test deselected, in 249.91 seconds and no warnings. Native JUnit and console
+  evidence were retained locally. This includes all 19 regression-gate control
+  cases, the real installed-package examples, native Dagster and local S3 SDK
+  retries. Ruff, lock consistency and all 522 maintained-document local targets
+  passed. CI configuration is updated; no remote CI run is claimed.
 
 <a id="d38"></a>
 
@@ -1273,9 +1311,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   using the same behavioral test. The focused installed-provider, GAO and package
   boundary gate passed **20 tests** in 23.69 seconds. Ruff and lock consistency
   passed. The installed provider's 92 package files match the shared wheel bytes.
-  Independent review of the newest implementation is
-  pending because all three reviewers reached their usage limit; these local
-  checks are not a substitute for that review or remote CI.
+  The [source-integration review](history/2026-09-12-source-integration-review.md)
+  now independently approves `03df308^..722e0ce` without actionable findings.
+  The [cleanup review](history/2026-09-12-latest-cleanup-review.md) independently
+  approves `722e0ce..1d73408`. Both are scoped static reviews, not remote CI or
+  acceptance of later changes. The regression replacement and final review
+  consolidation remain in progress.
 
 <a id="d40"></a>
 
@@ -1506,6 +1547,13 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   promise the latter without implementing it. Keep worker messages small
   references. Add a DocSpec helper only for behavior the real caller needs that
   these existing APIs do not supply. Depends on D02–D04, D15 and D21.
+
+  **Scope review, September 12:** the current document adapter accepts real
+  `StoreTask` work; arbitrary dataset computation can use Dagster's own jobs and
+  resources directly. Defer this qualification until Search supplies its recipe
+  and pinned inputs/outputs. Do not create a generic host or dataset-stage API
+  to satisfy a circular planning prerequisite. Only an observed public-reader,
+  publication or evidence gap justifies a DocSpec change.
 
 <a id="d49"></a>
 

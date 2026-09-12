@@ -153,8 +153,8 @@ ranking, and serving belong to consuming products.
 The [contributor task map](../CONTRIBUTING.md#find-a-bounded-change) points to
 focused tests. Full local tests cover invariants, recovery, byte identities,
 rejected fixtures, optional imports, and installed-package behavior.
-[Conformance](../conformance/specification.json) additionally requires evidence
-that ordinary tests cannot establish. Keep local checks, conformance,
+The [qualification guide](qualification.md) separates native regression evidence
+from capacity measurements and publication. Keep local checks, remote CI,
 qualification, and publication status separate.
 
 The four code areas have distinct responsibilities: domain types define valid

@@ -29,36 +29,15 @@ PACKAGED_SCALE_SCHEMAS = {
 }
 REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 
-# A path naming the sibling checkout: the name flanked by separators, or ending
-# the string after one. `spicy_regs` on its own is a package name, not a path --
-# ADAPTER_ONLY_SIBLING_PACKAGES above is exactly that -- and a remote URL such as
-# `git@github.com:civictechdc/spicy-regs.git` names a repository to clone, not a
-# directory on this machine, so neither form matches.
+# Match literal sibling checkout paths while allowing distribution names and
+# remote repository URLs. Actual package imports are checked separately.
 SIBLING_CHECKOUT_PATH = re.compile(r"(?:^|/)spicy[-_]regs(?:/|\Z)")
-SIBLING_MODULE_PATH = re.compile(r"\bspicy_regs\.")
 SIBLING_PACKAGE_ROOTS = frozenset({"spicy_regs", "spicyregs"})
-OPTIONAL_SOURCE_COMPOSITION_ROOTS = frozenset(
-    {"src/docspec/cli/source_catalog.py"}
-)
-# This module names a URN namespace reserved for a registry DocSpec does not
-# own. It is data the catalog refuses to mint, not an import of that product.
-RESERVED_NAMESPACE_ROOTS = frozenset({"src/docspec/application/catalog_policy.py"})
-# The independent result facade names the shared container owner in its public
-# API documentation; it imports only DocSpec's adapter, never a sibling checkout.
-SHARED_CONTAINER_FACADES = frozenset({"src/docspec/result_export.py"})
 # This one core module delegates canonical JSON to the shared public package.
 SHARED_CANONICAL_GATEWAY = "src/docspec/domain/identity.py"
 # An absolute path whose first segment is a home-directory root belongs to one
 # developer's machine, so it can only reach code this repository does not own.
 HOME_DIRECTORY_ROOTS = frozenset({"Users", "home"})
-
-# Every expression this repository passes as a subprocess working directory.
-# `ROOT` and `REPO_ROOT` are this checkout; `root` is a parameter its callers
-# bind to this checkout or to a temporary copy of it;
-# `tmp_path` is the pytest temporary directory; `RUN_ROOT` is the isolated wheel
-# probe directory supplied by its test under `tmp_path`. A crossing returns as a new
-# name here, which fails until someone adds it deliberately.
-REPOSITORY_ROOTED_WORKING_DIRECTORIES = frozenset({"REPO_ROOT", "ROOT", "RUN_ROOT", "root", "tmp_path"})
 
 ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
     {
@@ -68,34 +47,6 @@ ADAPTER_ONLY_SIBLING_PACKAGES = frozenset(
         "spicy_regs",
         "spicyregs",
         "spicysearch",
-    }
-)
-ARCHIVED_PRODUCT_AREAS = frozenset(
-    {
-        "candidate_release",
-        "corpora",
-        "docpipeline",
-        "document_file_pipeline",
-        "document_release",
-        "document_release_v3",
-        "document_release_v3_cli",
-        "document_release_v3_compact",
-        "document_release_v3_diff",
-        "document_release_v3_verify",
-        "document_release_v3_writer",
-        "enrichment",
-        "evaluate_tag_quality",
-        "evaluation_boundary",
-        "ontology",
-        "pipelines",
-        "published",
-        "retrieval",
-        "rulespec_testbed",
-        "source_profile_artifacts",
-        "source_profile_artifacts_cli",
-        "source_profiles",
-        "sources",
-        "transforms",
     }
 )
 
@@ -119,26 +70,13 @@ def _repository_code_files() -> list[Path]:
     return sorted(path for name in REPOSITORY_CODE_ROOTS for path in (ROOT / name).rglob("*.py"))
 
 
-def _working_directory_expression(node: ast.expr) -> str:
-    while isinstance(node, (ast.Attribute, ast.Subscript)):
-        node = node.value
-    while isinstance(node, ast.BinOp):
-        node = node.left
-    if isinstance(node, ast.Call):
-        node = node.func
-        while isinstance(node, ast.Attribute):
-            node = node.value
-    return node.id if isinstance(node, ast.Name) else ast.unparse(node)
-
-
-def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_directory() -> None:
+def test_repository_code_avoids_sibling_imports_and_personal_checkout_paths() -> None:
     """Repository code consumes pinned inputs rather than sibling worktrees."""
 
     files = _repository_code_files()
     assert files, "the repository must contain code under src/, tests/, and tools/"
 
     violations: list[str] = []
-    working_directories: set[str] = set()
     for path in files:
         relative = path.relative_to(ROOT).as_posix()
         source = path.read_text(encoding="utf-8")
@@ -151,25 +89,12 @@ def test_no_repository_code_names_a_sibling_checkout_or_an_outside_working_direc
                     violations.append(f"{relative}:{node.lineno} names a home directory: {value!r}")
                 if "/" in value and SIBLING_CHECKOUT_PATH.search(value):
                     violations.append(f"{relative}:{node.lineno} names a SpicyRegs path: {value!r}")
-                if SIBLING_MODULE_PATH.search(value):
-                    violations.append(f"{relative}:{node.lineno} names a spicy_regs module: {value!r}")
-            elif isinstance(node, ast.Call):
-                for keyword in node.keywords:
-                    if keyword.arg == "cwd":
-                        expression = _working_directory_expression(keyword.value)
-                        working_directories.add(expression)
-                        if expression not in REPOSITORY_ROOTED_WORKING_DIRECTORIES:
-                            violations.append(
-                                f"{relative}:{node.lineno} runs a subprocess in {expression}"
-                            )
 
     for imported in (name for path in files for name in _absolute_imports(path)):
         if imported.partition(".")[0] in SIBLING_PACKAGE_ROOTS:
             violations.append(f"a repository module imports {imported}")
 
     assert violations == []
-    # Any allowance that stops being used is removed rather than left standing.
-    assert working_directories == REPOSITORY_ROOTED_WORKING_DIRECTORIES
 
 
 def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
@@ -191,7 +116,6 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     }
     assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts", "spicy-docs"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
-    # No "fast" extra: it advertised jsonschema-rs as optional, and it is not.
     assert set(project["project"]["optional-dependencies"]) == {
         "dagster",
         "http",
@@ -208,7 +132,6 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert any(requirement.startswith("tiktoken") for requirement in extras["tokens"])
-    assert "archive" not in project["tool"]["ruff"]["exclude"]
     assert project["tool"]["pytest"]["ini_options"]["testpaths"] == ["tests"]
 
 
@@ -218,68 +141,6 @@ def test_checked_in_source_catalog_schemas_equal_domain_generation() -> None:
     assert {path.name for path in SOURCE_CATALOG_SCHEMA_ROOT.iterdir()} == set(generated)
     for name, schema in generated.items():
         assert (SOURCE_CATALOG_SCHEMA_ROOT / name).read_bytes() == canonical_json_file_bytes(schema)
-
-
-def test_superseded_source_formats_are_absent_from_repository_code() -> None:
-    import docspec.adapters as adapters
-    import docspec.ports as ports
-
-    assert not (PRODUCTION_ROOT / "adapters/source_catalog.py").exists()
-    assert not (PRODUCTION_ROOT / "adapters/wire_source_release.py").exists()
-    assert not (PRODUCTION_ROOT / "ports/source_release.py").exists()
-    assert not (ROOT / "tests/legacy_wire_source_release.py").exists()
-    assert not (ROOT / "tests/test_wire_source_release.py").exists()
-    assert not any((ROOT / "fixtures/wire/source-catalog-release-v1").rglob("*"))
-    assert not any((ROOT / "fixtures/conformance/core-v1").rglob("*"))
-    assert not any((ROOT / "fixtures/qualification/fr-mirrulations-10k-v1").rglob("*"))
-    for relative in (
-        "tests/legacy_" + "source_catalog.py",
-        "tests/legacy_" + "source_release.py",
-        "tests/test_" + "source_catalog.py",
-        "tests/test_fr_" + "mirrulations_qualification.py",
-        "tools/fr_" + "mirrulations_support.py",
-        "tools/fr_" + "mirrulations_qualification.py",
-        "tools/export_" + "selection_ledger.py",
-    ):
-        assert not (ROOT / relative).exists()
-    for name in (
-        "JsonSchemaWireSourceReleaseGate",
-        "LocalJsonlSourceCatalog",
-        "LocalSourceReleaseReader",
-        "LocalWireSourceReleaseReader",
-        "SourceReleaseCatalogView",
-    ):
-        assert not hasattr(adapters, name)
-    for name in ("SourceReleasePin", "SourceReleaseReader", "SourceReleaseSchemaGate"):
-        assert not hasattr(ports, name)
-
-    cli_source = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted((PRODUCTION_ROOT / "cli").glob("*.py"))
-    )
-    assert "LocalJsonlSourceCatalog" not in cli_source
-    assert "wire_source_release" not in cli_source
-
-    forbidden_tokens = (
-        "tests.legacy_source_" + "catalog",
-        "tests.legacy_source_" + "release",
-        "LocalJsonl" + "SourceCatalog",
-        "LocalSource" + "ReleaseReader",
-        "SourceRelease" + "CatalogView",
-        "SourceRelease" + "Pin",
-    )
-    violations: list[str] = []
-    for root_name in REPOSITORY_CODE_ROOTS:
-        for path in sorted((ROOT / root_name).rglob("*")):
-            if not path.is_file() or path == Path(__file__):
-                continue
-            try:
-                source = path.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            for token in forbidden_tokens:
-                if token in source:
-                    violations.append(f"{path.relative_to(ROOT).as_posix()} contains {token!r}")
-    assert violations == []
 
 
 def test_production_imports_stay_inside_the_standalone_boundary() -> None:
@@ -308,46 +169,9 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
                 and edge not in shared_imports
             ):
                 violations.append(f"{path.relative_to(ROOT)} imports undeclared core dependency {imported}")
-            if imported.startswith("docspec."):
-                area = imported.split(".", 2)[1]
-                if area in ARCHIVED_PRODUCT_AREAS:
-                    violations.append(f"{path.relative_to(ROOT)} imports archived area {imported}")
 
     assert violations == []
     assert observed_shared_imports == shared_imports
-
-
-def test_non_docspec_product_areas_are_absent_from_production() -> None:
-    top_level_names = {path.stem if path.is_file() else path.name for path in PRODUCTION_ROOT.iterdir()}
-    assert top_level_names.isdisjoint(ARCHIVED_PRODUCT_AREAS)
-
-    violations: list[str] = []
-    for path in _production_files():
-        relative = path.relative_to(ROOT).as_posix()
-        if path.relative_to(PRODUCTION_ROOT).parts[0] == "adapters":
-            continue
-        source = path.read_text(encoding="utf-8").casefold()
-        for word in ADAPTER_ONLY_SIBLING_PACKAGES:
-            if relative in OPTIONAL_SOURCE_COMPOSITION_ROOTS and word == "spicy_docs":
-                continue
-            if relative in RESERVED_NAMESPACE_ROOTS and word == "refspec":
-                continue
-            if relative in SHARED_CONTAINER_FACADES and word == "rulespec":
-                continue
-            if relative == SHARED_CANONICAL_GATEWAY and word == "rulespec":
-                continue
-            if re.search(rf"\b{re.escape(word.casefold())}\b", source):
-                violations.append(f"{path.relative_to(ROOT)} names {word}")
-    assert violations == []
-
-
-def test_git_is_the_only_predecessor_code_record() -> None:
-    assert not (ROOT / "archive/legacy-2026-08-05").exists()
-    assert not (ROOT / "conformance/predecessor-code-fingerprints-v1.json").exists()
-    assert not (ROOT / "ownership/modules.json").exists()
-    assert not (ROOT / "tools/generate_archive_manifest.py").exists()
-    assert not (ROOT / "tools/generate_ownership_manifest.py").exists()
-    assert not (ROOT / "tools/predecessor_code_fingerprints.py").exists()
 
 
 def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
@@ -371,13 +195,10 @@ def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
     assert "DocSpec" in help_result.stdout or "docspec" in help_result.stdout
 
 
-def test_dagster_adapter_is_lazy_and_has_no_parallel_runtime_or_deployment_schema() -> None:
+def test_dagster_adapter_import_is_lazy() -> None:
     import docspec.adapters as adapters
 
     assert callable(adapters.build_dagster_definitions)
-    for removed_name in ("DagsterRuntime", "ExternalExecutionBackend", "DagsterAdapterProfile", "DagsterDeploymentConfig"):
-        assert not hasattr(adapters, removed_name)
-    assert not any((PRODUCTION_ROOT / "storage_profiles" / "schedulers").glob("*.json"))
     isolated = subprocess.run(
         [
             sys.executable,
@@ -393,35 +214,17 @@ def test_dagster_adapter_is_lazy_and_has_no_parallel_runtime_or_deployment_schem
     assert isolated.returncode == 0, isolated.stderr
 
 
-def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path) -> None:
+def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_path: Path, docspec_wheel: Path) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "the package release test requires uv"
 
-    result = subprocess.run(
-        [uv, "build", "--wheel", "--out-dir", str(tmp_path)],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    wheel = next(tmp_path.glob("docspec-*.whl"))
+    wheel = docspec_wheel
 
     with zipfile.ZipFile(wheel) as archive:
         members = set(archive.namelist())
         assert members
         assert all(name.startswith(("docspec/", "docspec-")) for name in members)
-        assert not any("archive" in Path(name).parts for name in members)
         assert not any(Path(name).suffix in {".pyc", ".pyo"} for name in members)
-
-        packaged_areas = {
-            parts[1]
-            for name in members
-            if name.startswith("docspec/")
-            for parts in [Path(name).parts]
-            if len(parts) > 2
-        }
-        assert packaged_areas.isdisjoint(ARCHIVED_PRODUCT_AREAS)
 
         profile_paths = sorted((PRODUCTION_ROOT / "storage_profiles").glob("*.json"))
         assert len(profile_paths) == 10

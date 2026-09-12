@@ -1,428 +1,304 @@
 {
-  "format": "docspec-conformance-test-matrix",
-  "formatVersion": "1.0",
-  "specificationId": "urn:docspec:conformance:standalone-platform:1",
-  "implementationStatus": "standalone-reference-implementation",
-  "tests": [
-    {
-      "testId": "CORE-INSTALL",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency",
-        "tests/test_package_boundary.py::test_core_import_and_cli_help_need_no_optional_dependency"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "BOUNDARY-IMPORT",
-      "status": "partial",
-      "selectors": [
-        "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
-        "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
-        "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
-        "tests/conformance/test_import_directions.py::test_command_and_runtime_surfaces_are_explicit_composition_roots",
-        "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_only_the_shared_artifact_dependency"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "BOUNDARY-CODE",
-      "status": "partial",
-      "selectors": [
-        "tests/test_package_boundary.py::test_git_is_the_only_predecessor_code_record",
-        "tests/test_package_boundary.py::test_superseded_source_formats_are_absent_from_repository_code",
-        "tests/test_package_boundary.py::test_non_docspec_product_areas_are_absent_from_production",
-        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "SOURCE-CATALOG-CONTRACT",
-      "status": "partial",
-      "selectors": [
-        "tests/test_source_catalog_snapshot.py::test_builds_and_streams_one_complete_normative_snapshot",
-        "tests/test_source_catalog_build_safety.py::test_policy_must_account_for_every_universe_row_before_publication",
-        "tests/test_source_catalog_policy.py::test_accounts_for_an_observed_crawl_without_claiming_source_completeness",
-        "tests/test_source_catalog_snapshot.py::test_refuses_unknown_boundary_fields",
-        "tests/test_source_catalog_snapshot.py::test_tampering_fails_before_a_snapshot_row_is_returned",
-        "tests/test_source_catalog_build_safety.py::test_producer_gate_recomputes_state_before_publication",
-        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_initial_advance_and_readback_never_mutate_roots",
-        "tests/test_source_catalog_succession.py::test_source_catalog_supersedes_moves_only_physical_identity",
-        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_rejects_stale_missing_and_cross_series_candidates",
-        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_tamper_fails_readback",
-        "tests/test_source_catalog_succession.py::test_source_catalog_pointer_crash_before_replace_preserves_current"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "PROFILE-DESCRIPTION",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
-        "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
-        "tests/test_profile_registry.py::test_profile_pin_identifies_the_complete_machine_description",
-        "tests/test_profile_registry.py::test_profile_registry_refuses_superseded_descriptions",
-        "tests/test_cli.py::test_profile_verification_uses_the_machine_description",
-        "tests/conformance/test_profile_descriptions.py::test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable",
-        "tests/conformance/test_profile_descriptions.py::test_unpinned_descriptions_are_rejected_at_load",
-        "tests/conformance/test_profile_descriptions.py::test_unknown_unpinned_capability_and_digest_mismatched_pins_fail_before_work"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "RELEASE-MANIFEST",
-      "status": "partial",
-      "selectors": [
-        "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
-        "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
-        "tests/conformance/test_release_manifest.py::test_release_root_references_fail_closed_for_locator_drift_and_absence",
-        "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
-        "tests/test_processing_pipeline.py::test_content_records_recompute_identity_and_output_digests_when_read",
-        "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
-        "tests/test_release_integrity.py::test_logical_release_verifier_rejects_individually_valid_but_unlinked_records",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "DOCUMENT-CATALOG-CONTRACT",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_shared_release",
-        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_conflicts_and_refuses_stale_or_unsealed_commits",
-        "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_the_exact_stage_after_publish_before_head_update",
-        "tests/conformance/test_document_catalog_contract.py::test_document_catalog_independent_admission_rejects_cross_series_and_pointer_tamper",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "RECORD-STORAGE-CONTRACT",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_passes_the_shared_layer_contract",
-        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_rejects_unordered_and_duplicate_identities",
-        "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_fails_closed_on_tampered_member_bytes",
-        "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
-        "tests/test_storage_records_catalog.py::test_identical_record_layer_roots_publish_atomically_under_concurrency",
-        "tests/test_storage_records_catalog.py::test_record_layer_rejects_unsorted_open_or_tampered_records",
-        "tests/test_bounded_partitions.py::test_jsonl_writer_bounds_open_members_and_never_whole_reads_members",
-        "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
-        "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "PROFILE-COMPATIBILITY",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
-        "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
-        "tests/test_profile_registry.py::test_profile_selection_fails_before_work_when_a_requirement_is_missing",
-        "tests/conformance/test_profile_compatibility.py::test_every_one_per_role_combination_composes_or_registers_its_incompatibility",
-        "tests/conformance/test_profile_compatibility.py::test_a_specified_but_unimplemented_profile_refuses_selection",
-        "tests/conformance/test_profile_compatibility.py::test_an_incompatible_selection_fails_run_start_before_any_planning_state"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "DOCUMENT-STORE",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_document_store.py::test_completed_and_accepted_failure_stores_reconcile_with_complete_counts",
-        "tests/conformance/test_document_store.py::test_a_rejected_store_reconciles_but_refuses_publication",
-        "tests/test_result_sinks_and_recovery.py::test_stateless_returned_run_cannot_advance_the_document_catalog",
-        "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
-        "tests/test_domain.py::test_document_store_is_a_bounded_revisioned_job_and_receipt",
-        "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
-        "tests/test_storage_adapters.py::test_document_store_repository_moves_large_entry_ledgers_to_bounded_members",
-        "tests/test_storage_adapters.py::test_document_store_repository_seals_exact_ordered_planned_population",
-        "tests/test_storage_adapters.py::test_planned_store_ledger_enforces_declared_count_and_byte_bounds",
-        "tests/test_bounded_partitions.py::test_planner_preserves_full_then_remaining_store_emission_order",
-        "tests/test_application_pipeline.py::test_reconciler_matches_the_exact_planned_terminal_store_set",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "BLOB-STORE-CONTRACT",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_storage_adapters.py::test_blob_store_streams_deduplicates_ranges_and_materializes",
-        "tests/test_storage_adapters.py::test_blob_store_fails_closed_for_limits_tampering_and_symlinks",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
-        "tests/test_s3_blob_adapter.py::test_blob_store_behavioral_contract",
-        "tests/test_s3_blob_adapter.py::test_put_is_bounded_and_checks_declared_identity_before_upload",
-        "tests/test_s3_blob_adapter.py::test_conditional_create_accepts_only_an_identical_concurrent_object",
-        "tests/test_s3_blob_adapter.py::test_stat_and_verify_reject_tampered_metadata_and_bytes",
-        "tests/test_s3_blob_adapter.py::test_reads_are_bounded_streaming_and_ranges_are_half_open",
-        "tests/test_s3_blob_adapter.py::test_materialization_is_contained_and_never_replaces_files",
-        "tests/test_s3_blob_adapter.py::test_provider_failures_are_normalized_at_the_adapter_boundary",
-        "tests/test_s3_blob_adapter.py::test_configuration_and_reference_validation_fail_closed",
-        "tests/test_s3_blob_adapter.py::test_boto3_factory_is_lazy_and_uses_the_same_injected_client_boundary"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "ACQUISITION",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_acquisition.py::test_capture_deduplication_and_deletion_reconcile_across_releases",
-        "tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture",
-        "tests/conformance/test_acquisition.py::test_drifted_source_bytes_fail_closed_without_a_stored_object",
-        "tests/conformance/test_acquisition.py::test_an_oversized_declared_candidate_refuses_planning_before_any_io",
-        "tests/test_content_fetchers.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
-        "tests/test_content_fetchers.py::test_fetch_stream_closes_unstarted_source_once",
-        "tests/test_content_fetchers.py::test_local_fetcher_does_not_double_close_descriptors_under_concurrency",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_streams_pinned_object_and_closes",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_rejects_changed_response_and_closes",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_closes_truncated_oversized_and_failed_streams",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_closes_on_consumer_error_and_before_iteration",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_fails_before_io_for_bounds_and_source_escape",
-        "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_normalizes_provider_failures_without_leaking_detail",
-        "tests/test_content_fetchers.py::test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme",
-        "tests/test_stage_checkpoint_recovery.py::test_blob_digest_rejection_closes_fetch_stream",
-        "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
-        "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
-        "tests/test_planner.py::test_source_partition_selection_rejects_undeclared_partition_before_item_stream",
-        "tests/test_planner.py::test_source_partition_selection_rejects_malformed_item_partition",
-        "tests/test_planner.py::test_selection_is_precompiled_and_rejects_malformed_selectors_without_items",
-        "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
-        "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
-        "tests/test_work_budget.py::test_source_and_memory_limits_apply_to_aggregate_store_work",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "REPRESENTATION",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_representation.py::test_supported_content_produces_identified_receipted_representations",
-        "tests/conformance/test_representation.py::test_unregistered_media_types_fail_closed",
-        "tests/test_processing_pipeline.py::test_stdlib_extractors_preserve_exact_source_and_are_retry_stable",
-        "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
-        "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "SEGMENTATION",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_segmentation.py::test_segments_are_deterministic_for_every_supported_content_type",
-        "tests/conformance/test_segmentation.py::test_segment_coverage_matches_each_supported_content_type",
-        "tests/test_processing_pipeline.py::test_unicode_paragraphs_use_exact_utf8_byte_coordinates",
-        "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
-        "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "EVIDENCE-ROUNDTRIP",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
-        "tests/conformance/test_evidence_roundtrip.py::test_roundtrip_fails_closed_when_source_or_coordinates_drift",
-        "tests/test_processing_pipeline.py::test_image_passthrough_reports_header_metadata_and_exact_extent",
-        "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
-        "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
-        "tests/test_processing_pipeline.py::test_persisted_segment_reloads_with_exact_representation_and_source_round_trip",
-        "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
-        "tests/test_release_integrity.py::test_logical_release_verifier_rejects_segment_without_persisted_mapping",
-        "tests/test_release_integrity.py::test_logical_release_verifier_visits_every_retained_blob_reference",
-        "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "COMPLETE-SEARCH-CORPUS",
-      "status": "partial",
-      "selectors": [
-        "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
-        "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "PROCESSOR-CONTRACT",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_processor_contract.py::test_fake_and_real_processors_pass_one_reference_based_contract",
-        "tests/conformance/test_processor_contract.py::test_dependency_outputs_flow_only_through_declared_edges",
-        "tests/conformance/test_processor_contract.py::test_every_scheduled_item_ends_in_one_registered_processor_disposition",
-        "tests/test_domain.py::test_processing_plan_pins_the_complete_processor_graph",
-        "tests/test_domain.py::test_processor_description_is_closed_provider_neutral_and_identity_bearing",
-        "tests/test_processing_pipeline.py::test_injected_statistics_processor_is_deterministic_and_evidence_linked",
-        "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
-        "tests/test_processor_cache.py::test_sqlite_cache_reopens_and_returns_the_existing_immutable_winner",
-        "tests/test_processor_cache.py::test_sqlite_cache_concurrent_writers_observe_one_immutable_winner",
-        "tests/test_processor_cache.py::test_sqlite_cache_discard_is_conditional_on_the_observed_reference",
-        "tests/test_processor_cache.py::test_segment_input_digest_survives_physical_blob_relocation",
-        "tests/test_processor_cache.py::test_exact_result_cache_skips_reexecution_across_plan_identity",
-        "tests/test_processor_cache.py::test_invalid_cache_reference_is_recomputed_and_repaired",
-        "tests/test_processor_cache.py::test_overlapping_processor_attempts_converge_on_the_cache_winner",
-        "tests/test_processor_cache.py::test_cache_outage_falls_back_to_processor_execution",
-        "tests/test_processor_reprocessing.py::test_processor_result_must_report_declared_media_and_resources",
-        "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
-        "tests/test_work_budget.py::test_processor_input_declaration_is_enforced_before_invocation",
-        "tests/test_work_budget.py::test_processor_retry_is_bounded_receipted_and_charged_once",
-        "tests/test_work_budget.py::test_processor_retry_exhaustion_preserves_every_attempt",
-        "tests/test_work_budget.py::test_processor_item_duration_uses_worker_observation",
-        "tests/test_work_budget.py::test_elapsed_duration_is_checked_after_injected_stage_work",
-        "tests/test_policy_security.py::test_retention_and_data_use_policies_are_closed_versioned_and_identity_bearing",
-        "tests/test_policy_security.py::test_processor_payload_contains_only_policy_selected_fields",
-        "tests/test_policy_security.py::test_external_provider_evidence_matches_the_sealed_data_use_modes",
-        "tests/test_policy_security.py::test_external_request_accounting_matches_the_declared_execution_scope",
-        "tests/test_policy_security.py::test_processor_receipts_reject_secrets_and_diagnostics_redact_them",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "RESULT-SINK",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_result_sink_contract.py::test_every_registered_delivery_profile_passes_the_shared_store_contract",
-        "tests/conformance/test_result_sink_contract.py::test_interrupted_acknowledgement_replays_to_the_same_receipt",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
-        "tests/test_result_sinks_and_recovery.py::test_returned_sink_streams_with_acknowledgement_backpressure_and_stable_replay",
-        "tests/test_result_sinks_and_recovery.py::test_durable_and_hybrid_sinks_replay_to_the_same_immutable_layers",
-        "tests/test_result_sinks_and_recovery.py::test_delivery_receipt_outcomes_are_complete_and_bounded",
-        "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "SCHEDULER-PORTABILITY",
-      "status": "partial",
-      "selectors": [
-        "tests/conformance/test_scheduler_portability.py::test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_backend",
-        "tests/test_dagster_adapter.py::test_reconstructable_job_crosses_dagsters_multiprocess_worker_boundary",
-        "tests/test_execution_backends.py::test_execution_messages_are_closed_canonical_and_idempotent",
-        "tests/test_execution_backends.py::test_local_backend_uses_the_portable_messages_with_bounded_concurrency",
-        "tests/conformance/test_scheduler_portability.py::test_native_dagster_executes_the_real_graph_and_matches_local_and_external_runs",
-        "tests/test_execution_backends.py::test_backend_rejects_a_task_stream_that_differs_from_the_sealed_handoff",
-        "tests/test_execution_backends.py::test_local_backend_rejects_an_expired_profile_before_starting_work",
-        "tests/test_execution_backends.py::test_backend_verifies_the_complete_profile_reference_before_work",
-        "tests/test_execution_backends.py::test_local_backend_rejects_a_completion_after_its_deadline",
-        "tests/conformance/test_scheduler_portability.py::test_native_dagster_worker_failure_publishes_no_partial_run_or_release",
-        "tests/test_dagster_adapter.py::test_real_dagster_job_executes_reference_only_tasks_and_records_events",
-        "tests/test_dagster_adapter.py::test_dagster_retry_policy_recovers_one_mapped_task_without_rewriting_siblings",
-        "tests/test_dagster_adapter.py::test_rerunning_the_job_reuses_idempotent_handler_results",
-        "tests/test_dagster_adapter.py::test_malformed_or_incomplete_task_stream_fails_the_run",
-        "tests/test_dagster_adapter.py::test_missing_mapped_result_cannot_produce_a_successful_run",
-        "tests/test_dagster_adapter.py::test_executor_and_retry_policy_are_injected_at_the_composition_root",
-        "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "DOCUMENT-RELEASE-INTEGRITY",
-      "status": "partial",
-      "selectors": [
-        "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
-        "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",
-        "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
-        "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
-        "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
-        "tests/test_release_integrity.py::test_logical_release_verifier_rejects_segment_without_persisted_mapping",
-        "tests/test_maintenance.py::test_retention_set_is_derived_from_verified_release_store_and_profile_roots",
-        "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "INCREMENTAL-EQUIVALENCE",
-      "status": "implemented",
-      "selectors": [
-        "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
-        "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
-        "tests/test_planner.py::test_changed_selection_reuses_identical_selected_items_without_work",
-        "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
-        "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
-        "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
-        "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
-        "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
-        "tests/conformance/test_incremental_equivalence.py::test_clean_incremental_targeted_and_compacted_paths_converge_on_active_document_state",
-        "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
-        "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "RECOVERY",
-      "status": "implemented",
-      "selectors": [
-        "tests/conformance/test_recovery.py::test_a_restarted_coordinator_reconciles_replayed_results_to_the_same_release",
-        "tests/conformance/test_recovery.py::test_a_replayed_store_task_reuses_verified_work_and_delivers_identically",
-        "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
-        "tests/test_storage_adapters.py::test_document_store_latest_reads_only_the_newest_revision_while_revisions_validate_history",
-        "tests/test_storage_adapters.py::test_revision_writes_stage_crash_debris_outside_the_declared_revision_set",
-        "tests/test_storage_adapters.py::test_planned_store_ledger_presence_distinguishes_absence_from_invalid_state",
-        "tests/test_runtime_api.py::test_task_recovery_executes_only_an_unfinished_real_store",
-        "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
-        "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits",
-        "tests/test_result_sinks_and_recovery.py::test_worker_restart_reuses_the_verified_entry_checkpoint",
-        "tests/test_stage_checkpoint_recovery.py::test_restart_after_extraction_reuses_exact_files_and_representations",
-        "tests/test_stage_checkpoint_recovery.py::test_restart_after_segmentation_reuses_all_content_stages",
-        "tests/test_stage_checkpoint_recovery.py::test_restart_after_processor_layer_runs_only_the_remaining_dependency_layer",
-        "tests/test_stage_checkpoint_recovery.py::test_partial_processor_checkpoint_restores_every_cumulative_budget_counter",
-        "tests/test_stage_checkpoint_recovery.py::test_tampered_stage_receipt_fails_closed_before_any_work_restarts",
-        "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
-        "tests/test_stage_checkpoint_recovery.py::test_duplicate_stage_receipt_fails_closed_before_any_work_restarts",
-        "tests/test_stage_checkpoint_recovery.py::test_hard_crash_after_capture_reuses_bytes_and_reruns_only_incomplete_extraction",
-        "tests/test_stage_checkpoint_recovery.py::test_two_candidate_resume_never_refetches_verified_candidates",
-        "tests/test_stage_checkpoint_recovery.py::test_crash_during_second_candidate_reuses_completed_first_candidate",
-        "tests/test_processor_only_checkpoint_recovery.py::test_processor_only_restart_reuses_base_and_checkpoints_changed_layers",
-        "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
-        "tests/test_work_budget.py::test_resume_accounting_includes_zero_output_processor_invocations"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "SCALE",
-      "status": "partial",
-      "selectors": [
-        "tests/test_scale_profile.py::test_document_processing_scale_profile_remains_one_closed_canonical_variant",
-        "tests/test_scale_profile.py::test_source_catalog_profile_pins_every_accepted_section_without_processing_fields",
-        "tests/test_scale_profile.py::test_scale_profile_identity_changes_with_variant_inputs_or_ceilings",
-        "tests/test_scale_profile.py::test_scale_profile_union_rejects_old_mixed_or_unknown_shapes",
-        "tests/test_scale_profile.py::test_document_variant_retains_processor_and_resource_validation",
-        "tests/test_scale_profile.py::test_scale_result_is_closed_canonical_and_binds_complete_catalog_evidence",
-        "tests/test_scale_profile.py::test_scale_result_rejects_false_passes_for_both_workload_variants",
-        "tests/test_scale_profile.py::test_scale_result_fails_closed_for_identity_verdict_and_canonical_bytes",
-        "tests/test_scale_profile.py::test_checked_in_schemas_admit_both_profile_variants_and_result_evidence",
-        "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact",
-        "tests/test_cli.py::test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli"
-      ],
-      "plannedTestModule": null
-    },
-    {
-      "testId": "PACKAGE-RELEASE",
-      "status": "partial",
-      "selectors": [
-        "tests/test_package_boundary.py::test_docspec_metadata_wheel_has_no_legacy_document_dependency",
-        "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",
-        "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
-        "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",
-        "tests/test_cli.py::test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index",
-        "tests/test_conformance.py::test_conformance_runner_executes_exact_selectors_and_seals_a_report"
-      ],
-      "plannedTestModule": null
-    }
+  "CORE-INSTALL": [
+    "tests/test_package_boundary.py::test_installed_wheel_preserves_public_runtime_and_packaged_resources",
+    "tests/test_package_boundary.py::test_core_import_and_cli_help_need_no_optional_dependency"
+  ],
+  "BOUNDARY-IMPORT": [
+    "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
+    "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
+    "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
+    "tests/conformance/test_import_directions.py::test_command_and_runtime_surfaces_are_explicit_composition_roots",
+    "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_only_the_shared_artifact_dependency"
+  ],
+  "SOURCE-CATALOG-CONTRACT": [
+    "tests/test_source_catalog_snapshot.py::test_builds_and_streams_one_complete_normative_snapshot",
+    "tests/test_source_catalog_build_safety.py::test_policy_must_account_for_every_universe_row_before_publication",
+    "tests/test_source_catalog_policy.py::test_accounts_for_an_observed_crawl_without_claiming_source_completeness",
+    "tests/test_source_catalog_snapshot.py::test_refuses_unknown_boundary_fields",
+    "tests/test_source_catalog_snapshot.py::test_tampering_fails_before_a_snapshot_row_is_returned",
+    "tests/test_source_catalog_build_safety.py::test_producer_gate_recomputes_state_before_publication",
+    "tests/test_source_catalog_succession.py::test_source_catalog_pointer_initial_advance_and_readback_never_mutate_roots",
+    "tests/test_source_catalog_succession.py::test_source_catalog_supersedes_moves_only_physical_identity",
+    "tests/test_source_catalog_succession.py::test_source_catalog_pointer_rejects_stale_missing_and_cross_series_candidates",
+    "tests/test_source_catalog_succession.py::test_source_catalog_pointer_tamper_fails_readback",
+    "tests/test_source_catalog_succession.py::test_source_catalog_pointer_crash_before_replace_preserves_current"
+  ],
+  "PROFILE-DESCRIPTION": [
+    "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
+    "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
+    "tests/test_profile_registry.py::test_profile_pin_identifies_the_complete_machine_description",
+    "tests/test_profile_registry.py::test_profile_registry_refuses_superseded_descriptions",
+    "tests/test_cli.py::test_profile_verification_uses_the_machine_description",
+    "tests/conformance/test_profile_descriptions.py::test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable",
+    "tests/conformance/test_profile_descriptions.py::test_unpinned_descriptions_are_rejected_at_load",
+    "tests/conformance/test_profile_descriptions.py::test_unknown_unpinned_capability_and_digest_mismatched_pins_fail_before_work"
+  ],
+  "RELEASE-MANIFEST": [
+    "tests/conformance/test_release_manifest.py::test_every_catalog_profile_publishes_the_canonical_release_root",
+    "tests/conformance/test_release_manifest.py::test_unknown_and_incomplete_roots_are_rejected",
+    "tests/conformance/test_release_manifest.py::test_release_root_references_fail_closed_for_locator_drift_and_absence",
+    "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
+    "tests/test_processing_pipeline.py::test_content_records_recompute_identity_and_output_digests_when_read",
+    "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
+    "tests/test_release_integrity.py::test_logical_release_verifier_rejects_individually_valid_but_unlinked_records",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "DOCUMENT-CATALOG-CONTRACT": [
+    "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_opens_compares_stages_and_commits_the_shared_release",
+    "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_conflicts_and_refuses_stale_or_unsealed_commits",
+    "tests/conformance/test_document_catalog_contract.py::test_every_registered_catalog_profile_replays_the_exact_stage_after_publish_before_head_update",
+    "tests/conformance/test_document_catalog_contract.py::test_document_catalog_independent_admission_rejects_cross_series_and_pointer_tamper",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "RECORD-STORAGE-CONTRACT": [
+    "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_passes_the_shared_layer_contract",
+    "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_rejects_unordered_and_duplicate_identities",
+    "tests/conformance/test_record_storage_contract.py::test_every_registered_record_profile_fails_closed_on_tampered_member_bytes",
+    "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
+    "tests/test_storage_records_catalog.py::test_identical_record_layer_roots_publish_atomically_under_concurrency",
+    "tests/test_storage_records_catalog.py::test_record_layer_rejects_unsorted_open_or_tampered_records",
+    "tests/test_bounded_partitions.py::test_jsonl_writer_bounds_open_members_and_never_whole_reads_members",
+    "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
+    "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "PROFILE-COMPATIBILITY": [
+    "tests/test_machine_files.py::test_profile_descriptions_are_closed_and_cover_every_role",
+    "tests/test_profile_registry.py::test_machine_profiles_load_and_select_one_implemented_local_set",
+    "tests/test_profile_registry.py::test_profile_selection_fails_before_work_when_a_requirement_is_missing",
+    "tests/conformance/test_profile_compatibility.py::test_every_one_per_role_combination_composes_or_registers_its_incompatibility",
+    "tests/conformance/test_profile_compatibility.py::test_a_specified_but_unimplemented_profile_refuses_selection",
+    "tests/conformance/test_profile_compatibility.py::test_an_incompatible_selection_fails_run_start_before_any_planning_state"
+  ],
+  "DOCUMENT-STORE": [
+    "tests/conformance/test_document_store.py::test_completed_and_accepted_failure_stores_reconcile_with_complete_counts",
+    "tests/conformance/test_document_store.py::test_a_rejected_store_reconciles_but_refuses_publication",
+    "tests/test_result_sinks_and_recovery.py::test_stateless_returned_run_cannot_advance_the_document_catalog",
+    "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
+    "tests/test_domain.py::test_document_store_is_a_bounded_revisioned_job_and_receipt",
+    "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
+    "tests/test_storage_adapters.py::test_document_store_repository_moves_large_entry_ledgers_to_bounded_members",
+    "tests/test_storage_adapters.py::test_document_store_repository_seals_exact_ordered_planned_population",
+    "tests/test_storage_adapters.py::test_planned_store_ledger_enforces_declared_count_and_byte_bounds",
+    "tests/test_bounded_partitions.py::test_planner_preserves_full_then_remaining_store_emission_order",
+    "tests/test_application_pipeline.py::test_reconciler_matches_the_exact_planned_terminal_store_set",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "BLOB-STORE-CONTRACT": [
+    "tests/test_storage_adapters.py::test_blob_store_streams_deduplicates_ranges_and_materializes",
+    "tests/test_storage_adapters.py::test_blob_store_fails_closed_for_limits_tampering_and_symlinks",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
+    "tests/test_s3_blob_adapter.py::test_blob_store_behavioral_contract",
+    "tests/test_s3_blob_adapter.py::test_put_is_bounded_and_checks_declared_identity_before_upload",
+    "tests/test_s3_blob_adapter.py::test_conditional_create_accepts_only_an_identical_concurrent_object",
+    "tests/test_s3_blob_adapter.py::test_stat_and_verify_reject_tampered_metadata_and_bytes",
+    "tests/test_s3_blob_adapter.py::test_reads_are_bounded_streaming_and_ranges_are_half_open",
+    "tests/test_s3_blob_adapter.py::test_materialization_is_contained_and_never_replaces_files",
+    "tests/test_s3_blob_adapter.py::test_provider_failures_are_normalized_at_the_adapter_boundary",
+    "tests/test_s3_blob_adapter.py::test_configuration_and_reference_validation_fail_closed",
+    "tests/test_s3_blob_adapter.py::test_boto3_factory_is_lazy_and_uses_the_same_injected_client_boundary",
+    "tests/test_s3_native_retries.py::test_native_sdk_limit_includes_initial_request_for_each_operation",
+    "tests/test_s3_native_retries.py::test_sdk_retries_remain_separate_from_attributed_document_attempts"
+  ],
+  "ACQUISITION": [
+    "tests/conformance/test_acquisition.py::test_capture_deduplication_and_deletion_reconcile_across_releases",
+    "tests/conformance/test_acquisition.py::test_a_transport_retry_reconciles_into_a_published_capture",
+    "tests/conformance/test_acquisition.py::test_drifted_source_bytes_fail_closed_without_a_stored_object",
+    "tests/conformance/test_acquisition.py::test_an_oversized_declared_candidate_refuses_planning_before_any_io",
+    "tests/test_content_fetchers.py::test_local_file_fetcher_is_contained_streamed_and_receipted",
+    "tests/test_content_fetchers.py::test_fetch_stream_closes_unstarted_source_once",
+    "tests/test_content_fetchers.py::test_local_fetcher_does_not_double_close_descriptors_under_concurrency",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_streams_pinned_object_and_closes",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_rejects_changed_response_and_closes",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_closes_truncated_oversized_and_failed_streams",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_closes_on_consumer_error_and_before_iteration",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_fails_before_io_for_bounds_and_source_escape",
+    "tests/test_content_fetchers.py::test_anonymous_s3_fetcher_normalizes_provider_failures_without_leaking_detail",
+    "tests/test_content_fetchers.py::test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme",
+    "tests/test_stage_checkpoint_recovery.py::test_blob_digest_rejection_closes_fetch_stream",
+    "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
+    "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
+    "tests/test_planner.py::test_source_partition_selection_rejects_undeclared_partition_before_item_stream",
+    "tests/test_planner.py::test_source_partition_selection_rejects_malformed_item_partition",
+    "tests/test_planner.py::test_selection_is_precompiled_and_rejects_malformed_selectors_without_items",
+    "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
+    "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
+    "tests/test_work_budget.py::test_source_and_memory_limits_apply_to_aggregate_store_work",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "REPRESENTATION": [
+    "tests/conformance/test_representation.py::test_supported_content_produces_identified_receipted_representations",
+    "tests/conformance/test_representation.py::test_unregistered_media_types_fail_closed",
+    "tests/test_processing_pipeline.py::test_stdlib_extractors_preserve_exact_source_and_are_retry_stable",
+    "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
+    "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "SEGMENTATION": [
+    "tests/conformance/test_segmentation.py::test_segments_are_deterministic_for_every_supported_content_type",
+    "tests/conformance/test_segmentation.py::test_segment_coverage_matches_each_supported_content_type",
+    "tests/test_processing_pipeline.py::test_unicode_paragraphs_use_exact_utf8_byte_coordinates",
+    "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
+    "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "EVIDENCE-ROUNDTRIP": [
+    "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
+    "tests/conformance/test_evidence_roundtrip.py::test_roundtrip_fails_closed_when_source_or_coordinates_drift",
+    "tests/test_processing_pipeline.py::test_image_passthrough_reports_header_metadata_and_exact_extent",
+    "tests/test_processing_pipeline.py::test_json_array_records_are_exact_reversible_source_slices",
+    "tests/test_processing_pipeline.py::test_pypdf_is_loaded_only_when_selected_and_pages_round_trip",
+    "tests/test_processing_pipeline.py::test_persisted_segment_reloads_with_exact_representation_and_source_round_trip",
+    "tests/test_processing_pipeline.py::test_identical_bytes_share_a_blob_without_sharing_logical_file_lineage",
+    "tests/test_release_integrity.py::test_logical_release_verifier_rejects_segment_without_persisted_mapping",
+    "tests/test_release_integrity.py::test_logical_release_verifier_visits_every_retained_blob_reference",
+    "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "RETAINED-RESULT-EVIDENCE": [
+    "tests/conformance/test_evidence_roundtrip.py::test_every_fixture_segment_resolves_to_its_representation_and_exact_source",
+    "tests/test_release_integrity.py::test_logical_release_verifier_accepts_complete_source_lineage",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
+    "tests/test_result_export.py::test_export_opens_without_workspace_and_does_not_repeat_processing",
+    "tests/test_result_export.py::test_zero_task_successor_exports_entire_retained_population",
+    "tests/test_result_export.py::test_explicit_admission_preserves_valid_gaps_or_refuses_with_reasons",
+    "tests/test_result_export_admission.py::test_self_consistent_wrong_segment_bytes_refuse_the_claimed_slice"
+  ],
+  "PROCESSOR-CONTRACT": [
+    "tests/conformance/test_processor_contract.py::test_fake_and_real_processors_pass_one_reference_based_contract",
+    "tests/conformance/test_processor_contract.py::test_dependency_outputs_flow_only_through_declared_edges",
+    "tests/conformance/test_processor_contract.py::test_every_scheduled_item_ends_in_one_registered_processor_disposition",
+    "tests/test_domain.py::test_processing_plan_pins_the_complete_processor_graph",
+    "tests/test_domain.py::test_processor_description_is_closed_provider_neutral_and_identity_bearing",
+    "tests/test_processing_pipeline.py::test_injected_statistics_processor_is_deterministic_and_evidence_linked",
+    "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
+    "tests/test_processor_cache.py::test_sqlite_cache_reopens_and_returns_the_existing_immutable_winner",
+    "tests/test_processor_cache.py::test_sqlite_cache_concurrent_writers_observe_one_immutable_winner",
+    "tests/test_processor_cache.py::test_sqlite_cache_discard_is_conditional_on_the_observed_reference",
+    "tests/test_processor_cache.py::test_segment_input_digest_survives_physical_blob_relocation",
+    "tests/test_processor_cache.py::test_exact_result_cache_skips_reexecution_across_plan_identity",
+    "tests/test_processor_cache.py::test_invalid_cache_reference_is_recomputed_and_repaired",
+    "tests/test_processor_cache.py::test_overlapping_processor_attempts_converge_on_the_cache_winner",
+    "tests/test_processor_cache.py::test_cache_outage_falls_back_to_processor_execution",
+    "tests/test_processor_reprocessing.py::test_processor_result_must_report_declared_media_and_resources",
+    "tests/test_work_budget.py::test_observed_pages_segments_and_processor_invocations_enforce_actual_limits",
+    "tests/test_work_budget.py::test_processor_input_declaration_is_enforced_before_invocation",
+    "tests/test_work_budget.py::test_processor_retry_is_bounded_receipted_and_charged_once",
+    "tests/test_work_budget.py::test_processor_retry_exhaustion_preserves_every_attempt",
+    "tests/test_work_budget.py::test_processor_item_duration_uses_worker_observation",
+    "tests/test_work_budget.py::test_elapsed_duration_is_checked_after_injected_stage_work",
+    "tests/test_policy_security.py::test_retention_and_data_use_policies_are_closed_versioned_and_identity_bearing",
+    "tests/test_policy_security.py::test_processor_payload_contains_only_policy_selected_fields",
+    "tests/test_policy_security.py::test_external_provider_evidence_matches_the_sealed_data_use_modes",
+    "tests/test_policy_security.py::test_external_request_accounting_matches_the_declared_execution_scope",
+    "tests/test_policy_security.py::test_processor_receipts_reject_secrets_and_diagnostics_redact_them",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "RESULT-SINK": [
+    "tests/conformance/test_result_sink_contract.py::test_every_registered_delivery_profile_passes_the_shared_store_contract",
+    "tests/conformance/test_result_sink_contract.py::test_interrupted_acknowledgement_replays_to_the_same_receipt",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
+    "tests/test_result_sinks_and_recovery.py::test_returned_sink_streams_with_acknowledgement_backpressure_and_stable_replay",
+    "tests/test_result_sinks_and_recovery.py::test_durable_and_hybrid_sinks_replay_to_the_same_immutable_layers",
+    "tests/test_result_sinks_and_recovery.py::test_delivery_receipt_outcomes_are_complete_and_bounded",
+    "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits"
+  ],
+  "SCHEDULER-PORTABILITY": [
+    "tests/conformance/test_scheduler_portability.py::test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_backend",
+    "tests/test_dagster_adapter.py::test_reconstructable_job_crosses_dagsters_multiprocess_worker_boundary",
+    "tests/test_execution_backends.py::test_execution_messages_are_closed_canonical_and_idempotent",
+    "tests/test_execution_backends.py::test_local_backend_uses_the_portable_messages_with_bounded_concurrency",
+    "tests/conformance/test_scheduler_portability.py::test_native_dagster_executes_the_real_graph_and_matches_local_and_external_runs",
+    "tests/test_execution_backends.py::test_backend_rejects_a_task_stream_that_differs_from_the_sealed_handoff",
+    "tests/test_execution_backends.py::test_local_backend_rejects_an_expired_profile_before_starting_work",
+    "tests/test_execution_backends.py::test_backend_verifies_the_complete_profile_reference_before_work",
+    "tests/test_execution_backends.py::test_local_backend_rejects_a_completion_after_its_deadline",
+    "tests/conformance/test_scheduler_portability.py::test_native_dagster_worker_failure_publishes_no_partial_run_or_release",
+    "tests/test_dagster_adapter.py::test_real_dagster_job_executes_reference_only_tasks_and_records_events",
+    "tests/test_dagster_adapter.py::test_dagster_retry_policy_recovers_one_mapped_task_without_rewriting_siblings",
+    "tests/test_dagster_adapter.py::test_rerunning_the_job_reuses_idempotent_handler_results",
+    "tests/test_dagster_adapter.py::test_malformed_or_incomplete_task_stream_fails_the_run",
+    "tests/test_dagster_adapter.py::test_missing_mapped_result_cannot_produce_a_successful_run",
+    "tests/test_dagster_adapter.py::test_executor_and_retry_policy_are_injected_at_the_composition_root",
+    "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases",
+    "tests/test_dagster_experiment.py::test_installed_native_dagster_resources_recover_document_checkpoints"
+  ],
+  "DOCUMENT-RELEASE-INTEGRITY": [
+    "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
+    "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",
+    "tests/test_domain.py::test_document_release_is_a_complete_versioned_derivation_view",
+    "tests/test_reconciliation_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_commits_and_reopens_complete_state",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_rejects_valid_but_unrelated_release_state",
+    "tests/test_storage_records_catalog.py::test_manifest_catalog_verifies_every_blob_root_and_its_pinned_profile",
+    "tests/test_release_integrity.py::test_logical_release_verifier_rejects_segment_without_persisted_mapping",
+    "tests/test_maintenance.py::test_retention_set_is_derived_from_verified_release_store_and_profile_roots",
+    "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "INCREMENTAL-EQUIVALENCE": [
+    "tests/test_planner.py::test_planner_streams_bounded_stores_and_schedules_only_selected_work",
+    "tests/test_planner.py::test_targeted_selection_uses_source_partitions_and_stable_logical_buckets",
+    "tests/test_planner.py::test_changed_selection_reuses_identical_selected_items_without_work",
+    "tests/test_bounded_partitions.py::test_planner_spools_many_touched_partitions_with_deterministic_store_order",
+    "tests/test_reconciliation_workspace.py::test_sqlite_workspace_replaces_affected_rows_and_streams_one_sorted_collection",
+    "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
+    "tests/test_processor_reprocessing.py::test_changed_processor_reuses_content_and_runs_only_it_and_dependents",
+    "tests/test_maintenance.py::test_compaction_commits_a_zero_task_successor_with_exact_logical_state",
+    "tests/conformance/test_incremental_equivalence.py::test_clean_incremental_targeted_and_compacted_paths_converge_on_active_document_state",
+    "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
+    "tests/test_application_pipeline.py::test_full_and_incremental_runs_use_bounded_jobs_and_immutable_releases"
+  ],
+  "RECOVERY": [
+    "tests/conformance/test_recovery.py::test_a_restarted_coordinator_reconciles_replayed_results_to_the_same_release",
+    "tests/conformance/test_recovery.py::test_a_replayed_store_task_reuses_verified_work_and_delivers_identically",
+    "tests/test_storage_adapters.py::test_document_store_repository_saves_immutable_revisions",
+    "tests/test_storage_adapters.py::test_document_store_latest_reads_only_the_newest_revision_while_revisions_validate_history",
+    "tests/test_storage_adapters.py::test_revision_writes_stage_crash_debris_outside_the_declared_revision_set",
+    "tests/test_storage_adapters.py::test_planned_store_ledger_presence_distinguishes_absence_from_invalid_state",
+    "tests/test_runtime_api.py::test_task_recovery_executes_only_an_unfinished_real_store",
+    "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
+    "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits",
+    "tests/test_result_sinks_and_recovery.py::test_worker_restart_reuses_the_verified_entry_checkpoint",
+    "tests/test_stage_checkpoint_recovery.py::test_restart_after_extraction_reuses_exact_files_and_representations",
+    "tests/test_stage_checkpoint_recovery.py::test_restart_after_segmentation_reuses_all_content_stages",
+    "tests/test_stage_checkpoint_recovery.py::test_restart_after_processor_layer_runs_only_the_remaining_dependency_layer",
+    "tests/test_stage_checkpoint_recovery.py::test_partial_processor_checkpoint_restores_every_cumulative_budget_counter",
+    "tests/test_stage_checkpoint_recovery.py::test_tampered_stage_receipt_fails_closed_before_any_work_restarts",
+    "tests/test_stage_checkpoint_recovery.py::test_resumed_content_matches_uninterrupted_content_with_candidate_stage_revisions",
+    "tests/test_stage_checkpoint_recovery.py::test_duplicate_stage_receipt_fails_closed_before_any_work_restarts",
+    "tests/test_stage_checkpoint_recovery.py::test_hard_crash_after_capture_reuses_bytes_and_reruns_only_incomplete_extraction",
+    "tests/test_stage_checkpoint_recovery.py::test_two_candidate_resume_never_refetches_verified_candidates",
+    "tests/test_stage_checkpoint_recovery.py::test_crash_during_second_candidate_reuses_completed_first_candidate",
+    "tests/test_processor_only_checkpoint_recovery.py::test_processor_only_restart_reuses_base_and_checkpoints_changed_layers",
+    "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
+    "tests/test_work_budget.py::test_resume_accounting_includes_zero_output_processor_invocations"
+  ],
+  "SCALE-FORMAT": [
+    "tests/test_scale_profile.py::test_document_processing_scale_profile_remains_one_closed_canonical_variant",
+    "tests/test_scale_profile.py::test_source_catalog_profile_pins_every_accepted_section_without_processing_fields",
+    "tests/test_scale_profile.py::test_scale_profile_identity_changes_with_variant_inputs_or_ceilings",
+    "tests/test_scale_profile.py::test_scale_profile_union_rejects_old_mixed_or_unknown_shapes",
+    "tests/test_scale_profile.py::test_document_variant_retains_processor_and_resource_validation",
+    "tests/test_scale_profile.py::test_scale_result_is_closed_canonical_and_binds_complete_catalog_evidence",
+    "tests/test_scale_profile.py::test_scale_result_rejects_false_passes_for_both_workload_variants",
+    "tests/test_scale_profile.py::test_scale_result_fails_closed_for_identity_verdict_and_canonical_bytes",
+    "tests/test_scale_profile.py::test_checked_in_schemas_admit_both_profile_variants_and_result_evidence",
+    "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact",
+    "tests/test_cli.py::test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli"
+  ],
+  "INSTALLED-PACKAGE": [
+    "tests/test_package_boundary.py::test_installed_wheel_preserves_public_runtime_and_packaged_resources",
+    "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",
+    "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
+    "tests/test_cli.py::test_document_release_compact_runs_the_local_maintenance_service",
+    "tests/test_cli.py::test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index",
+    "tests/test_source_catalog_installed_wheel.py::test_installed_wheels_cover_source_kinds_reuse_and_independent_admission",
+    "tests/test_govinfo_bill_installed_wheel.py::test_bill_example_uses_installed_provider_and_reprocesses_offline"
   ]
 }

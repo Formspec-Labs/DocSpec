@@ -61,7 +61,7 @@ def _cmd_profile_list(args: argparse.Namespace) -> int:
             "implementationModule": item.implementation_module,
             "configurationDigest": item.description.configuration_digest,
             "descriptionDigest": item.description_digest,
-            "verifier": {"status": item.verifier_status, "testId": item.verifier_test_id},
+            "verifierTestId": item.verifier_test_id,
         }
         for item in registry.list()
     ]

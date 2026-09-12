@@ -31,7 +31,6 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "processing": {"processing", "ports", "domain", "errors"},
     "profile_registry": {"domain", "errors"},
     "workspace": {"profile_registry"},
-    "conformance": {"conformance", "domain", "errors", "__init__"},
     "application": {"application", "ports", "domain", "processing", "errors"},
     "adapters": {
         "adapters",
@@ -57,7 +56,6 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "cli_io",
         "adapters",
         "application",
-        "conformance",
         "domain",
         "errors",
         "ports",

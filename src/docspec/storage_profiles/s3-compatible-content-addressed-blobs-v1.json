@@ -16,8 +16,12 @@
     "sizeMetadataKey": "docspec-byte-size"
   },
   "configurationDigest": "sha256:674d2434ec7abae3437ef27ee278116518bdd69f0b248fa574e576903df93dbf",
-  "logicalSchemas": ["docspec-blob-reference/1.0"],
-  "physicalMediaTypes": ["application/octet-stream"],
+  "logicalSchemas": [
+    "docspec-blob-reference/1.0"
+  ],
+  "physicalMediaTypes": [
+    "application/octet-stream"
+  ],
   "capabilities": {
     "conditionalCreate": true,
     "contentAddressedKeys": true,
@@ -39,8 +43,5 @@
     "profileSetId": "urn:docspec:profile-set:s3-compatible:1",
     "requires": []
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "BLOB-STORE-CONTRACT"
-  }
+  "verifierTestId": "BLOB-STORE-CONTRACT"
 }

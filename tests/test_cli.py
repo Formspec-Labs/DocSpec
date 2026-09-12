@@ -66,7 +66,6 @@ ZERO_DIGEST = "sha256:" + "0" * 64
         ("sink", ("verify",)),
         ("document-release", ("retain", "commit", "verify", "diff", "compact")),
         ("blob-store", ("verify", "gc")),
-        ("conformance", ("run", "report")),
     ],
 )
 def test_one_cli_exposes_the_complete_lifecycle(

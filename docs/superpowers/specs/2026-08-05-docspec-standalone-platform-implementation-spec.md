@@ -6,6 +6,15 @@ Editor's Draft — 25 August 2026
 
 ## Status
 
+**Scope amendment, 12 September 2026:** The current
+[dataset experiment checklist](../../dataset-experiments-todo.md) and
+[qualification guide](../../qualification.md) govern the revised product scope.
+They supersede this draft's custom conformance report, predecessor-code absence
+proof, unconditional campaign ladder, and completion requirements for retired
+exports or unused integrations. Other entries below record the original design
+and must be checked against current code before use. Superseded or unrun checks
+are not passing checks.
+
 This specification defines the work required to make DocSpec a standalone
 platform for acquiring and processing large collections of files.
 
@@ -2023,8 +2032,6 @@ docspec document-release diff
 docspec document-release compact
 docspec blob-store verify
 docspec blob-store gc --dry-run
-docspec conformance run
-docspec conformance report
 ```
 
 Every mutating command MUST accept an explicit destination, refuse replacement
@@ -2141,18 +2148,21 @@ remain within the profile's declared targets, resources, and absolute ceilings.
 This evidence model records a completed run; it does not add scheduler state or
 campaign execution machinery to DocSpec.
 
-### 13.2 Ordered campaigns
+### 13.2 Representative capacity measurements
 
-The reference implementation MUST pass these campaigns in order:
-
-1. 100,000 representative image or page units;
-2. 1,000,000 representative image or page units; and
-3. at least 5,000,000 representative image or page units.
+Select workload sizes and acceptance thresholds for the dataset or deployment
+decision being qualified. The original 100k/1m/5m ladder is retired as an
+unconditional prerequisite. The [qualification guide](../../qualification.md)
+defines the exact inputs, resources, recovery and measured results to retain.
 
 Samples MUST cover byte-size, page-count, segment-count, media-type, and
 observed-cost ranges. A convenient prefix is not representative.
 
 ### 13.3 Base-platform targets
+
+The following five-million-unit target is an unqualified historical target,
+not a current capacity promise. Adopt it only through an explicit workload
+decision and the measurements required above.
 
 With source bytes colocated with the processing store, the five-million-unit
 base campaign SHOULD complete within 24 hours on no more than 256 effective
@@ -2229,31 +2239,27 @@ policy requires. Failure MUST NOT trigger an undeclared provider or processor.
 
 ### 15.1 Evidence report
 
-Each conformance run MUST emit a closed JSON report containing:
+Regression runs use native pytest reports and the current
+[required-test map](../../../conformance/test-matrix.json). The strict pytest
+option requires complete execution of every mapped function and parameter case;
+missing, skipped, expected-failure or incomplete required work fails the gate.
+CI retains native JUnit and console output with the lockfile and built wheels
+under its exact source checkout. There is no separate DocSpec test runner or
+closed conformance-report format.
 
-- specification ID and normative source path;
-- conformance class;
-- the exact clean Git commit containing the normative specification, matrix,
-  implementation, tests, and dependency lock;
-- exact input and output identities and digests;
-- plan and configuration identity;
-- command and environment identity;
-- required test identifiers and verdicts;
-- document-store counts, dispositions, retries, and failures;
-- bytes read, reused, written, delivered, and published;
-- wall time and peak memory when applicable;
-- verifier identity and version;
-- first registered failure code; and
-- overall `pass` or `fail`.
-
-A required test that is absent, skipped, or xfailed MUST fail the class.
-A release conformance run MUST also fail when its source is dirty or is not a Git
-checkout. The commit and normative path pin repository source; the runner MUST
-NOT manually walk and hash selected repository files. Runtime packages, inputs,
-outputs, and other bytes exchanged outside Git retain their normal content
-digests.
+Capacity and publication claims require actual input/output artifact pins,
+configuration, commands, environment, resource measurements and destination
+evidence as applicable. Preserve those measurements and failures from the real
+operation; test results cannot manufacture them. The
+[qualification guide](../../qualification.md) is the current authority.
 
 ### 15.2 Required tests
+
+This table records the original draft requirements. The current executable
+[regression map](../../../conformance/test-matrix.json) and the nine scope
+dispositions in the [qualification guide](../../qualification.md) supersede
+changed rows, including historical-code, search-corpus, scale and publication
+claims. No hand-maintained implementation status establishes a passing result.
 
 <!-- markdownlint-disable MD013 -->
 
@@ -2470,7 +2476,12 @@ object store, table engine, or analytics engine as part of this sequence.
 
 ## 17. Completion decision
 
-DocSpec is complete only when:
+The following is the historical draft completion list. For the current scope,
+use the [dataset experiment checklist](../../dataset-experiments-todo.md) and
+[qualification evidence requirements](../../qualification.md); they explicitly
+retain gaps and record retirement decisions.
+
+The original draft considered DocSpec complete only when:
 
 - it builds and atomically publishes one complete immutable `SourceCatalog`
   snapshot through injected source and storage ports;
@@ -2551,7 +2562,6 @@ govern the installed package.
 ## Appendix B. Required machine files
 
 ```text
-conformance/specification.json
 conformance/test-matrix.json
 conformance/scale-profile.schema.json
 conformance/scale-result.schema.json

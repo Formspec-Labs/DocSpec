@@ -9,7 +9,6 @@ from typing import Any
 from docspec.cli.blobs import _cmd_blob_store_gc, _cmd_blob_store_verify
 from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select
 from docspec.cli.common import _write_failure_receipt
-from docspec.cli.conformance import _cmd_conformance_report, _cmd_conformance_run
 from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
 from docspec.cli.inspection import add_inspection_command
 from docspec.cli.plans import _cmd_document_store_create, _cmd_document_store_verify, _cmd_plan_create
@@ -252,19 +251,6 @@ def build_parser() -> argparse.ArgumentParser:
     blob_gc.add_argument("--dry-run", action="store_true", required=True)
     blob_gc.set_defaults(func=_cmd_blob_store_gc)
 
-    conformance = commands.add_parser("conformance", help="Run and inspect executable conformance evidence")
-    conformance_commands = _subcommands(conformance, dest="conformance_command")
-    conformance_run = conformance_commands.add_parser("run", help="Execute every required selector and seal a report")
-    conformance_run.add_argument("--root", type=Path, required=True)
-    conformance_run.add_argument("--specification", type=Path, required=True)
-    conformance_run.add_argument("--matrix", type=Path, required=True)
-    conformance_run.add_argument("--output", type=Path, required=True)
-    conformance_run.add_argument("--class", dest="conformance_class", default="core")
-    conformance_run.add_argument("--timeout-seconds", type=int, default=600)
-    conformance_run.set_defaults(func=_cmd_conformance_run)
-    conformance_report = conformance_commands.add_parser("report", help="Verify and summarize an existing report")
-    conformance_report.add_argument("report", type=Path)
-    conformance_report.set_defaults(func=_cmd_conformance_report)
     return parser
 
 

@@ -9,8 +9,12 @@
   "implementationModule": "docspec.adapters.sinks:ReturnedResultSink",
   "configuration": {},
   "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "logicalSchemas": ["docspec-delivery-receipt/1.1"],
-  "physicalMediaTypes": ["application/x-ndjson"],
+  "logicalSchemas": [
+    "docspec-delivery-receipt/1.1"
+  ],
+  "physicalMediaTypes": [
+    "application/x-ndjson"
+  ],
   "capabilities": {
     "acknowledgements": true,
     "backpressure": true,
@@ -25,10 +29,9 @@
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
-    "requires": ["urn:docspec:profile:document-store-persistence:local-json:1"]
+    "requires": [
+      "urn:docspec:profile:document-store-persistence:local-json:1"
+    ]
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "RESULT-SINK"
-  }
+  "verifierTestId": "RESULT-SINK"
 }

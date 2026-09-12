@@ -76,19 +76,6 @@ def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable
         drifted.write_text(json.dumps(drifted_value), encoding="utf-8")
         assert ProfileRegistry.from_file(drifted).description_digest != registered.description_digest
 
-        evidence_value = json.loads(path.read_text(encoding="utf-8"))
-        evidence_value["verifier"] = {
-            "status": "partial" if value["verifier"]["status"] == "implemented" else "implemented",
-            "testId": value["verifier"]["testId"],
-        }
-        evidence = tmp_path / f"evidence-{path.name}"
-        evidence.write_text(json.dumps(evidence_value), encoding="utf-8")
-        flipped = ProfileRegistry.from_file(evidence)
-        assert flipped.description_digest == registered.description_digest
-        assert flipped.description.pin(description_digest=flipped.description_digest) == description.pin(
-            description_digest=registered.description_digest
-        )
-
 def test_unpinned_descriptions_are_rejected_at_load(tmp_path: Path) -> None:
     for path in _storage_profile_paths():
         value = json.loads(path.read_text(encoding="utf-8"))

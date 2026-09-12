@@ -39,23 +39,13 @@ def _sha256(path: Path) -> str:
 
 def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     tmp_path: Path,
+    docspec_wheel: Path,
 ) -> None:
     uv = shutil.which("uv")
     assert uv is not None, "the installed-wheel SourceCatalog proof requires uv"
     assert _sha256(RULESPEC_WHEEL) == RULESPEC_WHEEL_SHA256
     assert _sha256(SPICY_DOCS_WHEEL) == SPICY_DOCS_WHEEL_SHA256
 
-    build_root = tmp_path / "build"
-    build_root.mkdir()
-    build = subprocess.run(
-        [uv, "build", "--wheel", "--out-dir", str(build_root)],
-        cwd=ROOT,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert build.returncode == 0, build.stderr
-    docspec_wheel = next(build_root.glob(f"docspec-{docspec.__version__}-*.whl"))
     with zipfile.ZipFile(docspec_wheel) as archive:
         assert not any(
             name.endswith(".whl") or name.startswith("spicy_docs/")

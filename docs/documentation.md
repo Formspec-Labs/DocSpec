@@ -34,6 +34,7 @@ same change as the behavior or file move they describe.
 | Export active results and read them without the original workspace | [Result exports](result-exports.md) |
 | Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
+| Distinguish regression results, capacity claims, and publication evidence | [Qualification](qualification.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Understand supported identity values and the shared encoder | [Canonical JSON](canonical-json.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |

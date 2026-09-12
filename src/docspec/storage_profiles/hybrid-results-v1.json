@@ -38,8 +38,5 @@
       "urn:docspec:profile:record-storage:local-jsonl:1"
     ]
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "RESULT-SINK"
-  }
+  "verifierTestId": "RESULT-SINK"
 }

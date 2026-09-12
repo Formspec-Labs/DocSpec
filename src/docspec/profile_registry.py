@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from docspec.domain.identity import identity_digest, parse_closed_json, thaw_json
+from docspec.domain.identity import identity_digest, parse_closed_json, require_text, thaw_json
 from docspec.domain.profiles import ProfileDescription, ProfileRole, ProfileSet
 from docspec.errors import ProfileError
 from docspec.domain.security import require_secret_free
@@ -27,7 +27,7 @@ _FIELDS = {
     "capabilities",
     "limits",
     "compatibility",
-    "verifier",
+    "verifierTestId",
 }
 
 BUILTIN_PROFILE_DIRECTORY = Path(__file__).with_name("storage_profiles")
@@ -43,7 +43,7 @@ LOCAL_PROFILE_IDS = (
 
 
 def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
-    """Return the executable profile fields; mutable evidence status is not identity-bearing."""
+    """Return the fields pinned by a selected profile."""
 
     return {
         key: value[key]
@@ -62,8 +62,9 @@ def _description_identity(value: dict[str, Any]) -> dict[str, Any]:
             "capabilities",
             "limits",
             "compatibility",
+            "verifierTestId",
         )
-    } | {"verifierTestId": value["verifier"]["testId"]}
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +74,6 @@ class RegisteredProfile:
     implementation_status: str
     implementation_module: str | None
     profile_set_id: str
-    verifier_status: str
     verifier_test_id: str
 
 
@@ -155,9 +155,7 @@ class ProfileRegistry:
         requires = compatibility["requires"]
         if not isinstance(requires, list) or any(not isinstance(item, str) or not item for item in requires):
             raise ProfileError(f"{path.name} has invalid compatibility requirements")
-        verifier = value["verifier"]
-        if not isinstance(verifier, dict) or set(verifier) != {"status", "testId"}:
-            raise ProfileError(f"{path.name} has an invalid verifier")
+        verifier_test_id = require_text(value["verifierTestId"], "verifier test ID")
         description = ProfileDescription(
             role=ProfileRole(value["role"]),
             profile_id=value["profileId"],
@@ -176,8 +174,7 @@ class ProfileRegistry:
             value["implementationStatus"],
             module,
             compatibility["profileSetId"],
-            verifier["status"],
-            verifier["testId"],
+            verifier_test_id,
         )
 
     def list(self, role: ProfileRole | None = None) -> tuple[RegisteredProfile, ...]:

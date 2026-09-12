@@ -16,7 +16,10 @@
     "docspec-planned-store-ledger/1.0",
     "docspec-planned-store-reference/1.0"
   ],
-  "physicalMediaTypes": ["application/json", "application/x-ndjson"],
+  "physicalMediaTypes": [
+    "application/json",
+    "application/x-ndjson"
+  ],
   "capabilities": {
     "boundedLedgers": true,
     "checkpoints": true,
@@ -39,8 +42,5 @@
       "urn:docspec:profile:record-storage:local-jsonl:1"
     ]
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "DOCUMENT-STORE"
-  }
+  "verifierTestId": "DOCUMENT-STORE"
 }

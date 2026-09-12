@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVIDER_ROOT = ROOT / "vendor"
 
 
-def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path):
+def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path, docspec_wheel):
     uv = shutil.which("uv")
     assert uv, "the installed-wheel bill qualification requires uv"
     manifest = json.loads((PROVIDER_ROOT / "spicy_docs.json").read_text())
@@ -23,15 +23,14 @@ def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path):
                    if key not in {"PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"}}
     environment["PYTHONNOUSERSITE"] = "1"
 
-    def run(arguments, root=tmp_path):
-        result = subprocess.run([str(value) for value in arguments], cwd=root, env=environment,
+    def run(arguments):
+        result = subprocess.run([str(value) for value in arguments], cwd=tmp_path, env=environment,
                                 capture_output=True, text=True, timeout=180)
         assert result.returncode == 0, result.stdout + result.stderr
 
     wheels = tmp_path / "wheelhouse"
     wheels.mkdir()
-    run([uv, "build", "--wheel", "--out-dir", wheels], root=ROOT)
-    docspec = next(wheels.glob("docspec-*.whl"))
+    docspec = Path(shutil.copy2(docspec_wheel, wheels / docspec_wheel.name))
     with zipfile.ZipFile(docspec) as archive:
         assert not any(name.startswith("spicy_docs/") or name.endswith(".whl") for name in archive.namelist())
     spicy_docs = Path(shutil.copy2(provider, wheels / provider.name))

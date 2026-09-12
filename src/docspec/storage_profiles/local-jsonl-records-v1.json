@@ -17,7 +17,9 @@
     "docspec-disposition-record/3.0",
     "docspec-receipt-record/1.0"
   ],
-  "physicalMediaTypes": ["application/x-ndjson"],
+  "physicalMediaTypes": [
+    "application/x-ndjson"
+  ],
   "capabilities": {
     "boundedExternalMerge": true,
     "boundedReadFanIn": true,
@@ -39,10 +41,9 @@
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
-    "requires": ["urn:docspec:profile:document-catalog:local-manifest:1"]
+    "requires": [
+      "urn:docspec:profile:document-catalog:local-manifest:1"
+    ]
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "RECORD-STORAGE-CONTRACT"
-  }
+  "verifierTestId": "RECORD-STORAGE-CONTRACT"
 }

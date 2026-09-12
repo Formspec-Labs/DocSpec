@@ -9,8 +9,12 @@
   "implementationModule": "docspec.adapters.storage:LocalManifestDocumentCatalog",
   "configuration": {},
   "configurationDigest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
-  "logicalSchemas": ["docspec-document-release/2.0"],
-  "physicalMediaTypes": ["application/json"],
+  "logicalSchemas": [
+    "docspec-document-release/2.0"
+  ],
+  "physicalMediaTypes": [
+    "application/json"
+  ],
   "capabilities": {
     "conditionalCommit": true,
     "explicitReleaseOpen": true,
@@ -26,10 +30,9 @@
   },
   "compatibility": {
     "profileSetId": "urn:docspec:profile-set:portable-local:1",
-    "requires": ["urn:docspec:profile:release-manifest:canonical-json:1"]
+    "requires": [
+      "urn:docspec:profile:release-manifest:canonical-json:1"
+    ]
   },
-  "verifier": {
-    "status": "implemented",
-    "testId": "DOCUMENT-CATALOG-CONTRACT"
-  }
+  "verifierTestId": "DOCUMENT-CATALOG-CONTRACT"
 }
