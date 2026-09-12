@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 7 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 9 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -128,7 +128,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d03"></a>
 
-- [ ] **D03 · P0 · Provide one simple runtime configuration.** Replace the
+- [x] **D03 · P0 · Provide one simple runtime configuration.** Replace the
   ordinary user's eight storage roots and six profile documents with a workspace
   location, useful defaults, explicit limits, and selected implementations. Keep
   advanced overrides where they serve an actual backend. **Done when:** an
@@ -146,14 +146,30 @@ to defer a conditional item is a documented deferral, not completed implementati
   implicit/explicit settings and proves identical references and successful
   resume. Workspace, CLI, offline-example, Dagster, conformance, and isolated-wheel
   checks passed (76 tests); independent review approved the foundation. The
-  ordinary caller's plan/implementation configuration remains open; this is
-  not yet the complete installed experiment workflow.
+  ordinary caller's plan/implementation configuration was completed below.
 
   **Runtime progress:** the [Python run API](python-runs.md) now accepts typed
   settings and the same workspace directly. An isolated installed-wheel probe
   builds a catalog, injects a fetcher and processor, runs once, and recovers the
   same result without caller plan/request files. Invalid settings refuse before
-  planning. Simpler plan construction and the complete example remain open.
+  planning.
+
+  **Completed September 11:** `prepare_local_experiment` now builds the existing
+  plan from the catalog, workspace, explicit limits and accepted producers, and
+  selected stage/processor objects. `PreparedLocalRun.plan` exposes that exact
+  plan. Python and CLI share local execution defaults. Processor policy errors
+  refuse before output storage is created; execution rechecks the same rules.
+  Advanced prebuilt plans and real storage overrides remain supported. No new
+  configuration format, implicit base selection, or acceptance authority was
+  introduced. See the [architecture decision](history/2026-09-11-local-experiment-setup-architecture.md)
+  and [independent review](history/2026-09-11-local-experiment-setup-review.md).
+
+  The focused and isolated installed-wheel gate passed 131 checks, including
+  capture then later processing, equivalent explicit settings, dependency-order
+  normalization, before-write refusal, source coordinates, and saved recovery.
+  The regression suite then passed 1,089 tests, with one live integration test
+  deselected and one example-import warning. Ruff and diff checks passed.
+  D04's catalog/export convenience and D38's complete exercise remain separate.
 
 <a id="d04"></a>
 
@@ -401,13 +417,27 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d17"></a>
 
-- [ ] **D17 · P0 · Make extracted representations an explicit choice.** Connect
+- [x] **D17 · P0 · Make extracted representations an explicit choice.** Connect
   existing markup, visible-text, PDF, and segmentation capabilities to the normal
   workflow with clear supported defaults. Preserve exact captures independently
   of derived text. **Done when:** an experiment can choose a supported
   representation and inspect its source coordinates; HTML/XML markup retention,
   PDF extraction limits, and image handling are accurately described. Neither
   OCR nor every format must be implemented to close this item. Depends on D13.
+
+  **Completed September 11:** the [representation guide](representations.md)
+  and [running example](../examples/representation_choices.py) connect HTML/XML
+  visible text to the normal runtime using the existing parsers. Derived whole
+  blocks retain honest enclosing source ranges; captures keep their exact bytes.
+  Immutable settings pin the chosen parser and mapping behavior. The guide
+  explains default markup retention, optional PDF extraction, image handling,
+  encoding, block-size limits, and the absence of OCR/browser rendering.
+  The solutions architect approved reusing existing parsers and whole-block
+  evidence instead of introducing new coordinate semantics. The
+  [independent review](history/2026-09-11-representation-choice-review.md)
+  approved the final implementation. D03's 131-check local gate includes the
+  installed visible-text lifecycle and evidence checks; these bounded fixtures
+  do not establish semantic completeness or corpus-scale performance.
 
 <a id="d18"></a>
 

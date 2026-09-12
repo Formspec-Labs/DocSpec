@@ -25,6 +25,7 @@ from docspec.adapters.storage import (
 )
 from docspec.application.delivery import StoreDeliveryService
 from docspec.application.execution import StoreExecutionService
+from docspec.application.processor_rules import verify_processor_policies
 from docspec.errors import IntegrityError, ProfileError
 from docspec.application.stage_identity import verify_stage_implementations
 from docspec.runtime.storage import _local_profiles, _local_storage
@@ -137,8 +138,13 @@ def _verified_processors(
     ):
         raise ProfileError("local processor implementations differ from the processing plan")
     processors = {identifier: processors[identifier] for identifier in plan.stages.processor_ids}
-    if ProcessorSet(tuple(processor.description for processor in processors.values())) != plan.processors:
+    descriptions = tuple(processor.description for processor in processors.values())
+    if ProcessorSet(descriptions) != plan.processors:
         raise ProfileError("local processor implementations differ from the processing plan")
+    try:
+        verify_processor_policies(plan, descriptions)
+    except IntegrityError as error:
+        raise ProfileError(str(error)) from error
     return dict(processors)
 
 

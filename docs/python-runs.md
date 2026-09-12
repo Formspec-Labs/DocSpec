@@ -1,45 +1,115 @@
 # Run a document experiment from Python
 
-`docspec.runtime.prepare_local_run` accepts a `ProcessingPlan`, a
-`LocalWorkspace`, and explicit execution choices. It builds the same services
-used by the CLI. Callers do not need to write plan or run-request JSON files.
-The API captures selected documents and runs the requested extraction,
-segmentation, and processing stages. It returns a checked run receipt reference;
+`docspec.runtime.prepare_local_experiment` accepts a source catalog, workspace,
+work limits, and the implementations you choose. It derives the existing
+`ProcessingPlan` and prepares the same runtime used by the CLI. You do not need
+to write plan files or repeat processor descriptions, stage digests, profile
+documents, or policy digests. `prepared.plan` exposes the exact saved plan.
+
+The prepared run captures selected documents and runs the requested stages.
+`prepared.run()` returns a checked run receipt reference;
 `prepared.retain(run_reference)` keeps the result without selecting it as current.
+Call `prepare_local_run` directly when you already have a custom plan.
 
 Build or open the input catalog through
 [`docspec.source_catalog`](catalog-evidence.md). A plan pins that catalog, its
 selected base result, processing choices, policies, and work limits. The
 workspace provides storage locations and installed profile descriptions.
 
-## Prepare and run
+## Start with a small configuration
+
+Given an existing source catalog reference, an absolute workspace path, your
+accepted producers, and a fetcher, capture the selected documents:
+
+```python
+from docspec.domain.plans import WorkLimits
+from docspec.runtime import prepare_local_experiment
+from docspec.workspace import LocalWorkspace
+
+workspace = LocalWorkspace(workspace_path)
+settings = dict(
+    limits=WorkLimits(
+        max_entries=2, max_estimated_bytes=16 * 1024**2,
+        max_pages_or_frames=1000, max_segments=2000,
+        max_processor_cost=2000, max_memory_bytes=128 * 1024**2,
+        max_duration_seconds=60, max_attempts=3,
+    ),
+    source_catalog_producer=accepted_source_producer,
+    document_release_producer=accepted_document_producer,
+    completed_at=evidence_timestamp,
+    deadline_epoch_seconds=deadline,
+    content_fetcher=fetcher,
+)
+with prepare_local_experiment(
+    source_catalog_reference, workspace, stop_after="capture", **settings,
+) as captured:
+    captured_result = captured.retain(captured.run())
+```
+
+Later, pass that result as the explicit base and choose the processing objects.
+DocSpec derives their stage pins and processor graph, then reuses verified
+captures:
+
+```python
+from docspec.processing.extraction import TextExtractor
+from docspec.processing.segmentation import ParagraphSegmenter
+from docspec.processing.processors import ContentStatisticsProcessor
+
+with prepare_local_experiment(
+    source_catalog_reference, workspace, base_release=captured_result,
+    extractor=TextExtractor(), segmenter=ParagraphSegmenter(),
+    processors=(ContentStatisticsProcessor(),), **settings,
+) as processed:
+    result = processed.retain(processed.run())
+    effective_plan = processed.plan
+```
+
+This example selects source-native text. Choose a supported extractor for your
+documents; see [representation choices](representations.md). A tuple of processor
+objects supplies the graph; you do not supply a second description or ID map.
+The default empty tuple adds no processor output. Requested extraction and
+segmentation use their supported defaults when objects are omitted.
+
+The helper selects installed local profiles, one record partition, retain-all
+storage, local-content data use, and no accepted failures. Its default retry
+policy uses the work limit's `max_attempts`. `local_execution_limits()` supplies
+the same defaults as the CLI: one worker and in-flight task, 4 GiB scratch per
+worker, an 8 GiB network allowance per task, 100 requests per second, provider
+concurrency four, and one scheduler attempt. These are upper bounds; the helper
+does not enlarge them to fit a larger plan. Work limits remain explicit.
+
+Supply `execution_limits`, `profiles`, `partition_count`, `retry_policy`,
+`accepted_failure_policy`, `retention_policy`, or `data_use_policy` when your
+experiment needs different settings. `selection` uses the existing plan filters.
+Workspace root/profile overrides remain available through `LocalWorkspace`.
+Configured processors must agree with the chosen retry and data-use policies;
+preparation refuses a mismatch before creating run state. For example, when
+`limits.max_attempts` differs from three, configure the processor with the same
+`RetryPolicy(max_attempts=limits.max_attempts)` used by the experiment.
+
+Producer acceptance, evidence timestamp, deadline, and a retained base are never
+inferred from the input artifact, current catalog head, or wall clock. To resume
+a saved handoff, reconstruct the same settings and pass `handoff_ref`; changed
+settings refuse instead of overriding saved work. The installed-wheel
+[lifecycle probe](../tests/support/installed_runtime_probe.py) exercises this
+small configuration, capture reuse, HTML visible-text blocks and their source
+coordinates, and exact recovery outside the checkout.
+
+## Use an existing plan
 
 Given a plan, an absolute workspace path, and independently chosen producer
 acceptance, prepare the run with existing domain values:
 
 ```python
-from docspec.domain.execution import ExecutionLimits
-from docspec.runtime import prepare_local_run
+from docspec.runtime import local_execution_limits, prepare_local_run
 from docspec.workspace import LocalWorkspace
 
-limits = ExecutionLimits(
-    worker_count=1,
-    max_concurrency_per_worker=1,
-    max_in_flight=1,
-    max_scratch_bytes_per_worker=4 * 1024**3,
-    max_network_bytes_per_task=8 * 1024**3,
-    request_rate_limit_per_second=100,
-    max_provider_concurrency=4,
-    max_task_attempts=1,
-    retry_initial_delay_milliseconds=0,
-    retry_max_delay_milliseconds=0,
-)
 settings = dict(
     retry_policy=retry_policy,
     accepted_failure_policy=accepted_failure_policy,
     source_catalog_producer=accepted_source_producer,
     document_release_producer=accepted_document_producer,
-    execution_limits=limits,
+    execution_limits=local_execution_limits(),
     deadline_epoch_seconds=deadline,
     completed_at=evidence_timestamp,
     content_fetcher=fetcher,

@@ -15,9 +15,9 @@ from docspec.cli_io import (
 from docspec.domain.jobs import FailureClass
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
-from docspec.domain.execution import ExecutionLimits
 from docspec.profile_registry import BUILTIN_PROFILE_DIRECTORY
 from docspec.runtime.composition import _utc_instant, _verify_plan_policies
+from docspec.runtime.defaults import local_execution_limits
 from docspec.runtime.storage import _local_profiles, _local_storage
 from docspec.workspace import LocalWorkspace
 
@@ -40,15 +40,11 @@ _LOCAL_RUN_OPTIONAL_FIELDS = {"profileDirectory", "roots", "resultSinkId", "part
 _LOCAL_EXECUTION_REQUIRED_FIELDS = {"deadlineEpochSeconds"}
 
 
+_LOCAL_DEFAULT_LIMITS = local_execution_limits()
 _LOCAL_EXECUTION_OPTIONAL_DEFAULTS = {
-    "maxWorkers": 1,
-    "maxScratchBytesPerWorker": 4 * 1024**3,
-    "maxNetworkBytesPerTask": 8 * 1024**3,
-    "requestRateLimitPerSecond": 100,
-    "maxProviderConcurrency": 4,
-    "maxTaskAttempts": 1,
-    "retryInitialDelayMilliseconds": 0,
-    "retryMaxDelayMilliseconds": 0,
+    "maxWorkers": _LOCAL_DEFAULT_LIMITS.worker_count,
+    **{key: value for key, value in _LOCAL_DEFAULT_LIMITS.to_dict().items()
+       if key not in {"workerCount", "maxConcurrencyPerWorker", "maxInFlight"}},
 }
 
 
@@ -169,12 +165,14 @@ def _local_run_arguments(request: dict[str, Any]) -> dict[str, Any]:
         "accepted_failure_policy": request["acceptedFailurePolicy"],
         "source_catalog_producer": request["sourceCatalogProducer"],
         "document_release_producer": request["documentReleaseProducer"],
-        "execution_limits": ExecutionLimits(
-            execution["maxWorkers"], 1, execution["maxInFlight"],
-            execution["maxScratchBytesPerWorker"], execution["maxNetworkBytesPerTask"],
-            execution["requestRateLimitPerSecond"], execution["maxProviderConcurrency"],
-            execution["maxTaskAttempts"], execution["retryInitialDelayMilliseconds"],
-            execution["retryMaxDelayMilliseconds"],
+        "execution_limits": local_execution_limits(
+            worker_count=execution["maxWorkers"], max_in_flight=execution["maxInFlight"],
+            max_scratch_bytes_per_worker=execution["maxScratchBytesPerWorker"],
+            max_network_bytes_per_task=execution["maxNetworkBytesPerTask"],
+            request_rate_limit_per_second=execution["requestRateLimitPerSecond"],
+            max_provider_concurrency=execution["maxProviderConcurrency"], max_task_attempts=execution["maxTaskAttempts"],
+            retry_initial_delay_milliseconds=execution["retryInitialDelayMilliseconds"],
+            retry_max_delay_milliseconds=execution["retryMaxDelayMilliseconds"],
         ),
         "deadline_epoch_seconds": execution["deadlineEpochSeconds"],
         "completed_at": request["completedAt"],

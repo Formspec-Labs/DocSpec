@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal
 
 from rulespec_artifacts import Producer
 
 from docspec.domain.execution import ExecutionLimits
-from docspec.domain.plans import ProcessingPlan, StagePolicy
-from docspec.application.stage_identity import configured_stage_policy
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorResult
 from docspec.domain.references import ArtifactRef
@@ -20,40 +18,19 @@ from docspec.processing.artifacts import RepresentationPayload, SegmentPayload
 from docspec.processing.extraction import ExtractionResult
 from docspec.ports.processor import Processor
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
-from docspec.runtime.composition import _compose_local_run, _stage_implementations
+from docspec.runtime.composition import _compose_local_run
+from docspec.runtime.defaults import local_execution_limits
 from docspec.runtime.execution import PreparedLocalRun
+from docspec.runtime.experiments import prepare_local_experiment, stage_policy
 from docspec.runtime.inspection import open_local_inspection
 from docspec.application.inspection import InspectionView
 from docspec.runtime.preparation import _load_prepared_local_run, _prepare_local_run
 from docspec.workspace import LocalWorkspace
 
-__all__ = ["InspectionView", "PreparedLocalRun", "open_local_inspection", "prepare_local_run", "stage_policy"]
-
-
-def stage_policy(
-    *,
-    stop_after: Literal["capture", "extraction", "segmentation", "processing"] = "processing",
-    extractor: Extractor[ExtractionResult] | None = None,
-    segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None = None,
-    processor_ids: tuple[str, ...] = (),
-) -> StagePolicy:
-    """Pin requested stages, constructing defaults only for stages that will run.
-
-    ``capture`` retains source files; ``extraction`` also retains representations;
-    ``segmentation`` also retains segments; ``processing`` runs the listed
-    processors. Objects and processor IDs beyond the stopping point are refused.
-    """
-    if stop_after not in {"capture", "extraction", "segmentation", "processing"}:
-        raise ValueError("stop_after must be capture, extraction, segmentation, or processing")
-    if stop_after != "processing" and processor_ids:
-        raise ValueError("processor identities require stop_after='processing'")
-    extractor, segmenter = _stage_implementations(
-        extractor, segmenter,
-        requests_extraction=stop_after != "capture",
-        requests_segmentation=stop_after in {"segmentation", "processing"},
-    )
-    return configured_stage_policy(extractor, segmenter, processor_ids)
-
+__all__ = [
+    "InspectionView", "PreparedLocalRun", "local_execution_limits", "open_local_inspection",
+    "prepare_local_experiment", "prepare_local_run", "stage_policy",
+]
 
 
 def prepare_local_run(

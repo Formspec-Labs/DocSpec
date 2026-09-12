@@ -16,6 +16,7 @@ from docspec.application.reconcile import RunReconciler
 from docspec.application.store_state import load_latest_store
 from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.jobs import StoreState
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.runtime.composition import _LocalRunComposition
@@ -47,6 +48,12 @@ class PreparedLocalRun:
             self._composition.workspace.roots["reconciliation"] / "task-membership",
             max_scratch_bytes=self.execution_profile.limits.max_scratch_bytes_per_worker,
         ))
+
+    @property
+    def plan(self) -> ProcessingPlan:
+        """The exact admitted plan used by this prepared run's bound services."""
+
+        return self._composition.plan
 
     def __enter__(self) -> Self:
         return self

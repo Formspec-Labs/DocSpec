@@ -25,7 +25,6 @@ from docspec.domain.jobs import (
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import (
     AcceptedFailurePolicy,
-    ProcessorExecutionScope,
     RetryPolicy,
 )
 from docspec.domain.processors import (
@@ -53,6 +52,7 @@ from .execution_checkpoints import EntryCheckpointVerifier, VerifiedEntryCheckpo
 from .execution_evidence import failure_record, put_receipt
 from .processor_rules import (
     flatten_processor_records,
+    verify_processor_policies,
 )
 from .processor_runtime import ProcessorRuntime
 from .store_state import load_latest_store
@@ -197,19 +197,7 @@ class StoreExecutionService:
         processor_set = ProcessorSet(descriptions)
         if processor_set != plan.processors:
             raise IntegrityError("injected processor descriptions differ from the processing plan")
-        expected_data_use = plan.data_use_policy.digest
-        for description in descriptions:
-            if description.data_use_policy_digest != expected_data_use:
-                raise IntegrityError(f"processor {description.processor_id} differs from the plan data-use policy")
-            if (
-                description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
-                and not plan.data_use_policy.allows_external_processing
-            ):
-                raise IntegrityError(
-                    f"processor {description.processor_id} declares external execution under a local-only data-use policy"
-                )
-            if description.retry_policy_digest != self._retry_policy.digest:
-                raise IntegrityError(f"processor {description.processor_id} differs from the plan retry policy")
+        verify_processor_policies(plan, descriptions)
         return plan
 
     def _execute_entry(

@@ -18,6 +18,26 @@ from docspec.errors import IntegrityError, LimitExceededError
 from docspec.processing.artifacts import SegmentPayload
 
 
+def verify_processor_policies(
+    plan: ProcessingPlan,
+    descriptions: tuple[ProcessorDescription, ...],
+) -> None:
+    """Reject incompatible processor policies before saving or executing work."""
+
+    for description in descriptions:
+        if description.data_use_policy_digest != plan.data_use_policy.digest:
+            raise IntegrityError(f"processor {description.processor_id} differs from the plan data-use policy")
+        if (
+            description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
+            and not plan.data_use_policy.allows_external_processing
+        ):
+            raise IntegrityError(
+                f"processor {description.processor_id} declares external execution under a local-only data-use policy"
+            )
+        if description.retry_policy_digest != plan.retry_policy_digest:
+            raise IntegrityError(f"processor {description.processor_id} differs from the plan retry policy")
+
+
 def flatten_processor_records(
     plan: ProcessingPlan,
     records: Mapping[str, list[DerivedRecord]],

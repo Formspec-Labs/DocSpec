@@ -89,11 +89,13 @@ local files, HTTPS, S3, and routing. Keep provider errors, stream cleanup, and
 capture verification at their respective owners.
 
 Extraction turns captured bytes into a representation and coordinates that
-trace back to those bytes. There are two compositions in this repository:
+trace back to those bytes. See [representation choices](representations.md) for
+supported defaults, visible-text experiments, PDF/image limits, and coordinate
+inspection. There are two compositions in this repository:
 
 | Composition | Extraction and segmentation |
 | --- | --- |
-| Application execution | `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image, or lazy PDF extraction; the executor then uses its configured segmenter. |
+| Application execution | `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image, or lazy PDF extraction. An experiment can instead choose `VisibleTextExtractor` with `VisibleTextBlockSegmenter`; the executor uses the pinned implementations. |
 | Historical portable mint recipe | `tools/build_document_release.py` selects visible-text extraction, retention-floor checks, and bounded text segmentation for its recorded campaign workflow. |
 
 The portable recipe is a repository tool, not an installed generic build API.

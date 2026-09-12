@@ -2,9 +2,10 @@
 
 DocSpec can retain two verified processing results built from the same base,
 open and compare both, and explicitly choose either as the current result.
-Saving a result does not select it. This is a foundation for the experiment
-workflow; the remaining lifecycle work is tracked in
-[D03–D04](dataset-experiments-todo.md#d03).
+Saving a result does not select it. The [Python runtime](python-runs.md) derives
+the plan from your selected implementations and explicit settings. Remaining
+catalog construction and export convenience are tracked in
+[D04](dataset-experiments-todo.md#d04).
 
 Use the supported [inspection API and commands](inspection.md) to compare
 scheduled work separately from each complete retained result.

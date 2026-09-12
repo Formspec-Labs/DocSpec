@@ -19,7 +19,8 @@ same change as the behavior or file move they describe.
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
 | Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
-| Prepare, execute, and recover a run using typed Python objects | [Python runs](python-runs.md) |
+| Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
+| Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
