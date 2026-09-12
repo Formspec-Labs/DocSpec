@@ -1094,6 +1094,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   and installed-provider checks still pass. The focused gate passed **78 tests
   in 25.96 seconds**, including actual installed wheels. Broader review is open.
 
+  The combined suite at `0cfae80` passed **1,065 tests**, with one live test
+  deselected, in 234.67 seconds and no warnings. The first full run found one
+  stale comment-profile parser test using the removed CLI option; `78e9a40`
+  updates that caller while retaining its profile-selection assertion.
+
 <a id="d36"></a>
 
 - [ ] **D36 · P1 · Keep one contributor path through the new workflow.** Update
@@ -1194,13 +1199,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   processor-addition clean comparison. Local checks are recorded there;
   broader D39 acceptance remains open.
 
-  **Latest local qualification, September 12:** the combined suite at `7188e34`
-  passed **1,072 tests**, with one live integration test deselected, in 239.01
-  seconds. This includes the optional provider package, catalog growth, retained
-  publisher-body processing, simplified profiles, and installed native Dagster
-  recovery. Its two process-fork warnings were then addressed by D35's focused
-  crash-test update. Ruff, lock consistency, and 414 maintained-guide local file
-  targets also passed. Independent review of the newest implementation is
+  **Latest local qualification, September 12:** the combined suite at `0cfae80`
+  passed **1,065 tests**, with one live integration test deselected, in 234.67
+  seconds and no warnings. This includes the optional provider package, catalog
+  growth, retained publisher-body processing, simplified profiles, catalog
+  admission through one verifier, and installed native Dagster recovery. The
+  lower test count reflects removal of the superseded command-receipt checks;
+  current catalog behavior retains direct coverage under D35. Ruff and lock
+  consistency passed; 414 maintained-guide local file targets passed at the
+  preceding milestone. Independent review of the newest implementation is
   pending because all three reviewers reached their usage limit; these local
   checks are not a substitute for that review or remote CI.
 
