@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 36 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 37 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1275,17 +1275,17 @@ caller lives; moving imports between modules does not remove a package cycle.
   [SpicyRegs SR01](../../spicy-regs/PLAN.md#sr01); recording them here is not their
   implementation task.
 
-  **Completed September 12 at `03df308`:** the caller inventory below selects
-  existing owners and records the remaining removal target. This is an inventory
-  completion; D42 still owns the CourtListener implementation change.
+  **Completed September 12 at `03df308`, updated after D42:** the caller inventory
+  below selects existing owners. D42 records the CourtListener implementation
+  and removal; completing an inventory alone does not establish adoption.
 
   | Current DocSpec caller | Reuse or keep decision |
   | --- | --- |
   | [`SpicyDocsSourceNativeAdapter`](../src/docspec/adapters/spicy_docs_source_native.py), `spicy_docs_source_profile` | Already consume public `source_native` and `source_native_profiles` for admitted records, renditions, outcomes, bounded evidence and failures. D43/D46 qualify the current wheel; no local source reader or replay engine is needed. |
   | [`BillContentFetcher`](../examples/govinfo_bill_fetcher.py), [`run_example`](../examples/govinfo_bills.py) | D12/D44/D53 use `BillAcquirer`, `BillAcquisitionBudget` and `select_bill_xml` from the same wheel. Provider owns URLs, parsing, identity and transport; the example owns the selected version, evidence destination and DocSpec mapping. |
-  | [`courtlistener_bulk_source`](../tools/courtlistener_bulk_source.py): `BulkObject`, `_text`, `parse_listing_page`, filename/media-type constants | Replace the copied publisher grammar with SpicyDocs `sources.courtlistener_listing.BulkObject` and `parse_listing_page`. The provider is stricter and preserves exact ETag strings; remove the old parser directly. Retain or move only the caller's input-pin checks, complete-page-set checks, dataset selection and coverage assertions. D42 owns this remaining handoff. |
+  | [`courtlistener_bulk_source`](../tools/courtlistener_bulk_source.py): `parse_capture`, `build_source_items`, `coverage_for` | D42 now consumes SpicyDocs `sources.courtlistener_listing.BulkObject` and `parse_listing_page`. The copied parser, object class and filename/media-type rules are removed. DocSpec retains input pins, page-set consistency, dataset selection and coverage assertions; publisher values remain exact. |
   | [`FederalRegisterCatalogPolicy`](../src/docspec/application/federal_register_catalog.py), [`RegulationsGovCatalogPolicy`](../src/docspec/application/regulations_gov_catalog/policy.py) and its [`records`](../src/docspec/application/regulations_gov_catalog/records.py) | Keep catalog normalization, joins, source-path evidence, rendition preference, sampling and disposition policy here. Withholding reason codes and test-fixture exclusions are explicit dataset decisions over retained literal fields. The selected provider has no equivalent DocSpec policy API; moving these classes would couple it to the dataset model. |
-  | [`fr_topic_receipt.fetch_live`](../tools/fr_topic_receipt.py), [`fetch_attachment_sample`](../tools/fetch_attachment_sample.py) | Keep these bounded-in-scope research questions separate from production acquisition. Their exact topic projection and direct Regulations.gov API/attachment probing are not supplied by the current public provider API. Do not add a second general provider framework to share them. Retire or replace the study-specific code with its workflow under D34 when superseded. |
+  | [`fr_topic_receipt.fetch_live`](../tools/fr_topic_receipt.py), [`fetch_attachment_sample`](../tools/fetch_attachment_sample.py) | Keep these targeted research questions separate from production acquisition. Their exact topic projection and direct Regulations.gov API/attachment probing are not supplied by the current public provider API. Do not add a second general provider framework to share them. Retire or replace the study-specific code with its workflow under D34 when superseded. |
   | Generic catalog/artifact admission and physical blob storage | Use Rulespec Artifacts, not the source provider, for shared encoding and containers. D28/D29 already consume those APIs. D31 records the exact concurrency/root-pinning gap that prevents replacing the remaining local blob writer safely. |
 
   No DocSpec experiment currently calls the Federal Register/GovInfo body
@@ -1297,7 +1297,7 @@ caller lives; moving imports between modules does not remove a package cycle.
 
 <a id="d42"></a>
 
-- [ ] **D42 · P2 · Replace DocSpec's copied publisher rules with provider APIs.**
+- [x] **D42 · P2 · Replace DocSpec's copied publisher rules with provider APIs.**
   Separate publisher identity, enumeration, literal fields, and listing grammar
   from DocSpec's dataset selection and normalization policy. **Done when:** local
   callers use the chosen installed provider API, exact values/evidence and
@@ -1306,6 +1306,17 @@ caller lives; moving imports between modules does not remove a package cycle.
   [S25–S26](../../spicy-docs/docs/simplification-todo.md#s25), or selected
   [SpicyRegs SR03](../../spicy-regs/PLAN.md#sr03) handoffs. A provider move remains
   optional. Depends on D41.
+
+  **Completed September 12 for D41's selected candidates:** the CourtListener
+  tool now uses the same installed SpicyDocs `0.3.0` wheel as the reader and bill
+  example. Removing its duplicate parser and filename rules cuts the tool by
+  **153 lines**. DocSpec retains its capture-pin, page consistency, selection and
+  coverage behavior. New catalog versions preserve exact ETag strings, and URLs
+  use provider escaping; the old normalization has no fallback path. The focused
+  gate passed **39 tests**, with one live test deselected, in 21.10 seconds.
+  This includes the retained 1,076-object listing, catalog publication, malformed
+  source refusals, and isolated packages. See the
+  [decision](cleanup-decisions.md#require-the-current-installed-source-reader).
 
 <a id="d43"></a>
 

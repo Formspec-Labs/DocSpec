@@ -8,6 +8,8 @@ the [decision index](docs/decisions/README.md) identifies the rules that govern 
 
 Use Python 3.12 and `uv`. The checked-in lock and vendored
 `rulespec-artifacts` wheel make development independent of sibling checkouts.
+Development also installs the pinned SpicyDocs reader so source integrations run
+in the default test suite. The built core wheel keeps SpicyDocs optional.
 From the repository root:
 
 ```sh

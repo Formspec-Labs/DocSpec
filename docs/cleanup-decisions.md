@@ -142,6 +142,21 @@ test wheel have no continuing role. The imported example has an
 [independent review](history/2026-09-12-govinfo-bill-handoff-review.md); the later
 single-wheel integration is locally tested and awaits fresh independent review.
 
+CourtListener's research tool now imports the provider's `BulkObject` and
+`parse_listing_page` directly. This removes its second XML parser, filename and
+media-type rules, and URL construction. Exact quoted ETags now reach candidate
+versions unchanged, and download URLs use the provider's escaping. There is no
+compatibility parser or wrapper class. DocSpec still owns dataset scope, retained
+input pins, and consistency checks over the supplied pages. Those checks do not
+prove that the original capture retained every intermediate publisher response.
+
+The development dependency group installs the same provider wheel so these
+tests run by default; isolated package checks still prove core use without it.
+The handoff gate passed 39 tests, including the pinned 1,076-object listing,
+catalog publication, source refusals and installed-package checks. One live
+acquisition test was deselected. This is the primary agent's implementation and
+architecture review; independent review remains open under D39.
+
 ## Dormant public helpers
 
 The same repository and known-consumer searches covered these candidates,

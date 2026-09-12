@@ -252,6 +252,7 @@ dev = [
     { name = "msgspec" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "spicy-docs" },
 ]
 
 [package.metadata]
@@ -277,6 +278,7 @@ dev = [
     { name = "msgspec", specifier = ">=0.18,<1" },
     { name = "pytest" },
     { name = "ruff", specifier = ">=0.12,<0.13" },
+    { name = "spicy-docs", path = "vendor/spicy_docs-0.3.0-py3-none-any.whl" },
 ]
 
 [[package]]

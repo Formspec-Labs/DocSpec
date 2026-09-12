@@ -1,47 +1,30 @@
-"""Enumerate the CourtListener bulk-data population from a pinned publisher capture.
+"""Map pinned CourtListener listing pages into DocSpec dataset selections.
 
-CourtListener publishes its whole corpus as periodic CSV dumps in a public
-bucket, and that bucket answers the S3 list API. The listing is therefore not a
-convenience index we assembled — it is *the publisher's own enumeration of what
-exists*, which is the only thing a coverage claim can honestly be measured
-against. This module treats it that way: the raw listing XML is captured
-verbatim, pinned by digest, and admitted only if every pinned byte still
-matches, so a rewritten capture changes an identity rather than quietly changing
-a population.
+SpicyDocs owns listing grammar, filenames, URLs and exact source revision markers.
+This tool owns captured-input pins, page-set consistency, dataset scope and
+coverage accounting. ACTIVE means selected from this listing; EXCLUDED records
+our selection decision. DELETED records absence from a later captured listing,
+not independent proof that an object is unavailable at the publisher.
 
-**Missing and refused are different, and stay different.** Three distinct
-states, decided here rather than discovered at fetch time:
-
-* ``ACTIVE`` — the publisher enumerates it and it is in scope. It must be
-  acquirable, and a ``404`` on it later is an integrity failure, not a miss.
-* ``DELETED`` — a previous capture enumerated it and this one does not. The
-  publisher withdrew it. That is *missing*, and it is recorded as a tombstone
-  rather than silently dropped, because a population that shrinks without saying
-  so is indistinguishable from a broken capture.
-* ``EXCLUDED`` — the publisher enumerates it and *we* declined it: an undated
-  one-off export, a loader script, or a dataset outside the requested scope.
-  That is *refused*, and it is our decision, recorded as ours.
-
-The distinction matters because the two failure modes have opposite remedies. A
-``DELETED`` item means the upstream population moved and our expectations should
-follow. An ``EXCLUDED`` item means we chose, and the choice is reviewable. Only
-``ACTIVE`` items make a promise that acquisition has to keep.
-
-This module builds catalogs; it acquires nothing. Bytes are fetched by the
-existing HTTPS content fetcher over the ``storage.courtlistener.com`` host, so
-the transport's own refusal semantics (``IntegrityError`` for a candidate that
-is gone or changed, a retryable ``ConnectionError`` for 429/5xx) apply
-unchanged.
+The listing's ETag, size and timestamp describe an observed revision. They do not
+hash document bytes or establish that a later download still matches. Acquisition
+uses the injected HTTPS fetcher and retains its own byte evidence.
 """
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+from spicy_docs.sources.courtlistener_listing import (
+    BULK_LIST_URL,
+    BULK_PREFIX,
+    BulkObject,
+    parse_listing_page,
+)
 
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import (
@@ -58,154 +41,17 @@ CAPTURE_FORMAT = "docspec-courtlistener-bulk-capture"
 CAPTURE_FORMAT_VERSION = "1.0"
 CAPTURE_IDENTITY_KIND = "courtlistener-bulk-capture"
 
-#: Public read host for the dumps. Acquisition must allow exactly this host.
-CONTENT_HOST = "storage.courtlistener.com"
-CONTENT_BASE = f"https://{CONTENT_HOST}"
-
-#: The bucket's list API host. Captured, never fetched from during acquisition.
-LISTING_HOST = "com-courtlistener-storage.s3.amazonaws.com"
-LISTING_PREFIX = "bulk-data/"
-
-_S3_NS = {"s3": "http://s3.amazonaws.com/doc/2006-03-01/"}
-
 MAX_PINS_BYTES = 1024**2
-MAX_CAPTURE_PAGE_BYTES = 8 * 1024**2
 
 _PINS_KEYS = frozenset({"format", "formatVersion", "pinsId", "members", "origin"})
 _MEMBER_KEYS = frozenset({"path", "mediaType", "byteSize", "digest"})
 
-_MEDIA_TYPES = {
-    ".csv.bz2": "application/x-bzip2",
-    ".csv": "text/csv",
-    ".sql": "application/sql",
-    ".sh": "application/x-sh",
-    ".zip": "application/zip",
-}
-_SUFFIXES = tuple(sorted(_MEDIA_TYPES, key=len, reverse=True))
-
-
-@dataclass(frozen=True, slots=True)
-class BulkObject:
-    """One object the publisher enumerates, with the bytes it promises."""
-
-    key: str
-    size: int
-    etag: str
-    last_modified: str
-
-    def __post_init__(self) -> None:
-        require_text(self.key, "bulk object key")
-        require_text(self.etag, "bulk object etag")
-        require_text(self.last_modified, "bulk object last modified")
-        if self.size < 0:
-            raise ValueError("bulk object size must be non-negative")
-
-    @property
-    def filename(self) -> str:
-        return self.key.rsplit("/", 1)[-1]
-
-    @property
-    def suffix(self) -> str | None:
-        for suffix in _SUFFIXES:
-            if self.filename.endswith(suffix):
-                return suffix
-        return None
-
-    @property
-    def media_type(self) -> str:
-        return _MEDIA_TYPES.get(self.suffix or "", "application/octet-stream")
-
-    @property
-    def stem(self) -> str:
-        suffix = self.suffix
-        return self.filename[: -len(suffix)] if suffix else self.filename
-
-    @property
-    def dump_date(self) -> date | None:
-        """The dump's date stamp, or None for the publisher's undated exports."""
-        tail = self.stem[-10:]
-        try:
-            return date.fromisoformat(tail)
-        except ValueError:
-            return None
-
-    @property
-    def dataset(self) -> str:
-        """Dataset name with any date stamp removed (``opinions``, ``courts``...)."""
-        stem = self.stem
-        if self.dump_date is not None and len(stem) > 11 and stem[-11] == "-":
-            return stem[:-11]
-        return stem
-
-    @property
-    def locator(self) -> str:
-        return f"{CONTENT_BASE}/{self.key}"
-
-    @property
-    def transport_version(self) -> str:
-        """Pin the exact revision the publisher is offering right now.
-
-        The listing's ETag is not a whole-object digest for multipart uploads, so
-        it cannot stand in for a SHA-256. Combined with size and last-modified it
-        still changes whenever the object does, which is what a version needs to
-        do.
-        """
-        return f"s3-listing:{self.etag}:{self.size}:{self.last_modified}"
-
-
-def _text(node: ET.Element, tag: str, label: str) -> str:
-    value = node.findtext(f"s3:{tag}", None, _S3_NS)
-    if value is None or not value.strip():
-        raise IntegrityError(f"bulk listing entry is missing {label}")
-    return value.strip()
-
-
-def parse_listing_page(payload: bytes) -> tuple[tuple[BulkObject, ...], str | None]:
-    """Parse one captured S3 listing page into objects plus its continuation token.
-
-    Strict on purpose: a listing that does not name the bucket and prefix we
-    captured, or an entry missing a size or version marker, is refused rather
-    than partially believed. A truncated population is the one failure this whole
-    module exists to make impossible to mistake for a complete one.
-    """
-    if len(payload) > MAX_CAPTURE_PAGE_BYTES:
-        raise LimitExceededError(f"bulk listing page exceeds the {MAX_CAPTURE_PAGE_BYTES}-byte limit")
-    try:
-        root = ET.fromstring(payload)
-    except ET.ParseError as error:
-        raise IntegrityError("bulk listing page is not well-formed XML") from error
-
-    prefix = root.findtext("s3:Prefix", "", _S3_NS)
-    if prefix != LISTING_PREFIX:
-        raise IntegrityError(f"bulk listing page covers prefix {prefix!r}, not {LISTING_PREFIX!r}")
-
-    objects = []
-    for node in root.findall("s3:Contents", _S3_NS):
-        key = _text(node, "Key", "a key")
-        if not key.startswith(LISTING_PREFIX):
-            raise IntegrityError(f"bulk listing entry escapes the captured prefix: {key}")
-        objects.append(
-            BulkObject(
-                key=key,
-                size=int(_text(node, "Size", "a size")),
-                etag=_text(node, "ETag", "an ETag").strip('"'),
-                last_modified=_text(node, "LastModified", "a last-modified stamp"),
-            )
-        )
-
-    truncated = root.findtext("s3:IsTruncated", "false", _S3_NS) == "true"
-    token = root.findtext("s3:NextContinuationToken", None, _S3_NS)
-    if truncated and not token:
-        raise IntegrityError("bulk listing page is truncated but names no continuation token")
-    return tuple(objects), (token if truncated else None)
-
 
 def parse_capture(pages: Sequence[bytes]) -> tuple[BulkObject, ...]:
-    """Parse an ordered capture of listing pages into one complete population.
+    """Read pinned pages, rejecting repeated keys and inconsistent termination.
 
-    Refuses a capture whose last page is still truncated: that is a population we
-    only partly saw, and admitting it would let a coverage denominator be quietly
-    too small.
+    These checks establish what the supplied pages enumerate. They cannot prove
+    that the capture process retained every intermediate publisher response.
     """
     if not pages:
         raise IntegrityError("bulk capture contains no listing pages")
@@ -218,7 +64,7 @@ def parse_capture(pages: Sequence[bytes]) -> tuple[BulkObject, ...]:
                 raise IntegrityError(f"bulk capture enumerates {obj.key} more than once")
             seen[obj.key] = obj
         if index < len(pages) - 1 and next_token is None:
-            raise IntegrityError("bulk capture has pages after an unterminated listing")
+            raise IntegrityError("bulk capture has pages after a completed listing page")
         token = next_token
     if token is not None:
         raise IntegrityError("bulk capture ends on a truncated listing page")
@@ -240,7 +86,8 @@ class BulkCapture:
     def datasets(self) -> dict[str, int]:
         counts: dict[str, int] = {}
         for obj in self.objects:
-            counts[obj.dataset] = counts.get(obj.dataset, 0) + 1
+            dataset = obj.dataset or ""
+            counts[dataset] = counts.get(dataset, 0) + 1
         return dict(sorted(counts.items()))
 
 
@@ -344,8 +191,8 @@ def build_source_items(
 
     ``datasets`` narrows scope; anything outside it is ``EXCLUDED`` — refused by
     us, and recorded as such rather than omitted. Objects the previous capture
-    enumerated and this one does not become ``DELETED`` tombstones: the publisher
-    withdrew them, which is missing, not refused.
+    enumerated and this one does not become ``DELETED`` tombstones. This records
+    absence from the later listing separately from our selection decision.
     """
     wanted = None if datasets is None else set(datasets)
     items: list[SourceItem] = []
@@ -366,7 +213,7 @@ def build_source_items(
             candidates = (
                 CandidateFile(
                     candidate_id="dump",
-                    locator=obj.locator,
+                    locator=obj.url,
                     media_type=obj.media_type,
                     expected_size=obj.size,
                     transport_version=obj.transport_version,
@@ -416,8 +263,8 @@ def coverage_for(capture: BulkCapture, items: Sequence[SourceItem]) -> dict[str,
     active = [i for i in items if i.state is SourceItemState.ACTIVE]
     return {
         "captureId": capture.capture_id,
-        "listingHost": LISTING_HOST,
-        "listingPrefix": LISTING_PREFIX,
+        "listingHost": urlsplit(BULK_LIST_URL).hostname,
+        "listingPrefix": BULK_PREFIX,
         "publisherObjectCount": len(capture.objects),
         "publisherByteTotal": capture.byte_total,
         "datasetCounts": capture.datasets(),

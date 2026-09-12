@@ -33,8 +33,9 @@ jobs:
       - name: Install core and development dependencies
         # --extra dagster is required so tests/test_dagster_adapter.py's one real
         # native-execution test (gated only by `pytest.importorskip("dagster")`) runs
-        # here instead of silently skipping; core install itself stays
-        # dependency-free, as verified below in the empty-environment wheel check.
+        # here instead of silently skipping. Development includes the optional
+        # source reader; the core wheel stays provider-independent, as verified
+        # by the isolated package tests.
         run: uv sync --frozen --extra dagster
 
       - name: Check source and machine files

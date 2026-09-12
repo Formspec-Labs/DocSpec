@@ -1,23 +1,21 @@
-"""Contracts for the CourtListener bulk-data population and its pinned capture."""
+"""Qualify provider listing values through DocSpec selection and catalog admission."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+from spicy_docs.sources.courtlistener_listing import BULK_BASE_URL, BulkObject
 
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError
 from tests.helpers import source_catalog_reader, write_shared_source_catalog
 from tools.courtlistener_bulk_source import (
-    CONTENT_BASE,
     BulkCapture,
-    BulkObject,
     build_source_items,
     coverage_for,
     load_capture,
     parse_capture,
-    parse_listing_page,
     write_capture_pins,
 )
 
@@ -52,48 +50,28 @@ def _entry(key: str, size: int = 10, etag: str = "abc", modified: str = "2026-06
 # -- parsing the publisher's enumeration -------------------------------------
 
 
-def test_listing_entry_splits_dataset_from_dump_date_and_pins_its_revision():
-    obj = BulkObject("bulk-data/opinions-2026-06-30.csv.bz2", 54_561_543_156, "d41d8c-25", "2026-06-30T04:11:47.000Z")
-    assert obj.dataset == "opinions"
-    assert obj.dump_date is not None and obj.dump_date.isoformat() == "2026-06-30"
-    assert obj.media_type == "application/x-bzip2"
-    assert obj.locator == f"{CONTENT_BASE}/bulk-data/opinions-2026-06-30.csv.bz2"
-    # ETag alone is not a whole-object digest for a multipart upload, so the
-    # version has to combine it with size and last-modified to move when the
-    # object moves.
-    assert obj.transport_version == "s3-listing:d41d8c-25:54561543156:2026-06-30T04:11:47.000Z"
+def test_provider_listing_values_reach_selected_candidates_unchanged():
+    payload = _page(_entry("bulk-data/opinion text-2026-06-30.csv.bz2", 123, etag="abc-25"))
+    obj, = parse_capture([payload])
+    capture = BulkCapture("urn:test:capture", (obj,), {})
+    item, = build_source_items(capture, datasets={"opinion text"})
+    candidate, = item.candidates
 
-    undated = BulkObject("bulk-data/scotus_network.csv", 7_000, "e", "2024-04-04T00:00:00.000Z")
-    assert undated.dump_date is None
-    assert undated.dataset == "scotus_network"
-    assert undated.media_type == "text/csv"
+    assert obj.etag == '"abc-25"'
+    assert item.version == obj.transport_version == 's3-listing:"abc-25":123:2026-06-30T04:11:47.000Z'
+    assert candidate.transport_version == item.version
+    assert candidate.locator == f"{BULK_BASE_URL}/opinion%20text-2026-06-30.csv.bz2"
+    assert candidate.expected_size == 123 and candidate.media_type == "application/x-bzip2"
+    assert item.metadata["dataset"] == "opinion text" and item.metadata["dumpDate"] == "2026-06-30"
 
 
-def test_listing_page_parses_objects_and_reports_its_continuation():
-    objects, token = parse_listing_page(
-        _page(_entry("bulk-data/courts-2026-06-30.csv.bz2", 81_180), truncated=True, token="NEXT")
-    )
-    assert [o.key for o in objects] == ["bulk-data/courts-2026-06-30.csv.bz2"]
-    assert objects[0].size == 81_180
-    assert token == "NEXT"
-
-    _, done = parse_listing_page(_page(_entry("bulk-data/courts-2026-06-30.csv.bz2")))
-    assert done is None
-
-
-@pytest.mark.parametrize(
-    ("payload", "message"),
-    [
-        (_page(_entry("bulk-data/x.csv"), prefix="other/"), "covers prefix"),
-        (_page("<Contents><Key>bulk-data/x.csv</Key></Contents>"), "is missing"),
-        (_page(_entry("bulk-data/x.csv"), truncated=True), "names no continuation token"),
-        (b"<not-xml", "not well-formed XML"),
-    ],
-)
-def test_listing_page_refuses_a_population_it_cannot_fully_believe(payload: bytes, message: str):
-    """A partly-read listing must fail loudly; a short denominator is the whole risk."""
-    with pytest.raises(IntegrityError, match=message):
-        parse_listing_page(payload)
+@pytest.mark.parametrize("payload", [
+    _page(_entry("bulk-data/x.csv")).replace(b"com-courtlistener-storage", b"another-bucket"),
+    _page(_entry("bulk-data/x.csv")).replace(b"<IsTruncated>false</IsTruncated>", b""),
+])
+def test_capture_preserves_provider_refusal_for_ambiguous_listing(payload: bytes):
+    with pytest.raises(ValueError, match="CourtListener S3 bucket|IsTruncated"):
+        parse_capture([payload])
 
 
 def test_capture_refuses_a_truncated_tail_or_a_repeated_key():
@@ -119,6 +97,12 @@ def test_capture_refuses_a_truncated_tail_or_a_repeated_key():
 
     with pytest.raises(IntegrityError, match="no listing pages"):
         parse_capture([])
+
+    with pytest.raises(IntegrityError, match="after a completed listing page"):
+        parse_capture([
+            _page(_entry("bulk-data/a-2026-06-30.csv.bz2")),
+            _page(_entry("bulk-data/b-2026-06-30.csv.bz2")),
+        ])
 
 
 # -- the pinned capture ------------------------------------------------------
@@ -196,7 +180,7 @@ def test_population_separates_what_we_refused_from_what_the_publisher_withdrew()
     assert live.state is SourceItemState.ACTIVE
     assert len(live.candidates) == 1
     assert live.candidates[0].expected_size == 10
-    assert live.candidates[0].locator.startswith(CONTENT_BASE)
+    assert live.candidates[0].locator.startswith(BULK_BASE_URL)
 
     # We declined it — our decision, and it says so.
     declined = by_id["bulk-data/dockets-2026-06-30.csv.bz2"]
@@ -218,6 +202,14 @@ def test_population_separates_what_we_refused_from_what_the_publisher_withdrew()
 def test_population_without_a_scope_admits_every_dated_dump():
     items = build_source_items(_capture("bulk-data/a-2026-06-30.csv.bz2", "bulk-data/b-2026-06-30.csv.bz2"))
     assert {item.state for item in items} == {SourceItemState.ACTIVE}
+
+
+def test_unnamed_listing_entry_remains_counted_and_excluded():
+    capture = _capture("bulk-data/")
+    item, = build_source_items(capture)
+    assert capture.datasets() == {"": 1}
+    assert item.metadata["dataset"] is None and item.state is SourceItemState.EXCLUDED
+    assert not item.candidates
 
 
 def test_coverage_states_the_denominator_the_publisher_supplied():

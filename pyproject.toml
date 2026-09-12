@@ -41,6 +41,9 @@ dagster = [
 ]
 [dependency-groups]
 dev = [
+    # Exercise the source adapter against the same wheel as the optional extra.
+    # This is a development dependency; the installed core remains independent.
+    "spicy-docs==0.3.0",
     "httpx>=0.27,<1",
     "ijson>=3.3,<4",
     "jsonschema>=4.23,<5",
