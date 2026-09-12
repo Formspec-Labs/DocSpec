@@ -1303,6 +1303,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   reuse, original-data corruption, exact membership and mixed-plan exports.
   The [architecture guide](architecture.md) records the new local layout;
   derivation identities change with its declared output roles.
+  An [installed 512-document comparison](capacity-workloads.md#local-comparison-after-removing-duplicate-row-storage)
+  passed complete fixture checks in both versions. It eliminated 23,433,600
+  bytes of mirrored rows; processing took 94.13 versus 87.90 seconds, while
+  reopening and processing memory were essentially unchanged. These are single
+  diagnostic observations; the larger capacity and recovery claims remain open.
 
 <a id="d38"></a>
 
