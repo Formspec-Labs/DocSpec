@@ -1309,6 +1309,27 @@ to defer a conditional item is a documented deferral, not completed implementati
   reopening and processing memory were essentially unchanged. These are single
   diagnostic observations; the larger capacity and recovery claims remain open.
 
+  **Further validation simplification, September 12:** ordinary retained open
+  now checks pinned metadata and linked controls. Explicit audit retains complete
+  checks for retention, selection, export, maintenance and comprehensive inspection.
+  Stage and retain reuse their successful audit within one operation instead of
+  repeating dataset-wide scans; existing destinations still receive a fresh audit.
+  [The guide](retained-catalog.md) states the later detection of unused corruption.
+  PDF extraction parses once, checkpoints share identical full blob checks only
+  within one invocation, and compaction receipts keep actual counts without fixed
+  algorithm declarations. Independent reviews approved these changes. The strict
+  suite passed **1,105 tests**, with one live integration deselected, in 227.97
+  seconds; the final receipt-only cleanup then passed all **seven** maintenance
+  tests. Ruff and lock checks passed. The revised recipe also passed installed
+  text16 recovery and clean comparison; a measurement-only edit no longer forces
+  dataset rebuilding, while processor-byte drift still refuses.
+
+  **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
+  qualify the original `a4a0e05` markup256 case within its declared local scope.
+  Its complete changed-resource and clean results agree, with no repeated upstream
+  calls. Text4096 has passed capture, recovery, inspection and complete processing
+  checks; changed-resource and clean comparison remain pending. D37 stays open.
+
 <a id="d38"></a>
 
 - [x] **D38 · P0 · Prove the complete experiment loop through installed packages.**

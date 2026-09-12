@@ -75,7 +75,7 @@ and the core-only wheel built from `930ad06` (SHA-256
 Text also completed the four-task prefix and fresh-process resume. Both complete
 changed-resource results matched their clean controls. These observations predate
 the subsequent validation-cost cleanups; they establish recipe execution, not
-current release capacity. The capacity candidates remain unqualified.
+current release capacity. Later pinned trials are recorded below.
 
 Before making a capacity claim, follow the [qualification guide](qualification.md):
 declare the intended workload and resource budgets, collect native time and peak
@@ -111,7 +111,7 @@ lower in this pair; reopening time and processing memory were essentially
 unchanged. These single observations establish no repeatable percentage gain,
 maximum capacity, temporary-storage peak, or hard resource limit. They do not
 include changed-resource, clean-control or recovery runs at this population.
-The 4,096-document text and 256-document markup candidates remain unmeasured.
+That comparison does not qualify the larger text or markup candidates.
 
 The before wheel's SHA-256 is
 `3a8cf9f290b7ac7c68c68103a0bf7b4e7b882d873c26c97c9e736b166082be2a`;
@@ -122,3 +122,18 @@ Local raw evidence remains under `/tmp/docspec-validation-cost-baseline` and
 records, inputs, native result references, complete check outputs and `.time`
 files. The shared recipe and commands above reproduce the operations; build a
 fresh directory when code or input pins change.
+
+## Pinned larger workload measurements
+
+The [September 12 observations](history/2026-09-12-local-capacity-observations.md)
+record a passing 256-document markup trial against the frozen `a4a0e05` wheel
+and original recipe. Capture, completed-prefix recovery, changed-resource reuse,
+and complete clean comparison passed within the declared local time, memory,
+and sampled-storage allowances. The 4,096-document text trial has passed capture,
+recovery, inspection and its complete processing check; changed-resource and
+clean-comparison measurements remain pending.
+
+These observations precede the later metadata/audit split, PDF and checkpoint
+cleanup, and revised recipe. They do not establish those newer revisions'
+performance. Exact inputs, commands, native measurements and qualification limits
+remain with the frozen trials.

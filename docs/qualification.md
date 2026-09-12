@@ -67,7 +67,8 @@ generator, selected stages and components, storage profiles, resource limits,
 machine, cache state, operations, recovery scenario, and acceptance thresholds.
 Use the existing local runner or native Dagster job. The
 [local capacity recipe](capacity-workloads.md) supplies reproducible fixture
-workloads; its larger cases remain unmeasured. Retain actual input and result
+workloads and links exact measured revisions and remaining gaps. Retain actual
+input and result
 artifacts, elapsed time, peak memory, storage and scratch use, and the results of
 independent admission and comparison with a clean run.
 Use saved DocSpec plan, handoff, run and release references alongside the
@@ -76,11 +77,11 @@ and `ScaleResult` formats only validated supplied declarations; no runtime
 measured or executed through them. Existing work and execution limits continue
 to govern execution. There is no replacement DocSpec capacity report format.
 
-No corpus-capacity result is established by this cleanup. In particular,
+Capacity results apply to their exact installed wheels and workloads. In particular,
 `DocumentReleaseVerifier.verify` keeps a set of distinct blob identities that
 grows with the result. [D37](dataset-experiments-todo.md#d37) remains open for
-representative measurement and any bounded implementation that measurement
-justifies. Synthetic local tests also do not establish live provider reliability
+the remaining text-workload measurements and any implementation those observations
+justify. Synthetic local tests also do not establish live provider reliability
 or processor semantic quality.
 
 ## Qualify publication
