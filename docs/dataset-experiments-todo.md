@@ -1434,14 +1434,19 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 <a id="d48"></a>
 
 - [ ] **D48 · P1 · Support bounded dataset recipes beyond segment processors.**
-  Extend D04/D13 using the existing catalog workspace, artifact, and execution
-  primitives. Accept pinned catalog/layer/resource inputs and named output
-  partitions without inventing a document capture or segment. **Done when:**
-  an ordinary retained-input experiment and a metadata-only dataset build share
-  attempt/reuse accounting. Global census and lookup dependencies invalidate
-  affected outputs correctly. State whether resume reuses whole completed builds
-  or completed partitions; do not promise the latter without implementing it.
-  Keep scheduler messages small references. Depends on D02–D04 and D15.
+  Compose the supplied computation with native Dagster assets/jobs and injected
+  resources. Reuse DocSpec's public catalog readers and retained input references,
+  plus Rulespec's existing artifact publication. Accept pinned catalog/layer/
+  resource inputs and named output partitions without inventing a document
+  capture or segment. Dagster owns execution attempts, retries, cancellation and
+  run storage; do not add a recipe registry, scheduler or second run ledger.
+  **Done when:** an ordinary retained-input experiment and a metadata-only build
+  expose consistent input/result evidence and actual reuse accounting. Global
+  census and lookup dependencies invalidate affected outputs correctly. State
+  whether resume reuses whole completed builds or completed partitions; do not
+  promise the latter without implementing it. Keep worker messages small
+  references. Add a DocSpec helper only for behavior the real caller needs that
+  these existing APIs do not supply. Depends on D02–D04, D15 and D21.
 
 <a id="d49"></a>
 
