@@ -168,3 +168,33 @@ native measurements remain under
 These observations used the same shared host, overlapped the frozen text trial's
 changed-resource run and had uncontrolled OS cache. They do not qualify a
 complete workload on the newer revision or establish repeatable latency.
+
+## Rerun diagnostic and remaining read costs
+
+The same isolated `3eced2f` wheel completed a fresh `text512` experiment: capture,
+later processing, changed-resource processing, and complete comparison with a
+separate clean run. The changed run made exactly 2,560 processor calls and no
+fetch, extraction, or segmentation calls. Every selected source, file,
+representation, segment, derived value and source association matched the clean
+fixture output. Native elapsed times were 18.41 seconds for capture, 90.11 for
+later processing, 71.79 for clean, and 57.43 for complete comparison.
+
+Only the changed-resource operation used `cProfile`; its 266.55-second elapsed
+time includes profiling overhead. It recorded 3,072 redundant layer-descriptor
+reads from partition scans, taking 4.25 cumulative instrumented seconds. Commit
+`8331028` removes those adjacent reads while preserving fresh verification in
+each new lookup. The profile also shows repeated parsing of other sources in the
+same record partition; it does not establish an uninstrumented speedup for a fix.
+The recipe, exact commands, results and profile remain under
+`/Users/mikewolfd/Work/corpora/docspec-rerun-profile-2026-09-12-3eced2f`.
+
+A separate parser diagnostic compared the source at `8331028` with direct shared
+encoding of plain decoded JSON before freezing. Four passes over 4,096 saved
+record rows took 0.975 and 0.817 seconds respectively; every returned row's
+complete logical value agreed. That loop includes parsing and conversion to
+mutable rows, excluding input loading and output comparison. Both source files,
+input bytes, commands and observations remain under
+`/Users/mikewolfd/Work/corpora/docspec-parser-copy-2026-09-12`. This small source-level
+comparison is not an installed-workload or repeatable-throughput claim. These
+diagnostics and checkout tests overlapped the frozen text trial on the shared
+host; its activity log records those conditions.

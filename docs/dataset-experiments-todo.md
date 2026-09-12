@@ -1328,6 +1328,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   the 4,096-document result took 0.11 seconds; auditing its complete retained data
   took 53.34 seconds. This measures separate scopes on a shared host, not a full
   workload qualification of the newer revision.
+  The [installed text512 diagnostic and parser comparison](capacity-workloads.md#rerun-diagnostic-and-remaining-read-costs)
+  then passed complete changed/clean equality. Profiling found 3,072 adjacent
+  duplicate record-descriptor reads; `8331028` removes them within each lookup.
+  Canonical parsing also validates the decoder's plain values directly with the
+  existing shared encoder before freezing, eliminating an intermediate copy
+  while retaining the same byte/scalar checks. Both changes received independent
+  approval. The final strict suite passed **1,112 tests**, with one live
+  integration deselected, in 221.94 seconds; focused checks and Ruff passed.
+  Repeated per-source partition scanning remains under architectural review.
 
   **Frozen larger trial:** [recorded observations](history/2026-09-12-local-capacity-observations.md)
   qualify the original `a4a0e05` markup256 case within its declared local scope.
