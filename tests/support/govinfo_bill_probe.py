@@ -20,7 +20,8 @@ from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.content import CandidateFile
 from docspec.domain.references import BlobRef
 from examples import govinfo_bills as example
-from examples.govinfo_bill_fetcher import BillContentFetcher, provider_installation, retain_refusal
+from examples.provider_identity import provider_installation
+from examples.govinfo_bill_fetcher import BillContentFetcher, retain_refusal
 
 
 def reject_network(*args, **kwargs):

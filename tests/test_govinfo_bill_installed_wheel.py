@@ -44,7 +44,9 @@ def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path):
     run([uv, "pip", "check", "--python", python])
     examples = tmp_path / "examples"
     examples.mkdir()
-    for filename in ("__init__.py", "govinfo_bills.py", "govinfo_bill_fetcher.py", "phrase_match_processor.py"):
+    for filename in (
+        "__init__.py", "govinfo_bills.py", "govinfo_bill_fetcher.py", "phrase_match_processor.py", "provider_identity.py",
+    ):
         shutil.copy2(ROOT / "examples" / filename, examples / filename)
     shutil.copytree(ROOT / "examples/bill_fixtures", examples / "bill_fixtures")
     shutil.copy2(ROOT / "tests/support/govinfo_bill_probe.py", examples / "govinfo_bill_probe.py")

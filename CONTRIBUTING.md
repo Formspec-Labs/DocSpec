@@ -29,9 +29,12 @@ Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
 the adapter you are exercising. Core imports must work without them.
 
-Run the [offline walkthrough](docs/offline-walkthrough.md) to build a four-record
+Run the [offline walkthrough](docs/offline-walkthrough.md) to build and grow a
 catalog, capture documents, repair a failure, and compare later processing
-attempts. Use [result exports](docs/result-exports.md) for independent consumers.
+attempts. Try the [GAO topic filter](docs/gao-topics.md) for metadata-only work or
+the [GovInfo bill example](docs/govinfo-bill-example.md) for injected source
+fetching and later XML processing. Use [result exports](docs/result-exports.md)
+for independent consumers.
 
 ## Find a bounded change
 

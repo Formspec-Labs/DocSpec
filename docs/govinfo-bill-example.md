@@ -79,7 +79,8 @@ sampled before each run; those timestamps are not measured finish times.
 The [qualification test](../tests/test_govinfo_bill_installed_wheel.py) installs
 both packages outside their checkouts and forbids network connections during the
 example. Its [manifest](../vendor/spicy_docs.json)
-pins the provider wheel. The example separately hashes installed `spicy_docs`
+pins the provider wheel. The [shared example helper](../examples/provider_identity.py)
+separately hashes installed `spicy_docs`
 files; this is not a digest of every Python dependency. A missing installer wheel
 hash remains `null`. SpicyDocs is optional for DocSpec; only this example needs
 its `acquisition` extra. Source reading and bill acquisition use the same wheel.

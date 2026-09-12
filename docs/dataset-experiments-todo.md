@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 37 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 38 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1482,7 +1482,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d51"></a>
 
-- [ ] **D51 · P1 · Demonstrate GAO topic preservation in a dataset example.**
+- [x] **D51 · P1 · Demonstrate GAO topic preservation in a dataset example.**
   Carry a literal topic from a small retained publisher page through a catalog
   and a supported result or processor. An exact topic filter is sufficient;
   search publication is optional. **Done when:** matching, missing, and unexpected
@@ -1491,6 +1491,22 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   needs. Provider fixture/field work lives in
   [SpicyDocs S17](../../spicy-docs/docs/simplification-todo.md#s17). Depends on
   D06–D08 and applicable public processor APIs; report offline versus live use.
+
+  **Completed September 12:** the [GAO topic example](gao-topics.md) reads the
+  current provider's admitted fields and evidence, maps them through existing
+  supplied-record APIs, and filters the resulting catalog by exact label.
+  Matching and unexpected topics preserve their literal values and original
+  HTML references. Missing-topic input retains the provider refusal and creates
+  no catalog. Repeated filters leave the catalog unchanged; absent report
+  attachments remain absent. No core schema, processor type or runtime was added.
+
+  The focused gate passed **20 tests in 23.69 seconds**, including the same seven
+  GAO behavior checks against installed packages before HTTP support is installed,
+  the command-line example, and the existing bill/provider package checks. The
+  source fixtures come unchanged from SpicyDocs `8e485fe`. GAO and bill examples
+  share the existing provider-identity helper; its function body is unchanged.
+  This qualifies synthetic offline inputs, not live availability or full GAO
+  coverage. Fresh independent review remains D39.
 
 <a id="d52"></a>
 

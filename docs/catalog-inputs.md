@@ -84,6 +84,10 @@ analytics, PDF or Dagster dependencies. See the
 for use outside the checkout. Ordinary supplied-record experiments need no
 provider package.
 
+The [GAO topic example](gao-topics.md) maps admitted source fields and evidence
+into supplied records, then applies an exact-label filter without body capture
+or a new processor type.
+
 The existing source port streams already admitted records and renditions. The
 optional SpicyDocs adapter uses the installed provider reader; importing DocSpec
 does not import that package. Supply its exact artifact pin and independently

@@ -26,7 +26,8 @@ from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, V
 from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
 from docspec.workspace import LocalWorkspace
-from examples.govinfo_bill_fetcher import BillContentFetcher, capture_facts, provider_installation, retain_refusal
+from examples.provider_identity import provider_installation
+from examples.govinfo_bill_fetcher import BillContentFetcher, capture_facts, retain_refusal
 from examples.phrase_match_processor import PhraseMatchProcessor
 
 FIXTURES = Path(__file__).with_name("bill_fixtures")

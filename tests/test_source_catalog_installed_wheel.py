@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+from importlib.metadata import version
 from pathlib import Path
 
 import docspec
@@ -124,6 +125,27 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert reader_only.returncode == 0, reader_only.stderr
+    # Exercise the same GAO behavior test against installed packages. Source
+    # publication uses injected fixture bytes and needs only the reader wheel.
+    install_pytest = subprocess.run(
+        [uv, "pip", "install", "--python", str(environment_python), f"pytest=={version('pytest')}"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert install_pytest.returncode == 0, install_pytest.stderr
+    examples_root = runtime_root / "examples"
+    examples_root.mkdir()
+    for name in ("__init__.py", "gao_topics.py", "provider_identity.py"):
+        shutil.copy2(ROOT / "examples" / name, examples_root / name)
+    shutil.copytree(ROOT / "examples/gao_fixtures", examples_root / "gao_fixtures")
+    tests_root = runtime_root / "tests"
+    tests_root.mkdir()
+    shutil.copy2(ROOT / "tests/test_gao_topic_example.py", tests_root / "test_gao_topic_example.py")
+    gao = subprocess.run(
+        [environment_python, "-I", "-m", "pytest", "-q", "-o", f"pythonpath={runtime_root}",
+         str(tests_root / "test_gao_topic_example.py")],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert gao.returncode == 0, gao.stdout + gao.stderr
     # The reader-only check above stays independent of acquisition. This next
     # fixture explicitly chooses the existing HTTP extra for its body fetch.
     install_http = subprocess.run(

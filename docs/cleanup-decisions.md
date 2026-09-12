@@ -157,6 +157,16 @@ catalog publication, source refusals and installed-package checks. One live
 acquisition test was deselected. This is the primary agent's implementation and
 architecture review; independent review remains open under D39.
 
+The GAO topic example maps admitted records into `SuppliedRecordSource`, retaining
+the provider record, source pin, collection outcome and evidence reference. Exact
+topic filtering reads that catalog directly. Unexpected labels remain ordinary
+source facts; a missing publisher topic remains a source refusal. The provider
+offers no report attachment here, so the catalog preserves absent candidates
+while still supporting metadata analysis. This needs no new core schema or
+processing interface. Both source examples use one provider-identity helper,
+and installed qualification reuses the ordinary behavior test in the existing
+provider environment. The [guide](gao-topics.md) states its bounds and evidence.
+
 ## Dormant public helpers
 
 The same repository and known-consumer searches covered these candidates,
