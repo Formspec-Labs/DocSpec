@@ -1342,7 +1342,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   qualify the original `a4a0e05` markup256 case within its declared local scope.
   Its complete changed-resource and clean results agree, with no repeated upstream
   calls. Text4096 has passed capture, recovery, inspection and complete processing
-  checks; changed-resource and clean comparison remain pending. D37 stays open.
+  checks, but its changed-resource operation exceeded the fixed 1,800-second
+  allowance (exit 124). No completed changed result was returned; clean and
+  comparison qualification did not run. Preserve this failed trial and its limits;
+  a corrected implementation needs a fresh pinned trial. D37 stays open.
 
 <a id="d38"></a>
 

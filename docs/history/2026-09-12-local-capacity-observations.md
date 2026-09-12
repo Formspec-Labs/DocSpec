@@ -1,7 +1,7 @@
 # Frozen local capacity observations
 
-**The markup256 trial passed its declared local qualification. Text4096 remains
-in progress.** These observations apply to DocSpec source `a4a0e05` and the
+**The markup256 trial passed its declared local qualification. Text4096 failed
+its changed-resource time limit.** These observations apply to DocSpec source `a4a0e05` and the
 original recipe, before later metadata/audit and recipe simplifications.
 
 The tested wheel SHA-256 is
@@ -78,7 +78,7 @@ was 808,276 KiB for the main workspace and 1,031,272 KiB for clean, with zero
 temporary allocation. No `du` errors were recorded. Workspace totals include
 saved intermediate state, not just the final retained catalog.
 
-## Text4096 progress and limits
+## Text4096 failure and limits
 
 The 4,096 selected documents plus 256 exclusions comprise 4,096 captured files,
 83,886,080 bytes and 20,480 segments. Build, source verification, capture, its
@@ -86,8 +86,14 @@ complete byte check, a 16-task prefix, fresh-process recovery, inspection and
 the complete processing oracle have passed. Prefix plus resume took 1,309.71
 seconds of active time with a 16-second gap; the maximum of their resident
 memory peaks was 143,884,288 bytes. Fresh inspection took 119.51 seconds.
-Changed-resource, clean-control and complete-comparison qualification remain
-pending. Do not infer their outcome from these earlier phases.
+The changed-resource operation exceeded its predeclared 1,800-second limit and
+exited with timeout status 124. It started at 18:19:58 UTC; the outer measurement
+wrapper completed at 18:50:11 UTC after timeout cleanup. No completed changed
+result was returned, so clean-control and complete-comparison qualification did
+not run. The interrupted native time/RSS output is empty; the wrapper duration
+is not substituted for a completed native operation measurement. Earlier passing
+phases do not qualify this workload. A corrected implementation needs a fresh
+pinned trial with the same declared allowances.
 
 Checkout test activity overlapped part of this text trial; actual intervals are
 recorded in `background-activity.txt`. It used a separate environment and did not

@@ -129,9 +129,11 @@ The [September 12 observations](history/2026-09-12-local-capacity-observations.m
 record a passing 256-document markup trial against the frozen `a4a0e05` wheel
 and original recipe. Capture, completed-prefix recovery, changed-resource reuse,
 and complete clean comparison passed within the declared local time, memory,
-and sampled-storage allowances. The 4,096-document text trial has passed capture,
-recovery, inspection and its complete processing check; changed-resource and
-clean-comparison measurements remain pending.
+and sampled-storage allowances. The 4,096-document text trial passed capture,
+recovery, inspection and its complete processing check, then exceeded its
+30-minute changed-resource limit. It returned no completed changed result;
+clean and comparison qualification did not run. The failure remains recorded
+against the original code and allowances.
 
 These observations precede the later metadata/audit split, PDF and checkpoint
 cleanup, and revised recipe. They do not establish those newer revisions'
