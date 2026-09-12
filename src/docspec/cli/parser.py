@@ -15,8 +15,6 @@ from docspec.cli.plans import _cmd_document_store_create, _cmd_document_store_ve
 from docspec.cli.profiles import (
     _cmd_profile_list,
     _cmd_profile_verify,
-    _cmd_scale_profile_seal,
-    _cmd_scale_profile_verify,
 )
 from docspec.cli.releases import (
     _cmd_document_release_save,
@@ -83,20 +81,6 @@ def build_parser() -> argparse.ArgumentParser:
     profile_verify = profile_commands.add_parser("verify", help="Verify one closed profile description")
     profile_verify.add_argument("profile", type=Path)
     profile_verify.set_defaults(func=_cmd_profile_verify)
-
-    scale_profile = commands.add_parser("scale-profile", help="Seal and verify exact scale campaign inputs")
-    scale_profile_commands = _subcommands(scale_profile, dest="scale_profile_command")
-    _add_mutating_paths(
-        scale_profile_commands.add_parser("seal", help="Seal closed scale-profile content"),
-        operation="scale-profile.seal",
-        func=_cmd_scale_profile_seal,
-    )
-    scale_profile_verify = scale_profile_commands.add_parser(
-        "verify",
-        help="Verify one canonical identity-bearing scale profile",
-    )
-    scale_profile_verify.add_argument("profile", type=Path)
-    scale_profile_verify.set_defaults(func=_cmd_scale_profile_verify)
 
     document_catalog = commands.add_parser("document-catalog", help="Open, compare, and select retained results")
     catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")

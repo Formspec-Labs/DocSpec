@@ -157,7 +157,8 @@ DocSpec MUST:
 - publish configured durable outputs atomically and acknowledge returned data;
 - commit each stateful run as a new immutable `DocumentRelease`;
 - perform incremental updates without recurring full dumps; and
-- process millions of image or page units within a sealed scale profile.
+- qualify chosen document and page workloads using explicit inputs, enforced
+  limits, and measured results.
 
 ### 2.2 Excluded capabilities
 
@@ -927,7 +928,7 @@ The run receipt MUST pin that worker profile. Native output metadata MUST link
 the handoff identity and execution-profile reference to the execution tool's
 event history. This
 link identifies the work; it does not reproduce or enforce native scheduling
-settings. A `ScaleProfile` MUST additionally pin native run/configuration evidence
+settings. Capacity qualification MUST retain native run/configuration evidence
 when operational resources are part of a performance claim. Changing only a
 worker profile does not invalidate document content. If an operational change
 also changes a logical input, policy, accepted failure, or deterministic output,
@@ -1404,16 +1405,16 @@ Every conforming profile set MUST provide:
 - complete membership and integrity verification; and
 - export to the canonical logical records used by conformance tests.
 
-The reference implementation MUST provide at least one portable profile set and
-at least one profile set that passes the scale class. One profile set MAY satisfy
-both requirements. A profile SHOULD be a thin adapter over a maintained package
+The reference implementation MUST provide at least one portable profile set.
+Capacity claims for any profile set require the workload evidence in §13.
+A profile SHOULD be a thin adapter over a maintained package
 when one already implements the physical work. Manifest files, Apache Iceberg,
 Delta Lake, or a database MAY implement catalog state. Parquet, Arrow IPC, JSON
 Lines, or another bounded record format MAY implement record layers. Local
 files, S3, R2, or another immutable object service MAY implement blob storage.
 
 JSON Lines and local files are sufficient portable defaults. Parquet on
-immutable object storage is the preferred first scale profile when columnar
+immutable object storage is a candidate for larger workloads when columnar
 scans and compression matter. Iceberg or Delta SHOULD be added only when a
 deployment needs table transactions, multi-writer commits, long snapshot
 history, or row-level table maintenance. DocSpec MUST NOT implement a new table
@@ -1673,7 +1674,7 @@ content; DocSpec domain code never constructs an object-store client.
 
 Physical shard targets MUST be configurable. Each record profile MUST declare a
 recommended target and a hard safety limit, and MUST reject a member above that
-limit. The scale profile MUST record the active values.
+limit. Capacity qualification evidence MUST record the active values.
 
 Partition identity MUST include schema, partition policy, and ordered logical
 content. Physical row-group layout MAY vary without changing logical records.
@@ -2100,53 +2101,25 @@ exhaustion alone never proves completeness. `run start` MAY compose those
 operations as a local convenience. None of these commands may print bulk file or
 record payloads as scheduler metadata.
 
-## 13. Scale profile
+## 13. Capacity qualification
 
-### 13.1 Sealed profile
+### 13.1 Reproducible workload evidence
 
-Before a scale run, DocSpec MUST seal a `ScaleProfile` that identifies:
+Capacity qualification MUST retain the exact source revision and installed
+wheels, input artifacts or deterministic generator, selected components, storage
+profiles, resource limits, machine, cache state, commands, recovery scenario and
+acceptance thresholds. Existing `ProcessingPlan`, `ExecutionProfile`, handoff,
+run and release references MUST identify the DocSpec work being measured.
+Native execution and measurement tools supply elapsed time, resource use and
+operational event evidence; DocSpec supplies its saved task, store, byte and
+release evidence. Input and output artifacts MUST be independently admitted.
 
-- exact corpus or deterministic generator;
-- real input-shape sample and sampling method;
-- file, image, page, byte, representation, and segment distributions;
-- extractor, segmenter, and processor graph;
-- worker and coordinator resources;
-- document-store sizing policy and result sink;
-- selected storage profile set, document-catalog adapter, and base release;
-- storage and network placement;
-- cache state;
-- partition and task policy;
-- wall-time and resource targets; and
-- acceptance authority.
-
-The `ScaleProfile` MUST pin the `ProcessingPlan`, `ExecutionProfile`, execution
-tool's configuration digest, and exact storage and sink profiles. The execution
-tool and storage packages MAY supply scheduling, queue, cache, network, and
-resource measurements. DocSpec MUST preserve their evidence references and the
-DocSpec task, store, byte, and release counts needed to verify the claim.
-
-A changed corpus, processor graph, resource allocation, or target creates a new
-profile.
-
-The same `ScaleProfile` family governs catalog construction and document
-processing; DocSpec MUST NOT add a second source-catalog scale-profile format.
-The profile model MUST identify a closed workload kind. For a
-`source-catalog` workload it MUST replace processing-only fields with one
-closed catalog-workload section that pins the source-native input artifact set,
-catalog policy, requested universe, builder and verifier,
-bounded join/order/set-proof strategy, output profile, command, reference
-machine and resources, cold/warm cache state, measurement method, absolute
-ceilings, and acceptance authority. The checked-in schema, parser, generator,
-and tests MUST evolve together before such a profile can be called sealed.
-
-Each scale run MUST emit one closed, content-addressed `ScaleResult`. The result
-MUST bind the complete `ScaleProfile` pin, including its locator; the workload
-kind; the exact input and output artifact pins; item, partition, task, store,
-release, and byte counts; wall time and peak resource measures; evidence pins;
-the first failure when present; and a `pass` or `fail` verdict. A `pass` MUST
-remain within the profile's declared targets, resources, and absolute ceilings.
-This evidence model records a completed run; it does not add scheduler state or
-campaign execution machinery to DocSpec.
+The unused `ScaleProfile` and `ScaleResult` declaration family is retired. Its
+parsers compared supplied pins and metrics but did not execute workloads or
+collect measurements. No separate DocSpec capacity format or runner is required.
+Work limits, worker limits and physical storage profiles retain their existing
+meaning. A changed workload or deployment requires evidence for that actual
+configuration; a well-formed declaration does not establish capacity.
 
 ### 13.2 Representative capacity measurements
 
@@ -2464,11 +2437,12 @@ object store, table engine, or analytics engine as part of this sequence.
 
 ### 16.8 Qualify the composed deployment
 
-- Seal the exact processing, execution, storage, sink, and scale profiles.
+- Retain the exact processing, execution, storage and sink references together
+  with reproduction commands, native resource settings and acceptance thresholds.
 - Run local and maintained-scheduler recovery campaigns, including worker loss,
   coordinator restart, duplicate result delivery, slow storage, full scratch
   disk, and deterministic processor failure.
-- Run the ordered representative scale campaigns and record the execution
+- Run the selected representative capacity workloads and record the execution
   tool's event evidence with DocSpec's task, byte, partition, store, and release
   evidence.
 - Publish machine-readable conformance reports. Keep unrun external campaigns
@@ -2501,8 +2475,9 @@ The original draft considered DocSpec complete only when:
   with every intentional difference named by policy;
 - the optional installed SpicyRegs adapter is selected only by the CLI
   composition root, while DocSpec core imports no SpicyRegs module;
-- its sealed source-catalog `ScaleProfile` and dated result pass the declared
-  multi-million-row resource and determinism gate;
+- its selected source-catalog workload has dated measurements, exact input and
+  output references, native resource evidence and determinism checks that meet
+  the declared acceptance thresholds;
 - `DocumentCatalog` opens, compares, and advances corpus state only through
   explicit `DocumentRelease` identities;
 - each stateful run commits one immutable `DocumentRelease`;
@@ -2563,8 +2538,6 @@ govern the installed package.
 
 ```text
 conformance/test-matrix.json
-conformance/scale-profile.schema.json
-conformance/scale-result.schema.json
 profiles/
 fixtures/execution-handoffs/
 fixtures/source-catalogs/

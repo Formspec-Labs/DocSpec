@@ -19,14 +19,6 @@ from docspec.domain.source_catalog import source_catalog_schemas
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_ROOT = ROOT / "src" / "docspec"
 SOURCE_CATALOG_SCHEMA_ROOT = PRODUCTION_ROOT / "schemas" / "source_catalog" / "1.0"
-PACKAGED_SCALE_SCHEMAS = {
-    "docspec/schemas/scale_profile/2.0/scale-profile.schema.json": (
-        ROOT / "conformance" / "scale-profile.schema.json"
-    ),
-    "docspec/schemas/scale_result/1.0/scale-result.schema.json": (
-        ROOT / "conformance" / "scale-result.schema.json"
-    ),
-}
 REPOSITORY_CODE_ROOTS = ("src", "tests", "tools")
 
 # Match literal sibling checkout paths while allowing distribution names and
@@ -235,9 +227,6 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
             member = f"docspec/schemas/source_catalog/1.0/{name}"
             assert member in members
             assert archive.read(member) == canonical_json_file_bytes(schema)
-        for member, checked_in_schema in PACKAGED_SCALE_SCHEMAS.items():
-            assert member in members
-            assert archive.read(member) == checked_in_schema.read_bytes()
 
         entry_points_name = next(name for name in members if name.endswith(".dist-info/entry_points.txt"))
         parser = configparser.ConfigParser()

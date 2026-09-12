@@ -1,12 +1,11 @@
-"""DocSpec command profiles: profile inspection and scale-profile sealing."""
+"""Inspect installed storage and delivery profile descriptions."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
 
-from docspec.cli.common import _registered_profile, _write_artifact_and_receipt
+from docspec.cli.common import _registered_profile
 from docspec.cli_io import (
     emit as _emit,
 )
@@ -16,14 +15,10 @@ from docspec.cli_io import (
 from docspec.cli_io import (
     read_bytes as _read_bytes,
 )
-from docspec.cli_io import (
-    read_object as _read_json_object,
-)
 from docspec.domain.identity import (
     identity_digest,
     sha256_digest,
 )
-from docspec.domain.scale import ScaleProfile
 from docspec.profile_registry import BUILTIN_PROFILE_DIRECTORY, ProfileRegistry
 
 
@@ -84,50 +79,4 @@ def _cmd_profile_list(args: argparse.Namespace) -> int:
             "verdict": "pass",
         }
     )
-    return 0
-
-
-def _cmd_scale_profile_seal(args: argparse.Namespace) -> int:
-    profile = ScaleProfile.from_content_dict(
-        _read_json_object(args.request, label="scale profile content")
-    )
-    receipt = _write_artifact_and_receipt(
-        operation="scale-profile.seal",
-        request_path=args.request,
-        destination=args.destination,
-        receipt_path=args.receipt,
-        artifact_id=profile.profile_id,
-        payload=profile.to_bytes(),
-    )
-    _emit(receipt)
-    return 0
-
-
-def _cmd_scale_profile_verify(args: argparse.Namespace) -> int:
-    profile = ScaleProfile.from_bytes(_read_bytes(args.profile, label="scale profile"))
-    content: dict[str, Any] = {
-        "format": "docspec-scale-profile-verification",
-        "formatVersion": "1.0",
-        "profileId": profile.profile_id,
-        "profileDigest": profile.digest,
-        "workloadKind": profile.workload_kind.value,
-    }
-    document = profile.document_processing_workload
-    catalog = profile.catalog_workload
-    if document is not None:
-        content.update(
-            {
-                "unitCount": document.targets.unit_count,
-                "processorTargetCount": len(document.targets.processor_targets),
-            }
-        )
-    elif catalog is not None:
-        content.update(
-            {
-                "sourceNativeInputCount": len(catalog.source_native_inputs),
-                "maxSourceRecordCount": catalog.ceilings.max_source_record_count,
-            }
-        )
-    content["verdict"] = "pass"
-    _emit(content)
     return 0

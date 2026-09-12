@@ -127,11 +127,11 @@ A smaller physical layout alone does not establish equivalent document state.
 
 ## Separate local checks from qualification evidence
 
-Tests establish behavior for their actual inputs and environment. A valid
-`ScaleProfile` or a parsed `ScaleResult` is also only one part of qualification:
-the [scale model](../src/docspec/domain/scale.py) checks pins, workload declarations,
-inputs, limits, and reported evidence, while the qualification workflow must
-produce and verify the actual artifacts.
+Tests establish behavior for their actual inputs and environment. Capacity
+qualification requires actual input and output artifacts, saved plan and worker
+settings, reproduction commands, and native time and resource measurements.
+DocSpec's work limits and storage profiles govern the operation; a separate
+declaration format does not establish its measured behavior.
 
 The [qualification guide](qualification.md) defines native pytest regression
 evidence and the separate measurements needed for a representative workload.

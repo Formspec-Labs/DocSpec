@@ -17,7 +17,6 @@ existing libraries already provide validation mechanics.
 | Family | Edit and generate | Installed location under `docspec/schemas/` | Checks |
 | --- | --- | --- | --- |
 | Source catalog 1.0 | `source_catalog_schemas()` in `src/docspec/domain/source_catalog.py`; serialize with `canonical_json_file_bytes` | `source_catalog/1.0/` | `tests/test_package_boundary.py` compares all three files byte for byte with domain generation and checks the wheel |
-| Scale profile 2.0 and scale result 1.0 | Dataclasses in `domain/scale.py` plus explicit constraints in `tools/generate_scale_profile_schema.py` | `scale_profile/2.0/`, `scale_result/1.0/` | `tests/test_machine_files.py` compares generator output, `conformance/` copies, and installed-source copies; package-boundary checks inspect the wheel |
 
 Profiles under `src/docspec/storage_profiles/` are maintained machine descriptions
 in `docspec-storage-profile` format `2.0`, not generated schemas. The format
@@ -41,10 +40,6 @@ for name, schema in source_catalog_schemas().items():
     (root / name).write_bytes(canonical_json_file_bytes(schema))
 PY
 
-uv run --frozen python -m tools.generate_scale_profile_schema > conformance/scale-profile.schema.json
-cp conformance/scale-profile.schema.json src/docspec/schemas/scale_profile/2.0/scale-profile.schema.json
-uv run --frozen python -m tools.generate_scale_profile_schema --result > conformance/scale-result.schema.json
-cp conformance/scale-result.schema.json src/docspec/schemas/scale_result/1.0/scale-result.schema.json
 uv run --frozen pytest tests/test_machine_files.py tests/test_package_boundary.py
 ```
 

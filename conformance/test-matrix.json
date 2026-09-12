@@ -286,19 +286,6 @@
     "tests/test_work_budget.py::test_verified_source_bytes_are_not_double_charged_after_a_transport_retry",
     "tests/test_work_budget.py::test_resume_accounting_includes_zero_output_processor_invocations"
   ],
-  "SCALE-FORMAT": [
-    "tests/test_scale_profile.py::test_document_processing_scale_profile_remains_one_closed_canonical_variant",
-    "tests/test_scale_profile.py::test_source_catalog_profile_pins_every_accepted_section_without_processing_fields",
-    "tests/test_scale_profile.py::test_scale_profile_identity_changes_with_variant_inputs_or_ceilings",
-    "tests/test_scale_profile.py::test_scale_profile_union_rejects_old_mixed_or_unknown_shapes",
-    "tests/test_scale_profile.py::test_document_variant_retains_processor_and_resource_validation",
-    "tests/test_scale_profile.py::test_scale_result_is_closed_canonical_and_binds_complete_catalog_evidence",
-    "tests/test_scale_profile.py::test_scale_result_rejects_false_passes_for_both_workload_variants",
-    "tests/test_scale_profile.py::test_scale_result_fails_closed_for_identity_verdict_and_canonical_bytes",
-    "tests/test_scale_profile.py::test_checked_in_schemas_admit_both_profile_variants_and_result_evidence",
-    "tests/test_cli.py::test_scale_profile_seal_and_verify_use_one_canonical_artifact",
-    "tests/test_cli.py::test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli"
-  ],
   "INSTALLED-PACKAGE": [
     "tests/test_package_boundary.py::test_installed_wheel_preserves_public_runtime_and_packaged_resources",
     "tests/test_cli.py::test_one_cli_exposes_the_complete_lifecycle",

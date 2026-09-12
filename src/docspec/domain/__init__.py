@@ -62,7 +62,6 @@ from docspec.domain.profiles import ProfileDescription, ProfilePin, ProfileRole,
 from docspec.domain.receipts import CatalogCommitReceipt, DeliveryReceipt, RunReceipt
 from docspec.domain.release import DocumentRelease
 from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
-from docspec.domain.scale import ScaleProfile, ScaleResult, ScaleWorkloadKind
 from docspec.domain.source_catalog import (
     CatalogDisposition,
     SourceCatalogCandidate,
@@ -123,9 +122,6 @@ __all__ = [
     "RetentionPolicy",
     "RetryPolicy",
     "RunReceipt",
-    "ScaleProfile",
-    "ScaleResult",
-    "ScaleWorkloadKind",
     "Segment",
     "SourceCatalogRef",
     "SourceCatalogCandidate",

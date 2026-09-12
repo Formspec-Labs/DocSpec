@@ -1100,8 +1100,9 @@ to defer a conditional item is a documented deferral, not completed implementati
   covers all five production functions of at least 200 lines. Checkpoint
   verification, retained-base preparation, per-document execution, and release
   indexing each keep one related state transition together; the closed schema
-  declarations remain beside their typed rows. The scale and segmentation
-  decisions remain applicable. No additional wrappers or dispatch framework are
+  declarations remain beside their typed rows. The segmentation decision
+  remains applicable; the later caller audit retired the unused scale family.
+  No additional wrappers or dispatch framework are
   warranted by line count alone. This completes the local responsibility review;
   independent review is consolidated in D39.
 
@@ -1249,8 +1250,21 @@ to defer a conditional item is a documented deferral, not completed implementati
   retained-admission memory use, remain open; this scope revision claims no
   unrun workload result.
 
-  The complete strict suite passed **1,076 tests**, with one live integration
-  test deselected, in 249.91 seconds and no warnings. Native JUnit and console
+  **Unused declaration family retired, September 12:** removed `ScaleProfile`,
+  `ScaleResult`, their CLI, schemas, generator and exclusive tests. They validated
+  supplied declarations but had no execution or measurement consumer. The
+  [qualification guide](qualification.md#qualify-a-capacity-claim) uses existing
+  plan, handoff, run and release references with native measurements; work,
+  execution and storage limits remain enforced. Removing this unused format
+  claims no capacity result and leaves D37 open.
+  Independent review approved the retirement. The post-cleanup strict suite
+  passed **1,085 tests**, with one live integration test deselected, in 252.90
+  seconds. This includes the control, checkpoint and blob-read simplifications.
+  Ruff, lock consistency and all 270 local targets in the changed guides passed.
+
+  **Earlier regression evidence, before scale-family retirement:** the complete
+  strict suite passed **1,076 tests**, with one live integration test deselected,
+  in 249.91 seconds and no warnings. Native JUnit and console
   evidence were retained locally. This includes all 19 regression-gate control
   cases, the real installed-package examples, native Dagster and local S3 SDK
   retries. Ruff, lock consistency and all 522 maintained-document local targets

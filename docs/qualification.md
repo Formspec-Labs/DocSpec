@@ -48,7 +48,7 @@ These decisions revise scope. They do not turn unrun checks into passes.
 | `COMPLETE-SEARCH-CORPUS` | Rename to `RETAINED-RESULT-EVIDENCE`: check retained population, bytes and relationships. Search products own search completeness. |
 | `SCHEDULER-PORTABILITY` | Keep real local and native Dagster process, retry and recovery checks. Other executors and deployment capacity remain unqualified. |
 | `DOCUMENT-RELEASE-INTEGRITY` | Keep lineage, blob and malformed-reference checks. Fixture coverage does not establish corpus capacity. |
-| `SCALE` | Rename to `SCALE-FORMAT`: check scale evidence parsing and refusal. Actual workload capacity remains unqualified. |
+| `SCALE` | Retire the unused scale profile/result formats and their `SCALE-FORMAT` parsing checks. Capacity claims require the measurements described below. |
 | `PACKAGE-RELEASE` | Rename to `INSTALLED-PACKAGE`: build and run isolated wheels. Publishing a release requires separate registry and exact-wheel evidence. |
 
 The [independent architecture review](history/2026-09-12-regression-qualification-architecture.md)
@@ -65,11 +65,16 @@ establish representativeness.
 Before running, pin the source revision and installed wheels, inputs or fixture
 generator, selected stages and components, storage profiles, resource limits,
 machine, cache state, operations, recovery scenario, and acceptance thresholds.
-Use the existing local runner or native Dagster job. Retain actual input and
-result artifacts, elapsed time, peak memory, storage and scratch use, and the
-results of independent admission and comparison with a clean run.
-[`ScaleProfile` and `ScaleResult`](../src/docspec/domain/scale.py) can record this
-evidence; validating their shape cannot supply missing measurements.
+Use the existing local runner or native Dagster job. The
+[local capacity recipe](capacity-workloads.md) supplies reproducible fixture
+workloads; its larger cases remain unmeasured. Retain actual input and result
+artifacts, elapsed time, peak memory, storage and scratch use, and the results of
+independent admission and comparison with a clean run.
+Use saved DocSpec plan, handoff, run and release references alongside the
+measurement tool's output and reproduction commands. The retired `ScaleProfile`
+and `ScaleResult` formats only validated supplied declarations; no runtime
+measured or executed through them. Existing work and execution limits continue
+to govern execution. There is no replacement DocSpec capacity report format.
 
 No corpus-capacity result is established by this cleanup. In particular,
 `DocumentReleaseVerifier.verify` keeps a set of distinct blob identities that

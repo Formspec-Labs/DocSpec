@@ -7,7 +7,6 @@ from typing import Any
 
 from docspec.domain.profiles import ProfileRole
 from docspec.profile_registry import ProfileRegistry
-from tools.generate_scale_profile_schema import result_schema_bytes, schema_bytes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,34 +59,3 @@ def test_profile_descriptions_are_closed_and_cover_every_role() -> None:
         assert set(description.requires).issubset(profile_ids)
         assert item.profile_set_id
         assert item.verifier_test_id in required_test_ids
-
-
-def test_scale_profile_schema_is_generated_from_the_domain_model_and_up_to_date() -> None:
-    # Both normative schemas are generated from the live closed dataclasses.
-    schema_path = ROOT / "conformance" / "scale-profile.schema.json"
-    packaged_schema_path = (
-        ROOT
-        / "src"
-        / "docspec"
-        / "schemas"
-        / "scale_profile"
-        / "2.0"
-        / "scale-profile.schema.json"
-    )
-    assert schema_path.read_bytes() == packaged_schema_path.read_bytes() == schema_bytes()
-
-    result_schema_path = ROOT / "conformance" / "scale-result.schema.json"
-    packaged_result_schema_path = (
-        ROOT
-        / "src"
-        / "docspec"
-        / "schemas"
-        / "scale_result"
-        / "1.0"
-        / "scale-result.schema.json"
-    )
-    assert (
-        result_schema_path.read_bytes()
-        == packaged_result_schema_path.read_bytes()
-        == result_schema_bytes()
-    )

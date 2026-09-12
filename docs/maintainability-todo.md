@@ -277,7 +277,10 @@ separate simplification; keep those changes reviewable independently.
   remaining outlier has a coherent responsibility or a justified split; useful
   rationale and normative schema definitions remain discoverable.
   [Recorded decisions](cleanup-decisions.md#large-modules-reviewed-by-responsibility)
-  explain the store split and the retained schema, scale, and segmentation families.
+  explain the store split and the retained schema and segmentation families.
+  The later caller audit retired the unused scale declaration family and its
+  supporting CLI, schemas and tests; capacity qualification uses actual workload
+  evidence and existing runtime limits.
 
 **E. Tests and contribution conventions**
 
@@ -347,7 +350,7 @@ run the full baseline and applicable packaging checks before completing a PR.
 | Storage and S3 | `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_source_catalog_storage.py`, `tests/test_source_catalog_build_safety.py`, `tests/test_source_catalog_succession.py`, `tests/test_s3_blob_adapter.py`, `tests/test_content_fetchers.py` |
 | Extraction and segmentation | `tests/test_visible_text.py`, `tests/test_processing_pipeline.py`, `tests/test_bounded_segmentation.py`, `tests/conformance/test_evidence_roundtrip.py` |
 | Execution and recovery | `tests/test_stage_checkpoint_recovery.py`, `tests/test_processor_only_checkpoint_recovery.py`, `tests/test_processor_reprocessing.py`, `tests/test_work_budget.py`, `tests/test_processor_cache.py`, `tests/conformance/test_incremental_equivalence.py` |
-| Schemas and profiles | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_scale_profile.py`, `tests/test_profile_registry.py` |
+| Schemas and profiles | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_profile_registry.py` |
 
 For refactors, preserve exact source bytes, evidence coordinates, record and
 release identities, deterministic ordering, failure accounting, recovery,

@@ -57,7 +57,6 @@ ZERO_DIGEST = "sha256:" + "0" * 64
     [
         ("source-catalog", ("build", "verify")),
         ("profile", ("list", "verify")),
-        ("scale-profile", ("seal", "verify")),
         ("document-catalog", ("open", "compare", "select")),
         ("plan", ("create",)),
         ("document-store", ("create", "verify")),
@@ -165,85 +164,6 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
     assert main(arguments) == 2
     error = json.loads(capfd.readouterr().err)
     assert "refusing to replace" in error["message"]
-
-
-def test_scale_profile_seal_and_verify_use_one_canonical_artifact(
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    from docspec.domain.scale import ScaleProfile
-    from tests.support.scale import scale_profile_content
-
-    request = tmp_path / "scale-content.json"
-    destination = tmp_path / "scale-profile.json"
-    receipt = tmp_path / "scale-operation.json"
-    request.write_bytes(canonical_json_file_bytes(scale_profile_content()))
-
-    assert main(
-        [
-            "scale-profile",
-            "seal",
-            "--request",
-            str(request),
-            "--destination",
-            str(destination),
-            "--receipt",
-            str(receipt),
-        ]
-    ) == 0
-    operation = json.loads(capfd.readouterr().out)
-    profile = ScaleProfile.from_bytes(destination.read_bytes())
-    assert operation["artifact"]["artifactId"] == profile.profile_id
-
-    assert main(["scale-profile", "verify", str(destination)]) == 0
-    verification = json.loads(capfd.readouterr().out)
-    assert verification["profileId"] == profile.profile_id
-    assert verification["profileDigest"] == profile.digest
-    assert verification["workloadKind"] == "document-processing"
-    assert verification["unitCount"] == 100_000
-    assert verification["verdict"] == "pass"
-
-
-def test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli(
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    from docspec.domain.scale import ScaleProfile
-    from tests.support.scale import source_catalog_scale_profile_content
-
-    request = tmp_path / "catalog-scale-content.json"
-    destination = tmp_path / "catalog-scale-profile.json"
-    receipt = tmp_path / "catalog-scale-operation.json"
-    request.write_bytes(canonical_json_file_bytes(source_catalog_scale_profile_content()))
-
-    assert main(
-        [
-            "scale-profile",
-            "seal",
-            "--request",
-            str(request),
-            "--destination",
-            str(destination),
-            "--receipt",
-            str(receipt),
-        ]
-    ) == 0
-    operation = json.loads(capfd.readouterr().out)
-    profile = ScaleProfile.from_bytes(destination.read_bytes())
-    assert operation["artifact"]["artifactId"] == profile.profile_id
-
-    assert main(["scale-profile", "verify", str(destination)]) == 0
-    verification = json.loads(capfd.readouterr().out)
-    assert verification == {
-        "format": "docspec-scale-profile-verification",
-        "formatVersion": "1.0",
-        "maxSourceRecordCount": 100_000,
-        "profileDigest": profile.digest,
-        "profileId": profile.profile_id,
-        "sourceNativeInputCount": 2,
-        "verdict": "pass",
-        "workloadKind": "source-catalog",
-    }
 
 
 def test_mutating_command_failure_writes_a_new_machine_receipt(
