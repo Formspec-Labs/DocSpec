@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import pytest
 
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import FailureClass
@@ -16,7 +15,7 @@ from docspec.runtime import open_local_inspection, prepare_local_experiment
 from docspec.workspace import LocalWorkspace
 from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
 from tests.support.processors import _CountingExtractor, _CountingProcessor, _CountingSegmenter
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 class _FailingProcessor(_CountingProcessor):
@@ -35,8 +34,7 @@ class _FailingProcessor(_CountingProcessor):
 
 @pytest.fixture
 def experiment(tmp_path, monkeypatch):
-    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    original = _local_run_arguments(_local_run_request(request))
+    original = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     workspace = original["workspace"]
     content = b"First paragraph.\n\nSecond paragraph."
     (workspace.roots["sourceContent"] / "document.txt").write_bytes(content)

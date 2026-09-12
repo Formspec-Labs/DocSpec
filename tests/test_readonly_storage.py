@@ -4,19 +4,17 @@ from pathlib import Path
 
 import pytest
 
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.errors import IntegrityError
 from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run
 from docspec.runtime.storage import _local_profiles, _local_storage
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 @pytest.fixture
 def arguments(tmp_path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    return _local_run_arguments(_local_run_request(path))
+    return _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
 
 
 def _open(arguments):

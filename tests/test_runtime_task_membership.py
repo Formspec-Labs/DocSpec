@@ -11,7 +11,6 @@ import pytest
 
 from docspec.adapters.storage import LocalDocumentStoreRepository
 from docspec.application.commit import ReleaseCommitService
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.execution import StoreTask, summarize_store_tasks
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import DocumentStore
@@ -21,13 +20,12 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run
 from docspec.runtime.task_membership import _TaskMembershipIndex
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 @pytest.fixture
 def prepared(tmp_path: Path):
-    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(request))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     fetcher = SharedFixtureContentFetcher(arguments["workspace"].roots["sourceContent"])
     with prepare_local_run(**arguments, content_fetcher=fetcher) as run:
         yield run
@@ -204,8 +202,7 @@ def test_deadline_expiring_during_admission_refuses_before_recovery(prepared, mo
 
 
 def test_zero_task_successor_creates_no_membership_index(tmp_path) -> None:
-    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(request))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     arguments["content_fetcher"] = SharedFixtureContentFetcher(arguments["workspace"].roots["sourceContent"])
     with prepare_local_run(**arguments) as initial:
         run_ref = initial.run()

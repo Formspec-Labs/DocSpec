@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.storage import LocalJsonControlRepository
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.execution import summarize_store_tasks
 from docspec.domain.jobs import StoreState
 from docspec.domain.plans import ProcessingPlan
@@ -19,18 +18,14 @@ from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 @pytest.fixture
 def arguments(tmp_path: Path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    request = _local_run_request(path)
-    values = _local_run_arguments(request)
-    # Input files seed an existing fixture only; the Python lifecycle has the
-    # domain values and must not need either file after this point.
-    path.unlink()
-    request["plan"].unlink()
+    values = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
+    assert not (tmp_path / "run-request.json").exists()
+    assert not (tmp_path / "plan.json").exists()
     return values
 
 

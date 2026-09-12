@@ -8,14 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.errors import IntegrityError, ProfileError
 from docspec.runtime import prepare_local_run
 from docspec.workspace import LocalWorkspace
 from docspec.domain.identity import identity_digest
 from docspec.profile_registry import ProfileRegistry
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 class _CountingFetcher(SharedFixtureContentFetcher):
@@ -31,8 +30,7 @@ class _CountingFetcher(SharedFixtureContentFetcher):
 
 @pytest.fixture
 def run_request(tmp_path: Path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    return _local_run_arguments(_local_run_request(path))
+    return _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
 
 
 def test_reconstructed_worker_runs_and_recovers_without_fetching_again(run_request) -> None:

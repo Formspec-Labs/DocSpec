@@ -5,7 +5,6 @@ from dataclasses import fields, replace
 import pytest
 
 from docspec.application.work_budget import WorkBudget
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import EntryExecutionMode, StoreState
@@ -19,7 +18,7 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from docspec.workspace import LocalWorkspace
 from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 from tests.support.incremental import _active_document_state
 
 
@@ -30,8 +29,7 @@ def _replan(plan, **changes):
 
 @pytest.fixture
 def capture_arguments(tmp_path, monkeypatch, request):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(path))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     workspace = arguments["workspace"]
     candidates = []
     for name, content in (("z-first", b"First document."), ("a-second", b"Second document.")):

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 41 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 42 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1131,7 +1131,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d35"></a>
 
-- [ ] **D35 · P2 · Simplify tests around observable behavior.** Reuse the prior
+- [x] **D35 · P2 · Simplify tests around observable behavior.** Reuse the prior
   refactor's focused suites and support helpers. Retire assertions for deliberately
   removed behavior; reduce redundant tests that only mirror implementation.
   **Done when:** meaningful checks cover evidence, reuse, failures, bounded work,
@@ -1168,7 +1168,17 @@ to defer a conditional item is a documented deferral, not completed implementati
   build per pytest session while keeping separate environments, dependency
   absence checks and copied behavioral probes. The combined strict regression
   gate passed **1,076 tests**, with one live integration test deselected, in
-  249.91 seconds and no warnings. Typed Python fixture setup remains to simplify.
+  249.91 seconds and no warnings.
+
+  **Completed locally September 12:** Python API fixtures now construct typed
+  arguments directly in one existing support helper. Thirteen callers no longer
+  write CLI JSON and invoke private command parsers just to obtain those values.
+  The command writer remains a thin wrapper; its independent 1/1 execution
+  defaults preserve the real CLI parity control. Runtime, recovery, worker,
+  inspection, prefix, export, CLI and profile checks passed **169 tests** in
+  48.98 seconds; Ruff and diff checks passed. No behavioral cases were removed.
+  The [simplification review](history/2026-09-12-test-simplification-review.md)
+  records the three changes and the corrected parity counterfactual.
 
 <a id="d36"></a>
 

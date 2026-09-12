@@ -6,7 +6,6 @@ import pytest
 
 from docspec.application.execution_evidence import put_receipt
 from docspec.application.inspection_evidence import ENTRY_COUNT_KEYS, entry_evidence
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.jobs import EntryExecutionMode
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.processors import ProcessorSet
@@ -16,7 +15,7 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
 from tests.support.processors import _CountingProcessor, _description
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 def _replan(plan, **changes):
@@ -25,8 +24,7 @@ def _replan(plan, **changes):
 
 
 def _arguments(tmp_path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(path))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     arguments["content_fetcher"] = SharedFixtureContentFetcher(arguments["workspace"].roots["sourceContent"])
     return arguments
 

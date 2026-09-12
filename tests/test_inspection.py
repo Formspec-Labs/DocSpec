@@ -5,7 +5,6 @@ from dataclasses import fields, replace
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.plans import ProcessingPlan
@@ -19,7 +18,7 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import open_local_inspection, prepare_local_run, stage_policy
 from docspec.workspace import LocalWorkspace
 from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 def _replan(plan, **changes):
@@ -29,8 +28,7 @@ def _replan(plan, **changes):
 
 @pytest.fixture
 def arguments(tmp_path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    values = _local_run_arguments(_local_run_request(path))
+    values = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     workspace = values["workspace"]
     content = b"Two retained documents."
     (workspace.roots["sourceContent"] / "input.txt").write_bytes(content)

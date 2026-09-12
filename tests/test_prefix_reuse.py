@@ -8,7 +8,6 @@ import pytest
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.application.base_reprocessing import prepare_base_reprocessing
 from docspec.application.planner import RunPlanner
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.jobs import DocumentEntry, EntryExecutionMode
@@ -22,7 +21,7 @@ from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import EMPTY_DIGEST, SharedFixtureContentFetcher, artifact
 from tests.support.planner import MemoryControls, MemorySourceCatalog, MemoryStores
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 
 
 def _replan(plan, **changes):
@@ -31,8 +30,7 @@ def _replan(plan, **changes):
 
 
 def test_mixed_stage_items_use_their_own_retained_policy(tmp_path):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    template = _local_run_arguments(_local_run_request(path))["plan"]
+    template = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())["plan"]
     complete = stage_policy(extractor=TextExtractor(), segmenter=ParagraphSegmenter())
     policies = {
         "a-captured": stage_policy(stop_after="capture"),
@@ -91,8 +89,7 @@ def test_mixed_stage_items_use_their_own_retained_policy(tmp_path):
 
 @pytest.mark.parametrize("invalid", ["missing-file", "repeated-file", "wrong-source", "wrong-candidate", "wrong-extraction"])
 def test_invalid_base_prefix_refuses_before_new_receipts(tmp_path, monkeypatch, invalid):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(path))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     arguments["content_fetcher"] = SharedFixtureContentFetcher(arguments["workspace"].roots["sourceContent"])
     arguments["plan"] = _replan(arguments["plan"], stages=stage_policy(), processors=ProcessorSet(()))
     with prepare_local_run(**arguments) as initial:

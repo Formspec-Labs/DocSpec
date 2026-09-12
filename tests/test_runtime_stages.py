@@ -6,7 +6,6 @@ from dataclasses import fields, replace
 
 import pytest
 
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.identity import identity_digest, stable_urn
 from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass
 from docspec.domain.plans import ProcessingPlan
@@ -16,7 +15,7 @@ from docspec.processing.segmentation import ParagraphSegmenter
 from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 from tests.support.incremental import _active_document_state
 
 
@@ -59,8 +58,7 @@ def _replan(plan, **changes):
 
 @pytest.fixture
 def stages(tmp_path, monkeypatch):
-    path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(path))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     extractor, segmenter = _ConfiguredText(), _ConfiguredParagraphs()
     arguments.update(extractor=extractor, segmenter=segmenter)
     arguments["plan"] = _replan(arguments["plan"], stages=stage_policy(

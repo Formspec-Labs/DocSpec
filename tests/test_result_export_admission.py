@@ -17,12 +17,11 @@ from docspec.domain.content import CandidateFile, Segment, SourceItem
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, stable_urn
 from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError, LimitExceededError
-from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import export_local_result, prepare_local_experiment
 from docspec.workspace import LocalWorkspace
 from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run_arguments
 from tests.support.experiments import _FailingProcessor, experiment as _experiment_fixture
 from tests.support.exports import export_run as _export_fixture, export_result, open_export
 from tests.support.processors import _CountingProcessor, _description
@@ -164,8 +163,7 @@ def test_mixed_failed_item_uses_its_original_processor_plan(export_run, tmp_path
 
 
 def test_one_export_contains_processor_evidence_from_two_owning_plans(tmp_path):
-    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    arguments = _local_run_arguments(_local_run_request(request))
+    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     original = arguments["workspace"]
     catalog_root = tmp_path / "two-items"
     source = write_shared_source_catalog(catalog_root, tuple(SourceItem(name, "v1", (

@@ -15,14 +15,13 @@ from docspec.processing.segmentation import ParagraphSegmenter
 from docspec.profile_registry import ProfileRegistry
 from docspec.runtime import local_execution_limits, open_local_inspection, prepare_local_experiment, prepare_local_run, stage_policy
 from tests.helpers import SharedFixtureContentFetcher
-from tests.support.profiles import _seeded_local_run
+from tests.support.profiles import _seeded_local_run, _seeded_local_run_arguments
 from tests.support.processors import _CountingProcessor, _description
 
 
 @pytest.fixture
 def configured(tmp_path):
-    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
-    original = _local_run_arguments(_local_run_request(request))
+    original = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
     settings = {
         "limits": original["plan"].limits,
         "source_catalog_producer": original["source_catalog_producer"],
@@ -220,8 +219,9 @@ def test_source_acceptance_is_explicit_and_not_derived_from_input(configured):
         prepare_local_experiment(source, workspace, stop_after="capture", **(settings | {"source_catalog_producer": wrong}))
 
 
-def test_shared_execution_defaults_preserve_explicit_cli_behavior(configured):
-    _, _, _, original = configured
+def test_shared_execution_defaults_preserve_explicit_cli_behavior(tmp_path):
+    request, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
+    original = _local_run_arguments(_local_run_request(request))
     assert local_execution_limits() == original["execution_limits"]
     limits = local_execution_limits(worker_count=3)
     assert limits.max_in_flight == 3
