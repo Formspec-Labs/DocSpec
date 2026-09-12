@@ -463,7 +463,7 @@ def test_selection_is_precompiled_and_rejects_malformed_selectors_without_items(
         (_source_item("item", candidates=(_candidate(size=13),)), ChangeKind.CHANGED),
         (_source_item("item", candidates=(_candidate(transport="fixture:v2"),)), ChangeKind.CHANGED),
         (_source_item("item", candidates=(_candidate(metadata={"rendition": "changed"}),)), ChangeKind.CHANGED),
-        (_source_item("item", metadata={"expectedSegments": 2}), ChangeKind.CHANGED),
+        (_source_item("item", metadata={"expectedSegments": 2}), ChangeKind.REPAIR),
         (_source_item("item", state=SourceItemState.EXCLUDED), ChangeKind.EXCLUDED),
         (_source_item("item", state=SourceItemState.DELETED), ChangeKind.DELETED),
     ),
@@ -490,6 +490,14 @@ def test_same_version_complete_source_item_changes_are_scheduled(
     # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
     assert catalog.lookup_calls == 0
+
+
+def test_boolean_and_numeric_candidate_metadata_cannot_reuse_acquisition():
+    previous = _source_item("item", candidates=(_candidate(metadata={"option": 1}),))
+    current = _source_item("item", candidates=(_candidate(metadata={"option": True}),))
+    entries, _catalog = _planned_update((previous,), (current,))
+    assert entries[0].change is ChangeKind.CHANGED
+    assert entries[0].execution_mode is EntryExecutionMode.FULL
 
 
 def test_selected_failed_item_is_repaired_while_its_neighbours_are_dropped() -> None:

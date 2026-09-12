@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Any
 
 from rulespec_artifacts import Producer, Supersedes
 
@@ -12,6 +13,7 @@ from docspec.adapters.catalog_artifact.builder import SourceCatalogBuilder, Sour
 from docspec.adapters.catalog_artifact.reader import AdmittedSourceCatalog, SourceCatalogArtifactReader
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
+from docspec.application.catalog_preview import preview_catalog, validate_preview_limits
 from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceCatalogPolicy, SourceNativeRecordSource
 from docspec.workspace import LocalWorkspace
@@ -70,3 +72,36 @@ def open_local_catalog(
     return SourceCatalogArtifactReader(
         LocalSourceCatalogStore(workspace.roots["sourceCatalog"], create=False), producer=producer,
     ).admit_snapshot(reference)
+
+
+def preview_local_catalog(
+    reference: SourceCatalogRef,
+    workspace: LocalWorkspace,
+    *,
+    producer: Producer,
+    previous_ref: SourceCatalogRef | None = None,
+    sample_limit: int = 20,
+    max_sample_bytes: int = 1024 * 1024,
+) -> dict[str, Any]:
+    """Explain selected candidates, exclusions, and changes before acquisition.
+
+    Compare two exact catalogs from this workspace with the same explicit
+    producer acceptance. Counts stream the complete population; current-row
+    and change samples each cap their item count and canonical entry bytes.
+    Zero limits keep complete counts without those samples. No directories,
+    pointers, processing tasks, or document fetches are created.
+
+    Successive catalogs are full snapshots. Omission is reported explicitly;
+    input scope such as observed-crawl does not request append semantics.
+    Use prepared-run inspection for run filters and actual planned work.
+    """
+
+    validate_preview_limits(sample_limit, max_sample_bytes)
+    current = open_local_catalog(reference, workspace, producer=producer)
+    previous = None if previous_ref is None else open_local_catalog(previous_ref, workspace, producer=producer)
+    return preview_catalog(
+        current.summary, current.iter_mappings(),
+        previous_summary=None if previous is None else previous.summary,
+        previous_rows=iter(()) if previous is None else previous.iter_mappings(),
+        sample_limit=sample_limit, max_sample_bytes=max_sample_bytes,
+    )

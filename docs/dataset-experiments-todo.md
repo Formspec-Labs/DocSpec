@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 12 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 13 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -267,13 +267,28 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d07"></a>
 
-- [ ] **D07 · P0 · Make catalog iteration and selection inspectable.** Expose
+- [x] **D07 · P0 · Make catalog iteration and selection inspectable.** Expose
   previewable additions, changes, exclusions, selected candidates, and reasons
   before acquisition. Decide how a dataset accepts successive or multiple source
   inputs, including source-qualified identity and collisions. **Done when:** an
   operator can explain a selection change and grow a dataset without silently
   conflating records or refetching unchanged selections. Depends on D02 and D06;
   use the existing catalog policy and succession machinery.
+
+  **Completed September 11:** `preview_local_catalog` reports complete selection
+  and change counts with bounded candidate/reason samples from exact admitted
+  snapshots. Full-snapshot omissions and qualified-ID collisions remain explicit.
+  Metadata-only successors retain verified acquisition and processing work while
+  replacing the current source description; held failures still require an
+  admitted retry. Catalog and result inspection share comparison helpers that
+  distinguish absent fields, null, booleans, and numbers. See the
+  [guide](catalog-iteration.md),
+  [architecture decision](history/2026-09-11-catalog-iteration-architecture.md),
+  and [independent review](history/2026-09-11-catalog-iteration-review.md).
+  The final focused gate passed 98 tests, including real catalog growth, exact
+  acquisition-provenance reuse, clean-result comparison, failure repair,
+  ordering, sample bounds, and iterator closure. Ruff and diff checks passed.
+  This does not qualify live providers or arbitrary mixed-policy composition.
 
 <a id="d08"></a>
 

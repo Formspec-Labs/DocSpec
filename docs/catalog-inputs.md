@@ -4,6 +4,9 @@
 policy, a catalog identity, and the producer that will declare the output. It returns the
 existing verified catalog reference and summary. Catalog-only work creates only
 the workspace's `sourceCatalog` storage; no document is fetched or processed.
+Use [catalog preview and iteration](catalog-iteration.md) to review selected
+candidates and reasons, compare successive full snapshots, and reuse unchanged
+document work while updating catalog descriptions.
 
 ## Supply a small set of records
 

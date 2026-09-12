@@ -12,22 +12,11 @@ from typing import TYPE_CHECKING, Any
 from docspec.domain.identity import canonical_json_bytes, identity_digest
 from docspec.ports.record_workspace import RecordWorkspace
 
+from .comparison import json_changes, json_equal, paired_rows
 from .inspection_evidence import entry_evidence
 
 if TYPE_CHECKING:
     from .inspection import InspectionView
-
-
-def _changes(older: Any, newer: Any, path: str = "") -> list[dict[str, Any]]:
-    if older == newer:
-        return []
-    if isinstance(older, dict) and isinstance(newer, dict):
-        return [
-            change
-            for key in sorted(older.keys() | newer.keys())
-            for change in _changes(older.get(key), newer.get(key), f"{path}/{key}")
-        ]
-    return [{"path": path, "older": older, "newer": newer}]
 
 
 def _work(view: InspectionView, workspace: RecordWorkspace, collection: str) -> None:
@@ -133,22 +122,13 @@ def _result_signatures(workspace: RecordWorkspace, collection: str) -> Iterator[
 def _compare_rows(older: Iterator[dict[str, Any]], newer: Iterator[dict[str, Any]], limit: int) -> dict[str, Any]:
     counts: Counter[str] = Counter()
     sample: list[dict[str, Any]] = []
-    try:
-        old, new = next(older, None), next(newer, None)
-        while old is not None or new is not None:
-            if new is None or old is not None and old["sourceItemId"] < new["sourceItemId"]:
-                item, before, after, status = old["sourceItemId"], old, None, "removed"
-                old = next(older, None)
-            elif old is None or new["sourceItemId"] < old["sourceItemId"]:
-                item, before, after, status = new["sourceItemId"], None, new, "added"
-                new = next(newer, None)
-            else:
-                item, before, after = old["sourceItemId"], old, new
-                status = "unchanged" if old == new else "changed"
-                old, new = next(older, None), next(newer, None)
+    with closing(paired_rows(older, newer, key=lambda row: row["sourceItemId"])) as pairs:
+        for before, after in pairs:
+            item = (before if before is not None else after)["sourceItemId"]
+            status = "added" if before is None else "removed" if after is None else "unchanged" if json_equal(before, after) else "changed"
             counts[status] += 1
             if status != "unchanged" and len(sample) < limit:
-                changes = _changes(before, after)
+                changes = json_changes(before, after)
                 left, right = before or {}, after or {}
                 explanation = {
                     f"{name}Changed": left.get(f"{name}Digest") != right.get(f"{name}Digest")
@@ -156,11 +136,6 @@ def _compare_rows(older: Iterator[dict[str, Any]], newer: Iterator[dict[str, Any
                     if f"{name}Digest" in left or f"{name}Digest" in right
                 }
                 sample.append({"sourceItemId": item, "change": status, **explanation, "differences": changes})
-    finally:
-        for rows in (older, newer):
-            close = getattr(rows, "close", None)
-            if close is not None:
-                close()
     changed = counts["added"] + counts["removed"] + counts["changed"]
     return {"changeCount": changed, "counts": dict(sorted(counts.items())), "sample": sample, "sampleTruncated": changed > len(sample)}
 
@@ -192,8 +167,8 @@ def compare_views(older: InspectionView, newer: InspectionView, *, sample_limit:
     return {
         "format": "docspec-inspection-comparison", "formatVersion": "1.0",
         "olderPhase": older.phase, "newerPhase": newer.phase,
-        "configurationChanges": _changes(older.plan.identity_content(), newer.plan.identity_content()),
-        "executionConfigurationChanges": _changes(execution(older), execution(newer)),
+        "configurationChanges": json_changes(older.plan.identity_content(), newer.plan.identity_content()),
+        "executionConfigurationChanges": json_changes(execution(older), execution(newer)),
         "work": work, "result": result,
         "resultUnavailable": None if result is not None else "both sides must have a complete active result",
         "interpretation": {

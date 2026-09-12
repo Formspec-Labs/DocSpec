@@ -89,7 +89,7 @@ def test_mixed_stage_items_use_their_own_retained_policy(tmp_path):
     assert all(entry.processor_ids_to_run == () for entry in entries)
 
 
-@pytest.mark.parametrize("invalid", ["missing-file", "repeated-file", "wrong-source", "wrong-extraction"])
+@pytest.mark.parametrize("invalid", ["missing-file", "repeated-file", "wrong-source", "wrong-candidate", "wrong-extraction"])
 def test_invalid_base_prefix_refuses_before_new_receipts(tmp_path, monkeypatch, invalid):
     path, _ = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
     arguments = _local_run_arguments(_local_run_request(path))
@@ -112,6 +112,11 @@ def test_invalid_base_prefix_refuses_before_new_receipts(tmp_path, monkeypatch, 
                     continue
                 if invalid == "wrong-source" and layer_kind == "source-items":
                     row = {**row, "payload": {**row["payload"], "version": "different"}}
+                if invalid == "wrong-candidate" and layer_kind == "source-items":
+                    payload = row["payload"]
+                    row = {**row, "payload": {**payload, "candidates": [
+                        {**candidate, "locator": "different.txt"} for candidate in payload["candidates"]
+                    ]}}
                 yield row
                 if invalid == "repeated-file" and layer_kind == "files":
                     yield row
@@ -131,7 +136,8 @@ def test_invalid_base_prefix_refuses_before_new_receipts(tmp_path, monkeypatch, 
         monkeypatch.setattr(composition.controls, "put", unexpected_write)
         expected = {
             "missing-file": "capture population differs", "repeated-file": "reusable input bound",
-            "wrong-source": "source item differs", "wrong-extraction": "extraction settings differ",
+            "wrong-source": "source item differs", "wrong-candidate": "source item differs",
+            "wrong-extraction": "extraction settings differ",
         }[invalid]
         with pytest.raises((IntegrityError, LimitExceededError), match=expected):
             prepare_base_reprocessing(

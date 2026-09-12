@@ -354,8 +354,11 @@ class RunPlanner:
             if not selection.matches(item, logical_bucket=bucket):
                 continue
             impact = plan_impact
-            if previous is not None and previous.stages is not None and plan_impact.change_kind is None:
-                if previous.failed and change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
+            if (
+                previous is not None and previous.stages is not None and plan_impact.change_kind is None
+                and item.state == SourceItemState.ACTIVE and previous.item.same_acquisition_inputs(item)
+            ):
+                if previous.failed:
                     assert previous.entry_id is not None and previous.terminal_failure is not None
                     frontier = failed_item_frontier(item, previous.stages, previous.entry_id, workspace, self._controls, plan)
                     retry = selection.retry_failures == "selected" or (
@@ -365,10 +368,9 @@ class RunPlanner:
                         continue
                     impact = self._failed_impact(frontier, previous.stages, plan)
                     change = ChangeKind.REPAIR
-                elif not previous.failed:
+                elif change != ChangeKind.UNCHANGED or previous.stages != plan.stages:
                     impact = self._stage_impact(previous.stages, plan)
-                    if change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
-                        change = impact.change_kind or change
+                    change = ChangeKind.REPAIR
             if change == ChangeKind.UNCHANGED:
                 continue
             reuse = change == ChangeKind.REPAIR
@@ -489,8 +491,6 @@ class RunPlanner:
         """Choose the reusable prefix from this item's own retained policy."""
 
         current = plan.stages
-        if previous == current:
-            return _PlanImpact(None)
         if not current.requests_extraction or (
             previous.extractor_id, previous.extractor_configuration_digest
         ) != (current.extractor_id, current.extractor_configuration_digest):

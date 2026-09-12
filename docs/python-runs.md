@@ -177,9 +177,11 @@ declarations; this does not prove arbitrary plugin code behaves correctly.
 Changed settings require a new plan against an explicit retained base. For an
 unchanged source item, changed extraction reuses captures; changed segmentation
 reuses representations; changed processors reuse segments and unaffected
-processor results. Downstream work runs again. Changed source items and other
-governing policies conservatively require full work. A damaged promised prefix
-refuses reuse instead of silently fetching replacement evidence.
+processor results. Downstream work runs again. Changed acquisition inputs and
+other governing policies conservatively require full work. A catalog metadata
+refresh can retain verified document work while publishing the fresh source
+description; see [catalog iteration](catalog-iteration.md). A damaged promised
+prefix refuses reuse instead of silently fetching replacement evidence.
 
 The default extractor includes PDF support when the optional parser is installed.
 Configuration reads its installed version without importing the parser. PDF

@@ -84,7 +84,7 @@ def prepare_base_reprocessing(
 
     try:
         source_payloads = tuple(payloads("source-items", 1))
-        if len(source_payloads) != 1 or SourceItem.from_dict(source_payloads[0]) != entry.source_item:
+        if len(source_payloads) != 1 or not SourceItem.from_dict(source_payloads[0]).same_acquisition_inputs(entry.source_item):
             raise IntegrityError("reprocessing source item differs from the pinned base release")
         dispositions = tuple(payloads("dispositions", 1))
         if len(dispositions) != 1:
