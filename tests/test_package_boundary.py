@@ -185,7 +185,10 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
         "path": "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl"
     }
-    assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts"}
+    assert project["tool"]["uv"]["sources"]["spicy-docs"] == {
+        "path": "vendor/spicy_docs-0.2.0-py3-none-any.whl"
+    }
+    assert set(project["tool"]["uv"]["sources"]) == {"rulespec-artifacts", "spicy-docs"}
     assert project["project"]["scripts"] == {"docspec": "docspec.entrypoint:main"}
     # No "fast" extra: it advertised jsonschema-rs as optional, and it is not.
     assert set(project["project"]["optional-dependencies"]) == {
@@ -193,10 +196,12 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
         "http",
         "pdf",
         "s3",
+        "spicy-docs",
         "tokens",
     }
 
     extras = project["project"]["optional-dependencies"]
+    assert extras["spicy-docs"] == ["spicy-docs==0.2.0"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
     assert any(requirement.startswith("pymupdf") for requirement in extras["pdf"])
     assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])

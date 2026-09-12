@@ -14,13 +14,7 @@ import docspec
 ROOT = Path(__file__).resolve().parents[1]
 RULESPEC_WHEEL = ROOT / "vendor" / "rulespec_artifacts-1.0.12-py3-none-any.whl"
 RULESPEC_WHEEL_SHA256 = "3f6c946c60ff2ddbe854fce7f74f4358ddb21e3ba3f6ad10caa8a0d8d59fd0a5"
-SPICY_DOCS_WHEEL = (
-    ROOT
-    / "tests"
-    / "fixtures"
-    / "installed_wheels"
-    / "spicy_docs-0.2.0-py3-none-any.whl"
-)
+SPICY_DOCS_WHEEL = ROOT / "vendor" / "spicy_docs-0.2.0-py3-none-any.whl"
 SPICY_DOCS_VERSION = "0.2.0"
 SPICY_DOCS_WHEEL_SHA256 = "ecaa5ebc15df7cad12952e5fdeb8e1cef71614471dfb81b5f43316049d246c4e"
 SPICY_DOCS_REVISION = "296f20d05e0c32419ebae9d43cdfd19fe054238b"
@@ -28,8 +22,8 @@ SPICY_DOCS_REVISION = "296f20d05e0c32419ebae9d43cdfd19fe054238b"
 
 # This exact current producer wheel publishes and verifies the bounded source
 # fixtures. Its version, source revision and digest are independent of the data
-# pins produced below. It is test input, not a DocSpec dependency, and this test
-# never rebuilds it. Update these pins when accepting a new provider release.
+# pins produced below. The optional provider extra and this test use one wheel;
+# this test never rebuilds it. Update these pins when accepting a new release.
 _INSTALLED_PROBE = r'''
 from __future__ import annotations
 
@@ -542,10 +536,12 @@ assert sys.version_info[:2] == (3, 12)
 assert importlib.metadata.version("docspec") == "__DOCSPEC_VERSION__"
 assert importlib.metadata.version("rulespec-artifacts") == "1.0.12"
 assert importlib.metadata.version("spicy-docs") == "__SPICY_DOCS_VERSION__"
-assert not any(
-    requirement.lower().startswith("spicy-docs")
+provider_requirements = [
+    "".join(requirement.split()).replace('"', "'")
     for requirement in (importlib.metadata.requires("docspec") or ())
-)
+    if requirement.lower().startswith("spicy-docs")
+]
+assert provider_requirements == ["spicy-docs==__SPICY_DOCS_VERSION__;extra=='spicy-docs'"]
 environment_root = Path(sys.prefix).resolve(strict=True)
 module_origins = {
     "docspec": str(Path(docspec.__file__).resolve(strict=True)),
@@ -1082,6 +1078,12 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert install_core.returncode == 0, install_core.stderr
+    core_only = subprocess.run(
+        [environment_python, "-I", "-c",
+         "import docspec.runtime, importlib.util; assert importlib.util.find_spec('spicy_docs') is None"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert core_only.returncode == 0, core_only.stderr
     install_producer = subprocess.run(
         [
             uv,
@@ -1091,6 +1093,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             str(environment_python),
             str(runtime_rulespec),
             str(runtime_spicy_docs),
+            f"{runtime_docspec}[spicy-docs]",
         ],
         cwd=tmp_path,
         capture_output=True,
@@ -1098,6 +1101,14 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert install_producer.returncode == 0, install_producer.stderr
+    reader_only = subprocess.run(
+        [environment_python, "-I", "-c",
+         "import docspec.source_catalog, spicy_docs.source_native, importlib.util; "
+         "assert all(importlib.util.find_spec(name) is None for name in "
+         "('boto3', 'httpx', 'polars', 'pyarrow', 'dagster', 'pypdf'))"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert reader_only.returncode == 0, reader_only.stderr
     dependency_check = subprocess.run(
         [uv, "pip", "check", "--python", str(environment_python)],
         cwd=tmp_path,

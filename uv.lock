@@ -215,7 +215,7 @@ wheels = [
 
 [[package]]
 name = "docspec"
-version = "0.2.11"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "jsonschema" },
@@ -236,6 +236,9 @@ pdf = [
 ]
 s3 = [
     { name = "boto3" },
+]
+spicy-docs = [
+    { name = "spicy-docs" },
 ]
 tokens = [
     { name = "tiktoken" },
@@ -261,9 +264,10 @@ requires-dist = [
     { name = "pymupdf", marker = "extra == 'pdf'", specifier = ">=1.24,<2" },
     { name = "pypdf", marker = "extra == 'pdf'", specifier = ">=5,<7" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" },
+    { name = "spicy-docs", marker = "extra == 'spicy-docs'", path = "vendor/spicy_docs-0.2.0-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
-provides-extras = ["http", "s3", "tokens", "pdf", "dagster"]
+provides-extras = ["spicy-docs", "http", "s3", "tokens", "pdf", "dagster"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -940,6 +944,31 @@ sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050 },
 ]
+
+[[package]]
+name = "spicy-docs"
+version = "0.2.0"
+source = { path = "vendor/spicy_docs-0.2.0-py3-none-any.whl" }
+dependencies = [
+    { name = "jsonschema" },
+    { name = "rulespec-artifacts" },
+]
+wheels = [
+    { filename = "spicy_docs-0.2.0-py3-none-any.whl", hash = "sha256:ecaa5ebc15df7cad12952e5fdeb8e1cef71614471dfb81b5f43316049d246c4e" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", marker = "extra == 'acquisition'" },
+    { name = "httpx", marker = "extra == 'acquisition'" },
+    { name = "jsonschema", specifier = ">=4.23" },
+    { name = "loguru", marker = "extra == 'acquisition'" },
+    { name = "polars", marker = "extra == 'public-table'" },
+    { name = "pyarrow", marker = "extra == 'public-table'" },
+    { name = "rulespec-artifacts", specifier = "==1.0.12" },
+    { name = "tqdm", marker = "extra == 'acquisition'" },
+]
+provides-extras = ["acquisition", "public-table"]
 
 [[package]]
 name = "sqlalchemy"

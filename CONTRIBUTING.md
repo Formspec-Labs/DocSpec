@@ -149,6 +149,28 @@ from an installed package. For live service checks, inspect the specific test's
 configuration first and explicitly select it with `pytest -m integration`;
 the default test run supplies no live credentials.
 
+## Install the optional source reader
+
+`docspec[spicy-docs]` selects the pinned public SpicyDocs reader. It adds no
+acquisition, analytics, Dagster or PDF extras. The provider remains independently
+usable and does not depend on DocSpec. Supplied-record experiments work with
+core DocSpec alone.
+
+For a built `0.3.0` wheel and an existing empty verification environment:
+
+```sh
+uv pip install --python "$wheel_check/venv/bin/python" \
+  --find-links dist --find-links vendor 'docspec[spicy-docs]==0.3.0'
+```
+
+Outside the checkout, supply the DocSpec, Rulespec and SpicyDocs wheels from
+that same checked build. The two dependency wheels have one authoritative home
+under `vendor/`; installed integration tests use those same files. In a checkout,
+add `--extra spicy-docs` to the extras selected for `uv sync` and `uv run`.
+Keep optional acquisition or processing dependencies tied to the operation that
+needs them. Package/version pins identify code; source artifact pins identify
+the data that a catalog reads.
+
 ## Submit a reviewable change
 
 Explain the problem and resulting behavior, affected entry points, checks run,
@@ -168,5 +190,5 @@ Maintainers edit this guide and the guides under `docs/` directly. The
 [documentation index](docs/documentation.md) links to catalog evidence,
 extension guidance, operations, and historical provenance. Update the relevant
 guide with a behavior or file move so the next contributor finds its current owner.
-Use the [tool inventory](tools/README.md) for repository scripts, including the
-historical portable mint recipe and its limits.
+Use the [tool inventory](tools/README.md) for current source research, sampling,
+reporting and schema scripts.

@@ -75,6 +75,15 @@ uv run --frozen --extra dagster python -m examples.supplied_records --output /ab
 
 ## Use an installed provider reader
 
+Choose the `spicy-docs` package extra for this integration. In a checkout, add
+`--extra spicy-docs` to the extras you select for `uv sync` and `uv run`.
+The optional provider is pinned to
+SpicyDocs `0.2.0`; its base installation adds source reading without acquisition,
+analytics, PDF or Dagster dependencies. See the
+[wheel installation instructions](../CONTRIBUTING.md#install-the-optional-source-reader)
+for use outside the checkout. Ordinary supplied-record experiments need no
+provider package.
+
 The existing source port streams already admitted records and renditions. The
 optional SpicyDocs adapter uses the installed provider reader; importing DocSpec
 does not import that package. Supply its exact artifact pin and independently
