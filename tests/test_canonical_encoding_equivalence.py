@@ -30,6 +30,7 @@ def test_doc_spec_emits_the_shared_corpus_bytes(case):
     assert canonical_json_bytes(parse_canonical_json(expected, file_form=False)) == expected
     with trusted_json_input():
         assert canonical_json_bytes(case["value"]) == expected
+        assert canonical_json_bytes(parse_canonical_json(expected, file_form=False)) == expected
 
 
 def _rejected_value(description):
@@ -62,6 +63,15 @@ def test_doc_spec_refuses_the_shared_corpus_values_even_when_trusted(case):
 def test_doc_spec_refuses_the_shared_corpus_bytes_with_local_context(case):
     with pytest.raises(IntegrityError):
         parse_canonical_json(bytes.fromhex(case["utf8Hex"]), label="source receipt", file_form=False)
+    with trusted_json_input(), pytest.raises(IntegrityError):
+        parse_canonical_json(bytes.fromhex(case["utf8Hex"]), label="source receipt", file_form=False)
+
+
+def test_canonical_parser_returns_immutable_nested_containers():
+    parsed = parse_canonical_json(b'{"items":[{"value":1}]}\n')
+    assert parsed["items"] == ({"value": 1},)
+    with pytest.raises(TypeError):
+        parsed["items"][0]["value"] = 2
 
 
 def test_file_framing_adds_exactly_one_newline_to_shared_bytes():

@@ -275,24 +275,29 @@ def parse_canonical_json(data: bytes, *, label: str = "JSON", file_form: bool = 
     """Parse exact canonical UTF-8 JSON and reject alternate encodings."""
 
     try:
-        value = parse_closed_json(data, label=label)
-        expected = canonical_json_file_bytes(value) if file_form else canonical_json_bytes(value)
+        value = _decode_closed_json(data, label=label)
+        # Decoding already produces plain JSON; domain conversion would copy it again.
+        expected = _artifact_canonical_json_bytes(value) + (b"\n" if file_form else b"")
     except ValueError as error:
         raise IntegrityError(f"{label} is outside the canonical JSON domain: {error}") from error
     if data != expected:
         raise IntegrityError(f"{label} is not canonical JSON")
-    return value
+    return freeze_json(value, label=label)
 
 
 def parse_closed_json(data: bytes, *, label: str = "JSON") -> JSONValue:
     """Parse duplicate-safe finite UTF-8 JSON without imposing file formatting."""
 
+    return freeze_json(_decode_closed_json(data, label=label), label=label)
+
+
+def _decode_closed_json(data: bytes, *, label: str) -> Any:
     try:
         text = data.decode("utf-8")
         value = json.loads(text, object_pairs_hook=_closed_object, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)))
     except (UnicodeError, json.JSONDecodeError, ValueError) as error:
         raise IntegrityError(f"{label} is not valid closed UTF-8 JSON: {error}") from error
-    return freeze_json(value, label=label)
+    return value
 
 
 def sha256_digest(data: bytes) -> str:
