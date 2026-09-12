@@ -937,6 +937,18 @@ to defer a conditional item is a documented deferral, not completed implementati
   [SpicySearch SC02](../../spicysearch/PLAN.md#sc02). D47 links the separate
   search-definition work. Avoid creating a package solely for a future move.
 
+  **Shared-writer deferral, September 12:** the attempted runtime delegation
+  to Rulespec 1.0.12 was reverted before commit. A synchronized real-writer
+  probe found that ordinary pending-hardlink cleanup by one writer makes a
+  second writer reject unchanged identical bytes. The single qualification
+  case failed in 1.58 seconds. DocSpec keeps its working writer and adds no
+  local retry/locking workaround. Source-catalog transactions also need the
+  shared API to accept an already-admitted root identity before writing.
+  Both fixes are tracked in destination [Rulespec RS03](../../rulespec/TODO.md#rs03).
+  The [decision and retained probe](history/2026-09-12-shared-blob-writer-architecture.md)
+  and [independent review](history/2026-09-12-shared-blob-writer-review.md) record
+  the evidence-backed deferral. The broader D31 inventory remains open.
+
 <a id="d32"></a>
 
 - [ ] **D32 · P1 · Remove configuration that repeats facts or promises no enforcement.**
