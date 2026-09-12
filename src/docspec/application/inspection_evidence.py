@@ -120,14 +120,18 @@ def entry_evidence(
         raise ValueError("inspection sample limit must be a non-negative integer")
     if entry.requested_stages != plan.stages:
         raise IntegrityError("inspection entry stages differ from its owning plan")
-    loaded = load_stage_receipts(controls, entry)
-    extraction, segmentation = verify_stage_receipt_outputs(entry, loaded)
+    loaded = load_stage_receipts(controls, entry.stage_receipts)
+    extraction, segmentation = verify_stage_receipt_outputs(
+        entry.captured_files, entry.representations, entry.segments, loaded,
+    )
     if not plan.stages.requests_extraction and entry.representations:
         raise IntegrityError("inspection entry has unrequested extraction output")
     if not plan.stages.requests_segmentation and (entry.segments or segmentation):
         raise IntegrityError("inspection entry has unrequested segmentation output")
     results, _ = verify_processor_receipts(
-        controls, entry, plan, {item.segment_id: item for item in entry.segments}, loaded,
+        controls, plan, {item.segment_id: item for item in entry.segments}, loaded,
+        entry_id=entry.entry_id, source_item_id=entry.source_item.item_id,
+        derived_records=entry.derived_records, disposition=entry.disposition,
         max_attempts=plan.limits.max_attempts,
     )
     counts = dict.fromkeys(ENTRY_COUNT_KEYS, 0)

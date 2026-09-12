@@ -412,12 +412,10 @@ def test_clean_incremental_targeted_and_compacted_paths_converge_on_active_docum
 def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay_dropped(
     tmp_path: Path,
 ) -> None:
-    """A document that ends one run with an accepted-failure disposition must
-    be replanned as repairable work on the next run, even when neither the
-    source catalog nor the governing plan changed in between — otherwise it
-    is stuck forever. An item that succeeded must still classify as
-    UNCHANGED and drop out of the plan entirely, so one unrelated failure
-    does not turn every incremental run into a full rebuild."""
+    """Explicit repair reuses a failed item's completed stages and leaves
+    successful unchanged items out of the next plan. An unchanged deterministic
+    failure remains visible until the caller requests retry or changes its
+    unfinished work."""
 
     _FailingProcessor = importlib.import_module("tests.support.store_results")._FailingProcessor
 
@@ -468,18 +466,21 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     assert first_sealed_entries["document-steady-a"].disposition == AcquisitionDisposition.CAPTURED
     assert first_sealed_entries["document-steady-b"].disposition == AcquisitionDisposition.CAPTURED
 
-    # Second run: an unchanged source catalog (identical items, identical
-    # digests) over an unchanged governing plan (same processor description,
-    # limits, stages, retry and accepted-failure policies) — only the base
-    # release and the source-catalog reference legitimately differ.
+    # Unchanged deterministic failures are held by default, alongside the
+    # successful items that need no further work.
     second_source = platform.publish_source(items, name="second")
-    second_plan = _plan(second_source, first_release, (failing_processor,), retry, accepted)
-    assert second_plan.governing_content() == first_plan.governing_content(), (
+    unchanged_plan = _plan(second_source, first_release, (failing_processor,), retry, accepted)
+    assert unchanged_plan.governing_content() == first_plan.governing_content(), (
         "the scenario requires an unchanged plan; only the base release and "
         "source-catalog reference may legitimately differ"
     )
+    assert _planned_entries(platform, unchanged_plan, second_source, first_release, name="held") == ()
 
-    # Plan the second run directly, against the real committed first release.
+    second_plan = _targeted_plan(
+        second_source, first_release, (failing_processor,), retry, accepted,
+        selection={"retryFailures": "selected"},
+    )
+    # Explicit retry touches only the failed item in the committed release.
     second_planned_entries = _planned_entries(
         platform,
         second_plan,
@@ -494,32 +495,32 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     (repaired,) = second_planned_entries
     assert repaired.source_item.item_id == "document-broken"
     assert repaired.change == ChangeKind.REPAIR
-    assert repaired.execution_mode == EntryExecutionMode.FULL
+    assert repaired.execution_mode == EntryExecutionMode.FROM_SEGMENTS
+    assert repaired.processor_ids_to_run == (description.processor_id,)
 
     # The negative: the two items that succeeded the first time are still
     # UNCHANGED and still dropped from the plan.
     assert {entry.source_item.item_id for entry in second_planned_entries} == {"document-broken"}
 
-    # The same base release under a plan whose only change is a processor
-    # version: the plan impact is processor-only, so an unchanged item is
-    # reprocessed from the representations the release already holds. The item
-    # that failed has none to reuse -- a capture-stage failure leaves nothing
-    # behind -- so it must still get a full redo.
+    # Changing the failed processor is relevant repair intent. All three items
+    # already completed capture, extraction, and segmentation, so each can use
+    # those saved segments for the replacement processor.
     bumped_processor = _CountingProcessor(_description("repair-failed-item", "2", retry))
     bumped_plan = _plan(second_source, first_release, (bumped_processor,), retry, accepted)
     assert {
         entry.source_item.item_id: (entry.change, entry.execution_mode)
         for entry in _planned_entries(platform, bumped_plan, second_source, first_release, name="bumped")
     } == {
-        "document-broken": (ChangeKind.REPAIR, EntryExecutionMode.FULL),
+        "document-broken": (ChangeKind.REPAIR, EntryExecutionMode.FROM_SEGMENTS),
         "document-steady-a": (ChangeKind.REPAIR, EntryExecutionMode.FROM_SEGMENTS),
         "document-steady-b": (ChangeKind.REPAIR, EntryExecutionMode.FROM_SEGMENTS),
     }
 
-    # End-to-end confirmation: the repaired item now actually captures and
-    # completes, and the resulting release still carries every item's
-    # complete active state, not only the one item this run touched.
+    # The repaired item completes without fetching or rerunning the completed
+    # stages. The result still contains every item's complete active state.
     healed_processor = _CountingProcessor(description)
+    healed_fetcher = _CountingFetcher(SharedFixtureContentFetcher(platform.sources))
+    healed_extractor, healed_segmenter = _CountingExtractor(), _CountingSegmenter()
     _, _, second_sealed, _, second_release = _run(
         plan=second_plan,
         source_catalog=platform.source_catalog,
@@ -528,8 +529,10 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
         blobs=platform.blobs,
         records=platform.records,
         catalog=platform.catalog,
-        fetcher=SharedFixtureContentFetcher(platform.sources),
+        fetcher=healed_fetcher,
         processors=(healed_processor,),
+        extractor=healed_extractor,
+        segmenter=healed_segmenter,
         partition_policy=platform.partition_policy,
         accepted_failure_policy=accepted,
     )
@@ -540,6 +543,9 @@ def test_a_previously_failed_item_is_replanned_as_repair_and_unfailed_items_stay
     }
     assert set(second_sealed_entries) == {"document-broken"}
     assert second_sealed_entries["document-broken"].disposition == AcquisitionDisposition.CAPTURED
+    assert healed_fetcher.calls == []
+    assert healed_extractor.calls == healed_segmenter.calls == 0
+    assert len(healed_processor.calls) == 1
 
     # The repaired release must equal a clean build over the same population,
     # not merely mention the same three ids: every file, representation,

@@ -64,7 +64,7 @@ def test_mixed_stage_items_use_their_own_retained_policy(tmp_path):
         for item in items:
             payload = item.to_dict() if layer_kind == "source-items" else {
                 "entryId": f"entry:{item.item_id}", "change": "added", "disposition": "captured",
-                "warnings": [], "requestedStages": policies[item.item_id].to_dict(),
+                "warnings": [], "requestedStages": policies[item.item_id].to_dict(), "terminalFailure": None,
             }
             yield {
                 "recordId": item.item_id, "sourceItemId": item.item_id,

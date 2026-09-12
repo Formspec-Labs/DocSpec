@@ -76,7 +76,7 @@ class EntryCheckpointVerifier:
         verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
         if entry.requested_stages != plan.stages:
             raise IntegrityError("document entry stages differ from the processing plan")
-        loaded_receipts = load_stage_receipts(self._controls, entry)
+        loaded_receipts = load_stage_receipts(self._controls, entry.stage_receipts)
 
         files = {item.file_id: item for item in entry.captured_files}
         if len(files) != len(entry.captured_files):
@@ -120,7 +120,9 @@ class EntryCheckpointVerifier:
                 raise IntegrityError("checkpoint representation evidence exceeds its captured file")
             self._blobs.verify(representation.blob)
 
-        extraction_receipts, segmentation_receipts = verify_stage_receipt_outputs(entry, loaded_receipts)
+        extraction_receipts, segmentation_receipts = verify_stage_receipt_outputs(
+            entry.captured_files, entry.representations, entry.segments, loaded_receipts,
+        )
         extraction_observations = {
             receipt.representation_id: WorkBudget.extraction_observation(
                 representation_kind=receipt.kind, metadata=receipt.metadata,
@@ -184,10 +186,13 @@ class EntryCheckpointVerifier:
             available_inputs.add(record.derived_id)
         processor_results, invocation_ids = verify_processor_receipts(
             self._controls,
-            entry,
             plan,
             segments,
             loaded_receipts,
+            entry_id=entry.entry_id,
+            source_item_id=entry.source_item.item_id,
+            derived_records=entry.derived_records,
+            disposition=entry.disposition,
             max_attempts=self._retry_policy.max_attempts,
         )
         expected_nodes = tuple(

@@ -22,6 +22,7 @@ same change as the behavior or file move they describe.
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
 | Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |
+| Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |

@@ -8,7 +8,8 @@ from typing import Any
 
 from docspec.domain.content import AcquisitionDisposition, CapturedFile, DerivedRecord, Representation, Segment, SourceItem
 from docspec.domain.jobs import DocumentEntry, EntryExecutionMode
-from docspec.domain.plans import ProcessingPlan, StagePolicy
+from docspec.domain.plans import ProcessingPlan
+from docspec.domain.dispositions import parse_disposition_payload
 from docspec.domain.processors import ProcessorResult
 from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError, LimitExceededError
@@ -89,11 +90,11 @@ def prepare_base_reprocessing(
         if len(dispositions) != 1:
             raise IntegrityError("base source item requires exactly one disposition record")
         disposition = dispositions[0]
-        if set(disposition) != {"entryId", "change", "disposition", "warnings", "requestedStages"}:
-            raise IntegrityError("base disposition has an invalid closed shape")
-        if disposition["disposition"] != AcquisitionDisposition.CAPTURED.value:
-            raise IntegrityError("base reuse requires a successfully completed source item")
-        base_stages = StagePolicy.from_dict(disposition["requestedStages"])
+        base_stages, _terminal_failure = parse_disposition_payload(disposition)
+        if disposition["disposition"] not in {
+            AcquisitionDisposition.CAPTURED.value, AcquisitionDisposition.ACCEPTED_FAILURE.value,
+        }:
+            raise IntegrityError("base reuse requires a captured or accepted-failure source item")
         if reuse_representations and (
             base_stages.extractor_id, base_stages.extractor_configuration_digest
         ) != (plan.stages.extractor_id, plan.stages.extractor_configuration_digest):
@@ -102,10 +103,7 @@ def prepare_base_reprocessing(
             base_stages.segmenter_id, base_stages.segmenter_policy_digest
         ) != (plan.stages.segmenter_id, plan.stages.segmenter_policy_digest):
             raise IntegrityError("base segmentation settings differ from the reusable prefix")
-        raw_warnings = disposition["warnings"]
-        if not isinstance(raw_warnings, list) or not all(isinstance(item, str) for item in raw_warnings):
-            raise IntegrityError("base disposition warnings are invalid")
-        warnings = tuple(raw_warnings)
+        warnings = tuple(disposition["warnings"])
 
         # Layer scans sort by record ID. Restore source/processing order before
         # applying the same checkpoint invariants as ordinary execution.

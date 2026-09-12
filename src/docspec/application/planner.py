@@ -5,9 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from typing import Any, Iterator, cast
 
-from docspec.domain.content import AcquisitionDisposition, SourceItem, SourceItemState
+from docspec.domain.content import SourceItem, SourceItemState
+from docspec.domain.dispositions import parse_disposition_payload
 from docspec.domain.identity import identity_digest, require_text
-from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode
+from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode, FailureRecord
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
 from docspec.domain.release import DocumentRelease
@@ -19,6 +20,8 @@ from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFactory
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 
+from .failure_frontier import FailedItemFrontier, failed_item_frontier, spool_failed_evidence
+
 _SELECTION_FIELDS = frozenset(
     {
         "includeItemIds",
@@ -28,17 +31,12 @@ _SELECTION_FIELDS = frozenset(
         "mediaTypes",
         "sourcePartitions",
         "states",
+        "retryFailures",
     }
 )
 _PLANNING_STORE_ORDER_COLLECTION = "planner:store-order"
 _PLANNING_ITEM_STATE_COLLECTION = "planner:item-state"
 _DELIVERY_RECORD_FIELDS = frozenset({"recordId", "sourceItemId", "idempotencyKey", "deleted", "payload"})
-_DISPOSITION_PAYLOAD_FIELDS = frozenset({"entryId", "change", "disposition", "warnings", "requestedStages"})
-_ACQUISITION_DISPOSITIONS = frozenset(item.value for item in AcquisitionDisposition)
-# The two terminal verdicts that mean "this item ended the release in failure".
-_FAILED_DISPOSITIONS = frozenset(
-    {AcquisitionDisposition.ACCEPTED_FAILURE.value, AcquisitionDisposition.REJECTED_RUN.value}
-)
 _SOURCE_PARTITION_METADATA_FIELD = "sourcePartition"
 
 
@@ -93,8 +91,13 @@ _ZERO_ESTIMATE = WorkEstimate(0, 0, 0, 0, 0, 0)
 class _PriorSourceItem:
     item: SourceItem
     deleted: bool
-    failed: bool = False
+    terminal_failure: FailureRecord | None = None
     stages: StagePolicy | None = None
+    entry_id: str | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.terminal_failure is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +141,7 @@ class _CompiledSelection:
     media_types: frozenset[str]
     source_partitions: frozenset[str]
     states: frozenset[SourceItemState]
+    retry_failures: str
 
     @classmethod
     def compile(cls, value: object, *, partition_count: int) -> _CompiledSelection:
@@ -146,6 +150,9 @@ class _CompiledSelection:
         unknown = set(value) - _SELECTION_FIELDS
         if unknown:
             raise IntegrityError(f"processing plan contains unknown selection fields: {sorted(unknown)}")
+        retry_failures = value.get("retryFailures", "none")
+        if not isinstance(retry_failures, str) or retry_failures not in {"none", "transient", "selected"}:
+            raise IntegrityError("processing plan selection retryFailures must be none, transient, or selected")
 
         include = _string_selector(value, "includeItemIds")
         exclude = _string_selector(value, "excludeItemIds")
@@ -181,6 +188,7 @@ class _CompiledSelection:
             frozenset(media_types or ()),
             frozenset(source_partitions or ()),
             frozenset(states),
+            retry_failures,
         )
 
     def validate_source_partitions(self, declared: tuple[str, ...]) -> None:
@@ -308,7 +316,8 @@ class RunPlanner:
         plan_impact = self._plan_impact(base, plan)
         with self._workspace_factory.create() as workspace:
             if base_reader is not None:
-                self._spool_item_states(base_reader, workspace)
+                if self._spool_item_states(base_reader, workspace):
+                    spool_failed_evidence(base_reader, workspace, item_state_collection=_PLANNING_ITEM_STATE_COLLECTION)
             ledger = self._stores.seal_planned_stores(
                 plan.plan_id,
                 self._plan_store_references(
@@ -335,7 +344,7 @@ class RunPlanner:
 
         touched_partitions: set[int] = set()
         ordinal = 0
-        for item, change, failed, previous_stages in self._planned_changes(
+        for item, change, previous in self._planned_changes(
             source_items,
             base_reader,
             plan_impact.change_kind,
@@ -345,15 +354,24 @@ class RunPlanner:
             if not selection.matches(item, logical_bucket=bucket):
                 continue
             impact = plan_impact
-            if previous_stages is not None and plan_impact.change_kind is None and not failed:
-                impact = self._stage_impact(previous_stages, plan)
-                if change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
-                    change = impact.change_kind or change
+            if previous is not None and previous.stages is not None and plan_impact.change_kind is None:
+                if previous.failed and change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
+                    assert previous.entry_id is not None and previous.terminal_failure is not None
+                    frontier = failed_item_frontier(item, previous.stages, previous.entry_id, workspace, self._controls, plan)
+                    retry = selection.retry_failures == "selected" or (
+                        selection.retry_failures == "transient" and previous.terminal_failure.retryable
+                    )
+                    if not retry and not frontier.changed_inputs(previous.stages, plan.stages):
+                        continue
+                    impact = self._failed_impact(frontier, previous.stages, plan)
+                    change = ChangeKind.REPAIR
+                elif not previous.failed:
+                    impact = self._stage_impact(previous.stages, plan)
+                    if change == ChangeKind.UNCHANGED and item.state == SourceItemState.ACTIVE:
+                        change = impact.change_kind or change
             if change == ChangeKind.UNCHANGED:
                 continue
-            # A failed item may have an incomplete prefix. Until failed-stage
-            # recovery has its own admission policy, replan it with full work.
-            reuse = change == ChangeKind.REPAIR and not failed
+            reuse = change == ChangeKind.REPAIR
             mode = impact.execution_mode if reuse else EntryExecutionMode.FULL
             entry = DocumentEntry.create(
                 item,
@@ -491,6 +509,22 @@ class RunPlanner:
         )
 
     @staticmethod
+    def _failed_impact(frontier: FailedItemFrontier, previous: StagePolicy, plan: ProcessingPlan) -> _PlanImpact:
+        current = plan.stages
+        if not frontier.capture_complete:
+            return _PlanImpact(ChangeKind.REPAIR, current.processor_ids)
+        if not current.requests_extraction or not frontier.extraction_complete or (
+            previous.extractor_id, previous.extractor_configuration_digest
+        ) != (current.extractor_id, current.extractor_configuration_digest):
+            return _PlanImpact(ChangeKind.REPAIR, current.processor_ids, EntryExecutionMode.FROM_CAPTURES)
+        if not current.requests_segmentation or not frontier.segmentation_complete or (
+            previous.segmenter_id, previous.segmenter_policy_digest
+        ) != (current.segmenter_id, current.segmenter_policy_digest):
+            return _PlanImpact(ChangeKind.REPAIR, current.processor_ids, EntryExecutionMode.FROM_REPRESENTATIONS)
+        rerun = tuple(identifier for identifier in current.processor_ids if identifier not in frontier.completed_processors)
+        return _PlanImpact(ChangeKind.REPAIR, plan.processors.invalidated_by(rerun), EntryExecutionMode.FROM_SEGMENTS)
+
+    @staticmethod
     def _non_stage_governing_content(plan: ProcessingPlan) -> dict[str, Any]:
         content = plan.governing_content()
         content.pop("processors")
@@ -506,10 +540,10 @@ class RunPlanner:
         base_reader: DocumentCatalogReader | None,
         unchanged_change: ChangeKind | None,
         workspace: RecordWorkspace,
-    ) -> Iterator[tuple[SourceItem, ChangeKind, bool, StagePolicy | None]]:
+    ) -> Iterator[tuple[SourceItem, ChangeKind, _PriorSourceItem | None]]:
         if base_reader is None:
             for item in current_items:
-                yield item, self._classify(item, None, unchanged_change), False, None
+                yield item, self._classify(item, None, unchanged_change), None
             return
 
         yield from self._merge_snapshot(
@@ -538,7 +572,7 @@ class RunPlanner:
     def _previous_source_items(
         self,
         base_reader: DocumentCatalogReader,
-        item_states: Iterator[tuple[str, bool, StagePolicy]],
+        item_states: Iterator[tuple[str, FailureRecord | None, StagePolicy, str]],
     ) -> Iterator[_PriorSourceItem]:
         """Join source items to their terminal status and requested stage policy.
 
@@ -554,13 +588,13 @@ class RunPlanner:
             item_id = prior.item.item_id
             if state is None or state[0] != item_id:
                 raise IntegrityError("base disposition population differs from its source items")
-            yield replace(prior, failed=state[1], stages=state[2])
+            yield replace(prior, terminal_failure=state[1], stages=state[2], entry_id=state[3])
             state = next(item_states, None)
         if state is not None:
             raise IntegrityError("base disposition population differs from its source items")
 
     @staticmethod
-    def _spool_item_states(base_reader: DocumentCatalogReader, workspace: RecordWorkspace) -> None:
+    def _spool_item_states(base_reader: DocumentCatalogReader, workspace: RecordWorkspace) -> int:
         """Spool per-item policy and final outcome in the existing bounded workspace.
 
         An inherited item may have a different policy than the latest release
@@ -569,55 +603,52 @@ class RunPlanner:
         O(N) time, O(1) coordinator memory, and bounded on-disk workspace.
         """
 
+        failed_count = 0
         for record in base_reader.scan(layer_kind="dispositions"):
             if set(record) != _DELIVERY_RECORD_FIELDS or not isinstance(record["payload"], dict):
                 raise IntegrityError("base disposition record has an invalid closed shape")
             source_item_id = record["sourceItemId"]
             if not isinstance(source_item_id, str) or not source_item_id:
                 raise IntegrityError("base disposition record has an invalid sourceItemId")
-            if set(record["payload"]) != _DISPOSITION_PAYLOAD_FIELDS:
-                raise IntegrityError("base disposition record has an invalid closed payload")
-            disposition = record["payload"]["disposition"]
-            if disposition is not None and disposition not in _ACQUISITION_DISPOSITIONS:
-                raise IntegrityError("base disposition record names an unregistered disposition")
-            try:
-                stages = StagePolicy.from_dict(record["payload"]["requestedStages"])
-            except (TypeError, ValueError) as error:
-                raise IntegrityError(f"base disposition requested stages are invalid: {error}") from error
+            stages, terminal_failure = parse_disposition_payload(record["payload"])
+            failed_count += terminal_failure is not None
             workspace.add_record(
                 _PLANNING_ITEM_STATE_COLLECTION,
                 identity=source_item_id,
                 source_item_id=source_item_id,
                 record={
                     "sourceItemId": source_item_id,
-                    "failed": disposition in _FAILED_DISPOSITIONS,
+                    "entryId": record["payload"]["entryId"],
+                    "terminalFailure": None if terminal_failure is None else terminal_failure.to_dict(),
                     "requestedStages": stages.to_dict(),
                 },
             )
+        return failed_count
 
     @staticmethod
-    def _spooled_item_states(workspace: RecordWorkspace) -> Iterator[tuple[str, bool, StagePolicy]]:
+    def _spooled_item_states(workspace: RecordWorkspace) -> Iterator[tuple[str, FailureRecord | None, StagePolicy, str]]:
         """Read per-item status and policy back in source-item-id order."""
 
         for row in workspace.stream_records(_PLANNING_ITEM_STATE_COLLECTION):
             if (
-                set(row) != {"sourceItemId", "failed", "requestedStages"}
+                set(row) != {"sourceItemId", "entryId", "terminalFailure", "requestedStages"}
                 or not isinstance(row["sourceItemId"], str)
-                or not isinstance(row["failed"], bool)
+                or not isinstance(row["entryId"], str)
             ):
                 raise IntegrityError("spooled item-state record has an invalid closed shape")
             try:
                 stages = StagePolicy.from_dict(row["requestedStages"])
+                terminal = None if row["terminalFailure"] is None else FailureRecord.from_dict(row["terminalFailure"])
             except (TypeError, ValueError) as error:
                 raise IntegrityError(f"spooled requested stages are invalid: {error}") from error
-            yield row["sourceItemId"], row["failed"], stages
+            yield row["sourceItemId"], terminal, stages, row["entryId"]
 
     def _merge_snapshot(
         self,
         current_items: Iterator[SourceItem],
         previous_items: Iterator[_PriorSourceItem],
         unchanged_change: ChangeKind | None,
-    ) -> Iterator[tuple[SourceItem, ChangeKind, bool, StagePolicy | None]]:
+    ) -> Iterator[tuple[SourceItem, ChangeKind, _PriorSourceItem | None]]:
         """Merge one complete snapshot with prior state using bounded memory.
 
         Each result includes the prior terminal-failure flag and item policy,
@@ -629,7 +660,7 @@ class RunPlanner:
         while current is not None or previous is not None:
             if previous is None or (current is not None and current.item_id < previous.item.item_id):
                 assert current is not None
-                yield current, self._classify(current, None, unchanged_change), False, None
+                yield current, self._classify(current, None, unchanged_change), None
                 current = next(current_items, None)
                 continue
             if current is None or previous.item.item_id < current.item_id:
@@ -641,10 +672,10 @@ class RunPlanner:
                         state=SourceItemState.DELETED,
                         metadata=previous.item.metadata,
                     )
-                    yield tombstone, ChangeKind.DELETED, previous.failed, previous.stages
+                    yield tombstone, ChangeKind.DELETED, previous
                 previous = next(previous_items, None)
                 continue
-            yield current, self._classify(current, previous, unchanged_change), previous.failed, previous.stages
+            yield current, self._classify(current, previous, unchanged_change), previous
             current = next(current_items, None)
             previous = next(previous_items, None)
 
@@ -661,12 +692,7 @@ class RunPlanner:
                 return ChangeKind.EXCLUDED
             return ChangeKind.ADDED
         if _source_item_digest(previous.item) == _source_item_digest(item):
-            if item.state == SourceItemState.ACTIVE and (unchanged_change is not None or previous.failed):
-                # An item the base release ended in failure is repairable work even
-                # when nothing else about the plan or the source changed (see
-                # _PlanImpact, whose REPAIR this reuses for the plan-changed case).
-                # An item that ended it captured still drops out of the plan
-                # entirely, however many transports it lost and retried past.
+            if item.state == SourceItemState.ACTIVE and unchanged_change is not None:
                 return ChangeKind.REPAIR
             return ChangeKind.UNCHANGED
         if item.state == SourceItemState.DELETED:

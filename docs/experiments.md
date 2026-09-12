@@ -9,6 +9,8 @@ catalog construction and export convenience are tracked in
 
 Use the supported [inspection API and commands](inspection.md) to compare
 scheduled work separately from each complete retained result.
+Use [failure repair selection](repairing-failures.md) to retry accepted failures
+while retaining compatible completed stages and the original failure history.
 
 ## What the names mean
 

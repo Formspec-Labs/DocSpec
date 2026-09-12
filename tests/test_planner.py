@@ -11,7 +11,7 @@ from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFa
 from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import sha256_digest
-from docspec.domain.jobs import ChangeKind, EntryExecutionMode
+from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass, FailureRecord
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
@@ -106,6 +106,9 @@ class MemoryDocumentCatalog:
                     "requestedStages": (self.stages or _plan(self.release.source_catalog, None).stages).to_dict(),
                     "disposition": disposition,
                     "warnings": [],
+                    "terminalFailure": FailureRecord(
+                        FailureClass.DETERMINISTIC_INPUT, "test.failed", "fixture failure", 1, False,
+                    ).to_dict() if item_id in self.failed_item_ids else None,
                 },
             }
 
@@ -489,14 +492,14 @@ def test_same_version_complete_source_item_changes_are_scheduled(
     assert catalog.lookup_calls == 0
 
 
-def test_an_item_the_base_release_failed_is_repaired_while_its_neighbours_are_dropped() -> None:
-    """A failed item is repairable work on its own: with no plan change and no
-    source change, it is the only entry the next run plans, and it always gets
-    a full redo because a capture-stage failure leaves nothing to reuse."""
+def test_selected_failed_item_is_repaired_while_its_neighbours_are_dropped() -> None:
+    """Explicit repair repeats capture only when no complete capture exists."""
 
     items = (_source_item("failed"), _source_item("succeeded"))
 
-    entries, catalog = _planned_update(items, items, failed_item_ids=("failed",))
+    entries, catalog = _planned_update(
+        items, items, failed_item_ids=("failed",), selection={"retryFailures": "selected"},
+    )
 
     assert [(entry.source_item.item_id, entry.change, entry.execution_mode) for entry in entries] == [
         ("failed", ChangeKind.REPAIR, EntryExecutionMode.FULL)
@@ -504,6 +507,12 @@ def test_an_item_the_base_release_failed_is_repaired_while_its_neighbours_are_dr
     assert catalog.reader_calls == 1
     # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
+
+
+def test_unchanged_permanent_failure_requires_explicit_retry():
+    items = (_source_item("failed"), _source_item("succeeded"))
+    entries, _ = _planned_update(items, items, failed_item_ids=("failed",))
+    assert entries == ()
 
 
 def test_planning_reads_terminal_dispositions_and_never_the_failure_evidence() -> None:

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any
 
-from docspec.domain.content import AcquisitionDisposition, Segment
+from docspec.domain.content import AcquisitionDisposition, CapturedFile, DerivedRecord, Representation, Segment
 from docspec.domain.identity import identity_digest, stable_urn
-from docspec.domain.jobs import DocumentEntry, FailureClass, FailureRecord
+from docspec.domain.jobs import FailureClass, FailureRecord
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.processors import ProcessorRecordRef, ProcessorRequest, ProcessorResult
 from docspec.domain.references import ArtifactRef
@@ -46,7 +46,7 @@ def failure_record(stage: str, error: Exception, attempt: int) -> FailureRecord:
 
 def load_stage_receipts(
     controls: ControlRepository,
-    entry: DocumentEntry,
+    references: tuple[ArtifactRef, ...],
 ) -> tuple[tuple[ArtifactRef, dict[str, Any]], ...]:
     """Load each closed receipt once and verify its semantic artifact identity."""
 
@@ -58,7 +58,7 @@ def load_stage_receipts(
     }
     loaded: list[tuple[ArtifactRef, dict[str, Any]]] = []
     seen: set[ArtifactRef] = set()
-    for reference in entry.stage_receipts:
+    for reference in references:
         if reference in seen:
             raise IntegrityError("checkpoint repeats a stage receipt reference")
         seen.add(reference)
@@ -74,16 +74,18 @@ def load_stage_receipts(
 
 
 def verify_stage_receipt_outputs(
-    entry: DocumentEntry,
+    captured_files: tuple[CapturedFile, ...],
+    representation_outputs: tuple[Representation, ...],
+    segment_outputs: tuple[Segment, ...],
     loaded_receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...],
 ) -> tuple[list[ExtractionReceipt], list[SegmentationReceipt]]:
     """Bind persisted extraction/segmentation receipts to outputs, without plugins or blob reads."""
 
-    files = {item.file_id: item for item in entry.captured_files}
-    representations = {item.representation_id: item for item in entry.representations}
-    segments = {item.segment_id: item for item in entry.segments}
-    if (len(files) != len(entry.captured_files) or len(representations) != len(entry.representations)
-            or len(segments) != len(entry.segments)):
+    files = {item.file_id: item for item in captured_files}
+    representations = {item.representation_id: item for item in representation_outputs}
+    segments = {item.segment_id: item for item in segment_outputs}
+    if (len(files) != len(captured_files) or len(representations) != len(representation_outputs)
+            or len(segments) != len(segment_outputs)):
         raise IntegrityError("entry repeats a persisted output identity")
     extraction_receipts: list[ExtractionReceipt] = []
     segmentation_receipts: list[SegmentationReceipt] = []
@@ -95,9 +97,9 @@ def verify_stage_receipt_outputs(
                 segmentation_receipts.append(SegmentationReceipt.from_dict(raw))
         except (KeyError, TypeError, ValueError) as error:
             raise IntegrityError(f"checkpoint stage receipt is invalid: {error}") from error
-    if len(extraction_receipts) != len(entry.representations):
+    if len(extraction_receipts) != len(representation_outputs):
         raise IntegrityError("checkpoint extraction receipts do not cover its representations")
-    for receipt, representation in zip(extraction_receipts, entry.representations, strict=True):
+    for receipt, representation in zip(extraction_receipts, representation_outputs, strict=True):
         captured = files.get(representation.file_id)
         if captured is None:
             raise IntegrityError("checkpoint representation has no captured file")
@@ -137,13 +139,58 @@ def verify_stage_receipt_outputs(
     return extraction_receipts, segmentation_receipts
 
 
+def verify_processor_attempt_receipt(
+    receipt: Mapping[str, Any], *, entry_id: str, processor_ids: Collection[str],
+    segment_ids: Collection[str], max_attempts: int | None,
+) -> tuple[str, str, str, str, int, str]:
+    """Verify one recorded attempt; an unknown owning plan supplies no retry ceiling."""
+    expected = {
+        "format", "formatVersion", "processorId", "segmentId", "requestId", "invocationId",
+        "attempt", "outcome", "elapsedMilliseconds", "failure",
+    }
+    processor_id = receipt.get("processorId")
+    segment_id = receipt.get("segmentId")
+    request_id = receipt.get("requestId")
+    invocation_id = receipt.get("invocationId")
+    attempt = receipt.get("attempt")
+    outcome = receipt.get("outcome")
+    elapsed = receipt.get("elapsedMilliseconds")
+    if (
+        set(receipt) != expected
+        or receipt.get("format") != "docspec-processor-attempt-receipt"
+        or receipt.get("formatVersion") != "1.0"
+        or not all(isinstance(value, str) and value for value in (processor_id, segment_id, request_id, invocation_id))
+        or processor_id not in processor_ids
+        or segment_id not in segment_ids
+        or type(attempt) is not int or attempt < 1
+        or (max_attempts is not None and attempt > max_attempts)
+        or outcome not in {"failed", "succeeded"}
+        or type(elapsed) is not int or elapsed < 0
+        or invocation_id != WorkBudget.processor_invocation_id(entry_id, processor_id, (segment_id,))
+    ):
+        raise IntegrityError("processor attempt receipt has an invalid closed shape or identity")
+    if outcome == "failed":
+        try:
+            failure = FailureRecord.from_dict(receipt["failure"])
+        except (TypeError, ValueError) as error:
+            raise IntegrityError("processor attempt receipt has an invalid failure") from error
+        if failure.attempt != attempt:
+            raise IntegrityError("processor attempt failure names a different attempt")
+    elif receipt["failure"] is not None:
+        raise IntegrityError("successful processor attempt receipt contains a failure")
+    return processor_id, segment_id, request_id, invocation_id, attempt, outcome
+
+
 def verify_processor_receipts(
     controls: ControlRepository,
-    entry: DocumentEntry,
     plan: ProcessingPlan,
     segments: Mapping[str, Segment],
-    loaded_receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...] | None = None,
+    loaded_receipts: tuple[tuple[ArtifactRef, dict[str, Any]], ...],
     *,
+    entry_id: str,
+    source_item_id: str,
+    derived_records: tuple[DerivedRecord, ...],
+    disposition: AcquisitionDisposition | None,
     max_attempts: int,
 ) -> tuple[
     dict[tuple[str, str], tuple[ArtifactRef, ProcessorResult]],
@@ -151,8 +198,8 @@ def verify_processor_receipts(
 ]:
     """Verify one entry's complete processor subgraph without reading bulk bytes."""
 
-    derived_by_id = {record.derived_id: record for record in entry.derived_records}
-    if len(derived_by_id) != len(entry.derived_records):
+    derived_by_id = {record.derived_id: record for record in derived_records}
+    if len(derived_by_id) != len(derived_records):
         raise IntegrityError("entry repeats a processor-derived record identity")
     receipted_derived_ids: set[str] = set()
     invocation_ids: set[str] = set()
@@ -161,60 +208,12 @@ def verify_processor_receipts(
     settled_attempt_keys: set[tuple[str, str, str]] = set()
     descriptions = {item.processor_id: item for item in plan.processors.execution_order}
     allowed_fields = plan.data_use_policy.allowed_fields
-    receipts = loaded_receipts if loaded_receipts is not None else load_stage_receipts(controls, entry)
-    for _, receipt in receipts:
+    for _, receipt in loaded_receipts:
         receipt_format = receipt.get("format")
         if receipt_format == "docspec-processor-attempt-receipt":
-            expected_attempt = {
-                "format",
-                "formatVersion",
-                "processorId",
-                "segmentId",
-                "requestId",
-                "invocationId",
-                "attempt",
-                "outcome",
-                "elapsedMilliseconds",
-                "failure",
-            }
-            processor_id = receipt.get("processorId")
-            segment_id = receipt.get("segmentId")
-            request_id = receipt.get("requestId")
-            invocation_id = receipt.get("invocationId")
-            attempt = receipt.get("attempt")
-            outcome = receipt.get("outcome")
-            elapsed = receipt.get("elapsedMilliseconds")
-            if (
-                set(receipt) != expected_attempt
-                or receipt.get("formatVersion") != "1.0"
-                or not all(
-                    isinstance(value, str) and value
-                    for value in (processor_id, segment_id, request_id, invocation_id)
-                )
-                or processor_id not in descriptions
-                or segment_id not in segments
-                or type(attempt) is not int
-                or not 1 <= attempt <= max_attempts
-                or outcome not in {"failed", "succeeded"}
-                or type(elapsed) is not int
-                or elapsed < 0
-                or invocation_id
-                != WorkBudget.processor_invocation_id(
-                    entry.entry_id,
-                    processor_id,
-                    (segment_id,),
-                )
-            ):
-                raise IntegrityError("processor attempt receipt has an invalid closed shape or identity")
-            if outcome == "failed":
-                try:
-                    failure = FailureRecord.from_dict(receipt["failure"])
-                except (TypeError, ValueError) as error:
-                    raise IntegrityError("processor attempt receipt has an invalid failure") from error
-                if failure.attempt != attempt:
-                    raise IntegrityError("processor attempt failure names a different attempt")
-            elif receipt["failure"] is not None:
-                raise IntegrityError("successful processor attempt receipt contains a failure")
+            processor_id, segment_id, request_id, invocation_id, attempt, outcome = verify_processor_attempt_receipt(
+                receipt, entry_id=entry_id, processor_ids=descriptions, segment_ids=segments, max_attempts=max_attempts,
+            )
             attempt_key = (processor_id, segment_id, request_id)
             attempts = processor_attempts.setdefault(attempt_key, {})
             if attempt in attempts:
@@ -262,14 +261,14 @@ def verify_processor_receipts(
                 raise IntegrityError("processor invocation receipt is missing a prerequisite result")
             prerequisite_pairs.append(pair)
         expected_invocation_id = WorkBudget.processor_invocation_id(
-            entry.entry_id,
+            entry_id,
             processor_id,
             (segment_id,),
         )
         if (
             request.processor_id != processor_id
             or request.processor_description_digest != identity_digest(description.to_dict())
-            or request.source_item_id != entry.source_item.item_id
+            or request.source_item_id != source_item_id
             or segment is None
             or request.input_records
             != (ProcessorRecordRef.for_segment(segment),)
@@ -319,14 +318,14 @@ def verify_processor_receipts(
         if any(attempts[number] == "succeeded" for number in ordered[:-1]):
             raise IntegrityError("processor attempt sequence continued after success")
         if key not in settled_attempt_keys and (
-            entry.disposition
+            disposition
             not in {AcquisitionDisposition.ACCEPTED_FAILURE, AcquisitionDisposition.REJECTED_RUN}
             or attempts[ordered[-1]] != "failed"
         ):
             raise IntegrityError("processor attempt receipt is not settled by a result or terminal failure")
     if receipted_derived_ids != set(derived_by_id):
         raise IntegrityError("entry derived records are not covered by exact processor results")
-    if entry.disposition is AcquisitionDisposition.CAPTURED:
+    if disposition is AcquisitionDisposition.CAPTURED:
         expected_nodes = {
             (description.processor_id, segment_id)
             for description in plan.processors.execution_order

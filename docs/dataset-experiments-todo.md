@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 10 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 11 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -420,8 +420,9 @@ to defer a conditional item is a documented deferral, not completed implementati
   names processors that need to run. The planner reads each inherited document's
   policy, so mixed-stage results do not inherit the latest plan's stage choices
   accidentally. Selection chooses items without invalidating unchanged inputs.
-  Other governing policy changes and previously failed items still use full
-  repair. See [the recorded approach](history/2026-09-11-capture-prefix-architecture.md).
+  Other governing policy changes used full repair at this milestone. D16 below
+  extends verified-prefix reuse to accepted failures. See
+  [the recorded approach](history/2026-09-11-capture-prefix-architecture.md).
   Changed extraction, segmentation, and added/replaced processors now compare
   against clean active-document state. Exact capture provenance remains distinct
   from newly acquired evidence. The [independent review and executed checks](history/2026-09-11-capture-prefix-review.md)
@@ -431,13 +432,34 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d16"></a>
 
-- [ ] **D16 · P0 · Repair only the work that needs another attempt.** Carry final
+- [x] **D16 · P0 · Repair only the work that needs another attempt.** Carry final
   failure classification and completed-stage evidence into planning. Retry
   temporary failures under explicit policy; retry unchanged deterministic
   failures when selected or their relevant inputs change. **Done when:** a failed
   processor can be repaired without refetching valid content, repeated permanent
   failures do not loop on every unchanged successor, and retained failures remain
   visible. See [planner](../src/docspec/application/planner.py); depends on D15.
+
+  **Completed September 11:** `selection.retryFailures` selects no retries by
+  default, transient failures, or explicit retry of selected failed items.
+  Relevant input/stage changes can also admit repair; changing an independent
+  processor does not silently retry an unchanged permanent failure. Planning
+  derives the complete prefix from existing retained evidence, records the
+  execution mode and processor subset, and reuses only verified complete work.
+  The disposition schema is now `docspec-disposition-record/3.0`, including the
+  final failure and its checked evidence link. Successful repair leaves history
+  in the prior retained result. Shared receipt parsing and test fixtures remove
+  duplicated validation and setup. See the [repair guide](repairing-failures.md),
+  [architecture decision](history/2026-09-11-failed-item-repair-architecture.md),
+  and [independent review](history/2026-09-11-failed-item-repair-review.md).
+
+  The final focused gate passed 86 tests covering real retained failures,
+  clean-rebuild comparisons, extraction/segmentation/processor failures,
+  unrelated changes, removed failing stages, empty output, late failure,
+  interrupted repair, exact-input cache reuse, and budget recovery. No repeated
+  capture/extraction/segmentation work is charged for inherited inputs. Repair
+  checkpoints remain whole completed stages/processors; arbitrary partial-stage
+  restart is not promised. No legacy disposition reader is added.
 
 <a id="d17"></a>
 
