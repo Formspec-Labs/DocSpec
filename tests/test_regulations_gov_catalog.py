@@ -371,5 +371,5 @@ def test_direct_policy_refuses_bad_source_before_reading_its_identity(
 
     assert selected_policy._policy_digest is None
     if language != "en":
-        with pytest.raises(UnicodeEncodeError):
+        with pytest.raises(ValueError, match="lone Unicode surrogate"):
             _ = selected_policy.policy_digest
