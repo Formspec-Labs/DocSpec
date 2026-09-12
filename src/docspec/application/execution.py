@@ -151,12 +151,13 @@ class StoreExecutionService:
                 continue
             budget.check_duration()
 
-            def checkpoint_entry(partial: DocumentEntry) -> None:
+            def checkpoint_entry(partial: DocumentEntry) -> VerifiedEntryCheckpoint:
                 nonlocal store, current_ref
-                self._checkpoints.verify_entry(partial, plan)
+                verified = self._checkpoints.verify_entry(partial, plan)
                 entries[index] = partial
                 store = store.checkpoint(tuple(entries))
                 current_ref = self._stores.save(store)
+                return verified
 
             entries[index] = self._execute_entry(
                 entry,
@@ -225,7 +226,7 @@ class StoreExecutionService:
         budget: WorkBudget,
         base_reader: DocumentCatalogReader | None,
         checkpoint: VerifiedEntryCheckpoint,
-        checkpoint_entry: Callable[[DocumentEntry], None],
+        checkpoint_entry: Callable[[DocumentEntry], VerifiedEntryCheckpoint],
     ) -> DocumentEntry:
         if entry.execution_mode is not EntryExecutionMode.FULL:
             if base_reader is None:
@@ -239,9 +240,10 @@ class StoreExecutionService:
                 controls=self._controls,
                 checkpoints=self._checkpoints,
             )
-            checkpoint = self._checkpoints.verify_entry(seeded, plan)
             if seeded != entry:
-                checkpoint_entry(seeded)
+                checkpoint = checkpoint_entry(seeded)
+            else:
+                checkpoint = self._checkpoints.verify_entry(seeded, plan)
             entry = seeded
 
         captured = list(entry.captured_files)

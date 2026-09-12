@@ -234,6 +234,7 @@
     "tests/test_runtime_base_reader.py::test_close_and_fresh_prepared_resources_readmit_before_unfinished_work",
     "tests/test_runtime_base_reader.py::test_cached_admission_is_bound_to_every_field_of_the_base_reference",
     "tests/test_runtime_base_reader.py::test_used_base_evidence_is_rechecked_after_admission",
+    "tests/test_runtime_base_reader.py::test_changed_reused_bytes_refuse_before_saving_the_prefix_checkpoint",
     "tests/test_runtime_base_reader.py::test_run_finally_releases_the_reader_even_when_a_later_task_fails",
     "tests/conformance/test_document_release_integrity.py::test_composed_verification_covers_every_retained_authoritative_object",
     "tests/conformance/test_document_release_integrity.py::test_missing_retained_source_bytes_fail_the_composed_verification",

@@ -7,9 +7,10 @@ from threading import Barrier
 
 import pytest
 
+from docspec.application.base_reprocessing import prepare_base_reprocessing
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import sha256_digest
-from docspec.domain.jobs import EntryExecutionMode
+from docspec.domain.jobs import EntryExecutionMode, StoreState
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.references import ArtifactRef, BlobRef
 from docspec.errors import IntegrityError
@@ -201,6 +202,32 @@ def test_used_base_evidence_is_rechecked_after_admission(retained_experiment, mo
         with pytest.raises(IntegrityError):
             prepared.execute_task(prepared.handoff, tasks[1])
         assert opened == [base]  # The used-byte check, not another full admission, refused it.
+
+
+def test_changed_reused_bytes_refuse_before_saving_the_prefix_checkpoint(retained_experiment, monkeypatch):
+    prepare, _base = retained_experiment
+    with prepare() as prepared:
+        task = _tasks(prepared)[0]
+        composition = prepared._composition
+        planned = composition.stores.load(task.input_store)
+
+        def corrupt_after_preparation(*args, **kwargs):
+            seeded = prepare_base_reprocessing(*args, **kwargs)
+            reference, = (captured.blob for captured in seeded.captured_files)
+            path = composition.workspace.roots["blobStorage"] / reference.locator
+            original = path.read_bytes()
+            path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+            return seeded
+
+        monkeypatch.setattr("docspec.application.execution.prepare_base_reprocessing", corrupt_after_preparation)
+        with pytest.raises(IntegrityError, match="blob bytes differ"):
+            prepared.execute_task(prepared.handoff, task)
+        latest = composition.stores.latest(task.input_store.store_id)
+        assert latest is not None
+        saved = composition.stores.load(latest)
+        assert saved.state is StoreState.RUNNING
+        assert saved.revision == planned.revision + 1  # Only the attempt start was persisted.
+        assert saved.entries == planned.entries
 
 
 def test_run_finally_releases_the_reader_even_when_a_later_task_fails(retained_experiment, monkeypatch):
