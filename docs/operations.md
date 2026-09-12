@@ -89,18 +89,24 @@ Verification can take time for a large result.
 
 ## Build retention evidence before inspecting garbage candidates
 
-[`BlobRetentionSetService`](../src/docspec/application/maintenance.py) builds a
-retention set from explicitly retained releases, stores, and profile state.
-It verifies those roots and retains reachable captures, representations, and
-segments. Opaque profile state requires the profile's
+Use `build_local_retention_set` to save the blob dependencies of explicitly
+retained results and checkpoints. It composes
+[`BlobRetentionSetService`](../src/docspec/application/maintenance.py) through the
+supported runtime API. Results supply their saved plans; standalone stores
+require their plan references, available as `prepared.handoff.processing_plan`.
+The service follows required predecessors and plan bases, so a shorter successor
+also preserves earlier bytes still required by retention and selection checks.
+Opaque profile state requires the profile's
 [reachability interface](../src/docspec/ports/profile_state_reachability.py) to
 identify its referenced blobs. Omitting those references could misclassify live
-data as garbage.
+data as garbage. See the [retention walkthrough](retention-preview.md).
 
-The `docspec blob-store gc` command requires `--dry-run`. It reads a prepared,
-verified retention set and reports inventory; it does not delete blobs or build
-the retention set for the caller. Its minimum-age filter controls which
-unretained blobs become candidates, not which references remain protected.
+`preview_local_blob_inventory` and `docspec blob-store gc --dry-run` use one
+implementation to inspect a supplied retention set and verify each listed blob.
+They report inventory relative to that set; they do not independently prove
+that an imported set accounts for every root, discover other attempts, or delete
+anything. Build a fresh set containing every required result and checkpoint.
+Its minimum-age filter controls which unreferenced blobs become candidates.
 Check [the command](../src/docspec/cli/blobs.py) and
 [retention tests](../tests/test_maintenance.py) before changing these rules.
 

@@ -35,6 +35,8 @@ from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFacto
 
 _RETENTION_COLLECTION = "maintenance:blob-retention-references"
 _VISITED_STORE_COLLECTION = "maintenance:visited-document-stores"
+_VISITED_RELEASE_COLLECTION = "maintenance:visited-document-releases"
+_PLAN_COLLECTION = "maintenance:processing-plans"
 _RETENTION_SCHEMA = RecordSchema(
     "docspec-blob-retention-reference/1.0",
     (
@@ -118,10 +120,11 @@ class BlobRetentionSetService:
         blob_profile_state: ArtifactRef,
         retained_releases: Iterable[DocumentReleaseRef] = (),
         retained_stores: Iterable[StoreRef] = (),
+        retained_plans: Iterable[ArtifactRef] = (),
     ) -> ArtifactRef:
         releases = _ordered_distinct(
             retained_releases,
-            identity=lambda item: item.release_id,
+            identity=lambda item: (item.release_id, item.digest),
             order=lambda item: (item.release_id, item.locator, item.digest),
             label="retained releases",
         )
@@ -130,6 +133,12 @@ class BlobRetentionSetService:
             identity=lambda item: (item.store_id, item.revision),
             order=lambda item: (item.store_id, item.revision, item.locator, item.digest),
             label="retained stores",
+        )
+        plans = _ordered_distinct(
+            retained_plans,
+            identity=lambda item: item.artifact_id,
+            order=lambda item: (item.artifact_id, item.locator, item.digest),
+            label="retained plans",
         )
         if not releases and not stores:
             raise ValueError("blob retention requires at least one immutable root")
@@ -163,6 +172,10 @@ class BlobRetentionSetService:
                     workspace,
                     metrics,
                 )
+            for reference in plans:
+                plan = self._remember_plan(reference, workspace)
+                if plan.base_release is not None:
+                    self._retain_release(plan.base_release, blob_profile_state, workspace, metrics)
             for reference in stores:
                 self._retain_store(
                     reference,
@@ -183,6 +196,7 @@ class BlobRetentionSetService:
             blob_profile_state=blob_profile_state,
             retained_releases=releases,
             retained_stores=stores,
+            retained_plans=plans,
             references=layer,
             verification_evidence=metrics,
         )
@@ -199,8 +213,53 @@ class BlobRetentionSetService:
         workspace: RecordWorkspace,
         metrics: dict[str, Any],
     ) -> None:
+        # A selected successor still admits its predecessor. Walk the chain
+        # iteratively and retain its required bytes, including shorter-stage
+        # successors whose own active rows no longer contain those bytes.
+        current: DocumentReleaseRef | None = reference
+        while current is not None:
+            visit = {"release": current.to_dict()}
+            identity = stable_urn("retained-release-visit", {"releaseId": current.release_id, "digest": current.digest})
+            previous = workspace.lookup_record(_VISITED_RELEASE_COLLECTION, identity)
+            if previous is not None:
+                if previous != visit:
+                    raise IntegrityError("retained release visit has conflicting immutable references")
+                return
+            workspace.add_record(
+                _VISITED_RELEASE_COLLECTION, identity=identity,
+                source_item_id=current.release_id, record=visit,
+            )
+            current = self._retain_release_content(current, blob_profile_state, workspace, metrics)
+
+    def _remember_plan(self, reference: ArtifactRef, workspace: RecordWorkspace) -> ProcessingPlan:
+        try:
+            plan = ProcessingPlan.from_dict(self._controls.load(reference))
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"retained processing plan is invalid: {error}") from error
+        if plan.plan_id != reference.artifact_id:
+            raise IntegrityError("retained processing-plan identity differs from its reference")
+        value = {"plan": reference.to_dict()}
+        previous = workspace.lookup_record(_PLAN_COLLECTION, plan.plan_id)
+        if previous is not None and previous != value:
+            raise IntegrityError("retained processing plan has conflicting immutable references")
+        if previous is None:
+            workspace.add_record(
+                _PLAN_COLLECTION, identity=plan.plan_id, source_item_id=plan.plan_id, record=value,
+            )
+        return plan
+
+    def _retain_release_content(
+        self,
+        reference: DocumentReleaseRef,
+        blob_profile_state: ArtifactRef,
+        workspace: RecordWorkspace,
+        metrics: dict[str, Any],
+    ) -> DocumentReleaseRef | None:
         release = self._document_catalog.open(reference)
         metrics["catalogVerifiedReleaseCount"] += 1
+        plan = self._remember_plan(release.processing_plan, workspace)
+        if plan.base_release != release.previous_release:
+            raise IntegrityError("retained release predecessor differs from its processing plan")
         for profile_state in release.blob_roots:
             self._require_profile_state(profile_state, blob_profile_state)
 
@@ -232,6 +291,7 @@ class BlobRetentionSetService:
                 workspace,
                 metrics,
             )
+        return release.previous_release
 
     def _retain_active_release_blobs(
         self,
@@ -294,6 +354,8 @@ class BlobRetentionSetService:
             record=visit_record,
         )
         store = self._stores.load(reference)
+        if workspace.lookup_record(_PLAN_COLLECTION, store.plan_id) is None:
+            raise IntegrityError("retained store requires its explicit processing-plan reference")
         metrics["visitedStoreRevisionCount"] += 1
         for entry in store.entries:
             for captured in entry.captured_files:

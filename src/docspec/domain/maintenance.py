@@ -17,6 +17,7 @@ class BlobRetentionSet:
     blob_profile_state: ArtifactRef
     retained_releases: tuple[DocumentReleaseRef, ...]
     retained_stores: tuple[StoreRef, ...]
+    retained_plans: tuple[ArtifactRef, ...]
     references: LayerRef
     verification_evidence: dict[str, Any]
 
@@ -37,6 +38,11 @@ class BlobRetentionSet:
             self.retained_stores,
             key=lambda item: (item.store_id, item.revision, item.locator, item.digest),
             label="retained store roots",
+        )
+        self._require_ordered_distinct(
+            self.retained_plans,
+            key=lambda item: (item.artifact_id, item.locator, item.digest),
+            label="retained plan roots",
         )
         expected_evidence = {
             "profileStateVerificationCount",
@@ -87,6 +93,7 @@ class BlobRetentionSet:
         blob_profile_state: ArtifactRef,
         retained_releases: tuple[DocumentReleaseRef, ...],
         retained_stores: tuple[StoreRef, ...],
+        retained_plans: tuple[ArtifactRef, ...],
         references: LayerRef,
         verification_evidence: dict[str, Any],
     ) -> Self:
@@ -94,6 +101,7 @@ class BlobRetentionSet:
             blob_profile_state,
             retained_releases,
             retained_stores,
+            retained_plans,
             references,
             verification_evidence,
         )
@@ -102,6 +110,7 @@ class BlobRetentionSet:
             blob_profile_state,
             retained_releases,
             retained_stores,
+            retained_plans,
             references,
             verification_evidence,
         )
@@ -111,6 +120,7 @@ class BlobRetentionSet:
         blob_profile_state: ArtifactRef,
         retained_releases: tuple[DocumentReleaseRef, ...],
         retained_stores: tuple[StoreRef, ...],
+        retained_plans: tuple[ArtifactRef, ...],
         references: LayerRef,
         verification_evidence: dict[str, Any],
     ) -> dict[str, Any]:
@@ -118,6 +128,7 @@ class BlobRetentionSet:
             "blobProfileState": blob_profile_state.to_dict(),
             "retainedReleases": [item.to_dict() for item in retained_releases],
             "retainedStores": [item.to_dict() for item in retained_stores],
+            "retainedPlans": [item.to_dict() for item in retained_plans],
             "references": references.to_dict(),
             "verificationEvidence": verification_evidence,
         }
@@ -127,6 +138,7 @@ class BlobRetentionSet:
             self.blob_profile_state,
             self.retained_releases,
             self.retained_stores,
+            self.retained_plans,
             self.references,
             self.verification_evidence,
         )
@@ -134,7 +146,7 @@ class BlobRetentionSet:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": "docspec-blob-retention-set",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "retentionSetId": self.retention_set_id,
             **self.identity_content(),
         }
@@ -148,13 +160,14 @@ class BlobRetentionSet:
             "blobProfileState",
             "retainedReleases",
             "retainedStores",
+            "retainedPlans",
             "references",
             "verificationEvidence",
         }
         if (
             set(value) != expected
             or value["format"] != "docspec-blob-retention-set"
-            or value["formatVersion"] != "1.0"
+            or value["formatVersion"] != "2.0"
         ):
             raise ValueError("blob retention set has an unknown format or invalid closed shape")
         return cls(
@@ -162,6 +175,7 @@ class BlobRetentionSet:
             ArtifactRef.from_dict(value["blobProfileState"]),
             tuple(DocumentReleaseRef.from_dict(item) for item in value["retainedReleases"]),
             tuple(StoreRef.from_dict(item) for item in value["retainedStores"]),
+            tuple(ArtifactRef.from_dict(item) for item in value["retainedPlans"]),
             LayerRef.from_dict(value["references"]),
             value["verificationEvidence"],
         )

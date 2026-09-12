@@ -28,13 +28,12 @@ from docspec.application.execution import StoreExecutionService
 from docspec.application.processor_rules import verify_processor_policies
 from docspec.errors import IntegrityError, ProfileError
 from docspec.application.stage_identity import verify_stage_implementations
-from docspec.runtime.storage import _local_profiles, _local_storage
+from docspec.runtime.storage import _local_profiles, _local_storage, _put_blob_profile_state
 from docspec.runtime.fetcher import _BoundContentFetcher, _content_fetcher_identity
 from docspec.workspace import LocalWorkspace
 from docspec.domain.execution import ExecutionLimits
 from docspec.domain.identity import (
     require_text,
-    stable_urn,
 )
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
@@ -234,17 +233,7 @@ def _compose_local_run(
     def clock() -> str:
         return completed_at
 
-    blob_profile = plan.profiles.for_role(ProfileRole.BLOB_STORAGE)
-    blob_state = {
-        "profileId": blob_profile.profile_id,
-        "profileVersion": blob_profile.version,
-        "storageRoot": blobs.root.as_posix(),
-    }
-    blob_root = controls.put(
-        kind="profile-state",
-        artifact_id=stable_urn("profile-state", blob_state),
-        value=blob_state,
-    )
+    blob_root = _put_blob_profile_state(controls, plan, blobs)
     result_profile = plan.profiles.for_role(ProfileRole.RESULT_DELIVERY)
     sink = DurableDatasetSink(
         sink_id=result_sink_id,

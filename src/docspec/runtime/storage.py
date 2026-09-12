@@ -11,7 +11,9 @@ from docspec.adapters.storage import (
     LocalJsonlRecordStorage, LocalManifestDocumentCatalog,
 )
 from docspec.domain.plans import ProcessingPlan
+from docspec.domain.identity import stable_urn
 from docspec.domain.profiles import ProfileRole
+from docspec.domain.references import ArtifactRef
 from docspec.errors import ProfileError
 from docspec.profile_registry import ProfileRegistry, RegisteredProfile
 from docspec.workspace import LocalWorkspace
@@ -27,6 +29,14 @@ _LOCAL_PROFILE_MODULES = {
     ProfileRole.DOCUMENT_STORE: "docspec.adapters.storage:LocalDocumentStoreRepository",
     ProfileRole.RESULT_DELIVERY: "docspec.adapters.sinks:DurableDatasetSink",
 }
+
+
+def _put_blob_profile_state(
+    controls: LocalJsonControlRepository, plan: ProcessingPlan, blobs: LocalContentAddressedBlobStore,
+) -> ArtifactRef:
+    profile = plan.profiles.for_role(ProfileRole.BLOB_STORAGE)
+    state = {"profileId": profile.profile_id, "profileVersion": profile.version, "storageRoot": blobs.root.as_posix()}
+    return controls.put(kind="profile-state", artifact_id=stable_urn("profile-state", state), value=state)
 
 
 def _profile_limit(profile: RegisteredProfile, name: str) -> int:

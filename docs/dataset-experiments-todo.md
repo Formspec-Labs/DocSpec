@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 19 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 20 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -749,14 +749,36 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d25"></a>
 
-- [ ] **D25 · P1 · Make retention safe for shared experiment inputs.** Recheck
+- [x] **D25 · P1 · Account for shared experiment inputs in retention previews.** Recheck
   maintenance and deletion reachability against multiple attempts and shared
-  bases. Expose a preview of what would be retained or removed through existing
-  maintenance mechanisms. **Done when:** keeping an attempt preserves all inputs
-  and evidence it needs; pruning an obsolete attempt cannot damage another;
-  interrupted cleanup is recoverable. This item does not authorize deleting
-  existing user datasets. Depends on D02 and D24; see
+  bases. Expose a preview of referenced and candidate blobs through existing
+  maintenance mechanisms. **Done when:** explicit retained results and checkpoints
+  preserve required local blob dependencies; removing one alternative from the
+  root set leaves another's required bytes protected; interrupted previews are
+  repeatable. This item does not authorize deleting existing user datasets.
+  Depends on D02 and D24; see
   [maintenance](../src/docspec/application/maintenance.py).
+
+  **Scope decision, September 11:** the independent architect approved a
+  dependency inventory and read-only preview. The earlier destructive-pruning
+  and cleanup-recovery criteria required an unimplemented deletion subsystem;
+  those capabilities are outside this slice and are not claimed delivered.
+
+  **Completed September 11:** `build_local_retention_set` composes the existing
+  service, follows required predecessors and plan bases, and requires saved
+  plan references for standalone checkpoints. Exact artifact pins distinguish
+  different results of one logical plan. `preview_local_blob_inventory` and the
+  CLI share the moved inventory implementation. The reader labels inventory
+  relative to its supplied set; it does not rederive an imported set's complete
+  roots or discover other attempts. Retention-set 2.0 records supplied plan
+  references; no alternate format reader or deletion operation was added.
+  [Architecture](history/2026-09-11-retention-preview-architecture.md),
+  [review](history/2026-09-11-retention-preview-review.md), and the
+  [walkthrough](retention-preview.md) explain this boundary. All 34 focused
+  checks passed, including real same-plan alternatives, shorter successors,
+  planned work using captured bases, shared-input preservation, interruption,
+  and existing CLI/maintenance behavior. Fixture deletion was confined to
+  temporary test data; no existing dataset was cleaned.
 
 ## 5. Export and consume results without a second production pipeline
 

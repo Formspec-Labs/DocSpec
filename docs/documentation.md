@@ -28,6 +28,7 @@ same change as the behavior or file move they describe.
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
 | Add a processor, execution backend, sink, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
+| Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |
 | Understand recovery, publication, retention, compaction, or qualification | [Operations](operations.md) |
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
