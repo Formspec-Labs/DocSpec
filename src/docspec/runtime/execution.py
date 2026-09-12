@@ -16,10 +16,11 @@ from docspec.application.reconcile import RunReconciler
 from docspec.application.store_state import load_latest_store
 from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.jobs import StoreState
+from docspec.domain.identity import stable_urn
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef
 from docspec.errors import IntegrityError, LimitExceededError
-from docspec.runtime.composition import _LocalRunComposition
+from docspec.runtime.composition import _LocalRunComposition, _worker_composition_value
 from docspec.runtime.task_membership import _TaskMembershipIndex
 
 
@@ -71,6 +72,10 @@ class PreparedLocalRun:
     def _require_handoff(self, handoff: ExecutionHandoff) -> None:
         if handoff != self.handoff:
             raise IntegrityError("local worker received a different execution handoff")
+        if handoff.worker_composition.artifact_id != stable_urn(
+            "worker-composition", _worker_composition_value(self._composition),
+        ):
+            raise IntegrityError("local worker settings changed after preparation")
         self._composition.executor.verify_configuration()
 
     def task_source(self, handoff: ExecutionHandoff) -> Iterator[StoreTask]:

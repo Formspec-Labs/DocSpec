@@ -27,8 +27,11 @@ class LocalFileContentFetcher:
             raise ValueError("chunk_size must be positive")
         self.root = _storage_root(root)
         self.chunk_size = chunk_size
-        self.configuration_digest = identity_digest(
-            {"implementationId": self.downloader_id, "root": self.root.as_posix(), "chunkSize": chunk_size}
+
+    @property
+    def configuration_digest(self) -> str:
+        return identity_digest(
+            {"implementationId": self.downloader_id, "root": self.root.as_posix(), "chunkSize": self.chunk_size}
         )
 
     def fetch(

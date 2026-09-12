@@ -672,7 +672,7 @@ def _verify_release_relationships(connection: sqlite3.Connection) -> None:
                OR c.candidate_id IS NULL OR c.media_type != f.media_type
                OR (c.expected_digest IS NOT NULL AND c.expected_digest != f.blob_digest)
                OR (c.expected_size IS NOT NULL AND c.expected_size != f.blob_size)
-               OR (c.transport_version IS NOT NULL AND c.transport_version != f.transport_version)
+               OR (c.transport_version IS NOT NULL AND c.transport_version IS NOT f.transport_version)
             LIMIT 1
             """,
         ),

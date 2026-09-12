@@ -132,6 +132,8 @@ root. An injected fetcher supplies a nonempty `downloader_id` and a SHA-256
 `configuration_digest`; its acquisition metadata describes the same configured
 implementation. Credentials belong in the live fetcher, outside retained
 configuration. Source-aware fetchers remain optional integrations.
+See [fetcher composition and evidence](fetchers.md) for supported routing and
+the distinction between required pins and observed transport versions.
 
 Execution limits bound the runner; the plan's `WorkLimits` bound document work.
 The runner's network allowance must cover one planned store's byte allowance.

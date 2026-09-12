@@ -4,7 +4,7 @@ from docspec.runtime import stage_policy
 
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pytest
 
@@ -84,6 +84,18 @@ def _release_layers() -> dict[str, list[dict]]:
 
 def test_logical_release_verifier_accepts_complete_source_lineage() -> None:
     verify_logical_release_layers(_release_layers())
+
+
+@pytest.mark.parametrize("observed", [None, "different-version"])
+def test_required_transport_version_refuses_missing_or_different_capture_evidence(observed):
+    layers = _release_layers()
+    original = CapturedFile.from_dict(layers["files"][0]["payload"])
+    values = {field.name: getattr(original, field.name) for field in fields(original)
+              if field.name not in {"file_id", "disposition"}}
+    changed = CapturedFile.create(**(values | {"transport_version": observed}))
+    row = layers["files"][0] | {"recordId": changed.file_id, "payload": changed.to_dict()}
+    with pytest.raises(IntegrityError, match="file has no matching active source candidate"):
+        verify_logical_release_layers({"source-items": layers["source-items"], "files": [row]})
 
 
 def test_dispositions_preserve_requested_stages_and_refuse_missing_stage_evidence() -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from docspec.adapters.content_fetchers import (
 )
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import CandidateFile
+from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import FetchMetadata, FetchStream
 
@@ -616,3 +618,61 @@ def test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme(
         assert stream.metadata.downloader_configuration_digest == routed_https.configuration_digest
     assert routed_https.configuration_digest != routing.configuration_digest
     assert http_response.close_count == 1
+
+
+@pytest.mark.parametrize("route", ["local", "s3", "https"])
+def test_router_can_use_one_route_and_tracks_its_current_settings(tmp_path, route):
+    delegates = {
+        "local": LocalFileContentFetcher(tmp_path),
+        "s3": AnonymousS3ContentFetcher(_Client(b"exact bytes"), _config()),
+        "https": HttpsContentFetcher(_HttpClient({}), _https_config()),
+    }
+    delegate = delegates[route]
+    router = RoutingContentFetcher(**{route: delegate})
+    original = router.configuration_digest
+    if route == "local":
+        delegate.chunk_size //= 2
+    else:
+        delegate.config = replace(delegate.config, chunk_size=delegate.config.chunk_size // 2)
+    assert router.configuration_digest != original
+    with pytest.raises(ValueError, match="at least one"):
+        RoutingContentFetcher()
+
+
+@pytest.mark.parametrize("damage", ["implementation", "configuration", "task", "attempt", "version", "changed-during-fetch"])
+def test_router_refuses_wrong_child_evidence_and_closes_before_reading(damage):
+    class Delegate:
+        downloader_id = "test.route"
+        configuration_digest = identity_digest({"configuration": "original"})
+        closed = 0
+
+        def fetch(self, candidate, *, max_bytes, task_id, attempt_id):
+            assert max_bytes == 10
+            metadata = FetchMetadata(self.downloader_id, self.configuration_digest,
+                candidate.transport_version, LAST_MODIFIED, task_id, attempt_id)
+            fields = {
+                "implementation": {"downloader_id": "wrong"},
+                "configuration": {"downloader_configuration_digest": identity_digest("wrong")},
+                "task": {"task_id": "wrong"}, "attempt": {"attempt_id": "wrong"},
+                "version": {"transport_version": None},
+            }
+            if damage == "changed-during-fetch":
+                self.configuration_digest = identity_digest("changed")
+            else:
+                metadata = replace(metadata, **fields[damage])
+
+            def chunks():
+                pytest.fail("bad child metadata must refuse before reading bytes")
+                yield b"unreachable"
+
+            def close():
+                self.closed += 1
+
+            return FetchStream(metadata, chunks(), close_callback=close)
+
+    delegate = Delegate()
+    router = RoutingContentFetcher(https=delegate, max_object_bytes=10)
+    candidate = CandidateFile("remote", "https://example.test/document", "text/plain", transport_version="required")
+    with pytest.raises(IntegrityError):
+        router.fetch(candidate, max_bytes=20, task_id="task", attempt_id="attempt")
+    assert delegate.closed == 1

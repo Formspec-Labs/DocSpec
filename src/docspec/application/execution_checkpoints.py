@@ -92,7 +92,7 @@ class EntryCheckpointVerifier:
                 or captured.source_version != entry.source_item.version
                 or captured.candidate_id != candidate.candidate_id
                 or captured.media_type != candidate.media_type
-                or captured.transport_version != candidate.transport_version
+                or (candidate.transport_version is not None and captured.transport_version != candidate.transport_version)
                 or (candidate.expected_digest is not None and captured.blob.digest != candidate.expected_digest)
                 or (candidate.expected_size is not None and captured.blob.byte_size != candidate.expected_size)
             ):

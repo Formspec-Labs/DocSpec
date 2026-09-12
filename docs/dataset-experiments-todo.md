@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 11 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 12 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -257,6 +257,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   empty publication, read-only opening, and recovery. These are offline checks;
   source outcomes and partial-input policy remain D08/D10, and observed-crawl
   coverage does not automatically preserve omitted items from a prior catalog.
+  Commit `35d8516`; the subsequent combined regression passed 1,184 tests.
 
 <a id="d07"></a>
 
@@ -326,7 +327,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d11"></a>
 
-- [ ] **D11 · P0 · Make fetcher injection practical.** Expose explicit selection
+- [x] **D11 · P0 · Make fetcher injection practical.** Expose explicit selection
   and composition of local, HTTPS, S3, and caller-provided fetchers through the
   supported run API. Keep credentials outside retained configuration and isolate
   optional dependencies. **Done when:** the reference experiment swaps fetchers
@@ -340,6 +341,27 @@ to defer a conditional item is a documented deferral, not completed implementati
   configured fetcher and requested task before any chunks are read; refusals
   close the stream. The installed example proves custom injection and reuse.
   Convenient HTTPS/S3 composition and route qualification remain open.
+
+  **Completed September 11:** the router accepts any nonempty combination of
+  local, HTTPS, and S3 fetchers, checks child acquisition evidence before
+  accepting bytes, and derives its identity from effective delegate settings.
+  Saved workers refuse changed settings even for sealed work or zero-task runs.
+  An unpinned candidate may retain an observed transport version; required pins
+  still refuse a missing or different observation. Ordinary public S3 catalog
+  candidates now use HEAD followed by the existing conditional GET and exact
+  response checks. Partial supplied pins never trigger a fresh observation.
+  No catalog schema, client registry, or credential record was added. See
+  [fetcher usage](fetchers.md), the [architecture decision](history/2026-09-11-fetcher-composition-architecture.md),
+  the [router review](history/2026-09-11-fetcher-composition-review.md), and
+  the [S3 review](history/2026-09-11-s3-acquisition-review.md).
+
+  The transport gate passed 84 tests. It covers public local/S3 catalog
+  lifecycles, HTTPS adapter/router fixtures, injected-client bounds and refusal,
+  changed settings, retained evidence, and no refetch during later processing.
+  Installed custom-fetcher injection remains covered by the package probe.
+  The combined full regression passed 1,184 tests in 154.41 seconds, with one
+  live integration test deselected and one known example-import warning. These
+  checks qualify local behavior, not live remote availability or deployment.
 
 <a id="d12"></a>
 
@@ -460,6 +482,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   capture/extraction/segmentation work is charged for inherited inputs. Repair
   checkpoints remain whole completed stages/processors; arbitrary partial-stage
   restart is not promised. No legacy disposition reader is added.
+  Commit `6f4b8ab`; the subsequent combined regression passed 1,184 tests.
 
 <a id="d17"></a>
 

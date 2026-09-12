@@ -108,3 +108,8 @@ the recovery scenario passed in this final gate after the disposition profile
 edit finished. The other three failure cases concern separately reviewed D16
 fixture expectations and are outside this catalog slice. Full regression
 validation of the combined final tree follows the remaining transport edits.
+
+Final combined regression: **1,184 passed, one live integration test deselected,
+one known example-import warning in 154.41 seconds**. This run used the fixed
+catalog and repair commits with the final transport changes, resolving the
+earlier combined-suite failures described above.

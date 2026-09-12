@@ -148,14 +148,17 @@ def _close_body(body: object) -> None:
 class AnonymousS3ContentFetcher:
     """Stream conditionally pinned public S3 objects into DocSpec."""
 
-    downloader_id = "docspec.content-fetcher.anonymous-s3.v1"
+    downloader_id = "docspec.content-fetcher.anonymous-s3.v2"
 
     def __init__(self, client: Any, config: AnonymousS3ContentFetcherConfig) -> None:
         if client is None:
             raise ValueError("S3 source client must be provided")
         self.client = client
         self.config = config
-        self.configuration_digest = config.digest
+
+    @property
+    def configuration_digest(self) -> str:
+        return self.config.digest
 
     @classmethod
     def from_boto3(cls, config: AnonymousS3ContentFetcherConfig) -> Self:
@@ -183,27 +186,14 @@ class AnonymousS3ContentFetcher:
             raise S3ContentFetcherError("could not create the anonymous S3 source client") from error
         return cls(client, config)
 
-    def _candidate_record(self, candidate: CandidateFile) -> dict[str, Any]:
-        metadata = candidate.metadata
-        raw = metadata.get("s3") if isinstance(metadata, Mapping) else None
-        if not isinstance(raw, Mapping) or set(raw) != {"bucket", "key", "size", "etag", "lastModified"}:
-            raise IntegrityError("S3 candidate metadata has an invalid closed shape")
+    def _candidate_location(self, candidate: CandidateFile) -> tuple[str, str]:
         try:
-            record = _s3_version_content(
-                bucket=raw["bucket"],
-                key=raw["key"],
-                size=raw["size"],
-                etag=raw["etag"],
-                last_modified=raw["lastModified"],
-            )
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"S3 candidate metadata is invalid: {error}") from error
-        parsed = urlsplit(candidate.locator)
-        try:
+            parsed = urlsplit(candidate.locator)
             parsed_port = parsed.port
+            key = unquote(parsed.path.removeprefix("/"))
+            canonical = s3_locator(parsed.netloc, key)
         except ValueError as error:
             raise IntegrityError("S3 candidate locator is not canonical") from error
-        key = unquote(parsed.path.removeprefix("/"))
         if (
             parsed.scheme != "s3"
             or not parsed.netloc
@@ -212,13 +202,58 @@ class AnonymousS3ContentFetcher:
             or parsed.username is not None
             or parsed.password is not None
             or parsed_port is not None
-            or candidate.locator != s3_locator(parsed.netloc, key)
+            or candidate.locator != canonical
         ):
             raise IntegrityError("S3 candidate locator is not canonical")
-        if parsed.netloc != record["bucket"] or key != record["key"]:
-            raise IntegrityError("S3 candidate locator differs from its sealed metadata")
-        if record["bucket"] != self.config.bucket or not record["key"].startswith(self.config.prefix):
+        if parsed.netloc != self.config.bucket or not key.startswith(self.config.prefix):
             raise IntegrityError("S3 candidate is outside the configured source boundary")
+        return parsed.netloc, key
+
+    def _observed_record(self, bucket: str, key: str) -> dict[str, Any]:
+        """Observe an unpinned candidate before the ordinary conditional download."""
+
+        try:
+            response = self.client.head_object(Bucket=bucket, Key=key)
+        except Exception as error:
+            code, status = provider_error_identity(error)
+            if code in _MISSING_CODES or status == 404:
+                raise IntegrityError("S3 candidate does not exist") from error
+            raise S3ContentFetcherError("anonymous S3 observation failed") from error
+        if not isinstance(response, Mapping):
+            raise S3ContentFetcherError("anonymous S3 observation returned an invalid response")
+        # HEAD has no body; release any unexpected body from an injected client.
+        _close_body(response.get("Body"))
+        try:
+            return _s3_version_content(
+                bucket=bucket, key=key, size=response.get("ContentLength"),
+                etag=response.get("ETag"), last_modified=response.get("LastModified"),
+            )
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"S3 observation metadata is invalid: {error}") from error
+
+    def _candidate_record(self, candidate: CandidateFile) -> dict[str, Any]:
+        bucket, key = self._candidate_location(candidate)
+        metadata = candidate.metadata
+        if candidate.transport_version is None and "s3" not in metadata:
+            record = self._observed_record(bucket, key)
+            if candidate.expected_size is not None and candidate.expected_size != record["size"]:
+                raise IntegrityError("S3 observation size differs from the candidate's expected size")
+            return record
+
+        # A supplied pin or observation must be complete and exact. Never replace
+        # a malformed or partial caller observation with a fresh remote one.
+        raw = metadata.get("s3")
+        if not isinstance(raw, Mapping) or set(raw) != {"bucket", "key", "size", "etag", "lastModified"}:
+            raise IntegrityError("S3 candidate metadata has an invalid closed shape")
+        try:
+            record = _s3_version_content(
+                bucket=raw["bucket"], key=raw["key"], size=raw["size"],
+                etag=raw["etag"], last_modified=raw["lastModified"],
+            )
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"S3 candidate metadata is invalid: {error}") from error
+        if bucket != record["bucket"] or key != record["key"]:
+            raise IntegrityError("S3 candidate locator differs from its sealed metadata")
         if candidate.expected_size != record["size"]:
             raise IntegrityError("S3 candidate size differs from its sealed metadata")
         expected_version = s3_transport_version(
@@ -244,10 +279,16 @@ class AnonymousS3ContentFetcher:
             raise ValueError("max_bytes must be a positive integer")
         require_text(task_id, "task_id")
         require_text(attempt_id, "attempt_id")
+        if candidate.expected_size is not None and candidate.expected_size > max_bytes:
+            raise LimitExceededError(f"candidate exceeds the {max_bytes}-byte acquisition limit")
+        started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         record = self._candidate_record(candidate)
         if record["size"] > max_bytes:
             raise LimitExceededError(f"candidate exceeds the {max_bytes}-byte acquisition limit")
-        started_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        transport_version = s3_transport_version(
+            bucket=record["bucket"], key=record["key"], size=record["size"],
+            etag=record["etag"], last_modified=record["lastModified"],
+        )
         try:
             response = self.client.get_object(
                 Bucket=record["bucket"],
@@ -325,7 +366,7 @@ class AnonymousS3ContentFetcher:
             FetchMetadata(
                 self.downloader_id,
                 self.configuration_digest,
-                candidate.transport_version,
+                transport_version,
                 started_at,
                 task_id,
                 attempt_id,

@@ -121,7 +121,7 @@ def test_missing_fetcher_identity_refuses_before_local_control_writes(run_reques
 
 
 @pytest.mark.parametrize("field", [
-    "downloader_id", "downloader_configuration_digest", "task_id", "attempt_id", "transport_version",
+    "downloader_id", "downloader_configuration_digest", "task_id", "attempt_id",
 ])
 def test_fetch_receipt_mismatch_closes_source_before_reading_bytes(run_request, field: str) -> None:
     from docspec.adapters.storage import LocalDocumentStoreRepository
@@ -160,14 +160,12 @@ def test_fetch_receipt_mismatch_closes_source_before_reading_bytes(run_request, 
 
 
 def test_mutated_fetcher_cannot_run_under_prepared_identity(run_request) -> None:
-    from docspec.adapters.storage import LocalDocumentStoreRepository
-    from docspec.domain.jobs import FailureClass
-
     fetcher = _CountingFetcher(run_request["workspace"].roots["sourceContent"])
-    prepared = prepare_local_run(**run_request, content_fetcher=fetcher)
-    fetcher.configuration_digest = identity_digest({"changed-after-prepare": True})
-    result = prepared.execute_task(prepared.handoff, next(prepared.task_source(prepared.handoff)))
+    with prepare_local_run(**run_request, content_fetcher=fetcher) as prepared:
+        task = next(prepared.task_source(prepared.handoff))
+        fetcher.configuration_digest = identity_digest({"changed-after-prepare": True})
+        with pytest.raises(IntegrityError, match="settings changed"):
+            prepared.execute_task(prepared.handoff, task)
+        with pytest.raises(IntegrityError, match="settings changed"):
+            next(prepared.task_source(prepared.handoff))
     assert fetcher.calls == 0
-    store = LocalDocumentStoreRepository(run_request["workspace"].roots["documentStores"]).load(result.output_store)
-    assert not store.entries[0].captured_files
-    assert store.entries[0].failures[0].failure_class is FailureClass.ARTIFACT_INTEGRITY

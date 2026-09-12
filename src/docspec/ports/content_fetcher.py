@@ -8,6 +8,7 @@ from typing import Protocol, Self
 
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import require_sha256, require_text
+from docspec.errors import IntegrityError
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +31,19 @@ class FetchMetadata:
         require_sha256(self.downloader_configuration_digest, "downloader configuration digest")
         if self.transport_version is not None:
             require_text(self.transport_version, "transport_version")
+
+    def verify_request(
+        self, candidate: CandidateFile, *, identity: dict[str, str], task_id: str, attempt_id: str,
+    ) -> None:
+        """Bind reported acquisition evidence to the selected implementation and request."""
+        if (
+            self.downloader_id != identity["implementationId"]
+            or self.downloader_configuration_digest != identity["configurationDigest"]
+            or self.task_id != task_id
+            or self.attempt_id != attempt_id
+            or (candidate.transport_version is not None and self.transport_version != candidate.transport_version)
+        ):
+            raise IntegrityError("fetch metadata differs from the prepared worker or requested acquisition")
 
 
 @dataclass(slots=True)
@@ -75,6 +89,12 @@ class FetchStream:
 
 
 class ContentFetcher(Protocol):
+    @property
+    def downloader_id(self) -> str: ...
+
+    @property
+    def configuration_digest(self) -> str: ...
+
     def fetch(
         self,
         candidate: CandidateFile,
@@ -83,6 +103,16 @@ class ContentFetcher(Protocol):
         task_id: str,
         attempt_id: str,
     ) -> FetchStream: ...
+
+
+def content_fetcher_identity(fetcher: ContentFetcher) -> dict[str, str]:
+    """Read a configured fetcher's declared identity without retaining client secrets."""
+    return {
+        "implementationId": require_text(getattr(fetcher, "downloader_id", None), "downloader identity"),
+        "configurationDigest": require_sha256(
+            getattr(fetcher, "configuration_digest", None), "downloader configuration digest",
+        ),
+    }
 
 
 AcquisitionSource = ContentFetcher

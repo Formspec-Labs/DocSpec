@@ -116,3 +116,8 @@ A separate 74-test gate passed current-profile installed-wheel, release-integrit
 worker-identity, and local recovery checks. Full regression of the combined final
 tree follows the separately reviewed transport edits. No CI, live provider
 collection, push, or release result is inferred from these local runs.
+
+Final combined regression: **1,184 passed, one live integration test deselected,
+one known example-import warning in 154.41 seconds**. This run used the fixed
+catalog and repair commits with the final transport changes, resolving the
+earlier combined-suite failures described above.
