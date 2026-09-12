@@ -73,6 +73,8 @@ def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Pat
     path.write_bytes(b"evil")
     with pytest.raises(IntegrityError):
         store.verify(reference)
+    with pytest.raises(IntegrityError):
+        b"".join(store.read(reference))
 
     target = tmp_path / "outside"
     target.write_bytes(b"safe")
@@ -82,6 +84,26 @@ def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Pat
     linked = BlobRef(link.relative_to(store.root).as_posix(), f"sha256:{'a' * 64}", 4, "text/plain")
     with pytest.raises(IntegrityError):
         store.verify(linked)
+    with pytest.raises(IntegrityError):
+        b"".join(store.read(linked))
+
+
+def test_blob_read_refuses_correct_bytes_at_a_different_locator_before_open(tmp_path, monkeypatch):
+    store = LocalContentAddressedBlobStore(tmp_path / "objects")
+    reference = store.put_if_absent([b"safe"], media_type="text/plain")
+    misplaced = store.root / "copied-object"
+    misplaced.write_bytes(b"safe")
+    reference = replace(reference, locator="copied-object")
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == misplaced:
+            pytest.fail("a blob with a noncanonical locator was opened")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(IntegrityError, match="locator does not match its digest"):
+        b"".join(store.read(reference))
 
 
 @pytest.mark.parametrize("allowance, error", [(8, LimitExceededError), (16, IntegrityError)])

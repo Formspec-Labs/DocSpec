@@ -576,7 +576,6 @@ class StoreExecutionService:
             if not selected:
                 continue
             budget.check_duration()
-            self._blobs.verify(representation.blob)
             representation_memory = (
                 f"resume-representation:{entry.entry_id}:{representation.representation_id}"
             )
@@ -590,7 +589,6 @@ class StoreExecutionService:
             representation_payload = RepresentationPayload(representation, representation_content)
             for segment in selected:
                 budget.check_duration()
-                self._blobs.verify(segment.content)
                 memory_identity = f"resume-segment:{entry.entry_id}:{segment.segment_id}"
                 memory.reserve(memory_identity, segment.content.byte_size)
                 content = b"".join(

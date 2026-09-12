@@ -109,6 +109,8 @@ class LocalContentAddressedBlobStore:
             raise ValueError("chunk_size must be positive")
         if max_bytes is not None and reference.byte_size > max_bytes:
             raise LimitExceededError(f"blob exceeds the {max_bytes}-byte read limit")
+        if reference.locator != self._locator(reference.digest):
+            raise IntegrityError("blob locator does not match its digest")
         path = _contained(self.root, reference.locator)
         if not path.is_file() or path.is_symlink() or path.stat().st_size != reference.byte_size:
             raise IntegrityError("blob size or storage type differs from its reference")

@@ -255,6 +255,22 @@ def test_reads_are_bounded_streaming_and_ranges_are_half_open(tmp_path: Path) ->
         store.read_range(reference, start=0, end=11)
 
 
+def test_full_read_refuses_a_short_body_despite_matching_headers_and_closes_it(tmp_path, monkeypatch):
+    store, client = _s3_store(tmp_path)
+    reference = store.put_if_absent([b"trusted"], media_type="text/plain")
+    get_object = client.get_object
+
+    def short_body(**request):
+        response = get_object(**request)
+        response["Body"]._payload = b"trust"
+        return response
+
+    monkeypatch.setattr(client, "get_object", short_body)
+    with pytest.raises(IntegrityError, match="bytes differ"):
+        b"".join(store.read(reference))
+    assert client.bodies[-1].closed
+
+
 def test_materialization_is_contained_and_never_replaces_files(tmp_path: Path) -> None:
     store, _ = _s3_store(tmp_path)
     reference = store.put_if_absent([b"safe"], media_type="text/plain")
