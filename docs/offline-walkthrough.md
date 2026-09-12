@@ -29,10 +29,15 @@ release. The real `FederalRegisterCatalogPolicy`, `SourceCatalogBuilder`, and
 catalog verifier turn them into a sealed, selected catalog item.
 
 The example selects the six installed local profiles through
-`ProfileRegistry.builtin().local_profiles()`, creates a processing plan, and calls `docspec.cli.execution.run_local`. This uses the same planning,
+`ProfileRegistry.builtin().local_profiles()`, creates a processing plan, and calls
+`docspec.runtime.prepare_local_run(...).run()`. This uses the same planning,
 execution, checkpoint, delivery, and reconciliation code as the run commands,
 with the local content fetcher explicitly injected and recorded. The plan runs
 extraction and segmentation without an additional processor.
+
+The example also writes plan and run-request files for its later CLI commit
+step and for inspection. The Python execution API does not require those files;
+see [Python runs](python-runs.md) for direct preparation and recovery.
 
 Finally, the existing `document-release commit` and `document-catalog open`
 commands publish and verify the application release. Opening the catalog checks
@@ -78,6 +83,9 @@ use one worker description containing the effective roots, fetcher, policies,
 accepted producers, sink, partition settings, and fixed evidence timestamp.
 Recovery refuses changed settings before fetching. Saved worker descriptions
 now use version `2.0`; older prepared workers must be prepared again.
+The shared runtime also pins `docspec.runtime.local-worker/v1` as its worker
+implementation. Reprepare handoffs created by the former CLI worker; retained
+plans and results keep their existing references.
 
 A workspace supplies locations only. It does not create a second run ledger,
 change input identities, make an alternate experiment into a resume, or provide

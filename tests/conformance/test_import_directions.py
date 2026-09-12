@@ -19,8 +19,9 @@ PRODUCTION_ROOT = ROOT / "src" / "docspec"
 # (vendor software enters it only through a lazily selected extractor, proven
 # by test_pypdf_is_loaded_only_when_selected_and_pages_round_trip); application
 # services compose ports, domain records, and processing receipts; adapters
-# may depend on the whole core; only the cli composition root wires adapters
-# into services. A new import direction fails here until someone widens the
+# may depend on the whole core; runtime wires the local lifecycle for Python
+# and commands, while other CLI operations assemble their own services.
+# A new import direction fails here until someone widens the
 # map deliberately.
 _ALLOWED_INTERNAL_IMPORTS = {
     "__init__": {"errors"},
@@ -47,8 +48,12 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "__init__",
     },
     # Stable public assembly surface. It re-exports explicit constructors but
-    # selects and instantiates none of them; the CLI remains the composition root.
+    # selects and instantiates none of them.
     "source_catalog": {"adapters", "application", "domain", "ports"},
+    "runtime": {
+        "runtime", "adapters", "application", "domain", "ports", "processing",
+        "profile_registry", "workspace", "errors",
+    },
     "entrypoint": {"cli"},
     "cli_io": {"domain", "errors"},
     "cli": {
@@ -63,13 +68,14 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "processing",
         "profile_registry",
         "workspace",
+        "runtime",
         "__init__",
     },
 }
 
 # Areas whose modules the core must never import back: concrete adapters and
 # the operator command are the outermost ring.
-_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "cli_io"}
+_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "cli_io", "runtime"}
 _CORE_AREAS = set(_ALLOWED_INTERNAL_IMPORTS) - _OUTER_AREAS
 _PUBLIC_FACADE_MODULES = {"docspec.source_catalog"}
 
@@ -145,7 +151,7 @@ def test_core_areas_never_import_adapters_or_the_command_surface() -> None:
     assert violations == []
 
 
-def test_command_surfaces_are_explicit_composition_roots() -> None:
+def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
     modules = _production_modules()
     wiring = {
         module
@@ -155,8 +161,10 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
     }
     assert wiring == {
         "docspec.cli.blobs", "docspec.cli.catalog", "docspec.cli.common",
-        "docspec.cli.execution", "docspec.cli.local",
-        "docspec.cli.plans", "docspec.cli.requests",
+        "docspec.runtime.composition", "docspec.runtime.execution",
+        "docspec.runtime.preparation", "docspec.runtime.storage",
+        "docspec.runtime.task_membership",
+        "docspec.cli.plans",
         "docspec.cli.source_catalog",
     }
     assert {
@@ -167,8 +175,15 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
             for imported in _internal_imports(modules[module], module)
         )
     } == _PUBLIC_FACADE_MODULES
-    cli_imports = {_area(imported) for imported in _internal_imports(modules["docspec.cli.local"], "docspec.cli.local")}
-    assert {"adapters", "application"} <= cli_imports
+    runtime_imports = {
+        _area(imported)
+        for imported in _internal_imports(modules["docspec.runtime.composition"], "docspec.runtime.composition")
+    }
+    assert {"adapters", "application"} <= runtime_imports
+    assert not (PRODUCTION_ROOT / "cli" / "local.py").exists()
+    assert not (PRODUCTION_ROOT / "cli" / "execution.py").exists()
+    command_imports = _internal_imports(modules["docspec.cli.runs"], "docspec.cli.runs")
+    assert "docspec.runtime" in command_imports
     importers_of_cli = {
         module
         for module, path in modules.items()

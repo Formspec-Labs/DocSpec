@@ -26,7 +26,7 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.storage import LocalDocumentStoreRepository, LocalJsonControlRepository
-from docspec.cli import local as cli_local
+from docspec.runtime import prepare_local_run
 from docspec.cli import main
 from docspec.cli import requests as cli_requests
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
@@ -402,17 +402,14 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
         label="active-fail",
     )
 
-    # item-active-ok needs real acquisition, so it is driven through the
-    # exact same executor/delivery services `task execute` uses internally
-    # (`_compose_local_run`), just with the shared-fixture fetcher that
-    # resolves this test's on-disk content -- the CLI's own composition
-    # helper, not a hand-rolled substitute.
-    composition = cli_local._compose_local_run(
-        cli_requests._local_run_request(run_request),
-        content_fetcher=SharedFixtureContentFetcher(source_content),
+    # Process one selected task through the same runtime the CLI uses, with the
+    # fixture fetcher needed to resolve this test's source namespace.
+    prepared = prepare_local_run(
+        **cli_requests._local_run_arguments(cli_requests._local_run_request(run_request)),
+        content_fetcher=SharedFixtureContentFetcher(source_content), resume=True,
     )
-    processed_reference = composition.executor.execute_store(by_item["item-active-ok"])
-    composition.delivery.deliver_store(processed_reference, composition.sink_ref)
+    task = next(task for task in prepared.task_source(prepared.handoff) if task.input_store == by_item["item-active-ok"])
+    prepared.execute_task(prepared.handoff, task)
 
     # item-running: simulate a worker that claimed the store and died before
     # doing anything else -- call DocumentStore.start() and save it directly,

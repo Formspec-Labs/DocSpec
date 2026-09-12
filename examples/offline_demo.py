@@ -18,7 +18,8 @@ from rulespec_artifacts import Producer
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.cli import main as cli_main
-from docspec.cli.execution import run_local
+from docspec.runtime import prepare_local_run
+from docspec.domain.execution import ExecutionLimits
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
@@ -208,7 +209,14 @@ def run_example(output: Path) -> None:
         "sourceCatalogProducer": source_producer.as_dict(),
     }
     write_json(output / "run-request.json", request)
-    run = run_local(output / "run-request.json", content_fetcher=ExampleFetcher(source))
+    run = prepare_local_run(
+        plan, LocalWorkspace(output, {"sourceCatalog": store.root, "sourceContent": INPUT_ROOT}),
+        retry_policy=retry, accepted_failure_policy=accepted,
+        source_catalog_producer=source_producer, document_release_producer=release_producer,
+        execution_limits=ExecutionLimits(1, 1, 1, 4 * 1024**3, 8 * 1024**3, 100, 4, 1, 0, 0),
+        deadline_epoch_seconds=4_000_000_000, completed_at=COMPLETED_AT,
+        content_fetcher=ExampleFetcher(source),
+    ).run()
     write_json(output / "run-reference.json", run.to_dict())
     write_json(
         output / "commit-request.json",

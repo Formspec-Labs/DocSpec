@@ -20,7 +20,7 @@
         "tests/test_package_boundary.py::test_production_imports_stay_inside_the_standalone_boundary",
         "tests/conformance/test_import_directions.py::test_every_production_area_imports_only_its_declared_inner_layers",
         "tests/conformance/test_import_directions.py::test_core_areas_never_import_adapters_or_the_command_surface",
-        "tests/conformance/test_import_directions.py::test_command_surfaces_are_explicit_composition_roots",
+        "tests/conformance/test_import_directions.py::test_command_and_runtime_surfaces_are_explicit_composition_roots",
         "tests/conformance/test_import_directions.py::test_importing_the_complete_core_loads_no_vendor_software"
       ],
       "plannedTestModule": null
@@ -373,7 +373,7 @@
         "tests/test_storage_adapters.py::test_document_store_latest_reads_only_the_newest_revision_while_revisions_validate_history",
         "tests/test_storage_adapters.py::test_revision_writes_stage_crash_debris_outside_the_declared_revision_set",
         "tests/test_storage_adapters.py::test_planned_store_ledger_presence_distinguishes_absence_from_invalid_state",
-        "tests/test_cli.py::test_local_task_recovery_executes_only_an_unfinished_store",
+        "tests/test_runtime_api.py::test_task_recovery_executes_only_an_unfinished_real_store",
         "tests/test_cli.py::test_local_run_start_resume_and_release_commit_use_real_application_services",
         "tests/test_result_sinks_and_recovery.py::test_interrupted_return_delivery_replays_keys_and_completed_delivery_short_circuits",
         "tests/test_result_sinks_and_recovery.py::test_worker_restart_reuses_the_verified_entry_checkpoint",

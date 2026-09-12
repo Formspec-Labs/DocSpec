@@ -149,6 +149,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   ordinary caller's plan/implementation configuration remains open; this is
   not yet the complete installed experiment workflow.
 
+  **Runtime progress:** the [Python run API](python-runs.md) now accepts typed
+  settings and the same workspace directly. An isolated installed-wheel probe
+  builds a catalog, injects a fetcher and processor, runs once, and recovers the
+  same result without caller plan/request files. Invalid settings refuse before
+  planning. Simpler plan construction and the complete example remain open.
+
 <a id="d04"></a>
 
 - [ ] **D04 · P0 · Expose the lifecycle through a supported application API.**
@@ -166,6 +172,14 @@ to defer a conditional item is a documented deferral, not completed implementati
   workspace model, run ledger, or plugin loader. A solutions architect approved
   this direction. Capture-only completion and result inspection still need
   their own implementation; moving composition alone does not complete D04.
+
+  **Runtime progress:** `prepare_local_run` and `PreparedLocalRun` now provide
+  preparation, local execution, task dispatch, reconciliation, and saved-handoff
+  recovery. CLI execution and the offline example use this same path. The
+  superseded CLI-local composition/execution modules were removed. Existing
+  plans, ledgers, handoffs, and receipts remain the saved state. Independent
+  architecture and code reviews approved this bounded extraction; inspection,
+  capture-only completion, and simpler catalog/plan composition remain open.
 
 <a id="d05"></a>
 
@@ -255,6 +269,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   source identity, limits, and outcomes are retained. See
   [existing fetchers](../src/docspec/adapters/content_fetchers/).
 
+  **Runtime progress:** callers can supply a fetcher object through the supported
+  Python API. Its declared identity is pinned during preparation and checked
+  again before fetching and recovery. Acquisition metadata must match the
+  configured fetcher and requested task before any chunks are read; refusals
+  close the stream. The installed example proves custom injection and reuse.
+  Convenient HTTPS/S3 composition and route qualification remain open.
+
 <a id="d12"></a>
 
 - [ ] **D12 · P1 · Connect source-specific body validation when a route needs it.**
@@ -286,6 +307,11 @@ to defer a conditional item is a documented deferral, not completed implementati
   check because unchanged stage names can cause the planner to skip work.
   Preserve lazy optional imports. Correct invalidation comes first; reuse of
   captures or representations after stage changes remains D15.
+
+  **Runtime progress:** custom processors now run through the public Python
+  factory, with their complete descriptions checked against the plan. CLI
+  retention can retain these results without reconstructing the custom
+  processor. Extractor and segmenter injection still await the stage pins above.
 
 <a id="d14"></a>
 
@@ -380,6 +406,15 @@ to defer a conditional item is a documented deferral, not completed implementati
   Dagster checks pass. This closes the existing local reconstruction gap;
   configurable extraction/segmentation and the full D04 interruption workflow
   remain open. Commit `c41b00b`.
+
+  **Runtime progress:** public task execution now admits the exact initial
+  reference from the verified planned-store ledger before loading or executing
+  work. A bounded disposable lookup avoids rescanning the ledger for every task
+  in one prepared worker. Real running/sealed revision tests prove only
+  unfinished work executes. Changed deadlines/limits and unsupported saved
+  operations refuse recovery; admission rechecks the deadline before execution.
+  Zero-task runs need no lookup, and failure/context exit releases scratch.
+  Active cancellation and aggregate concurrent scratch accounting remain open.
 
 <a id="d21"></a>
 
@@ -619,6 +654,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   `c41b00b`. Review findings were resolved. The combined local suite passed
   907 tests, with one live integration test deselected; Ruff passed. Subsequent
   API and lifecycle work still requires independent review and acceptance.
+
+  The [public runtime review](history/2026-09-11-public-runtime-review.md) records
+  independent approval of the next extraction, injected dependency checks, exact
+  task membership, and installed-caller coverage. Its execution record separates
+  942 passing full-suite tests from one stale-selector failure, then records all
+  25 focused checks passing after that selector mapping was corrected. Ruff and
+  diff checks pass. This does not complete whole-workflow acceptance or D39.
 
 <a id="d40"></a>
 

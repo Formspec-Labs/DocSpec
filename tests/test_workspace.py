@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from docspec.cli.requests import _local_run_request
+from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.cli_io import CliError
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
@@ -101,7 +101,7 @@ def test_workspace_copies_override_configuration(tmp_path: Path) -> None:
 
 
 def test_implicit_and_explicit_defaults_resume_the_same_prepared_work(tmp_path: Path) -> None:
-    from docspec.cli.local import _compose_local_run, _load_prepared_local_run, _prepare_local_run
+    from docspec.runtime import prepare_local_run
     from docspec.profile_registry import ProfileRegistry
     from tests.support.profiles import _seeded_local_run
 
@@ -114,7 +114,7 @@ def test_implicit_and_explicit_defaults_resume_the_same_prepared_work(tmp_path: 
     for name in ("maxWorkers", "maxInFlight"):
         value["execution"].pop(name)
     implicit = read_request(tmp_path, value)
-    prepared = _prepare_local_run(_compose_local_run(implicit), resume=False)
+    prepared = prepare_local_run(**_local_run_arguments(implicit), resume=False)
 
     value.update(
         roots={name: str(path) for name, path in implicit["roots"].items()},
@@ -123,11 +123,11 @@ def test_implicit_and_explicit_defaults_resume_the_same_prepared_work(tmp_path: 
         partitionPolicyId=implicit["partitionPolicyId"],
         execution=implicit["execution"],
     )
-    explicit = _compose_local_run(read_request(tmp_path, value))
-    rebuilt = _prepare_local_run(explicit, resume=True)
+    explicit = _local_run_arguments(read_request(tmp_path, value))
+    rebuilt = prepare_local_run(**explicit, resume=True)
     assert rebuilt.handoff_ref == prepared.handoff_ref
     assert rebuilt.execution_profile_ref == prepared.execution_profile_ref
-    resumed = _load_prepared_local_run(explicit, prepared.handoff_ref)
+    resumed = prepare_local_run(**explicit, handoff_ref=prepared.handoff_ref)
     assert resumed.handoff_ref == prepared.handoff_ref
     assert resumed.execution_profile_ref == prepared.execution_profile_ref
     assert resumed.handoff.planned_store_ledger == prepared.handoff.planned_store_ledger

@@ -35,8 +35,8 @@ mechanisms from missing interfaces and qualification.
 | Task | Current entry point and limits |
 | --- | --- |
 | Build and read a catalog | The public [`docspec.source_catalog`](src/docspec/source_catalog.py) API and `source-catalog` CLI use explicit policies and pinned inputs. The optional installed SpicyDocs adapter reads source-native releases; the offline example supplies its own local source adapter. General supplied-record ergonomics remain [D06](docs/dataset-experiments-todo.md#d06). |
-| Capture, extract, and segment documents | The execution service accepts injected fetchers, extractors, segmenters, and processors. [`run_local`](src/docspec/cli/execution.py) exposes fetcher injection through the CLI's request-based composition. Convenient implementation selection remains [D11](docs/dataset-experiments-todo.md#d11) and [D13](docs/dataset-experiments-todo.md#d13). |
-| Resume and inspect a run | `run prepare`, `start`, `resume`, `reconcile`, `active`, and `status` expose jobs, checkpoints, progress, and receipts. These use explicit requests, profiles, and storage references; the simpler configuration and public lifecycle are [D03](docs/dataset-experiments-todo.md#d03) and [D04](docs/dataset-experiments-todo.md#d04). |
+| Capture, extract, and segment documents | [`docspec.runtime.prepare_local_run`](docs/python-runs.md) accepts a typed plan, workspace, fetcher, and processors. The CLI uses the same services. Custom extractor and segmenter injection remains [D13](docs/dataset-experiments-todo.md#d13). |
+| Resume and inspect a run | The Python runtime prepares, executes, reconstructs saved work, and reconciles results without caller-written request files. `run prepare`, `start`, `resume`, `reconcile`, `active`, and `status` provide command access. Simpler plan construction and the complete lifecycle remain [D03](docs/dataset-experiments-todo.md#d03) and [D04](docs/dataset-experiments-todo.md#d04). |
 | Retain and choose alternative results | `document-release retain` keeps a verified result without changing current. `document-catalog select` chooses a retained result against an explicit expected current reference. Alternatives keep their original pinned base; see [experiment identities and selection](docs/experiments.md). |
 | Rerun processors and compare results | Application services support processor-only execution from a verified base release, reusing captured, extracted, and segmented content. `document-catalog compare` compares one logical layer across releases. Unified attempt inspection and the full installed experiment loop remain [D19](docs/dataset-experiments-todo.md#d19) and [D38](docs/dataset-experiments-todo.md#d38). |
 
@@ -97,6 +97,7 @@ uv run --frozen docspec --help  # the one CLI
 | Format adapters + source access | `src/docspec/adapters/` |
 | Processing / segmentation | `src/docspec/processing/` |
 | Dataset planning, execution, reuse, and publication | `src/docspec/application/` |
+| Shared Python and CLI run setup | `src/docspec/runtime/` |
 | Installed storage and delivery profiles | `src/docspec/storage_profiles/` |
 | Conformance fixtures | `conformance/`, `fixtures/` |
 | Decision records | `docs/decisions/` |

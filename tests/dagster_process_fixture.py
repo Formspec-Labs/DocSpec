@@ -11,13 +11,8 @@ from typing import Any
 import dagster
 
 from docspec.adapters.dagster import DAGSTER_JOB_NAME, DagsterRuntime, build_dagster_definitions
-from docspec.cli.execution import _execute_local_task
-from docspec.cli.local import (
-    _compose_local_run,
-    _load_prepared_local_run,
-    _prepared_tasks,
-)
-from docspec.cli.requests import _local_run_request
+from docspec.runtime import prepare_local_run
+from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import ArtifactRef, StoreRef
@@ -86,8 +81,9 @@ def application_runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-
     handoff_reference = ArtifactRef.from_dict(
         json.loads(Path(config["handoff_reference_path"]).read_text(encoding="utf-8"))
     )
-    composition = _compose_local_run(_local_run_request(request_path))
-    prepared = _load_prepared_local_run(composition, handoff_reference)
+    prepared = prepare_local_run(
+        **_local_run_arguments(_local_run_request(request_path)), handoff_ref=handoff_reference,
+    )
     evidence_root = Path(config["worker_evidence_root"])
     evidence_root.mkdir(parents=True, exist_ok=True)
     fail_task_id = config.get("fail_task_id")
@@ -95,12 +91,12 @@ def application_runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-
     def task_source(current_handoff: ExecutionHandoff) -> Iterator[StoreTask]:
         if current_handoff != prepared.handoff:
             raise ValueError("Dagster worker reconstructed a different handoff")
-        yield from _prepared_tasks(composition, prepared)
+        yield from prepared.task_source(current_handoff)
 
     def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
         if current_handoff != prepared.handoff:
             raise ValueError("Dagster worker reconstructed a different handoff")
-        result = _execute_local_task(composition, prepared, task)
+        result = prepared.execute_task(current_handoff, task)
         if task.task_id == fail_task_id:
             evidence = {
                 "pid": os.getpid(),

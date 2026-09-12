@@ -39,7 +39,7 @@ catalog → processing → publication → verification flow using one local doc
 | Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog/`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
 | Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
 | Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
-| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `cli/local.py` connects local services; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
+| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `runtime/` connects local services for commands and Python callers; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
 | Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_document_release_schema_bundle.py` | Closed shapes, canonical bytes, version/identity rules, predecessor fixtures |
 
 Source paths in this table are relative to `src/docspec/`. Shared test setup
@@ -66,14 +66,15 @@ Each suite imports only the setup it needs. Family setup lives in
 `document_release.py`, and `regulations_gov.py`. Shared pytest fixtures are
 registered explicitly in the suites that use them.
 
-For an embedded local runner, `docspec.cli.execution.run_local` accepts the same
-closed request file as the CLI and an optional injected content fetcher. The
-offline example exercises this entry point; preparation and worker helpers
-inside `cli/` remain internal implementation details.
+For an embedded local runner, `docspec.runtime.prepare_local_run` accepts a typed
+plan, workspace, policies, fetcher, and processors. Its prepared object executes
+or recovers the same work used by CLI commands. See [Python runs](docs/python-runs.md).
+Other runtime helpers remain implementation details; import the public factory
+and `PreparedLocalRun` from the package entry point.
 
 ## Organize code for its reader
 
-The dependency direction is commands → application → ports and domain, with
+The dependency direction is callers → runtime → application → ports and domain, with
 adapters implementing the ports. Deterministic processing code depends on domain
 types. Only composition code connects concrete adapters to application services.
 `tests/conformance/test_import_directions.py` checks the complete allowed map.

@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -18,23 +17,23 @@ from docspec.adapters.storage import (
     RootOnlyBlobProfileStateReachability,
 )
 from docspec.application.maintenance import BlobRetentionSetService
-from docspec.cli import execution as cli_execution
-from docspec.cli import local as cli_local
+from docspec.runtime import prepare_local_run
+from docspec.runtime import composition as runtime_composition
+from docspec.runtime import preparation as runtime_preparation
 from docspec.cli import main
 from docspec.cli import plans as cli_plans
 from docspec.cli import requests as cli_requests
 from docspec.cli_io import MAX_JSON_BYTES
 from docspec.domain.content import SourceItem, SourceItemState
-from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
+from docspec.domain.execution import ExecutionHandoff, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.jobs import StoreState
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
-from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
 from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests.helpers import (
@@ -316,67 +315,6 @@ def test_failure_receipt_keeps_the_original_error_when_request_hashing_fails(
     assert not destination.exists()
 
 
-@pytest.mark.parametrize("state", (StoreState.RUNNING, StoreState.SEALED))
-def test_local_task_recovery_executes_only_an_unfinished_store(state: StoreState) -> None:
-    plan_ref = ArtifactRef("plan-1", "plan.json", ZERO_DIGEST, "application/json", 1)
-    sink_ref = ArtifactRef("sink-1", "sink.json", ZERO_DIGEST, "application/json", 1)
-    planned_ref = StoreRef("store-1", 0, "planned.json", ZERO_DIGEST)
-    current_ref = StoreRef("store-1", 2, "current.json", ZERO_DIGEST)
-    processed_ref = StoreRef("store-1", 3, "processed.json", ZERO_DIGEST)
-    sealed_ref = StoreRef("store-1", 4, "sealed.json", ZERO_DIGEST)
-    task = StoreTask("plan-1", "execute-and-deliver", planned_ref)
-    current_store = SimpleNamespace(plan_id="plan-1", state=state)
-    executor_calls: list[StoreRef] = []
-    delivery_calls: list[StoreRef] = []
-
-    class _Stores:
-        def load(self, reference: StoreRef) -> object:
-            assert reference in (planned_ref, current_ref)
-            return current_store
-
-        def latest(self, store_id: str) -> StoreRef:
-            assert store_id == "store-1"
-            return current_ref
-
-    class _Executor:
-        def execute_store(self, reference: StoreRef) -> StoreRef:
-            executor_calls.append(reference)
-            return processed_ref
-
-    class _Delivery:
-        def deliver_store(self, reference: StoreRef, requested_sink: ArtifactRef) -> StoreRef:
-            assert requested_sink == sink_ref
-            delivery_calls.append(reference)
-            return current_ref if state is StoreState.SEALED else sealed_ref
-
-    composition = SimpleNamespace(
-        plan=SimpleNamespace(plan_id="plan-1"),
-        plan_ref=plan_ref,
-        stores=_Stores(),
-        executor=_Executor(),
-        delivery=_Delivery(),
-    )
-    prepared = SimpleNamespace(
-        handoff=SimpleNamespace(
-            operation_id="execute-and-deliver",
-            processing_plan=plan_ref,
-            result_sink=sink_ref,
-            handoff_id="handoff-1",
-        )
-    )
-
-    result = cli_execution._execute_local_task(composition, prepared, task)
-
-    if state is StoreState.SEALED:
-        assert executor_calls == []
-        assert delivery_calls == [current_ref]
-        assert result.output_store == current_ref
-    else:
-        assert executor_calls == [current_ref]
-        assert delivery_calls == [processed_ref]
-        assert result.output_store == sealed_ref
-
-
 def test_local_run_start_resume_and_release_commit_use_real_application_services(
     tmp_path: Path,
     capfd: pytest.CaptureFixture[str],
@@ -482,12 +420,11 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         pytest.fail("automatic recovery must not deeply re-execute an already sealed store")
 
     with monkeypatch.context() as recovery_patch:
-        recovery_patch.setattr(cli_local.RunPlanner, "plan_run", unexpected_replanning)
-        recovery_patch.setattr(cli_local.StoreExecutionService, "execute_store", unexpected_execution)
-        automatic_resume = cli_execution._execute_local_run(
-            cli_requests._local_run_request(run_request),
-            resume=None,
-        )
+        recovery_patch.setattr(runtime_preparation.RunPlanner, "plan_run", unexpected_replanning)
+        recovery_patch.setattr(runtime_composition.StoreExecutionService, "execute_store", unexpected_execution)
+        automatic_resume = prepare_local_run(
+            **cli_requests._local_run_arguments(cli_requests._local_run_request(run_request)), resume=None,
+        ).run()
     assert automatic_resume == run_reference
 
     resume_reference_path = tmp_path / "resume-reference.json"
@@ -745,7 +682,8 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         producer=document_release_producer(),
         blobs=platform.blobs,
     )
-    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verify_plan_policies", lambda *_args: None)
+    monkeypatch.setattr(cli_requests, "_local_profiles", lambda *_args: {})
     monkeypatch.setattr(
         cli_requests,
         "_local_storage",
@@ -834,7 +772,8 @@ def test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index(
         platform,
         completed_at="2026-08-05T16:00:00Z",
     )
-    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verify_plan_policies", lambda *_args: None)
+    monkeypatch.setattr(cli_requests, "_local_profiles", lambda *_args: {})
     monkeypatch.setattr(
         cli_requests,
         "_local_storage",

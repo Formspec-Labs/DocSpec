@@ -279,15 +279,18 @@ schema explicitly marks them sorted.
 DocSpec MUST use this dependency direction:
 
 ```text
-commands -> application services -> DocSpec ports and domain records
-                                      ^
-                                      |
- source-native/source-catalog/document-catalog/blob-store/extractor/segmenter/
- processor/execution-tool/result-sink adapters
+commands / Python callers -> runtime composition -> application services
+                                  |                        |
+                                  v                        v
+                             concrete adapters -> DocSpec ports and domain
 ```
 
 Application services and domain records MUST NOT import adapters or vendor
-software. One composition root MUST select and inject concrete adapters.
+software. Shared runtime composition MUST select and inject concrete run
+adapters for commands and Python callers. This outer assembly layer MAY import
+adapters and application services; core services MUST NOT import it. Request
+parsing MUST NOT create a second run composition path. Source-catalog and other
+command-specific composition remains at their existing outer entry points.
 
 ### 4.2 Required ports
 

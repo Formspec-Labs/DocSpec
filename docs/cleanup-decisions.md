@@ -54,10 +54,19 @@ Call the existing services directly: `RunPlanner`, `StoreExecutionService`,
 their existing modules; public application exports remain for the services that
 were already exported. Reconciliation consumes task results, including their
 handoff and task identity, rather than an unqualified list of sealed stores.
-The working local composition is in `src/docspec/cli/local.py` and
-`src/docspec/cli/execution.py`.
+The working local composition now lives in `src/docspec/runtime/` and supports
+both Python callers and the CLI. Its prepared object binds verified services,
+task references, and recovery, replacing the former CLI-only setup. See
+[Python runs](python-runs.md); the removed five-method wrapper remains retired.
 
 ## Small duplicate candidates
+
+The public runtime's task lookup has a separate purpose from retained run state.
+A store identity describes its content; membership in the sealed plan determines
+whether this run selected it. A disposable bounded SQLite index checks that
+membership before acquisition or delivery. Building it once avoids a full plan
+scan for every task. It introduces no additional authoritative ledger and is
+released after local execution or when the caller closes the prepared worker.
 
 | Candidate | Decision and reason |
 | --- | --- |

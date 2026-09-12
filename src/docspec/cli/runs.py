@@ -11,9 +11,10 @@ from pathlib import Path
 from typing import Any
 
 from docspec.cli.common import _require_new_output_paths, _write_artifact_and_receipt
-from docspec.cli.execution import _execute_local_task, _reconcile_local_run, run_local
-from docspec.cli.local import _compose_local_run, _load_prepared_local_run, _prepare_local_run
-from docspec.cli.requests import _absolute_request_path, _local_run_request, _local_storage_for_run_request
+from docspec.runtime import prepare_local_run
+from docspec.cli.requests import (
+    _absolute_request_path, _local_run_arguments, _local_run_request, _local_storage_for_run_request,
+)
 from docspec.cli_io import (
     CliError,
 )
@@ -38,7 +39,7 @@ from docspec.domain.references import ArtifactRef
 def _cmd_local_run_prepare(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     request = _local_run_request(args.request)
-    prepared = _prepare_local_run(_compose_local_run(request), resume=False)
+    prepared = prepare_local_run(**_local_run_arguments(request), resume=False)
     receipt = _write_artifact_and_receipt(
         operation="run.prepare",
         request_path=args.request,
@@ -68,11 +69,10 @@ def _local_task_request(path: Path) -> tuple[Path, ArtifactRef, StoreTask]:
 def _cmd_local_task_execute(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     run_request_path, handoff_ref, task = _local_task_request(args.request)
-    composition = _compose_local_run(_local_run_request(run_request_path))
-    prepared = _load_prepared_local_run(composition, handoff_ref)
-    if time.time() >= prepared.execution_profile.deadline_epoch_seconds:
-        raise CliError("execution profile deadline has expired")
-    result = _execute_local_task(composition, prepared, task)
+    with prepare_local_run(
+        **_local_run_arguments(_local_run_request(run_request_path)), handoff_ref=handoff_ref,
+    ) as prepared:
+        result = prepared.execute_task(prepared.handoff, task)
     receipt = _write_artifact_and_receipt(
         operation="task.execute",
         request_path=args.request,
@@ -116,13 +116,10 @@ def _iter_task_result_file(path: Path) -> Iterator[StoreTaskResult]:
 def _cmd_local_run_reconcile(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     run_request_path, handoff_ref, results_path = _local_reconcile_request(args.request)
-    composition = _compose_local_run(_local_run_request(run_request_path))
-    prepared = _load_prepared_local_run(composition, handoff_ref)
-    reference = _reconcile_local_run(
-        composition,
-        prepared,
-        _iter_task_result_file(results_path),
-    )
+    with prepare_local_run(
+        **_local_run_arguments(_local_run_request(run_request_path)), handoff_ref=handoff_ref,
+    ) as prepared:
+        reference = prepared.reconcile(_iter_task_result_file(results_path))
     receipt = _write_artifact_and_receipt(
         operation="run.reconcile",
         request_path=args.request,
@@ -137,7 +134,9 @@ def _cmd_local_run_reconcile(args: argparse.Namespace) -> int:
 
 def _cmd_local_run(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
-    reference = run_local(args.request, resume=args.operation == "run.resume")
+    reference = prepare_local_run(
+        **_local_run_arguments(_local_run_request(args.request)), resume=args.operation == "run.resume",
+    ).run()
     receipt = _write_artifact_and_receipt(
         operation=args.operation,
         request_path=args.request,
@@ -166,7 +165,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
     nothing, seals nothing, and must never become a second run ledger --
     the sealed `RunReceipt` stays the only sealed evidence a run produces.
 
-    It reads exactly what `_prepare_local_run` and `RunReconciler` already
+    It reads exactly what `prepare_local_run` and `RunReconciler` already
     read to resume or finish a run: `has_planned_store_ledger` /
     `planned_store_ledger` / `stream_planned_stores` name the complete,
     exact planned population (`run prepare` seals `expected_task_count` and

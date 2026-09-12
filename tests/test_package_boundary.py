@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 
 from docspec import __version__
-from docspec.domain.identity import canonical_json_file_bytes
+from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.source_catalog import source_catalog_schemas
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -279,14 +279,14 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
         is_adapter = relative_parts[0] == "adapters"
-        is_command_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py"}
+        is_composition_surface = relative_parts[0] in {"cli", "cli_io.py", "entrypoint.py", "runtime"}
         for imported in _absolute_imports(path):
             root_name = imported.partition(".")[0]
-            if not is_adapter and not is_command_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
+            if not is_adapter and not is_composition_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
             if (
                 not is_adapter
-                and not is_command_surface
+                and not is_composition_surface
                 and root_name != "docspec"
                 and root_name not in sys.stdlib_module_names
             ):
@@ -510,4 +510,19 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
         text=True,
     )
     assert profile_list.returncode == 0, profile_list.stderr
+
+    # Reuse the documented source fixture, but execute the typed API from the
+    # installed wheel, outside the checkout and without a caller JSON request.
+    shutil.copy2(ROOT / "examples/offline_demo.py", tmp_path / "offline_demo.py")
+    shutil.copytree(ROOT / "examples/offline", tmp_path / "offline")
+    shutil.copy2(ROOT / "tests/support/installed_runtime_probe.py", tmp_path / "runtime_probe.py")
+    runtime_result = subprocess.run(
+        [environment_python, "-I", str(tmp_path / "runtime_probe.py"), sha256_digest(wheel.read_bytes())],
+        cwd=tmp_path,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert runtime_result.returncode == 0, runtime_result.stderr
+    assert "captured once, recovered unchanged work" in runtime_result.stdout
     assert '"profileCount":10' in profile_list.stdout

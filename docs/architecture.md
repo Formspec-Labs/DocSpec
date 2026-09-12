@@ -82,6 +82,20 @@ executor, not a source of document meaning. SQLite workspaces, streaming readers
 bounded merges, and checkpoints keep large runs within declared resource limits;
 their extra steps are part of the behavior a refactor must preserve.
 
+[`docspec.runtime`](../src/docspec/runtime/) connects the local adapters and
+application services for both Python callers and commands. `composition` checks
+typed inputs and assembles services; `storage` selects verified profiles and
+local stores; `preparation` creates or verifies execution references; and
+`execution` exposes the prepared run's task, delivery, and reconciliation methods.
+The CLI parses request files and passes typed values into that same path. Core
+services never import the runtime or concrete adapters. See
+[Python runs](python-runs.md) for the public entry point and current limits.
+
+The runtime binds acquisition metadata to the selected fetcher and checks exact
+task membership before work. Its temporary SQLite lookup derives from the
+verified planned-store ledger and has explicit size and lifetime bounds. This
+keeps lookup memory bounded and avoids rescanning the full plan for every task.
+
 See [application services](../src/docspec/application/),
 [recovery tests](../tests/test_stage_checkpoint_recovery.py), and
 [task portability tests](../tests/test_execution_backends.py).

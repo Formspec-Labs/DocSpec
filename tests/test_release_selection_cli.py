@@ -9,11 +9,13 @@ from pathlib import Path
 import pytest
 
 from docspec.cli import main
-from docspec.cli.execution import run_local
-from docspec.cli.requests import _local_storage_for_run_request
+from docspec.runtime import prepare_local_run
+from docspec.cli.requests import _local_run_arguments, _local_run_request, _local_storage_for_run_request
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.plans import ProcessingPlan
+from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import DocumentReleaseRef
+from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.profile_registry import ProfileRegistry
 from tests.helpers import SharedFixtureContentFetcher
 from tests.support.profiles import _seeded_local_run
@@ -46,7 +48,9 @@ def test_cli_retains_alternatives_then_selects_with_explicit_current(tmp_path: P
     fetcher = SharedFixtureContentFetcher(Path(roots["sourceContent"]))
 
     def retain(name: str) -> DocumentReleaseRef:
-        run = run_local(run_request, resume=False, content_fetcher=fetcher)
+        run = prepare_local_run(
+            **_local_run_arguments(_local_run_request(run_request)), resume=False, content_fetcher=fetcher,
+        ).run()
         run_receipt = _write(tmp_path / f"{name}-run.json", run.to_dict())
         return _operation(tmp_path, capfd, name, "document-release", "retain", {
             "format": "docspec-local-release-retain-request", "formatVersion": "1.0",
@@ -97,3 +101,33 @@ def test_bad_selection_requests_refuse_before_opening_runtime(tmp_path: Path, ca
     } | change
     _operation(tmp_path, capfd, "bad", "document-catalog", "select", value, expected=2)
     assert not (tmp_path / "documentCatalog").exists()
+
+
+def test_cli_can_retain_a_python_injected_processor_result(tmp_path: Path, capfd) -> None:
+    request_path, roots = _seeded_local_run(tmp_path, ProfileRegistry.builtin().local_profiles())
+    request = _local_run_request(request_path)
+    arguments = _local_run_arguments(request)
+    original = ContentStatisticsProcessor()
+    processor = ContentStatisticsProcessor(
+        item_limits=replace(original.description.item_limits, max_output_bytes=128 * 1024),
+    )
+    plan = arguments["plan"]
+    values = {field.name: getattr(plan, field.name) for field in fields(plan) if field.name != "plan_id"}
+    arguments["plan"] = ProcessingPlan.create(**(values | {
+        "processors": ProcessorSet((processor.description,)),
+        "stages": replace(plan.stages, processor_ids=(processor.description.processor_id,)),
+    }))
+    _write(request["plan"], arguments["plan"].to_dict())
+    run = prepare_local_run(
+        **arguments,
+        content_fetcher=SharedFixtureContentFetcher(Path(roots["sourceContent"])),
+        processors={processor.description.processor_id: processor},
+    ).run()
+    run_receipt = _write(tmp_path / "custom-run.json", run.to_dict())
+    retained = _operation(tmp_path, capfd, "custom", "document-release", "retain", {
+        "format": "docspec-local-release-retain-request", "formatVersion": "1.0",
+        "runRequest": str(request_path), "runReceipt": str(run_receipt), "baseRelease": None,
+    })
+    *_, catalog = _local_storage_for_run_request(request_path)
+    assert catalog.open(retained).run_receipt == run
+    assert catalog.current() is None
