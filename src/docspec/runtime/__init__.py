@@ -19,6 +19,7 @@ from docspec.processing.extraction import ExtractionResult
 from docspec.ports.processor import Processor
 from docspec.ports.source_catalog import ImmutableSourceCatalogReader
 from docspec.runtime.composition import _compose_local_run
+from docspec.runtime.catalogs import build_local_catalog, open_local_catalog
 from docspec.runtime.defaults import local_execution_limits
 from docspec.runtime.execution import PreparedLocalRun
 from docspec.runtime.experiments import prepare_local_experiment, stage_policy
@@ -28,7 +29,7 @@ from docspec.runtime.preparation import _load_prepared_local_run, _prepare_local
 from docspec.workspace import LocalWorkspace
 
 __all__ = [
-    "InspectionView", "PreparedLocalRun", "local_execution_limits", "open_local_inspection",
+    "InspectionView", "PreparedLocalRun", "build_local_catalog", "local_execution_limits", "open_local_catalog", "open_local_inspection",
     "prepare_local_experiment", "prepare_local_run", "stage_policy",
 ]
 

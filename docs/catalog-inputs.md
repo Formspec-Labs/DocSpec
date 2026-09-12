@@ -1,0 +1,128 @@
+# Build a catalog from provider data or supplied records
+
+`build_local_catalog` accepts source objects, a workspace, an interpretation
+policy, a catalog identity, and the producer that will declare the output. It returns the
+existing verified catalog reference and summary. Catalog-only work creates only
+the workspace's `sourceCatalog` storage; no document is fetched or processed.
+
+## Supply a small set of records
+
+```python
+from docspec.runtime import build_local_catalog, open_local_catalog
+from docspec.source_catalog import (
+    SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource,
+)
+from docspec.workspace import LocalWorkspace
+
+namespace = "urn:example:my-notes"
+source = SuppliedRecordSource(({
+    "recordId": "notes-1", "sourceIssuedVersion": "draft-2", "title": "Project notes",
+    "metadata": {"owner": "contributors"},
+    "candidateRenditions": [SourceCatalogCandidate(
+        "body", "text/plain", "immutable-object", "notes.txt",
+    ).to_dict()],
+},), source_system_id=namespace, source_system_version="1",
+    source_state_scope="complete-snapshot", max_records=100, max_bytes=1024**2)
+workspace = LocalWorkspace(absolute_workspace_path)
+result = build_local_catalog(
+    (source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
+    catalog_id="urn:example:my-notes:catalog", producer=catalog_output_producer,
+    max_scratch_bytes=16 * 1024**2,
+)
+catalog = open_local_catalog(result.reference, workspace, producer=accepted_catalog_producer)
+for row in catalog.iter_mappings():
+    print(row["documentId"], row["selection"])
+```
+
+The input shape has exactly the five keys shown. `title` may be `None`; arbitrary
+JSON metadata stays in the saved source facts. Candidate renditions use the
+existing public type and may include expected SHA-256 and byte-size values.
+An empty candidate list produces an `unavailable` catalog row with a reason.
+It remains available for catalog inspection. The policy does not infer agencies,
+dates, source URLs, or observed topics from arbitrary metadata.
+
+The source snapshots canonical bytes within the supplied record and byte limits.
+Later mutations to caller objects or returned row dictionaries cannot change its
+identity. Record order does not matter. Duplicate IDs within a source namespace
+refuse; the same local record ID in another namespace has a different item ID.
+Use your own namespace, and change `sourceIssuedVersion` when the caller's record
+revision changes. Raw fields, candidates, namespace, scope, and schema all affect
+the snapshot pin; these are input evidence rather than downloaded-document hashes.
+
+`complete-snapshot` describes the complete universe the caller submitted.
+`observed-crawl` records an explicitly incomplete observed population. Neither
+setting establishes publisher-wide coverage, a successful upstream collection,
+or document acquisition. `metadata` preserves assertions as supplied. Captured
+bytes and acquisition receipts appear only when a later run actually fetches
+documents.
+
+Every catalog still defines the whole chosen dataset universe for a processing
+run. When a successor uses a base result, prior items absent from its new catalog
+enter planning as deletions, subject to the run's selection filters, including
+when the input scope is `observed-crawl`. That
+scope describes upstream coverage; it does not request incremental updates or
+preserve omitted items. Include all items you intend the successor to retain.
+
+Run [the supplied-record example](../examples/supplied_records.py) without a
+provider package or sibling checkout:
+
+```sh
+uv run --frozen --extra dagster python -m examples.supplied_records --output /absolute/new-notes-catalog
+```
+
+## Use an installed provider reader
+
+The existing source port streams already admitted records and renditions. The
+optional SpicyDocs adapter uses the installed provider reader; importing DocSpec
+does not import that package. Supply its exact artifact pin and independently
+accepted verifier implementation, then choose DocSpec's interpretation policy:
+
+```python
+from docspec.source_catalog import (
+    FederalRegisterCatalogPolicy, SpicyDocsSourceNativeAdapter, spicy_docs_source_profile,
+)
+
+profile = spicy_docs_source_profile("federal-register")
+source = SpicyDocsSourceNativeAdapter.from_local(
+    provider_artifact_path, blob_root=provider_blob_path,
+    logical_id=expected_logical_id, artifact_digest=expected_artifact_digest,
+    profile=profile, accepted_verifier_implementation_ids=accepted_provider_verifiers,
+)
+result = build_local_catalog(
+    (source,), workspace, policy=FederalRegisterCatalogPolicy(profile.source_system_id),
+    catalog_id="urn:example:federal-register-catalog", producer=catalog_output_producer,
+    max_scratch_bytes=128 * 1024**2,
+)
+```
+
+This uses the same builder and verification as source-catalog commands. The
+output producer describes who made this catalog; it does not authorize its
+upstream source. The provider reader's accepted verifiers and a later catalog
+reader's accepted producer remain separate, explicit choices. The
+installed-provider test uses a pinned SpicyDocs wheel and bounded fixtures;
+it does not establish live provider completeness. Other admitted sources can
+implement `SourceNativeRecordSource` and supply their own matching policy.
+
+## Reopen, resume, or process
+
+`open_local_catalog` requires existing storage and creates no directories. It
+returns the existing admitted reader described in [catalog evidence](catalog-evidence.md).
+Exhaust or close row iterators to release resources. A wrong producer or artifact
+pin refuses. Full producer-diagnostic recomputation remains the explicit
+`SourceCatalogArtifactReader.verify_snapshot` operation.
+
+An optional absolute `resume_workspace` path reuses the builder's existing SQLite
+recovery state after interruption. Identical source pins, policy, producer, and
+catalog identity are required. The supplied path remains after completion;
+ordinary temporary scratch is removed on success or failure. `max_scratch_bytes`
+reserves database and rollback-journal space, separately from staged/published
+catalog bytes and other concurrent work. Supplied-record memory is separately
+bounded by `max_records` and canonical `max_bytes`; those limits do not bound
+arbitrary Python objects the caller already owns.
+
+Pass `result.reference` to [prepare_local_experiment](python-runs.md) to capture
+and process documents now or later. A local-file fetcher resolves `notes.txt`
+under the workspace's `sourceContent` root; building this catalog does not create
+that file. Catalog succession uses the explicit existing `supersedes` argument.
+Neither building nor opening silently selects a current catalog or document
+result. The CLI retains its destination publication checks and command receipts.

@@ -161,6 +161,7 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
     }
     assert wiring == {
         "docspec.cli.blobs", "docspec.cli.catalog", "docspec.cli.common",
+        "docspec.runtime.catalogs",
         "docspec.runtime.composition", "docspec.runtime.execution", "docspec.runtime.inspection",
         "docspec.runtime.preparation", "docspec.runtime.storage",
         "docspec.runtime.task_membership",

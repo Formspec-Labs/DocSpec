@@ -1,9 +1,10 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.errors import IntegrityError
+from docspec.errors import IntegrityError, LimitExceededError
 
 
 def test_workspace_round_trips_exact_keys_and_isolates_namespaces(tmp_path: Path) -> None:
@@ -82,3 +83,39 @@ def test_the_payload_fast_path_stores_and_streams_the_exact_bytes(tmp_path) -> N
         assert [value["sourceItemId"] for value in checked_values] == ["a", "b", "c"]
         with pytest.raises(IntegrityError, match="already exists"):
             fast.put_payload("rows", ("a",), b"{}")
+
+
+def test_workspace_scratch_cap_refuses_growth_and_removes_temporary_state(tmp_path):
+    allowance = 512 * 1024
+    with SqliteCatalogPolicyWorkspace(directory=tmp_path, max_scratch_bytes=allowance) as workspace:
+        workspace.put("small", ("one",), {"value": 1})
+        workspace.commit()
+        with pytest.raises(LimitExceededError, match="scratch allowance"):
+            workspace.put("large", ("one",), {"value": "x" * allowance})
+        assert sum(path.stat().st_size for path in tmp_path.rglob("*") if path.is_file()) <= allowance
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_workspace_checks_cap_before_creation_and_cleans_connection_failure(tmp_path, monkeypatch):
+    with pytest.raises(LimitExceededError, match="minimum SQLite"):
+        SqliteCatalogPolicyWorkspace(directory=tmp_path, max_scratch_bytes=1)
+    assert list(tmp_path.iterdir()) == []
+
+    def cannot_connect(*args):
+        raise sqlite3.OperationalError("controlled connection failure")
+
+    monkeypatch.setattr(sqlite3, "connect", cannot_connect)
+    with pytest.raises(sqlite3.OperationalError, match="controlled"):
+        SqliteCatalogPolicyWorkspace(directory=tmp_path, max_scratch_bytes=512 * 1024)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_resume_refuses_an_existing_database_larger_than_the_allowance(tmp_path):
+    path = tmp_path / "retained.sqlite3"
+    with SqliteCatalogPolicyWorkspace(path=path) as workspace:
+        workspace.put("large", ("one",), {"value": "x" * 1024**2})
+        workspace.commit()
+    with pytest.raises(LimitExceededError, match="existing catalog workspace"):
+        SqliteCatalogPolicyWorkspace(path=path, max_scratch_bytes=512 * 1024)
+    with SqliteCatalogPolicyWorkspace(path=path) as reopened:
+        assert len(reopened.get("large", ("one",))["value"]) == 1024**2

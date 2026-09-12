@@ -21,13 +21,11 @@ from docspec.errors import IntegrityError, ProfileError
 from docspec.processing.artifacts import RepresentationPayload, SegmentPayload, verify_representation_evidence, verify_segment_evidence
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import open_local_inspection, prepare_local_experiment, prepare_local_run
+from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, prepare_local_run
 from docspec.source_catalog import (
     FederalRegisterCatalogPolicy,
-    LocalSourceCatalogStore,
-    SourceCatalogBuilder,
-    SourceCatalogBuildRequest,
-    SqliteCatalogPolicyWorkspace,
+    SuppliedRecordCatalogPolicy,
+    SuppliedRecordSource,
 )
 from docspec.workspace import LocalWorkspace
 
@@ -41,13 +39,27 @@ def main() -> None:
     )
     release_producer = replace(source_producer, verifier_id="urn:docspec:verifier:document-release")
     workspace = LocalWorkspace(Path.cwd() / "dataset")
-    store = LocalSourceCatalogStore(workspace.roots["sourceCatalog"])
-    catalog = SourceCatalogBuilder(
-        store=store,
+    catalog = build_local_catalog(
+        (source,), workspace,
         policy=FederalRegisterCatalogPolicy(example["SOURCE_SYSTEM"]),
-        request=SourceCatalogBuildRequest("urn:docspec:installed-runtime-test:catalog", source_producer),
-        workspace_factory=SqliteCatalogPolicyWorkspace,
-    ).build((source,))
+        catalog_id="urn:docspec:installed-runtime-test:catalog", producer=source_producer,
+        max_scratch_bytes=8 * 1024**2,
+    )
+    supplied_source = SuppliedRecordSource(({
+        "recordId": "note", "sourceIssuedVersion": "draft-1", "title": "Catalog-only note",
+        "metadata": {"authorSupplied": "unchanged"}, "candidateRenditions": [],
+    },), source_system_id="urn:example:installed-notes", source_system_version="1",
+        source_state_scope="complete-snapshot", max_records=2, max_bytes=1024**2)
+    supplied_workspace = LocalWorkspace(Path.cwd() / "supplied-dataset")
+    supplied_catalog = build_local_catalog(
+        (supplied_source,), supplied_workspace,
+        policy=SuppliedRecordCatalogPolicy("urn:example:installed-notes", "1"),
+        catalog_id="urn:example:installed-notes:catalog", producer=source_producer, max_scratch_bytes=8 * 1024**2,
+    )
+    supplied_rows = tuple(open_local_catalog(supplied_catalog.reference, supplied_workspace, producer=source_producer).iter_mappings())
+    assert supplied_rows[0]["selection"]["disposition"] == "unavailable"
+    assert supplied_rows[0]["sourceNativeFacts"][0]["fields"]["metadata"] == {"authorSupplied": "unchanged"}
+    assert {path.name for path in supplied_workspace.root.iterdir()} == {"sourceCatalog"}
     retry, accepted = RetryPolicy(), AcceptedFailurePolicy()
     class CountingProcessor(ContentStatisticsProcessor):
         calls = 0

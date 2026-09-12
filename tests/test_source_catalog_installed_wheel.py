@@ -60,6 +60,9 @@ from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPol
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceInputSelector
+from docspec.runtime import build_local_catalog, open_local_catalog
+from docspec.source_catalog import SpicyDocsSourceNativeAdapter
+from docspec.workspace import LocalWorkspace
 from rulespec_artifacts import Producer
 from spicy_docs.federal_register_source_native import (
     FederalRegisterPage,
@@ -557,6 +560,25 @@ source_b = publish_federal_source(
     RUN_ROOT / "source-native-b",
     changed_id=DOCUMENT_IDS[0],
 )
+public_source = SpicyDocsSourceNativeAdapter.from_local(
+    source_a.release.root, blob_root=source_a.blob_store,
+    logical_id=source_a.release.artifact.pin.logical_id,
+    artifact_digest=source_a.release.artifact.pin.artifact_digest,
+    profile=FEDERAL_REGISTER_PROFILE,
+    accepted_verifier_implementation_ids=frozenset({SPICY_DOCS_IMPLEMENTATION}),
+)
+public_workspace = LocalWorkspace(RUN_ROOT / "public-catalog-workspace")
+public_catalog = build_local_catalog(
+    (public_source,), public_workspace,
+    policy=FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
+    catalog_id="urn:docspec:installed-public-catalog", producer=catalog_producer(), max_scratch_bytes=16 * 1024**2,
+)
+public_rows = tuple(open_local_catalog(public_catalog.reference, public_workspace, producer=catalog_producer()).iter_mappings())
+assert {row["documentId"] for row in public_rows} == set(DOCUMENT_IDS)
+assert {row["sourceItemId"] for row in public_rows} == {
+    row["sourceRecordId"] for row in public_source.iter_records()
+}
+assert {path.name for path in public_workspace.root.iterdir()} == {"sourceCatalog"}
 document_source = publish_regulations_source(
     RUN_ROOT / "source-native-regulations-documents",
     profile=REGULATIONS_GOV_DOCUMENT_PROFILE,
@@ -817,6 +839,7 @@ assert regulations_item_scopes == {
 }
 
 proof = {
+    "publicCatalogReference": public_catalog.reference.to_dict(),
     "pythonVersion": ".".join(str(value) for value in sys.version_info[:3]),
     "sysPath": list(sys.path),
     "moduleOrigins": module_origins,

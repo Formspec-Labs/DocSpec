@@ -6,6 +6,9 @@ from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogStore,
 )
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
+from docspec.application.supplied_records_catalog import SuppliedRecordCatalogPolicy
+from docspec.adapters.supplied_records import SuppliedRecordSource
+from docspec.adapters.spicy_docs_source_native import SpicyDocsSourceNativeAdapter, spicy_docs_source_profile
 from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
     RegulationsGovSamplePolicy,
@@ -82,8 +85,12 @@ __all__ = [
     "SourceNativeDescription",
     "SourceNativeRecordSource",
     "SourceNativeRow",
+    "SpicyDocsSourceNativeAdapter",
+    "SuppliedRecordCatalogPolicy",
+    "SuppliedRecordSource",
     "requested_universe_set_digest",
     "selected_source_set_digest",
     "source_catalog_producer",
     "open_admitted_source_catalog",
+    "spicy_docs_source_profile",
 ]

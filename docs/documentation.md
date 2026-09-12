@@ -18,6 +18,7 @@ same change as the behavior or file move they describe.
 | Build a synthetic catalog and verify one local application release | [Offline walkthrough](offline-walkthrough.md) |
 | Change catalog selection, policy input, or processing evidence | [Catalog and processing](catalog-and-processing.md) |
 | Admit a pinned catalog once and stream objects or dictionaries | [Public catalog reading](catalog-evidence.md) |
+| Build a catalog from provider data or bounded supplied records | [Catalog inputs](catalog-inputs.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
 | Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |

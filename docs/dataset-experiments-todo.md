@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 9 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 10 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -210,6 +210,13 @@ to defer a conditional item is a documented deferral, not completed implementati
   streamed records/bytes, and comparisons without reconstructing execution
   plugins. D19 records the delivered acceptance and validation.
 
+  **Catalog progress, September 11:** `build_local_catalog` and
+  `open_local_catalog` now compose the existing builder and admitted reader from
+  a workspace, chosen sources/policy, explicit producer, and scratch bound.
+  Catalog-only work creates no document-processing state. D06 records the
+  public supplied-record and installed-provider checks. Export convenience
+  remains open under D26; catalog setup is now supported.
+
 <a id="d05"></a>
 
 - [ ] **D05 · P0 · Establish a small reference experiment.** Extend the offline
@@ -223,7 +230,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d06"></a>
 
-- [ ] **D06 · P0 · Support provider inputs and caller-supplied records.** Make the
+- [x] **D06 · P0 · Support provider inputs and caller-supplied records.** Make the
   source interface usable for SpicyDocs, SpicyRegs-derived data, another source,
   and bounded local records. Define the required source identity and
   provenance for supplied records without inventing acquisition evidence.
@@ -233,6 +240,23 @@ to defer a conditional item is a documented deferral, not completed implementati
   [D52](#d52) own the GAO-topic and retained public-comment-table examples; they extend
   this interface without requiring a provider package move or blocking the
   initial local example.
+
+  **Completed September 11:** `SuppliedRecordSource` snapshots bounded records
+  with source-qualified identity, explicit coverage, exact raw fields, and
+  proposed document candidates. Its policy uses the existing catalog format
+  and records unavailable documents without inventing acquisition evidence.
+  Public catalog helpers remove manual storage assembly; the existing optional
+  SpicyDocs adapter is publicly exported. Empty catalogs now publish the blob
+  directory needed by read-only opening. Producer validation and scratch limits
+  refuse invalid setup before writes. See the [input guide](catalog-inputs.md),
+  [architecture decision](history/2026-09-11-catalog-input-architecture.md), and
+  [independent review](history/2026-09-11-catalog-input-review.md).
+
+  The final focused gate passed 74 tests, including isolated installed wheels,
+  public provider/supplied-record paths, malformed inputs, scratch bounds,
+  empty publication, read-only opening, and recovery. These are offline checks;
+  source outcomes and partial-input policy remain D08/D10, and observed-crawl
+  coverage does not automatically preserve omitted items from a prior catalog.
 
 <a id="d07"></a>
 

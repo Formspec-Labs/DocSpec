@@ -11,8 +11,8 @@ The prepared run captures selected documents and runs the requested stages.
 `prepared.retain(run_reference)` keeps the result without selecting it as current.
 Call `prepare_local_run` directly when you already have a custom plan.
 
-Build or open the input catalog through
-[`docspec.source_catalog`](catalog-evidence.md). A plan pins that catalog, its
+Build or open the input catalog through the
+[catalog convenience API](catalog-inputs.md). A plan pins that catalog, its
 selected base result, processing choices, policies, and work limits. The
 workspace provides storage locations and installed profile descriptions.
 
