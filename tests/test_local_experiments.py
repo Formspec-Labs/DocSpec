@@ -159,7 +159,7 @@ def test_processor_policy_mismatch_refuses_before_creating_dataset_state(configu
     assert {path.relative_to(workspace.root) for path in workspace.root.rglob("*")} == before
 
 
-@pytest.mark.parametrize("invalid", ["stop", "duplicate-processors", "unrequested-stage", "selection", "network-limit", "retry-policy"])
+@pytest.mark.parametrize("invalid", ["stop", "duplicate-processors", "unrequested-stage", "selection", "retry-policy"])
 def test_invalid_configuration_refuses_before_creating_dataset_state(configured, invalid):
     source, workspace, settings, _ = configured
     before = {path.relative_to(workspace.root) for path in workspace.root.rglob("*")}
@@ -173,8 +173,6 @@ def test_invalid_configuration_refuses_before_creating_dataset_state(configured,
         extra.update(stop_after="capture", extractor=TextExtractor())
     elif invalid == "selection":
         extra["selection"] = {"inventedFilter": True}
-    elif invalid == "network-limit":
-        extra["execution_limits"] = local_execution_limits(max_network_bytes_per_task=1)
     else:
         extra["retry_policy"] = RetryPolicy(max_attempts=settings["limits"].max_attempts + 1)
     with pytest.raises((ValueError, ProfileError, IntegrityError)):
@@ -195,7 +193,7 @@ def test_advanced_policy_profile_and_limit_overrides_are_pinned(configured):
         assert prepared.plan.partition_count == 3
         assert prepared.plan.retention_policy == retention
         assert prepared.plan.selection == {"includeItemIds": ["document-a"]}
-        assert prepared.execution_profile.limits == execution
+        assert prepared.execution_profile.max_task_index_bytes == execution.max_task_index_bytes
 
 
 def test_saved_handoff_refuses_different_explicit_time_and_stage_settings(configured):
@@ -227,6 +225,6 @@ def test_shared_execution_defaults_preserve_explicit_cli_behavior(configured):
     assert local_execution_limits() == original["execution_limits"]
     limits = local_execution_limits(worker_count=3)
     assert limits.max_in_flight == 3
-    assert limits.max_concurrency_per_worker == 1
+    assert limits.max_task_index_bytes == 4 * 1024**3
     with pytest.raises(ValueError):
         local_execution_limits(worker_count=0)

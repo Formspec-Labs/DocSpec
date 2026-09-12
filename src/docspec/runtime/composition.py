@@ -205,14 +205,12 @@ def _compose_local_run(
         verify_stage_implementations(plan.stages, extractor=extractor, segmenter=segmenter)
     except IntegrityError as error:
         raise ProfileError(str(error)) from error
+    if not isinstance(execution_limits, ExecutionLimits):
+        raise ProfileError("execution_limits must be an ExecutionLimits value")
     profiles = _local_profiles(plan, workspace)
     processors = _verified_processors(plan, retry_policy, accepted_failure_policy, processors)
     if type(deadline_epoch_seconds) is not int or deadline_epoch_seconds < 1:
         raise ProfileError("deadline_epoch_seconds must be a positive integer")
-    if execution_limits.max_network_bytes_per_task < plan.limits.max_estimated_bytes:
-        raise ProfileError("execution network bound is lower than one planned store's logical byte bound")
-    if execution_limits.max_concurrency_per_worker != 1:
-        raise ProfileError("local execution requires one concurrent task per worker")
     completed_at = _utc_instant(completed_at, label="completed_at")
     if not isinstance(source_catalog_producer, Producer) or not isinstance(document_release_producer, Producer):
         raise ProfileError("source and document producer acceptance must be supplied independently")

@@ -23,7 +23,6 @@ from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     StoreTaskResult,
     iter_store_tasks,
@@ -472,17 +471,9 @@ def persist_execution_evidence(
         artifact_id="urn:docspec:test:worker-composition",
         value={"implementationId": "tests.worker/v1"},
     )
-    scheduler = controls.put(
-        kind="scheduler-configurations",
-        artifact_id="urn:docspec:test:scheduler-configuration",
-        value={"adapterId": "docspec.local-threaded"},
-    )
     profile = ExecutionProfile(
-        "docspec.local-threaded",
-        "1.0.0",
         worker,
-        scheduler,
-        ExecutionLimits(1, 1, 1, 1024**3, 1024**3, 100, 1, 1, 0, 0),
+        1024**3,
         2_000_000_000,
     )
     profile_ref = controls.put(

@@ -12,8 +12,6 @@ from typing import Any
 _EXPORTS = {
     "AnonymousS3ContentFetcher": "docspec.adapters.content_fetchers",
     "AnonymousS3ContentFetcherConfig": "docspec.adapters.content_fetchers",
-    "DagsterRuntime": "docspec.adapters.dagster",
-    "ExternalExecutionBackend": "docspec.adapters.execution",
     "HttpsContentFetcher": "docspec.adapters.content_fetchers",
     "HttpsContentFetcherConfig": "docspec.adapters.content_fetchers",
     "HttpsContentFetcherError": "docspec.adapters.content_fetchers",

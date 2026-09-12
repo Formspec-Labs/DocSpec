@@ -6,11 +6,13 @@ import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 from typing import Any
 
 import dagster
 
-from docspec.adapters.dagster import DAGSTER_JOB_NAME, DagsterRuntime, build_dagster_definitions
+from docspec.adapters.dagster import DAGSTER_JOB_NAME, build_dagster_definitions
 from docspec.runtime import prepare_local_run
 from docspec.cli.requests import _local_run_arguments, _local_run_request
 from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult
@@ -25,7 +27,7 @@ from docspec.domain.references import ArtifactRef, StoreRef
         "worker_evidence_root": str,
     }
 )
-def runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-untyped-def]
+def runtime_resource(context) -> Any:  # type: ignore[no-untyped-def]
     """Reconstruct the runtime from references in each Dagster worker."""
 
     config = context.resource_config
@@ -56,13 +58,13 @@ def runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-untyped-def]
             ),
         )
 
-    return DagsterRuntime(handoff, task_source, handler)
+    return SimpleNamespace(handoff=handoff, task_source=task_source, execute_task=handler)
 
 
 def reconstructable_job() -> Any:
     """Return the same thin job definition in the coordinator and workers."""
 
-    return build_dagster_definitions(runtime_resource).get_job_def(DAGSTER_JOB_NAME)
+    return build_dagster_definitions({"docspec_runtime": runtime_resource}).get_job_def(DAGSTER_JOB_NAME)
 
 
 @dagster.resource(
@@ -73,7 +75,7 @@ def reconstructable_job() -> Any:
         "fail_task_id": dagster.Field(str, is_required=False),
     }
 )
-def application_runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-untyped-def]
+def application_runtime_resource(context) -> Any:  # type: ignore[no-untyped-def]
     """Reconstruct the real DocSpec task graph from deployment-owned resources."""
 
     config = context.resource_config
@@ -88,15 +90,12 @@ def application_runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-
     evidence_root.mkdir(parents=True, exist_ok=True)
     fail_task_id = config.get("fail_task_id")
 
-    def task_source(current_handoff: ExecutionHandoff) -> Iterator[StoreTask]:
-        if current_handoff != prepared.handoff:
-            raise ValueError("Dagster worker reconstructed a different handoff")
-        yield from prepared.task_source(current_handoff)
+    execute_task = prepared.execute_task
 
-    def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
+    def handler(self, current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
         if current_handoff != prepared.handoff:
             raise ValueError("Dagster worker reconstructed a different handoff")
-        result = prepared.execute_task(current_handoff, task)
+        result = execute_task(current_handoff, task)
         if task.task_id == fail_task_id:
             evidence = {
                 "pid": os.getpid(),
@@ -115,10 +114,11 @@ def application_runtime_resource(context) -> DagsterRuntime:  # type: ignore[no-
         (evidence_root / f"{task.task_id.rsplit(':', 1)[-1]}.json").write_bytes(canonical_json_file_bytes(evidence))
         return result
 
-    return DagsterRuntime(prepared.handoff, task_source, handler)
+    with prepared, patch.object(type(prepared), "execute_task", handler):
+        yield prepared
 
 
 def reconstructable_application_job() -> Any:
     """Return a native Dagster job backed by DocSpec's real application services."""
 
-    return build_dagster_definitions(application_runtime_resource).get_job_def(DAGSTER_JOB_NAME)
+    return build_dagster_definitions({"docspec_runtime": application_runtime_resource}).get_job_def(DAGSTER_JOB_NAME)

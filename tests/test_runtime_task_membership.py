@@ -177,8 +177,7 @@ def test_sqlite_page_limit_refuses_and_removes_partial_database(prepared, tmp_pa
 
 
 def test_worker_scratch_limit_is_applied_before_any_execution(prepared, monkeypatch) -> None:
-    limits = replace(prepared.execution_profile.limits, max_scratch_bytes_per_worker=4096)
-    bounded = replace(prepared, execution_profile=replace(prepared.execution_profile, limits=limits))
+    bounded = replace(prepared, execution_profile=replace(prepared.execution_profile, max_task_index_bytes=4096))
     task = _tasks(bounded)[0]
 
     def unexpected(*args, **kwargs):

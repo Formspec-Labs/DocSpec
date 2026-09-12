@@ -44,7 +44,7 @@ _LOCAL_DEFAULT_LIMITS = local_execution_limits()
 _LOCAL_EXECUTION_OPTIONAL_DEFAULTS = {
     "maxWorkers": _LOCAL_DEFAULT_LIMITS.worker_count,
     **{key: value for key, value in _LOCAL_DEFAULT_LIMITS.to_dict().items()
-       if key not in {"workerCount", "maxConcurrencyPerWorker", "maxInFlight"}},
+       if key not in {"workerCount", "maxInFlight"}},
 }
 
 
@@ -103,7 +103,7 @@ def _local_run_request(path: Path) -> dict[str, Any]:
     value = _read_json_object(path, label="local run request")
     if not _LOCAL_RUN_FIELDS <= set(value) or not set(value) <= _LOCAL_RUN_FIELDS | _LOCAL_RUN_OPTIONAL_FIELDS:
         raise CliError("local run request has an invalid closed shape")
-    if value["format"] != "docspec-local-run-request" or value["formatVersion"] != "2.0":
+    if value["format"] != "docspec-local-run-request" or value["formatVersion"] != "3.0":
         raise CliError("local run request has an unknown format")
     try:
         workspace = LocalWorkspace(
@@ -123,13 +123,9 @@ def _local_run_request(path: Path) -> dict[str, Any]:
         raise CliError("local run execution settings have an invalid closed shape")
     execution = {**_LOCAL_EXECUTION_OPTIONAL_DEFAULTS, **execution}
     execution.setdefault("maxInFlight", execution["maxWorkers"])
-    zero_allowed = {"retryInitialDelayMilliseconds", "retryMaxDelayMilliseconds"}
     for name, setting in execution.items():
-        minimum = 0 if name in zero_allowed else 1
-        if type(setting) is not int or setting < minimum:
-            raise CliError(f"local run execution setting {name} must be an integer of at least {minimum}")
-    if execution["retryMaxDelayMilliseconds"] < execution["retryInitialDelayMilliseconds"]:
-        raise CliError("local run execution retry maximum must not be less than its initial delay")
+        if type(setting) is not int or setting < 1:
+            raise CliError(f"local run execution setting {name} must be a positive integer")
     value = {"resultSinkId": "urn:docspec:local:sink", "partitionPolicyId": "source-item-sha256-v1", **value}
     for name in ("resultSinkId", "partitionPolicyId"):
         if not isinstance(value[name], str) or not value[name]:
@@ -167,12 +163,7 @@ def _local_run_arguments(request: dict[str, Any]) -> dict[str, Any]:
         "document_release_producer": request["documentReleaseProducer"],
         "execution_limits": local_execution_limits(
             worker_count=execution["maxWorkers"], max_in_flight=execution["maxInFlight"],
-            max_scratch_bytes_per_worker=execution["maxScratchBytesPerWorker"],
-            max_network_bytes_per_task=execution["maxNetworkBytesPerTask"],
-            request_rate_limit_per_second=execution["requestRateLimitPerSecond"],
-            max_provider_concurrency=execution["maxProviderConcurrency"], max_task_attempts=execution["maxTaskAttempts"],
-            retry_initial_delay_milliseconds=execution["retryInitialDelayMilliseconds"],
-            retry_max_delay_milliseconds=execution["retryMaxDelayMilliseconds"],
+            max_task_index_bytes=execution["maxTaskIndexBytes"],
         ),
         "deadline_epoch_seconds": execution["deadlineEpochSeconds"],
         "completed_at": request["completedAt"],

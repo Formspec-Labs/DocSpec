@@ -10,7 +10,6 @@ from docspec.application.reconcile import run_ledger_schemas
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.execution import (
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     summarize_store_tasks,
 )
@@ -685,20 +684,7 @@ class ReleaseCompactionService:
             artifact_id=stable_urn("worker-composition", worker_content),
             value=worker_content,
         )
-        scheduler_content = {"adapterId": "docspec.inline-maintenance", "operationId": _COMPACTION_OPERATION_ID}
-        scheduler = self._controls.put(
-            kind="scheduler-configurations",
-            artifact_id=stable_urn("scheduler-configuration", scheduler_content),
-            value=scheduler_content,
-        )
-        profile = ExecutionProfile(
-            "docspec.inline-maintenance",
-            "1.0.0",
-            worker,
-            scheduler,
-            ExecutionLimits(1, 1, 1, 1, 1, 1, 1, 1, 0, 0),
-            2_147_483_647,
-        )
+        profile = ExecutionProfile(worker, 1, 2_147_483_647)
         profile_ref = self._controls.put(
             kind="execution-profiles",
             artifact_id=profile.profile_id,

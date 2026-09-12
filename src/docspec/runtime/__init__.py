@@ -66,8 +66,9 @@ def prepare_local_run(
     Unrequested stages reject supplied objects and do not construct defaults.
 
     With ``handoff_ref``, verify the saved handoff against reconstructed services,
-    including the same execution limits and deadline; supplied settings cannot
-    silently override or be ignored by saved work.
+    including the same task-index byte bound and deadline. Local worker count
+    and in-flight settings apply only to ``run()`` and may change on recovery;
+    native schedulers own their execution configuration.
     Otherwise ``resume=None`` reuses an existing planned-store ledger when present;
     ``False`` plans the work, and ``True`` requires the existing ledger. Identical
     work in one workspace recovers progress rather than creating another trial.

@@ -47,7 +47,7 @@ class PreparedLocalRun:
             self._composition.stores,
             self.handoff,
             self._composition.workspace.roots["reconciliation"] / "task-membership",
-            max_scratch_bytes=self.execution_profile.limits.max_scratch_bytes_per_worker,
+            max_scratch_bytes=self.execution_profile.max_task_index_bytes,
         ))
 
     @property
@@ -148,7 +148,8 @@ class PreparedLocalRun:
                     self.execute_task,
                     profile_reference=self.execution_profile_ref,
                     controls=self._composition.controls,
-                    max_workers=self.execution_profile.limits.worker_count,
+                    max_workers=self._composition.execution_limits.worker_count,
+                    max_in_flight=self._composition.execution_limits.max_in_flight,
                 ).execute(self.handoff, tasks)) as results:
                     return self.reconcile(results)
         finally:

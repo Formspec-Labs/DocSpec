@@ -162,7 +162,6 @@ def compare_views(older: InspectionView, newer: InspectionView, *, sample_limit:
         return {
             "profile": profile.to_dict(),
             "worker": view._controls.load(profile.worker_composition),
-            "scheduler": view._controls.load(profile.scheduler_configuration),
         }
     return {
         "format": "docspec-inspection-comparison", "formatVersion": "1.0",

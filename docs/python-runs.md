@@ -73,10 +73,11 @@ segmentation use their supported defaults when objects are omitted.
 The helper selects installed local profiles, one record partition, retain-all
 storage, local-content data use, and no accepted failures. Its default retry
 policy uses the work limit's `max_attempts`. `local_execution_limits()` supplies
-the same defaults as the CLI: one worker and in-flight task, 4 GiB scratch per
-worker, an 8 GiB network allowance per task, 100 requests per second, provider
-concurrency four, and one scheduler attempt. These are upper bounds; the helper
-does not enlarge them to fit a larger plan. Work limits remain explicit.
+the same defaults as the CLI: one local worker, one in-flight task, and a 4 GiB
+limit for each worker's temporary task-membership index. Worker count and
+in-flight settings control only the direct `run()` helper. Dagster owns native
+concurrency and task retries; fetchers own their transport limits. Work limits
+remain explicit.
 
 Supply `execution_limits`, `profiles`, `partition_count`, `retry_policy`,
 `accepted_failure_policy`, `retention_policy`, or `data_use_policy` when your
@@ -237,8 +238,9 @@ run_reference = recovered.run()
 
 Recovery verifies the retained handoff against the reconstructed worker. Changed
 roots, fetcher identity/configuration, stage identities/settings, policies, accepted producers, partition
-settings, result sink, evidence timestamp, execution limits, or deadline are
-refused. Verified completed work is reused. A saved handoff and a `resume`
+settings, result sink, evidence timestamp, task-index byte bound, or deadline
+are refused. Local worker count and in-flight settings may change on recovery;
+they do not change the saved worker identity. Verified completed work is reused. A saved handoff and a `resume`
 planning option are mutually exclusive.
 
 Without `handoff_ref`, `resume=None` uses an existing planned-store ledger when
@@ -258,10 +260,50 @@ with prepared:
     run_reference = prepared.reconcile(results)
 ```
 
-Those bound methods also fit the optional `DagsterRuntime` adapter. Each worker
-must reconstruct its dependencies and verify the saved handoff. This interface
-does not itself establish a complete deployed Dagster example or active-work
-cancellation guarantees.
+For Dagster, pass native resource definitions to `build_dagster_definitions`.
+The `docspec_runtime` resource yields the prepared run directly; its native
+resource dependencies supply the fetcher, processors, and workspace:
+
+```python
+import dagster
+from docspec.adapters.dagster import build_dagster_definitions
+
+@dagster.resource(required_resource_keys={"workspace", "fetcher", "processors"})
+def docspec_runtime(context):
+    with prepare_local_experiment(
+        catalog_ref, context.resources.workspace,
+        content_fetcher=context.resources.fetcher,
+        processors=context.resources.processors,
+        handoff_ref=saved_handoff_ref, **experiment_settings,
+    ) as prepared:
+        yield prepared
+
+# Supply your native resource definitions for these dependencies.
+definitions = build_dagster_definitions({
+    "workspace": workspace_resource,
+    "fetcher": fetcher_resource,
+    "processors": processors_resource,
+    "docspec_runtime": docspec_runtime,
+}, retry_policy=dagster.RetryPolicy(max_retries=1))
+```
+
+Dagster constructs those resources in each worker and closes the generator
+resource when that worker finishes. Its executor, retries, cancellation,
+reexecution, and event store remain authoritative. DocSpec output metadata links
+the handoff, execution profile, task, and result to native events. The saved
+handoff remains independent of Dagster run IDs, so native reexecution can use
+the same prepared work.
+
+Execution profile format `2.0` pins the actual worker composition, task-index
+bound, deadline, and cache references. It makes no claim to preserve or enforce
+Dagster's scheduler configuration. Native events and configuration provide that
+evidence. Local-run request format `3.0` accepts `maxWorkers`, `maxInFlight`,
+`maxTaskIndexBytes`, and required `deadlineEpochSeconds` execution settings.
+
+The adapter streams bounded task and result messages. It does not collect all
+results into a list. Reconcile the result stream through the existing API;
+Dagster's `.collect()` is suitable only when the caller has independently bounded
+the aggregate output, as in a small example.
 
 Before running a task, the worker checks its exact input reference against the
 verified planned-store ledger. A bounded temporary SQLite lookup makes repeated
@@ -269,7 +311,7 @@ checks efficient. The saved ledger remains the authority; interrupted or removed
 lookup files can be rebuilt. `run()` releases this scratch space even if
 execution fails. Direct task callers use the context manager or call `close()`
 after their workers stop; later use rebuilds the lookup. Its page allowance is
-capped by the declared execution scratch limit and ledger size limits. This
+capped by `max_task_index_bytes` and ledger size limits. This
 does not establish aggregate scratch accounting across all simultaneous work.
 
 ## Current limits and checks
@@ -279,12 +321,13 @@ tasks, selected items, retained layers, byte references, failures, and coverage.
 Keeping it does not select a current application release or create a portable
 export. [Retention and selection](experiments.md) remain explicit operations.
 [Inspect and compare results](inspection.md) through `open_local_inspection`.
-Simpler plan construction and portable export convenience remain checklist work.
+`prepare_local_experiment` constructs plans from typed source references and
+injected implementations. Portable export convenience remains checklist work.
 
 Custom processors, fetchers, extractors, and segmenters use this public runtime.
 The default `stage_policy()` still requests extraction and segmentation with no
 processors. Use `stop_after="capture"` to retain only source files. Processing
-plans and document stores use format `3.0`; disposition records use schema `2.0`
+plans and document stores use format `3.0`; disposition records use schema `3.0`
 and ordinary segmentation receipts use format `2.0`. Rebuild plans and prepared
 work made with superseded shapes; there is no compatibility reader.
 

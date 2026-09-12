@@ -17,7 +17,7 @@ from tests.helpers import document_release_producer, source_catalog_producer
 def request_value(tmp_path: Path) -> dict:
     return {
         "format": "docspec-local-run-request",
-        "formatVersion": "2.0",
+        "formatVersion": "3.0",
         "workspace": str(tmp_path / "dataset"),
         "plan": str(tmp_path / "plan.json"),
         "retryPolicy": RetryPolicy().to_dict(),

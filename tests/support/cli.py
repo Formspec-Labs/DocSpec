@@ -37,7 +37,7 @@ def _write_local_run_request(
         canonical_json_file_bytes(
             {
                 "format": "docspec-local-run-request",
-                "formatVersion": "2.0",
+                "formatVersion": "3.0",
                 "documentReleaseProducer": document_release_producer().as_dict(),
                 "sourceCatalogProducer": source_catalog_producer().as_dict(),
                 "plan": plan_path.as_posix(),

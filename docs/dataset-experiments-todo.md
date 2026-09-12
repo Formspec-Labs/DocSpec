@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 15 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 17 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -61,6 +61,9 @@ splits or documentation consolidation without a new, concrete problem.
   verified stage checkpoints, retained input/output evidence, and reuse across
   dataset experiments; those rules must survive native Dagster interruption and
   re-execution. Do not build a parallel execution-control platform.
+  Native Dagster resources inject chosen implementations and prepared DocSpec
+  services. Native configuration controls managed execution; saved DocSpec
+  evidence records the worker settings and limits it actually enforces.
 - **Judge complexity by the work it saves or the errors it prevents.** Retain
   bounded execution, verifiable reuse, attributable evidence, complete failure
   accounting, and safe publication. Simplify configuration, repeated validation,
@@ -243,6 +246,8 @@ to defer a conditional item is a documented deferral, not completed implementati
   Independent [architecture](history/2026-09-11-reference-experiment-architecture.md)
   and [code review](history/2026-09-11-reference-experiment-review.md) approved the
   bounded example. D38's complete growth/interruption exercise remains open.
+  The combined regression then passed 1,216 tests with one live integration
+  excluded and no warnings, before the next execution/source-outcome changes.
 
 ## 2. Build catalogs and acquire inputs through clear interfaces
 
@@ -605,7 +610,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d20"></a>
 
-- [ ] **D20 · P0 · Prove pause, interruption, and resume for the new workflow.**
+- [x] **D20 · P0 · Prove pause, interruption, and resume for the new workflow.**
   Exercise capture, extraction, processing, delivery, and final state updates.
   Reuse checkpoints after verification and restore cumulative budgets.
   **Done when:** interrupted work resumes without accepting partial output,
@@ -613,46 +618,30 @@ to defer a conditional item is a documented deferral, not completed implementati
   reaches active work where the backend promises it. Reuse the existing recovery
   tests and add only missing cases introduced by D04.
 
-  **Execution ownership, September 11:** use native Dagster cancellation and
-  re-execution for managed runs. Qualify DocSpec's checkpoint recovery through
-  that integration alongside D21. The proposed custom local stop-event layer
-  was removed before commit following the user's direction; it is not a
-  prerequisite. Keep complete writes recoverable and preserve interruptions
-  through resource cleanup without creating another run-control mechanism.
+  **Completed September 11:** the installed native multiprocess probe records
+  a Dagster cancellation request and signals its parent while an extractor is
+  active after a saved capture checkpoint. Dagster stops that child and closes
+  its resources. Native re-execution runs only the unfinished task; the original
+  successful sibling comes from native IO. Reconciliation preserves the exact
+  captured payload, performs no repeat fetch, accounts for captured bytes once,
+  and produces the same phrase values as the local reference.
 
-  **Progress:** local preparation and saved-handoff loading now derive one
-  worker description from the actual fetcher, roots, policies, accepted
-  producers, sink, partition settings, and evidence timestamp. Changed settings
-  refuse recovery before fetching; unchanged settings reuse completed work.
-  Fifteen new identity cases and 61 related workspace, CLI, acquisition, and
-  Dagster checks pass. This closes the existing local reconstruction gap;
-  the full D04 interruption workflow remains open. Configurable stages are
-  tracked in D13. Commit `c41b00b`.
+  Existing checkpoint, prefix-budget, delivery, retention, and coordinator
+  recovery checks cover the other stage and finalization boundaries. Changed
+  worker settings, deadlines, task bounds, and invalid membership still refuse
+  recovery. A custom local cancellation layer was removed before commit; no
+  DocSpec run-control API or cancellation state was added. See the
+  [native guide](dagster-experiment.md) and
+  [independent review](history/2026-09-11-native-dagster-review.md).
 
-  **Runtime progress:** public task execution now admits the exact initial
-  reference from the verified planned-store ledger before loading or executing
-  work. A bounded disposable lookup avoids rescanning the ledger for every task
-  in one prepared worker. Real running/sealed revision tests prove only
-  unfinished work executes. Changed deadlines/limits and unsupported saved
-  operations refuse recovery; admission rechecks the deadline before execution.
-  Zero-task runs need no lookup, and failure/context exit releases scratch.
-  Active cancellation and aggregate concurrent scratch accounting remain open.
-
-  **Capture-prefix progress:** multi-candidate capture recovery and recovery
-  after new extraction/segmentation of reused inputs now use the same verifier
-  and execution loop. Cumulative page/frame costs come from verified extraction
-  receipts rather than being inferred from output boundaries. Reused prefix
-  work is excluded from new-work counters; resumed new work charges once.
-
-  D13 adds actual stage configuration checks before direct execution,
-  checkpoint admission, completed-task reuse, and zero-task execution. Tests
-  refuse changed live settings and mismatched selected-child evidence. These
-  checks preserve the existing checkpoint and cumulative-budget tests; they do
-  not complete active cancellation or the whole interruption exercise.
+  Qualification covers native multiprocess executor cancellation and recovery,
+  not a launcher's transport, daemon/UI, hosted deployment, forced-kill cleanup,
+  aggregate worker scratch, or uncheckpointed physical cost. D23 retains the
+  broader retry/accounting review.
 
 <a id="d21"></a>
 
-- [ ] **D21 · P1 · Complete the Dagster composition of the same workflow.** Keep
+- [x] **D21 · P1 · Complete the Dagster composition of the same workflow.** Keep
   Dagster optional and reuse the same plans, injected components, execution
   services, and result checks. **Done when:** a documented installed example
   demonstrates dispatch, interruption/retry, and result reconciliation with the
@@ -663,6 +652,30 @@ to defer a conditional item is a documented deferral, not completed implementati
   worker management. State backend-specific limits; avoid a second dataset
   state or execution-control model. Depends on D04 and D13; qualify interruption
   and recovery jointly with D20. See [the adapter](../src/docspec/adapters/dagster.py).
+
+  **Completed September 11:** `build_dagster_definitions` accepts native
+  `resource_defs`; a yielding resource supplies `PreparedLocalRun` directly.
+  Fetchers, processors, workspace and other components use native dependency
+  injection. The documented installed example captures two documents, processes
+  retained captures in a later native run, and reconciles results through the
+  public runtime with local-value parity. The separate native stop/re-execution
+  probe establishes D20's missing active-worker boundary and preserves accepted
+  document failures without converting them into worker retries.
+
+  Removed `DagsterRuntime`, `ExternalExecutionBackend`, the unused dispatcher
+  and backend protocols, scheduler declarations and unenforced proxy limits.
+  Execution profile `2.0` retains actual worker, task-index, deadline and cache
+  evidence; local request `3.0` retains only meaningful local execution choices.
+  Native events link the saved evidence to Dagster's run without putting its
+  run ID in the document handoff. There are no legacy readers. See the
+  [architecture decision](history/2026-09-11-native-dagster-di-architecture.md).
+
+  The focused runtime gate passed 128 tests; the isolated installed native
+  qualification passed, including actual child interruption, resource closure,
+  sibling/checkpoint reuse, native IO, output parity and independent resource-pin
+  refusal. Existing checkpoint/finalization and package/budget gates provide
+  adjacent regression checks. These are local qualification results, not
+  remote CI, publication or deployment evidence.
 
 <a id="d22"></a>
 
@@ -709,7 +722,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   The [review and execution evidence](history/2026-09-11-capture-prefix-review.md)
   cover incomplete-request refusal, mixed-result preservation, guarded selection,
   installed capture/retain/later-process/retain, and recovery without refetching.
-  D20's active cancellation remains separate unfinished work.
+  D20 now qualifies active interruption through the native multiprocess executor.
 
 <a id="d25"></a>
 
@@ -817,6 +830,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   declarations match actual runtime behavior, and each retained abstraction
   serves the experiment workflow. Lack of today's CLI caller alone does not
   make processor dependencies or resource pins dead code.
+
+  **Progress, September 11:** D21 removes saved scheduler declarations and seven
+  unenforced limit fields. The remaining task-index bound names the actual
+  temporary database it limits; local concurrency stays outside saved worker
+  identity. Native Dagster configuration is authoritative for managed workers.
+  The broader profile/governance/cache review remains open.
 
 <a id="d33"></a>
 

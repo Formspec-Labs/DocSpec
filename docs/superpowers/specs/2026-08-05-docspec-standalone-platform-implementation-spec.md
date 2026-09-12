@@ -86,8 +86,8 @@ A conforming DocSpec deployment answers four questions.
 - A selected set of release-manifest, catalog, record, blob, job-persistence,
   and delivery profiles.
 - Resource, retention, delivery, and publication policies.
-- A sealed execution profile that selects a local runner or external execution
-  tool and records its operational limits without changing document semantics.
+- A sealed execution profile that pins the actual worker composition and its
+  enforced task-index bound and deadline without changing document semantics.
 
 ### 1.2 What happens?
 
@@ -236,11 +236,10 @@ schema explicitly marks them sorted.
   execution tool's control messages.
 
 **Execution profile**
-: A sealed description of how one run is handed to a local runner or external
-  tool. It identifies the adapter and configuration digest, worker-composition
-  profile, concurrency and in-flight bounds, queue or pool, scratch limits,
-  provider limits, cache state, and deadline. It governs operations, not logical
-  document meaning.
+: A sealed description of the actual worker composition, temporary task-index
+  byte bound, cache references, and deadline. It governs worker reconstruction,
+  not document meaning. Native scheduling configuration and events remain in
+  the execution tool.
 
 **Result sink**
 : An injected destination that accepts verified result records and returns a
@@ -306,7 +305,7 @@ The core MUST define project-owned ports for:
 - `Extractor`;
 - `Segmenter`;
 - `Processor`;
-- `ExecutionBackend`;
+- `StoreTaskHandler`;
 - `ResultSink`.
 
 Ports MUST exchange DocSpec records. `SourceNativeRecordSource` returns one
@@ -901,30 +900,30 @@ and move its `artifactDigest`. The plan verifier recomputes the projection
 digest, Rulespec logical ID, and exact artifact digest and rejects any mismatch.
 
 The plan MUST NOT encode scheduler worker placement, queue implementation,
-cluster topology, or a cache product's native configuration. Those operational
-choices belong to a separate sealed `ExecutionProfile`. The execution profile
-MUST identify:
+cluster topology, or a cache product's native configuration. Native tools own
+that configuration. The separate sealed `ExecutionProfile` format `2.0` MUST
+identify:
 
-- the execution adapter and its version or deployment identity;
-- a digest-pinned worker-composition profile that can reconstruct all adapters;
-- worker, concurrency, and in-flight bounds;
-- queue, pool, partition, or task-mapping configuration by identity and digest;
-- scratch-disk, network, request-rate, and provider limits;
-- retry timing owned by the execution tool;
-- cache implementation and initial cache state, if any; and
+- a digest-pinned worker composition that reconstructs the actual adapters;
+- the enforced temporary task-index byte bound;
+- cache implementation and initial cache state references, if any; and
 - an absolute deadline.
 
-The run receipt MUST pin the execution profile and the execution tool's returned
-run or event-log reference. A `ScaleProfile` MUST pin it when operational
-resources are part of a performance claim. Changing only an execution profile
-does not invalidate document content. If an operational change also changes a
-logical input, policy, accepted failure, or deterministic output, the
-`ProcessingPlan` MUST change as well.
+The run receipt MUST pin that worker profile. Native output metadata MUST link
+the handoff identity and execution-profile reference to the execution tool's
+event history. This
+link identifies the work; it does not reproduce or enforce native scheduling
+settings. A `ScaleProfile` MUST additionally pin native run/configuration evidence
+when operational resources are part of a performance claim. Changing only a
+worker profile does not invalidate document content. If an operational change
+also changes a logical input, policy, accepted failure, or deterministic output,
+the `ProcessingPlan` MUST change as well.
 
-DocSpec MAY provide a local default execution profile. A deployment SHOULD let
-Dagster, Ray, a queue, or another maintained tool own worker placement,
-concurrency, triggers, and retry timing rather than reproducing those features in
-DocSpec.
+DocSpec MAY provide a small direct local runner with explicit worker and
+in-flight limits. Those local settings MUST NOT be presented as native scheduler
+policy or change an otherwise identical handoff. Dagster or another maintained
+tool owns placement, concurrency, triggers, cancellation, and task retry timing.
+DocSpec MUST NOT duplicate those settings in its worker profile.
 
 ### 5.4 Change planning
 
@@ -1806,8 +1805,8 @@ The control plane MUST classify failures as:
 
 Retries MUST have finite limits and bounded backoff. The `ProcessingPlan` owns
 which failures may be retried and the maximum semantic stage attempts. The
-execution tool MAY own task retry timing and worker replacement under the sealed
-`ExecutionProfile`. A resumed run MUST verify a completed stage, entry, or store
+execution tool owns task retry timing and worker replacement under its native
+configuration. A resumed run MUST verify a completed stage, entry, or store
 checkpoint before reuse. Stale attempts and duplicate delivery MUST remain
 idempotent.
 

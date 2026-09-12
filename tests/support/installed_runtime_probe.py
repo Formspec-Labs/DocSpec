@@ -21,7 +21,7 @@ from docspec.errors import IntegrityError, ProfileError
 from docspec.processing.artifacts import RepresentationPayload, SegmentPayload, verify_representation_evidence, verify_segment_evidence
 from docspec.processing.processors import ContentStatisticsProcessor
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, prepare_local_run
+from docspec.runtime import local_execution_limits, build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, prepare_local_run
 from docspec.source_catalog import (
     SourceCatalogCandidate,
     SuppliedRecordCatalogPolicy,
@@ -174,7 +174,7 @@ def main() -> None:
     settings = {
         **{key: value for key, value in experiment_settings.items() if key != "limits"},
         "retry_policy": retry, "accepted_failure_policy": accepted,
-        "execution_limits": prepared.execution_profile.limits,
+        "execution_limits": local_execution_limits(),
         "extractor": extractor, "segmenter": segmenter,
         "processors": {processor.description.processor_id: processor},
     }

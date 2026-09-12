@@ -55,18 +55,6 @@ def _prepare_local_run(
         artifact_id=stable_urn("worker-composition", worker_composition_value),
         value=worker_composition_value,
     )
-    scheduler_configuration_value = {
-        "format": "docspec-local-scheduler-configuration",
-        "formatVersion": "1.0",
-        "adapterId": "docspec.local-threaded",
-        "limits": composition.execution_limits.to_dict(),
-        "deadlineEpochSeconds": composition.deadline_epoch_seconds,
-    }
-    scheduler_configuration = controls.put(
-        kind="scheduler-configurations",
-        artifact_id=stable_urn("scheduler-configuration", scheduler_configuration_value),
-        value=scheduler_configuration_value,
-    )
     cache_profile_value = {
         "format": "docspec-processor-result-cache-profile",
         "formatVersion": "1.0",
@@ -95,11 +83,8 @@ def _prepare_local_run(
         value=cache_state_value,
     )
     execution_profile = ExecutionProfile(
-        "docspec.local-threaded",
-        "1.0.0",
         worker_composition,
-        scheduler_configuration,
-        composition.execution_limits,
+        composition.execution_limits.max_task_index_bytes,
         composition.deadline_epoch_seconds,
         cache_profile,
         cache_state,
@@ -144,7 +129,7 @@ def _load_prepared_local_run(
     if profile.profile_id != handoff.execution_profile.artifact_id:
         raise IntegrityError("saved execution profile identity differs from its reference")
     if (
-        profile.limits != composition.execution_limits
+        profile.max_task_index_bytes != composition.execution_limits.max_task_index_bytes
         or profile.deadline_epoch_seconds != composition.deadline_epoch_seconds
     ):
         raise IntegrityError("saved execution settings differ from the reconstructed local worker")

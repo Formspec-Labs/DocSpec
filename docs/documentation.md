@@ -22,6 +22,7 @@ same change as the behavior or file move they describe.
 | Build a catalog from provider data or bounded supplied records | [Catalog inputs](catalog-inputs.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
+| Inject components through native resources and execute with Dagster | [Dagster experiment](dagster-experiment.md) |
 | Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |
 | Configure document transports and understand acquisition evidence | [Fetchers](fetchers.md) |
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |

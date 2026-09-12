@@ -25,6 +25,7 @@ HANDOFF_FORMAT = "docspec-execution-handoff"
 TASK_FORMAT = "docspec-store-task"
 RESULT_FORMAT = "docspec-store-task-result"
 FORMAT_VERSION = "1.0"
+PROFILE_FORMAT_VERSION = "2.0"
 EXECUTE_AND_DELIVER_OPERATION_ID = "execute-and-deliver-store/v1"
 MAX_PROFILE_BYTES = 32 * 1024
 MAX_HANDOFF_BYTES = 64 * 1024
@@ -58,104 +59,50 @@ def _parse(data: bytes, maximum: int, label: str) -> dict[str, Any]:
 
 @dataclass(frozen=True, slots=True)
 class ExecutionLimits:
-    """Operational bounds owned by an execution profile, not a processing plan."""
+    """Local helper concurrency and the enforced temporary task-index bound.
+
+    Native schedulers own their concurrency and retries. Only the task-index
+    bound participates in the saved execution profile.
+    """
 
     worker_count: int
-    max_concurrency_per_worker: int
     max_in_flight: int
-    max_scratch_bytes_per_worker: int
-    max_network_bytes_per_task: int
-    request_rate_limit_per_second: int
-    max_provider_concurrency: int
-    max_task_attempts: int
-    retry_initial_delay_milliseconds: int
-    retry_max_delay_milliseconds: int
+    max_task_index_bytes: int
 
     def __post_init__(self) -> None:
         for label, value in (
             ("worker_count", self.worker_count),
-            ("max_concurrency_per_worker", self.max_concurrency_per_worker),
             ("max_in_flight", self.max_in_flight),
-            ("max_scratch_bytes_per_worker", self.max_scratch_bytes_per_worker),
-            ("max_network_bytes_per_task", self.max_network_bytes_per_task),
-            ("request_rate_limit_per_second", self.request_rate_limit_per_second),
-            ("max_provider_concurrency", self.max_provider_concurrency),
-            ("max_task_attempts", self.max_task_attempts),
+            ("max_task_index_bytes", self.max_task_index_bytes),
         ):
             _integer(value, label)
-        _integer(
-            self.retry_initial_delay_milliseconds,
-            "retry_initial_delay_milliseconds",
-            positive=False,
-        )
-        _integer(
-            self.retry_max_delay_milliseconds,
-            "retry_max_delay_milliseconds",
-            positive=False,
-        )
-        if self.retry_max_delay_milliseconds < self.retry_initial_delay_milliseconds:
-            raise ProfileError("maximum retry delay must not be less than the initial retry delay")
 
     def to_dict(self) -> dict[str, int]:
         return {
             "workerCount": self.worker_count,
-            "maxConcurrencyPerWorker": self.max_concurrency_per_worker,
             "maxInFlight": self.max_in_flight,
-            "maxScratchBytesPerWorker": self.max_scratch_bytes_per_worker,
-            "maxNetworkBytesPerTask": self.max_network_bytes_per_task,
-            "requestRateLimitPerSecond": self.request_rate_limit_per_second,
-            "maxProviderConcurrency": self.max_provider_concurrency,
-            "maxTaskAttempts": self.max_task_attempts,
-            "retryInitialDelayMilliseconds": self.retry_initial_delay_milliseconds,
-            "retryMaxDelayMilliseconds": self.retry_max_delay_milliseconds,
+            "maxTaskIndexBytes": self.max_task_index_bytes,
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> Self:
-        expected = {
-            "workerCount",
-            "maxConcurrencyPerWorker",
-            "maxInFlight",
-            "maxScratchBytesPerWorker",
-            "maxNetworkBytesPerTask",
-            "requestRateLimitPerSecond",
-            "maxProviderConcurrency",
-            "maxTaskAttempts",
-            "retryInitialDelayMilliseconds",
-            "retryMaxDelayMilliseconds",
-        }
-        if set(value) != expected:
+        if set(value) != {"workerCount", "maxInFlight", "maxTaskIndexBytes"}:
             raise ProfileError("execution limits have an invalid closed shape")
-        return cls(
-            value["workerCount"],
-            value["maxConcurrencyPerWorker"],
-            value["maxInFlight"],
-            value["maxScratchBytesPerWorker"],
-            value["maxNetworkBytesPerTask"],
-            value["requestRateLimitPerSecond"],
-            value["maxProviderConcurrency"],
-            value["maxTaskAttempts"],
-            value["retryInitialDelayMilliseconds"],
-            value["retryMaxDelayMilliseconds"],
-        )
+        return cls(value["workerCount"], value["maxInFlight"], value["maxTaskIndexBytes"])
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionProfile:
-    """Sealed operational choices for one scheduler or local runner."""
+    """Pinned worker evidence and bounds enforced independently of a scheduler."""
 
-    adapter_id: str
-    adapter_version: str
     worker_composition: ArtifactRef
-    scheduler_configuration: ArtifactRef
-    limits: ExecutionLimits
+    max_task_index_bytes: int
     deadline_epoch_seconds: int
     cache_profile: ArtifactRef | None = None
     cache_state: ArtifactRef | None = None
 
     def __post_init__(self) -> None:
-        require_text(self.adapter_id, "execution adapter_id")
-        require_text(self.adapter_version, "execution adapter_version")
+        _integer(self.max_task_index_bytes, "max_task_index_bytes")
         _integer(self.deadline_epoch_seconds, "deadline_epoch_seconds")
         if (self.cache_profile is None) != (self.cache_state is None):
             raise ProfileError("cache profile and initial cache state must both be present or both be absent")
@@ -163,11 +110,8 @@ class ExecutionProfile:
 
     def identity_content(self) -> dict[str, Any]:
         return {
-            "adapterId": self.adapter_id,
-            "adapterVersion": self.adapter_version,
             "workerComposition": self.worker_composition.to_dict(),
-            "schedulerConfiguration": self.scheduler_configuration.to_dict(),
-            "limits": self.limits.to_dict(),
+            "maxTaskIndexBytes": self.max_task_index_bytes,
             "deadlineEpochSeconds": self.deadline_epoch_seconds,
             "cacheProfile": None if self.cache_profile is None else self.cache_profile.to_dict(),
             "cacheState": None if self.cache_state is None else self.cache_state.to_dict(),
@@ -178,7 +122,7 @@ class ExecutionProfile:
         """List every immutable control artifact required to execute this profile."""
 
         optional = () if self.cache_profile is None else (self.cache_profile, self.cache_state)
-        return (self.worker_composition, self.scheduler_configuration, *optional)
+        return (self.worker_composition, *optional)
 
     @property
     def profile_id(self) -> str:
@@ -187,7 +131,7 @@ class ExecutionProfile:
     def to_dict(self) -> dict[str, Any]:
         return {
             "format": PROFILE_FORMAT,
-            "formatVersion": FORMAT_VERSION,
+            "formatVersion": PROFILE_FORMAT_VERSION,
             "profileId": self.profile_id,
             **self.identity_content(),
         }
@@ -211,23 +155,17 @@ class ExecutionProfile:
             "format",
             "formatVersion",
             "profileId",
-            "adapterId",
-            "adapterVersion",
             "workerComposition",
-            "schedulerConfiguration",
-            "limits",
+            "maxTaskIndexBytes",
             "deadlineEpochSeconds",
             "cacheProfile",
             "cacheState",
         }
-        if set(value) != expected or value["format"] != PROFILE_FORMAT or value["formatVersion"] != FORMAT_VERSION:
+        if set(value) != expected or value["format"] != PROFILE_FORMAT or value["formatVersion"] != PROFILE_FORMAT_VERSION:
             raise ProfileError("execution profile has an unknown format or invalid closed shape")
         result = cls(
-            value["adapterId"],
-            value["adapterVersion"],
             ArtifactRef.from_dict(value["workerComposition"]),
-            ArtifactRef.from_dict(value["schedulerConfiguration"]),
-            ExecutionLimits.from_dict(value["limits"]),
+            value["maxTaskIndexBytes"],
             value["deadlineEpochSeconds"],
             None if value["cacheProfile"] is None else ArtifactRef.from_dict(value["cacheProfile"]),
             None if value["cacheState"] is None else ArtifactRef.from_dict(value["cacheState"]),

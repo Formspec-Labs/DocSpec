@@ -5,7 +5,7 @@ from docspec.ports.control_repository import ControlRepository
 from docspec.ports.content_fetcher import AcquisitionSource, ContentFetcher, FetchMetadata, FetchStream
 from docspec.ports.document_catalog import DocumentCatalog, DocumentCatalogReader
 from docspec.ports.document_store_repository import DocumentStoreRepository
-from docspec.ports.execution_backend import ExecutionBackend, SerializedTaskDispatcher, StoreTaskHandler
+from docspec.ports.execution_backend import StoreTaskHandler
 from docspec.ports.processor_cache import ProcessorResultCache
 from docspec.ports.profile_state_reachability import ProfileStateBlobReachability
 from docspec.ports.extractor import Extractor
@@ -44,7 +44,6 @@ __all__ = [
     "DocumentCatalog",
     "DocumentCatalogReader",
     "DocumentStoreRepository",
-    "ExecutionBackend",
     "ProcessorResultCache",
     "ProfileStateBlobReachability",
     "Extractor",
@@ -60,7 +59,6 @@ __all__ = [
     "ReconciliationWorkspaceFactory",
     "ResultSink",
     "Segmenter",
-    "SerializedTaskDispatcher",
     "SourceCatalogMemberSource",
     "SourceCatalogCurrentPointer",
     "SourceCatalogPolicy",

@@ -120,15 +120,13 @@ def test_capture_run_refuses_unrequested_stage_objects_before_writing(arguments,
 
 
 @pytest.mark.parametrize("change", [
-    "network_bound", "worker_concurrency", "deadline", "completion_clock", "extractor", "segmenter",
+    "execution_limits", "deadline", "completion_clock", "extractor", "segmenter",
     "missing_processor", "wrong_processor", "wrong_processor_key", "source_acceptance", "document_acceptance",
 ])
 def test_invalid_runtime_choices_refuse_before_storage_or_planning(arguments, change: str) -> None:
     plan = arguments["plan"]
-    if change == "network_bound":
-        arguments["execution_limits"] = replace(arguments["execution_limits"], max_network_bytes_per_task=1)
-    elif change == "worker_concurrency":
-        arguments["execution_limits"] = replace(arguments["execution_limits"], max_concurrency_per_worker=2)
+    if change == "execution_limits":
+        arguments["execution_limits"] = None
     elif change == "deadline":
         arguments["deadline_epoch_seconds"] = 0
     elif change == "completion_clock":
@@ -158,7 +156,7 @@ def test_invalid_runtime_choices_refuse_before_storage_or_planning(arguments, ch
 def test_recovery_refuses_changed_execution_settings(arguments, change: str) -> None:
     prepared = prepare_local_run(**arguments)
     if change == "limits":
-        arguments["execution_limits"] = replace(arguments["execution_limits"], worker_count=2)
+        arguments["execution_limits"] = replace(arguments["execution_limits"], max_task_index_bytes=1024**3)
     else:
         arguments["deadline_epoch_seconds"] += 1
     with pytest.raises(IntegrityError, match="saved execution settings differ"):
@@ -291,3 +289,15 @@ def test_zero_task_recovery_still_checks_stage_configuration(arguments, tmp_path
     extractor.configuration_digest = identity_digest({"different": "zero-task-settings"})
     with pytest.raises(ProfileError, match="settings differ"):
         prepare_local_run(**arguments, handoff_ref=handoff_ref)
+
+
+def test_local_concurrency_can_change_without_rebinding_saved_worker_evidence(arguments) -> None:
+    with prepare_local_run(**arguments) as prepared:
+        changed = arguments | {
+            "execution_limits": replace(arguments["execution_limits"], worker_count=3, max_in_flight=2),
+        }
+        with prepare_local_run(**changed, handoff_ref=prepared.handoff_ref) as recovered:
+            assert recovered.handoff_ref == prepared.handoff_ref
+            assert recovered.execution_profile_ref == prepared.execution_profile_ref
+            assert recovered._composition.execution_limits.worker_count == 3
+            assert recovered._composition.execution_limits.max_in_flight == 2

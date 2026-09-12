@@ -350,11 +350,11 @@ def test_core_import_and_cli_help_need_no_optional_dependency() -> None:
     assert "DocSpec" in help_result.stdout or "docspec" in help_result.stdout
 
 
-def test_dagster_adapter_has_one_lazy_runtime_resource_and_no_deployment_schema() -> None:
+def test_dagster_adapter_is_lazy_and_has_no_parallel_runtime_or_deployment_schema() -> None:
     import docspec.adapters as adapters
 
-    assert adapters.DagsterRuntime.__name__ == "DagsterRuntime"
-    for removed_name in ("DagsterAdapterProfile", "DagsterDeploymentConfig"):
+    assert callable(adapters.build_dagster_definitions)
+    for removed_name in ("DagsterRuntime", "ExternalExecutionBackend", "DagsterAdapterProfile", "DagsterDeploymentConfig"):
         assert not hasattr(adapters, removed_name)
     assert not any((PRODUCTION_ROOT / "storage_profiles" / "schedulers").glob("*.json"))
     isolated = subprocess.run(
@@ -362,7 +362,7 @@ def test_dagster_adapter_has_one_lazy_runtime_resource_and_no_deployment_schema(
             sys.executable,
             "-I",
             "-c",
-            "import sys; from docspec.adapters import DagsterRuntime; assert 'dagster' not in sys.modules",
+            "import sys; from docspec.adapters import build_dagster_definitions; assert 'dagster' not in sys.modules",
         ],
         cwd=ROOT,
         capture_output=True,
@@ -464,8 +464,8 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
                 "from pathlib import Path; "
                 "from docspec.workspace import LocalWorkspace; "
                 "assert LocalWorkspace(Path.cwd()).roots['blobStorage'] == Path.cwd() / 'blobStorage'; "
-                "from docspec.adapters import DagsterRuntime; "
-                "assert DagsterRuntime.__name__ == 'DagsterRuntime'; "
+                "from docspec.adapters import build_dagster_definitions; "
+                "assert callable(build_dagster_definitions); "
                 "from docspec.source_catalog import requested_universe_set_digest; "
                 "from docspec.source_catalog import AdmittedSourceCatalog, open_admitted_source_catalog; "
                 "assert requested_universe_set_digest(0, ()).startswith('sha256:'); "
