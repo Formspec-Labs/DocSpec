@@ -23,7 +23,6 @@ from docspec.errors import IntegrityError
 
 JSONScalar: TypeAlias = None | bool | int | str
 JSONValue: TypeAlias = JSONScalar | tuple["JSONValue", ...] | Mapping[str, "JSONValue"]
-JSONObject: TypeAlias = Mapping[str, JSONValue]
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _URN_PART_RE = re.compile(r"^[a-z][a-z0-9-]*$")

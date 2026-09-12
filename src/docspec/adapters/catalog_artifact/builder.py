@@ -149,7 +149,7 @@ class SourceCatalogBuildResult:
     byte_measurements: Mapping[str, int]
     #: Which engine derived the digests, for the build and for the producer
     #: gate's recomputation: ``{"build": {...}, "gate": {...}}``, each a
-    #: ``DERIVATION_PATHS`` member with its worker count. The parallel engine
+    #: path (serial, parallel, or serial-fallback) with its worker count. The parallel engine
     #: falls back to the serial one silently when workers cannot start, and
     #: nothing else records which path a receipt's digests came from.
     derivation: Mapping[str, Mapping[str, object]]

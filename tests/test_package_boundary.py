@@ -179,9 +179,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     assert project["project"]["version"] == __version__
     assert project["project"]["dependencies"] == [
         "jsonschema>=4.23,<5",
-        # Deliberately not optional: it is the engine every source-item row is
-        # actually checked by, and jsonschema alone is ~116x slower on that
-        # schema. See the comment beside it in pyproject.toml.
+        # Required for source-item acceptance; Python jsonschema supplies diagnostics.
         "jsonschema-rs>=0.52,<1",
         "rulespec-artifacts==1.0.12",
     ]
@@ -206,8 +204,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     extras = project["project"]["optional-dependencies"]
     assert extras["spicy-docs"] == ["spicy-docs==" + provider["version"]]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
-    assert any(requirement.startswith("pymupdf") for requirement in extras["pdf"])
-    assert any(requirement.startswith("pypdf") for requirement in extras["pdf"])
+    assert extras["pdf"] == ["pypdf>=5,<7"]
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert any(requirement.startswith("tiktoken") for requirement in extras["tokens"])

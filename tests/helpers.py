@@ -35,7 +35,7 @@ from docspec.domain.identity import (
     sha256_digest,
     stable_urn,
 )
-from docspec.domain.policies import DataUsePolicy, RetentionPolicy
+from docspec.domain.policies import DataUsePolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
@@ -60,7 +60,6 @@ from docspec.ports.source_catalog import (
 
 EMPTY_DIGEST = sha256_digest(b"")
 DATA_USE_POLICY = DataUsePolicy.local_content()
-RETENTION_POLICY = RetentionPolicy.retain_all()
 TASK_RESULT_SCHEMA = RecordSchema(
     "docspec-store-task-result-record/1.0",
     ("recordId", "sourceItemId", "result"),

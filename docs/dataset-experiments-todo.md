@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 40 of 52 local implementation items complete.** D47 is a moved-task
+**Status: 41 of 52 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1086,7 +1086,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d34"></a>
 
-- [ ] **D34 · P2 · Remove superseded paths, declarations, and dependencies.**
+- [x] **D34 · P2 · Remove superseded paths, declarations, and dependencies.**
   Search source, tools, tests, exports, registrations, profile strings, and known
   installed consumers after each replacement. Recheck obsolete source-policy
   declarations with the SpicyDocs owner: tagging eligibility and processor
@@ -1104,6 +1104,23 @@ to defer a conditional item is a documented deferral, not completed implementati
   the maintained decision. Invocation details remain in the build report.
   Source-side declaration removal is [SpicyDocs S12](../../spicy-docs/docs/simplification-todo.md#s12);
   this task removes only DocSpec code and dependencies.
+
+  **Completed local audit September 12:** Vulture `2.16` scanned production,
+  tools, examples and tests; callers and registrations were traced before
+  removal. Removed five unused production declarations: two cached staging
+  paths, an unused JSON type alias, and two unused sets of diagnostic codes.
+  Their active state, individual codes and measurement explanations remain.
+  Removed the unused test retention constant, PyMuPDF, ijson, and a redundant
+  development declaration of the core jsonschema dependency. The PDF extra
+  retains pypdf, which the actual extractor loads. The shared encoder still
+  uses msgspec, so that development accelerator remains.
+  Parser callbacks, lazy exports, protocol methods, serialized enum values,
+  generator failure controls and dataclass equality are active behavior, not
+  removals justified by a static unused-name report. The focused package,
+  publication, worker, identity, segmentation and extraction gate passed
+  **164 tests** in 19.53 seconds, including installed-package checks. Ruff and
+  the updated 79-package lock pass. Vulture is a one-off audit tool, not a new
+  project dependency or blanket CI gate. Independent review remains D39.
 
 <a id="d35"></a>
 

@@ -92,9 +92,7 @@ class LocalSourceCatalogStaging:
         self._artifact = artifact
         self._blob_staging = blob_staging
         self._store_root = store_root.path
-        self._session_path = session.path
         self._path = artifact.path
-        self._published_blob_root = store_root.path / ".blobs"
         self._shared_blob_root = shared_blob_root
         self._committed = False
         self._closed = False

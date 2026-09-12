@@ -76,7 +76,6 @@ BOUNDED_TEXT_KINDS = frozenset({"text", "html", "xml"})
 # is prose fit to show a reader; both are required of every excluded range.
 EXCLUDED_NOT_EVIDENCE_ELIGIBLE = "segmentation.region-not-evidence-eligible"
 EXCLUDED_EMPTY = "segmentation.region-empty"
-EXCLUDED_REASON_CODES = frozenset({EXCLUDED_NOT_EVIDENCE_ELIGIBLE, EXCLUDED_EMPTY})
 
 HEADING_EXCLUSION_REASON = "heading text is segment context, never segment evidence"
 EMPTY_EXCLUSION_REASON = "the region carries no text between its neighbours"
