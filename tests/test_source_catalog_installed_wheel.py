@@ -42,6 +42,8 @@ from typing import Any
 
 import docspec
 import spicy_docs
+import httpx
+from docspec.adapters.content_fetchers import HttpsContentFetcher, HttpsContentFetcherConfig
 from docspec.adapters.catalog_artifact.reader import (
     SourceCatalogArtifactReader,
 )
@@ -52,12 +54,15 @@ from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
 from docspec.domain.identity import canonical_json_file_bytes
-from docspec.domain.references import SourceCatalogRef
+from docspec.domain.references import BlobRef, SourceCatalogRef
 from docspec.ports.source_catalog import SourceInputSelector
 from docspec.runtime import (
     build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog,
 )
 from docspec.domain.plans import WorkLimits
+from docspec.domain.policies import RetryPolicy
+from docspec.processing import ContentStatisticsProcessor
+from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
 from docspec.workspace import LocalWorkspace
 from rulespec_artifacts import Producer
@@ -586,6 +591,80 @@ assert public_source.describe().collection_outcome["failedRecordCount"] == 0
 # those raw records, while DocSpec's required-metadata interpretation refuses.
 assert public_catalog.summary.disposition_counts["failed"] == len(DOCUMENT_IDS)
 
+# A successful provider record enters the ordinary public runtime. The real
+# HTTPS fetcher reads controlled publisher bytes once; later processing uses
+# the retained capture, including its exact source and byte evidence.
+body_url = "https://www.federalregister.gov/documents/full_text/2026-00001.html"
+body = (RUN_ROOT / "notice.html").read_bytes()
+body_fixture = publish_federal_source(RUN_ROOT / "source-with-body", changed_id=None, records=(
+    document(DOCUMENT_IDS[0], changed=False) | {
+        "agencies": [{"slug": "environmental-protection-agency", "name": "Environmental Protection Agency"}],
+        "body_html_url": body_url,
+    },
+))
+body_source = SpicyDocsSourceNativeAdapter.from_local(
+    body_fixture.release.root, blob_root=body_fixture.blob_store,
+    logical_id=body_fixture.release.artifact.pin.logical_id,
+    artifact_digest=body_fixture.release.artifact.pin.artifact_digest,
+    profile=FEDERAL_REGISTER_PROFILE,
+    accepted_verifier_implementation_ids=frozenset({SPICY_DOCS_IMPLEMENTATION}),
+)
+body_workspace = LocalWorkspace(RUN_ROOT / "body-workspace")
+body_catalog = build_local_catalog((body_source,), body_workspace,
+    policy=FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
+    catalog_id="urn:docspec:installed-body-catalog", producer=catalog_producer(), max_scratch_bytes=16 * 1024**2)
+assert body_catalog.summary.disposition_counts["selected"] == 1
+requests = []
+
+
+def serve_body(request):
+    assert request.method == "GET" and str(request.url) == body_url
+    requests.append(str(request.url))
+    return httpx.Response(200, stream=httpx.ByteStream(body), headers={"Content-Type": "text/html; charset=utf-8"})
+
+
+retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
+statistics = ContentStatisticsProcessor(retry_policy=retry)
+with httpx.Client(transport=httpx.MockTransport(serve_body)) as client:
+    body_settings = {
+        "limits": WorkLimits(1, 1024**2, 20, 20, 20, 16 * 1024**2, 60, 1),
+        "source_catalog_producer": catalog_producer(), "document_release_producer": catalog_producer(),
+        "completed_at": "2026-09-12T00:00:00Z", "deadline_epoch_seconds": 4102444800,
+        "retry_policy": retry,
+        "content_fetcher": HttpsContentFetcher(client, HttpsContentFetcherConfig(
+            allowed_hosts=("www.federalregister.gov",), user_agent="DocSpec installed fixture",
+        )),
+    }
+    with prepare_local_experiment(body_catalog.reference, body_workspace, stop_after="capture", **body_settings) as prepared:
+        captured_release = prepared.retain(prepared.run())
+    with prepare_local_experiment(body_catalog.reference, body_workspace, base_release=captured_release,
+        extractor=VisibleTextExtractor(), segmenter=VisibleTextBlockSegmenter(), processors=(statistics,),
+        **body_settings,
+    ) as prepared:
+        body_release = prepared.retain(prepared.run())
+        body_view = open_local_inspection(prepared.plan, body_workspace,
+            document_release_producer=catalog_producer(), source_catalog_producer=catalog_producer(), release_ref=body_release)
+        body_report = body_view.summary()
+assert requests == [body_url]
+assert body_report["source"]["sourceNativeInputs"][0]["collectionOutcome"]["recordOutcome"] == "no-record-rejections"
+assert body_report["work"]["counts"]["newCapturedFiles"] == 0
+assert list(body_view.records("failures")) == []
+captured_file, = body_view.records("files")
+assert b"".join(body_view.read_blob(BlobRef.from_dict(captured_file["payload"]["blob"]), max_bytes=len(body))) == body
+segments = {row["recordId"]: row["payload"] for row in body_view.records("segments")}
+assert len(segments) == 3
+statistics_rows = list(body_view.records(f"derived:{statistics.description.processor_id}"))
+assert len(statistics_rows) == len(segments)
+for row in statistics_rows:
+    value = row["payload"]["value"]
+    segment = segments[value["segmentId"]]
+    segment_bytes = b"".join(body_view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=1024**2))
+    assert value["wordCount"] == len(segment_bytes.decode("utf-8").split())
+    assert value["evidence"] == segment["evidence"]
+    assert value["contentDigest"] == "sha256:" + hashlib.sha256(segment_bytes).hexdigest()
+body_proof = {"requests": requests, "segments": len(segments), "derivedRecords": len(statistics_rows),
+              "release": body_release.to_dict(), "inspection": body_report}
+
 # The actual installed provider owns classification and evidence admission.
 # DocSpec retains its public report and makes acceptance a separate choice.
 collection_proof = {}
@@ -946,6 +1025,7 @@ assert regulations_item_scopes == {
 
 proof = {
     "collectionOutcomes": collection_proof,
+    "retainedBodyProcessing": body_proof,
     "publicCatalogReference": public_catalog.reference.to_dict(),
     "pythonVersion": ".".join(str(value) for value in sys.version_info[:3]),
     "sysPath": list(sys.path),
@@ -1109,6 +1189,14 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert reader_only.returncode == 0, reader_only.stderr
+    # The reader-only check above stays independent of acquisition. This next
+    # fixture explicitly chooses the existing HTTP extra for its body fetch.
+    install_http = subprocess.run(
+        [uv, "pip", "install", "--python", str(environment_python), str(runtime_rulespec), f"{runtime_docspec}[http]"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert install_http.returncode == 0, install_http.stderr
+    shutil.copy2(ROOT / "examples/offline/notice.html", runtime_root / "notice.html")
     dependency_check = subprocess.run(
         [uv, "pip", "check", "--python", str(environment_python)],
         cwd=tmp_path,

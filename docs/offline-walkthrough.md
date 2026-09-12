@@ -4,7 +4,8 @@ This walkthrough builds a catalog of four synthetic documents, excludes one
 from the run, retains an initial capture with a visible missing-file failure,
 repairs that failure, and processes the captures with a pinned phrase vocabulary.
 It then compares two processor alternatives without fetching or extracting the
-documents again. It uses public Python APIs, local files, and no network.
+documents again, adds a fifth catalog item, and compares the incremental result
+with a clean rebuild. It uses public Python APIs, local files, and no network.
 
 After [checkout setup](../CONTRIBUTING.md#set-up-a-checkout), run:
 
@@ -13,10 +14,11 @@ uv run --frozen python -m examples.offline_demo --output /absolute/new-experimen
 ```
 
 `--output` must name a new directory. Repeating it refuses before changing the
-previous experiment. The final JSON reports four catalog items, three selected
+previous experiment. The final JSON reports five catalog items, four selected
 documents, one exclusion, one initial failure, no remaining failure after repair,
-and six processed segments. The original, case-sensitive, and updated-resource
-attempts produce four, three, and five phrase matches respectively.
+and seven processed segments. The original, case-sensitive, and updated-resource
+attempts produce four, three, and five phrase matches respectively. The added
+document raises the updated-resource result to seven matches.
 
 ## What the experiment demonstrates
 
@@ -41,7 +43,16 @@ the three retained captures without fetching again. Reopening the saved handoff
 reuses the completed run. Two later attempts start from the same processed base:
 one changes case sensitivity, and the other changes the vocabulary bytes and
 resource pin. Both keep the exact captured-file, representation and segment
-identities. The updated vocabulary's output values also agree with a clean run.
+identities.
+
+The next catalog contains all four original rows plus `added-note`. It records
+the previous catalog's exact reference through `Supersedes`; the preview shows
+one addition and four unchanged rows. Processing from the updated-resource
+result fetches and processes only the added input. A separate clean workspace
+then processes all four selected documents. Exact phrase values, source slices,
+processing settings, dispositions, and failures agree. The inspection comparison
+still records different delivery evidence and add/update classifications: the
+clean run adds every item, while the incremental run updates existing items.
 
 `retain` keeps each immutable result available; these calls do not choose a
 current catalog result. The example introduces no scheduler, run-control service,
@@ -55,14 +66,17 @@ interfaces through the existing direct local helper.
 | --- | --- |
 | `experiment-summary.json` | Small outcome summary, match counts and verified comparisons |
 | `catalog-preview.json` | All catalog rows and the explicit run exclusion |
+| `catalog-growth.json` | Successor catalog, one added row, and four unchanged rows |
 | `initial-capture.json`, `repaired-capture.json` | Existing plan/run/release/handoff references and inspection results before and after repair |
 | `processed.json`, `case-sensitive.json`, `resource-v2.json` | Retained processor alternatives, their exact settings and recorded work |
+| `grown.json` | Retained result after processing the added document |
 | `matches.json` | Literal quotes, segment byte offsets, resource pins and enclosing source evidence for each alternative |
 | `comparisons.json` | Existing inspection comparisons showing configuration and result differences |
+| `clean-comparison.json` | Incremental versus clean result, including different execution history |
 | `reference-inputs/` | The exact two vocabulary files used by the processor |
-| `sourceContent/` | Three materialized local source files; the excluded file is never fetched |
+| `sourceContent/` | Four materialized local source files; the excluded file is never fetched |
 | `sourceCatalog/`, `documentCatalog/`, `controlRepository/` | Existing catalog, retained results and their verification dependencies |
-| `clean-comparison/` | Independent clean processing result used to check the updated vocabulary |
+| `clean-comparison/` | Independent clean processing result for the grown catalog and updated vocabulary |
 | `implementation.json` | Example and processor code digests plus the installed DocSpec version; it does not claim to hash the entire installed runtime |
 
 The stage JSON files contain an ordinary serialized `ProcessingPlan`. For example,
@@ -109,11 +123,17 @@ the captured source slice. It does not invent exact raw-source offsets for
 transformed HTML or PDF text. The separate
 [representation example](representations.md) demonstrates those choices.
 
-The automated test forbids network access and observes actual fetch/stage calls.
-The package test also runs the copied walkthrough against an isolated installed
-wheel while preserving the detailed typed-runtime probe. These are local fixture
-checks; they do not establish live provider coverage, a qualified external
-reference resource, scale, or published-package status.
+The automated test forbids network access and observes actual fetch and stage
+calls separately for each phase. The package test runs that same test and copied
+walkthrough against an isolated installed wheel. Test-only instrumentation stays
+outside the example. The separate installed provider test builds a catalog from
+SpicyDocs records, captures one controlled HTML response through the real HTTPS
+fetcher, and processes the retained bytes without a second request. Native
+process interruption and recovery are covered by the
+[Dagster experiment](dagster-experiment.md).
+
+These are local fixture checks; they do not establish live provider coverage, a
+qualified external reference resource, scale, or published-package status.
 
 ## Unfamiliar-contributor exercise
 

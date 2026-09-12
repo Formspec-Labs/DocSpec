@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import ast
 import configparser
-import json
 import re
 import shutil
 import subprocess
 import sys
 import tomllib
 import zipfile
+from importlib.metadata import version
 from pathlib import Path
 
 from docspec import __version__
@@ -550,19 +550,21 @@ def test_docspec_metadata_wheel_has_no_legacy_document_dependency(tmp_path: Path
     )
     assert runtime_result.returncode == 0, runtime_result.stderr
     assert "retained capture, processed it without refetching, recovered" in runtime_result.stdout
-    # Only copied example files enter the isolated interpreter's import path.
-    example_result = subprocess.run(
-        [environment_python, "-I", "-c",
-         "import runpy, sys; "
-         f"sys.path.insert(0, {str(tmp_path)!r}); "
-         f"sys.argv = ['examples.offline_demo', '--output', {str(tmp_path / 'reference-experiment')!r}]; "
-         "runpy.run_module('examples.offline_demo', run_name='__main__')"],
+    # Reuse the same behavioral test against the installed wheel: phase-by-phase
+    # call observations belong in one test, not in the contributor example.
+    install_test_runner = subprocess.run(
+        [uv, "pip", "install", "--python", str(environment_python), f"pytest=={version('pytest')}"],
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
-    assert example_result.returncode == 0, example_result.stderr
-    example_summary = json.loads(example_result.stdout)
-    assert example_summary["catalogItems"] == 4
-    assert example_summary["initialFailures"] == 1 and example_summary["repairedFailures"] == 0
-    assert example_summary["matchCounts"] == {"original": 4, "case-sensitive": 3, "resource-v2": 5}
-    assert example_summary["savedHandoffRecovered"] and example_summary["cleanOutputValuesAgree"]
+    assert install_test_runner.returncode == 0, install_test_runner.stderr
+    shutil.copy2(ROOT / "tests/test_offline_example.py", tmp_path / "test_offline_example.py")
+    example_result = subprocess.run(
+        [environment_python, "-I", "-c",
+         "import pathlib, pytest, sys; "
+         f"sys.path.insert(0, {str(tmp_path)!r}); "
+         "import docspec; assert pathlib.Path(docspec.__file__).is_relative_to(sys.prefix); "
+         "sys.exit(pytest.main(['-q', 'test_offline_example.py']))"],
+        cwd=tmp_path, capture_output=True, check=False, text=True,
+    )
+    assert example_result.returncode == 0, example_result.stdout + example_result.stderr
     assert '"profileCount":10' in profile_list.stdout

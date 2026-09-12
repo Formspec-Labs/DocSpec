@@ -5,9 +5,11 @@ import runpy
 import socket
 import sys
 from collections import Counter
+from contextlib import contextmanager
 
 import pytest
 
+import docspec.runtime
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.processing import ParagraphSegmenter, TextExtractor
 from examples.phrase_match_processor import PhraseMatchProcessor
@@ -34,6 +36,19 @@ def test_reference_experiment_repairs_and_compares_without_repeating_upstream_wo
     observe(TextExtractor, "extract", extractions)
     observe(ParagraphSegmenter, "segment", segmentations)
     observe(PhraseMatchProcessor, "process", invocations)
+    prepare = docspec.runtime.prepare_local_experiment
+    phases = []
+
+    @contextmanager
+    def observe_phase(*args, **kwargs):
+        before = tuple(len(calls) for calls in (fetches, extractions, segmentations, invocations))
+        with prepare(*args, **kwargs) as prepared:
+            yield prepared
+        phases.append(tuple(len(calls) - count for calls, count in zip(
+            (fetches, extractions, segmentations, invocations), before, strict=True,
+        )))
+
+    monkeypatch.setattr(docspec.runtime, "prepare_local_experiment", observe_phase)
     output = tmp_path / "example"
     monkeypatch.setattr(sys, "argv", ["examples.offline_demo", "--output", str(output)])
     with pytest.raises(SystemExit) as completed:
@@ -41,18 +56,28 @@ def test_reference_experiment_repairs_and_compares_without_repeating_upstream_wo
     assert completed.value.code == 0
     summary = json.loads(capfd.readouterr().out)
     assert summary["verdict"] == "pass"
-    assert summary["catalogItems"] == 4 and summary["excludedDocuments"] == 1
+    assert summary["initialCatalogItems"] == 4 and summary["catalogItems"] == 5
+    assert summary["excludedDocuments"] == 1 and summary["addedDocuments"] == 1
     assert summary["initialFailures"] == 1 and summary["repairedFailures"] == 0
-    assert summary["matchCounts"] == {"original": 4, "case-sensitive": 3, "resource-v2": 5}
-    assert summary["processedSegments"] == 6
+    assert summary["matchCounts"] == {"original": 4, "case-sensitive": 3, "resource-v2": 5, "grown": 7}
+    assert summary["processedSegments"] == 7
     assert summary["savedHandoffRecovered"] and summary["cleanOutputValuesAgree"]
     # Two initial captures + one absent-file refusal, one repair acquisition,
-    # then three fresh comparison acquisitions. No attempt touches the exclusion.
+    # then one added input and four fresh comparison acquisitions. No attempt
+    # touches the exclusion. Observe each phase, not just reported work counts.
     assert Counter(candidate.locator for candidate in fetches) == {
-        "privacy.txt": 2, "security.txt": 2, "late-arrival.txt": 3,
+        "privacy.txt": 2, "security.txt": 2, "late-arrival.txt": 3, "added-note.txt": 2,
     }
-    assert len(extractions) == len(segmentations) == 6
-    assert len(invocations) == 24  # six segments, original + two alternatives + clean run
+    assert phases == [
+        (3, 0, 0, 0),  # first capture includes the missing file
+        (1, 0, 0, 0),  # repair only that failure
+        (0, 3, 3, 6),  # process retained captures
+        (0, 0, 0, 0),  # recover saved handoff
+        (0, 0, 0, 6),  # change processor configuration
+        (0, 0, 0, 6),  # change reference resource
+        (1, 1, 1, 1),  # grow the catalog by one input
+        (4, 4, 4, 7),  # independent clean rebuild
+    ]
     original = json.loads((output / "processed.json").read_bytes())
     resource = json.loads((output / "resource-v2.json").read_bytes())
     assert original["plan"]["planId"] != resource["plan"]["planId"]

@@ -7,7 +7,7 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 30 of 51 local implementation items complete.** D47 is a moved-task
+**Status: 31 of 51 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. This is a plan, not evidence that the
@@ -1081,7 +1081,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d38"></a>
 
-- [ ] **D38 · P0 · Prove the complete experiment loop through installed packages.**
+- [x] **D38 · P0 · Prove the complete experiment loop through installed packages.**
   Starting from the reference experiment, build a provider catalog, fetch once,
   run a meaningful processor, change its configuration or resource pin, and
   process retained inputs again. Add input, target failed work, interrupt/resume,
@@ -1090,6 +1090,25 @@ to defer a conditional item is a documented deferral, not completed implementati
   imports, ad hoc file editing, or sibling checkout. Keep export/Dagster checks
   in D29/D21 so they do not block useful local experiments. Depends on D05–D07,
   D11, D13–D17, D19–D20, and D24.
+
+  **Completed September 12:** the [reference walkthrough](offline-walkthrough.md)
+  now publishes a five-row successor catalog and processes only its added input.
+  The same test runs locally and against an isolated wheel, observing actual
+  calls for capture, targeted repair, retained processing, saved recovery,
+  configuration/resource alternatives, growth, and a clean rebuild. Exact
+  phrase values, source slices, settings, dispositions, and failures agree;
+  inspection preserves different delivery evidence and add/update classifications.
+  Test instrumentation stays outside the example, and the package test reuses
+  the behavioral test rather than duplicating its assertions.
+
+  The installed SpicyDocs probe separately builds a valid Federal Register
+  catalog, captures a controlled publisher HTML response through the real HTTPS
+  fetcher, and produces three source-linked statistics records from retained
+  visible text with one total request. Existing installed native Dagster checks
+  cover process interruption and recovery; no new runner was added. The focused
+  installed/package/catalog/Dagster gate passed **30 tests in 60.07 seconds**;
+  the direct walkthrough passed separately. These fixture checks do not establish
+  live publisher reliability or semantic quality. Final independent review is D39.
 
 <a id="d39"></a>
 

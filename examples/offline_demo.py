@@ -12,7 +12,7 @@ from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 
-from rulespec_artifacts import Producer
+from rulespec_artifacts import Producer, Supersedes
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, identity_digest, sha256_digest
@@ -22,7 +22,9 @@ from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.processors import ProcessorResourceIdentity, ProcessorResourceKind
 from docspec.domain.references import BlobRef
 from docspec.processing import ParagraphSegmenter, TextExtractor
-from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment
+from docspec.runtime import (
+    build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog,
+)
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
 from docspec.workspace import LocalWorkspace
 from examples.phrase_match_processor import PhraseMatchProcessor
@@ -37,7 +39,7 @@ def _write(path: Path, value: object) -> None:
 
 
 def _phrase_values(view, processor) -> list[dict]:
-    """Check quote slices and source links for this bounded four-document fixture."""
+    """Check quote slices and source links for this bounded document fixture."""
     files = {row["payload"]["blob"]["digest"]: row["payload"] for row in view.records("files")}
     segments = {row["recordId"]: row["payload"] for row in view.records("segments")}
     values = []
@@ -76,17 +78,22 @@ def run_example(output: Path) -> dict:
     workspace = LocalWorkspace(output)
     payloads = {name: (INPUT_ROOT / f"{name}.txt").read_bytes() for name in DOCUMENTS}
     namespace = "urn:docspec:example:review-notes"
-    source = SuppliedRecordSource(({
-        "recordId": name, "sourceIssuedVersion": "fixture-1", "title": name.replace("-", " ").title(),
-        "metadata": {"synthetic": True},
-        "candidateRenditions": [SourceCatalogCandidate(
-            "body", "text/plain", "immutable-object", f"{name}.txt",
-            expected_sha256=sha256_digest(content), expected_byte_size=len(content),
-        ).to_dict()],
-    } for name, content in payloads.items()), source_system_id=namespace, source_system_version="1",
-        source_state_scope="complete-snapshot", max_records=4, max_bytes=16 * 1024)
-    catalog = build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
-        catalog_id="urn:docspec:example:review-catalog", producer=source_producer, max_scratch_bytes=8 * 1024**2)
+
+    def build_catalog(documents, *, supersedes=None):
+        source = SuppliedRecordSource(({
+            "recordId": name, "sourceIssuedVersion": "fixture-1", "title": name.replace("-", " ").title(),
+            "metadata": {"synthetic": True},
+            "candidateRenditions": [SourceCatalogCandidate(
+                "body", "text/plain", "immutable-object", f"{name}.txt",
+                expected_sha256=sha256_digest(content), expected_byte_size=len(content),
+            ).to_dict()],
+        } for name, content in documents.items()), source_system_id=namespace, source_system_version="1",
+            source_state_scope="complete-snapshot", max_records=5, max_bytes=16 * 1024)
+        return build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
+            catalog_id="urn:docspec:example:review-catalog", producer=source_producer,
+            max_scratch_bytes=8 * 1024**2, supersedes=supersedes)
+
+    catalog = build_catalog(payloads)
     rows = tuple(open_local_catalog(catalog.reference, workspace, producer=source_producer).iter_mappings())
     excluded = next(row["sourceItemId"] for row in rows if row["documentId"] == "out-of-scope")
     preview = [{"documentId": row["documentId"], "sourceItemId": row["sourceItemId"],
@@ -160,26 +167,56 @@ def run_example(output: Path) -> dict:
     ):
         with prepare_local_experiment(catalog.reference, workspace, **(settings | stages),
                                       processors=(candidate,), base_release=processed_base) as prepared:
-            _, view, report = finish(prepared, name)
+            alternative_base, view, report = finish(prepared, name)
         assert all(tuple(row["payload"] for row in view.records(kind)) == records for kind, records in base_prefix.items())
         counts = report["inspection"]["work"]["counts"]
         assert counts["newCapturedFiles"] == counts["newRepresentations"] == counts["newSegments"] == 0
         values[name], comparisons[name] = _phrase_values(view, candidate), processed_view.compare(view)
+
+    payloads["added-note"] = (INPUT_ROOT / "added-note.txt").read_bytes()
+    (input_root / "added-note.txt").write_bytes(payloads["added-note"])
+    grown_catalog = build_catalog(payloads, supersedes=Supersedes(
+        catalog.reference.catalog_id, catalog.reference.digest, "Add one review note",
+    ))
+    growth = preview_local_catalog(grown_catalog.reference, workspace, producer=source_producer,
+        previous_ref=catalog.reference)
+    assert growth["comparison"]["counts"] == {"added": 1, "removedFromCatalog": 0, "changed": 0, "unchanged": 4}
+    _write(output / "catalog-growth.json", growth)
+    with prepare_local_experiment(grown_catalog.reference, workspace, **(settings | stages),
+                                  processors=(candidate,), base_release=alternative_base) as prepared:
+        _, grown_view, grown = finish(prepared, "grown")
+    assert grown["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
+    values["grown"] = _phrase_values(grown_view, candidate)
     clean_workspace = LocalWorkspace(output / "clean-comparison", {
         "sourceCatalog": workspace.roots["sourceCatalog"], "sourceContent": input_root,
     })
-    with prepare_local_experiment(catalog.reference, clean_workspace, **(settings | stages),
+    with prepare_local_experiment(grown_catalog.reference, clean_workspace, **(settings | stages),
                                   processors=(candidate,)) as clean:
         clean_release = clean.retain(clean.run())
         clean_view = open_local_inspection(clean.plan, clean_workspace,
             document_release_producer=release_producer, release_ref=clean_release)
-    assert _phrase_values(clean_view, candidate) == values["resource-v2"]
+    assert _phrase_values(clean_view, candidate) == values["grown"]
+    clean_comparison = grown_view.compare(clean_view)
+    assert not clean_comparison["result"]["sampleTruncated"]
+    assert all(not change[f"{kind}Changed"] for change in clean_comparison["result"]["sample"]
+               for kind in ("input", "content", "configuration"))
+    # Inspection's outcome digest includes the plan's add/update classification.
+    # Compare actual dispositions and failures separately: a clean run adds
+    # every item, while an incremental run updates the existing items.
+    def outcomes(view):
+        return {row["sourceItemId"]: {key: value for key, value in row["payload"].items()
+                if key not in {"entryId", "change"}} for row in view.records("dispositions")}
+
+    assert outcomes(grown_view) == outcomes(clean_view)
+    assert list(grown_view.records("failures")) == list(clean_view.records("failures")) == []
+    _write(output / "clean-comparison.json", clean_comparison)
     _write(output / "matches.json", values)
     _write(output / "comparisons.json", comparisons)
     summary = {
-        "verdict": "pass", "catalogItems": len(rows), "selectedDocuments": 3, "excludedDocuments": 1,
+        "verdict": "pass", "initialCatalogItems": len(rows), "catalogItems": len(payloads),
+        "selectedDocuments": 4, "excludedDocuments": 1, "addedDocuments": 1,
         "initialFailures": 1, "repairedFailures": 0, "originalFailureStillInspectable": True,
-        "capturedDocuments": 3, "processedSegments": len(values["original"]),
+        "capturedDocuments": 4, "processedSegments": len(values["grown"]),
         "matchCounts": {name: sum(len(value["matches"]) for value in result) for name, result in values.items()},
         "savedHandoffRecovered": True, "alternativesReuseUpstream": True, "cleanOutputValuesAgree": True,
         "limitations": "Synthetic literal-mention examples; no semantic classification or live-resource verification.",
