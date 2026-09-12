@@ -1269,6 +1269,10 @@ to defer a conditional item is a documented deferral, not completed implementati
   lock consistency and maintained-document local targets passed.
   The profile establishes repeated work, not unprofiled performance or the
   proposed 4,096-document capacity. Representative capacity remains open.
+  The same unprofiled 64-document processing/retention probe improved from
+  **28.112 to 12.962 seconds**; the corrected 128-document probe completed in
+  **25.170 seconds**. Fresh retained inspection passed for both. The architecture
+  report retains exact observations and their limited scope.
 
 <a id="d38"></a>
 
