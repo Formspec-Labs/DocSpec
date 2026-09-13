@@ -1,6 +1,6 @@
 # Core implementation tasks
 
-Proposed 2026-09-13. These **25 tasks** implement the [Core spec](core-model.md)
+Proposed 2026-09-13. These **24 tasks** (C22 is dropped; its identifier is retained so earlier records resolve) implement the [Core spec](core-model.md)
 and [implementation plan](core-model-implementation-plan.md), informed by the
 [current-code comparison](history/2026-09-13-core-model-implementation-comparison.md).
 All tasks are proposed; none is marked implemented by this document. Task IDs are
@@ -12,8 +12,8 @@ operations; task IDs below reflect that corrected dependency order.
 
 The outcome is one simpler shared lifecycle, with the existing document features
 using it, and a bounded bulk data path through DuckDB and Arrow. Python coordinates
-operations and batches. The SQLite ledger owns logical publication; disk-objectstore
-owns local content placement. Tests accompany each task; the final validation tasks
+operations and batches. The SQLite ledger owns logical publication; the existing content-addressed blob store owns bytes.
+Nothing is deferred behind a trigger; a capability that turns out to be needed is a new decision. Tests accompany each task; the final validation tasks
 complete the coverage and qualify the assembled implementation.
 
 Legacy support is out of scope. Adopt the new APIs and storage formats directly;
@@ -45,17 +45,17 @@ Related tasks may be implemented together when that makes a smaller coherent cha
 | --- | --- | --- |
 | C01 | Map ownership, preservation, and retirement | — |
 | C02 | Specify records, identity rules, and independent fixtures | C01 |
-| C03 | Qualify the required bulk operations and native-code gaps | C02 |
+| C03 | Qualify the required bulk operations | C02 |
 | C04 | Implement typed records and one admission path | C02 |
 | C05 | Implement canonical value and correspondence encoding | C03, C04 |
 | C06 | Make record storage and interchange batch-native | C03, C04, C05 |
-| C07 | Add packed local content storage | C04, C05 |
+| C07 | Connect the existing blob store to publication and cleanup | C04, C05 |
 | C08 | Implement the authoritative SQLite metadata backend | C04, C05 |
 | C09 | Implement durable publication and recovery | C06, C07, C08 |
 | C10 | Implement general root states and occurrence membership | C09 |
 | C11 | Implement the common operation lifecycle | C10 |
 | C12 | Implement immutable partial-value transformations | C11 |
-| C13 | Implement membership revision and ordering resolution | C12 |
+| C13 | Implement membership revision resolution | C12 |
 | C14 | Implement typed selected-value evaluation | C13 |
 | C15 | Implement checkpoints and compaction without new logical states | C14 |
 | C16 | Implement dependency adequacy and affected-result queries | C14, C08 |
@@ -64,15 +64,13 @@ Related tasks may be implemented together when that makes a smaller coherent cha
 | C19 | Move the document pipeline onto Core and bulk data flow | C13, C14, C17 |
 | C20 | Consolidate Python API, CLI, and inspection | C18, C19 |
 | C21 | Preserve scheduler, remote storage, and independent exports | C20 |
-| C22 | Implement bounded PROV export and Keyed-State checks | C13, C17, C18 |
-| C23 | Retire superseded code, schemas, configuration, and dependencies | C20, C21, C22 |
+| C22 | Dropped; Keyed-State checks move to C24 | — |
+| C23 | Retire superseded code, schemas, configuration, and dependencies | C20, C21 |
 | C24 | Complete conformance, regression, and installed-package checks | C23 |
 | C25 | Qualify full-path performance and finish implementation docs | C24 |
 
 After C02, C03 and C04 can progress independently. After C05, batch I/O,
-content storage, and the ledger can progress independently. After C17, document
-integration and PROV work can progress independently when their listed prerequisites
-are ready.
+content storage, and the ledger can progress independently. After C17, document integration can proceed when its listed prerequisites are ready.
 
 ## A. Fix the scope and acceptance criteria
 
@@ -94,21 +92,21 @@ Map each required Core behavior to its current owner, target owner, useful user 
 
 Specify the versioned occurrence, state, revision, operation definition, execution, input/result binding, selected-value, resource, and selection records. Separate member keys, occurrence/entity IDs, content digests, request IDs, and attempt IDs. Define contextual raw/derived roles, new/adopted entities, uncertainty, empty/null/failure outcomes, and physical versus logical state identity.
 
-**Done when:** Known-answer fixtures cover every distinction and invalid combination, including generation cycles/self-dependence, duplicate generation, and usage timing for streams. A small independent state/selection reference model and Hypothesis generators exist for later implementation checks. Record the actual PROV interpretation from the beginning; exporter implementation comes in C22.
+**Done when:** Known-answer fixtures cover every distinction and invalid combination, including generation cycles/self-dependence, duplicate generation, and usage timing for streams. A small independent state/selection reference model and Hypothesis generators exist for later implementation checks. Record the actual PROV interpretation from the beginning; C24 checks it against the ledger.
 
 **Simplification:** Several concepts may share one record or manifest. The reference model is test code; production has one implementation of each rule.
 
 **Start from:** [docs/core-model.md](core-model.md), [docs/core-model-implementation-plan.md](core-model-implementation-plan.md), [src/docspec/domain/content.py](../src/docspec/domain/content.py), [src/docspec/domain/processors.py](../src/docspec/domain/processors.py).
 
-### C03 · Qualify the required bulk operations and native-code gaps
+### C03 · Qualify the required bulk operations
 
 **Depends on:** C02. **Status:** proposed.
 
-Exercise DuckDB/Arrow on the actual selected-value encodings, nested JSON edits, ordering, schema validation, and hashing requirements. Extend probes to absent/null/type/composite cases, duplicate-key and pointer-syntax admission, canonical escaping of extracted strings/objects, and bounded execution over input larger than the allowed working memory. Include whole-state sorting/framing without unbounded list/string aggregates. Measure parsing, Python conversions/callbacks, scratch use, and output streaming.
+Exercise DuckDB/Arrow on the actual selected-value encodings, nested JSON edits, schema validation, and hashing requirements. Extend probes to absent/null/type/composite cases, duplicate-key and pointer-syntax admission, canonical escaping of extracted strings/objects, and bounded execution over input larger than the allowed working memory. Measure parsing, Python conversions/callbacks, scratch use, and output streaming.
 
-**Done when:** Keep DuckDB as selected. Record which operations work through existing libraries and whether any specific required function needs C-N1. Establish reproducible baselines without treating the existing membership probe as a complete resolver or production benchmark.
+**Done when:** The canonical-bytes path for extracted values passes its fixtures across the admitted domain, and reproducible baselines exist for each required operation without treating the existing membership probe as a complete resolver or production benchmark.
 
-**Simplification:** Resolve the required execution mechanism before its production implementation. Do not build both a Python bulk engine and a replacement native engine.
+**Simplification:** One engine, no native component.
 
 **Start from:** [docs/history/probes/2026-09-13-engine-resolver-probe.py](history/probes/2026-09-13-engine-resolver-probe.py), [docs/capacity-workloads.md](capacity-workloads.md), [src/docspec/adapters/storage/records.py](../src/docspec/adapters/storage/records.py).
 
@@ -130,9 +128,9 @@ Implement the fixed records with msgspec; use explicit typed decoding and strict
 
 **Depends on:** C03, C04. **Status:** proposed.
 
-Reuse the existing canonical JSON codec and SHA-256. Implement purpose-tagged, versioned operation/dependency encodings, explicit absent/present values, labeled composites, material identities/resources, ordered sequences, and duplicate-preserving unordered comparisons. Preserve exact opaque binary bytes and distinct logical identities.
+Reuse the existing canonical JSON codec and SHA-256. Implement purpose-tagged, versioned operation/dependency encodings, explicit absent/present values, labeled composites, and material identities/resources. Preserve exact opaque binary bytes and distinct logical identities.
 
-**Done when:** Every encoding has known-answer bytes and digests. Number/string, null/absence, duplicate counts, Unicode/control-character escaping, object ordering, and malformed numeric cases match across the chosen execution paths. Extracted JSON is canonically re-encoded or passes a proven byte-equivalent path before hashing. Large selections produce the same bytes/digests across bounded chunk sizes. Encoding version changes cannot silently reinterpret retained identities.
+**Done when:** Every encoding has known-answer bytes and digests. Number/string, null/absence, Unicode/control-character escaping, object ordering, and malformed numeric cases match across the chosen execution paths. Extracted JSON is canonically re-encoded or passes a proven byte-equivalent path before hashing. Encoding version changes cannot silently reinterpret retained identities.
 
 **Simplification:** One canonical rule set per codec and one hash family. Ordinary JSON serialization and engine-internal hashes do not become alternate identity encoders.
 
@@ -150,15 +148,15 @@ Expose bounded Arrow record-batch readers/writers and DuckDB relations for inter
 
 **Start from:** [src/docspec/ports/record_storage.py](../src/docspec/ports/record_storage.py), [src/docspec/adapters/storage/records.py](../src/docspec/adapters/storage/records.py), [src/docspec/ports/record_workspace.py](../src/docspec/ports/record_workspace.py), [src/docspec/adapters/reconciliation.py](../src/docspec/adapters/reconciliation.py), [tests/test_parquet_arrow_stream.py](../tests/test_parquet_arrow_stream.py).
 
-### C07 · Add packed local content storage
+### C07 · Connect the existing blob store to publication and cleanup
 
 **Depends on:** C04, C05. **Status:** proposed.
 
-Implement a thin disk-objectstore adapter for bounded writes, reads, integrity checks, physical deduplication, packing, and maintenance. Preserve logical artifact IDs independently of storage addresses. Define content readiness and protection hooks used by publication and cleanup. Enforce the pinned library's per-operation access restrictions, including an exclusive content-access gate for deletion.
+Keep the existing content-addressed blob store and its S3 adapter. Preserve logical artifact IDs independently of storage addresses. Define the content readiness and protection hooks used by publication and cleanup, and route every removal through `remove_under_policy`.
 
-**Done when:** Exact bytes survive write/reopen/packing; equal bytes can back distinct entities. Integrity, concurrent creation, stream closure, interruption, and adapter durability checks pass. Destructive repacking stays disabled until its crash-recovery path is qualified. Packed-object deletion and actual space reclamation are reported separately. The metadata ledger does not take ownership of the store's internal physical index.
+**Done when:** Exact bytes survive write and reopen; equal bytes can back distinct entities. Integrity, concurrent creation, stream closure, interruption, and adapter durability checks pass. Nothing deletes content except the policy operation.
 
-**Simplification:** Replace the custom local generic object-storage implementation as callers move. Preserve DocSpec retention rules and the provider-neutral content boundary.
+**Simplification:** No new storage library. Preserve DocSpec retention rules and the provider-neutral content boundary.
 
 **Start from:** [src/docspec/ports/blob_store.py](../src/docspec/ports/blob_store.py), [src/docspec/adapters/storage/blobs.py](../src/docspec/adapters/storage/blobs.py), [src/docspec/runtime/storage.py](../src/docspec/runtime/storage.py), [tests/test_storage_adapters.py](../tests/test_storage_adapters.py).
 
@@ -190,7 +188,7 @@ Implement successful-retention checks and publication units: retain required byt
 
 **Depends on:** C09. **Status:** proposed.
 
-Create and read root states with scalar or structured admitted values and opaque value references. Keep source/member keys separate from immutable occurrence IDs. Store full membership, multiplicity, values, and meaningful order in retained batch representations.
+Create and read root states with scalar or structured admitted values and opaque value references. Keep source/member keys separate from immutable occurrence IDs. Store full membership, multiplicity, and values in retained batch representations.
 
 **Done when:** Equal values remain distinct occurrences; full roots recover after reopen. A source metadata change can keep its member key while receiving a new occurrence identity. Imported roots do not invent construction activities. Single-member and batch APIs use the same implementation.
 
@@ -224,13 +222,13 @@ Apply ordered JSON Patch operations to named occurrence values, preserving null 
 
 **Start from:** [src/docspec/application](../src/docspec/application), [src/docspec/domain/content.py](../src/docspec/domain/content.py), [src/docspec/adapters/storage/records.py](../src/docspec/adapters/storage/records.py).
 
-### C13 · Implement membership revision and ordering resolution
+### C13 · Implement membership revision resolution
 
 **Depends on:** C12. **Status:** proposed.
 
-Resolve puts, removals, and moves over retained bases using DuckDB and the plan's member addressing rules. Validate sequential preconditions before reducing to the final change per key. Preserve order independently of key sorting; reject ambiguous conflicts and implicit branch merges.
+Resolve puts and removals over retained bases using DuckDB and the plan's member addressing rules. Validate sequential preconditions before reducing to the final change per key. Reject ambiguous conflicts and implicit branch merges.
 
-**Done when:** Full resolution, affected-partition resolution, and the reference model agree on repeated keys, replacements, removals, moves, duplicates, and invalid intermediate edits. Old and new states remain recoverable. Explicit composition produces complete membership and actual provenance.
+**Done when:** Full resolution, affected-partition resolution, and the reference model agree on repeated keys, replacements, removals, duplicates, and invalid intermediate edits. Old and new states remain recoverable. Explicit composition produces complete membership and actual provenance.
 
 **Simplification:** Replace the document-specific assumptions used to treat partition replacement or record-ID sorting as all state revision semantics. Reuse partition files and indexes.
 
@@ -240,9 +238,9 @@ Resolve puts, removals, and moves over retained bases using DuckDB and the plan'
 
 **Depends on:** C13. **Status:** proposed.
 
-Implement whole values, labeled JSON Pointer composites, and state-member selections. Preserve types, absent/present/null, keys, multiplicity, array addressing, and order when material. Group by definition/codec, extract needed fields together, then use C05 encodings. Support direct retention or exact recovery from retained parents.
+Implement whole values and labeled JSON Pointer composites. Preserve types, absent/present/null, keys, multiplicity, and array addressing. Group by definition/codec, extract needed fields together, then use C05 encodings. Support direct retention or exact recovery from retained parents.
 
-**Done when:** Both retention routes produce identical values and fingerprints. Invalid pointer escapes refuse before engine evaluation. Number/string and null/absence never collide semantically. Unrelated parent metadata and state IDs do not invalidate value-only dependencies; relevant order/membership changes do. Generated keys enter correspondence when declared material. Actual bound values remain recoverable, not just their hashes.
+**Done when:** Both retention routes produce identical values and fingerprints. Invalid pointer escapes refuse before engine evaluation. Number/string and null/absence never collide semantically. Unrelated parent metadata and state IDs do not invalidate value-only dependencies; relevant membership changes do. Generated keys enter correspondence when declared material. Actual bound values remain recoverable, not just their hashes.
 
 **Simplification:** Replace hard-coded dependency-field projections with retained definitions evaluated by one bulk path. Origin remains separate from equivalence unless material.
 
@@ -252,7 +250,7 @@ Implement whole values, labeled JSON Pointer composites, and state-member select
 
 **Depends on:** C14. **Status:** proposed.
 
-Bound edit replay through retained checkpoints, partition indexes, and physical compaction. Materialize full membership, values, and ordering; preserve original revision/provenance information and all retained recovery paths. Replace physical references through the metadata owner only after equivalence is established.
+Bound edit replay through retained checkpoints, partition indexes, and physical compaction. Materialize full membership and values; preserve original revision/provenance information and all retained recovery paths. Replace physical references through the metadata owner only after equivalence is established.
 
 **Done when:** Checkpointed, replayed, and compacted states agree and retain the same logical IDs. Reopen after interruption recovers a valid representation. Small lookups avoid replaying the full history; deletion of shared storage cannot break another retained state or selected value.
 
@@ -290,9 +288,9 @@ Connect batch candidate lookup to correspondence, current availability, and sepa
 
 **Depends on:** C15, C17. **Status:** proposed.
 
-Implement guarded current pointers and remove_under_policy with recorded authorization and outcomes. Retain historical retention status while tracking availability separately. Use C07's maintenance gate and C08's durable intent records for bounded, resumable deletion. Coordinate reachability, shared packed content, in-flight publication, and interrupted cleanup; reclaim crash leftovers only under an explicit policy.
+Implement guarded current pointers and remove_under_policy with recorded authorization and outcomes. Retain historical retention status while tracking availability separately. Use C08's durable intent records for bounded, resumable deletion. Coordinate reachability, shared content, in-flight publication, and interrupted cleanup; reclaim crash leftovers only under an explicit policy.
 
-**Done when:** Stale expected-current updates refuse; switching back preserves both states. Cleanup refuses without an applicable policy or when retention commitments outside its authorized scope still require the content. Durable intent, availability changes, partial deletion outcomes, and reopening reconcile without erasing historical execution evidence. Shared content, selected-value recovery, and concurrent reader/writer restrictions are checked; logical deletion is not reported as reclaimed packed space.
+**Done when:** Stale expected-current updates refuse; switching back preserves both states. Cleanup refuses without an applicable policy or when retention commitments outside its authorized scope still require the content. Durable intent, availability changes, partial deletion outcomes, and reopening reconcile without erasing historical execution evidence. Shared content and selected-value recovery are checked.
 
 **Simplification:** Reuse the current selection and reachability behavior under the ledger owner. Replace separate ad hoc cleanup and pointer-write decisions.
 
@@ -336,23 +334,18 @@ Adapt the existing Dagster execution, local workers, S3 storage, result sinks, a
 
 **Start from:** [src/docspec/adapters/dagster.py](../src/docspec/adapters/dagster.py), [src/docspec/adapters/execution.py](../src/docspec/adapters/execution.py), [src/docspec/adapters/s3_blob.py](../src/docspec/adapters/s3_blob.py), [src/docspec/adapters/result_export](../src/docspec/adapters/result_export), [src/docspec/adapters/sinks.py](../src/docspec/adapters/sinks.py), [tests/test_dagster_adapter.py](../tests/test_dagster_adapter.py), [tests/test_s3_blob_adapter.py](../tests/test_s3_blob_adapter.py).
 
-### C22 · Implement bounded PROV export and Keyed-State checks
+### C22 · Dropped
 
-**Depends on:** C13, C17, C18. **Status:** proposed.
-
-Build requested PROV documents from the retained records, including entities, activities, Plan/Association interpretation, membership, usage, generation, established derivation, and Core-specific associations. Implement the optional Keyed-State interpretation and complete insertion/removal constraints for the selected keyed binding.
-
-**Done when:** Exports and independent fixtures preserve actual provenance, adopted entities, reused results, order, and complete keyed changes without invented history. Explicit record/byte budgets bound every export; over-budget requests refuse clearly without materializing an unbounded ProvDocument or silently truncating membership/change claims. Claim Core and Keyed-State conformance separately and only for checked behavior.
-
-**Simplification:** Keep one standards-facing mapping over authoritative records. Do not add an RDF database or duplicate all history into an in-memory graph.
-
-**Start from:** [src/docspec/application/execution_evidence.py](../src/docspec/application/execution_evidence.py), [src/docspec/application/inspection_evidence.py](../src/docspec/application/inspection_evidence.py), [src/docspec/adapters/result_export](../src/docspec/adapters/result_export), [tests/conformance](../tests/conformance), [docs/core-model.md](core-model.md).
+PROV export through the `prov` library is not needed: Core requires the
+interpretation to be recoverable, and C24 checks it against the ledger. The
+Keyed-State insertion/removal completeness checks formerly here move to C24. The
+identifier is retained so earlier records still resolve.
 
 ## F. Finish consolidation and qualify the result
 
 ### C23 · Retire superseded code, schemas, configuration, and dependencies
 
-**Depends on:** C20, C21, C22. **Status:** proposed.
+**Depends on:** C20, C21. **Status:** proposed.
 
 Close the C01 retirement map: remove unused old parsers, cache/publication owners, graph algorithms, blob mechanics, stage-specific duplicate rules, obsolete formats, and dead wrappers after their callers have moved. Update registrations, imports, examples, and dependency metadata together.
 
@@ -366,7 +359,7 @@ Close the C01 retirement map: remove unused old parsers, cache/publication owner
 
 **Depends on:** C23. **Status:** proposed.
 
-Complete the Core requirement-to-test map and Hypothesis sequences begun in C02. Exercise revisions, selections, omissions, failures, deletion, concurrency, schema-version checks, and encoding across the installed package. Update tests to the new interfaces while preserving behavioral assertions, remove tests solely for retired formats/APIs, and run the repository's strict regression workflow. Ship the full two-field revision/reuse/reopen example.
+Complete the Core requirement-to-test map and Hypothesis sequences begun in C02, including the PROV interpretation and the Keyed-State insertion/removal completeness checks against the ledger. Exercise revisions, selections, omissions, failures, deletion, concurrency, schema-version checks, and encoding across the installed package. Update tests to the new interfaces while preserving behavioral assertions, remove tests solely for retired formats/APIs, and run the repository's strict regression workflow. Ship the full two-field revision/reuse/reopen example.
 
 **Done when:** Required tests and parameter cases pass without skips or fabricated coverage; independent fixtures agree with production. The wheel installs with declared dependencies, including the supplied shared artifact wheel, and works without optional services. Evidence names the tested revision and package.
 
@@ -386,33 +379,20 @@ Measure the production request-to-durable-publication path: full construction, m
 
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 
-## Conditional native work
-
-**C-N1 · Implement one justified native batch function.** This is not a baseline
-component or a twenty-sixth unconditional task. C03, or a later named semantic
-or capacity failure, must identify the exact operation, missing library capability,
-expected benefit, and acceptance fixture first. Implement only that operation in
-one focused PyO3/maturin component, with bounded Arrow exchange where appropriate,
-compatible dependencies, correct buffer/stream ownership, and interpreter-lock
-release where safe. If required for the initial workflow, it becomes a prerequisite
-of the task that needs it. Include installed-wheel and cross-path encoding/behavior
-checks and remove any superseded prototype path. Do not add Rust solely to bind
-SQLite rows.
-
 ## Coverage against the spec and plan
 
 | Required outcome | Owning tasks |
 | --- | --- |
-| Core §1: explicit scope and checked conformance claims | C01, C02, C22, C24 |
-| Core §2: recoverable PROV interpretation | C02, C11, C22, C24 |
-| Core §3: occurrences, complete states, revisions, order, and multiplicity | C10, C12–C15 |
-| Core §4: definitions, executions, bindings, contextual roles, and actual provenance | C02, C04, C11, C19, C22 |
+| Core §1: explicit scope and checked conformance claims | C01, C02, C24 |
+| Core §2: recoverable PROV interpretation | C02, C11, C24 |
+| Core §3: occurrences, complete states, revisions, and multiplicity | C10, C12–C15 |
+| Core §4: definitions, executions, bindings, contextual roles, and actual provenance | C02, C04, C11, C19 |
 | Core §5: retention, availability, streaming, fusion, history, and authorized deletion | C07–C11, C14, C15, C18 |
 | Core §6: selected values, adequacy, omissions, resources, and nondeterminism | C05, C14, C16, C17 |
 | Core §7: correspondence, policy, exact retained associations, and provenance preservation | C08, C09, C16, C17, C20 |
 | Core §8: batching, physical sharing, and compaction | C05–C09, C15, C19, C25 |
-| Optional Keyed-State Profile §9 | C02, C10–C13, C22, C24 |
-| Plan: one native bulk data path and measured capacity | C03, C05, C06, C13–C17, C19, C25 |
+| Keyed-State Profile §9 | C02, C10–C13, C24 |
+| Plan: one bulk data path and measured capacity | C03, C05, C06, C13–C17, C19, C25 |
 | Plan: one metadata authority and preserved current selection | C08, C09, C18, C19 |
 | Simplification and preservation of the existing product | C01, C04, C06, C19–C25 |
 
@@ -423,11 +403,7 @@ the planned keyed-state implementation and its separately checked profile claim,
 and preservation of the existing document, S3, Dagster, and independent-export
 capabilities. Existing optional adapters remain optional to install and run.
 
-PostgreSQL, a new remote content service, RDF/SPARQL storage, Delta integration,
-additional value codecs, new schedulers, new source connectors, and new domain
-processors are later product additions. They are not prerequisites for this
-implementation. Add them through the existing interfaces when a concrete need
-exists; do not prebuild empty backends or service frameworks.
+Not planned: PostgreSQL, packed or remote content services beyond the existing S3 adapter, PROV export, RDF storage, Delta integration, additional value codecs, new schedulers, new source connectors, new domain processors, a native component, and authored state ordering. Any of these is a new decision with its own record if it becomes needed; nothing is prebuilt or held behind a trigger.
 
 Legacy API support, old-format readers, and migration of existing workspaces are
 excluded. Update owned consumers and fixtures directly to the new interfaces.

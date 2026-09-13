@@ -5,7 +5,7 @@ open. Parties: the owner; Claude Fable 5.1, which reviewed and refined the
 spec, reviewed the plan twice, measured the engine and ledger choices, and
 wrote this record; and GPT-6, which authored the plan and tasks and ran the
 [recursive validation](2026-09-13-core-plan-swarm-validation.md). Versions
-are pinned at the end. Nothing here is implemented; the 25 tasks are proposed.
+are pinned at the end. Nothing here is implemented; the 24 tasks are proposed.
 
 ## Decisions
 
@@ -21,8 +21,8 @@ are pinned at the end. Nothing here is implemented; the 25 tasks are proposed.
 | DuckDB is the sole bulk engine. | Owner directed a decision; Fable measured | Engine probe: equal speed within noise, about a tenth of the memory, typed extraction and SHA-256 in the engine, no new dependency; the swarm narrowed the claim to the tested query shape | Agreed |
 | Standard-library `graphlib` and recursive SQL replace rustworkx. | Fable | The operation graph is a handful of nodes | Agreed |
 | SQLite through standard-library `sqlite3`; no native ledger component in the foundation. | Fable measured; the swarm corrected the measurement | Ledger probe; F13 withdrew the subtraction and extrapolation | Agreed; both sides admit native code only on a measured gap |
-| SHA-256 throughout. | Fable; GPT-6 | disk-objectstore is SHA-256 only | Agreed |
-| disk-objectstore for local content, with maintenance restrictions taken from its source. | GPT-6; swarm F07 | Source at `ba13ca6`, confirmed below | Agreed |
+| SHA-256 throughout. | Fable; GPT-6 | The existing blob store and Rulespec digests are SHA-256 | Agreed |
+| disk-objectstore for local content. | GPT-6; swarm F07 | Source at `ba13ca6`, confirmed below | Superseded the same day; see Simplification below. The existing blob store stays. |
 | msgspec for typed records; jsonschema-rs for supplied payloads; duplicate keys rejected by the shared Rulespec decoder at raw admission. | GPT-6; swarm F06 | Confirmed below | Agreed |
 | Roles on result bindings; an established-or-uncertain marker on resources; a retention policy record every removal cites; a guarded current selection per dataset. | Fable recommended; owner accepted | Plan §2, §4, §5, §8; the swarm refined generated-key materiality (F01) and adequacy before policy (F02) | Applied |
 | No legacy support: no importer, compatibility layer, migration framework, or dual write. | Owner and GPT-6 | Consistent with the to-do's breaking-changes decision | Applied |
@@ -54,14 +54,11 @@ turns on it, because the plan admits native code only on a measured gap.
 
 ## Open items
 
-- Plan §7 says a future PostgreSQL backend owns "migrations" while the plan
-  excludes migration frameworks. One word. Left as is to keep the swarm's
-  pinned plan hash.
 - F05's confirmed gap, canonical bytes from engine extraction, is resolved by
-  design in C03 and C05, not yet in fact. One shape to evaluate there: compute
-  declared projections' canonical bytes at admission, where each record is
-  already canonically encoded in Python, and re-encode in Python only the
-  extracted values that contain a control-character escape.
+  design in plan §3.3 and by fixtures in C03 and C05: extracted values pass
+  through the shared canonical encoder where they contain a control-character
+  escape. The fixtures decide whether that filter is complete across the
+  admitted domain.
 - Capacity, adapter durability, installed-package behavior, and Core
   conformance remain acceptance checks on unbuilt code.
 
@@ -71,3 +68,31 @@ Commit `185a981` on branch `docs/core-model`. SHA-256: spec
 `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81`, plan
 `9a46a286a572c2550639cbd98dca31c496c493570fd3911c26cd28432217b28d`, tasks
 `6eafa2503ce2b78464ec219d15fef83d9b338e24b0a80f543e2e0e07af208caa`.
+
+## Simplification, 2026-09-13, later
+
+The owner asked how to simplify and ruled out deferrals: nothing is held
+behind a trigger; a component is either needed for the first implementation
+or it is out. Decided on that rule and applied to the plan and tasks:
+
+| Component | Decision | Reason |
+| --- | --- | --- |
+| disk-objectstore | Out; the existing content-addressed blob store stays | Its deletion is non-atomic, needs exclusive access and soft-deletes, so the plan had to wrap it in a maintenance gate. The existing store already deletes under retention machinery and has an S3 adapter. Packing's benefit is unmeasured. |
+| `prov` export | Out | Core requires the PROV interpretation to be recoverable, not exported. C24 checks it against the ledger. |
+| Authored state ordering, `move` edits, positional insertion | Out; states are dictionaries | DocSpec's states are keyed and sorted by identity; order is derived, never authored. The initial binding is the Keyed-State Profile. |
+| `state_members` selector kind | Out | A whole-state dependency binds the state as a whole value, which Core §6.2 permits as a conservative declaration. |
+| Native component, conditional or otherwise | Out | No measured gap. The canonical-bytes gap is resolved with the shared encoder. |
+| PostgreSQL and the rest of §7 | Out | Not needed. Dagster stays because it exists and is used. |
+| Plan §8 implementation steps | Out; §8 is now acceptance only | The tasks file already sequences the work. |
+| msgspec, Hypothesis | In | The only new dependencies. |
+
+Effect: the plan went from 783 to 591 lines and the tasks from 437 to 413.
+C22 is dropped with its identifier retained; C07, C13, C14, C15 and C18 are
+trimmed; the conditional native task is removed. The task graph has 24 live
+tasks and 37 edges and is acyclic. All 169 local links across the five
+documents resolve. The swarm validation's pinned plan and task hashes are now
+historical; current hashes are below. The spec is unchanged.
+
+## Versions after simplification
+
+Spec `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81`, plan `430ba669c39480d6541bcaf6281b04fd735e713ec6e845fd7110955e7a3d44d5`, tasks `7c36ee55f3daf0fd9b834c7f8e89f56d3ba47ddca45f6b29db6d02cee9472f25`.
