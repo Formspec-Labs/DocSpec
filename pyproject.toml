@@ -1,24 +1,26 @@
 [project]
 name = "docspec"
-version = "0.2.11"
+version = "0.3.0"
 description = "Format-neutral bulk document acquisition, processing, segmentation, and release management"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "duckdb>=1.5.5,<2",
+    "pyarrow>=25,<26",
     "jsonschema>=4.23,<5",
-    # Not an accelerator: the sole schema engine every catalog row passes
-    # through in practice. jsonschema alone is ~116x slower on the source-item
-    # schema (1,993 us/row against 17.1 us/row), which is the difference
-    # between minutes and hours over a full corpus, and nothing announced which
-    # engine a build had resolved. jsonschema stays as the refusal authority.
-    # Same spelling and bound SpicySearch already declares.
+    # Required for the per-row acceptance check. Python jsonschema supplies
+    # detailed refusal diagnostics; it is not an alternative execution mode.
     "jsonschema-rs>=0.52,<1",
-    "rulespec-artifacts==1.0.11",
+    "rulespec-artifacts==1.0.12",
 ]
 
 [tool.uv.sources]
-rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.11-py3-none-any.whl" }
+rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" }
+spicy-docs = { path = "vendor/spicy_docs-0.6.0-py3-none-any.whl" }
 
 [project.optional-dependencies]
+spicy-docs = [
+    "spicy-docs==0.6.0",
+]
 http = [
     "httpx>=0.27,<1",
 ]
@@ -29,7 +31,6 @@ tokens = [
     "tiktoken>=0.7,<1",
 ]
 pdf = [
-    "pymupdf>=1.24,<2",
     "pypdf>=5,<7",
 ]
 dagster = [
@@ -37,9 +38,10 @@ dagster = [
 ]
 [dependency-groups]
 dev = [
+    # Exercise the source adapter and retained Parquet example against the same
+    # provider wheel. DuckDB and Arrow also power retained record storage.
+    "spicy-docs[public-table]==0.6.0",
     "httpx>=0.27,<1",
-    "ijson>=3.3,<4",
-    "jsonschema>=4.23,<5",
     # Optional accelerator for rulespec-artifacts' canonical encoder, which
     # imports it defensively and falls back to json.dumps when it is absent.
     # It sits in the group `uv run` already keeps self-consistent because a

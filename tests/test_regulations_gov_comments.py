@@ -360,7 +360,7 @@ def test_installed_adapter_exposes_comment_profile_and_propagates_upstream_tie_r
             raise ValueError("upstream source-version tie")
 
     source_native = SimpleNamespace(
-        SUPPORTED_PRODUCER_PRODUCTS=frozenset({"spicy-regs", "spicy-docs"}),
+        CURRENT_PRODUCER_PRODUCT="spicy-docs",
         SourceNativeReleaseReader=RefusingReader,
     )
     monkeypatch.setattr(spicy_docs_adapter_module, "import_module", lambda _: source_native)
@@ -396,8 +396,6 @@ def test_source_catalog_cli_accepts_the_comment_profile_choice() -> None:
             "git+https://example.test/docspec@" + "1" * 40,
             "--destination",
             "catalog",
-            "--receipt",
-            "receipt.json",
         ]
     )
     assert args.source_native_profile == ["regulations-gov-comments"]

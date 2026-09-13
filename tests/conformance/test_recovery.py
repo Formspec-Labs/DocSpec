@@ -14,7 +14,6 @@ from docspec.domain.content import SourceItem
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     StoreTaskResult,
     iter_store_tasks,
@@ -111,17 +110,9 @@ class _Composition:
             artifact_id="urn:docspec:test:worker-composition",
             value={"implementationId": "tests.local-worker/v1", "planId": plan.plan_id},
         )
-        scheduler_configuration = controls.put(
-            kind="scheduler-configurations",
-            artifact_id="urn:docspec:test:scheduler-configuration",
-            value={"adapterId": "docspec.local-threaded", "maxWorkers": 2, "maxInFlight": 2},
-        )
         execution_profile = ExecutionProfile(
-            "docspec.local-threaded",
-            "1.0.0",
             worker_composition,
-            scheduler_configuration,
-            ExecutionLimits(2, 1, 2, 4 * 1024**3, 8 * 1024**3, 100, 2, 1, 0, 0),
+            4 * 1024**3,
             2_000_000_000,
         )
         self.execution_profile_ref = controls.put(

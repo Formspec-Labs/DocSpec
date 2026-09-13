@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import pytest
@@ -11,7 +11,7 @@ from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFa
 from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.identity import sha256_digest
-from docspec.domain.jobs import ChangeKind, EntryExecutionMode
+from docspec.domain.jobs import ChangeKind, EntryExecutionMode, FailureClass, FailureRecord
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import DataUsePolicy, RetentionPolicy
 from docspec.domain.processors import ProcessorSet
@@ -59,6 +59,7 @@ class MemoryDocumentCatalog:
     release: DocumentRelease
     items: tuple[SourceItem, ...]
     failed_item_ids: tuple[str, ...] = ()
+    stages: StagePolicy | None = None
     reader_calls: int = 0
     scan_calls: int = 0
     lookup_calls: int = 0
@@ -102,8 +103,12 @@ class MemoryDocumentCatalog:
                 "payload": {
                     "entryId": f"urn:test:entry:{item_id}",
                     "change": "added",
+                    "requestedStages": (self.stages or _plan(self.release.source_catalog, None).stages).to_dict(),
                     "disposition": disposition,
                     "warnings": [],
+                    "terminalFailure": FailureRecord(
+                        FailureClass.DETERMINISTIC_INPUT, "test.failed", "fixture failure", 1, False,
+                    ).to_dict() if item_id in self.failed_item_ids else None,
                 },
             }
 
@@ -154,13 +159,14 @@ def _plan(
     *,
     selection: dict | None = None,
     partition_count: int = 4,
+    stages: StagePolicy | None = None,
 ) -> ProcessingPlan:
     return ProcessingPlan.create(
         source_catalog=source,
         base_release=base,
         profiles=profile_set(),
         limits=WorkLimits(10, 1000, 100, 100, 1000, 1000, 60),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=stages or StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=partition_count,
         selection={} if selection is None else selection,
@@ -179,6 +185,7 @@ def _planned_update(
     previous_selection: dict | None = None,
     partitions: tuple[str, ...] = (),
     failed_item_ids: tuple[str, ...] = (),
+    current_stages: StagePolicy | None = None,
 ) -> tuple[tuple, MemoryDocumentCatalog]:
     controls = MemoryControls()
     stores = MemoryStores()
@@ -208,7 +215,7 @@ def _planned_update(
     )
     release_ref = release.reference("memory://releases/base", sha256_digest(release.file_bytes))
     current_source = _source_reference("current")
-    plan = _plan(current_source, release_ref, selection=selection)
+    plan = _plan(current_source, release_ref, selection=selection, stages=current_stages)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
     catalog = MemoryDocumentCatalog(
         release_ref,
@@ -285,7 +292,7 @@ def test_planner_streams_bounded_stores_and_schedules_only_selected_work(tmp_pat
         base_release=None,
         profiles=profile_set(),
         limits=WorkLimits(2, 100, 10, 10, 20, 100, 20),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=1,
         selection={"excludeItemIds": ["item-4"]},
@@ -358,7 +365,7 @@ def test_targeted_selection_uses_source_partitions_and_stable_logical_buckets(tm
     assert all(entry.change == ChangeKind.ADDED for entry in entries)
 
 
-def test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucket() -> None:
+def test_changed_selection_reuses_identical_selected_items_without_work() -> None:
     partition_count = 4
     items = tuple(
         _source_item(
@@ -388,8 +395,7 @@ def test_changed_selection_targets_rebuild_to_source_partition_and_logical_bucke
         and logical_partition(item.item_id, partition_count) == selected_bucket
     }
     assert expected
-    assert {entry.source_item.item_id for entry in entries} == expected
-    assert all(entry.change == ChangeKind.REPAIR for entry in entries)
+    assert entries == ()
 
 
 def test_source_partition_selection_rejects_undeclared_partition_before_item_stream(tmp_path: Path) -> None:
@@ -457,7 +463,7 @@ def test_selection_is_precompiled_and_rejects_malformed_selectors_without_items(
         (_source_item("item", candidates=(_candidate(size=13),)), ChangeKind.CHANGED),
         (_source_item("item", candidates=(_candidate(transport="fixture:v2"),)), ChangeKind.CHANGED),
         (_source_item("item", candidates=(_candidate(metadata={"rendition": "changed"}),)), ChangeKind.CHANGED),
-        (_source_item("item", metadata={"expectedSegments": 2}), ChangeKind.CHANGED),
+        (_source_item("item", metadata={"expectedSegments": 2}), ChangeKind.REPAIR),
         (_source_item("item", state=SourceItemState.EXCLUDED), ChangeKind.EXCLUDED),
         (_source_item("item", state=SourceItemState.DELETED), ChangeKind.DELETED),
     ),
@@ -486,14 +492,22 @@ def test_same_version_complete_source_item_changes_are_scheduled(
     assert catalog.lookup_calls == 0
 
 
-def test_an_item_the_base_release_failed_is_repaired_while_its_neighbours_are_dropped() -> None:
-    """A failed item is repairable work on its own: with no plan change and no
-    source change, it is the only entry the next run plans, and it always gets
-    a full redo because a capture-stage failure leaves nothing to reuse."""
+def test_boolean_and_numeric_candidate_metadata_cannot_reuse_acquisition():
+    previous = _source_item("item", candidates=(_candidate(metadata={"option": 1}),))
+    current = _source_item("item", candidates=(_candidate(metadata={"option": True}),))
+    entries, _catalog = _planned_update((previous,), (current,))
+    assert entries[0].change is ChangeKind.CHANGED
+    assert entries[0].execution_mode is EntryExecutionMode.FULL
+
+
+def test_selected_failed_item_is_repaired_while_its_neighbours_are_dropped() -> None:
+    """Explicit repair repeats capture only when no complete capture exists."""
 
     items = (_source_item("failed"), _source_item("succeeded"))
 
-    entries, catalog = _planned_update(items, items, failed_item_ids=("failed",))
+    entries, catalog = _planned_update(
+        items, items, failed_item_ids=("failed",), selection={"retryFailures": "selected"},
+    )
 
     assert [(entry.source_item.item_id, entry.change, entry.execution_mode) for entry in entries] == [
         ("failed", ChangeKind.REPAIR, EntryExecutionMode.FULL)
@@ -501,6 +515,12 @@ def test_an_item_the_base_release_failed_is_repaired_while_its_neighbours_are_dr
     assert catalog.reader_calls == 1
     # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
+
+
+def test_unchanged_permanent_failure_requires_explicit_retry():
+    items = (_source_item("failed"), _source_item("succeeded"))
+    entries, _ = _planned_update(items, items, failed_item_ids=("failed",))
+    assert entries == ()
 
 
 def test_planning_reads_terminal_dispositions_and_never_the_failure_evidence() -> None:
@@ -542,7 +562,7 @@ def test_a_failed_disposition_naming_no_source_item_is_refused(ghost: str) -> No
 
     items = (_source_item("item"),)
 
-    with pytest.raises(IntegrityError, match="failed item that has no source item"):
+    with pytest.raises(IntegrityError, match="disposition population differs from its source items"):
         _planned_update(items, items, failed_item_ids=(ghost,))
 
 
@@ -569,3 +589,21 @@ def test_complete_snapshot_omissions_create_selected_tombstones_only_once() -> N
     assert catalog.reader_calls == 1
     # One scan of "source-items" plus one bounded scan of "dispositions" to find repairable work.
     assert catalog.scan_calls == 2
+
+
+@pytest.mark.parametrize("configuration_field", ["extractor_configuration_digest", "segmenter_policy_digest"])
+def test_stage_configuration_change_rebuilds_unchanged_input(configuration_field: str) -> None:
+    item = _source_item("same-item")
+    stages = _plan(_source_reference("fixture"), None).stages
+    unchanged, _ = _planned_update((item,), (item,), current_stages=stages)
+    assert unchanged == ()
+    changed_stages = replace(stages, **{configuration_field: sha256_digest(b"changed-settings")})
+    rebuilt, _ = _planned_update((item,), (item,), current_stages=changed_stages)
+    assert len(rebuilt) == 1
+    expected_mode = (
+        EntryExecutionMode.FROM_CAPTURES
+        if configuration_field == "extractor_configuration_digest"
+        else EntryExecutionMode.FROM_REPRESENTATIONS
+    )
+    assert rebuilt[0].execution_mode is expected_mode
+    assert rebuilt[0].requested_stages == changed_stages

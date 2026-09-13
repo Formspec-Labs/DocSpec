@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CFRGRANULE>
+  <FDSYS><CFRTITLE>1</CFRTITLE><CFRTITLETEXT>General Provisions</CFRTITLETEXT><VOL>1</VOL><DATE>2023-01-01</DATE><COVERONLY>true</COVERONLY><ORIGINALDATE>2023-01-01</ORIGINALDATE></FDSYS>
+  <SECTION><SECTNO>§ 18.1</SECTNO><SUBJECT>Public access</SUBJECT>
+    <P>Public access includes records &amp; résumé metadata.</P>
+    <P>Machine <E T="03">readable</E> documents support reuse.</P>
+    <CITA>Authored fixture, not legal text.</CITA>
+  </SECTION>
+</CFRGRANULE>

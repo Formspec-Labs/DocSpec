@@ -18,6 +18,8 @@ inventing new fixture machinery.
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 import json
 import os
 import time
@@ -26,20 +28,18 @@ from pathlib import Path
 import pytest
 
 from docspec.adapters.storage import LocalDocumentStoreRepository, LocalJsonControlRepository
-from docspec.cli import local as cli_local
+from docspec.runtime import prepare_local_run
 from docspec.cli import main
 from docspec.cli import requests as cli_requests
 from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import ExecutionHandoff, StoreTask
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
 from docspec.domain.jobs import FailureClass
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import ArtifactRef
-from docspec.processing.extraction import DefaultExtractorRegistry
 from docspec.processing.processors import ContentStatisticsProcessor
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests import helpers as _helpers
 from tests.support import cli as _cli_helpers
 
@@ -76,11 +76,7 @@ def _run_request(
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(1, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            processor_ids,
-        ),
+        stages=stage_policy(processor_ids=processor_ids),
         processors=processors,
         partition_count=4,
         selection={},
@@ -219,7 +215,9 @@ def test_run_active_reports_absence_before_any_planning(
         retry=retry,
         accepted=accepted,
     )
+    before = {str(path.relative_to(tmp_path)): path.stat().st_mtime_ns for path in tmp_path.rglob("*")}
     view = _run_active(run_request, capfd)
+    assert {str(path.relative_to(tmp_path)): path.stat().st_mtime_ns for path in tmp_path.rglob("*")} == before
     assert view["format"] == "docspec-run-active-view"
     assert view["phase"] == "not-planned"
     assert view["planId"] == plan.plan_id
@@ -339,11 +337,7 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(1, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
-        ),
+        stages=stage_policy(processor_ids=(processor.description.processor_id,)),
         processors=ProcessorSet((processor.description,)),
         partition_count=4,
         selection={},
@@ -402,17 +396,14 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
         label="active-fail",
     )
 
-    # item-active-ok needs real acquisition, so it is driven through the
-    # exact same executor/delivery services `task execute` uses internally
-    # (`_compose_local_run`), just with the shared-fixture fetcher that
-    # resolves this test's on-disk content -- the CLI's own composition
-    # helper, not a hand-rolled substitute.
-    composition = cli_local._compose_local_run(
-        cli_requests._local_run_request(run_request),
-        content_fetcher=SharedFixtureContentFetcher(source_content),
+    # Process one selected task through the same runtime the CLI uses, with the
+    # fixture fetcher needed to resolve this test's source namespace.
+    prepared = prepare_local_run(
+        **cli_requests._local_run_arguments(cli_requests._local_run_request(run_request)),
+        content_fetcher=SharedFixtureContentFetcher(source_content), resume=True,
     )
-    processed_reference = composition.executor.execute_store(by_item["item-active-ok"])
-    composition.delivery.deliver_store(processed_reference, composition.sink_ref)
+    task = next(task for task in prepared.task_source(prepared.handoff) if task.input_store == by_item["item-active-ok"])
+    prepared.execute_task(prepared.handoff, task)
 
     # item-running: simulate a worker that claimed the store and died before
     # doing anything else -- call DocumentStore.start() and save it directly,
@@ -447,7 +438,8 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
         "captured": 1,
         "deleted": 2,
     }
-    assert view["entries"]["acquisition"] == {"capturedEntries": 1, "newlyCapturedBytes": len(payload)}
+    assert view["formatVersion"] == "2.0"
+    assert view["entries"]["acquisition"] == {"capturedEntries": 1, "capturedBytes": len(payload)}
     assert view["entries"]["processing"] == {"producedEntries": 1}
     assert view["failures"]["totalRecords"] == 1
     assert view["failures"]["byClassAndDiagnosticCode"] == {
@@ -492,6 +484,14 @@ def test_run_active_distinguishes_planned_running_sealed_and_failed_stores(
     assert capped_view["progress"]["stalledStoreCount"] == 1
     assert capped_view["progress"]["stalledStoreSample"] == []
     assert capped_view["progress"]["stalledSampleTruncated"] is True
+    failure_view = _run_active(run_request, capfd, "--failure-sample-limit", "0")
+    assert failure_view["failures"] == {
+        "totalRecords": 1,
+        "byClassAndDiagnosticCode": {},
+        "byClass": {"transient-external": 1},
+        "unsampledRecordCount": 1,
+        "diagnosticSampleTruncated": True,
+    }
 
 
 def test_run_active_reports_sensibly_for_a_finished_run(

@@ -26,14 +26,16 @@ class LocalContentAddressedBlobStore:
         *,
         max_blob_bytes: int = 8 * 1024**3,
         stream_chunk_bytes: int = _FILE_CHUNK_BYTES,
+        create: bool = True,
     ) -> None:
         if min(max_blob_bytes, stream_chunk_bytes) <= 0:
             raise ValueError("blob store limits must be positive")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.max_blob_bytes = max_blob_bytes
         self.stream_chunk_bytes = stream_chunk_bytes
-        self._staging = _contained(self.root, ".staging/blob", create_parents=True).parent
-        self._staging.mkdir(exist_ok=True)
+        self._staging = _contained(self.root, ".staging/blob", create_parents=create).parent
+        if create:
+            self._staging.mkdir(exist_ok=True)
 
     @staticmethod
     def _locator(digest: str) -> str:
@@ -107,14 +109,20 @@ class LocalContentAddressedBlobStore:
             raise ValueError("chunk_size must be positive")
         if max_bytes is not None and reference.byte_size > max_bytes:
             raise LimitExceededError(f"blob exceeds the {max_bytes}-byte read limit")
+        if reference.locator != self._locator(reference.digest):
+            raise IntegrityError("blob locator does not match its digest")
         path = _contained(self.root, reference.locator)
         if not path.is_file() or path.is_symlink() or path.stat().st_size != reference.byte_size:
             raise IntegrityError("blob size or storage type differs from its reference")
         digest = hashlib.sha256()
         seen = 0
         with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(effective_chunk_size), b""):
+            while chunk := handle.read(min(effective_chunk_size, reference.byte_size - seen + 1)):
                 seen += len(chunk)
+                if max_bytes is not None and seen > max_bytes:
+                    raise LimitExceededError(f"blob exceeds the {max_bytes}-byte read limit")
+                if seen > reference.byte_size:
+                    raise IntegrityError("blob grew beyond its immutable reference")
                 digest.update(chunk)
                 yield chunk
         if seen != reference.byte_size or f"sha256:{digest.hexdigest()}" != reference.digest:

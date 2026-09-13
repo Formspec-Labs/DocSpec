@@ -79,6 +79,21 @@ the resulting member contains its sealed identity and settings. Use the
 Catalog build and verification commands live in
 [`cli/source_catalog.py`](../src/docspec/cli/source_catalog.py).
 
+Federal Register policy `1.1.0` accepts source schema `1.1` and selects the first
+usable family: publisher-stated XML, body HTML, landing-page HTML, then PDF.
+All offered families and source fields remain evidence; `html_url` remains the
+normalized landing-page reference. HTML/PDF are alternatives when XML is absent,
+not automatic retries after an XML download fails. No XML URL is constructed.
+Regulations.gov policy `1.3.0` still uses raw schema `1.0` for its own records and
+requires schema `1.1` for its optional Federal Register lookup. Previous policy
+members are refused; rebuild them under the installed policy before new runs.
+
+Regulations.gov files take priority over a joined Federal Register document.
+When that lookup supplies the body, the catalog selects one representation using
+the same XML-first order. Every usable offer stays in the catalog evidence;
+only the selected body enters the fetch list. Ambiguous Federal Register filings
+remain unmatched. A failed download does not trigger another format automatically.
+
 ## Preserve evidence across acquisition, extraction, and segmentation
 
 A [content fetcher](../src/docspec/ports/content_fetcher.py) supplies a stream
@@ -89,21 +104,14 @@ local files, HTTPS, S3, and routing. Keep provider errors, stream cleanup, and
 capture verification at their respective owners.
 
 Extraction turns captured bytes into a representation and coordinates that
-trace back to those bytes. There are two compositions in this repository:
-
-| Composition | Extraction and segmentation |
-| --- | --- |
-| Application execution | `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image, or lazy PDF extraction; the executor then uses its configured segmenter. |
-| Historical portable mint recipe | `tools/build_document_release.py` selects visible-text extraction, retention-floor checks, and bounded text segmentation for its recorded campaign workflow. |
-
-The portable recipe is a repository tool, not an installed generic build API.
-Application release output does not replace historical portable mints
-byte-for-byte; see the separate release representations in the architecture guide.
-
-The default registry does not register `HtmlVisibleTextExtractor` or
-`XmlVisibleTextExtractor`. Adding those to general execution requires explicit
-adaptation to `ExtractionResult` and its evidence model. An import or registry
-entry alone does not establish equivalent extraction.
+trace back to those bytes. See [representation choices](representations.md) for
+supported defaults, visible-text experiments, PDF/image limits, and coordinate
+inspection. `DefaultExtractorRegistry` selects text, HTML, XML, JSON, image,
+or lazy PDF extraction. An experiment can choose `VisibleTextExtractor` with
+`VisibleTextBlockSegmenter`; the executor records the injected implementations.
+That adapter already connects the lower-level HTML/XML parsers to current
+`ExtractionResult` evidence. Export reads retained outputs and does not run a
+second extraction pipeline.
 
 Text segments use half-open UTF-8 byte ranges: the start is included and the end
 is excluded. Preserve exact coordinate round trips for non-ASCII text, tokenizer

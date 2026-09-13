@@ -30,7 +30,15 @@ class BlobStore(Protocol):
         *,
         chunk_size: int | None = None,
         max_bytes: int | None = None,
-    ) -> Iterator[bytes]: ...
+    ) -> Iterator[bytes]:
+        """Stream bytes under the reference and any explicit byte allowance.
+
+        Full exhaustion verifies the exact size and digest; partial consumption
+        does not verify the whole blob. Close an abandoned iterator to release
+        its resources. A separate ``verify`` is unnecessary when the caller
+        fully consumes the stream before using its result.
+        """
+        ...
 
     def read_range(self, reference: BlobRef, *, start: int, end: int) -> bytes: ...
 

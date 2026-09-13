@@ -27,6 +27,28 @@ recorded absence.
 
 ## What DocSpec is for
 
+**Current-status correction, 2026-09-11:** The owner intent and September 2
+assessment below remain part of this decision's history. Current
+[`StagePolicy`](../../src/docspec/domain/plans.py) supports capture, extraction,
+segmentation, and processing prefixes. The
+[Python runtime](../python-runs.md) retains each useful result and processes it
+later. Changed stages reuse verified inputs up to the first changed stage;
+source or other governing changes conservatively require full work. A new
+capture still opens its fetcher before writing to content-addressed storage:
+avoiding duplicate stored objects does not itself avoid another fetch.
+[Unified inspection](../inspection.md) now exposes saved work, complete results,
+and differences. Broader qualification remains
+[D37](../dataset-experiments-todo.md#d37) and independent review remains
+[D39](../dataset-experiments-todo.md#d39). The installed experiment proof in D38
+is complete locally. The historical population measurements
+below do not establish today's qualification. See the
+[current entry points](../../README.md#what-you-can-use-today).
+
+**Qualification correction, 2026-09-12:** The former conformance wrapper and
+hand-edited test statuses described below are retired. Native pytest and CI
+retain regression evidence. The [qualification guide](../qualification.md)
+records the scope decisions and the capacity measurements still required.
+
 The owner's framing, and the reason this record was reorganized around it:
 DocSpec is an experimental dataset runner. You point it at a population, it
 acquires the files once, and it runs processing over them in a way you can
@@ -48,6 +70,7 @@ reacquiring anything.
 carried through to a committed catalog is one thousand documents. Ten thousand
 was attempted three times and never completed. That is the gap this record is
 about, and it is why the obligations are ordered the way they are.
+
 
 ## Minting is the mechanism, not the goal
 

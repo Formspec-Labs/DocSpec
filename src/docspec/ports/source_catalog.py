@@ -8,9 +8,14 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, BinaryIO, Protocol
 
-from docspec.domain.identity import require_sha256, require_text
+from docspec.domain.identity import canonical_json_bytes, freeze_json, require_sha256, require_text, thaw_json
 from docspec.domain.references import SourceCatalogRef
 from docspec.domain.source_catalog import SOURCE_CATALOG_MAX_JOIN_IDS, SourceCatalogItem
+from docspec.domain.source_outcomes import (
+    DEFAULT_ACCEPTED_RECORD_OUTCOMES, MAX_SOURCE_DESCRIPTION_BYTES,
+    accepted_record_outcomes, collection_outcome, require_accepted_outcome,
+)
+from docspec.errors import LimitExceededError
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +29,7 @@ class SourceNativeDescription:
     source_state_scope: str
     source_state_digest: str
     source_native_schema_set_digest: str
+    collection_outcome: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         require_text(self.logical_id, "source-native logical_id")
@@ -34,6 +40,33 @@ class SourceNativeDescription:
             raise ValueError("source_state_scope must be complete-snapshot or observed-crawl")
         require_sha256(self.source_state_digest, "source_state_digest")
         require_sha256(self.source_native_schema_set_digest, "source_native_schema_set_digest")
+        object.__setattr__(self, "collection_outcome", collection_outcome(
+            self.collection_outcome, source_state_scope=self.source_state_scope,
+        ))
+        if len(canonical_json_bytes(self.to_dict())) > MAX_SOURCE_DESCRIPTION_BYTES:
+            raise LimitExceededError("source description exceeds its metadata byte limit")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "logicalId": self.logical_id, "artifactDigest": self.artifact_digest,
+            "sourceSystemId": self.source_system_id, "sourceSystemVersion": self.source_system_version,
+            "sourceStateScope": self.source_state_scope, "sourceStateDigest": self.source_state_digest,
+            "sourceNativeSchemaSetDigest": self.source_native_schema_set_digest,
+            "collectionOutcome": thaw_json(self.collection_outcome),
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> SourceNativeDescription:
+        if not isinstance(value, Mapping) or set(value) != {
+            "logicalId", "artifactDigest", "sourceSystemId", "sourceSystemVersion",
+            "sourceStateScope", "sourceStateDigest", "sourceNativeSchemaSetDigest", "collectionOutcome",
+        }:
+            raise ValueError("source description must have a closed shape")
+        return cls(
+            value["logicalId"], value["artifactDigest"], value["sourceSystemId"], value["sourceSystemVersion"],
+            value["sourceStateScope"], value["sourceStateDigest"], value["sourceNativeSchemaSetDigest"],
+            value["collectionOutcome"],
+        )
 
 
 class SourceNativeRecordSource(Protocol):
@@ -349,9 +382,10 @@ class SourceCatalogSnapshotSummary:
     partition_policy: Mapping[str, Any]
     join_coverage: tuple[Mapping[str, Any], ...]
     diagnostic_digests: Mapping[str, str]
-    source_native_inputs: tuple[Mapping[str, str], ...]
+    source_native_inputs: tuple[Mapping[str, Any], ...]
     byte_measurements: Mapping[str, int]
     succession: SourceCatalogSuccession | None = None
+    accepted_record_outcomes: frozenset[str] = DEFAULT_ACCEPTED_RECORD_OUTCOMES
 
     def __post_init__(self) -> None:
         require_text(self.logical_id, "source catalog logical_id")
@@ -464,19 +498,14 @@ class SourceCatalogSnapshotSummary:
             raise ValueError("source catalog diagnostic digest set is incomplete")
         for name, digest in diagnostic_digests.items():
             require_sha256(digest, f"source catalog {name}")
-        source_native_inputs: list[Mapping[str, str]] = []
+        accepted = accepted_record_outcomes(self.accepted_record_outcomes)
+        source_native_inputs: list[Mapping[str, Any]] = []
         if not self.source_native_inputs:
             raise ValueError("source catalog must retain at least one source-native input pin")
         for value in self.source_native_inputs:
-            source_input = dict(value)
-            if set(source_input) != {"logicalId", "artifactDigest"}:
-                raise ValueError("source catalog input pin must have a closed shape")
-            require_text(source_input["logicalId"], "source catalog input logicalId")
-            require_sha256(
-                source_input["artifactDigest"],
-                "source catalog input artifactDigest",
-            )
-            source_native_inputs.append(MappingProxyType(source_input))
+            description = SourceNativeDescription.from_dict(value)
+            require_accepted_outcome(description.collection_outcome, accepted)
+            source_native_inputs.append(freeze_json(description.to_dict()))
         if len(
             {
                 (value["logicalId"], value["artifactDigest"])
@@ -505,6 +534,7 @@ class SourceCatalogSnapshotSummary:
         object.__setattr__(self, "join_coverage", tuple(coverage_rows))
         object.__setattr__(self, "diagnostic_digests", MappingProxyType(diagnostic_digests))
         object.__setattr__(self, "source_native_inputs", tuple(source_native_inputs))
+        object.__setattr__(self, "accepted_record_outcomes", accepted)
         object.__setattr__(self, "byte_measurements", MappingProxyType(byte_measurements))
         if self.succession is not None and not isinstance(
             self.succession,
@@ -524,6 +554,18 @@ class LocatedSourceCatalogItem:
         require_sha256(self.blob_ref, "source catalog item blob_ref")
 
 
+@dataclass(frozen=True, slots=True)
+class LocatedSourceCatalogMapping:
+    """A validated JSON row and the content address of its supplying partition.
+
+    The dictionary belongs to the caller; changing it cannot change a later
+    read or the catalog's admitted summary.
+    """
+
+    item: dict[str, Any]
+    blob_ref: str
+
+
 @dataclass(slots=True)
 class SourceCatalogSnapshot:
     """One verified root and its bounded full normative row stream."""
@@ -535,7 +577,13 @@ class SourceCatalogSnapshot:
     def items(self) -> Iterator[SourceCatalogItem]:
         """Expose existing consumers to the same single-pass located stream."""
 
-        return (located.item for located in self.located_items)
+        try:
+            for located in self.located_items:
+                yield located.item
+        finally:
+            close = getattr(self.located_items, "close", None)
+            if close is not None:
+                close()
 
 
 class ImmutableSourceCatalogReader(Protocol):

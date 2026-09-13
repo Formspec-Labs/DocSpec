@@ -1,302 +1,241 @@
-"""Build, process, publish, and verify one synthetic document without a network.
+"""Capture, repair, process, and compare a small local document experiment.
 
-Run from a checkout: uv run --frozen python -m examples.offline_demo --output PATH
-PATH must not exist. The example uses the production Federal Register policy on
-synthetic source-shaped metadata, with an explicit adapter for local bytes.
+Run: python -m examples.offline_demo --output /absolute/new-experiment
+The example uses the installed public API and needs no network or provider.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from contextlib import redirect_stdout
+from contextlib import ExitStack
 from dataclasses import replace
+from importlib.metadata import version
 from pathlib import Path
-from typing import Any
 
-from rulespec_artifacts import Producer
+from rulespec_artifacts import Producer, Supersedes
 
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from docspec.cli import main as cli_main
-from docspec.cli.execution import run_local
-from docspec.domain.content import CandidateFile
-from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
-from docspec.domain.processors import ProcessorSet
-from docspec.ports.content_fetcher import FetchStream
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
-from docspec.profile_registry import ProfileRegistry
-from docspec.source_catalog import (
-    FederalRegisterCatalogPolicy,
-    LocalSourceCatalogStore,
-    SourceCatalogArtifactReader,
-    SourceCatalogBuilder,
-    SourceCatalogBuildRequest,
-    SourceNativeDescription,
-    SqliteCatalogPolicyWorkspace,
+from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, identity_digest, sha256_digest
+from docspec.domain.jobs import FailureClass
+from docspec.domain.plans import WorkLimits
+from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
+from docspec.domain.processors import ProcessorResourceIdentity, ProcessorResourceKind
+from docspec.domain.references import BlobRef
+from docspec.processing import ParagraphSegmenter, TextExtractor
+from docspec.runtime import (
+    build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog,
 )
+from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
+from docspec.workspace import LocalWorkspace
+from examples.phrase_match_processor import PhraseMatchProcessor
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 INPUT_ROOT = Path(__file__).with_name("offline")
-SOURCE_SYSTEM = "https://www.federalregister.gov/api/v1"
 COMPLETED_AT = "2026-09-11T12:00:00Z"
+DOCUMENTS = ("privacy", "security", "late-arrival", "out-of-scope")
 
 
-def write_json(path: Path, value: object) -> None:
+def _write(path: Path, value: object) -> None:
     path.write_bytes(canonical_json_file_bytes(value))
 
 
-class ExampleSource:
-    """Admit the checked-in synthetic input at the source-record boundary.
-
-    A real source-native adapter supplies these methods after verifying its
-    producer's release. This example pins its own local input bytes instead.
-    """
-
-    def __init__(self) -> None:
-        raw = (INPUT_ROOT / "source.json").read_bytes()
-        self.record = json.loads(raw)
-        self.payload = (INPUT_ROOT / "notice.html").read_bytes()
-        self.input_digest = sha256_digest(raw + self.payload)
-        # The example records the shape it admits; this is not an official
-        # Federal Register schema or an upstream qualification assertion.
-        self.schema_digest = sha256_digest(
-            canonical_json_file_bytes(
-                {
-                    "type": "object",
-                    "required": sorted(self.record),
-                }
-            )
-        )
-
-    def describe(self) -> SourceNativeDescription:
-        return SourceNativeDescription(
-            logical_id="urn:docspec:example:source:" + self.input_digest,
-            artifact_digest=self.input_digest,
-            source_system_id=SOURCE_SYSTEM,
-            source_system_version="v1",
-            source_state_scope="complete-snapshot",
-            source_state_digest=self.input_digest,
-            source_native_schema_set_digest=self.schema_digest,
-        )
-
-    def iter_records(self):
-        yield {
-            "sourceRecordId": self.record["document_number"],
-            "scopeId": "federal-register-documents",
-            "schemaName": "federal-register-document",
-            "schemaVersion": "1.0",
-            "schemaDigest": self.schema_digest,
-            "record": self.record,
-            "fieldDiagnostics": [],
-        }
-
-    def iter_renditions(self):
-        yield {
-            "sourceRecordId": self.record["document_number"],
-            "renditionId": self.record["document_number"] + "/html",
-            "sourceField": "html_url",
-            "locator": self.record["html_url"],
-            "mediaType": "text/html",
-            "expectedSha256": sha256_digest(self.payload),
-            "expectedByteSize": len(self.payload),
-        }
+def _phrase_values(view, processor) -> list[dict]:
+    """Check quote slices and source links for this bounded document fixture."""
+    files = {row["payload"]["blob"]["digest"]: row["payload"] for row in view.records("files")}
+    segments = {row["recordId"]: row["payload"] for row in view.records("segments")}
+    values = []
+    for row in view.records(f"derived:{processor.description.processor_id}"):
+        value = row["payload"]["value"]
+        segment = segments[value["segmentId"]]
+        content = b"".join(view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=64 * 1024))
+        assert sha256_digest(content) == value["segmentDigest"]
+        evidence = value["enclosingSourceEvidence"]
+        assert evidence == segment["evidence"]
+        captured = files[evidence["sourceDigest"]]
+        source = b"".join(view.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=64 * 1024))
+        # This walkthrough uses source-native plain text. Other representations
+        # can supply enclosing block/page evidence rather than exact slices.
+        assert source[evidence["start"]:evidence["end"]] == content
+        for match in value["matches"]:
+            assert content[match["segmentByteStart"]:match["segmentByteEnd"]].decode("utf-8") == match["quote"]
+        values.append(value)
+    return sorted(values, key=canonical_json_bytes)
 
 
-class ExampleFetcher:
-    """Map exactly one synthetic URL to the pinned local source file."""
-
-    downloader_id = "docspec.example.local-mapping/v1"
-
-    def __init__(self, source: ExampleSource) -> None:
-        self.url = source.record["html_url"]
-        self.local = LocalFileContentFetcher(INPUT_ROOT)
-        self.configuration_digest = sha256_digest(
-            canonical_json_file_bytes(
-                {
-                    "url": self.url,
-                    "inputDigest": source.input_digest,
-                }
-            )
-        )
-
-    def fetch(self, candidate: CandidateFile, **kwargs: Any) -> FetchStream:
-        if candidate.locator != self.url:
-            raise ValueError("candidate is outside the example's explicit local mapping")
-        fetched = self.local.fetch(replace(candidate, locator="notice.html"), **kwargs)
-        return FetchStream(
-            replace(
-                fetched.metadata,
-                downloader_id=self.downloader_id,
-                downloader_configuration_digest=self.configuration_digest,
-                transport_version=candidate.transport_version,
-                acquisition_started_at=COMPLETED_AT,
-            ),
-            fetched.chunks,
-            fetched.close,
-        )
-
-
-def implementation_manifest() -> dict[str, str]:
-    """Identify the actual local implementation, including uncommitted edits."""
-    paths = [path for path in (REPO_ROOT / "src" / "docspec").rglob("*") if path.suffix in {".py", ".json"}]
-    paths += sorted((REPO_ROOT / "profiles").glob("*.json"))
-    paths += [Path(__file__), REPO_ROOT / "uv.lock"]
-    return {path.relative_to(REPO_ROOT).as_posix(): sha256_digest(path.read_bytes()) for path in sorted(paths)}
-
-
-def run_command(command: list[str], result_path: Path) -> dict[str, Any]:
-    """Retain the actual CLI result instead of printing a large release root."""
-    with result_path.open("w", encoding="utf-8") as stream, redirect_stdout(stream):
-        if cli_main(command):
-            raise RuntimeError(f"example command failed: {' '.join(command[:2])}")
-    return json.loads(result_path.read_text(encoding="utf-8"))
-
-
-def run_example(output: Path) -> None:
+def run_example(output: Path) -> dict:
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
-    implementation = implementation_manifest()
-    write_json(output / "implementation.json", implementation)
-    implementation_id = "urn:docspec:example:implementation:" + sha256_digest(canonical_json_file_bytes(implementation))
+    implementation = {
+        "docspecVersion": version("docspec"),
+        "example": sha256_digest(Path(__file__).read_bytes()),
+        "processor": sha256_digest(Path(__file__).with_name("phrase_match_processor.py").read_bytes()),
+    }
+    _write(output / "implementation.json", implementation)
+    implementation_id = "urn:docspec:example:implementation:" + identity_digest(implementation)
     source_producer = Producer(
-        "docspec", implementation_id, "urn:docspec:verifier:source-catalog", "1.0.0", implementation_id
+        "docspec-example", implementation_id, "urn:docspec:verifier:source-catalog", "1.0.0", implementation_id,
     )
     release_producer = replace(source_producer, verifier_id="urn:docspec:verifier:document-release")
-    source = ExampleSource()
-    store = LocalSourceCatalogStore(output / "source-catalog")
-    built = SourceCatalogBuilder(
-        store=store,
-        policy=FederalRegisterCatalogPolicy(SOURCE_SYSTEM),
-        request=SourceCatalogBuildRequest("urn:docspec:example:catalog", source_producer),
-        workspace_factory=SqliteCatalogPolicyWorkspace,
-    ).build((source,))
-    reader = SourceCatalogArtifactReader(store, producer=source_producer)
-    reader.verify_snapshot(built.reference)
-    write_json(output / "source-catalog-reference.json", built.reference.to_dict())
+    workspace = LocalWorkspace(output)
+    payloads = {name: (INPUT_ROOT / f"{name}.txt").read_bytes() for name in DOCUMENTS}
+    namespace = "urn:docspec:example:review-notes"
 
-    registry = ProfileRegistry.from_directory(REPO_ROOT / "profiles")
-    profiles = registry.select(
-        (
-            "urn:docspec:profile:release-manifest:canonical-json:1",
-            "urn:docspec:profile:document-catalog:local-manifest:1",
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "urn:docspec:profile:blob-storage:local-content-addressed:1",
-            "urn:docspec:profile:document-store-persistence:local-json:1",
-            "urn:docspec:profile:result-delivery:durable-dataset:1",
-        )
-    )
-    retry, accepted = RetryPolicy(), AcceptedFailurePolicy()
-    plan = ProcessingPlan.create(
-        source_catalog=built.reference,
-        base_release=None,
-        profiles=profiles,
-        limits=WorkLimits(2, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy((DefaultExtractorRegistry.extractor_id,), DefaultSegmenterRegistry.segmenter_id),
-        processors=ProcessorSet(()),
-        partition_count=2,
-        selection={},
-        retention_policy=RetentionPolicy.retain_all(),
-        data_use_policy=DataUsePolicy.local_content(),
-        retry_policy_digest=retry.digest,
-        accepted_failure_policy_digest=accepted.digest,
-    )
-    write_json(output / "plan.json", plan.to_dict())
-    roots = {
-        name: str(output / name)
-        for name in (
-            "blobStorage",
-            "controlRepository",
-            "documentCatalog",
-            "documentStores",
-            "reconciliation",
-            "recordStorage",
-        )
+    def build_catalog(documents, *, supersedes=None):
+        source = SuppliedRecordSource(({
+            "recordId": name, "sourceIssuedVersion": "fixture-1", "title": name.replace("-", " ").title(),
+            "metadata": {"synthetic": True},
+            "candidateRenditions": [SourceCatalogCandidate(
+                "body", "text/plain", "immutable-object", f"{name}.txt",
+                expected_sha256=sha256_digest(content), expected_byte_size=len(content),
+            ).to_dict()],
+        } for name, content in documents.items()), source_system_id=namespace, source_system_version="1",
+            source_state_scope="complete-snapshot", max_records=5, max_bytes=16 * 1024)
+        return build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
+            catalog_id="urn:docspec:example:review-catalog", producer=source_producer,
+            max_scratch_bytes=8 * 1024**2, supersedes=supersedes)
+
+    catalog = build_catalog(payloads)
+    rows = tuple(open_local_catalog(catalog.reference, workspace, producer=source_producer).iter_mappings())
+    excluded = next(row["sourceItemId"] for row in rows if row["documentId"] == "out-of-scope")
+    preview = [{"documentId": row["documentId"], "sourceItemId": row["sourceItemId"],
+                "catalogSelection": row["selection"], "selectedInRun": row["sourceItemId"] != excluded} for row in rows]
+    _write(output / "catalog-preview.json", {"reference": catalog.reference.to_dict(), "items": preview})
+    input_root = workspace.roots["sourceContent"]
+    input_root.mkdir()
+    for name in ("privacy", "security"):
+        (input_root / f"{name}.txt").write_bytes(payloads[name])
+    resource_root = output / "reference-inputs"
+    resource_root.mkdir()
+    resources = {}
+    for revision in ("v1", "v2"):
+        raw = (INPUT_ROOT / f"vocabulary-{revision}.json").read_bytes()
+        (resource_root / f"vocabulary-{revision}.json").write_bytes(raw)
+        resources[revision] = (ProcessorResourceIdentity(
+            "urn:docspec:example:review-vocabulary", ProcessorResourceKind.REFERENCE_DATA, revision, sha256_digest(raw),
+        ), raw)
+    retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
+    selection = {"excludeItemIds": [excluded]}
+    settings = {
+        "limits": WorkLimits(4, 64 * 1024, 16, 16, 16, 1024 * 1024, 60, 1),
+        "source_catalog_producer": source_producer, "document_release_producer": release_producer,
+        "completed_at": COMPLETED_AT, "deadline_epoch_seconds": 4_000_000_000,
+        "content_fetcher": LocalFileContentFetcher(input_root), "retry_policy": retry,
+        "accepted_failure_policy": AcceptedFailurePolicy(accepted_classes=(FailureClass.TRANSIENT_EXTERNAL,)),
+        "selection": selection,
     }
-    roots.update(sourceCatalog=str(store.root), sourceContent=str(INPUT_ROOT))
-    request = {
-        "format": "docspec-local-run-request",
-        "formatVersion": "1.0",
-        "plan": str(output / "plan.json"),
-        "profileDirectory": str(REPO_ROOT / "profiles"),
-        "roots": roots,
-        "resultSinkId": "urn:docspec:example:sink",
-        "partitionPolicyId": "source-item-sha256-v1",
-        "retryPolicy": retry.to_dict(),
-        "acceptedFailurePolicy": accepted.to_dict(),
-        "execution": {"maxWorkers": 1, "maxInFlight": 1, "deadlineEpochSeconds": 4_000_000_000},
-        "completedAt": COMPLETED_AT,
-        "documentReleaseProducer": release_producer.as_dict(),
-        "sourceCatalogProducer": source_producer.as_dict(),
-    }
-    write_json(output / "run-request.json", request)
-    run = run_local(output / "run-request.json", content_fetcher=ExampleFetcher(source))
-    write_json(output / "run-reference.json", run.to_dict())
-    write_json(
-        output / "commit-request.json",
-        {
-            "format": "docspec-local-release-commit-request",
-            "formatVersion": "1.0",
-            "runRequest": str(output / "run-request.json"),
-            "runReceipt": str(output / "run-reference.json"),
-            "baseRelease": None,
-        },
-    )
-    command = [
-        "document-release",
-        "commit",
-        "--request",
-        str(output / "commit-request.json"),
-        "--destination",
-        str(output / "release-reference.json"),
-        "--receipt",
-        str(output / "commit-receipt.json"),
-    ]
-    run_command(command, output / "commit-result.json")
-    command = [
-        "document-catalog",
-        "open",
-        "--reference",
-        str(output / "release-reference.json"),
-        "--catalog-root",
-        roots["documentCatalog"],
-        "--record-root",
-        roots["recordStorage"],
-        "--blob-root",
-        roots["blobStorage"],
-        "--store-root",
-        roots["documentStores"],
-        "--control-root",
-        roots["controlRepository"],
-        "--implementation-id",
-        implementation_id,
-        "--verifier-implementation-id",
-        implementation_id,
-    ]
-    verified = run_command(command, output / "verification.json")
-    print(
-        json.dumps(
-            {
-                "verdict": verified["verdict"],
-                "recordCounts": {
-                    layer["layerKind"]: layer["recordCount"] for layer in verified["release"]["activeLayers"]
-                },
-            },
-            sort_keys=True,
-        )
-    )
+
+    with ExitStack() as views:
+        def finish(prepared, name):
+            run = prepared.run()
+            release = prepared.retain(run)
+            view = views.enter_context(open_local_inspection(prepared.plan, workspace,
+                document_release_producer=release_producer, source_catalog_producer=source_producer, release_ref=release))
+            report = {"plan": prepared.plan.to_dict(), "run": run.to_dict(), "release": release.to_dict(),
+                      "handoff": prepared.handoff_ref.to_dict(), "inspection": view.summary()}
+            _write(output / f"{name}.json", report)
+            return release, view, report
+
+        with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", **settings) as prepared:
+            failed_base, failed_view, failed = finish(prepared, "initial-capture")
+        assert failed["inspection"]["result"]["layers"]["files"] == 2
+        assert failed["inspection"]["result"]["layers"]["failures"] == 1
+        (input_root / "late-arrival.txt").write_bytes(payloads["late-arrival"])
+        repair_settings = settings | {"selection": selection | {"retryFailures": "transient"}}
+        with prepare_local_experiment(catalog.reference, workspace, stop_after="capture", base_release=failed_base,
+                                      **repair_settings) as prepared:
+            captured_base, _, repaired = finish(prepared, "repaired-capture")
+        assert repaired["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
+        assert repaired["inspection"]["result"]["layers"]["files"] == 3
+        assert repaired["inspection"]["result"]["layers"]["failures"] == 0
+        assert len(tuple(failed_view.records("failures"))) == 1
+        processor = PhraseMatchProcessor(*resources["v1"], retry_policy=retry)
+        stages = {"extractor": TextExtractor(), "segmenter": ParagraphSegmenter()}
+        processing_settings = settings | stages | {"processors": (processor,), "base_release": captured_base}
+        with prepare_local_experiment(catalog.reference, workspace, **processing_settings) as prepared:
+            processed_base, processed_view, processed = finish(prepared, "processed")
+            handoff = prepared.handoff_ref
+            run = prepared.run()
+        with prepare_local_experiment(catalog.reference, workspace, handoff_ref=handoff, **processing_settings) as recovered:
+            assert recovered.run() == run
+        values = {"original": _phrase_values(processed_view, processor)}
+        comparisons = {}
+        base_prefix = {
+            kind: tuple(row["payload"] for row in processed_view.records(kind))
+            for kind in ("files", "representations", "segments")
+        }
+        for name, candidate in (
+            ("case-sensitive", PhraseMatchProcessor(*resources["v1"], case_sensitive=True, retry_policy=retry)),
+            ("resource-v2", PhraseMatchProcessor(*resources["v2"], retry_policy=retry)),
+        ):
+            with prepare_local_experiment(catalog.reference, workspace, **(settings | stages),
+                                          processors=(candidate,), base_release=processed_base) as prepared:
+                alternative_base, view, report = finish(prepared, name)
+            assert all(tuple(row["payload"] for row in view.records(kind)) == records for kind, records in base_prefix.items())
+            counts = report["inspection"]["work"]["counts"]
+            assert counts["newCapturedFiles"] == counts["newRepresentations"] == counts["newSegments"] == 0
+            values[name], comparisons[name] = _phrase_values(view, candidate), processed_view.compare(view)
+
+        payloads["added-note"] = (INPUT_ROOT / "added-note.txt").read_bytes()
+        (input_root / "added-note.txt").write_bytes(payloads["added-note"])
+        grown_catalog = build_catalog(payloads, supersedes=Supersedes(
+            catalog.reference.catalog_id, catalog.reference.digest, "Add one review note",
+        ))
+        growth = preview_local_catalog(grown_catalog.reference, workspace, producer=source_producer,
+            previous_ref=catalog.reference)
+        assert growth["comparison"]["counts"] == {"added": 1, "removedFromCatalog": 0, "changed": 0, "unchanged": 4}
+        _write(output / "catalog-growth.json", growth)
+        with prepare_local_experiment(grown_catalog.reference, workspace, **(settings | stages),
+                                      processors=(candidate,), base_release=alternative_base) as prepared:
+            _, grown_view, grown = finish(prepared, "grown")
+        assert grown["inspection"]["work"]["counts"]["newCapturedFiles"] == 1
+        values["grown"] = _phrase_values(grown_view, candidate)
+        clean_workspace = LocalWorkspace(output / "clean-comparison", {
+            "sourceCatalog": workspace.roots["sourceCatalog"], "sourceContent": input_root,
+        })
+        with prepare_local_experiment(grown_catalog.reference, clean_workspace, **(settings | stages),
+                                      processors=(candidate,)) as clean:
+            clean_release = clean.retain(clean.run())
+            clean_view = views.enter_context(open_local_inspection(clean.plan, clean_workspace,
+                document_release_producer=release_producer, release_ref=clean_release))
+        assert _phrase_values(clean_view, candidate) == values["grown"]
+        clean_comparison = grown_view.compare(clean_view)
+        assert not clean_comparison["result"]["sampleTruncated"]
+        assert all(not change[f"{kind}Changed"] for change in clean_comparison["result"]["sample"]
+                   for kind in ("input", "content", "configuration"))
+        # Inspection's outcome digest includes the plan's add/update classification.
+        # Compare actual dispositions and failures separately: a clean run adds
+        # every item, while an incremental run updates the existing items.
+        def outcomes(view):
+            return {row["sourceItemId"]: {key: value for key, value in row["payload"].items()
+                    if key not in {"entryId", "change"}} for row in view.records("dispositions")}
+
+        assert outcomes(grown_view) == outcomes(clean_view)
+        assert list(grown_view.records("failures")) == list(clean_view.records("failures")) == []
+        _write(output / "clean-comparison.json", clean_comparison)
+        _write(output / "matches.json", values)
+        _write(output / "comparisons.json", comparisons)
+        summary = {
+            "verdict": "pass", "initialCatalogItems": len(rows), "catalogItems": len(payloads),
+            "selectedDocuments": 4, "excludedDocuments": 1, "addedDocuments": 1,
+            "initialFailures": 1, "repairedFailures": 0, "originalFailureStillInspectable": True,
+            "capturedDocuments": 4, "processedSegments": len(values["grown"]),
+            "matchCounts": {name: sum(len(value["matches"]) for value in result) for name, result in values.items()},
+            "savedHandoffRecovered": True, "alternativesReuseUpstream": True, "cleanOutputValuesAgree": True,
+            "limitations": "Synthetic literal-mention examples; no semantic classification or live-resource verification.",
+        }
+        _write(output / "experiment-summary.json", summary)
+        return summary
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True, help="new directory for all generated artifacts")
-    args = parser.parse_args()
+    parser.add_argument("--output", type=Path, required=True, help="new directory for retained experiment artifacts")
+    arguments = parser.parse_args()
     try:
-        run_example(args.output)
+        summary = run_example(arguments.output)
     except FileExistsError:
         parser.error("--output must name a new directory")
+    print(json.dumps(summary, sort_keys=True))
     return 0
 
 

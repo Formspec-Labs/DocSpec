@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
+from docspec.runtime import stage_policy
+
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -12,13 +16,13 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.execution import StoreExecutionService
 from docspec.application.work_budget import WorkBudget
 from docspec.domain.content import AcquisitionDisposition, CandidateFile, SourceItem
-from docspec.domain.identity import sha256_digest
+from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, FailureClass
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
@@ -140,12 +144,19 @@ class _ReadThenFailOnceFetcher:
 
 
 class _PageReportingExtractor:
-    extractor_id = DefaultExtractorRegistry.extractor_id
+    extractor_id = "tests.page-reporting-extractor/v1"
 
     def __init__(self, *, page_count: int, after: Callable[[], None] | None = None) -> None:
         self._delegate = DefaultExtractorRegistry()
         self._page_count = page_count
         self._after = after
+
+    @property
+    def configuration_digest(self):
+        return identity_digest({"pageCount": self._page_count, "delegate": self._delegate.configuration_digest})
+
+    def selected_identity(self, captured):
+        return self._delegate.selected_identity(captured)
 
     def extract(self, captured: Any, source_bytes: bytes) -> ExtractionResult:
         result = self._delegate.extract(captured, source_bytes)
@@ -190,7 +201,7 @@ def _execute(
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
         records=records,
@@ -204,11 +215,9 @@ def _execute(
     retry = RetryPolicy(max_attempts=limits.max_attempts, base_delay_milliseconds=0)
     accepted = AcceptedFailurePolicy()
     processors = {} if processor is None else {processor.description.processor_id: processor}
-    stages = StagePolicy(
-        (DefaultExtractorRegistry.extractor_id,),
-        DefaultSegmenterRegistry.segmenter_id,
-        tuple(processors),
-    )
+    extractor = DefaultExtractorRegistry() if extractor is None else extractor
+    segmenter = DefaultSegmenterRegistry()
+    stages = stage_policy(extractor=extractor, segmenter=segmenter, processor_ids=tuple(processors))
     source_ref = SourceCatalogRef(
         "urn:docspec:test:source-catalog", "source-catalog.json", sha256_digest(b"source-catalog")
     )
@@ -244,8 +253,8 @@ def _execute(
         document_catalog=catalog,
         blobs=blobs,
         fetcher=fetcher,
-        extractor=extractor or DefaultExtractorRegistry(),
-        segmenter=DefaultSegmenterRegistry(),
+        extractor=extractor,
+        segmenter=segmenter,
         processors=processors,
         retry_policy=retry,
         accepted_failure_policy=accepted,
@@ -281,7 +290,18 @@ def test_verified_source_bytes_are_not_double_charged_after_a_transport_retry(tm
     assert [failure.failure_class for failure in entry.failures] == [FailureClass.TRANSIENT_EXTERNAL]
 
     resumed_budget = WorkBudget(_limits(source_bytes=len(content) + 1, memory_bytes=32))
-    resumed_budget.seed_verified_entries(processed.entries, {})
+    controls = LocalJsonControlRepository(tmp_path / "controls")
+    observations = {
+        entry.entry_id: {
+            receipt["representationId"]: WorkBudget.extraction_observation(
+                representation_kind=receipt["kind"], metadata=receipt["metadata"],
+            )
+            for reference in entry.stage_receipts
+            if (receipt := controls.load(reference)).get("format") == "docspec-extraction-receipt"
+        }
+        for entry in processed.entries
+    }
+    resumed_budget.seed_verified_entries(processed.entries, {}, observations)
     assert resumed_budget.usage.source_bytes == len(content)
     assert resumed_budget.usage.segments == 1
     with pytest.raises(LimitExceededError, match="source bytes"):
@@ -298,7 +318,7 @@ def test_resume_accounting_includes_zero_output_processor_invocations() -> None:
         DocumentEntry.create(
             item,
             ChangeKind.ADDED,
-            StagePolicy(("tests.extractor/v1",), "tests.segmenter/v1", ("tests.processor/v1",)),
+            StagePolicy(extractor_id="tests.extractor/v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="tests.segmenter/v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=("tests.processor/v1",)),
         ),
         disposition=AcquisitionDisposition.CAPTURED,
     )
@@ -307,6 +327,7 @@ def test_resume_accounting_includes_zero_output_processor_invocations() -> None:
     budget.seed_verified_entries(
         (entry,),
         {entry.entry_id: ("urn:docspec:test:abstained-invocation",)},
+        {entry.entry_id: {}},
     )
 
     assert budget.usage.processor_cost == 1

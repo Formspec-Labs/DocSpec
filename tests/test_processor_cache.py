@@ -9,7 +9,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.domain.content import SourceItem
@@ -99,7 +99,7 @@ def _pipeline(tmp_path: Path):
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     partition_policy = PartitionPolicy("source-item-sha256-v1", 8)
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "document-catalog",

@@ -1,4 +1,4 @@
-"""Bounded local execution and serialized external-scheduler handoff."""
+"""Small bounded local runner for portable store tasks."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from docspec.domain.identity import OrderedJsonSequenceDigester
 from docspec.domain.references import ArtifactRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.control_repository import ControlRepository
-from docspec.ports.execution_backend import SerializedTaskDispatcher, StoreTaskHandler
+from docspec.ports.execution_backend import StoreTaskHandler
 
 
 class _ExecutionProfileBinding:
@@ -38,8 +38,7 @@ class _ExecutionProfileBinding:
             raise IntegrityError(f"execution profile reference is invalid: {error}") from error
         if resolved != self.profile:
             raise IntegrityError("execution profile reference resolves to different profile content")
-        for reference in resolved.control_artifacts:
-            self._controls.verify(reference)
+        self._controls.verify(resolved.worker_composition)
         if handoff.worker_composition != self.profile.worker_composition:
             raise IntegrityError("execution handoff and profile name different worker compositions")
         self.require_active_deadline()
@@ -108,15 +107,18 @@ class LocalExecutionBackend:
         *,
         profile_reference: ArtifactRef,
         controls: ControlRepository,
-        max_workers: int | None = None,
+        max_workers: int = 1,
+        max_in_flight: int = 1,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._binding = _ExecutionProfileBinding(profile, profile_reference, controls, clock)
         self._handler = handler
-        configured = profile.limits.worker_count * profile.limits.max_concurrency_per_worker
-        self._max_workers = configured if max_workers is None else max_workers
+        self._max_workers = max_workers
+        self._max_in_flight = max_in_flight
         if type(self._max_workers) is not int or self._max_workers <= 0:
             raise ValueError("max_workers must be a positive integer")
+        if type(max_in_flight) is not int or max_in_flight <= 0:
+            raise ValueError("max_in_flight must be a positive integer")
 
     def execute(
         self,
@@ -124,12 +126,7 @@ class LocalExecutionBackend:
         tasks: Iterable[StoreTask],
     ) -> Iterator[StoreTaskResult]:
         self._binding.require_handoff(handoff)
-        profile = self._binding.profile
-        capacity = min(
-            self._max_workers,
-            profile.limits.worker_count * profile.limits.max_concurrency_per_worker,
-            profile.limits.max_in_flight,
-        )
+        capacity = min(self._max_workers, self._max_in_flight)
         source = iter(tasks)
         verifier = _TaskStreamVerifier(handoff)
         pending: dict[Future[StoreTaskResult], StoreTask] = {}
@@ -153,47 +150,4 @@ class LocalExecutionBackend:
                     self._binding.require_active_deadline()
                     _validate_result(result, handoff, task)
                     yield result
-        verifier.finish()
-
-
-class ExternalExecutionBackend:
-    """Translate canonical messages at a deployment-owned scheduler boundary."""
-
-    def __init__(
-        self,
-        profile: ExecutionProfile,
-        dispatcher: SerializedTaskDispatcher,
-        *,
-        profile_reference: ArtifactRef,
-        controls: ControlRepository,
-        clock: Callable[[], float] = time.time,
-    ) -> None:
-        self._binding = _ExecutionProfileBinding(profile, profile_reference, controls, clock)
-        self._dispatcher = dispatcher
-
-    def execute(
-        self,
-        handoff: ExecutionHandoff,
-        tasks: Iterable[StoreTask],
-    ) -> Iterator[StoreTaskResult]:
-        self._binding.require_handoff(handoff)
-        verifier = _TaskStreamVerifier(handoff)
-
-        def encoded_tasks() -> Iterator[bytes]:
-            for task in tasks:
-                yield verifier.accept(task).to_bytes()
-
-        result_count = 0
-        maximum_results = handoff.expected_task_count * self._binding.profile.limits.max_task_attempts
-        for payload in self._dispatcher.dispatch(
-            handoff=handoff.to_bytes(),
-            tasks=encoded_tasks(),
-        ):
-            self._binding.require_active_deadline()
-            result_count += 1
-            if result_count > maximum_results:
-                raise LimitExceededError("external execution result stream exceeds its sealed attempt bound")
-            result = StoreTaskResult.from_bytes(payload)
-            _validate_result(result, handoff)
-            yield result
         verifier.finish()

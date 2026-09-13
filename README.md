@@ -1,39 +1,68 @@
 # DocSpec
 
-DocSpec turns immutable source-native releases into a verified `SourceCatalog`,
-then turns selected source files into verified document state. It publishes the
-product-owned kinds `docspec-source-catalog`, `docspec-processing-plan`, and
-`docspec-document-release` through Rulespec's one generic artifact container.
-Other software can trust those installed schemas and immutable files without
-trusting this repository or a running DocSpec service.
+DocSpec is a Python toolkit for repeatable document dataset experiments. It
+builds selection catalogs, captures document bytes, and retains processing work
+with the identities and evidence needed to check and reuse it. The goal is to
+try different processors, inspect failures, add inputs, and compare results
+without repeating unchanged work.
 
-The idea in four steps:
+The intended workflow is:
 
-1. **Catalog** — bounded adapters read sealed source-native releases, preserve
-   source facts, apply one explicit catalog policy, and publish the normative
-   `SourceCatalog` and `SourceItem` model.
-2. **Process** — the sealed catalog selects candidate files. Format-neutral
-   adapters capture and normalize each selection (PDF, XML,
-   JSON, HTML) into document nodes, structural segments, and evidence
-   coordinates that point back to exact byte ranges in the source.
-3. **Publish** — the catalog, plan, and document release each use the same
-   portable Rulespec container: closed membership, exact digests, and
-   product-owned semantic verification. No DocSpec-specific exchange root or
-   structural verifier exists beside it.
-4. **Serve nothing** — consumers (chiefly SpicySearch) verify the release's
-   digests at admission and open, then read it directly. No DocSpec service,
-   no database, no sibling checkout.
+1. **Choose inputs and build a catalog.** A source adapter supplies records,
+   candidate document locations, and provenance. A catalog policy records
+   selection, exclusions, normalized metadata, and the source fields behind each
+   interpretation. The catalog is useful before any document is fetched.
+2. **Capture selected documents.** An injected fetcher supplies bounded byte
+   streams. DocSpec retains the captured bytes, source identity, acquisition
+   evidence, and outcomes independently of derived text.
+3. **Process now or later.** Choose extraction, segmentation, and optional
+   processors. A later attempt reuses retained inputs and unaffected work,
+   while recording the implementation, configuration, and resources that changed.
+4. **Inspect and compare retained attempts.** Keep results and failures
+   attributable to their inputs. Extend the dataset or retry selected work
+   without overwriting earlier evidence.
+5. **Export when a consumer needs it.** Portable output applies its own checks.
+   Catalog construction and document experiments do not require a search build.
 
-The seam is `source-native → SourceCatalog → DocumentRelease`. REF-048 in
-`RefSpec/docs/decisions.md` assigns catalog ownership to DocSpec and supersedes
-REF-024's older SpicyRegs/DocSpec catalog row; REF-024's other ownership rows and
-the file-exchange rule remain. Products trade published, digest-pinned files,
-never source trees.
+The public Python runtime connects this workflow. [Decision 0002](docs/decisions/0002-shared-execution-and-the-acquisition-gap-ledger.md#what-docspec-is-for)
+records the experiment-platform purpose. The
+[implementation checklist](docs/dataset-experiments-todo.md) separates existing
+mechanisms from missing interfaces and qualification.
 
-DocSpec's application functions depend on small injected ports for source,
-catalog, blob, task, and result access. They run locally, in external processes,
-or through a maintained distributed executor. Dagster is an optional adapter at
-that edge; it does not define document or catalog meaning.
+## What you can use today
+
+| Task | Current entry point and limits |
+| --- | --- |
+| Build and read a catalog | [`build_local_catalog` and `open_local_catalog`](docs/catalog-inputs.md) use a workspace, explicit policy and producer, and pinned inputs. Choose bounded supplied records or the optional installed SpicyDocs adapter. Catalog-only work creates no document-processing state; the `source-catalog` CLI also remains available. |
+| Capture, extract, and segment documents | [`prepare_local_experiment`](docs/python-runs.md) builds the plan from a catalog, workspace, explicit limits, accepted producers, and selected implementations. Choose where to stop, retain the result, and process it later. Advanced callers can supply their own plan through `prepare_local_run`; the CLI uses the same runtime. |
+| Choose fetchers and repair failures | [Configure local, HTTPS, S3, or custom fetchers](docs/fetchers.md). [Retry selected failed work](docs/repairing-failures.md) from verified completed stages; unchanged permanent failures remain visible until explicitly retried or relevant inputs change. |
+| Resume and inspect a run | The Python runtime prepares, executes, reconstructs saved work, and reconciles results without caller-written request files. `run prepare`, `start`, `resume`, `reconcile`, `active`, and `status` provide command access. |
+| Retain and choose alternative results | `PreparedLocalRun.retain()` or `document-release retain` keeps a verified result without changing current. `document-catalog select` chooses a retained result against an explicit expected current reference. Alternatives keep their original pinned base; see [experiment identities and selection](docs/experiments.md). |
+| Reuse inputs and compare results | Changed extraction reuses captures; changed segmentation reuses representations; changed processors reuse segments and unaffected processor results from an explicit verified base. [`open_local_inspection` and `docspec inspect`](docs/inspection.md) explain scheduled work, complete results, reuse, failures, and differences. The [offline walkthrough](docs/offline-walkthrough.md) exercises this locally and against an installed wheel. |
+| Export and independently read a dataset | [`export_local_result` and `open_result_export`](docs/result-exports.md) preserve active records, captured and derived bytes, and processing evidence without executing work again. Choose retained evidence or require nonempty text; both preserve complete outcome accounting. |
+
+Capture-only results can be retained and used by a later processing plan through
+the [Python runtime](docs/python-runs.md#capture-first-and-process-later).
+Each result records its requested stages, and completion checks that prefix.
+Dataset-wide recipes, such as search preparation, remain an
+[extension task](docs/dataset-experiments-todo.md#d48).
+
+Dagster is an optional execution adapter. It schedules DocSpec's work; DocSpec
+owns dataset meaning, reuse, and result checks. The [installed Dagster example](docs/dagster-experiment.md)
+uses native resources to inject implementations and native task execution,
+cancellation, and re-execution.
+
+## Retained state and portable output
+
+A retained result references the workspace's verified record layers, blobs,
+plans, and receipts so later experiments can reuse them. An optional
+[result export](docs/result-exports.md) copies the active dataset and its typed
+evidence into an independently readable Rulespec container. It needs neither
+the original workspace nor its execution plugins.
+
+Rulespec checks generic artifact membership and byte integrity. DocSpec checks
+document identities, outcomes, source coordinates, processing evidence, and the
+chosen text requirement. See [the output comparison](docs/architecture.md#what-comes-out).
 
 ## Quick start
 
@@ -41,8 +70,11 @@ Start with [contributor setup and focused tests](CONTRIBUTING.md) and the
 [current architecture](docs/architecture.md). The
 [documentation index](docs/documentation.md) links to maintained guides for
 catalog evidence, extensions, and operations.
-Then run the [offline walkthrough](docs/offline-walkthrough.md) to publish and
-verify one local document.
+Then run the [offline walkthrough](docs/offline-walkthrough.md). It builds a
+catalog from supplied records, grows it, retains captures, repairs a missing-file
+failure, and compares a pinned phrase processor's settings and reference data.
+Later processing reuses captured bytes. It needs no network during execution;
+portable export and large datasets have separate qualification.
 
 ```sh
 uv sync --frozen --python 3.12
@@ -58,22 +90,35 @@ uv run --frozen docspec --help  # the one CLI
 | Domain model (documents, segments, evidence) | `src/docspec/domain/` |
 | Format adapters + source access | `src/docspec/adapters/` |
 | Processing / segmentation | `src/docspec/processing/` |
-| Release pipeline | `src/docspec/application/` |
-| Document profiles (per source kind) | `profiles/` |
+| Dataset planning, execution, reuse, and publication | `src/docspec/application/` |
+| Shared Python and CLI run setup | `src/docspec/runtime/` |
+| Installed storage and delivery profiles | `src/docspec/storage_profiles/` |
 | Conformance fixtures | `conformance/`, `fixtures/` |
 | Decision records | `docs/decisions/` |
 | Measurements and incidents | `docs/history/` |
+| Experiment workflow and current usability gaps | [Dataset experimentation to-do list](docs/dataset-experiments-todo.md) |
 | Contributor improvements and code cleanup | [Maintainability to-do list](docs/maintainability-todo.md) |
 
 ## Boundaries
 
-DocSpec owns `SourceCatalog`, `SourceItem`, catalog policy, document capture,
-normalization, identity, segmentation, and evidence addresses. Rulespec owns
-only the generic artifact bytes and structural checks. RefSpec owns governed
-reference resources. SpicyRegs owns faithful source-native acquisition and
-public raw-data publication. SpicySearch owns search, ranking, composition, and
-serving. A consumer needs the published artifacts and installed packages—not a
-sibling checkout.
+DocSpec owns dataset catalogs and selection policy, document capture,
+normalization, segmentation, retained attempts, and evidence addresses.
+Processors own their domain interpretation; RefSpec can supply pinned reference
+resources. Rulespec owns shared artifact structure and canonical byte rules;
+DocSpec retains its document and experiment validation.
+
+Source providers own publisher access, literal source facts, and independent
+raw-data publication. The current integration uses the installed SpicyDocs
+reader. Whether selected provider capabilities remain in SpicyDocs or move to
+SpicyRegs is an [open ownership choice](docs/dataset-experiments-todo.md#d41),
+not a prerequisite for DocSpec experiments. Reuse public wheel APIs and pinned
+artifacts; provider packages remain independently usable.
+
+SpicySearch owns search-dataset preparation and search semantics. SpicyEngine
+owns native indexing and interactive serving. Proposed use of DocSpec to execute
+Search's dataset recipes is tracked in
+[D48–D50](docs/dataset-experiments-todo.md#d48); it does not move indexing or
+serving into DocSpec.
 
 ## What the published schemas do not promise
 

@@ -8,35 +8,25 @@ from pathlib import Path
 from typing import Any
 
 from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
-from docspec.adapters.catalog_artifact.digests import (
-    DERIVATION_PATHS,
-)
-from docspec.adapters.catalog_artifact.reader import (
-    SourceCatalogArtifactReader,
-)
+from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
     SourceCatalogBuilder,
+    _snapshot_sources,
 )
-from docspec.adapters.catalog_artifact.rules import (
-    source_catalog_producer,
-)
-from docspec.adapters.catalog_artifact.schemas import (
-    source_item_validator_implementation,
-)
+from docspec.adapters.catalog_artifact.rules import source_catalog_producer
 from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogPublication,
     LocalSourceCatalogStore,
 )
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
-from docspec.domain.identity import (
-    canonical_json_file_bytes,
-    require_sha256,
-    stable_urn,
-)
+from docspec.domain.identity import stable_urn
 from docspec.domain.references import SourceCatalogRef
-from docspec.domain.source_catalog import CatalogDisposition
+from docspec.domain.source_outcomes import (
+    DEFAULT_ACCEPTED_RECORD_OUTCOMES, RECORD_OUTCOMES, accepted_record_outcomes,
+)
+from docspec.ports.source_catalog import SourceNativeDescription
 from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
 
@@ -45,13 +35,8 @@ from docspec.cli_io import (
     SourceCatalogCliError,
     emit as _emit,
     existing_root,
-    read_bytes,
     read_object,
 )
-
-
-def _read_bytes(path: Path, *, label: str) -> bytes:
-    return read_bytes(path, label=label, error_type=SourceCatalogCliError)
 
 
 def _read_object(path: Path, *, label: str, canonical: bool) -> dict[str, Any]:
@@ -62,7 +47,6 @@ def _existing_root(path: Path, *, label: str) -> Path:
     return existing_root(path, label=label, error_type=SourceCatalogCliError)
 
 
-_BUILD_RECEIPT_NAME = "source-catalog-build-command-receipt.json"
 _SOURCE_NATIVE_PROFILES = (
     "federal-register",
     "regulations-gov-documents",
@@ -99,15 +83,9 @@ def _blob_store_evidence(
 
 def _require_new_outputs(
     destination: Path,
-    receipt: Path,
     blob_store: Path | None,
     source_native_roots: tuple[Path, ...],
 ) -> None:
-    expected_receipt = destination / _BUILD_RECEIPT_NAME
-    if receipt.resolve(strict=False) != expected_receipt.resolve(strict=False):
-        raise SourceCatalogCliError(
-            f"operation receipt must be the atomic artifact member: {expected_receipt}"
-        )
     if blob_store is not None and _paths_overlap(destination, blob_store):
         raise SourceCatalogCliError("artifact and blob store paths must not contain one another")
     if any(_paths_overlap(destination, root) for root in source_native_roots):
@@ -127,416 +105,18 @@ def _producer(args: argparse.Namespace):
     )
 
 
-def _receipt_object(
-    value: object,
-    fields: set[str],
-    *,
-    nested_label: str,
-) -> dict[str, Any]:
-    if not isinstance(value, dict) or set(value) != fields:
-        raise SourceCatalogCliError(f"{nested_label} has an invalid closed shape")
-    return value
-
-
-def _receipt_text(value: object, *, nested_label: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise SourceCatalogCliError(f"{nested_label} must be a non-empty string")
-    return value
-
-
-def _receipt_count(value: object, *, nested_label: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise SourceCatalogCliError(f"{nested_label} must be a non-negative integer")
-    return value
-
-
-def _receipt_absolute_path(value: object, *, nested_label: str) -> str:
-    selected = _receipt_text(value, nested_label=nested_label)
-    if not Path(selected).is_absolute():
-        raise SourceCatalogCliError(f"{nested_label} must be an absolute path")
-    return selected
-
-
-def _validate_receipt_identity(receipt: dict[str, Any], *, label: str) -> None:
-    receipt = _receipt_object(
-        receipt,
-        {
-            "acceptedSourceVerifierImplementationIds",
-            "blobStore",
-            "byteMeasurements",
-            "catalog",
-            "catalogPolicy",
-            "catalogStateDigest",
-            "derivation",
-            "destination",
-            "diagnosticDigests",
-            "dispositionCounts",
-            "format",
-            "formatVersion",
-            "itemCount",
-            "joinCoverage",
-            "operation",
-            "partitionPolicy",
-            "producer",
-            "reasonCounts",
-            "receiptId",
-            "requestedUniverseSetDigest",
-            "selectedSourceSetDigest",
-            "sourceNativeInputs",
-            "verdict",
-        },
-        nested_label=label,
-    )
-    if (
-        receipt["format"] != "docspec-source-catalog-build-command-receipt"
-        or receipt["formatVersion"] != "1.0"
-        or receipt["operation"] != "source-catalog.build"
-        or receipt["verdict"] != "pass"
-    ):
-        raise SourceCatalogCliError(f"{label} has an unsupported identity or verdict")
-
-    content = {
-        key: value
-        for key, value in receipt.items()
-        if key not in {"format", "formatVersion", "receiptId"}
-    }
-    expected_receipt_id = stable_urn("source-catalog-build-command-receipt", content)
-    if receipt["receiptId"] != expected_receipt_id:
-        raise SourceCatalogCliError(f"{label} receiptId does not match its content")
-
-
-def _validate_receipt_sources(receipt: dict[str, Any], *, label: str) -> None:
-    raw_inputs = receipt["sourceNativeInputs"]
-    if not isinstance(raw_inputs, list) or not raw_inputs:
-        raise SourceCatalogCliError(f"{label} sourceNativeInputs must be a non-empty array")
-    input_pins: list[tuple[str, str]] = []
-    for index, raw_input in enumerate(raw_inputs):
-        source_input = _receipt_object(
-            raw_input,
-            {"artifactDigest", "blobStore", "locator", "logicalId", "profile"},
-            nested_label=f"{label} sourceNativeInputs[{index}]",
-        )
-        _receipt_absolute_path(source_input["locator"], nested_label=f"{label} source-native locator")
-        _receipt_absolute_path(
-            source_input["blobStore"],
-            nested_label=f"{label} source-native blob store",
-        )
-        _receipt_text(source_input["logicalId"], nested_label=f"{label} source-native logicalId")
-        try:
-            require_sha256(
-                source_input["artifactDigest"],
-                f"{label} source-native artifactDigest",
-            )
-        except ValueError as error:
-            raise SourceCatalogCliError(str(error)) from error
-        if source_input["profile"] not in _SOURCE_NATIVE_PROFILES:
-            raise SourceCatalogCliError(f"{label} contains an unsupported source-native profile")
-        input_pins.append((source_input["logicalId"], source_input["artifactDigest"]))
-    if len(set(input_pins)) != len(input_pins):
-        raise SourceCatalogCliError(f"{label} source-native input pins must be distinct")
-
-    accepted_verifiers = receipt["acceptedSourceVerifierImplementationIds"]
-    if not isinstance(accepted_verifiers, list) or not accepted_verifiers:
-        raise SourceCatalogCliError(
-            f"{label} acceptedSourceVerifierImplementationIds must be a non-empty array"
-        )
-    for value in accepted_verifiers:
-        _receipt_text(value, nested_label=f"{label} accepted source verifier implementation ID")
-    if accepted_verifiers != sorted(set(accepted_verifiers)):
-        raise SourceCatalogCliError(
-            f"{label} accepted source verifier implementation IDs must be sorted and distinct"
-        )
-
-
-def _validate_receipt_catalog(receipt: dict[str, Any], *, label: str) -> SourceCatalogRef:
-    catalog_policy = _receipt_object(
-        receipt["catalogPolicy"],
-        {"policyDigest", "policyId", "policyVersion"},
-        nested_label=f"{label} catalogPolicy",
-    )
-    _receipt_text(catalog_policy["policyId"], nested_label=f"{label} catalog policyId")
-    _receipt_text(catalog_policy["policyVersion"], nested_label=f"{label} catalog policyVersion")
-    try:
-        require_sha256(catalog_policy["policyDigest"], f"{label} catalog policyDigest")
-    except ValueError as error:
-        raise SourceCatalogCliError(str(error)) from error
-
-    producer = _receipt_object(
-        receipt["producer"],
-        {
-            "implementationId",
-            "product",
-            "verifierId",
-            "verifierImplementationId",
-            "verifierVersion",
-        },
-        nested_label=f"{label} producer",
-    )
-    for name, value in producer.items():
-        _receipt_text(value, nested_label=f"{label} producer {name}")
-
-    catalog = _receipt_object(
-        receipt["catalog"],
-        {"catalogId", "digest", "locator"},
-        nested_label=f"{label} catalog",
-    )
-    try:
-        catalog_reference = SourceCatalogRef.from_dict(catalog)
-    except (TypeError, ValueError) as error:
-        raise SourceCatalogCliError(f"{label} catalog reference is invalid: {error}") from error
-    return catalog_reference
-
-
-def _validate_receipt_summary(receipt: dict[str, Any], *, label: str) -> None:
-    _receipt_count(receipt["itemCount"], nested_label=f"{label} itemCount")
-    for name in (
-        "catalogStateDigest",
-        "requestedUniverseSetDigest",
-        "selectedSourceSetDigest",
-    ):
-        try:
-            require_sha256(receipt[name], f"{label} {name}")
-        except ValueError as error:
-            raise SourceCatalogCliError(str(error)) from error
-    dispositions = _receipt_object(
-        receipt["dispositionCounts"],
-        {value.value for value in CatalogDisposition},
-        nested_label=f"{label} dispositionCounts",
-    )
-    for name, value in dispositions.items():
-        _receipt_count(value, nested_label=f"{label} dispositionCounts.{name}")
-    reason_counts = receipt["reasonCounts"]
-    if not isinstance(reason_counts, list):
-        raise SourceCatalogCliError(f"{label} reasonCounts must be an array")
-    for index, raw_row in enumerate(reason_counts):
-        row = _receipt_object(
-            raw_row,
-            {"count", "disposition", "reasonCode"},
-            nested_label=f"{label} reasonCounts[{index}]",
-        )
-        _receipt_text(row["disposition"], nested_label=f"{label} reasonCounts[{index}].disposition")
-        _receipt_text(row["reasonCode"], nested_label=f"{label} reasonCounts[{index}].reasonCode")
-        _receipt_count(row["count"], nested_label=f"{label} reasonCounts[{index}].count")
-    derivation = _receipt_object(receipt["derivation"], {"build", "gate"}, nested_label=f"{label} derivation")
-    for stage, raw_engine in derivation.items():
-        engine = _receipt_object(raw_engine, {"path", "workers"}, nested_label=f"{label} derivation.{stage}")
-        if engine["path"] not in DERIVATION_PATHS:
-            raise SourceCatalogCliError(f"{label} derivation.{stage}.path is not a known derivation path")
-        _receipt_count(engine["workers"], nested_label=f"{label} derivation.{stage}.workers")
-        if engine["workers"] < 1:
-            raise SourceCatalogCliError(f"{label} derivation.{stage}.workers must be at least one")
-
-
-def _validate_receipt_partition(receipt: dict[str, Any], *, label: str) -> None:
-    partition_policy = _receipt_object(
-        receipt["partitionPolicy"],
-        {"bucketCount", "policyDigest", "policyId", "policyVersion"},
-        nested_label=f"{label} partitionPolicy",
-    )
-    _receipt_text(partition_policy["policyId"], nested_label=f"{label} partition policyId")
-    _receipt_text(
-        partition_policy["policyVersion"],
-        nested_label=f"{label} partition policyVersion",
-    )
-    try:
-        require_sha256(
-            partition_policy["policyDigest"],
-            f"{label} partition policyDigest",
-        )
-    except ValueError as error:
-        raise SourceCatalogCliError(str(error)) from error
-    bucket_count = _receipt_count(
-        partition_policy["bucketCount"],
-        nested_label=f"{label} partition bucketCount",
-    )
-    if not 1 <= bucket_count <= 65_536:
-        raise SourceCatalogCliError(f"{label} partition bucketCount is invalid")
-
-
-def _validate_receipt_joins(receipt: dict[str, Any], *, label: str) -> None:
-    join_coverage = receipt["joinCoverage"]
-    if not isinstance(join_coverage, list):
-        raise SourceCatalogCliError(f"{label} joinCoverage must be an array")
-    for index, value in enumerate(join_coverage):
-        coverage = _receipt_object(
-            value,
-            {"eligible", "joinId", "matched", "nullResult", "unmatched"},
-            nested_label=f"{label} joinCoverage[{index}]",
-        )
-        _receipt_text(coverage["joinId"], nested_label=f"{label} joinCoverage[{index}].joinId")
-        for name in ("eligible", "matched", "nullResult", "unmatched"):
-            _receipt_count(
-                coverage[name],
-                nested_label=f"{label} joinCoverage[{index}].{name}",
-            )
-
-
-def _validate_receipt_diagnostics(receipt: dict[str, Any], *, label: str) -> None:
-    diagnostic_digests = _receipt_object(
-        receipt["diagnosticDigests"],
-        {
-            "dispositionsDigest",
-            "interpretationsDigest",
-            "joinedFieldsDigest",
-            "normalizedFieldsDigest",
-            "reasonsDigest",
-            "renditionChoicesDigest",
-        },
-        nested_label=f"{label} diagnosticDigests",
-    )
-    for name, digest in diagnostic_digests.items():
-        try:
-            require_sha256(digest, f"{label} {name}")
-        except ValueError as error:
-            raise SourceCatalogCliError(str(error)) from error
-
-
-def _validate_receipt_byte_evidence(receipt: dict[str, Any], *, label: str) -> None:
-    measurements = _receipt_object(
-        receipt["byteMeasurements"],
-        {
-            "payloadBytesRead",
-            "payloadBytesReused",
-            "payloadBytesWritten",
-            "publicationBytesWritten",
-        },
-        nested_label=f"{label} byteMeasurements",
-    )
-    for name, value in measurements.items():
-        _receipt_count(value, nested_label=f"{label} byteMeasurements.{name}")
-    if measurements["payloadBytesRead"] != (
-        measurements["payloadBytesReused"] + measurements["payloadBytesWritten"]
-    ):
-        raise SourceCatalogCliError(f"{label} payload byte measurements do not reconcile")
-
-    blob_store = receipt["blobStore"]
-    if blob_store is not None:
-        blob_store = _receipt_object(
-            blob_store,
-            {
-                "accountingStatus",
-                "path",
-                "payloadBytesReused",
-                "payloadBytesWritten",
-                "retention",
-            },
-            nested_label=f"{label} blobStore",
-        )
-        _receipt_absolute_path(blob_store["path"], nested_label=f"{label} blob-store path")
-        _receipt_count(
-            blob_store["payloadBytesReused"],
-            nested_label=f"{label} blobStore.payloadBytesReused",
-        )
-        _receipt_count(
-            blob_store["payloadBytesWritten"],
-            nested_label=f"{label} blobStore.payloadBytesWritten",
-        )
-        if (
-            blob_store["retention"]
-            != "verified-content-addressed-blobs-retained-for-reuse"
-            or blob_store["accountingStatus"] != "complete"
-            or blob_store["payloadBytesReused"] != measurements["payloadBytesReused"]
-            or blob_store["payloadBytesWritten"] != measurements["payloadBytesWritten"]
-        ):
-            raise SourceCatalogCliError(f"{label} blob-store evidence is invalid")
-
-
-def _load_build_command_receipt(
-    root: Path,
-) -> tuple[dict[str, Any], SourceCatalogRef]:
-    """Validate a command receipt in its original refusal order."""
-
-    label = "source catalog build command receipt"
-    receipt = _read_object(root / _BUILD_RECEIPT_NAME, label=label, canonical=True)
-    _validate_receipt_identity(receipt, label=label)
-    _validate_receipt_sources(receipt, label=label)
-    catalog_reference = _validate_receipt_catalog(receipt, label=label)
-    _validate_receipt_summary(receipt, label=label)
-    _validate_receipt_partition(receipt, label=label)
-    _validate_receipt_joins(receipt, label=label)
-    _validate_receipt_diagnostics(receipt, label=label)
-    _validate_receipt_byte_evidence(receipt, label=label)
-    _receipt_absolute_path(receipt["destination"], nested_label=f"{label} destination")
-    return receipt, catalog_reference
-
-
 def _verify(args: argparse.Namespace) -> int:
     root = _existing_root(args.root, label="source catalog root")
-    receipt, receipt_reference = _load_build_command_receipt(root)
-    if receipt["receiptId"] != args.expected_command_receipt_id:
-        raise SourceCatalogCliError(
-            "source catalog build command receipt differs from the expected receipt identity"
-        )
-    supplied_reference = SourceCatalogRef.from_dict(
+    reference = SourceCatalogRef.from_dict(
         _read_object(args.reference, label="source catalog reference", canonical=False)
     )
-    if supplied_reference != receipt_reference:
-        raise SourceCatalogCliError(
-            "source catalog reference differs from the published build command receipt"
-        )
-    producer = _producer(args)
-    if receipt["producer"] != producer.as_dict():
-        raise SourceCatalogCliError(
-            "source catalog build command receipt producer differs from the installed implementation"
-        )
-    if receipt["destination"] != root.as_posix():
-        raise SourceCatalogCliError(
-            "source catalog build command receipt destination differs from the explicit store root"
-        )
     summary = SourceCatalogArtifactReader(
-        LocalSourceCatalogStore(
-            root,
-            create=False,
-        ),
-        producer=producer,
-    ).verify_snapshot(receipt_reference)
-    comparisons = {
-        "artifactDigest": (summary.artifact_digest, receipt_reference.digest),
-        "byteMeasurements": (
-            dict(summary.byte_measurements),
-            receipt["byteMeasurements"],
-        ),
-        "catalogStateDigest": (summary.catalog_state_digest, receipt["catalogStateDigest"]),
-        "diagnosticDigests": (dict(summary.diagnostic_digests), receipt["diagnosticDigests"]),
-        "dispositionCounts": (dict(summary.disposition_counts), receipt["dispositionCounts"]),
-        "reasonCounts": ([dict(value) for value in summary.reason_counts], receipt["reasonCounts"]),
-        "itemCount": (summary.item_count, receipt["itemCount"]),
-        "joinCoverage": (
-            [dict(value) for value in summary.join_coverage],
-            receipt["joinCoverage"],
-        ),
-        "logicalId": (summary.logical_id, receipt_reference.catalog_id),
-        "partitionPolicy": (dict(summary.partition_policy), receipt["partitionPolicy"]),
-        "requestedUniverseSetDigest": (
-            summary.requested_universe_set_digest,
-            receipt["requestedUniverseSetDigest"],
-        ),
-        "selectedSourceSetDigest": (
-            summary.selected_source_set_digest,
-            receipt["selectedSourceSetDigest"],
-        ),
-        "selectionPolicy": (dict(summary.selection_policy), receipt["catalogPolicy"]),
-        "sourceNativeInputs": (
-            {
-                (value["logicalId"], value["artifactDigest"])
-                for value in summary.source_native_inputs
-            },
-            {
-                (value["logicalId"], value["artifactDigest"])
-                for value in receipt["sourceNativeInputs"]
-            },
-        ),
-    }
-    for name, (actual, expected) in comparisons.items():
-        if actual != expected:
-            raise SourceCatalogCliError(
-                f"source catalog build command receipt {name} differs from the admitted catalog"
-            )
+        LocalSourceCatalogStore(root, create=False), producer=_producer(args),
+    ).verify_snapshot(reference)
     _emit(
         {
             "format": "docspec-source-catalog-verification",
-            "formatVersion": "1.0",
-            "commandReceiptId": receipt["receiptId"],
+            "formatVersion": "2.0",
             "logicalId": summary.logical_id,
             "artifactDigest": summary.artifact_digest,
             "catalogId": summary.catalog_id,
@@ -551,7 +131,8 @@ def _verify(args: argparse.Namespace) -> int:
             "partitionPolicy": dict(summary.partition_policy),
             "joinCoverage": [dict(value) for value in summary.join_coverage],
             "diagnosticDigests": dict(summary.diagnostic_digests),
-            "sourceNativeInputs": [dict(value) for value in summary.source_native_inputs],
+            "sourceNativeInputs": [SourceNativeDescription.from_dict(value).to_dict() for value in summary.source_native_inputs],
+            "acceptedRecordOutcomes": sorted(summary.accepted_record_outcomes),
             "byteMeasurements": dict(summary.byte_measurements),
             "verdict": "pass",
         }
@@ -560,9 +141,6 @@ def _verify(args: argparse.Namespace) -> int:
 
 
 def _build(args: argparse.Namespace) -> int:
-    # A successful build publishes its receipt inside the immutable destination.
-    # A failed build has no destination to contain a trustworthy success receipt.
-    args._suppress_failure_receipt = True
     lengths = {
         len(args.source_native),
         len(args.source_native_artifact_digest),
@@ -583,6 +161,9 @@ def _build(args: argparse.Namespace) -> int:
     else:
         raise SourceCatalogCliError("catalog policy is not implemented by this DocSpec version")
     accepted_verifiers = frozenset(args.accepted_source_verifier_implementation_id)
+    accepted_outcomes = accepted_record_outcomes(
+        DEFAULT_ACCEPTED_RECORD_OUTCOMES if args.accepted_record_outcome is None else args.accepted_record_outcome
+    )
 
     # Import the producer adapter only after the operator selects it. Help and
     # verification do not require the producer package.
@@ -616,6 +197,7 @@ def _build(args: argparse.Namespace) -> int:
         )
         for locator, digest, blob_root, profile_name in source_inputs
     )
+    sources = _snapshot_sources(sources, accepted_outcomes)
     descriptions = tuple(source.describe() for source in sources)
     catalog_id = stable_urn(
         "source-catalog-series",
@@ -626,23 +208,18 @@ def _build(args: argparse.Namespace) -> int:
     )
     producer = _producer(args)
     destination = Path(args.destination)
-    receipt_path = Path(args.receipt)
     blob_store = Path(args.blob_store) if args.blob_store is not None else None
     _require_new_outputs(
         destination,
-        receipt_path,
         blob_store,
         tuple(source_input[0] for source_input in source_inputs),
     )
-    # Record which schema engine will decide every row. jsonschema-rs is a
-    # declared dependency, so this should always name it; if an install ever
-    # loses it, a ~116x slowdown announces itself here instead of being read as
-    # "the build is just slow". stderr, so the receipt on stdout is unchanged.
+    # Diagnostics use stderr; the build report uses stdout.
     _emit(
         {
             "format": "docspec-source-catalog-build-diagnostic",
             "formatVersion": "1.0",
-            "sourceItemValidator": source_item_validator_implementation(),
+            "sourceItemValidator": "jsonschema-rs",
         },
         error=True,
     )
@@ -655,7 +232,7 @@ def _build(args: argparse.Namespace) -> int:
         result = SourceCatalogBuilder(
             store=catalog_store,
             policy=policy,
-            request=SourceCatalogBuildRequest(catalog_id, producer),
+            request=SourceCatalogBuildRequest(catalog_id, producer, accepted_record_outcomes=accepted_outcomes),
             workspace_factory=lambda: (
                 SqliteCatalogPolicyWorkspace(path=args.resume_workspace)
                 if args.resume_workspace is not None
@@ -681,13 +258,13 @@ def _build(args: argparse.Namespace) -> int:
         content = {
             "operation": "source-catalog.build",
             "acceptedSourceVerifierImplementationIds": sorted(accepted_verifiers),
+            "acceptedRecordOutcomes": sorted(accepted_outcomes),
             "sourceNativeInputs": [
                 {
                     "locator": Path(locator).resolve(strict=True).as_posix(),
                     "blobStore": Path(blob_root).resolve(strict=True).as_posix(),
                     "profile": profile_name,
-                    "logicalId": description.logical_id,
-                    "artifactDigest": description.artifact_digest,
+                    **description.to_dict(),
                 }
                 for (locator, _, blob_root, profile_name), description in zip(
                     source_inputs,
@@ -717,18 +294,9 @@ def _build(args: argparse.Namespace) -> int:
             "blobStore": _blob_store_evidence(args, result.byte_measurements),
             "verdict": "pass",
         }
-        receipt = {
-            "format": "docspec-source-catalog-build-command-receipt",
-            "formatVersion": "1.0",
-            "receiptId": stable_urn("source-catalog-build-command-receipt", content),
-            **content,
-        }
-        publication.write_file(
-            _BUILD_RECEIPT_NAME,
-            canonical_json_file_bytes(receipt),
-        )
+        report = {"format": "docspec-source-catalog-build-report", "formatVersion": "1.0", **content}
         publication.publish()
-    _emit(receipt)
+    _emit(report)
     return 0
 
 
@@ -752,6 +320,10 @@ def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
         choices=_SOURCE_NATIVE_PROFILES,
     )
     source_build.add_argument("--accepted-source-verifier-implementation-id", action="append", required=True)
+    source_build.add_argument(
+        "--accepted-record-outcome", action="append", choices=sorted(RECORD_OUTCOMES),
+        help="Repeat for each accepted provider outcome; defaults to empty and no-record-rejections",
+    )
     source_build.add_argument("--catalog-policy", type=Path, required=True)
     source_build.add_argument("--implementation-id", required=True)
     source_build.add_argument("--verifier-implementation-id", required=True)
@@ -768,15 +340,6 @@ def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
         ),
     )
     source_build.add_argument(
-        "--receipt",
-        type=Path,
-        required=True,
-        help=(
-            "Required atomic receipt member; must be "
-            "<destination>/source-catalog-build-command-receipt.json"
-        ),
-    )
-    source_build.add_argument(
         "--blob-store",
         type=Path,
         help=(
@@ -789,7 +352,6 @@ def _add_subcommands(source_catalog: argparse.ArgumentParser) -> None:
     source_verify = source_commands.add_parser("verify", help="Verify a complete local source-catalog distribution")
     source_verify.add_argument("--root", type=Path, required=True)
     source_verify.add_argument("--reference", type=Path, required=True, help="JSON SourceCatalogRef")
-    source_verify.add_argument("--expected-command-receipt-id", required=True)
     source_verify.add_argument("--implementation-id", required=True)
     source_verify.add_argument("--verifier-implementation-id", required=True)
     source_verify.set_defaults(func=_verify)

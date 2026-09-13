@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from pathlib import Path
 
 from docspec.adapters.execution import LocalExecutionBackend
@@ -16,14 +18,13 @@ from docspec.domain.content import CandidateFile
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     StoreTaskResult,
     iter_store_tasks,
     summarize_store_tasks,
 )
 from docspec.domain.identity import sha256_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.references import StoreRef
@@ -66,11 +67,7 @@ def _plan(
         base_release=base,
         profiles=local_profile_set(),
         limits=WorkLimits(max_entries, 1024 * 1024, 100, 100, 1000, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-            (processor.description.processor_id,),
-        ),
+        stages=stage_policy(processor_ids=(processor.description.processor_id,)),
         processors=ProcessorSet((processor.description,)),
         partition_count=buckets,
         selection={},
@@ -98,6 +95,7 @@ def _run(
     processor_cache=None,
     partition_policy,
     accepted_failure_policy=None,
+    select_current: bool = True,
 ):
     configured_processors = processors
     if configured_processors is None:
@@ -126,8 +124,8 @@ def _run(
         document_catalog=catalog,
         blobs=blobs,
         fetcher=fetcher,
-        extractor=extractor or DefaultExtractorRegistry(),
-        segmenter=segmenter or DefaultSegmenterRegistry(),
+        extractor=DefaultExtractorRegistry() if plan.stages.requests_extraction and extractor is None else extractor,
+        segmenter=DefaultSegmenterRegistry() if plan.stages.requests_segmentation and segmenter is None else segmenter,
         processors=processor_registry,
         retry_policy=retry,
         accepted_failure_policy=accepted_failure_policy or AcceptedFailurePolicy(),
@@ -163,17 +161,9 @@ def _run(
         artifact_id="urn:docspec:test:worker-composition",
         value={"implementationId": "tests.local-worker/v1", "planId": plan.plan_id},
     )
-    scheduler_configuration = controls.put(
-        kind="scheduler-configurations",
-        artifact_id="urn:docspec:test:scheduler-configuration",
-        value={"adapterId": "docspec.local-threaded", "maxWorkers": 2, "maxInFlight": 2},
-    )
     execution_profile = ExecutionProfile(
-        "docspec.local-threaded",
-        "1.0.0",
         worker_composition,
-        scheduler_configuration,
-        ExecutionLimits(2, 1, 2, 4 * 1024**3, 8 * 1024**3, 100, 2, 1, 0, 0),
+        4 * 1024**3,
         2_000_000_000,
     )
     execution_profile_ref = controls.put(
@@ -217,6 +207,8 @@ def _run(
             execute_and_deliver,
             profile_reference=execution_profile_ref,
             controls=controls,
+            max_workers=2,
+            max_in_flight=2,
         ).execute(handoff, tasks)
     )
     processed = tuple(processed_references)
@@ -237,10 +229,12 @@ def _run(
         clock=_clock,
     )
     run_ref = reconciler.reconcile_run(results)
-    release_ref = ReleaseCommitService(
+    service = ReleaseCommitService(
         plan_ref=plan_ref,
         controls=controls,
         records=records,
         document_catalog=catalog,
-    ).commit_release(plan.base_release, run_ref)
+    )
+    save = service.commit_release if select_current else service.retain_release
+    release_ref = save(plan.base_release, run_ref)
     return planned, processed, sealed, run_ref, release_ref

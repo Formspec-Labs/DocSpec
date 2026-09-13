@@ -43,6 +43,20 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
             self.source_system_version = description().source_system_version
             self.source_state_digest = description().source_state_digest
             self.source_native_schema_set_digest = description().source_native_schema_set_digest
+            self.collection_outcome = {
+                "recordOutcome": "no-record-rejections", "sourceStateScope": self.source_state_scope,
+                "publishedRecordCount": 1, "failedRecordCount": 0,
+                "requestedScope": {"providerQuery": {"page": 1}},
+            }
+
+        def record_evidence(self, source_record_id):
+            return None
+
+        def iter_failures(self, *, limit=100):
+            yield from ()
+
+        def read_evidence(self, blob_ref, *, max_bytes):
+            raise ValueError("fixture has no provider evidence blobs")
 
         def iter_records(self):
             yield record("2026-00001")
@@ -61,7 +75,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     package.__path__ = []  # type: ignore[attr-defined]
     module = ModuleType(module_name)
     profiles_module = ModuleType(profiles_module_name)
-    module.SUPPORTED_PRODUCER_PRODUCTS = frozenset({"spicy-regs", "spicy-docs"})  # type: ignore[attr-defined]
+    module.CURRENT_PRODUCER_PRODUCT = "spicy-docs"  # type: ignore[attr-defined]
     module.SourceNativeReleaseReader = FakeReader  # type: ignore[attr-defined]
     profiles_module.FEDERAL_REGISTER_PROFILE = fake_profile  # type: ignore[attr-defined]
     profiles_module.REGULATIONS_GOV_DOCUMENT_PROFILE = object()  # type: ignore[attr-defined]
@@ -78,7 +92,6 @@ def source_catalog_build_arguments(
     tmp_path: Path,
     *,
     destination: Path,
-    receipt_path: Path,
     blob_store: Path | None = None,
 ) -> list[str]:
     source_root = tmp_path / "source-native"
@@ -113,9 +126,15 @@ def source_catalog_build_arguments(
         implementation_id,
         "--destination",
         str(destination),
-        "--receipt",
-        str(receipt_path),
     ]
     if blob_store is not None:
         arguments.extend(("--blob-store", str(blob_store)))
     return arguments
+
+
+def source_catalog_verify_arguments(destination: Path, reference_path: Path) -> list[str]:
+    implementation_id = "git+https://example.test/docspec@" + "1" * 40
+    return [
+        "source-catalog", "verify", "--root", str(destination), "--reference", str(reference_path),
+        "--implementation-id", implementation_id, "--verifier-implementation-id", implementation_id,
+    ]

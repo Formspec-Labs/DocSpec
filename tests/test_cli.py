@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
+from docspec.runtime import stage_policy
+
 import json
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -13,30 +16,28 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
     RootOnlyBlobProfileStateReachability,
 )
 from docspec.application.maintenance import BlobRetentionSetService
-from docspec.cli import execution as cli_execution
-from docspec.cli import local as cli_local
+from docspec.runtime import prepare_local_run
+from docspec.runtime import composition as runtime_composition
+from docspec.runtime import preparation as runtime_preparation
 from docspec.cli import main
 from docspec.cli import plans as cli_plans
 from docspec.cli import requests as cli_requests
 from docspec.cli_io import MAX_JSON_BYTES
 from docspec.domain.content import SourceItem, SourceItemState
-from docspec.domain.execution import ExecutionHandoff, StoreTask, iter_store_tasks
+from docspec.domain.execution import ExecutionHandoff, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.jobs import StoreState
 from docspec.domain.maintenance import BlobRetentionSet, ReleaseCompactionReceipt
 from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.receipts import RunReceipt
-from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef, StoreRef
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, SourceCatalogRef
 from tests.helpers import (
     document_release_producer,
     write_shared_source_catalog,
@@ -56,16 +57,14 @@ ZERO_DIGEST = "sha256:" + "0" * 64
     [
         ("source-catalog", ("build", "verify")),
         ("profile", ("list", "verify")),
-        ("scale-profile", ("seal", "verify")),
-        ("document-catalog", ("open", "compare")),
+        ("document-catalog", ("open", "audit", "compare", "select")),
         ("plan", ("create",)),
         ("document-store", ("create", "verify")),
         ("run", ("prepare", "start", "resume", "reconcile", "status", "active")),
         ("task", ("execute",)),
         ("sink", ("verify",)),
-        ("document-release", ("commit", "verify", "diff", "compact")),
+        ("document-release", ("retain", "commit", "verify", "diff", "compact")),
         ("blob-store", ("verify", "gc")),
-        ("conformance", ("run", "report")),
     ],
 )
 def test_one_cli_exposes_the_complete_lifecycle(
@@ -82,7 +81,7 @@ def test_one_cli_exposes_the_complete_lifecycle(
 
 
 def test_profile_verification_uses_the_machine_description(capfd: pytest.CaptureFixture[str]) -> None:
-    profile = REPO_ROOT / "profiles" / "canonical-release-manifest-v1.json"
+    profile = REPO_ROOT / "src" / "docspec" / "storage_profiles" / "canonical-release-manifest-v1.json"
     assert main(["profile", "verify", str(profile)]) == 0
     result = json.loads(capfd.readouterr().out)
     assert result == {
@@ -131,7 +130,7 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
         "baseRelease": None,
         "profiles": _profile_set().to_dict(),
         "limits": WorkLimits(10, 1000, 100, 200, 300, 4000, 60, 2).to_dict(),
-        "stages": StagePolicy(("text-v1",), "paragraph-v1", ()).to_dict(),
+        "stages": StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()).to_dict(),
         "processors": ProcessorSet(()).to_dict(),
         "partitionCount": 8,
         "selection": {"kind": "all"},
@@ -165,85 +164,6 @@ def test_plan_create_writes_canonical_artifact_and_receipt_once(
     assert main(arguments) == 2
     error = json.loads(capfd.readouterr().err)
     assert "refusing to replace" in error["message"]
-
-
-def test_scale_profile_seal_and_verify_use_one_canonical_artifact(
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    from docspec.domain.scale import ScaleProfile
-    from tests.support.scale import scale_profile_content
-
-    request = tmp_path / "scale-content.json"
-    destination = tmp_path / "scale-profile.json"
-    receipt = tmp_path / "scale-operation.json"
-    request.write_bytes(canonical_json_file_bytes(scale_profile_content()))
-
-    assert main(
-        [
-            "scale-profile",
-            "seal",
-            "--request",
-            str(request),
-            "--destination",
-            str(destination),
-            "--receipt",
-            str(receipt),
-        ]
-    ) == 0
-    operation = json.loads(capfd.readouterr().out)
-    profile = ScaleProfile.from_bytes(destination.read_bytes())
-    assert operation["artifact"]["artifactId"] == profile.profile_id
-
-    assert main(["scale-profile", "verify", str(destination)]) == 0
-    verification = json.loads(capfd.readouterr().out)
-    assert verification["profileId"] == profile.profile_id
-    assert verification["profileDigest"] == profile.digest
-    assert verification["workloadKind"] == "document-processing"
-    assert verification["unitCount"] == 100_000
-    assert verification["verdict"] == "pass"
-
-
-def test_source_catalog_scale_profile_seal_and_verify_use_the_same_cli(
-    tmp_path: Path,
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    from docspec.domain.scale import ScaleProfile
-    from tests.support.scale import source_catalog_scale_profile_content
-
-    request = tmp_path / "catalog-scale-content.json"
-    destination = tmp_path / "catalog-scale-profile.json"
-    receipt = tmp_path / "catalog-scale-operation.json"
-    request.write_bytes(canonical_json_file_bytes(source_catalog_scale_profile_content()))
-
-    assert main(
-        [
-            "scale-profile",
-            "seal",
-            "--request",
-            str(request),
-            "--destination",
-            str(destination),
-            "--receipt",
-            str(receipt),
-        ]
-    ) == 0
-    operation = json.loads(capfd.readouterr().out)
-    profile = ScaleProfile.from_bytes(destination.read_bytes())
-    assert operation["artifact"]["artifactId"] == profile.profile_id
-
-    assert main(["scale-profile", "verify", str(destination)]) == 0
-    verification = json.loads(capfd.readouterr().out)
-    assert verification == {
-        "format": "docspec-scale-profile-verification",
-        "formatVersion": "1.0",
-        "maxSourceRecordCount": 100_000,
-        "profileDigest": profile.digest,
-        "profileId": profile.profile_id,
-        "sourceNativeInputCount": 2,
-        "verdict": "pass",
-        "workloadKind": "source-catalog",
-    }
 
 
 def test_mutating_command_failure_writes_a_new_machine_receipt(
@@ -316,67 +236,6 @@ def test_failure_receipt_keeps_the_original_error_when_request_hashing_fails(
     assert not destination.exists()
 
 
-@pytest.mark.parametrize("state", (StoreState.RUNNING, StoreState.SEALED))
-def test_local_task_recovery_executes_only_an_unfinished_store(state: StoreState) -> None:
-    plan_ref = ArtifactRef("plan-1", "plan.json", ZERO_DIGEST, "application/json", 1)
-    sink_ref = ArtifactRef("sink-1", "sink.json", ZERO_DIGEST, "application/json", 1)
-    planned_ref = StoreRef("store-1", 0, "planned.json", ZERO_DIGEST)
-    current_ref = StoreRef("store-1", 2, "current.json", ZERO_DIGEST)
-    processed_ref = StoreRef("store-1", 3, "processed.json", ZERO_DIGEST)
-    sealed_ref = StoreRef("store-1", 4, "sealed.json", ZERO_DIGEST)
-    task = StoreTask("plan-1", "execute-and-deliver", planned_ref)
-    current_store = SimpleNamespace(plan_id="plan-1", state=state)
-    executor_calls: list[StoreRef] = []
-    delivery_calls: list[StoreRef] = []
-
-    class _Stores:
-        def load(self, reference: StoreRef) -> object:
-            assert reference in (planned_ref, current_ref)
-            return current_store
-
-        def latest(self, store_id: str) -> StoreRef:
-            assert store_id == "store-1"
-            return current_ref
-
-    class _Executor:
-        def execute_store(self, reference: StoreRef) -> StoreRef:
-            executor_calls.append(reference)
-            return processed_ref
-
-    class _Delivery:
-        def deliver_store(self, reference: StoreRef, requested_sink: ArtifactRef) -> StoreRef:
-            assert requested_sink == sink_ref
-            delivery_calls.append(reference)
-            return current_ref if state is StoreState.SEALED else sealed_ref
-
-    composition = SimpleNamespace(
-        plan=SimpleNamespace(plan_id="plan-1"),
-        plan_ref=plan_ref,
-        stores=_Stores(),
-        executor=_Executor(),
-        delivery=_Delivery(),
-    )
-    prepared = SimpleNamespace(
-        handoff=SimpleNamespace(
-            operation_id="execute-and-deliver",
-            processing_plan=plan_ref,
-            result_sink=sink_ref,
-            handoff_id="handoff-1",
-        )
-    )
-
-    result = cli_execution._execute_local_task(composition, prepared, task)
-
-    if state is StoreState.SEALED:
-        assert executor_calls == []
-        assert delivery_calls == [current_ref]
-        assert result.output_store == current_ref
-    else:
-        assert executor_calls == [current_ref]
-        assert delivery_calls == [processed_ref]
-        assert result.output_store == sealed_ref
-
-
 def test_local_run_start_resume_and_release_commit_use_real_application_services(
     tmp_path: Path,
     capfd: pytest.CaptureFixture[str],
@@ -399,10 +258,7 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(2, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-        ),
+        stages=stage_policy(),
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},
@@ -482,12 +338,11 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
         pytest.fail("automatic recovery must not deeply re-execute an already sealed store")
 
     with monkeypatch.context() as recovery_patch:
-        recovery_patch.setattr(cli_local.RunPlanner, "plan_run", unexpected_replanning)
-        recovery_patch.setattr(cli_local.StoreExecutionService, "execute_store", unexpected_execution)
-        automatic_resume = cli_execution._execute_local_run(
-            cli_requests._local_run_request(run_request),
-            resume=None,
-        )
+        recovery_patch.setattr(runtime_preparation.RunPlanner, "plan_run", unexpected_replanning)
+        recovery_patch.setattr(runtime_composition.StoreExecutionService, "execute_store", unexpected_execution)
+        automatic_resume = prepare_local_run(
+            **cli_requests._local_run_arguments(cli_requests._local_run_request(run_request)), resume=None,
+        ).run()
     assert automatic_resume == run_reference
 
     resume_reference_path = tmp_path / "resume-reference.json"
@@ -638,7 +493,7 @@ def test_local_run_start_resume_and_release_commit_use_real_application_services
     commit_operation = json.loads(capfd.readouterr().out)
     release_reference = DocumentReleaseRef.from_dict(json.loads(release_reference_path.read_text()))
     stores = LocalDocumentStoreRepository(Path(roots["documentStores"]))
-    records = LocalJsonlRecordStorage(Path(roots["recordStorage"]))
+    records = LocalParquetRecordStorage(Path(roots["recordStorage"]))
     catalog = LocalManifestDocumentCatalog(
         Path(roots["documentCatalog"]),
         records=records,
@@ -733,7 +588,7 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         platform,
         completed_at="2026-08-05T16:00:00Z",
     )
-    compacted_records = LocalJsonlRecordStorage(
+    compacted_records = LocalParquetRecordStorage(
         platform.records.root,
         max_member_bytes=1024 * 1024,
     )
@@ -745,7 +600,8 @@ def test_document_release_compact_runs_the_local_maintenance_service(
         producer=document_release_producer(),
         blobs=platform.blobs,
     )
-    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verify_plan_policies", lambda *_args: None)
+    monkeypatch.setattr(cli_requests, "_local_profiles", lambda *_args: {})
     monkeypatch.setattr(
         cli_requests,
         "_local_storage",
@@ -834,7 +690,8 @@ def test_blob_gc_streams_a_sealed_retention_layer_through_a_bounded_index(
         platform,
         completed_at="2026-08-05T16:00:00Z",
     )
-    monkeypatch.setattr(cli_requests, "_verified_local_plan", lambda _request: (plan, {}, {}))
+    monkeypatch.setattr(cli_requests, "_verify_plan_policies", lambda *_args: None)
+    monkeypatch.setattr(cli_requests, "_local_profiles", lambda *_args: {})
     monkeypatch.setattr(
         cli_requests,
         "_local_storage",

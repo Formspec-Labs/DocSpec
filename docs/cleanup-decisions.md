@@ -6,34 +6,54 @@ lines preserve useful ownership. The maintainer subsequently clarified that
 legacy compatibility is not required; current workflows still govern which
 behaviors belong here.
 
-## Retire compatibility-only import paths
+## Keep one current export path
 
-Removed `adapters.source_catalog_artifact` and
-`adapters.document_release_verify` after redirecting every current code, tool,
-test, and installed-wheel probe to the implementation owners. The public
-`docspec.source_catalog` API now imports those owners directly. Portable bundle
-verification lives at `adapters.document_release.verify.verify_document_release`.
+The former compatibility imports `adapters.source_catalog_artifact` and
+`adapters.document_release_verify` were removed during the first refactor.
+`docspec.source_catalog` imports the current catalog owners directly.
 
-The application release lifecycle and portable bundle lifecycle both serve
-current callers. Both advertise `2.0`, and their structures differ; removing an
-old import path does not make either current workflow obsolete. Predecessor
-portable-format handling is retired as described below.
+The September 12 simplification retires the entire campaign-specific portable
+builder/verifier, its retention-floor calibration, exclusive schemas and tests,
+and fixture restamping chain. The owner explicitly removed historical
+reproduction and legacy consumers from the requirements. Git retains the
+implementation and fixture provenance.
 
-## Retire the predecessor portable reader
+Use [result exports](result-exports.md) to copy a retained active dataset through
+Rulespec's shared artifact container. Existing document identities, outcomes,
+coordinates and typed processing evidence keep their established validators.
+The current retained-state adapter `platform_artifact.py` remains necessary for
+later processing and already uses Rulespec; it is separate from the removed
+portable verifier. Current visible-text and segmentation implementations remain
+usable through injected processing stages.
 
-The portable verifier accepts the current eight-schema shape, strict JSONL
-members, framed set digests, and content-based release identity. Removed schema
-aliases, generation inference, JSON-array member parsing, and predecessor digest
-rules no longer create a second validation path. Current per-kind accounting,
-retention floors, source versions, and indexed-byte ownership checks remain.
+## Verify the catalog once
 
-Decision 0001 explicitly made the predecessor reader temporary until restamping.
-The current restamper produces the supported corpus and does not read the old
-DocumentRelease corpus. Both frozen fixture trees remain sealed provenance;
-`source_catalog_release_v1/valid` remains a required input to the current recipe.
-No packaged schema or sealed fixture bytes changed. The
-[dated retirement note](decisions/0001-document-release-2-0.md#migration-and-the-builders-obligations)
-supersedes the earlier promise to accept both portable generations.
+The catalog CLI now verifies the caller's `SourceCatalogRef` directly through
+`SourceCatalogArtifactReader.verify_snapshot`. That reader admits the shared
+artifact, verifies its exact pin and producer, and recomputes the catalog's
+digests, counts, policy diagnostics, and byte accounting. Both Python-built and
+relocated catalogs use this path.
+
+The former command receipt repeated those facts in another file, added a second
+identity and closed-shape validator, and required the original destination path
+during verification. It did not replace the reader's full verification. Remove
+that receipt, its `--receipt` and `--expected-command-receipt-id` arguments, and
+the now-unused publication root-file writer. The artifact's sealed
+`catalog-build-receipt.json` remains part of its own evidence and verification.
+
+Build output still reports source locations, the chosen provider profiles and
+source-verifier acceptance, and actual execution diagnostics. Those describe
+the invocation; they are emitted on standard output for callers or Dagster to
+retain as logs. They are not another required dataset artifact. A failed
+publication emits no success report, and an existing destination is never
+replaced. The exact artifact remains authoritative if output logging fails.
+
+Keeping the second file but sharing its validators would retain unnecessary
+identity and location dependencies. Removing it makes verification work for
+catalogs created through either public entry point and eliminates roughly 500
+lines of production code without adding a new schema, reader, or run ledger.
+This is the primary agent's architecture judgment; independent review is pending
+because the reviewers reached their usage limit.
 
 ## Retire the unused application wrapper
 
@@ -54,14 +74,22 @@ Call the existing services directly: `RunPlanner`, `StoreExecutionService`,
 their existing modules; public application exports remain for the services that
 were already exported. Reconciliation consumes task results, including their
 handoff and task identity, rather than an unqualified list of sealed stores.
-The working local composition is in `src/docspec/cli/local.py` and
-`src/docspec/cli/execution.py`.
+The working local composition now lives in `src/docspec/runtime/` and supports
+both Python callers and the CLI. Its prepared object binds verified services,
+task references, and recovery, replacing the former CLI-only setup. See
+[Python runs](python-runs.md); the removed five-method wrapper remains retired.
 
 ## Small duplicate candidates
 
+The public runtime's task lookup has a separate purpose from retained run state.
+A store identity describes its content; membership in the sealed plan determines
+whether this run selected it. A disposable bounded SQLite index checks that
+membership before acquisition or delivery. Building it once avoids a full plan
+scan for every task. It introduces no additional authoritative ledger and is
+released after local execution or when the caller closes the prepared worker.
+
 | Candidate | Decision and reason |
 | --- | --- |
-| Builder/restamper member descriptors | One `member_descriptor` in `document_release_support.py` now derives the same seven fields from the actual member file. Both builders use it; sealed fixture identities remain the check. |
 | Source policies' `to_member` | Retain each small explicit serialization method. It sits beside that policy's inverse reader and names its own version and configuration. A generic serialization function would add parameters and indirection without reducing the code needed to understand either policy. The shared domain schema checks both shapes. |
 | Source policies' cached `policy_digest` | Retain the short per-instance cache. Lazy calculation preserves configuration-error timing and avoids hashing the whole configuration for each item. A shared mutation helper or inheritance layer would obscure ownership of the frozen policy's cache. The Regulations.gov method retains the measurements that explain why this cache matters. |
 | Retained-catalog research readers | Seven tools now share manifest ordering, plain/gzip JSONL reading, and receipt path formatting in `tools/catalog_sample_support.py`. Sampling rules and receipt meanings stay with their callers. This helper reads research inputs; package verification still governs publication. |
@@ -78,31 +106,66 @@ The former `tools/write_catalog_policy_member.py` entry point is removed.
 Source-catalog command handling also moved into `cli/source_catalog.py`, so
 contributors can find command code in one tree.
 
-Retain `build_document_release.py` and `fr_mirrulations_pin.py` as historical
-FR/Mirrulations reproduction recipes. Their campaign-specific inputs, empty
-comment output, document-body assumptions, and refusal behavior do not define
-a general installed writer. No current product caller was found. The portable
-format remains supported, and shared identity and verification rules already
-have package owners. The application release service produces a different
-representation and does not supersede this reproduction recipe.
-
-Research tools, the CourtListener population proof, schema generation, and
-fixture restamping keep their distinct roles. Removed the unused `MINOR_TYPES`
-constant and obsolete three-argument sample-worker input; both current callers
-use the four-argument shape. A similar filename alone does not establish that
-one tool supersedes another.
+The superseded portable mint and calibration tools are removed. The inventory
+records the remaining research, source-selection, schema and reporting tools by
+their current caller and purpose. Shared package code owns behavior used by the
+normal workflow; tools retain only experiment-specific choices. A historical
+filename or a previous measurement alone does not justify maintaining a tool.
 
 ## Require the current installed source reader
 
 `SpicyDocsSourceNativeAdapter` in `adapters/spicy_docs_source_native.py` now loads
 only `spicy_docs`. The predecessor `spicy_regs` fallback and old adapter names
-are removed, with current imports and tests updated directly. Accepted artifact
-producer labels still include `spicy-regs` and `spicy-docs`: those recorded data
-labels are separate from the installed reader's ownership.
+are removed, with current imports and tests updated directly. The adapter requires
+the installed reader's public `CURRENT_PRODUCER_PRODUCT` to be `spicy-docs`.
+The current reader owns source format and policy admission; callers independently
+supply the source artifact pin and accepted verifier implementation IDs. Historical
+producer labels do not enable a compatibility path.
 
-Expected reader-admission failures use `SourceNativeReaderError`, which the CLI
-reports as a structured error. Import failures inside an installed reader retain
-their original cause and are not mistaken for an absent package.
+Reader selection failures use `SourceNativeReaderError`, which the CLI reports
+as a structured error. Source admission failures retain the provider's exception.
+Import failures inside an installed reader retain their original cause and are
+not mistaken for an absent package.
+
+The GovInfo bill example uses that same optional SpicyDocs wheel for acquisition.
+The provider owns offered-version checks, bill/XML identity, HTTP bounds and
+source refusals. The example chooses one version, maps the response to the
+existing fetcher interface, and retains source observations before using normal
+DocSpec capture and processing. Its later run changes only the phrase resource
+and reuses the retained upstream layers after the provider closes.
+
+Keep this composition in the example: a provider registry or general source
+runner has no additional caller here. Promote a shared adapter only when another
+actual workflow needs the same mapping. One current wheel and manifest qualify
+both source reading and acquisition; the former reader wheel and a separate bill
+test wheel have no continuing role. The imported example has an
+[independent review](history/2026-09-12-govinfo-bill-handoff-review.md); the later
+single-wheel integration is locally tested and awaits fresh independent review.
+
+CourtListener's research tool now imports the provider's `BulkObject` and
+`parse_listing_page` directly. This removes its second XML parser, filename and
+media-type rules, and URL construction. Exact quoted ETags now reach candidate
+versions unchanged, and download URLs use the provider's escaping. There is no
+compatibility parser or wrapper class. DocSpec still owns dataset scope, retained
+input pins, and consistency checks over the supplied pages. Those checks do not
+prove that the original capture retained every intermediate publisher response.
+
+The development dependency group installs the same provider wheel so these
+tests run by default; isolated package checks still prove core use without it.
+The handoff gate passed 39 tests, including the pinned 1,076-object listing,
+catalog publication, source refusals and installed-package checks. One live
+acquisition test was deselected. This is the primary agent's implementation and
+architecture review; independent review remains open under D39.
+
+The GAO topic example maps admitted records into `SuppliedRecordSource`, retaining
+the provider record, source pin, collection outcome and evidence reference. Exact
+topic filtering reads that catalog directly. Unexpected labels remain ordinary
+source facts; a missing publisher topic remains a source refusal. The provider
+offers no report attachment here, so the catalog preserves absent candidates
+while still supporting metadata analysis. This needs no new core schema or
+processing interface. Both source examples use one provider-identity helper,
+and installed qualification reuses the ordinary behavior test in the existing
+provider environment. The [guide](gao-topics.md) states its bounds and evidence.
 
 ## Dormant public helpers
 
@@ -122,9 +185,9 @@ even when a direct-call search finds no caller.
 
 ## Large modules reviewed by responsibility
 
-The remaining outlier assessment distinguishes declarations from execution
-flow. These decisions follow inspection of the implementation, its callers and
-tests, with independent architecture review.
+The first refactor's outlier assessment distinguished declarations from execution
+flow. The following decisions had independent architecture review; sizes in this
+table describe that review revision.
 
 | Module at review | Decision and contribution boundary |
 | --- | --- |
@@ -132,7 +195,7 @@ tests, with independent architecture review.
 | `adapters/content_fetchers.py` — 832 lines | Split into local-file, HTTPS, S3, and routing owners, with the same public exports. The largest is 335 lines. Transport-specific retries, credentials, optional imports, and resource lifetimes remain together. |
 | `application/regulations_gov_catalog.py` — 2,131 lines | Split into policy configuration/dispatch, indexed rows, sampling, shared record facts, document conversion, and comment/docket conversion. The largest owner is 530 lines. The policy retains its selected count, resume order, and lazy identity cache; conversion helpers receive explicit inputs. Independent review caught and corrected an early identity calculation before the split was committed. |
 | `domain/source_catalog.py` — 1,077 lines | Keep the typed catalog rows and their closed schema family together. `source_catalog_schemas()` contains 681 lines of declarations, shares its field vocabulary locally, and feeds the artifact schema owner. `tests/test_package_boundary.py` compares generated and packaged schemas byte for byte. Splitting schema fragments would add navigation to one schema-maintenance task. |
-| `domain/scale.py` — 1,560 lines | Keep the closed profile/result family together. `ScaleProfile` admits exactly the document-processing and source-catalog variants; `ScaleResult.verify_profile` binds evidence and rejects impossible pass claims for both. Its longer method contains two explicit variant checks and their resource-limit tables. `tests/test_scale_profile.py` covers both variants. No separate scale format or per-type modules are needed. |
+| `domain/scale.py` — 1,560 lines | Retired September 12 after tracing its callers. The profile/result family only parsed declarations and compared supplied metrics; execution, measurement and the capacity workload did not consume it. Its CLI, generator, schemas and exclusive tests were removed together. Existing plans, enforced limits, artifact references and native measurements provide the inputs for [capacity qualification](qualification.md#qualify-a-capacity-claim). This supersedes the earlier decision to keep the family together. |
 | `processing/bounded_segmentation.py` — 1,104 lines | Keep the cohesive region → unit → packing → coverage algorithm and its provenance. `_bound` is the one owner of both boundaries and byte accounting. The introductory rationale explains source adaptation, tokenizer choice, excluded headings, and reversible evidence; it remains beside the algorithm. `tests/test_bounded_segmentation.py` covers deterministic output, token limits, coverage, and refusal cases. |
 
 Source-catalog filesystem checks remain separate from `adapters/storage/files.py`.
@@ -144,6 +207,31 @@ between operations; they are deliberate behavior, not duplicate convenience code
 These are justified size exceptions, not a waiver for unrelated additions.
 Review a new responsibility on its own merits and retain the governing rules,
 measurements, and failure explanations when moving code.
+
+### September 12 follow-up
+
+The catalog CLI now has 399 lines, down from 858 after removing its second
+verification path. The existing catalog reader supplies that behavior. The
+installed source probe is ordinary Python, separate from environment setup.
+These changes remove duplicate work and make the remaining code easier to inspect.
+
+At `722e0ce`, five production functions have at least 200 lines. The root agent
+reviewed their responsibilities and traced the execution functions' callers and
+behavioral tests. This follow-up is not an independent review; D39 remains open.
+
+| Function | Decision and evidence |
+| --- | --- |
+| [`source_catalog_schemas`](../src/docspec/domain/source_catalog.py) — 694 lines | Keep the closed declarations with their typed rows. The module is now 1,097 lines; the prior reason for co-location still applies. [`test_package_boundary.py`](../tests/test_package_boundary.py) checks packaged schemas against their generated definitions. |
+| [`EntryCheckpointVerifier.verify_entry`](../src/docspec/application/execution_checkpoints.py) — 241 lines | Keep the ordered verification of one saved entry together: capture, representations, segments, processor dependencies, completion, and budget accounting. `execute_store` calls it before accepting or saving resumed work. The [checkpoint tests](../tests/test_stage_checkpoint_recovery.py) check exact reuse, cumulative limits, and refusal before any new work when evidence is altered. |
+| [`prepare_base_reprocessing`](../src/docspec/application/base_reprocessing.py) — 236 lines | Keep this one transition from a verified retained result to a current entry. It validates the reusable prefix and processor graph before writing new receipts. The [reprocessing test](../tests/test_processor_reprocessing.py) checks unchanged work is reused and replaced processor layers disappear; the [recovery test](../tests/test_processor_only_checkpoint_recovery.py) interrupts that path and checks only the remaining changed processor runs. |
+| [`StoreExecutionService._execute_entry`](../src/docspec/application/execution.py) — 228 lines | Keep the per-document output state, memory lifetime, checkpoints, and failure snapshot visible together. Fetching, extraction, segmentation, and processor implementations already have separate owners. Further stage wrappers would need to shuttle that mutable state between helpers. The checkpoint and reprocessing tests cover the useful interruption boundaries. Dagster continues to own worker execution and retries. |
+| [`_index_release_layer`](../src/docspec/domain/delivery.py) — 225 lines | Keep the finite layer-to-SQLite translation together. Its caller selects supported layers and then checks relationships across the resulting index. A handler registry would add a second dispatch structure. [Release-integrity tests](../tests/test_release_integrity.py) reject broken file and processor lineage and missing evidence mappings; the [composed check](../tests/conformance/test_document_release_integrity.py) alters every retained object category and requires admission to fail. |
+
+The separate scale declarations (1,560 lines) and bounded segmentation algorithm
+(1,055 lines) retain the responsibilities recorded above. Their length does not
+justify a new schema framework or another segmentation implementation. Revisit
+these decisions when a concrete change crosses responsibilities or requires
+unrelated state; there is no target line count to satisfy by adding wrappers.
 
 ## Source-policy boundaries
 

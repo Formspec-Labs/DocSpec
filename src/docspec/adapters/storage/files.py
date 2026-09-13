@@ -23,11 +23,14 @@ from docspec.errors import IntegrityError, LimitExceededError
 _FILE_CHUNK_BYTES = 1024 * 1024
 
 
-def _storage_root(path: Path) -> Path:
+def _storage_root(path: Path, *, create: bool = True) -> Path:
     path = Path(path)
     if path.is_symlink():
         raise IntegrityError(f"storage root must not be a symlink: {path}")
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
+    elif not path.is_dir():
+        raise IntegrityError(f"storage root must be an existing directory: {path}")
     if path.is_symlink():
         raise IntegrityError(f"storage root must not be a symlink: {path}")
     return path.resolve(strict=True)
@@ -55,11 +58,19 @@ def _contained(root: Path, locator: str, *, create_parents: bool = False) -> Pat
     return candidate
 
 
-def _read_exact(root: Path, locator: str) -> bytes:
+def _read_exact(root: Path, locator: str, *, max_bytes: int | None = None) -> bytes:
     path = _contained(root, locator)
     if not path.is_file() or path.is_symlink():
         raise IntegrityError(f"storage member is missing or not a regular file: {locator}")
-    return path.read_bytes()
+    if max_bytes is None:
+        return path.read_bytes()
+    if path.stat().st_size > max_bytes:
+        raise LimitExceededError(f"storage member exceeds the {max_bytes}-byte limit")
+    with path.open("rb") as stream:
+        payload = stream.read(max_bytes + 1)
+    if len(payload) > max_bytes:
+        raise LimitExceededError(f"storage member exceeds the {max_bytes}-byte limit")
+    return payload
 
 
 def _write_once(

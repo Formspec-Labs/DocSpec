@@ -6,6 +6,15 @@ Editor's Draft — 25 August 2026
 
 ## Status
 
+**Scope amendment, 12 September 2026:** The current
+[dataset experiment checklist](../../dataset-experiments-todo.md) and
+[qualification guide](../../qualification.md) govern the revised product scope.
+They supersede this draft's custom conformance report, predecessor-code absence
+proof, unconditional campaign ladder, and completion requirements for retired
+exports or unused integrations. Other entries below record the original design
+and must be checked against current code before use. Superseded or unrun checks
+are not passing checks.
+
 This specification defines the work required to make DocSpec a standalone
 platform for acquiring and processing large collections of files.
 
@@ -86,8 +95,8 @@ A conforming DocSpec deployment answers four questions.
 - A selected set of release-manifest, catalog, record, blob, job-persistence,
   and delivery profiles.
 - Resource, retention, delivery, and publication policies.
-- A sealed execution profile that selects a local runner or external execution
-  tool and records its operational limits without changing document semantics.
+- A sealed execution profile that pins the actual worker composition and its
+  enforced task-index bound and deadline without changing document semantics.
 
 ### 1.2 What happens?
 
@@ -148,7 +157,8 @@ DocSpec MUST:
 - publish configured durable outputs atomically and acknowledge returned data;
 - commit each stateful run as a new immutable `DocumentRelease`;
 - perform incremental updates without recurring full dumps; and
-- process millions of image or page units within a sealed scale profile.
+- qualify chosen document and page workloads using explicit inputs, enforced
+  limits, and measured results.
 
 ### 2.2 Excluded capabilities
 
@@ -236,11 +246,10 @@ schema explicitly marks them sorted.
   execution tool's control messages.
 
 **Execution profile**
-: A sealed description of how one run is handed to a local runner or external
-  tool. It identifies the adapter and configuration digest, worker-composition
-  profile, concurrency and in-flight bounds, queue or pool, scratch limits,
-  provider limits, cache state, and deadline. It governs operations, not logical
-  document meaning.
+: A sealed description of the actual worker composition, temporary task-index
+  byte bound, cache references, and deadline. It governs worker reconstruction,
+  not document meaning. Native scheduling configuration and events remain in
+  the execution tool.
 
 **Result sink**
 : An injected destination that accepts verified result records and returns a
@@ -279,15 +288,23 @@ schema explicitly marks them sorted.
 DocSpec MUST use this dependency direction:
 
 ```text
-commands -> application services -> DocSpec ports and domain records
-                                      ^
-                                      |
- source-native/source-catalog/document-catalog/blob-store/extractor/segmenter/
- processor/execution-tool/result-sink adapters
+commands / Python callers -> runtime composition -> application services
+                                  |                        |
+                                  v                        v
+                             concrete adapters -> DocSpec ports and domain
 ```
 
-Application services and domain records MUST NOT import adapters or vendor
-software. One composition root MUST select and inject concrete adapters.
+Application services and domain records MUST NOT import concrete adapters,
+transport clients, parsers or processor implementations. The domain identity
+gateway uses the public `rulespec_artifacts.canonical_json_bytes` implementation
+for the shared safe-integer and UTF-16 JSON domain; this is the one declared
+core dependency outside DocSpec and the standard library. See
+[canonical JSON](../../canonical-json.md) for the supported values and exact
+source-byte boundary. Shared runtime composition MUST select and inject concrete run
+adapters for commands and Python callers. This outer assembly layer MAY import
+adapters and application services; core services MUST NOT import it. Request
+parsing MUST NOT create a second run composition path. Source-catalog and other
+command-specific composition remains at their existing outer entry points.
 
 ### 4.2 Required ports
 
@@ -303,7 +320,7 @@ The core MUST define project-owned ports for:
 - `Extractor`;
 - `Segmenter`;
 - `Processor`;
-- `ExecutionBackend`;
+- `StoreTaskHandler`;
 - `ResultSink`.
 
 Ports MUST exchange DocSpec records. `SourceNativeRecordSource` returns one
@@ -811,22 +828,38 @@ artifact digest.
 - scan active records and changes in stable order without loading the corpus;
 - compare two releases by logical identity;
 - stage verified outputs without making them current;
-- commit sealed `DocumentStore` receipts against one expected base release;
-- reject a stale base or conflicting commit;
-- publish and return the new `DocumentRelease`; and
-- reconstruct the same logical state from the committed release.
+- retain and return a verified immutable `DocumentRelease` with its exact base
+  and sealed `DocumentStore` receipts, without requiring that base to be current;
+- select a retained release only if the independently supplied expected current
+  reference still matches, or the exact result is already current;
+- reject a stale selection or invalid release; and
+- reconstruct the same logical state from any retained release.
 
 `DocumentCatalog` MUST NOT maintain corpus state that its `DocumentRelease`
 cannot identify and reproduce. A mutable `current` pointer MAY help operators,
-but consumers and jobs MUST use an explicit release identity. Moving that
-pointer requires the candidate Rulespec root's `supersedes` record to match the
-current root exactly with a nonempty reason, and the DocSpec verifier must prove
-series continuity. The release-local `previousRelease` field still records the
-logical corpus chain; the generic field protects the physical pointer update.
+but consumers and jobs MUST use an explicit release identity. The candidate
+Rulespec root's `supersedes` record MUST match the release's exact
+`previousRelease` with a nonempty reason; both identify its input lineage. The
+DocSpec verifier checks that lineage independently of the current pointer.
+Selecting one retained alternative after another MUST NOT restamp its bytes or
+rewrite its base. Selection verifies the candidate and its pinned base, then
+checks the independently supplied expected current reference under the catalog
+write lock. For alternatives A and B derived from X, selecting B while A is
+current requires `expected_current=A`; B continues to name X as its base.
+
+The combined `commit` operation retains a result and selects it with the expected
+current reference equal to its base, preserving the linear-update convenience.
+A failed selection MUST NOT discard a valid retained result. The existing
+`CatalogCommitReceipt` records prepared authorization for exact run state and
+base lineage: its `expectedHead` is the prepared base and its timestamp is
+`preparedAt`. It is not a receipt proving that the current pointer changed.
+Retention and selection MUST share existing artifact, dependency and store
+verification; neither introduces another run or dataset ledger.
 
 In this model, `DocumentCatalog` corresponds to the versioned corpus and
-`DocumentRelease` corresponds to one commit. The ordered release lineage is the
-catalog's history.
+`DocumentRelease` corresponds to one retained result. Base references preserve
+its experiment history, including alternatives derived from a common input. The
+current pointer records the operator's selected result, not the complete history.
 
 ### 5.3 ProcessingPlan
 
@@ -882,30 +915,30 @@ and move its `artifactDigest`. The plan verifier recomputes the projection
 digest, Rulespec logical ID, and exact artifact digest and rejects any mismatch.
 
 The plan MUST NOT encode scheduler worker placement, queue implementation,
-cluster topology, or a cache product's native configuration. Those operational
-choices belong to a separate sealed `ExecutionProfile`. The execution profile
-MUST identify:
+cluster topology, or a cache product's native configuration. Native tools own
+that configuration. The separate sealed `ExecutionProfile` format `2.0` MUST
+identify:
 
-- the execution adapter and its version or deployment identity;
-- a digest-pinned worker-composition profile that can reconstruct all adapters;
-- worker, concurrency, and in-flight bounds;
-- queue, pool, partition, or task-mapping configuration by identity and digest;
-- scratch-disk, network, request-rate, and provider limits;
-- retry timing owned by the execution tool;
-- cache implementation and initial cache state, if any; and
+- a digest-pinned worker composition that reconstructs the actual adapters;
+- the enforced temporary task-index byte bound;
+- cache implementation and initial cache state references, if any; and
 - an absolute deadline.
 
-The run receipt MUST pin the execution profile and the execution tool's returned
-run or event-log reference. A `ScaleProfile` MUST pin it when operational
-resources are part of a performance claim. Changing only an execution profile
-does not invalidate document content. If an operational change also changes a
-logical input, policy, accepted failure, or deterministic output, the
-`ProcessingPlan` MUST change as well.
+The run receipt MUST pin that worker profile. Native output metadata MUST link
+the handoff identity and execution-profile reference to the execution tool's
+event history. This
+link identifies the work; it does not reproduce or enforce native scheduling
+settings. Capacity qualification MUST retain native run/configuration evidence
+when operational resources are part of a performance claim. Changing only a
+worker profile does not invalidate document content. If an operational change
+also changes a logical input, policy, accepted failure, or deterministic output,
+the `ProcessingPlan` MUST change as well.
 
-DocSpec MAY provide a local default execution profile. A deployment SHOULD let
-Dagster, Ray, a queue, or another maintained tool own worker placement,
-concurrency, triggers, and retry timing rather than reproducing those features in
-DocSpec.
+DocSpec MAY provide a small direct local runner with explicit worker and
+in-flight limits. Those local settings MUST NOT be presented as native scheduler
+policy or change an otherwise identical handoff. Dagster or another maintained
+tool owns placement, concurrency, triggers, cancellation, and task retry timing.
+DocSpec MUST NOT duplicate those settings in its worker profile.
 
 ### 5.4 Change planning
 
@@ -1372,16 +1405,16 @@ Every conforming profile set MUST provide:
 - complete membership and integrity verification; and
 - export to the canonical logical records used by conformance tests.
 
-The reference implementation MUST provide at least one portable profile set and
-at least one profile set that passes the scale class. One profile set MAY satisfy
-both requirements. A profile SHOULD be a thin adapter over a maintained package
+The reference implementation MUST provide at least one portable profile set.
+Capacity claims for any profile set require the workload evidence in §13.
+A profile SHOULD be a thin adapter over a maintained package
 when one already implements the physical work. Manifest files, Apache Iceberg,
 Delta Lake, or a database MAY implement catalog state. Parquet, Arrow IPC, JSON
 Lines, or another bounded record format MAY implement record layers. Local
 files, S3, R2, or another immutable object service MAY implement blob storage.
 
 JSON Lines and local files are sufficient portable defaults. Parquet on
-immutable object storage is the preferred first scale profile when columnar
+immutable object storage is a candidate for larger workloads when columnar
 scans and compression matter. Iceberg or Delta SHOULD be added only when a
 deployment needs table transactions, multi-writer commits, long snapshot
 history, or row-level table maintenance. DocSpec MUST NOT implement a new table
@@ -1433,6 +1466,20 @@ their independently verified immutable state. The DocSpec semantic verifier
 derives the actual role set from the manifests and checks it against this
 vocabulary. An unknown role cannot authorize itself through artifact-authored
 metadata.
+
+The local manifest catalog MUST publish exactly one product member:
+`release.json` with role `release-state`. Its immutable record layers remain in
+the selected record store; the release container MUST NOT mirror those logical
+rows. Ordinary catalog open MUST admit the exact container and release metadata,
+accepted producer, linked plan/run/commit and execution controls, profile pins,
+and declared inventory without scanning the entire dataset. Consumed members
+and blobs MUST retain their on-use checks. Explicit catalog audit, staging,
+retention, selection, export, maintenance and comprehensive inspection MUST run
+the full `DocumentReleaseVerifier` over the referenced state and dependencies.
+A successful audit may be reused within the same exclusive publication operation
+when only its already-audited directory is renamed; metadata readback MUST still
+confirm the published pin. An independently pre-existing destination MUST be
+audited. These checks do not promise continuing availability after observation.
 
 The installed package MUST generate and ship
 `docspec/schemas/document_release/2.0/document-release.schema.json` from the
@@ -1641,7 +1688,7 @@ content; DocSpec domain code never constructs an object-store client.
 
 Physical shard targets MUST be configurable. Each record profile MUST declare a
 recommended target and a hard safety limit, and MUST reject a member above that
-limit. The scale profile MUST record the active values.
+limit. Capacity qualification evidence MUST record the active values.
 
 Partition identity MUST include schema, partition policy, and ordered logical
 content. Physical row-group layout MAY vary without changing logical records.
@@ -1787,8 +1834,8 @@ The control plane MUST classify failures as:
 
 Retries MUST have finite limits and bounded backoff. The `ProcessingPlan` owns
 which failures may be retried and the maximum semantic stage attempts. The
-execution tool MAY own task retry timing and worker replacement under the sealed
-`ExecutionProfile`. A resumed run MUST verify a completed stage, entry, or store
+execution tool owns task retry timing and worker replacement under its native
+configuration. A resumed run MUST verify a completed stage, entry, or store
 checkpoint before reuse. Stale attempts and duplicate delivery MUST remain
 idempotent.
 
@@ -1968,6 +2015,13 @@ of the same logical release, not a new logical release.
 
 ## 12. Operator interface
 
+**Source-catalog CLI update, September 12:** the command-receipt requirements in
+this draft are superseded by [the maintained cleanup decision](../../cleanup-decisions.md#verify-the-catalog-once).
+Current builds emit an invocation report; verification admits the pinned catalog
+directly and supports relocated or Python-built catalogs. The installed optional
+source reader is SpicyDocs. See [current catalog inputs](../../catalog-inputs.md#cli-build-reports-and-verification)
+for the supported arguments and evidence boundaries.
+
 One `docspec` command MUST expose the lifecycle:
 
 ```text
@@ -1976,6 +2030,7 @@ docspec source-catalog verify
 docspec profile list
 docspec profile verify
 docspec document-catalog open
+docspec document-catalog audit
 docspec document-catalog compare
 docspec plan create
 docspec document-store create
@@ -1993,8 +2048,6 @@ docspec document-release diff
 docspec document-release compact
 docspec blob-store verify
 docspec blob-store gc --dry-run
-docspec conformance run
-docspec conformance report
 ```
 
 Every mutating command MUST accept an explicit destination, refuse replacement
@@ -2063,66 +2116,41 @@ exhaustion alone never proves completeness. `run start` MAY compose those
 operations as a local convenience. None of these commands may print bulk file or
 record payloads as scheduler metadata.
 
-## 13. Scale profile
+## 13. Capacity qualification
 
-### 13.1 Sealed profile
+### 13.1 Reproducible workload evidence
 
-Before a scale run, DocSpec MUST seal a `ScaleProfile` that identifies:
+Capacity qualification MUST retain the exact source revision and installed
+wheels, input artifacts or deterministic generator, selected components, storage
+profiles, resource limits, machine, cache state, commands, recovery scenario and
+acceptance thresholds. Existing `ProcessingPlan`, `ExecutionProfile`, handoff,
+run and release references MUST identify the DocSpec work being measured.
+Native execution and measurement tools supply elapsed time, resource use and
+operational event evidence; DocSpec supplies its saved task, store, byte and
+release evidence. Input and output artifacts MUST be independently admitted.
 
-- exact corpus or deterministic generator;
-- real input-shape sample and sampling method;
-- file, image, page, byte, representation, and segment distributions;
-- extractor, segmenter, and processor graph;
-- worker and coordinator resources;
-- document-store sizing policy and result sink;
-- selected storage profile set, document-catalog adapter, and base release;
-- storage and network placement;
-- cache state;
-- partition and task policy;
-- wall-time and resource targets; and
-- acceptance authority.
+The unused `ScaleProfile` and `ScaleResult` declaration family is retired. Its
+parsers compared supplied pins and metrics but did not execute workloads or
+collect measurements. No separate DocSpec capacity format or runner is required.
+Work limits, worker limits and physical storage profiles retain their existing
+meaning. A changed workload or deployment requires evidence for that actual
+configuration; a well-formed declaration does not establish capacity.
 
-The `ScaleProfile` MUST pin the `ProcessingPlan`, `ExecutionProfile`, execution
-tool's configuration digest, and exact storage and sink profiles. The execution
-tool and storage packages MAY supply scheduling, queue, cache, network, and
-resource measurements. DocSpec MUST preserve their evidence references and the
-DocSpec task, store, byte, and release counts needed to verify the claim.
+### 13.2 Representative capacity measurements
 
-A changed corpus, processor graph, resource allocation, or target creates a new
-profile.
-
-The same `ScaleProfile` family governs catalog construction and document
-processing; DocSpec MUST NOT add a second source-catalog scale-profile format.
-The profile model MUST identify a closed workload kind. For a
-`source-catalog` workload it MUST replace processing-only fields with one
-closed catalog-workload section that pins the source-native input artifact set,
-catalog policy, requested universe, builder and verifier,
-bounded join/order/set-proof strategy, output profile, command, reference
-machine and resources, cold/warm cache state, measurement method, absolute
-ceilings, and acceptance authority. The checked-in schema, parser, generator,
-and tests MUST evolve together before such a profile can be called sealed.
-
-Each scale run MUST emit one closed, content-addressed `ScaleResult`. The result
-MUST bind the complete `ScaleProfile` pin, including its locator; the workload
-kind; the exact input and output artifact pins; item, partition, task, store,
-release, and byte counts; wall time and peak resource measures; evidence pins;
-the first failure when present; and a `pass` or `fail` verdict. A `pass` MUST
-remain within the profile's declared targets, resources, and absolute ceilings.
-This evidence model records a completed run; it does not add scheduler state or
-campaign execution machinery to DocSpec.
-
-### 13.2 Ordered campaigns
-
-The reference implementation MUST pass these campaigns in order:
-
-1. 100,000 representative image or page units;
-2. 1,000,000 representative image or page units; and
-3. at least 5,000,000 representative image or page units.
+Select workload sizes and acceptance thresholds for the dataset or deployment
+decision being qualified. The original 100k/1m/5m ladder is retired as an
+unconditional prerequisite. The [qualification guide](../../qualification.md)
+defines the exact inputs, resources, recovery and measured results to retain.
 
 Samples MUST cover byte-size, page-count, segment-count, media-type, and
 observed-cost ranges. A convenient prefix is not representative.
 
 ### 13.3 Base-platform targets
+
+The following five-million-unit target is an unqualified historical target,
+not a current capacity promise. Adopt it only through an explicit workload
+decision and the measurements required above.
 
 With source bytes colocated with the processing store, the five-million-unit
 base campaign SHOULD complete within 24 hours on no more than 256 effective
@@ -2199,38 +2227,34 @@ policy requires. Failure MUST NOT trigger an undeclared provider or processor.
 
 ### 15.1 Evidence report
 
-Each conformance run MUST emit a closed JSON report containing:
+Regression runs use native pytest reports and the current
+[required-test map](../../../conformance/test-matrix.json). The strict pytest
+option requires complete execution of every mapped function and parameter case;
+missing, skipped, expected-failure or incomplete required work fails the gate.
+CI retains native JUnit and console output with the lockfile and built wheels
+under its exact source checkout. There is no separate DocSpec test runner or
+closed conformance-report format.
 
-- specification ID and normative source path;
-- conformance class;
-- the exact clean Git commit containing the normative specification, matrix,
-  implementation, tests, and dependency lock;
-- exact input and output identities and digests;
-- plan and configuration identity;
-- command and environment identity;
-- required test identifiers and verdicts;
-- document-store counts, dispositions, retries, and failures;
-- bytes read, reused, written, delivered, and published;
-- wall time and peak memory when applicable;
-- verifier identity and version;
-- first registered failure code; and
-- overall `pass` or `fail`.
-
-A required test that is absent, skipped, or xfailed MUST fail the class.
-A release conformance run MUST also fail when its source is dirty or is not a Git
-checkout. The commit and normative path pin repository source; the runner MUST
-NOT manually walk and hash selected repository files. Runtime packages, inputs,
-outputs, and other bytes exchanged outside Git retain their normal content
-digests.
+Capacity and publication claims require actual input/output artifact pins,
+configuration, commands, environment, resource measurements and destination
+evidence as applicable. Preserve those measurements and failures from the real
+operation; test results cannot manufacture them. The
+[qualification guide](../../qualification.md) is the current authority.
 
 ### 15.2 Required tests
+
+This table records the original draft requirements. The current executable
+[regression map](../../../conformance/test-matrix.json) and the nine scope
+dispositions in the [qualification guide](../../qualification.md) supersede
+changed rows, including historical-code, search-corpus, scale and publication
+claims. No hand-maintained implementation status establishes a passing result.
 
 <!-- markdownlint-disable MD013 -->
 
 | Test ID | Required proof |
 | --- | --- |
 | `CORE-INSTALL` | A built wheel installs, imports, and shows help in an empty environment |
-| `BOUNDARY-IMPORT` | Core code depends only on DocSpec ports and domain records; vendor and concrete processing types remain in adapters; the optional SpicyRegs adapter loads only at the CLI composition root |
+| `BOUNDARY-IMPORT` | Core depends on DocSpec ports and domain records plus the shared canonical JSON implementation at its identity gateway; concrete transport, parser and processor dependencies remain in adapters or load when selected; optional source providers load at the outer composition root |
 | `BOUNDARY-CODE` | Git history, package boundaries, static checks, and focused behavior fixtures prove production code contains no copied predecessor implementation; no project-owned source archive or fingerprint corpus exists |
 | `SOURCE-CATALOG-CONTRACT` | The DocSpec builder, reader, and semantic verifier pass the sole complete-snapshot form, closed input/payload roles, multi-source sets, policy, migration-fixture identity, every field and disposition, source-URL and immutable-object candidates, exact decision-order/sampling/join/rendition/topic-recovery differential, Federal Register malformed-RIN and missing-agency/rendition isolation, the pinned 30-row empty-topic interpretation, exact shared framed `catalogStateDigest`, `U`, and `S` projections including empty-set and duplicate cases, deterministic partitions, unchanged `blobRef` reuse, reconciled byte writes, changed-state identity, legacy change-set refusal, consumer receipt verification without a second full semantic pass or prior-catalog replay, logical-versus-physical identity, immutability, and bounded streaming |
 | `PROFILE-DESCRIPTION` | Every selected profile has a closed, versioned, digest-pinned description with declared capabilities and limits |
@@ -2428,11 +2452,12 @@ object store, table engine, or analytics engine as part of this sequence.
 
 ### 16.8 Qualify the composed deployment
 
-- Seal the exact processing, execution, storage, sink, and scale profiles.
+- Retain the exact processing, execution, storage and sink references together
+  with reproduction commands, native resource settings and acceptance thresholds.
 - Run local and maintained-scheduler recovery campaigns, including worker loss,
   coordinator restart, duplicate result delivery, slow storage, full scratch
   disk, and deterministic processor failure.
-- Run the ordered representative scale campaigns and record the execution
+- Run the selected representative capacity workloads and record the execution
   tool's event evidence with DocSpec's task, byte, partition, store, and release
   evidence.
 - Publish machine-readable conformance reports. Keep unrun external campaigns
@@ -2440,7 +2465,12 @@ object store, table engine, or analytics engine as part of this sequence.
 
 ## 17. Completion decision
 
-DocSpec is complete only when:
+The following is the historical draft completion list. For the current scope,
+use the [dataset experiment checklist](../../dataset-experiments-todo.md) and
+[qualification evidence requirements](../../qualification.md); they explicitly
+retain gaps and record retirement decisions.
+
+The original draft considered DocSpec complete only when:
 
 - it builds and atomically publishes one complete immutable `SourceCatalog`
   snapshot through injected source and storage ports;
@@ -2460,8 +2490,9 @@ DocSpec is complete only when:
   with every intentional difference named by policy;
 - the optional installed SpicyRegs adapter is selected only by the CLI
   composition root, while DocSpec core imports no SpicyRegs module;
-- its sealed source-catalog `ScaleProfile` and dated result pass the declared
-  multi-million-row resource and determinism gate;
+- its selected source-catalog workload has dated measurements, exact input and
+  output references, native resource evidence and determinism checks that meet
+  the declared acceptance thresholds;
 - `DocumentCatalog` opens, compares, and advances corpus state only through
   explicit `DocumentRelease` identities;
 - each stateful run commits one immutable `DocumentRelease`;
@@ -2521,10 +2552,7 @@ govern the installed package.
 ## Appendix B. Required machine files
 
 ```text
-conformance/specification.json
 conformance/test-matrix.json
-conformance/scale-profile.schema.json
-conformance/scale-result.schema.json
 profiles/
 fixtures/execution-handoffs/
 fixtures/source-catalogs/

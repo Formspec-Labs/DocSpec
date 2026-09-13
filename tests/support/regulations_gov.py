@@ -100,7 +100,7 @@ def _source_record(
         "record": dict(record),
         "schemaDigest": _SHA_A,
         "schemaName": schema,
-        "schemaVersion": "1.0",
+        "schemaVersion": "1.1" if schema == "federal-register-document" else "1.0",
         "scopeId": scope,
         "sourceRecordId": identity,
     }
@@ -317,7 +317,7 @@ def _policy(*, include_comments: bool = False) -> RegulationsGovCatalogPolicy:
             "v1",
             "federal-register-documents",
             "federal-register-document",
-            "1.0",
+            "1.1",
         ),
         {"EPA": "Environmental Protection Agency"},
         comment_input=(

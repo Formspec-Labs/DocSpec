@@ -7,10 +7,11 @@ import sys
 from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from docspec.adapters.dagster import DagsterRuntime, build_dagster_definitions
+from docspec.adapters.dagster import build_dagster_definitions
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
@@ -93,8 +94,8 @@ def _success(handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
     )
 
 
-def _resource(runtime: DagsterRuntime):  # type: ignore[no-untyped-def]
-    return dagster.ResourceDefinition.hardcoded_resource(runtime)
+def _resource(runtime):  # type: ignore[no-untyped-def]
+    return {"docspec_runtime": dagster.ResourceDefinition.hardcoded_resource(runtime)}
 
 
 def _result_payloads(result) -> tuple[bytes, ...]:  # type: ignore[no-untyped-def]
@@ -158,7 +159,7 @@ def test_real_dagster_job_executes_reference_only_tasks_and_records_events() -> 
         handled.append(task.task_id)
         return _success(current_handoff, StoreTask.from_bytes(task.to_bytes()))
 
-    runtime = DagsterRuntime(handoff, task_source, handler)
+    runtime = SimpleNamespace(handoff=handoff, task_source=task_source, execute_task=handler)
     job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
 
     assert job.executor_def.name == "multiprocess"
@@ -186,7 +187,7 @@ def test_dagster_retry_policy_recovers_one_mapped_task_without_rewriting_sibling
             raise RuntimeError("transient fixture failure")
         return _success(current_handoff, task)
 
-    runtime = DagsterRuntime(handoff, lambda _handoff: iter(tasks), handler)
+    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=handler)
     job = build_dagster_definitions(
         _resource(runtime),
         retry_policy=dagster.RetryPolicy(max_retries=1, delay=0),
@@ -222,7 +223,7 @@ def test_rerunning_the_job_reuses_idempotent_handler_results() -> None:
             saved[task.idempotency_key] = result
         return result
 
-    runtime = DagsterRuntime(handoff, lambda _handoff: iter(tasks), handler)
+    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=handler)
     job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
 
     first = job.execute_in_process()
@@ -252,7 +253,7 @@ def test_malformed_or_incomplete_task_stream_fails_the_run(task_source) -> None:
         handled.append(task)
         return _success(current_handoff, task)
 
-    runtime = DagsterRuntime(handoff, lambda _handoff: task_source(tasks), handler)
+    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: task_source(tasks), execute_task=handler)
     job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
 
     result = job.execute_in_process(raise_on_error=False)
@@ -271,7 +272,7 @@ def test_missing_mapped_result_cannot_produce_a_successful_run() -> None:
             return _success(current_handoff, task)
         return None  # type: ignore[return-value]
 
-    runtime = DagsterRuntime(handoff, lambda _handoff: iter(tasks), incomplete_handler)
+    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=incomplete_handler)
     job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
 
     result = job.execute_in_process(raise_on_error=False)
@@ -284,7 +285,7 @@ def test_missing_mapped_result_cannot_produce_a_successful_run() -> None:
 def test_executor_and_retry_policy_are_injected_at_the_composition_root() -> None:
     tasks = _tasks(1)
     handoff = _handoff(tasks)
-    runtime = DagsterRuntime(handoff, lambda _handoff: iter(tasks), _success)
+    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=_success)
     job = build_dagster_definitions(
         _resource(runtime),
         executor_def=dagster.in_process_executor,
@@ -300,7 +301,62 @@ def test_importing_the_adapter_does_not_eagerly_load_dagster(monkeypatch: pytest
     monkeypatch.delitem(sys.modules, "docspec.adapters.dagster", raising=False)
     monkeypatch.delitem(sys.modules, "dagster", raising=False)
 
-    imported = __import__("docspec.adapters.dagster", fromlist=["DagsterRuntime"])
+    imported = __import__("docspec.adapters.dagster", fromlist=["build_dagster_definitions"])
 
-    assert imported.DagsterRuntime.__name__ == "DagsterRuntime"
+    assert callable(imported.build_dagster_definitions)
     assert "dagster" not in sys.modules
+
+
+def test_native_resource_dependencies_and_generator_cleanup_are_preserved() -> None:
+    tasks = _tasks(1)
+    handoff = _handoff(tasks)
+    events = []
+    marker = object()
+
+    @dagster.resource(required_resource_keys={"fetcher"})
+    def prepared_resource(context):
+        assert context.resources.fetcher is marker
+        events.append("opened")
+        try:
+            yield SimpleNamespace(handoff=handoff, task_source=lambda _: iter(tasks), execute_task=_success)
+        finally:
+            events.append("closed")
+
+    job = build_dagster_definitions({
+        "fetcher": dagster.ResourceDefinition.hardcoded_resource(marker),
+        "docspec_runtime": prepared_resource,
+    }).get_job_def("docspec_store_tasks")
+    result = job.execute_in_process()
+    assert result.success
+    assert events == ["opened", "closed"]
+    outputs = [event.step_output_data for event in result.all_events if event.event_type is dagster.DagsterEventType.STEP_OUTPUT]
+    assert len(outputs) == 2
+    for output in outputs:
+        assert output.metadata["handoff_id"].value == handoff.handoff_id
+        assert output.metadata["execution_profile_ref"].value == handoff.execution_profile.to_dict()
+        assert output.metadata["input_store_ref"].value == tasks[0].input_store.to_dict()
+
+
+@pytest.mark.parametrize("stop", ["close", "invalid-item"])
+def test_task_emission_closes_the_underlying_source_on_early_exit(stop) -> None:
+    from docspec.adapters.dagster import _task_payloads
+    from docspec.errors import IntegrityError
+
+    tasks = _tasks(2)
+    closed = []
+
+    def source(_):
+        try:
+            yield tasks[0]
+            yield object()
+        finally:
+            closed.append(True)
+
+    payloads = _task_payloads(SimpleNamespace(handoff=_handoff(tasks), task_source=source))
+    next(payloads)
+    if stop == "close":
+        payloads.close()
+    else:
+        with pytest.raises(IntegrityError, match="non-StoreTask"):
+            next(payloads)
+    assert closed == [True]

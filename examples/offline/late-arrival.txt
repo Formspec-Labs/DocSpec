@@ -1,0 +1,3 @@
+Delete obsolete personal data after the approved retention period.
+
+This document arrives after the initial capture attempt.

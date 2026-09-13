@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.domain.content import AcquisitionDisposition, SourceItem
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import FailureClass, StoreVerdict
@@ -121,7 +120,7 @@ def test_capture_deduplication_and_deletion_reconcile_across_releases(tmp_path: 
         assert captured.blob.digest == sha256_digest(payload)
         assert captured.blob.byte_size == len(payload), "declared and actual byte size must agree"
         assert captured.media_type == "text/plain"
-        assert captured.downloader_id == LocalFileContentFetcher.downloader_id
+        assert captured.downloader_id == fetcher.downloader_id
         assert captured.downloader_configuration_digest, "the receipt pins the downloader configuration"
         assert captured.transport_version is None
         assert captured.acquisition_started_at and captured.acquired_at

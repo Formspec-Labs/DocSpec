@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
 import importlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -73,7 +75,7 @@ class _Platform:
 
 
 @dataclass(frozen=True)
-class _CommittedRun:
+class _SavedRun:
     reference: DocumentReleaseRef
     plan_ref: ArtifactRef
     run_ref: ArtifactRef
@@ -104,7 +106,7 @@ _FACTORIES: dict[str, Callable[..., DocumentCatalog]] = {
 
 
 def _registered_catalog_profiles() -> tuple[RegisteredProfile, ...]:
-    profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.DOCUMENT_CATALOG)
+    profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.DOCUMENT_CATALOG)
     assert profiles
     assert {item.description.implementation_id for item in profiles} == set(_FACTORIES), (
         "a registered catalog profile has no conformance factory"
@@ -121,14 +123,15 @@ def _platform(registered: RegisteredProfile, root: Path) -> _Platform:
     return _Platform(records, stores, controls, catalog)
 
 
-def _commit_run(
+def _save_run(
     platform: _Platform,
     *,
     run_tag: str,
     rows: tuple[dict[str, Any], ...],
     base: DocumentReleaseRef | None,
-) -> _CommittedRun:
-    """Commit one complete run whose only logical content is the shared
+    select_current: bool = True,
+) -> _SavedRun:
+    """Retain or select one complete run whose logical content is the shared
     extension-layer rows; every release fixture flows through this builder."""
 
     records = platform.records
@@ -146,7 +149,7 @@ def _commit_run(
             key=lambda item: item.layer_kind,
         )
     )
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     source_digest = sha256_digest(run_tag.encode())
     source = SourceCatalogRef(
         f"urn:docspec:test:catalog:{source_digest.removeprefix('sha256:')}",
@@ -248,17 +251,19 @@ def _commit_run(
 
     platform.catalog.stage = capture_stage  # type: ignore[method-assign]
     try:
-        reference = ReleaseCommitService(
+        service = ReleaseCommitService(
             plan_ref=plan_ref,
             controls=controls,
             records=records,
             document_catalog=platform.catalog,
-        ).commit_release(base, run_ref)
+        )
+        save = service.commit_release if select_current else service.retain_release
+        reference = save(base, run_ref)
     finally:
         platform.catalog.stage = original_stage  # type: ignore[method-assign]
-    platform.catalog.open(reference)
+    platform.catalog.audit(reference)
     assert len(staged) == 1
-    return _CommittedRun(reference, plan_ref, run_ref, planned_job_ref, job_ref, staged[0])
+    return _SavedRun(reference, plan_ref, run_ref, planned_job_ref, job_ref, staged[0])
 
 
 BASE_ROWS = (

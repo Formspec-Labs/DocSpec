@@ -7,19 +7,19 @@ from pathlib import Path
 from typing import Any
 
 from docspec.cli.blobs import _cmd_blob_store_gc, _cmd_blob_store_verify
-from docspec.cli.catalog import _cmd_document_catalog_compare, _cmd_document_catalog_open
+from docspec.cli.catalog import (
+    _cmd_document_catalog_audit, _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select,
+)
 from docspec.cli.common import _write_failure_receipt
-from docspec.cli.conformance import _cmd_conformance_report, _cmd_conformance_run
 from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
+from docspec.cli.inspection import add_inspection_command
 from docspec.cli.plans import _cmd_document_store_create, _cmd_document_store_verify, _cmd_plan_create
 from docspec.cli.profiles import (
     _cmd_profile_list,
     _cmd_profile_verify,
-    _cmd_scale_profile_seal,
-    _cmd_scale_profile_verify,
 )
 from docspec.cli.releases import (
-    _cmd_document_release_commit,
+    _cmd_document_release_save,
     _cmd_document_release_compact,
     _cmd_document_release_diff,
     _cmd_document_release_verify,
@@ -73,36 +73,32 @@ def build_parser() -> argparse.ArgumentParser:
     commands = _subcommands(parser, dest="command")
 
     add_source_catalog_command(commands)
+    add_inspection_command(commands)
 
     profile = commands.add_parser("profile", help="Inspect storage and delivery profile descriptions")
     profile_commands = _subcommands(profile, dest="profile_command")
-    profile_list = profile_commands.add_parser("list", help="List and verify every profile in an explicit directory")
-    profile_list.add_argument("--directory", type=Path, required=True)
+    profile_list = profile_commands.add_parser("list", help="List installed profiles or an explicit profile directory")
+    profile_list.add_argument("--directory", type=Path)
     profile_list.set_defaults(func=_cmd_profile_list)
     profile_verify = profile_commands.add_parser("verify", help="Verify one closed profile description")
     profile_verify.add_argument("profile", type=Path)
     profile_verify.set_defaults(func=_cmd_profile_verify)
 
-    scale_profile = commands.add_parser("scale-profile", help="Seal and verify exact scale campaign inputs")
-    scale_profile_commands = _subcommands(scale_profile, dest="scale_profile_command")
-    _add_mutating_paths(
-        scale_profile_commands.add_parser("seal", help="Seal closed scale-profile content"),
-        operation="scale-profile.seal",
-        func=_cmd_scale_profile_seal,
-    )
-    scale_profile_verify = scale_profile_commands.add_parser(
-        "verify",
-        help="Verify one canonical identity-bearing scale profile",
-    )
-    scale_profile_verify.add_argument("profile", type=Path)
-    scale_profile_verify.set_defaults(func=_cmd_scale_profile_verify)
-
-    document_catalog = commands.add_parser("document-catalog", help="Open and compare complete catalog releases")
+    document_catalog = commands.add_parser("document-catalog", help="Open, audit, compare, and select retained results")
     catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")
-    catalog_open = catalog_commands.add_parser("open", help="Verify and open an explicit release reference")
-    _add_local_catalog_arguments(catalog_open)
-    catalog_open.add_argument("--reference", type=Path, required=True)
-    catalog_open.set_defaults(func=_cmd_document_catalog_open)
+    _add_mutating_paths(
+        catalog_commands.add_parser("select", help="Select a retained result if current still matches the request"),
+        operation="document-catalog.select",
+        func=_cmd_document_catalog_select,
+    )
+    for name, help_text, handler in (
+        ("open", "Open pinned metadata without scanning retained data", _cmd_document_catalog_open),
+        ("audit", "Verify all retained records, bytes and execution evidence", _cmd_document_catalog_audit),
+    ):
+        command = catalog_commands.add_parser(name, help=help_text)
+        _add_local_catalog_arguments(command)
+        command.add_argument("--reference", type=Path, required=True)
+        command.set_defaults(func=handler)
     catalog_compare = catalog_commands.add_parser("compare", help="Compare one logical layer across two releases")
     _add_local_catalog_arguments(catalog_compare)
     catalog_compare.add_argument("--older-reference", type=Path, required=True)
@@ -182,6 +178,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum stalled store ids to list; stalledStoreCount is always exact",
     )
     run_active.set_defaults(func=_cmd_run_active)
+    run_active.add_argument(
+        "--failure-sample-limit", type=int, default=20,
+        help="Maximum diagnostic signatures to count separately; class totals stay exact",
+    )
 
     task = commands.add_parser("task", help="Execute portable serialized DocumentStore tasks")
     task_commands = _subcommands(task, dest="task_command")
@@ -198,12 +198,17 @@ def build_parser() -> argparse.ArgumentParser:
     sink_verify.add_argument("--control-root", type=Path, help="Resolve an ArtifactRef from this control repository")
     sink_verify.set_defaults(func=_cmd_sink_verify)
 
-    release = commands.add_parser("document-release", help="Commit, verify, compare, and compact releases")
+    release = commands.add_parser("document-release", help="Retain, commit, verify, compare, and compact releases")
     release_commands = _subcommands(release, dest="document_release_command")
     _add_mutating_paths(
         release_commands.add_parser("commit", help="Commit a reconciled local run with compare-and-swap"),
         operation="document-release.commit",
-        func=_cmd_document_release_commit,
+        func=_cmd_document_release_save,
+    )
+    _add_mutating_paths(
+        release_commands.add_parser("retain", help="Keep a verified result without changing the current selection"),
+        operation="document-release.retain",
+        func=_cmd_document_release_save,
     )
     release_verify = release_commands.add_parser("verify", help="Verify one canonical release root")
     release_verify.add_argument("release", type=Path)
@@ -236,19 +241,6 @@ def build_parser() -> argparse.ArgumentParser:
     blob_gc.add_argument("--dry-run", action="store_true", required=True)
     blob_gc.set_defaults(func=_cmd_blob_store_gc)
 
-    conformance = commands.add_parser("conformance", help="Run and inspect executable conformance evidence")
-    conformance_commands = _subcommands(conformance, dest="conformance_command")
-    conformance_run = conformance_commands.add_parser("run", help="Execute every required selector and seal a report")
-    conformance_run.add_argument("--root", type=Path, required=True)
-    conformance_run.add_argument("--specification", type=Path, required=True)
-    conformance_run.add_argument("--matrix", type=Path, required=True)
-    conformance_run.add_argument("--output", type=Path, required=True)
-    conformance_run.add_argument("--class", dest="conformance_class", default="core")
-    conformance_run.add_argument("--timeout-seconds", type=int, default=600)
-    conformance_run.set_defaults(func=_cmd_conformance_run)
-    conformance_report = conformance_commands.add_parser("report", help="Verify and summarize an existing report")
-    conformance_report.add_argument("report", type=Path)
-    conformance_report.set_defaults(func=_cmd_conformance_report)
     return parser
 
 

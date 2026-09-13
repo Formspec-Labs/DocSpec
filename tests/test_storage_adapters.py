@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers import EMPTY_DIGEST
+
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -30,7 +32,7 @@ def _planned_store(
     logical_partition: str = "000",
 ) -> DocumentStore:
     item = SourceItem(item_id, "v1", (CandidateFile("primary", f"{item_id}.txt", "text/plain"),))
-    entry = DocumentEntry.create(item, ChangeKind.ADDED, StagePolicy(("text-v1",), "paragraph-v1"))
+    entry = DocumentEntry.create(item, ChangeKind.ADDED, StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()))
     return DocumentStore.planned(
         plan_id=plan_id,
         logical_partition=logical_partition,
@@ -71,6 +73,8 @@ def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Pat
     path.write_bytes(b"evil")
     with pytest.raises(IntegrityError):
         store.verify(reference)
+    with pytest.raises(IntegrityError):
+        b"".join(store.read(reference))
 
     target = tmp_path / "outside"
     target.write_bytes(b"safe")
@@ -80,6 +84,40 @@ def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Pat
     linked = BlobRef(link.relative_to(store.root).as_posix(), f"sha256:{'a' * 64}", 4, "text/plain")
     with pytest.raises(IntegrityError):
         store.verify(linked)
+    with pytest.raises(IntegrityError):
+        b"".join(store.read(linked))
+
+
+def test_blob_read_refuses_correct_bytes_at_a_different_locator_before_open(tmp_path, monkeypatch):
+    store = LocalContentAddressedBlobStore(tmp_path / "objects")
+    reference = store.put_if_absent([b"safe"], media_type="text/plain")
+    misplaced = store.root / "copied-object"
+    misplaced.write_bytes(b"safe")
+    reference = replace(reference, locator="copied-object")
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == misplaced:
+            pytest.fail("a blob with a noncanonical locator was opened")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(IntegrityError, match="locator does not match its digest"):
+        b"".join(store.read(reference))
+
+
+@pytest.mark.parametrize("allowance, error", [(8, LimitExceededError), (16, IntegrityError)])
+def test_blob_read_never_yields_growth_past_its_allowance_or_reference(tmp_path, allowance, error):
+    store = LocalContentAddressedBlobStore(tmp_path / "objects")
+    reference = store.put_if_absent([b"12345678"], media_type="text/plain")
+    chunks = store.read(reference, chunk_size=4, max_bytes=allowance)
+    received = next(chunks)
+    with (store.root / reference.locator).open("ab") as stream:
+        stream.write(b"unexpected growth")
+    received += next(chunks)
+    with pytest.raises(error):
+        next(chunks)
+    assert received == b"12345678"
 
 
 def test_control_repository_uses_canonical_immutable_json(tmp_path: Path) -> None:
@@ -104,6 +142,23 @@ def test_control_repository_uses_canonical_immutable_json(tmp_path: Path) -> Non
     )
     with pytest.raises(IntegrityError, match="duplicate key"):
         repository.load(duplicate_reference)
+
+
+def test_control_read_refuses_actual_oversized_file_before_open(tmp_path, monkeypatch):
+    repository = LocalJsonControlRepository(tmp_path / "control", max_artifact_bytes=1024)
+    reference = repository.put(kind="plans", artifact_id="plan-1", value={"small": True})
+    path = repository.root / reference.locator
+    path.write_bytes(b"x" * 1025)
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == path:
+            pytest.fail("oversized control artifact was opened before enforcing its bound")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(LimitExceededError):
+        repository.load(reference)
 
 
 def test_document_store_repository_saves_immutable_revisions(tmp_path: Path) -> None:
@@ -136,6 +191,25 @@ def test_document_store_latest_reads_only_the_newest_revision_while_revisions_va
     assert repository.latest(planned.store_id) == running_ref
     with pytest.raises(IntegrityError):
         repository.revisions(planned.store_id)
+
+
+@pytest.mark.parametrize("operation", ["latest", "revisions"])
+def test_revision_discovery_refuses_oversized_bytes_before_reading(tmp_path, monkeypatch, operation):
+    repository = LocalDocumentStoreRepository(tmp_path / "jobs")
+    planned = _planned_store()
+    reference = repository.save(planned)
+    path = repository.root / reference.locator
+    repository.max_revision_bytes = path.stat().st_size - 1
+    original_open = Path.open
+
+    def guarded_open(self, *args, **kwargs):
+        if self == path:
+            pytest.fail("oversized revision was opened before enforcing its bound")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    with pytest.raises(LimitExceededError):
+        getattr(repository, operation)(planned.store_id)
 
 
 def test_revision_writes_stage_crash_debris_outside_the_declared_revision_set(
@@ -240,7 +314,7 @@ def test_document_store_repository_moves_large_entry_ledgers_to_bounded_members(
         max_revision_bytes=128 * 1024,
         max_inline_bytes=2 * 1024,
     )
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     entries = tuple(
         DocumentEntry.create(
             SourceItem(

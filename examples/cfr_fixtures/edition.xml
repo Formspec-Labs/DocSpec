@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mods xmlns="http://www.loc.gov/mods/v3" xmlns:example="urn:docspec:fixture" version="3.3">
+  <extension><collectionCode>CFR</collectionCode><accessId>CFR-2025-title1-vol1</accessId><titleNumber>1</titleNumber><volumeNumber>1</volumeNumber><editionId>CFR-title1-vol1</editionId><isCoverOnly>true</isCoverOnly><originalDateIssued>2023-01-01</originalDateIssued></extension>
+  <originInfo><dateIssued encoding="w3cdtf">2025-01-01</dateIssued></originInfo>
+  <titleInfo><title>General Provisions</title></titleInfo>
+  <note>Authored fixture; this is <example:emphasis>not legal text</example:emphasis>.</note>
+  <relatedItem type="constituent" ID="id-CFR-2025-title1-vol1-sec18-2">
+    <titleInfo><title>Another section</title></titleInfo>
+    <extension><accessId>CFR-2025-title1-vol1-sec18-2</accessId></extension>
+    <identifier type="Parent Id">CFR-2025-title1-vol1-part18</identifier>
+    <location><url displayLabel="XML rendition" access="raw object">https://www.govinfo.gov/content/pkg/CFR-2025-title1-vol1/xml/CFR-2025-title1-vol1-sec18-2.xml</url></location>
+  </relatedItem>
+  <relatedItem type="constituent" ID="id-CFR-2025-title1-vol1-sec18-1">
+    <titleInfo><title>Public access</title></titleInfo>
+    <extension><accessId>CFR-2025-title1-vol1-sec18-1</accessId><example:unclassified flag="keep">native value</example:unclassified></extension>
+    <identifier type="Parent Id">CFR-2025-title1-vol1-part18</identifier>
+    <identifier type="preferred citation">1 CFR 18.1</identifier>
+    <location>
+      <url displayLabel="PDF rendition" access="raw object">https://www.govinfo.gov/content/pkg/CFR-2025-title1-vol1/pdf/CFR-2025-title1-vol1-sec18-1.pdf</url>
+      <url displayLabel="XML rendition" access="raw object">https://www.govinfo.gov/content/pkg/CFR-2025-title1-vol1/xml/CFR-2025-title1-vol1-sec18-1.xml</url>
+    </location>
+  </relatedItem>
+</mods>

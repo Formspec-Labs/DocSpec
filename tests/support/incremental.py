@@ -13,7 +13,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.domain.content import SourceItem
@@ -39,7 +39,7 @@ class _Platform:
     controls: LocalJsonControlRepository
     stores: LocalDocumentStoreRepository
     blobs: LocalContentAddressedBlobStore
-    records: LocalJsonlRecordStorage
+    records: LocalParquetRecordStorage
     catalog: LocalManifestDocumentCatalog
     partition_policy: PartitionPolicy
 
@@ -56,7 +56,7 @@ def _platform(root: Path, *, member_bytes: int) -> _Platform:
     controls = LocalJsonControlRepository(root / "controls")
     stores = LocalDocumentStoreRepository(root / "stores")
     blobs = LocalContentAddressedBlobStore(root / "blobs")
-    records = LocalJsonlRecordStorage(root / "records", max_member_bytes=member_bytes)
+    records = LocalParquetRecordStorage(root / "records", max_member_bytes=member_bytes)
     partition_policy = PartitionPolicy("source-item-sha256-v1", 8)
     catalog = LocalManifestDocumentCatalog(
         root / "document-catalog",

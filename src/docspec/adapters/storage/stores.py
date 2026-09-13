@@ -91,6 +91,7 @@ class LocalDocumentStoreRepository:
         max_plan_record_bytes: int = 64 * 1024,
         max_plan_store_count: int = 10_000_000,
         verification_scratch: Path | None = None,
+        create: bool = True,
     ) -> None:
         if min(
             max_revision_bytes,
@@ -102,22 +103,25 @@ class LocalDocumentStoreRepository:
             raise ValueError("document store byte limits must be positive")
         if max_inline_bytes > max_revision_bytes:
             raise ValueError("max_inline_bytes must not exceed max_revision_bytes")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.max_revision_bytes = max_revision_bytes
         self.max_inline_bytes = max_inline_bytes
         self.max_plan_ledger_bytes = max_plan_ledger_bytes
         self.max_plan_record_bytes = max_plan_record_bytes
         self.max_plan_store_count = max_plan_store_count
-        self._plan_staging = _contained(self.root, ".staging/plans/placeholder", create_parents=True).parent
-        self._verification_scratch = self._external_verification_scratch(verification_scratch)
+        self._plan_staging = _contained(self.root, ".staging/plans/placeholder", create_parents=create).parent
+        self._verification_scratch = self._external_verification_scratch(verification_scratch, create=create)
 
-    def _external_verification_scratch(self, path: Path | None) -> Path | None:
+    def _external_verification_scratch(self, path: Path | None, *, create: bool) -> Path | None:
         if path is None:
             return None
         path = Path(path)
         if path.is_symlink():
             raise IntegrityError("verification scratch must not be a symlink")
-        path.mkdir(parents=True, exist_ok=True)
+        if create:
+            path.mkdir(parents=True, exist_ok=True)
+        elif not path.is_dir():
+            raise IntegrityError("verification scratch must be an existing directory")
         resolved = path.resolve(strict=True)
         try:
             resolved.relative_to(self.root)
@@ -176,7 +180,7 @@ class LocalDocumentStoreRepository:
                 "byteSize": len(entry_payload),
                 "digest": entry_digest,
                 "recordCount": len(store.entries),
-                "schemaId": "docspec-document-store-entry/1.0",
+                "schemaId": "docspec-document-store-entry/3.0",
             },
         }
         root_payload = canonical_json_file_bytes(root)
@@ -201,7 +205,7 @@ class LocalDocumentStoreRepository:
         path = _contained(self.root, reference.locator)
         if path.is_file() and path.stat().st_size > self.max_revision_bytes:
             raise LimitExceededError(f"document store revision exceeds the {self.max_revision_bytes}-byte limit")
-        payload = _read_exact(self.root, reference.locator)
+        payload = _read_exact(self.root, reference.locator, max_bytes=self.max_revision_bytes)
         if sha256_digest(payload) != reference.digest:
             raise IntegrityError("document store bytes differ from their reference")
         value = thaw_json(parse_canonical_json(payload, label=reference.store_id))
@@ -252,7 +256,7 @@ class LocalDocumentStoreRepository:
             self.root,
             member,
             media_type="application/x-ndjson",
-            schema_id="docspec-document-store-entry/1.0",
+            schema_id="docspec-document-store-entry/3.0",
         )
         if member["path"] != self._entry_member_locator(member["digest"]):
             raise IntegrityError("document store entry-member locator differs from its digest")
@@ -286,7 +290,7 @@ class LocalDocumentStoreRepository:
             if path.is_symlink() or not path.is_file() or not re.fullmatch(r"[0-9]{20}\.json", path.name):
                 raise IntegrityError("document store revision directory contains an undeclared member")
             revision = int(path.stem)
-            payload = path.read_bytes()
+            payload = _read_exact(self.root, path.relative_to(self.root).as_posix(), max_bytes=self.max_revision_bytes)
             reference = StoreRef(
                 store_id,
                 revision,
@@ -332,7 +336,7 @@ class LocalDocumentStoreRepository:
         latest_path = self._latest_revision_path(store_id)
         if latest_path is None:
             return None
-        payload = latest_path.read_bytes()
+        payload = _read_exact(self.root, latest_path.relative_to(self.root).as_posix(), max_bytes=self.max_revision_bytes)
         reference = StoreRef(
             store_id,
             int(latest_path.stem),

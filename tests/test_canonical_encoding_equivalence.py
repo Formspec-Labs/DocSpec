@@ -1,103 +1,119 @@
-"""``canonical_json_bytes`` must encode exactly what freeze-then-thaw encoded.
-
-The encoder used to build two throwaway trees per value -- ``freeze_json`` walked
-the whole structure to validate it, sort its keys and wrap it immutably, and
-``thaw_json`` walked that copy straight back to plain dicts and lists before
-``json.dumps`` walked it a third time and sorted the keys again. A profiled
-real-corpus catalog build spent roughly a quarter of its time in that pair.
-
-These tests pin what the replacement may not change: the bytes, and the
-refusals. They compare against the original composition rather than against
-recorded literals, so the property stays checkable if the rules themselves
-ever move.
-"""
+"""The shared wheel's byte corpus governs DocSpec identities and JSON admission."""
 
 from __future__ import annotations
 
-import json
-import math
+from collections.abc import Mapping
+from dataclasses import dataclass
+from enum import Enum
 
 import pytest
+from rulespec_artifacts.resources import canonical_json_corpus
 
 from docspec.domain.identity import (
     canonical_json_bytes,
+    canonical_json_file_bytes,
     freeze_json,
-    thaw_json,
+    parse_canonical_json,
     trusted_json_input,
 )
+from docspec.errors import IntegrityError
 
 
-def _previous_encoding(value: object) -> bytes:
-    """The freeze-then-thaw composition this encoder replaced."""
-
-    return json.dumps(
-        thaw_json(freeze_json(value)),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
+CORPUS = canonical_json_corpus()
 
 
-# Shapes the identity rules exist for: the escaping classes a canonical encoder
-# has to agree on, plus the nesting and key-ordering the sort used to do twice.
-EQUIVALENT_VALUES = [
-    {}, [], "", 0, -1, True, False, None,
-    {"b": 1, "a": 2},
-    {"z": {"y": [1, {"x": "  "}]}},
-    {"k": "control \x00\x01\x1f"},
-    {"k": "non-bmp \U0001f600"},
-    {"k": "combining é"},
-    {"k": "rtl אב"},
-    {"k": "separators   "},
-    {"nested": [[[{"deep": [1, 2, {"a": None}]}]]]},
-    {"unicode key \U0001f600": 1},
-    {"": "empty key"},
-    [{"a": 1}, {"a": 2}],
-    {"big": 2**63, "negative": -(2**63)},
-]
-
-
-@pytest.mark.parametrize("value", EQUIVALENT_VALUES, ids=range(len(EQUIVALENT_VALUES)))
-def test_encodes_the_same_bytes_as_freeze_then_thaw(value: object) -> None:
-    assert canonical_json_bytes(value) == _previous_encoding(value)
-
-
-@pytest.mark.parametrize("value", EQUIVALENT_VALUES, ids=range(len(EQUIVALENT_VALUES)))
-def test_trusted_input_encodes_those_same_bytes(value: object) -> None:
-    """The trusted fast path skips the checks, never changes the output."""
-
-    expected = _previous_encoding(value)
+@pytest.mark.parametrize("case", CORPUS["encodeAccepted"], ids=lambda case: case["name"])
+def test_doc_spec_emits_the_shared_corpus_bytes(case):
+    expected = bytes.fromhex(case["canonicalHex"])
+    assert canonical_json_bytes(case["value"]) == expected
+    assert canonical_json_bytes(freeze_json(case["value"])) == expected
+    assert canonical_json_bytes(parse_canonical_json(expected, file_form=False)) == expected
     with trusted_json_input():
-        assert canonical_json_bytes(value) == expected
+        assert canonical_json_bytes(case["value"]) == expected
+        assert canonical_json_bytes(parse_canonical_json(expected, file_form=False)) == expected
 
 
-REFUSED_VALUES = [
-    1.5,
-    float("nan"),
-    float("inf"),
-    -math.inf,
-    {"a": 1.5},
-    {1: "int key"},
-    {"a": {2: "nested int key"}},
-    object(),
-    {"a": object()},
-    [object()],
-]
+def _rejected_value(description):
+    kind = description["kind"]
+    if kind == "integer":
+        return int(description["literal"])
+    if kind == "float":
+        return float(description["literal"])
+    if kind == "lone-surrogate-string":
+        return chr(int(description["codeUnit"], 16))
+    if kind == "lone-surrogate-key":
+        return {chr(int(description["codeUnit"], 16)): None}
+    if kind == "non-string-key":
+        return {1: "integer key"}
+    if kind == "bytes":
+        return b"exact bytes are not JSON values"
+    raise AssertionError(f"unhandled shared corpus value kind: {kind}")
 
 
-@pytest.mark.parametrize("value", REFUSED_VALUES, ids=range(len(REFUSED_VALUES)))
-def test_refuses_exactly_what_freeze_refused(value: object) -> None:
-    with pytest.raises(ValueError) as previous:
-        _previous_encoding(value)
-    with pytest.raises(ValueError) as current:
+@pytest.mark.parametrize("case", CORPUS["encodeRejected"], ids=lambda case: case["name"])
+def test_doc_spec_refuses_the_shared_corpus_values_even_when_trusted(case):
+    value = _rejected_value(case["input"])
+    with pytest.raises(ValueError):
         canonical_json_bytes(value)
-    assert str(current.value) == str(previous.value)
+    with trusted_json_input(), pytest.raises(ValueError):
+        canonical_json_bytes(value)
 
 
-def test_labels_name_the_path_to_the_offending_value() -> None:
-    """The label is how a refusal is diagnosable, so it survives the rewrite."""
+@pytest.mark.parametrize("case", CORPUS["parseRejected"], ids=lambda case: case["name"])
+def test_doc_spec_refuses_the_shared_corpus_bytes_with_local_context(case):
+    with pytest.raises(IntegrityError):
+        parse_canonical_json(bytes.fromhex(case["utf8Hex"]), label="source receipt", file_form=False)
+    with trusted_json_input(), pytest.raises(IntegrityError):
+        parse_canonical_json(bytes.fromhex(case["utf8Hex"]), label="source receipt", file_form=False)
 
-    with pytest.raises(ValueError) as error:
-        canonical_json_bytes({"outer": [{"inner": 1.5}]})
-    assert "outer[].inner" in str(error.value)
+
+def test_canonical_parser_returns_immutable_nested_containers():
+    parsed = parse_canonical_json(b'{"items":[{"value":1}]}\n')
+    assert parsed["items"] == ({"value": 1},)
+    with pytest.raises(TypeError):
+        parsed["items"][0]["value"] = 2
+
+
+def test_file_framing_adds_exactly_one_newline_to_shared_bytes():
+    value = {"\ue000": 1, "\U00010000": 2}
+    expected = '{"𐀀":2,"":1}'.encode()
+    assert canonical_json_file_bytes(value) == expected + b"\n"
+    assert canonical_json_bytes(parse_canonical_json(expected + b"\n")) == expected
+    with pytest.raises(IntegrityError, match="not canonical"):
+        parse_canonical_json(expected + b"\n\n")
+
+
+class _Label(Enum):
+    NOTE = "note"
+
+
+@dataclass
+class _Record:
+    label: _Label
+    coordinates: tuple[int, int]
+
+
+def test_domain_conversion_precedes_shared_encoding():
+    assert canonical_json_bytes(_Record(_Label.NOTE, (1, 2))) == b'{"coordinates":[1,2],"label":"note"}'
+
+
+class _RepeatedKeyMapping(Mapping):
+    def __len__(self):
+        return 2
+
+    def __iter__(self):
+        return iter(("repeated", "repeated"))
+
+    def __getitem__(self, key):
+        return "value"
+
+
+def test_custom_mapping_duplicate_keys_refuse_before_plain_conversion():
+    with pytest.raises(ValueError, match="value.outer contains a duplicate key: repeated"):
+        canonical_json_bytes({"outer": _RepeatedKeyMapping()})
+
+
+@pytest.mark.parametrize("value", [1.5, float("nan"), object()])
+def test_conversion_errors_keep_the_nested_domain_path(value):
+    with pytest.raises(ValueError, match=r"value.outer\[\].inner"):
+        canonical_json_bytes({"outer": [{"inner": value}]})

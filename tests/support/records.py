@@ -18,14 +18,13 @@ def _implementation(registered: RegisteredProfile) -> type:
     return getattr(importlib.import_module(module_name), attribute)
 
 
-def _local_jsonl_storage(registered: RegisteredProfile, root: Path) -> RecordStorage:
+def _local_parquet_storage(registered: RegisteredProfile, root: Path) -> RecordStorage:
     limits = registered.description.limits
     return _implementation(registered)(
         root / "records",
         max_member_bytes=limits["maxMemberBytes"],
         max_record_bytes=limits["maxRecordBytes"],
         max_root_bytes=limits["maxRootBytes"],
-        max_open_members=limits["maxOpenMembers"],
         max_merge_scratch_bytes=limits["maxMergeScratchBytes"],
     )
 
@@ -35,12 +34,12 @@ def _local_jsonl_storage(registered: RegisteredProfile, root: Path) -> RecordSto
 # factory here. A newly registered profile fails the coverage check below
 # until it joins this table and passes the same fixture.
 _FACTORIES: dict[str, Callable[[RegisteredProfile, Path], RecordStorage]] = {
-    "docspec.record-storage.local-jsonl.v1": _local_jsonl_storage,
+    "docspec.record-storage.local-parquet.v1": _local_parquet_storage,
 }
 
 
 def _registered_record_profiles() -> tuple[RegisteredProfile, ...]:
-    profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.RECORD_STORAGE)
+    profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.RECORD_STORAGE)
     assert profiles
     assert {item.description.implementation_id for item in profiles} == set(_FACTORIES), (
         "a registered record profile has no conformance factory"

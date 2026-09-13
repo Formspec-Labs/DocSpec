@@ -17,6 +17,7 @@ from docspec.application.catalog_policy import (
     utc_instant_date_value as _instant_date,
     utf16_key as _utf16_key,
 )
+from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.domain.source_catalog import (
     CatalogDisposition,
     CatalogNormalizationField,
@@ -463,41 +464,32 @@ def _document_selection(
 def _rendition_preference(
     regulations_renditions: tuple[Mapping[str, Any], ...], federal_register_renditions: tuple[Mapping[str, Any], ...]
 ) -> tuple[tuple[SourceCatalogCandidate, ...], tuple[CatalogRenditionFamily, ...], str | None]:
-    by_family: dict[str, list[SourceCatalogCandidate]] = {family: [] for family in _RENDITION_ORDER}
+    regulations_candidates: list[SourceCatalogCandidate] = []
+    claimed: set[str] = set()
+    for value in regulations_renditions:
+        candidate = _candidate_from_rendition(value, rendition_id=f"regulations-gov/{value['renditionId']}")
+        if candidate is None or candidate.locator in claimed:
+            continue
+        claimed.add(candidate.locator)
+        regulations_candidates.append(candidate)
+    regulations_selected = tuple(sorted(regulations_candidates, key=lambda value: _utf16_key(value.rendition_id)))
 
-    def add(
-        family: str,
-        values: tuple[Mapping[str, Any], ...],
-        *,
-        prefix: str,
-    ) -> None:
-        claimed: set[str] = set()
-        for value in values:
-            candidate = _candidate_from_rendition(
-                value,
-                rendition_id=f"{prefix}{value['renditionId']}",
-            )
-            if candidate is None or candidate.locator in claimed:
-                continue
-            claimed.add(candidate.locator)
-            by_family[family].append(candidate)
-
-    add("regulations-gov-file", regulations_renditions, prefix="regulations-gov/")
-    add("federal-register", federal_register_renditions, prefix="federal-register/")
-    ordered = {
-        family: tuple(sorted(by_family[family], key=lambda value: _utf16_key(value.rendition_id)))
-        for family in _RENDITION_ORDER
-    }
-    families = tuple(
-        CatalogRenditionFamily(
-            family,
-            tuple(value.rendition_id for value in ordered[family]),
+    federal_selected, federal_families, _ = FederalRegisterCatalogPolicy._rendition_preference(
+        tuple(
+            dict(value, renditionId=f"federal-register/{value['renditionId']}") for value in federal_register_renditions
         )
-        for family in _RENDITION_ORDER
     )
-    selected_family = next((family for family in _RENDITION_ORDER if ordered[family]), None)
+    # Execution fetches every selected candidate. Other representations remain
+    # offers, not additional fetch tasks for the same Federal Register document.
+    selected = {"regulations-gov-file": regulations_selected, "federal-register": federal_selected[:1]}
+    offered_ids = {
+        "regulations-gov-file": tuple(value.rendition_id for value in regulations_selected),
+        "federal-register": tuple(value for family in federal_families for value in family.offered_rendition_ids),
+    }
+    families = tuple(CatalogRenditionFamily(family, offered_ids[family]) for family in _RENDITION_ORDER)
+    selected_family = next((family for family in _RENDITION_ORDER if selected[family]), None)
     return (
-        ordered[selected_family] if selected_family is not None else (),
+        selected[selected_family] if selected_family is not None else (),
         families,
         selected_family,
     )

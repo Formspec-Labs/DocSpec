@@ -197,18 +197,27 @@ def verify_representation_evidence(
         if evidence.source_digest != payload.representation.file_digest:
             raise IntegrityError("evidence source digest differs from the representation's file digest")
         output = payload.content[mapping.representation_start : mapping.representation_end]
-        if mapping.transformation == IDENTITY_TRANSFORM:
-            if evidence.start is None or evidence.end is None:
-                raise IntegrityError("identity evidence requires source byte coordinates")
-            if evidence.end > len(source_bytes):
-                raise IntegrityError("evidence byte range exceeds the captured source")
-            resolved = source_bytes[evidence.start : evidence.end]
-        elif derived_resolver is not None:
-            resolved = derived_resolver(mapping, source_bytes)
-        else:
-            raise IntegrityError(f"evidence transformation {mapping.transformation!r} requires its named resolver")
-        if resolved != output:
-            raise IntegrityError("representation bytes do not round-trip through their source evidence")
+        verify_representation_mapping(mapping, output, source_bytes, derived_resolver=derived_resolver)
+
+
+def verify_representation_mapping(
+    mapping: EvidenceMapping, output: bytes, source_bytes: bytes, *,
+    derived_resolver: DerivedEvidenceResolver | None = None,
+) -> None:
+    """Check one declared mapping, allowing readers to verify only supported transforms."""
+    evidence = mapping.evidence
+    if mapping.transformation == IDENTITY_TRANSFORM:
+        if evidence.start is None or evidence.end is None:
+            raise IntegrityError("identity evidence requires source byte coordinates")
+        if evidence.end > len(source_bytes):
+            raise IntegrityError("evidence byte range exceeds the captured source")
+        resolved = source_bytes[evidence.start : evidence.end]
+    elif derived_resolver is not None:
+        resolved = derived_resolver(mapping, source_bytes)
+    else:
+        raise IntegrityError(f"evidence transformation {mapping.transformation!r} requires its named resolver")
+    if resolved != output:
+        raise IntegrityError("representation bytes do not round-trip through their source evidence")
 
 
 def verify_segment_representation(

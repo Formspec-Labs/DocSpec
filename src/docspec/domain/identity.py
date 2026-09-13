@@ -17,11 +17,12 @@ from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Any, TypeAlias
 
+from rulespec_artifacts import canonical_json_bytes as _artifact_canonical_json_bytes
+
 from docspec.errors import IntegrityError
 
 JSONScalar: TypeAlias = None | bool | int | str
 JSONValue: TypeAlias = JSONScalar | tuple["JSONValue", ...] | Mapping[str, "JSONValue"]
-JSONObject: TypeAlias = Mapping[str, JSONValue]
 
 _SHA256_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _URN_PART_RE = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -177,26 +178,15 @@ def thaw_json(value: JSONValue) -> Any:
 
 
 def _canonical_plain(value: Any, *, label: str = "value") -> Any:
-    """Validate one value against the identity rules, returning plain JSON types.
+    """Convert domain values once, preserving contextual conversion errors.
 
-    Same rules and same refusals as :func:`freeze_json`, but it builds ordinary
-    dicts and lists instead of ``MappingProxyType`` and tuples, because the one
-    caller that needs them -- :func:`canonical_json_bytes` -- immediately threw
-    the immutable copy away through :func:`thaw_json`. That pair walked every
-    record twice and allocated two complete throwaway trees before the encoder
-    walked it a third time; a profiled real-corpus catalog build spent about a
-    quarter of its time here (24.8M calls each way, 355M ``isinstance`` calls
-    across the walkers). Freezing is still what callers holding a value want --
-    :func:`freeze_json` keeps them -- but encoding never did.
-
-    Key order is left to ``json.dumps(sort_keys=True)``, which sorts by the same
-    string comparison ``freeze_json`` used, so dropping the redundant sort here
-    cannot move a byte.
+    Encoding needs plain containers, so it avoids a freeze/thaw copy pair.
+    The shared emitter owns scalar bounds, Unicode validity and key ordering.
     """
 
     if _TRUSTED_JSON_INPUT.get() and type(value) in _PLAIN_JSON_TYPES:
-        # Canonical parsing already established string keys, no duplicates, no
-        # floats and canonical order. Nothing is left to check or to copy.
+        # Admitted plain JSON needs no domain conversion. Shared emission still
+        # enforces its scalar domain; this context never bypasses that check.
         return value
     return _canonical_plain_checked(value, label)
 
@@ -261,10 +251,9 @@ def _canonical_plain_checked(value: Any, label: str) -> Any:
 
 
 def canonical_json_bytes(value: Any) -> bytes:
-    """Encode one value with DocSpec's identity-bearing JSON rules."""
+    """Encode converted domain values with Rulespec's canonical JSON rules."""
 
-    plain = _canonical_plain(value)
-    return json.dumps(plain, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return _artifact_canonical_json_bytes(_canonical_plain(value))
 
 
 def canonical_json_file_bytes(value: Any) -> bytes:
@@ -285,22 +274,30 @@ def _closed_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 def parse_canonical_json(data: bytes, *, label: str = "JSON", file_form: bool = True) -> JSONValue:
     """Parse exact canonical UTF-8 JSON and reject alternate encodings."""
 
-    value = parse_closed_json(data, label=label)
-    expected = canonical_json_file_bytes(value) if file_form else canonical_json_bytes(value)
+    try:
+        value = _decode_closed_json(data, label=label)
+        # Decoding already produces plain JSON; domain conversion would copy it again.
+        expected = _artifact_canonical_json_bytes(value) + (b"\n" if file_form else b"")
+    except ValueError as error:
+        raise IntegrityError(f"{label} is outside the canonical JSON domain: {error}") from error
     if data != expected:
         raise IntegrityError(f"{label} is not canonical JSON")
-    return value
+    return freeze_json(value, label=label)
 
 
 def parse_closed_json(data: bytes, *, label: str = "JSON") -> JSONValue:
     """Parse duplicate-safe finite UTF-8 JSON without imposing file formatting."""
 
+    return freeze_json(_decode_closed_json(data, label=label), label=label)
+
+
+def _decode_closed_json(data: bytes, *, label: str) -> Any:
     try:
         text = data.decode("utf-8")
         value = json.loads(text, object_pairs_hook=_closed_object, parse_constant=lambda item: (_ for _ in ()).throw(ValueError(item)))
     except (UnicodeError, json.JSONDecodeError, ValueError) as error:
         raise IntegrityError(f"{label} is not valid closed UTF-8 JSON: {error}") from error
-    return freeze_json(value, label=label)
+    return value
 
 
 def sha256_digest(data: bytes) -> str:

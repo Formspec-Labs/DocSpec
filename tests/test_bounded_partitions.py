@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.adapters.storage import LocalJsonlRecordStorage
+from docspec.adapters.storage import LocalParquetRecordStorage
 from docspec.application.planner import RunPlanner, logical_partition
 from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest, stable_urn
@@ -53,7 +56,7 @@ def _planning_plan(
         base_release=None,
         profiles=profile_set(),
         limits=WorkLimits(max_entries, 100, 10, 10, 100, 100, 60),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=bucket_count,
         selection={},
@@ -155,7 +158,7 @@ def _records_in_distinct_partitions(count: int, bucket_count: int) -> list[dict[
     return records
 
 
-def test_jsonl_writer_bounds_open_members_and_never_whole_reads_members(
+def test_parquet_writer_streams_many_partitions_without_whole_python_member_reads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -169,67 +172,38 @@ def test_jsonl_writer_bounds_open_members_and_never_whole_reads_members(
     records = _records_in_distinct_partitions(512, policy.bucket_count)
     merge_scratch = tmp_path / "merge-scratch"
     merge_scratch.mkdir()
-    storage = LocalJsonlRecordStorage(
+    storage = LocalParquetRecordStorage(
         tmp_path / "records",
         max_member_bytes=64 * 1024,
-        max_open_members=2,
         merge_scratch_root=merge_scratch,
     )
     original_read_bytes = Path.read_bytes
-    original_open = Path.open
-    input_handles = {"active": 0, "peak": 0}
-
-    class TrackedInput:
-        def __init__(self, handle: object) -> None:
-            self._handle = handle
-            self._closed = False
-            input_handles["active"] += 1
-            input_handles["peak"] = max(input_handles["peak"], input_handles["active"])
-
-        def __enter__(self) -> TrackedInput:
-            return self
-
-        def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
-            self.close()
-
-        def close(self) -> None:
-            if not self._closed:
-                self._closed = True
-                self._handle.close()
-                input_handles["active"] -= 1
-
-        def __getattr__(self, name: str) -> object:
-            return getattr(self._handle, name)
-
-    def track_input_open(path: Path, mode: str = "r", *args: object, **kwargs: object) -> object:
-        handle = original_open(path, mode, *args, **kwargs)
-        if mode == "rb" and path.suffix == ".jsonl":
-            return TrackedInput(handle)
-        return handle
 
     def reject_whole_member_read(path: Path) -> bytes:
-        if path.suffix == ".jsonl" or path.name.startswith("records-"):
+        if path.suffix == ".parquet":
             raise AssertionError(f"record member was read whole: {path}")
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", reject_whole_member_read)
-    monkeypatch.setattr(Path, "open", track_input_open)
 
     first = storage.write_layer(records, layer_kind="stress-records", schema=schema, partition_policy=policy)
     second = storage.write_layer(records, layer_kind="stress-records", schema=schema, partition_policy=policy)
 
     assert first == second
-    assert storage.last_write_peak_open_members == 2
     assert list(storage.stream(second)) == records
-    assert storage.last_read_peak_open_members == 2
-    assert input_handles == {"active": 0, "peak": 2}
+    storage.verify_members(second)
+    storage.verify(second)
     root = json.loads((storage.root / second.state_ref).read_text())
+    assert root["formatVersion"] == "2.0"
     assert len(root["members"]) == len(records)
+    assert all(member["mediaType"] == "application/vnd.apache.parquet" for member in root["members"])
+    assert all((storage.root / member["path"]).stat().st_size == member["byteSize"] for member in root["members"])
+    storage.close()
     assert list(storage._staging.iterdir()) == []
     assert list(merge_scratch.iterdir()) == []
 
 
-def test_jsonl_writer_shards_a_hot_partition_and_reuses_immutable_members(tmp_path: Path) -> None:
+def test_parquet_writer_shards_a_hot_partition_and_reuses_immutable_members(tmp_path: Path) -> None:
     policy = PartitionPolicy("single-partition-v1", 1)
     schema = RecordSchema(
         "docspec-test-record/1.0",
@@ -238,14 +212,14 @@ def test_jsonl_writer_shards_a_hot_partition_and_reuses_immutable_members(tmp_pa
         "sourceItemId",
     )
     records = [
-        {"recordId": f"record-{index:04d}", "sourceItemId": "hot", "value": index}
+        {"recordId": f"record-{index:04d}", "sourceItemId": "hot",
+         "value": hashlib.shake_256(str(index).encode()).hexdigest(2048)}
         for index in range(24)
     ]
-    storage = LocalJsonlRecordStorage(
+    storage = LocalParquetRecordStorage(
         tmp_path / "hot-records",
-        max_member_bytes=256,
-        max_record_bytes=256,
-        max_open_members=2,
+        max_member_bytes=16 * 1024,
+        max_record_bytes=8 * 1024,
     )
 
     first = storage.write_layer(records, layer_kind="hot-records", schema=schema, partition_policy=policy)
@@ -258,9 +232,68 @@ def test_jsonl_writer_shards_a_hot_partition_and_reuses_immutable_members(tmp_pa
     assert all(member["partition"] == 0 for member in root["members"])
     assert all(member["byteSize"] <= storage.max_member_bytes for member in root["members"])
     assert list(storage.stream(first)) == records
+    storage.close()
 
 
-def test_bounded_merge_rejects_cross_run_duplicates_and_cleans_scratch(tmp_path: Path) -> None:
+def _physical_layer(storage, schema, policy, partitions, *, physical_schema=None):
+    """Write actual Parquet bytes and pin them, including intentionally false rows."""
+    physical_schema = physical_schema or pa.schema([
+        ("record_identity", pa.string()), ("partition_value", pa.string()), ("record_json", pa.binary()),
+    ])
+    members = []
+    for index, (partition, rows) in enumerate(partitions):
+        temporary = storage.root / f"fixture-{index}.parquet"
+        pq.write_table(pa.Table.from_pylist(rows, schema=physical_schema), temporary)
+        digest = sha256_digest(temporary.read_bytes())
+        locator = storage._member_locator(digest)
+        path = storage.root / locator
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.replace(path)
+        members.append({
+            "partition": partition, "sequence": 0, "path": locator,
+            "mediaType": "application/vnd.apache.parquet", "byteSize": path.stat().st_size,
+            "digest": digest, "recordCount": len(rows), "schemaId": schema.schema_id,
+        })
+    return _pin_layer(storage, schema, policy, members)
+
+
+def _pin_layer(storage, schema, policy, members):
+    content = {
+        "layerKind": "fixture-records",
+        "schema": {"schemaId": schema.schema_id, "fields": list(schema.fields),
+                   "identityField": schema.identity_field, "partitionField": schema.partition_field},
+        "profileId": "urn:docspec:profile:record-storage:local-parquet:1",
+        "partitionPolicy": {"policyId": policy.policy_id, "bucketCount": policy.bucket_count},
+        "members": members, "recordCount": sum(member["recordCount"] for member in members),
+    }
+    root = {"format": "docspec-record-layer", "formatVersion": "2.0",
+            "layerId": stable_urn("record-layer", content), **content}
+    payload = canonical_json_file_bytes(root)
+    digest = sha256_digest(payload)
+    locator = f"record-layers/sha256/{digest[7:9]}/{digest[7:]}.json"
+    path = storage.root / locator
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return LayerRef(root["layerId"], root["layerKind"], schema.schema_id,
+                    root["profileId"], locator, digest, root["recordCount"])
+
+
+def test_parquet_refuses_one_member_path_claimed_by_multiple_shards(tmp_path: Path) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records")
+    schema = RecordSchema("docspec-test-record/1.0", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
+    policy = PartitionPolicy("single", 1)
+    record = {"recordId": "a", "sourceItemId": "source", "value": 1}
+    row = {"record_identity": "a", "partition_value": "source", "record_json": canonical_json_bytes(record)}
+    original = _physical_layer(storage, schema, policy, [(0, [row])])
+    storage.verify_members(original)
+    member, = json.loads((storage.root / original.state_ref).read_bytes())["members"]
+    repeated = _pin_layer(storage, schema, policy, [member, {**member, "sequence": 1}])
+    with pytest.raises(IntegrityError):
+        storage.verify_members(repeated)
+    storage.close()
+
+
+def test_parquet_scan_rejects_cross_member_duplicates_and_cleans_scratch(tmp_path: Path) -> None:
     policy = PartitionPolicy("duplicate-stress-v1", 8)
     schema = RecordSchema(
         "docspec-test-record/1.0",
@@ -270,9 +303,8 @@ def test_bounded_merge_rejects_cross_run_duplicates_and_cleans_scratch(tmp_path:
     )
     scratch = tmp_path / "duplicate-scratch"
     scratch.mkdir()
-    storage = LocalJsonlRecordStorage(
+    storage = LocalParquetRecordStorage(
         tmp_path / "duplicate-records",
-        max_open_members=2,
         merge_scratch_root=scratch,
     )
     values_by_partition: dict[int, str] = {}
@@ -283,55 +315,104 @@ def test_bounded_merge_rejects_cross_run_duplicates_and_cleans_scratch(tmp_path:
         values_by_partition.setdefault(partition_bucket(value, policy.bucket_count), value)
     partitions = sorted(values_by_partition)[:3]
     identities = ("duplicate", "middle", "duplicate")
-    members: list[dict[str, object]] = []
+    rows_by_partition = []
     for partition, identity in zip(partitions, identities, strict=True):
         record = {
             "recordId": identity,
             "sourceItemId": values_by_partition[partition],
             "value": partition,
         }
-        payload = canonical_json_bytes(record) + b"\n"
-        digest = sha256_digest(payload)
-        locator = storage._member_locator(digest)
-        path = storage.root / locator
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(payload)
-        members.append(
-            {
-                "partition": partition,
-                "sequence": 0,
-                "path": locator,
-                "mediaType": "application/x-ndjson",
-                "byteSize": len(payload),
-                "digest": digest,
-                "recordCount": 1,
-                "schemaId": schema.schema_id,
-            }
-        )
+        rows_by_partition.append((partition, [{"record_identity": identity,
+            "partition_value": record["sourceItemId"], "record_json": canonical_json_bytes(record)}]))
 
+    layer = _physical_layer(storage, schema, policy, rows_by_partition)
+    storage.verify_members(layer)
     with pytest.raises(IntegrityError, match="globally unique"):
-        list(storage._stream_selected_members(members, schema, policy))
+        storage.verify(layer)
+    storage.close()
     assert list(scratch.iterdir()) == []
+
+
+@pytest.mark.parametrize("corruption", ["identity", "partition", "noncanonical", "physical-schema", "open-row"])
+def test_parquet_refuses_repinned_false_routing_or_payload_schema(tmp_path: Path, corruption: str) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records")
+    schema = RecordSchema("docspec-test-record/1.0", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
+    policy = PartitionPolicy("single", 1)
+    record = {"recordId": "a", "sourceItemId": "source", "value": {"optional": None}}
+    physical = {"record_identity": "a", "partition_value": "source", "record_json": canonical_json_bytes(record)}
+    physical_schema = None
+    if corruption == "identity":
+        physical["record_identity"] = "other"
+    elif corruption == "partition":
+        physical["partition_value"] = "other"
+    elif corruption == "noncanonical":
+        physical["record_json"] = json.dumps(record).encode()
+    elif corruption == "open-row":
+        physical["record_json"] = canonical_json_bytes({**record, "extra": True})
+    else:
+        physical["record_json"] = physical["record_json"].decode()
+        physical_schema = pa.schema([
+            ("record_identity", pa.string()), ("partition_value", pa.string()), ("record_json", pa.string()),
+        ])
+    layer = _physical_layer(storage, schema, policy, [(0, [physical])], physical_schema=physical_schema)
+    # The complete file/root byte pins are genuine; semantic admission must
+    # still refuse a false routing column, noncanonical bytes or open row.
+    if corruption != "physical-schema":
+        storage.verify_members(layer)
+    with pytest.raises(IntegrityError):
+        storage.verify(layer)
+    storage.close()
+
+
+def test_parquet_physical_member_cap_includes_encoding_overhead(tmp_path: Path) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records", max_member_bytes=128, max_record_bytes=128)
+    schema = RecordSchema("docspec-test-record/1.0", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
+    record = {"recordId": "a", "sourceItemId": "source", "value": 1}
+    assert len(canonical_json_bytes(record)) < storage.max_member_bytes
+    with pytest.raises(LimitExceededError, match="member"):
+        storage.write_layer([record], layer_kind="test-records", schema=schema, partition_policy=PartitionPolicy("single", 1))
+    assert not list(storage.root.glob("record-layers/**/*.json"))
+    storage.close()
+    assert list(storage._staging.iterdir()) == []
+
+
+@pytest.mark.parametrize("violation", ["wrong-bucket", "oversized-row"])
+def test_physical_admission_does_not_replace_logical_row_checks(tmp_path: Path, violation: str) -> None:
+    storage = LocalParquetRecordStorage(tmp_path / "records", max_record_bytes=1024)
+    schema = RecordSchema("test/1", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
+    policy = PartitionPolicy("source-buckets", 8)
+    row = {"recordId": "a", "sourceItemId": "source", "value": "x" * (8192 if violation == "oversized-row" else 8)}
+    partition = partition_bucket(row["sourceItemId"], policy.bucket_count)
+    if violation == "wrong-bucket":
+        partition = (partition + 1) % policy.bucket_count
+    layer = _physical_layer(storage, schema, policy, [(partition, [{
+        "record_identity": row["recordId"], "partition_value": row["sourceItemId"],
+        "record_json": canonical_json_bytes(row),
+    }])])
+    storage.verify_members(layer)  # Valid Parquet, exact pins, matching routing columns.
+    error = IntegrityError if violation == "wrong-bucket" else LimitExceededError
+    with pytest.raises(error, match="wrong partition" if violation == "wrong-bucket" else "record exceeds"):
+        storage.verify(layer)
+    storage.close()
 
 
 def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path: Path) -> None:
     profile = json.loads(
-        (Path(__file__).parents[1] / "profiles" / "local-jsonl-records-v1.json").read_text()
+        (Path(__file__).parents[1] / "src" / "docspec" / "storage_profiles" / "local-parquet-records-v1.json").read_text()
     )
-    digest = "sha256:" + "a" * 64
-    members = [
-        {
+    members = []
+    for partition in range(65_536):
+        digest = sha256_digest(f"partition-{partition}".encode())
+        members.append({
             "partition": partition,
             "sequence": 0,
-            "path": f"record-members/sha256/aa/{'a' * 64}.jsonl",
-            "mediaType": "application/x-ndjson",
+            "path": f"record-members/sha256/{digest[7:9]}/{digest[7:]}.parquet",
+            "mediaType": "application/vnd.apache.parquet",
             "byteSize": 2,
             "digest": digest,
             "recordCount": 1,
             "schemaId": "docspec-test-record/1.0",
-        }
-        for partition in range(65_536)
-    ]
+        })
     content = {
         "layerKind": "boundary-records",
         "schema": {
@@ -347,7 +428,7 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
     }
     root = {
         "format": "docspec-record-layer",
-        "formatVersion": "1.1",
+        "formatVersion": "2.0",
         "layerId": stable_urn("record-layer", content),
         **content,
     }
@@ -366,8 +447,8 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
     (record_root / reference.state_ref).write_bytes(payload)
 
     assert 16 * 1024**2 < len(payload) <= profile["limits"]["maxRootBytes"]
-    undersized = LocalJsonlRecordStorage(record_root, max_root_bytes=len(payload) - 1)
-    with pytest.raises(LimitExceededError, match="root exceeds"):
+    undersized = LocalParquetRecordStorage(record_root, max_root_bytes=len(payload) - 1)
+    with pytest.raises(LimitExceededError, match="storage member exceeds"):
         undersized._load_root(reference)
-    exact = LocalJsonlRecordStorage(record_root, max_root_bytes=len(payload))
+    exact = LocalParquetRecordStorage(record_root, max_root_bytes=len(payload))
     assert exact._load_root(reference)["recordCount"] == 65_536

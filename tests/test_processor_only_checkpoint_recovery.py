@@ -9,13 +9,13 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.execution import StoreExecutionService
 from docspec.domain.content import AcquisitionDisposition, SourceItem
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, EntryExecutionMode, StoreState
-from docspec.domain.plans import ProcessingPlan, StagePolicy
+from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.storage import PartitionPolicy
 from docspec.errors import IntegrityError
@@ -74,7 +74,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "document-catalog",
         records=records,
@@ -122,11 +122,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     broad_plan = _plan(source_ref, base_release, processors, retry, accepted)
     plan = _with_processor_cost(broad_plan, 4)
     plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    requested = StagePolicy(
-        plan.stages.extractor_ids,
-        plan.stages.segmenter_id,
-        (changed_root.description.processor_id, changed_dependent.description.processor_id),
-    )
+    requested = (changed_root.description.processor_id, changed_dependent.description.processor_id)
     planned = DocumentStore.planned(
         plan_id=plan.plan_id,
         logical_partition="bucket-00000/store-00000000",
@@ -134,8 +130,9 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
             DocumentEntry.create(
                     mapped_item,
                 ChangeKind.REPAIR,
-                requested,
-                execution_mode=EntryExecutionMode.PROCESSORS_ONLY,
+                plan.stages,
+                execution_mode=EntryExecutionMode.FROM_SEGMENTS,
+                processor_ids_to_run=requested,
             ),
         ),
         limits=plan.limits,
@@ -166,7 +163,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
         return (
             store.state is StoreState.RUNNING
             and not entry.terminal
-            and entry.execution_mode is EntryExecutionMode.PROCESSORS_ONLY
+            and entry.execution_mode is EntryExecutionMode.FROM_SEGMENTS
             and changed_root.description.processor_id in processor_ids
             and unaffected.description.processor_id in processor_ids
             and changed_dependent.description.processor_id not in processor_ids
@@ -192,7 +189,7 @@ def test_processor_only_restart_reuses_base_and_checkpoints_changed_layers(
     assert (len(fetcher.calls), extractor.calls, segmenter.calls, len(unaffected.calls)) == base_counts
     assert len(changed_root.calls) == len(changed_dependent.calls) == 2
     assert len(resumed.attempts) == 2
-    assert len(stores.revisions(planned.store_id)) == 6
+    assert len(stores.revisions(planned.store_id)) == 7
 
     changed_root_receipts = [
         reference

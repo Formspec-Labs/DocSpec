@@ -77,7 +77,7 @@ _FACTORIES: dict[str, Callable[[RegisteredProfile, Path], tuple[Any, Any, Any]]]
 
 
 def _registered_delivery_profiles() -> tuple[RegisteredProfile, ...]:
-    profiles = ProfileRegistry.from_directory(ROOT / "profiles").list(ProfileRole.RESULT_DELIVERY)
+    profiles = ProfileRegistry.from_directory(ROOT / "src" / "docspec" / "storage_profiles").list(ProfileRole.RESULT_DELIVERY)
     assert profiles
     assert {item.description.implementation_id for item in profiles} == set(_FACTORIES), (
         "a registered result-delivery profile has no conformance factory"

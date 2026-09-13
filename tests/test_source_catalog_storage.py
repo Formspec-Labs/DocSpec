@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from multiprocessing import get_context
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,7 @@ def test_local_source_catalog_publication_pins_the_destination_parent(
     replacement.mkdir()
 
     with LocalSourceCatalogPublication(parent / "catalog") as publication:
-        publication.write_file("receipt.json", b"complete\n")
+        (publication.root / 'receipt.json').write_bytes(b"complete\n")
         parent.rename(retained)
         parent.symlink_to(replacement, target_is_directory=True)
 
@@ -64,52 +65,50 @@ def test_local_source_catalog_publication_store_refuses_a_replaced_parent(
     assert not (retained / stage_name).exists()
 
 
+def _publish_and_exit(destination: Path, published: bool) -> None:
+    publication = LocalSourceCatalogPublication(destination)
+    (publication.root / 'artifact.json').write_bytes(b"artifact\n" if published else b"unpublished\n")
+    if published:
+        (publication.root / 'note.txt').write_bytes(b"receipt\n")
+        publication.publish()
+    # Deliberately bypass cleanup to test actual process loss, not an exception.
+    os._exit(23 if published else 31)
+
+
+def _crash_publication(destination: Path, *, published: bool) -> None:
+    process = get_context("spawn").Process(target=_publish_and_exit, args=(destination, published))
+    process.start()
+    try:
+        process.join(timeout=30)
+        assert process.exitcode == (23 if published else 31)
+    finally:
+        if process.is_alive():
+            process.kill()
+            process.join()
+        process.close()
+
+
 def test_local_source_catalog_publication_survives_process_exit_after_rename(
     tmp_path: Path,
 ) -> None:
     destination = tmp_path / "catalog"
-    process_id = os.fork()
-    if process_id == 0:
-        try:
-            publication = LocalSourceCatalogPublication(destination)
-            publication.write_file("artifact.json", b"artifact\n")
-            publication.write_file(
-                "source-catalog-build-command-receipt.json",
-                b"receipt\n",
-            )
-            publication.publish()
-        except BaseException:
-            os._exit(99)
-        os._exit(23)
-
-    _, status = os.waitpid(process_id, 0)
-    assert os.waitstatus_to_exitcode(status) == 23
+    _crash_publication(destination, published=True)
     assert (destination / "artifact.json").read_bytes() == b"artifact\n"
-    assert (destination / "source-catalog-build-command-receipt.json").read_bytes() == b"receipt\n"
+    assert (destination / "note.txt").read_bytes() == b"receipt\n"
 
 
 def test_local_source_catalog_publication_process_exit_before_rename_leaves_no_root_and_retry_succeeds(
     tmp_path: Path,
 ) -> None:
     destination = tmp_path / "catalog"
-    process_id = os.fork()
-    if process_id == 0:
-        publication = LocalSourceCatalogPublication(destination)
-        publication.write_file("artifact.json", b"unpublished\n")
-        os._exit(31)
-
-    _, status = os.waitpid(process_id, 0)
-    assert os.waitstatus_to_exitcode(status) == 31
+    _crash_publication(destination, published=False)
     assert not destination.exists()
     unpublished = tuple(tmp_path.glob(".catalog.*"))
     assert len(unpublished) == 1
 
     with LocalSourceCatalogPublication(destination) as publication:
-        publication.write_file("artifact.json", b"published\n")
-        publication.write_file(
-            "source-catalog-build-command-receipt.json",
-            b"receipt\n",
-        )
+        (publication.root / 'artifact.json').write_bytes(b"published\n")
+        (publication.root / 'note.txt').write_bytes(b"receipt\n")
         publication.publish()
 
     assert (destination / "artifact.json").read_bytes() == b"published\n"

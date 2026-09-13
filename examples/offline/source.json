@@ -1,8 +1,0 @@
-{
-  "document_number": "2026-00001",
-  "title": "Local contributor example",
-  "type": "Rule",
-  "publication_date": "2026-09-11",
-  "agencies": [{"slug": "example-agency", "name": "Example Agency"}],
-  "html_url": "https://example.invalid/docspec/notice.html"
-}

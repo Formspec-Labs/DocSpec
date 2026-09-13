@@ -8,6 +8,8 @@ the [decision index](docs/decisions/README.md) identifies the rules that govern 
 
 Use Python 3.12 and `uv`. The checked-in lock and vendored
 `rulespec-artifacts` wheel make development independent of sibling checkouts.
+Development also installs the pinned SpicyDocs reader so source integrations run
+in the default test suite. The built core wheel keeps SpicyDocs optional.
 From the repository root:
 
 ```sh
@@ -27,26 +29,34 @@ Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
 the adapter you are exercising. Core imports must work without them.
 
-Run the [offline walkthrough](docs/offline-walkthrough.md) to see a complete
-catalog → processing → publication → verification flow using one local document.
+Run the [offline walkthrough](docs/offline-walkthrough.md) to build and grow a
+catalog, capture documents, repair a failure, and compare later processing
+attempts. Try the [GAO topic filter](docs/gao-topics.md) for metadata-only work or
+the [GovInfo bill example](docs/govinfo-bill-example.md) or
+[annual CFR example](docs/govinfo-cfr-example.md) for injected source
+fetching and later XML processing. Use [result exports](docs/result-exports.md)
+for independent consumers.
 
 ## Find a bounded change
 
 | Task | Start here | Representative implementation and focused checks | Preserve |
 | --- | --- | --- | --- |
+| Add a source adapter | `ports/source_catalog.py`, [catalog inputs](docs/catalog-inputs.md) | `adapters/spicy_docs_source_native.py`, `adapters/supplied_records.py`; `tests/test_spicy_docs_source_native.py`, `tests/test_local_catalogs.py`, `tests/test_source_catalog_installed_wheel.py` | Admitted source identity, literal fields, collection outcomes, bounded evidence |
+| Add a fetcher | `ports/content_fetcher.py`, [fetchers](docs/fetchers.md) | `examples/govinfo_bill_fetcher.py`; `tests/test_runtime_fetchers.py`, `tests/test_govinfo_bill_installed_wheel.py` | Bounded streams, source and transport identity, exact bytes, cleanup, retained failure evidence |
 | Extract a format | `ports/extractor.py`, `processing/extraction.py` | `processing/visible_text.py`; `tests/test_visible_text.py`, `tests/test_processing_pipeline.py` | Exact source bytes, byte offsets, extraction identity, evidence round trips |
 | Change segmentation | `ports/segmenter.py`, `processing/segmentation.py` | `processing/bounded_segmentation.py`; `tests/test_bounded_segmentation.py`, `tests/conformance/test_segmentation.py` | Deterministic order, size bounds, source coordinates |
 | Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog/`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
 | Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
 | Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
-| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `cli/local.py` connects local services; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
-| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py`, `tests/test_document_release_schema_bundle.py` | Closed shapes, canonical bytes, version/identity rules, predecessor fixtures |
+| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `runtime/` connects local services for commands and Python callers; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
+| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py` | Closed shapes, canonical bytes, current version/identity rules |
+| Change result export or consumer admission | [Result exports](docs/result-exports.md), `adapters/result_export/` | `tests/test_result_export.py`, `tests/test_result_export_admission.py` | Complete outcomes, exact bytes and typed evidence, shared generic verification, independent reading |
 
 Source paths in this table are relative to `src/docspec/`. Shared test setup
 lives in focused `tests/support/` modules and `tests/helpers.py`. Import setup
 from there; test modules should not import other test modules.
 
-For catalog and portable-release changes, choose the suite for the behavior:
+For catalog and result changes, choose the suite for the behavior:
 
 | Behavior | Focused suites under `tests/` |
 | --- | --- |
@@ -54,26 +64,28 @@ For catalog and portable-release changes, choose the suite for the behavior:
 | Catalog source admission, policy rows, and row encoding | `test_source_catalog_policy.py`, `test_source_catalog_rows.py` |
 | Catalog filesystem safety, publication recovery, and pointer advancement | `test_source_catalog_storage.py`, `test_source_catalog_build_safety.py`, `test_source_catalog_succession.py` |
 | Serial and spawned-worker catalog derivation | `test_source_catalog_workers.py` |
-| Catalog command builds and verification receipts | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
+| Catalog command builds and artifact verification | `test_source_catalog_cli_build.py`, `test_source_catalog_cli_verify.py` |
 | Regulations.gov joins/provenance, selection, and comments | `test_regulations_gov_catalog.py`, `test_regulations_gov_selection.py`, `test_regulations_gov_comments.py` |
-| Portable release admission and complete diagnostics | `test_document_release_verify.py` |
-| Portable identity, digest rules, and canonical encoding | `test_document_release_identity.py` |
-| Minted portable rows and declared format | `test_document_release_wire_format.py` |
-| Comment/attachment accounting and indexed byte ownership | `test_document_release_text_bodies.py`, `test_document_release_member_index.py` |
+| Result export, complete active population and independent reading | `test_result_export.py` |
+| Product evidence after shared container admission | `test_result_export_admission.py` |
+| Canonical identity values and framing | `test_canonical_encoding_equivalence.py`, `test_framing.py` |
+| Extraction quality limits and concrete misleading outputs | `test_extraction_quality.py` |
 
 Each suite imports only the setup it needs. Family setup lives in
 `tests/support/source_catalog_builds.py`, `source_catalog_cli.py`,
-`document_release.py`, and `regulations_gov.py`. Shared pytest fixtures are
+`exports.py`, and `regulations_gov.py`. Shared pytest fixtures are
 registered explicitly in the suites that use them.
 
-For an embedded local runner, `docspec.cli.execution.run_local` accepts the same
-closed request file as the CLI and an optional injected content fetcher. The
-offline example exercises this entry point; preparation and worker helpers
-inside `cli/` remain internal implementation details.
+For a local experiment, `docspec.runtime.prepare_local_experiment` builds the
+plan from a catalog, workspace, selected implementations and explicit limits.
+Advanced callers can supply a plan to `prepare_local_run`. Their prepared object
+executes or recovers the same work used by CLI commands. Import supported catalog,
+inspection, retention and export operations from the runtime package entry point;
+see [Python runs](docs/python-runs.md) and the [guide index](docs/documentation.md).
 
 ## Organize code for its reader
 
-The dependency direction is commands → application → ports and domain, with
+The dependency direction is callers → runtime → application → ports and domain, with
 adapters implementing the ports. Deterministic processing code depends on domain
 types. Only composition code connects concrete adapters to application services.
 `tests/conformance/test_import_directions.py` checks the complete allowed map.
@@ -110,21 +122,17 @@ the [CI workflow](.github/workflows/ci.yml) as the command authority:
 
 ```sh
 uv lock --check
-uv sync --frozen --extra dagster
-uv run --frozen --extra dagster ruff check .
-uv run --frozen --extra dagster pytest
-uv run --frozen --extra dagster docspec conformance run --root . \
-  --specification conformance/specification.json \
-  --matrix conformance/test-matrix.json \
-  --output /tmp/docspec-conformance-report.json --class core
+uv sync --frozen --extra dagster --extra s3
+uv run --frozen --extra dagster --extra s3 ruff check .
+uv run --frozen --extra dagster --extra s3 pytest --require-regression-map \
+  --junitxml=/tmp/docspec-pytest.xml
 uv build --out-dir dist
 ```
 
-The conformance command currently returns a nonzero status when required
-evidence is incomplete; CI records it with `continue-on-error`. Read the report.
-The required matrix still includes partial scale and package-release checks.
-Local tests cannot substitute for ordered qualification campaigns or publication
-evidence from an exact clean commit. Do not relabel missing evidence as a pass.
+CI runs pytest once, requires all mapped regression cases to complete, and
+retains native JUnit, console output, the lockfile, and built wheels for that
+checkout. The [qualification guide](docs/qualification.md) distinguishes these
+checks from actual capacity measurements and publication evidence.
 
 To reproduce CI's installed-wheel check in an empty environment:
 
@@ -145,6 +153,28 @@ from an installed package. For live service checks, inspect the specific test's
 configuration first and explicitly select it with `pytest -m integration`;
 the default test run supplies no live credentials.
 
+## Install the optional source reader
+
+`docspec[spicy-docs]` selects the pinned public SpicyDocs reader. It adds no
+acquisition, analytics, Dagster or PDF extras. The provider remains independently
+usable and does not depend on DocSpec. Supplied-record experiments work with
+core DocSpec alone.
+
+For a built `0.3.0` wheel and an existing empty verification environment:
+
+```sh
+uv pip install --python "$wheel_check/venv/bin/python" \
+  --find-links dist --find-links vendor 'docspec[spicy-docs]==0.3.0'
+```
+
+Outside the checkout, supply the DocSpec, Rulespec and SpicyDocs wheels from
+that same checked build. The two dependency wheels have one authoritative home
+under `vendor/`; installed integration tests use those same files. In a checkout,
+add `--extra spicy-docs` to the extras selected for `uv sync` and `uv run`.
+Keep optional acquisition or processing dependencies tied to the operation that
+needs them. Package/version pins identify code; source artifact pins identify
+the data that a catalog reads.
+
 ## Submit a reviewable change
 
 Explain the problem and resulting behavior, affected entry points, checks run,
@@ -164,5 +194,5 @@ Maintainers edit this guide and the guides under `docs/` directly. The
 [documentation index](docs/documentation.md) links to catalog evidence,
 extension guidance, operations, and historical provenance. Update the relevant
 guide with a behavior or file move so the next contributor finds its current owner.
-Use the [tool inventory](tools/README.md) for repository scripts, including the
-historical portable mint recipe and its limits.
+Use the [tool inventory](tools/README.md) for current source research, sampling,
+reporting and schema scripts.

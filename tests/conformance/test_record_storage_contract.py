@@ -135,13 +135,14 @@ def test_every_registered_record_profile_fails_closed_on_tampered_member_bytes(t
             partition_policy=POLICY,
         )
         storage.verify(layer)
-        tampered = [
-            path
-            for path in sorted(root.rglob("*"))
-            if path.is_file() and b'"recordId":"prune-me"' in path.read_bytes()
-        ]
-        assert tampered, "the fixture record must be findable in exactly the persisted member bytes"
-        for path in tampered:
-            path.write_bytes(path.read_bytes().replace(b'"value":4', b'"value":5'))
+        manifest = json.loads((storage.root / layer.state_ref).read_bytes())
+        members = [member for member in manifest["members"] if member["partition"] == _bucket("source-prune")]
+        assert members, "the pinned partition must contain the fixture record"
+        for member in members:
+            path = storage.root / member["path"]
+            original = path.read_bytes()
+            path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
+        with pytest.raises(IntegrityError):
+            storage.verify_members(layer)
         with pytest.raises(IntegrityError):
             storage.verify(layer)

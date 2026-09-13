@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from collections import defaultdict
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pytest
 
@@ -18,7 +20,7 @@ from docspec.domain.content import (
 from docspec.domain.delivery import iter_delivery_records, verify_logical_release_layers
 from docspec.domain.identity import sha256_digest
 from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore
-from docspec.domain.plans import StagePolicy, WorkLimits
+from docspec.domain.plans import WorkLimits
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError
 from docspec.processing import ContentStatisticsProcessor, ParagraphSegmenter, TextExtractor
@@ -61,7 +63,7 @@ def _release_layers() -> dict[str, list[dict]]:
         (),
     ).derived_records[0]
     entry = replace(
-        DocumentEntry.create(source, ChangeKind.ADDED, StagePolicy((captured.downloader_id,), segment.segment.segmenter_id)),
+        DocumentEntry.create(source, ChangeKind.ADDED, stage_policy(extractor=TextExtractor(), segmenter=ParagraphSegmenter(), processor_ids=(processor.description.processor_id,))),
         captured_files=(captured,),
         representations=(extraction.payload.representation,),
         segments=(segment.segment,),
@@ -82,6 +84,30 @@ def _release_layers() -> dict[str, list[dict]]:
 
 def test_logical_release_verifier_accepts_complete_source_lineage() -> None:
     verify_logical_release_layers(_release_layers())
+
+
+@pytest.mark.parametrize("observed", [None, "different-version"])
+def test_required_transport_version_refuses_missing_or_different_capture_evidence(observed):
+    layers = _release_layers()
+    original = CapturedFile.from_dict(layers["files"][0]["payload"])
+    values = {field.name: getattr(original, field.name) for field in fields(original)
+              if field.name not in {"file_id", "disposition"}}
+    changed = CapturedFile.create(**(values | {"transport_version": observed}))
+    row = layers["files"][0] | {"recordId": changed.file_id, "payload": changed.to_dict()}
+    with pytest.raises(IntegrityError, match="file has no matching active source candidate"):
+        verify_logical_release_layers({"source-items": layers["source-items"], "files": [row]})
+
+
+def test_dispositions_preserve_requested_stages_and_refuse_missing_stage_evidence() -> None:
+    layers = _release_layers()
+    disposition = layers["dispositions"][0]["payload"]
+    assert disposition["requestedStages"] == stage_policy(
+        extractor=TextExtractor(), segmenter=ParagraphSegmenter(),
+        processor_ids=(ContentStatisticsProcessor().description.processor_id,),
+    ).to_dict()
+    disposition.pop("requestedStages")
+    with pytest.raises(IntegrityError, match="invalid closed payload"):
+        verify_logical_release_layers(layers)
 
 
 def test_logical_release_verifier_visits_every_retained_blob_reference() -> None:
@@ -157,4 +183,11 @@ def test_logical_release_verifier_rejects_segment_without_persisted_mapping() ->
     layers["segments"][0]["payload"] = shifted.to_dict()
 
     with pytest.raises(IntegrityError, match="no persisted reversible representation mapping"):
+        verify_logical_release_layers(layers)
+
+
+def test_derived_output_requires_its_own_documents_requested_processor() -> None:
+    layers = _release_layers()
+    layers["dispositions"][0]["payload"]["requestedStages"]["processorIds"] = []
+    with pytest.raises(IntegrityError, match="not requested by its source item"):
         verify_logical_release_layers(layers)

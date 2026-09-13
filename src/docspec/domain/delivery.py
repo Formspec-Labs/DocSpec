@@ -22,12 +22,14 @@ from docspec.domain.content import (
 )
 from docspec.domain.identity import (
     canonical_json_bytes,
+    identity_digest,
     ordered_json_sequence_digest,
     parse_canonical_json,
     stable_urn,
     thaw_json,
 )
-from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, FailureRecord, StoreVerdict
+from docspec.domain.jobs import DocumentEntry, DocumentStore, FailureRecord, StoreVerdict
+from docspec.domain.dispositions import DISPOSITION_SCHEMA_ID, disposition_payload, parse_disposition_payload
 from docspec.domain.references import ArtifactRef, BlobRef
 from docspec.domain.storage import RecordSchema
 from docspec.errors import IntegrityError
@@ -38,7 +40,7 @@ _CORE_LAYER_SCHEMA_IDS = {
     "files": "docspec-file-record/1.0",
     "representations": "docspec-representation-record/1.0",
     "segments": "docspec-segment-record/1.0",
-    "dispositions": "docspec-disposition-record/1.0",
+    "dispositions": DISPOSITION_SCHEMA_ID,
     "failures": "docspec-failure-record/1.0",
     "receipts": "docspec-stage-receipt-record/1.0",
 }
@@ -217,14 +219,9 @@ def iter_delivery_records(store: DocumentStore) -> Iterator[DeliveryRecord]:
             store,
             entry,
             layer_kind="dispositions",
-            schema_id="docspec-disposition-record/1.0",
+            schema_id=DISPOSITION_SCHEMA_ID,
             record_id=disposition_id,
-            payload={
-                "entryId": entry.entry_id,
-                "change": entry.change.value,
-                "disposition": None if entry.disposition is None else entry.disposition.value,
-                "warnings": list(entry.warnings),
-            },
+            payload=disposition_payload(entry),
         )
         for index, failure in enumerate(entry.failures):
             failure_id = stable_urn(
@@ -373,11 +370,23 @@ def _create_release_integrity_schema(connection: sqlite3.Connection) -> None:
             input_id TEXT NOT NULL,
             PRIMARY KEY (derived_id, input_id)
         ) WITHOUT ROWID;
+        CREATE TABLE requested_processors (
+            source_item_id TEXT NOT NULL,
+            processor_id TEXT NOT NULL,
+            PRIMARY KEY (source_item_id, processor_id)
+        ) WITHOUT ROWID;
         CREATE TABLE dispositions (
             source_item_id TEXT PRIMARY KEY,
             record_id TEXT NOT NULL,
             entry_id TEXT NOT NULL,
-            disposition TEXT
+            disposition TEXT,
+            terminal_failure_digest TEXT
+        ) WITHOUT ROWID;
+        CREATE TABLE failures (
+            source_item_id TEXT NOT NULL,
+            entry_id TEXT NOT NULL,
+            failure_digest TEXT NOT NULL,
+            PRIMARY KEY (source_item_id, entry_id, failure_digest)
         ) WITHOUT ROWID;
         """
     )
@@ -576,18 +585,15 @@ def _index_release_layer(
             )
         elif layer_kind == "dispositions":
             _require_live_record(deleted, layer_kind)
-            expected = {"entryId", "change", "disposition", "warnings"}
-            if set(payload) != expected or not isinstance(payload["warnings"], list):
-                raise IntegrityError("disposition record has an invalid closed payload")
+            stages, terminal_failure = parse_disposition_payload(payload)
             entry_id = payload["entryId"]
-            if not isinstance(entry_id, str) or not entry_id:
-                raise IntegrityError("disposition record has an invalid entry identity")
-            ChangeKind(payload["change"])
+            connection.executemany(
+                "INSERT INTO requested_processors VALUES (?, ?)",
+                ((source_item_id, identifier) for identifier in stages.processor_ids),
+            )
             disposition = payload["disposition"]
             if disposition is not None:
                 disposition = AcquisitionDisposition(disposition).value
-            if any(not isinstance(warning, str) for warning in payload["warnings"]):
-                raise IntegrityError("disposition warnings must be strings")
             expected_id = stable_urn(
                 "disposition",
                 {"entryId": entry_id, "disposition": disposition},
@@ -595,8 +601,9 @@ def _index_release_layer(
             if record_id != expected_id:
                 raise IntegrityError("disposition record identity differs from its payload")
             connection.execute(
-                "INSERT INTO dispositions VALUES (?, ?, ?, ?)",
-                (source_item_id, record_id, entry_id, disposition),
+                "INSERT INTO dispositions VALUES (?, ?, ?, ?, ?)",
+                (source_item_id, record_id, entry_id, disposition,
+                 None if terminal_failure is None else identity_digest(terminal_failure.to_dict())),
             )
         elif layer_kind == "failures":
             _require_live_record(deleted, layer_kind)
@@ -609,8 +616,12 @@ def _index_release_layer(
                 "retryable",
             }:
                 raise IntegrityError("failure record has an invalid closed payload")
-            FailureRecord.from_dict({key: value for key, value in payload.items() if key != "entryId"})
+            failure = FailureRecord.from_dict({key: value for key, value in payload.items() if key != "entryId"})
             _require_source(connection, source_item_id, "failure")
+            connection.execute(
+                "INSERT OR IGNORE INTO failures VALUES (?, ?, ?)",
+                (source_item_id, payload["entryId"], identity_digest(failure.to_dict())),
+            )
         elif layer_kind == "receipts":
             _require_live_record(deleted, layer_kind)
             if set(payload) != {"entryId", "artifact"}:
@@ -640,6 +651,16 @@ def _require_source(connection: sqlite3.Connection, source_item_id: str, label: 
 def _verify_release_relationships(connection: sqlite3.Connection) -> None:
     checks = (
         (
+            "terminal failure has no matching failure evidence for its entry",
+            """
+            SELECT d.record_id FROM dispositions AS d
+            LEFT JOIN failures AS f ON f.source_item_id = d.source_item_id
+              AND f.entry_id = d.entry_id AND f.failure_digest = d.terminal_failure_digest
+            WHERE d.terminal_failure_digest IS NOT NULL AND f.failure_digest IS NULL
+            LIMIT 1
+            """,
+        ),
+        (
             "file has no matching active source candidate or source version",
             """
             SELECT f.file_id
@@ -651,7 +672,7 @@ def _verify_release_relationships(connection: sqlite3.Connection) -> None:
                OR c.candidate_id IS NULL OR c.media_type != f.media_type
                OR (c.expected_digest IS NOT NULL AND c.expected_digest != f.blob_digest)
                OR (c.expected_size IS NOT NULL AND c.expected_size != f.blob_size)
-               OR (c.transport_version IS NOT NULL AND c.transport_version != f.transport_version)
+               OR (c.transport_version IS NOT NULL AND c.transport_version IS NOT f.transport_version)
             LIMIT 1
             """,
         ),
@@ -688,6 +709,17 @@ def _verify_release_relationships(connection: sqlite3.Connection) -> None:
             FROM derived_records AS d
             LEFT JOIN sources AS s ON s.source_item_id = d.source_item_id
             WHERE s.source_item_id IS NULL OR s.state != 'active'
+            LIMIT 1
+            """,
+        ),
+        (
+            "derived record was not requested by its source item's processing stages",
+            """
+            SELECT d.derived_id
+            FROM derived_records AS d
+            LEFT JOIN requested_processors AS p
+              ON p.source_item_id = d.source_item_id AND p.processor_id = d.processor_id
+            WHERE p.processor_id IS NULL
             LIMIT 1
             """,
         ),

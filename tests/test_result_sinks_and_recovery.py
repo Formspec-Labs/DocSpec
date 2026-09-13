@@ -13,7 +13,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.commit import ReleaseCommitService
@@ -27,7 +27,7 @@ from docspec.domain.delivery import (
     iter_delivery_records,
 )
 from docspec.domain.identity import ordered_json_sequence_digest, sha256_digest
-from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, StoreState
+from docspec.domain.jobs import ChangeKind, DocumentEntry, DocumentStore, FailureClass, FailureRecord, StoreState
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
@@ -174,7 +174,10 @@ def test_sink_receipt_uses_the_terminal_store_verdict(
     expected: str,
 ) -> None:
     store = _terminal_store()
-    store = replace(store, entries=(replace(store.entries[0], disposition=disposition),))
+    failure = FailureRecord(
+        FailureClass.DETERMINISTIC_INPUT, "test.invalid-input", "declared terminal fixture failure", 1, False,
+    )
+    store = replace(store, entries=(replace(store.entries[0], disposition=disposition, failures=(failure,)),))
     receiver = _RecordingReceiver()
     receipt = ReturnedResultSink(
         sink_id="urn:docspec:test:sink:returned",
@@ -184,12 +187,15 @@ def test_sink_receipt_uses_the_terminal_store_verdict(
     ).deliver(store, iter_delivery_records(store))
 
     assert receipt.final_verdict.value == expected
+    disposition_record = next(record for record in receiver.accepted.values()
+                              if "terminalFailure" in record["payload"])
+    assert disposition_record["payload"]["terminalFailure"] == failure.to_dict()
 
 
 def test_durable_and_hybrid_sinks_replay_to_the_same_immutable_layers(tmp_path: Path) -> None:
     store = _terminal_store()
     expected = tuple(iter_delivery_records(store))
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     blob_root = artifact("blob-root")
     durable = DurableDatasetSink(
         sink_id="urn:docspec:test:sink:durable",
@@ -333,7 +339,7 @@ def _plan(source: SourceCatalogRef, retry: RetryPolicy, accepted: AcceptedFailur
 
 def test_stateless_returned_run_cannot_advance_the_document_catalog(tmp_path: Path) -> None:
     controls = LocalJsonControlRepository(tmp_path / "controls")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
@@ -497,7 +503,7 @@ def test_worker_restart_reuses_the_verified_entry_checkpoint(tmp_path: Path) -> 
     durable_stores = LocalDocumentStoreRepository(tmp_path / "stores")
     stores = _InterruptingStoreRepository(durable_stores)
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
         records=records,

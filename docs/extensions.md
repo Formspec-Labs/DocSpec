@@ -5,12 +5,31 @@ inside adapters and connect them in composition code. The
 [architecture guide](architecture.md) explains the dependency direction;
 [CONTRIBUTING](../CONTRIBUTING.md#find-a-bounded-change) maps changes to tests.
 
+## Add a source or fetcher at its existing interface
+
+Start with [supplied records or the installed source reader](catalog-inputs.md).
+Small metadata mappings can use `SuppliedRecordSource` and its existing policy,
+as the [GAO example](gao-topics.md) does. A new provider adapter implements
+`SourceNativeRecordSource`: `describe()` identifies the admitted source, and
+`iter_records()` / `iter_renditions()` stream its records and candidate files.
+These types are public imports from `docspec.source_catalog`. Keep source
+validation and publisher parsing in the provider; choose dataset interpretation
+through `SourceCatalogPolicy` only when the supplied-record mapping is insufficient.
+
+A document fetcher implements `ContentFetcher` and returns bounded `FetchStream`
+bytes and acquisition facts. Pass it directly to `prepare_local_experiment` or
+inject it through a native Dagster resource. The [fetcher guide](fetchers.md)
+defines identities and lifetime; the [GovInfo bill example](govinfo-bill-example.md)
+shows an installed provider and later processing after the source client closes.
+
 ## Add a processor with explicit inputs and stable identity
 
 1. Implement the [processor interface](../src/docspec/ports/processor.py).
    [`ContentStatisticsProcessor`](../src/docspec/processing/processors.py) is a
    small working example. Its `description` declares its identity; `process()`
    receives the request, permitted payload, and prerequisite results.
+   The [phrase processor example](phrase-matching-example.md) shows configuration,
+   pinned reference data, and literal quote evidence in a complete experiment.
 2. Build a [`ProcessorDescription`](../src/docspec/domain/processors.py) with the
    implementation version, configuration, accepted inputs, output schemas,
    resource identities, cache policy, data-use policy digest, and item limits.
@@ -36,6 +55,32 @@ invocation, retries, and caching. Exercise
 [data-use restrictions](../tests/test_policy_security.py), and
 [reprocessing](../tests/test_processor_reprocessing.py) when changing this path.
 
+## Replace extraction or segmentation
+
+Implement the [extractor](../src/docspec/ports/extractor.py) or
+[segmenter](../src/docspec/ports/segmenter.py) interface. An extractor exposes
+`extractor_id`, `configuration_digest`, and `extract()`; a segmenter exposes
+`segmenter_id`, `policy_digest`, and `segment()`. Each also implements
+`selected_identity(input)`, returning the output implementation's ID and digest.
+An ordinary implementation returns its own pair. A registry selects a child
+using captured-file or representation metadata and shares that selection logic
+with execution.
+
+Use `docspec.runtime.stage_policy` to derive the plan's stage settings from the
+actual objects, then pass those objects to `prepare_local_run`. The
+[Python guide](python-runs.md#choose-extraction-and-segmentation) shows that path;
+[the installed probe](../tests/support/installed_runtime_probe.py) demonstrates
+small custom implementations without private application imports. Credentials
+belong in live dependencies, not retained settings. Output-affecting changes,
+including parser/tokenizer versions, must change the relevant digest.
+
+Representations and extraction receipts retain the selected extractor's identity.
+Segments and segmentation receipts retain the selected segmenter's identity and
+policy, including an invocation that returns no segments. DocSpec checks these
+values before accepting outputs and when saved entries are opened as checkpoints,
+along with the existing source, byte, and evidence checks. The registry's aggregate settings remain in
+the plan; they do not replace the identities of individual outputs.
+
 ## Make cache reuse conditional on verified evidence
 
 The [cache interface](../src/docspec/ports/processor_cache.py) returns immutable
@@ -47,13 +92,17 @@ Use the same request, input, resource, policy, and result checks as uncached
 execution. A cache outage can cause more work; it must not make an invalid result
 acceptable. [Cache tests](../tests/test_processor_cache.py) cover this boundary.
 
-## Add an execution backend without moving processing rules
+## Inject implementations through Dagster resources
 
-An [execution backend](../src/docspec/ports/execution_backend.py) takes an
-`ExecutionHandoff` and its `StoreTask` population and returns `StoreTaskResult`
-objects. The [task model](../src/docspec/domain/execution.py) carries immutable
-references and identity pins. Serialized dispatchers exchange those messages;
-worker-local Python objects and document bytes do not belong in task messages.
+[`build_dagster_definitions`](../src/docspec/adapters/dagster.py) accepts native
+resource definitions. The `docspec_runtime` resource supplies a prepared run;
+other resources inject its fetcher, processors, workspace and settings. Native
+Dagster configuration controls execution, retries and cancellation. See the
+[installed example](dagster-experiment.md) for resource construction and cleanup.
+
+The [task model](../src/docspec/domain/execution.py) carries immutable references
+and identity pins. Worker-local Python objects and document bytes stay inside
+their resources. The small direct local runner uses the same task handler.
 
 The [profile registry](../src/docspec/profile_registry.py) validates and selects
 machine descriptions; it does not import or instantiate their implementations.
@@ -62,6 +111,12 @@ services. Keep profile implementation strings, actual composition, and
 installed-package checks aligned when moving code. Keep optional imports at the
 adapter that selects them. A valid profile object alone does not demonstrate
 that a deployed worker enforces its declared resource limits.
+
+Storage-description format `2.0` retains concrete implementation settings and
+limits. It removes the five placeholder governance labels: those labels never
+enforced access, encryption, location, retention or redistribution. Configure
+deployment controls through the actual storage implementation. DocSpec's
+implemented plan data-use and retention policies remain separate.
 
 Keep task scheduling separate from document meaning. A successful task result
 identifies durable output; reconciliation still verifies it against the complete

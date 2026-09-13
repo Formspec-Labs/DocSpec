@@ -92,9 +92,7 @@ class LocalSourceCatalogStaging:
         self._artifact = artifact
         self._blob_staging = blob_staging
         self._store_root = store_root.path
-        self._session_path = session.path
         self._path = artifact.path
-        self._published_blob_root = store_root.path / ".blobs"
         self._shared_blob_root = shared_blob_root
         self._committed = False
         self._closed = False
@@ -460,8 +458,6 @@ class LocalSourceCatalogStaging:
             parent=self._blob_staging,
             missing_ok=True,
         )
-        if staged_sha_root is None:
-            return
         try:
             published_blob_root = _pin_directory(
                 ".blobs",
@@ -470,10 +466,18 @@ class LocalSourceCatalogStaging:
                 create=True,
             )
         except BaseException:
-            os.close(staged_sha_root.descriptor)
+            if staged_sha_root is not None:
+                os.close(staged_sha_root.descriptor)
             raise
         assert published_blob_root is not None
         try:
+            if staged_sha_root is None:
+                # Empty catalogs still need a stable blob resolver when opened
+                # read-only. Create its directory during publication, even
+                # though this artifact references no payload blobs.
+                _sync_directory_descriptor(published_blob_root)
+                _sync_directory_descriptor(self._store)
+                return
             for name in sorted(os.listdir(staged_sha_root.descriptor)):
                 metadata = os.stat(
                     name,
@@ -528,7 +532,8 @@ class LocalSourceCatalogStaging:
             _sync_directory_descriptor(self._store)
         finally:
             os.close(published_blob_root.descriptor)
-            os.close(staged_sha_root.descriptor)
+            if staged_sha_root is not None:
+                os.close(staged_sha_root.descriptor)
 
     def commit(self, reference: SourceCatalogRef) -> SourceCatalogRef:
         if self._committed:

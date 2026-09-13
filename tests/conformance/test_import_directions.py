@@ -16,29 +16,25 @@ PRODUCTION_ROOT = ROOT / "src" / "docspec"
 # Each production area therefore declares the complete set of areas it may
 # import. "errors" and "domain" sit at the bottom; "ports" speak only domain
 # records; "processing" is DocSpec's own deterministic content implementation
-# (vendor software enters it only through a lazily selected extractor, proven
+# (parser software enters it only through a lazily selected extractor, proven
 # by test_pypdf_is_loaded_only_when_selected_and_pages_round_trip); application
 # services compose ports, domain records, and processing receipts; adapters
-# may depend on the whole core; only the cli composition root wires adapters
-# into services. A new import direction fails here until someone widens the
+# may depend on the whole core; runtime wires the local lifecycle for Python
+# and commands, while other CLI operations assemble their own services.
+# A new import direction fails here until someone widens the
 # map deliberately.
 _ALLOWED_INTERNAL_IMPORTS = {
     "__init__": {"errors"},
     "errors": set(),
     "domain": {"domain", "errors"},
     "ports": {"ports", "domain", "errors"},
-    "processing": {"processing", "domain", "errors"},
+    "processing": {"processing", "ports", "domain", "errors"},
     "profile_registry": {"domain", "errors"},
-    # The DocumentRelease 2.0 wire primitives: a leaf that reads DocSpec's byte
-    # rules and adds the spellings that contract needs. It imports nothing that
-    # could import it back.
-    "document_release_support": {"domain", "errors"},
-    "conformance": {"conformance", "domain", "errors", "__init__"},
+    "workspace": {"profile_registry"},
     "application": {"application", "ports", "domain", "processing", "errors"},
     "adapters": {
         "adapters",
         "application",
-        "document_release_support",
         "ports",
         "domain",
         "processing",
@@ -46,8 +42,13 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "__init__",
     },
     # Stable public assembly surface. It re-exports explicit constructors but
-    # selects and instantiates none of them; the CLI remains the composition root.
+    # selects and instantiates none of them.
     "source_catalog": {"adapters", "application", "domain", "ports"},
+    "result_export": {"adapters"},
+    "runtime": {
+        "runtime", "adapters", "application", "domain", "ports", "processing",
+        "profile_registry", "workspace", "errors",
+    },
     "entrypoint": {"cli"},
     "cli_io": {"domain", "errors"},
     "cli": {
@@ -55,21 +56,22 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "cli_io",
         "adapters",
         "application",
-        "conformance",
         "domain",
         "errors",
         "ports",
         "processing",
         "profile_registry",
+        "workspace",
+        "runtime",
         "__init__",
     },
 }
 
 # Areas whose modules the core must never import back: concrete adapters and
 # the operator command are the outermost ring.
-_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "cli_io"}
+_OUTER_AREAS = {"adapters", "cli", "entrypoint", "source_catalog", "result_export", "cli_io", "runtime"}
 _CORE_AREAS = set(_ALLOWED_INTERNAL_IMPORTS) - _OUTER_AREAS
-_PUBLIC_FACADE_MODULES = {"docspec.source_catalog"}
+_PUBLIC_FACADE_MODULES = {"docspec.source_catalog", "docspec.result_export"}
 
 
 def _module_name(path: Path) -> str:
@@ -143,7 +145,7 @@ def test_core_areas_never_import_adapters_or_the_command_surface() -> None:
     assert violations == []
 
 
-def test_command_surfaces_are_explicit_composition_roots() -> None:
+def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
     modules = _production_modules()
     wiring = {
         module
@@ -153,8 +155,13 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
     }
     assert wiring == {
         "docspec.cli.blobs", "docspec.cli.catalog", "docspec.cli.common",
-        "docspec.cli.execution", "docspec.cli.local",
-        "docspec.cli.plans", "docspec.cli.requests",
+        "docspec.runtime.catalogs",
+        "docspec.runtime.composition", "docspec.runtime.execution", "docspec.runtime.inspection",
+        "docspec.runtime.maintenance",
+        "docspec.runtime.exports",
+        "docspec.runtime.preparation", "docspec.runtime.storage",
+        "docspec.runtime.task_membership",
+        "docspec.cli.plans",
         "docspec.cli.source_catalog",
     }
     assert {
@@ -165,8 +172,15 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
             for imported in _internal_imports(modules[module], module)
         )
     } == _PUBLIC_FACADE_MODULES
-    cli_imports = {_area(imported) for imported in _internal_imports(modules["docspec.cli.local"], "docspec.cli.local")}
-    assert {"adapters", "application"} <= cli_imports
+    runtime_imports = {
+        _area(imported)
+        for imported in _internal_imports(modules["docspec.runtime.composition"], "docspec.runtime.composition")
+    }
+    assert {"adapters", "application"} <= runtime_imports
+    assert not (PRODUCTION_ROOT / "cli" / "local.py").exists()
+    assert not (PRODUCTION_ROOT / "cli" / "execution.py").exists()
+    command_imports = _internal_imports(modules["docspec.cli.runs"], "docspec.cli.runs")
+    assert "docspec.runtime" in command_imports
     importers_of_cli = {
         module
         for module, path in modules.items()
@@ -175,10 +189,14 @@ def test_command_surfaces_are_explicit_composition_roots() -> None:
     assert importers_of_cli == {"docspec.entrypoint", "docspec.cli.__main__"}
 
 
-def test_importing_the_complete_core_loads_no_vendor_software() -> None:
-    """Prove at runtime what the static walk proves at rest: core imports stay
-    stdlib-and-docspec even through lazy indirection, with every optional
-    dependency installed and importable in this environment."""
+def test_importing_the_complete_core_loads_only_the_shared_artifact_dependency() -> None:
+    """Core imports may load the shared encoder and its own dependencies.
+
+    Establish that baseline through its public import, including any optional
+    accelerator installed here. The remaining core must introduce no other
+    foreign package. The static package guard permits this import only in the
+    domain identity gateway.
+    """
 
     core_modules = sorted(
         module for module in _production_modules() if _area(module) in _CORE_AREAS
@@ -187,11 +205,12 @@ def test_importing_the_complete_core_loads_no_vendor_software() -> None:
     assert "docspec.processing.extraction" in core_modules
     probe = (
         "import importlib, json, sys\n"
-        "interpreter_baseline = {name.partition('.')[0] for name in sys.modules}\n"
+        "from rulespec_artifacts import canonical_json_bytes\n"
+        "shared_baseline = {name.partition('.')[0] for name in sys.modules}\n"
         f"for name in {core_modules!r}:\n"
         "    importlib.import_module(name)\n"
         "loaded = {name.partition('.')[0] for name in sys.modules}\n"
-        "foreign = loaded - interpreter_baseline - set(sys.stdlib_module_names) - {'docspec'}\n"
+        "foreign = loaded - shared_baseline - set(sys.stdlib_module_names) - {'docspec'}\n"
         "print(json.dumps(sorted(foreign)))\n"
     )
     result = subprocess.run(

@@ -107,7 +107,6 @@ class RunReconciler:
         task_results: Iterable[StoreTaskResult],
         workspace: ReconciliationWorkspace,
     ) -> ArtifactRef:
-        self._controls.verify(self._plan_ref)
         plan = ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
         if plan.source_catalog != self._source_catalog_ref or plan.base_release != self._base_release_ref:
             raise IntegrityError("reconciler inputs differ from the sealed processing plan")
@@ -129,7 +128,7 @@ class RunReconciler:
         }
         planned_store_ledger = self._stores.planned_store_ledger(plan.plan_id)
         handoff = self._verified_execution_handoff(plan, planned_store_ledger)
-        active = self._base_layers()
+        active, blob_roots = self._base_state()
         fragment_schemas: dict[str, RecordSchema] = {}
         touched_partitions: set[int] = set()
         counts = {
@@ -146,7 +145,6 @@ class RunReconciler:
         }
         failure_counts: dict[str, int] = {}
         first_failure: dict[str, Any] | None = None
-        blob_roots: dict[str, ArtifactRef] = {}
 
         for reference, store in self._verified_complete_stores(
             task_results,
@@ -205,7 +203,7 @@ class RunReconciler:
             for root in receipt.blob_roots:
                 existing = blob_roots.get(root.artifact_id)
                 if existing is not None and existing != root:
-                    raise IntegrityError("delivery receipts disagree on a blob root")
+                    raise IntegrityError("run inputs disagree on a blob root")
                 blob_roots[root.artifact_id] = root
             if self._stateful:
                 self._spool_store_layers(
@@ -292,11 +290,15 @@ class RunReconciler:
         )
         return self._controls.put(kind="run-receipts", artifact_id=receipt.run_id, value=receipt.to_dict())
 
-    def _base_layers(self) -> dict[str, LayerRef]:
+    def _base_state(self) -> tuple[dict[str, LayerRef], dict[str, ArtifactRef]]:
+        """Carry pinned base storage with inherited layers, including zero-work runs."""
+
         if self._base_release_ref is None:
-            return {}
+            return {}, {}
         release = self._document_catalog.open(self._base_release_ref)
-        return {layer.layer_kind: layer for layer in release.active_layers}
+        layers = {layer.layer_kind: layer for layer in release.active_layers}
+        roots = {root.artifact_id: root for root in release.blob_roots} if self._stateful else {}
+        return layers, roots
 
     def _verified_complete_stores(
         self,
@@ -374,8 +376,7 @@ class RunReconciler:
             raise IntegrityError(f"run execution controls are invalid: {error}") from error
         if profile.profile_id != self._execution_profile_ref.artifact_id:
             raise IntegrityError("execution profile identity differs from its artifact reference")
-        for reference in profile.control_artifacts:
-            self._controls.verify(reference)
+        self._controls.verify(profile.worker_composition)
         if handoff.handoff_id != self._execution_handoff_ref.artifact_id:
             raise IntegrityError("execution handoff identity differs from its artifact reference")
         if (
@@ -401,7 +402,6 @@ class RunReconciler:
 
     def _delivery_receipt(self, store: DocumentStore, plan: ProcessingPlan) -> DeliveryReceipt:
         assert store.delivery_receipt is not None
-        self._controls.verify(store.delivery_receipt)
         try:
             receipt = DeliveryReceipt.from_dict(self._controls.load(store.delivery_receipt))
         except (TypeError, ValueError) as error:
@@ -484,11 +484,14 @@ class RunReconciler:
     ) -> dict[str, LayerRef]:
         """Stage every replacement before publishing each logical layer once."""
 
-        core_schemas = core_delivery_schemas()
-        required = set(core_schemas)
-        scheduled_derived = {f"derived:{identifier}" for identifier in plan.stages.processor_ids}
+        required_schemas = core_delivery_schemas() | {
+            f"derived:{description.processor_id}": record_schema(
+                f"derived:{description.processor_id}", description.output_schema_id,
+            )
+            for description in plan.processors.processors
+        }
         retired_derived = self._retired_derived_layers(plan, active)
-        kinds = required | retired_derived | (scheduled_derived & (set(fragment_schemas) | set(active)))
+        kinds = set(required_schemas) | retired_derived
         staged: list[tuple[str, RecordSchema, LayerRef | None]] = []
         for kind in sorted(kinds):
             current = active.get(kind)
@@ -497,12 +500,13 @@ class RunReconciler:
                 if current is not None:
                     schema = record_schema(kind, current.schema_id)
                 else:
-                    schema = core_schemas[kind]
+                    schema = required_schemas[kind]
             if current is not None and current.schema_id != schema.schema_id:
                 raise IntegrityError(f"layer {kind!r} changed schema without a new logical layer identity")
             if current is not None and not touched:
                 continue
             if current is not None:
+                self._records.verify_members(current)
                 workspace.retain_records(
                     _layer_collection(kind),
                     self._records.stream(current, partitions=touched),
@@ -511,7 +515,10 @@ class RunReconciler:
                 )
             staged.append((kind, schema, current))
 
-        result = dict(active)
+        result = {
+            kind: layer for kind, layer in active.items()
+            if kind not in retired_derived or layer.record_count
+        }
         for kind, schema, current in staged:
             records = workspace.stream_records(_layer_collection(kind))
             if current is None:
@@ -541,20 +548,7 @@ class RunReconciler:
         plan: ProcessingPlan,
         active: Mapping[str, LayerRef],
     ) -> set[str]:
-        """Name prior processor layers whose pinned descriptions are no longer current."""
+        """Retire affected rows from every inherited layer absent from this plan."""
 
-        if self._base_release_ref is None:
-            return set()
-        base = self._document_catalog.open(self._base_release_ref)
-        self._controls.verify(base.processing_plan)
-        try:
-            previous = ProcessingPlan.from_dict(self._controls.load(base.processing_plan))
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"base release processing plan is invalid: {error}") from error
-        current = {item.processor_id for item in plan.processors.processors}
-        return {
-            layer_kind
-            for item in previous.processors.processors
-            if item.processor_id not in current
-            and (layer_kind := f"derived:{item.processor_id}") in active
-        }
+        scheduled = {f"derived:{identifier}" for identifier in plan.stages.processor_ids}
+        return {kind for kind in active if kind.startswith("derived:") and kind not in scheduled}

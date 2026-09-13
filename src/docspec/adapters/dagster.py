@@ -9,15 +9,14 @@ step boundaries.
 from __future__ import annotations
 
 import importlib
-from collections.abc import Callable, Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Iterator, Mapping
+from contextlib import closing
 from types import ModuleType
 from typing import Any
 
 from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult
 from docspec.domain.identity import OrderedJsonSequenceDigester
 from docspec.errors import DocSpecError, IntegrityError
-from docspec.ports.execution_backend import StoreTaskHandler
 
 DAGSTER_JOB_NAME = "docspec_store_tasks"
 DAGSTER_RUNTIME_RESOURCE_KEY = "docspec_runtime"
@@ -27,32 +26,6 @@ class DagsterAdapterError(DocSpecError):
     """Dagster is unavailable or an injected runtime has an invalid shape."""
 
 
-TaskSource = Callable[[ExecutionHandoff], Iterable[StoreTask]]
-
-
-@dataclass(frozen=True, slots=True)
-class DagsterRuntime:
-    """Process-local application services injected through one Dagster resource.
-
-    A production ``ResourceDefinition`` should build this value from deployment
-    configuration in every worker process. The task source streams the sealed
-    ledger; the handler is the same scheduler-neutral ``StoreTaskHandler`` used
-    by other execution backends.
-    """
-
-    handoff: ExecutionHandoff
-    task_source: TaskSource
-    handler: StoreTaskHandler
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.handoff, ExecutionHandoff):
-            raise TypeError("Dagster runtime handoff must be an ExecutionHandoff")
-        if not callable(self.task_source):
-            raise TypeError("Dagster runtime task_source must be callable")
-        if not callable(self.handler):
-            raise TypeError("Dagster runtime handler must be callable")
-
-
 def _load_dagster() -> ModuleType:
     try:
         return importlib.import_module("dagster")
@@ -60,10 +33,14 @@ def _load_dagster() -> ModuleType:
         raise DagsterAdapterError("the optional 'dagster' package is required to build Dagster definitions") from error
 
 
-def _runtime(context: Any) -> DagsterRuntime:
+def _runtime(context: Any) -> Any:
     value = getattr(context.resources, DAGSTER_RUNTIME_RESOURCE_KEY)
-    if not isinstance(value, DagsterRuntime):
-        raise DagsterAdapterError("the Dagster resource must return DagsterRuntime")
+    if (
+        not isinstance(getattr(value, "handoff", None), ExecutionHandoff)
+        or not callable(getattr(value, "task_source", None))
+        or not callable(getattr(value, "execute_task", None))
+    ):
+        raise DagsterAdapterError("the docspec_runtime resource must provide a prepared DocSpec run")
     return value
 
 
@@ -73,24 +50,30 @@ def _mapping_key(task: StoreTask) -> str:
     return task.task_id.rsplit(":", 1)[-1]
 
 
-def _task_payloads(runtime: DagsterRuntime) -> Iterator[tuple[str, bytes]]:
+def _task_payloads(runtime: Any) -> Iterator[tuple[str, bytes]]:
     """Stream and verify the exact task population sealed by the handoff."""
 
     handoff = runtime.handoff
     count = 0
     digest = OrderedJsonSequenceDigester()
-    for value in runtime.task_source(handoff):
-        if not isinstance(value, StoreTask):
-            raise IntegrityError("Dagster task source yielded a non-StoreTask value")
-        if value.processing_plan_id != handoff.processing_plan.artifact_id:
-            raise IntegrityError("Dagster task names a different processing plan")
-        if value.operation_id != handoff.operation_id:
-            raise IntegrityError("Dagster task names a different execution operation")
-        if count >= handoff.expected_task_count:
-            raise IntegrityError("Dagster task stream exceeds the sealed task count")
-        digest.accept(value.to_dict())
-        count += 1
-        yield _mapping_key(value), value.to_bytes()
+    source = iter(runtime.task_source(handoff))
+    try:
+        for value in source:
+            if not isinstance(value, StoreTask):
+                raise IntegrityError("Dagster task source yielded a non-StoreTask value")
+            if value.processing_plan_id != handoff.processing_plan.artifact_id:
+                raise IntegrityError("Dagster task names a different processing plan")
+            if value.operation_id != handoff.operation_id:
+                raise IntegrityError("Dagster task names a different execution operation")
+            if count >= handoff.expected_task_count:
+                raise IntegrityError("Dagster task stream exceeds the sealed task count")
+            digest.accept(value.to_dict())
+            count += 1
+            yield _mapping_key(value), value.to_bytes()
+    finally:
+        close = getattr(source, "close", None)
+        if close is not None:
+            close()
 
     if count != handoff.expected_task_count:
         raise IntegrityError("Dagster task stream count differs from the sealed handoff")
@@ -98,14 +81,14 @@ def _task_payloads(runtime: DagsterRuntime) -> Iterator[tuple[str, bytes]]:
         raise IntegrityError("Dagster task stream digest differs from the sealed handoff")
 
 
-def _execute_task(runtime: DagsterRuntime, task_payload: bytes) -> StoreTaskResult:
+def _execute_task(runtime: Any, task_payload: bytes) -> StoreTaskResult:
     """Call the scheduler-neutral handler and verify its one terminal message."""
 
     handoff = runtime.handoff
     task = StoreTask.from_bytes(task_payload)
     if task.processing_plan_id != handoff.processing_plan.artifact_id or task.operation_id != handoff.operation_id:
         raise IntegrityError("Dagster mapped task is outside its execution handoff")
-    result = runtime.handler(handoff, task)
+    result = runtime.execute_task(handoff, task)
     if not isinstance(result, StoreTaskResult):
         raise TypeError("Dagster StoreTaskHandler must return StoreTaskResult")
     if result.handoff_id != handoff.handoff_id or result.task != task:
@@ -114,19 +97,26 @@ def _execute_task(runtime: DagsterRuntime, task_payload: bytes) -> StoreTaskResu
 
 
 def build_dagster_definitions(
-    runtime_resource: Any,
+    resource_defs: Mapping[str, Any],
     *,
     executor_def: Any | None = None,
     retry_policy: Any | None = None,
 ) -> Any:
-    """Build DocSpec's real dynamic Dagster job.
+    """Build the native dynamic job with dependency-injected resources.
 
-    ``runtime_resource`` is a Dagster resource definition (or another value
-    Dagster accepts as a resource). The default executor is Dagster's maintained
-    multiprocess executor. A composition root may inject another executor and a
-    native ``RetryPolicy`` derived from its ``ExecutionProfile``.
+    ``resource_defs["docspec_runtime"]`` supplies the existing prepared run.
+    Use a native generator resource with ``with prepare_local_experiment(...)``
+    to close each process's temporary task index. Other native resources can
+    supply its fetcher, processors, workspace, or deployment configuration.
+
+    Dagster owns executor configuration, retries, cancellation, and event
+    storage. The default executor is its multiprocess executor. The job emits
+    bounded task/result messages; callers reconcile those through DocSpec's
+    existing API without a second scheduler or run ledger.
     """
 
+    if DAGSTER_RUNTIME_RESOURCE_KEY not in resource_defs:
+        raise DagsterAdapterError("resource_defs must include docspec_runtime")
     dagster = _load_dagster()
     selected_executor = dagster.multiprocess_executor if executor_def is None else executor_def
 
@@ -136,9 +126,19 @@ def build_dagster_definitions(
         out=dagster.DynamicOut(bytes),
     )
     def emit_store_tasks(context) -> Iterator[Any]:  # type: ignore[no-untyped-def]
-        for mapping_key, payload in _task_payloads(_runtime(context)):
-            task = StoreTask.from_bytes(payload)
-            yield dagster.DynamicOutput(payload, mapping_key=mapping_key, metadata={"task_id": task.task_id})
+        runtime = _runtime(context)
+        with closing(_task_payloads(runtime)) as payloads:
+            for mapping_key, payload in payloads:
+                task = StoreTask.from_bytes(payload)
+                yield dagster.DynamicOutput(
+                    payload, mapping_key=mapping_key,
+                    metadata={
+                        "handoff_id": runtime.handoff.handoff_id,
+                        "execution_profile_ref": runtime.handoff.execution_profile.to_dict(),
+                        "task_id": task.task_id,
+                        "input_store_ref": task.input_store.to_dict(),
+                    },
+                )
 
     @dagster.op(
         name="execute_store_task",
@@ -147,19 +147,24 @@ def build_dagster_definitions(
         retry_policy=retry_policy,
     )
     def execute_store_task(context, task_payload: bytes) -> bytes:  # type: ignore[no-untyped-def]
-        result = _execute_task(_runtime(context), task_payload)
+        runtime = _runtime(context)
+        result = _execute_task(runtime, task_payload)
         context.add_output_metadata(
             {
+                "handoff_id": result.handoff_id,
+                "execution_profile_ref": runtime.handoff.execution_profile.to_dict(),
                 "task_id": result.task.task_id,
+                "input_store_ref": result.task.input_store.to_dict(),
                 "result_id": result.result_id,
                 "status": result.status.value,
+                **({} if result.output_store is None else {"output_store_ref": result.output_store.to_dict()}),
             }
         )
         return result.to_bytes()
 
     @dagster.job(
         name=DAGSTER_JOB_NAME,
-        resource_defs={DAGSTER_RUNTIME_RESOURCE_KEY: runtime_resource},
+        resource_defs=dict(resource_defs),
         executor_def=selected_executor,
     )
     def docspec_store_tasks() -> None:

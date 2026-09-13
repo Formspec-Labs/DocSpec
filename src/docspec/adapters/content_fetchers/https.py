@@ -133,7 +133,10 @@ class HttpsContentFetcher:
             raise ValueError("HTTPS client must provide streaming requests")
         self.client = client
         self.config = config
-        self.configuration_digest = config.digest
+
+    @property
+    def configuration_digest(self) -> str:
+        return self.config.digest
 
     @classmethod
     def from_httpx(cls, config: HttpsContentFetcherConfig) -> Self:

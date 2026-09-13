@@ -7,6 +7,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from docspec.adapters.catalog_artifact import digests as catalog_digests
 from docspec.adapters.catalog_artifact.builder import SourceCatalogBuilder, SourceCatalogBuildRequest
 from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
@@ -336,16 +338,46 @@ def test_rendition_preference_records_every_offer_and_selects_the_first_family(
     assert [candidate.rendition_id for candidate in item.candidate_renditions] == [f"{identity}/body-html"]
     preference = interpretation_result(item, "rendition-preference")
     assert preference["orderedFamilyIds"] == (
+        "full_text_xml_url",
         "body_html_url",
         "html_url",
         "pdf_url",
     )
     assert preference["selectedFamilyId"] == "body_html_url"
     assert [family["offeredRenditionIds"] for family in preference["families"]] == [
+        (),
         (f"{identity}/body-html",),
         (f"{identity}/html",),
         (f"{identity}/pdf",),
     ]
+
+
+@pytest.mark.parametrize("xml_url", ["https://publisher.example/native.xml", None])
+def test_publisher_xml_is_selected_when_offered_with_html_as_an_absent_xml_alternative(tmp_path, xml_url):
+    identity = "2026-00001"
+    native = record(identity)
+    native["record"]["full_text_xml_url"] = xml_url
+    xml = {"sourceRecordId": identity, "renditionId": f"{identity}/body-xml", "sourceField": "full_text_xml_url",
+           "locator": xml_url, "mediaType": "application/xml", "expectedSha256": None, "expectedByteSize": None}
+    source = FakeSource(description(), (native,), (xml, *renditions(identity)))
+    store, result = build(tmp_path, source)
+    item = next(SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items)
+    selected, = item.candidate_renditions
+    expected_id = f"{identity}/body-xml" if xml_url else f"{identity}/html"
+    assert selected.rendition_id == expected_id
+    assert selected.media_type == ("application/xml" if xml_url else "text/html")
+    assert selected.locator == (xml_url or native["record"]["html_url"])
+    preference = interpretation_result(item, "rendition-preference")
+    assert preference["selectedFamilyId"] == ("full_text_xml_url" if xml_url else "html_url")
+    assert preference["families"][-1]["offeredRenditionIds"] == (f"{identity}/pdf",)
+
+
+def test_federal_register_policy_requires_current_schema_and_rejects_earlier_policy():
+    policy = FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE)
+    assert policy.universe_inputs[0].schema_version == "1.1" and policy.policy_version == "1.1.0"
+    prior = policy.to_member() | {"policyVersion": "1.0.0"}
+    with pytest.raises(ValueError, match="installed policy version"):
+        FederalRegisterCatalogPolicy.from_member(prior)
 
 
 def test_empty_topics_are_not_recovered_without_evidence_and_do_not_affect_a_neighbor(

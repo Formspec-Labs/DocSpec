@@ -11,7 +11,7 @@ from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 
 
 class DocumentCatalogReader(Protocol):
-    """A verified, immutable release view reusable for one application operation."""
+    """Pinned release metadata with member verification on reads, not a full audit."""
 
     @property
     def release(self) -> DocumentRelease: ...
@@ -29,11 +29,17 @@ class DocumentCatalogReader(Protocol):
 
 
 class DocumentCatalog(Protocol):
-    """Open and conditionally advance complete release-described state."""
+    """Retain immutable corpus results and explicitly select the current one."""
 
     def release_id(self, plan: ProcessingPlan, partition_policy: Mapping[str, object]) -> str: ...
 
-    def open(self, reference: DocumentReleaseRef) -> DocumentRelease: ...
+    def open(self, reference: DocumentReleaseRef) -> DocumentRelease:
+        """Admit pinned metadata and linked small controls; inventory is declared."""
+        ...
+
+    def audit(self, reference: DocumentReleaseRef) -> DocumentRelease:
+        """Verify the complete retained data, lineage and execution evidence."""
+        ...
 
     def open_reader(self, reference: DocumentReleaseRef) -> DocumentCatalogReader: ...
 
@@ -49,10 +55,25 @@ class DocumentCatalog(Protocol):
 
     def stage(self, release: DocumentRelease) -> ArtifactRef: ...
 
+    def retain(self, staged: ArtifactRef, *, stores: Iterable[StoreRef]) -> DocumentReleaseRef:
+        """Verify and retain an independently readable result without changing current."""
+        ...
+
+    def select(
+        self,
+        reference: DocumentReleaseRef,
+        *,
+        expected_current: DocumentReleaseRef | None,
+    ) -> DocumentReleaseRef:
+        """Select a verified result only while the expected current head still matches."""
+        ...
+
     def commit(
         self,
         staged: ArtifactRef,
         *,
         expected_base: DocumentReleaseRef | None,
         stores: Iterable[StoreRef],
-    ) -> DocumentReleaseRef: ...
+    ) -> DocumentReleaseRef:
+        """Retain a verified result and select it against its expected base."""
+        ...

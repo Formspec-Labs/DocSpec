@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import Any
 
 from docspec.domain.identity import (
+    canonical_json_bytes,
     freeze_json,
     identity_digest,
     require_sha256,
@@ -209,6 +210,18 @@ class SourceItem:
     @property
     def identity(self) -> str:
         return stable_urn("source-item-version", {"itemId": self.item_id, "version": self.version})
+
+    def same_acquisition_inputs(self, other: SourceItem) -> bool:
+        """Compare source and candidate inputs independently of catalog metadata.
+
+        This permits a fresh source description to retain acquired bytes. Stage
+        settings and retained evidence still require their ordinary checks.
+        """
+
+        return (self.item_id, self.version, self.state) == (other.item_id, other.version, other.state) and (
+            canonical_json_bytes([candidate.to_dict() for candidate in self.candidates])
+            == canonical_json_bytes([candidate.to_dict() for candidate in other.candidates])
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {

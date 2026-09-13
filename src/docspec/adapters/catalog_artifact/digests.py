@@ -137,15 +137,9 @@ class _DerivedCatalog:
     disposition_counts: dict[str, int]
     reason_counts: list[dict[str, object]]
     diagnostics: dict[str, object]
-    #: ``{"path": DERIVATION_PATHS member, "workers": processes that derived}``.
+    #: Actual ``path`` (serial, parallel, or serial-fallback) and ``workers``.
+    #: Fallback preserves digests but changes timing and memory measurements.
     derivation: Mapping[str, object] = dataclass_field(default_factory=dict)
-
-
-#: The engines a derivation can report. ``serial-fallback`` is the parallel
-#: engine giving up on its workers and running serially; the digests are
-#: identical either way, the wall clock and memory are not, so a measurement
-#: that does not know which ran is unscoped.
-DERIVATION_PATHS = frozenset({"serial", "parallel", "serial-fallback"})
 
 
 def _fixed_count_digests(item_count: int, selected_count: int) -> tuple[_FramedSectionHasher, ...]:

@@ -1,4 +1,4 @@
-"""Local catalog: verified releases and compare-and-swap publication."""
+"""Local catalog: retained immutable results and guarded current selection."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import os
 import shutil
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
+from contextlib import closing, contextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from rulespec_artifacts import Producer, Supersedes
@@ -43,7 +45,7 @@ from docspec.ports.control_repository import ControlRepository
 from docspec.ports.document_store_repository import DocumentStoreRepository
 from docspec.ports.record_storage import RecordStorage
 
-_DOCUMENT_RELEASE_SUCCESSION_REASON = "advance document catalog from previousRelease"
+_DOCUMENT_RELEASE_SUCCESSION_REASON = "derive document state from previousRelease"
 
 
 class RootOnlyBlobProfileStateReachability:
@@ -70,11 +72,21 @@ def _release_layer(release: DocumentRelease, layer_kind: str) -> LayerRef:
 
 
 class _LocalDocumentCatalogReader:
-    """One verified local release view with partition-directed logical reads."""
+    """Pinned local metadata with verified, partition-directed logical reads."""
 
     def __init__(self, release: DocumentRelease, records: RecordStorage) -> None:
         self._release = release
         self._records = records
+        self._admitted: set[LayerRef] = set()
+        self._admission_lock = Lock()
+
+    def _layer(self, layer_kind: str) -> LayerRef:
+        reference = _release_layer(self._release, layer_kind)
+        with self._admission_lock:
+            if reference not in self._admitted:
+                self._records.verify_members(reference)
+                self._admitted.add(reference)
+        return reference
 
     @property
     def release(self) -> DocumentRelease:
@@ -83,13 +95,13 @@ class _LocalDocumentCatalogReader:
     def lookup(self, *, layer_kind: str, record_id: str) -> dict[str, Any] | None:
         partition_value = record_id if layer_kind == "source-items" else None
         return self._records.lookup(
-            _release_layer(self._release, layer_kind),
+            self._layer(layer_kind),
             record_id,
             partition_value=partition_value,
         )
 
     def scan(self, *, layer_kind: str) -> Iterator[dict[str, Any]]:
-        yield from self._records.stream(_release_layer(self._release, layer_kind))
+        yield from self._records.stream(self._layer(layer_kind))
 
     def scan_source(
         self,
@@ -98,18 +110,18 @@ class _LocalDocumentCatalogReader:
         source_item_id: str,
     ) -> Iterator[dict[str, Any]]:
         require_text(source_item_id, "source_item_id")
-        for record in self._records.scan_partition_value(
-            _release_layer(self._release, layer_kind),
-            source_item_id,
-        ):
-            if "sourceItemId" not in record:
-                raise IntegrityError(f"release layer {layer_kind!r} does not carry source-item identity")
-            if record["sourceItemId"] == source_item_id:
-                yield record
+        with closing(self._records.scan_partition_value(
+            self._layer(layer_kind), source_item_id,
+        )) as rows:
+            for record in rows:
+                if "sourceItemId" not in record:
+                    raise IntegrityError(f"release layer {layer_kind!r} does not carry source-item identity")
+                if record["sourceItemId"] == source_item_id:
+                    yield record
 
 
 class LocalManifestDocumentCatalog:
-    """Publish shared derivations with an operator-only compare-and-swap head."""
+    """Retain shared derivations with an optional compare-and-swap current head."""
 
     def __init__(
         self,
@@ -121,10 +133,11 @@ class LocalManifestDocumentCatalog:
         producer: Producer,
         blobs: BlobStore | None = None,
         max_release_bytes: int = 1024**2,
+        create: bool = True,
     ) -> None:
         if max_release_bytes <= 0:
             raise ValueError("max_release_bytes must be positive")
-        self.root = _storage_root(root)
+        self.root = _storage_root(root, create=create)
         self.records = records
         self.stores = stores
         self.controls = controls
@@ -137,8 +150,6 @@ class LocalManifestDocumentCatalog:
         )
         self.artifact_verifier = DocumentReleaseArtifactVerifier(
             verifier=self.verifier,
-            controls=controls,
-            records=records,
             producer=producer,
         )
         self.artifact_builder = LocalDerivationBuilder(producer, self.artifact_verifier)
@@ -160,17 +171,17 @@ class LocalManifestDocumentCatalog:
     def _staged_locator(cls, digest: str) -> str:
         return f"{cls._artifact_directory('staged', digest)}/{ARTIFACT_ROOT_KEY}"
 
-    def _verify_release_dependencies(self, release: DocumentRelease) -> None:
-        self.verifier.verify(release)
-
     def open(self, reference: DocumentReleaseRef) -> DocumentRelease:
-        expected_locator = self._release_locator(reference.digest)
-        if reference.locator != expected_locator:
-            raise IntegrityError("document release locator differs from its identity")
-        _, release = self._open_artifact(reference)
+        """Admit pinned metadata and small controls without scanning retained data."""
+        artifact, source = self._admit_artifact(reference)
+        return self.artifact_verifier.read(artifact, source)
+
+    def audit(self, reference: DocumentReleaseRef) -> DocumentRelease:
+        """Verify every retained layer, blob, receipt and output-store relationship."""
+        _, release = self._audit_artifact(reference)
         return release
 
-    def _open_artifact(self, reference: DocumentReleaseRef, *, staged: bool = False):
+    def _admit_artifact(self, reference: DocumentReleaseRef, *, staged: bool = False):
         allowed = {self._release_locator(reference.digest)}
         if staged:
             allowed.add(self._staged_locator(reference.digest))
@@ -179,17 +190,19 @@ class LocalManifestDocumentCatalog:
         root_path = _contained(self.root, reference.locator)
         if root_path.is_file() and root_path.stat().st_size > self.max_release_bytes:
             raise LimitExceededError(f"document release exceeds the {self.max_release_bytes}-byte limit")
-        artifact, source = admit_local_artifact(
+        return admit_local_artifact(
             root_path.parent,
             logical_id=reference.release_id,
             artifact_digest=reference.digest,
             root_byte_limit=self.max_release_bytes,
         )
-        release = self.artifact_verifier.read(artifact, source)
-        return artifact, release
+
+    def _audit_artifact(self, reference: DocumentReleaseRef, *, staged: bool = False):
+        artifact, source = self._admit_artifact(reference, staged=staged)
+        return artifact, self.artifact_verifier.audit(artifact, source)
 
     def open_reader(self, reference: DocumentReleaseRef) -> _LocalDocumentCatalogReader:
-        """Verify once and return a per-operation immutable release reader."""
+        """Admit metadata now and each immutable layer once when first consumed."""
 
         return _LocalDocumentCatalogReader(self.open(reference), self.records)
 
@@ -220,43 +233,40 @@ class LocalManifestDocumentCatalog:
         new_identity = self.records.identity_field(new_layer)
         if old_identity != new_identity:
             raise IntegrityError("cannot compare layers with different logical identity fields")
-        old_records = iter(self.records.stream(old_layer))
-        new_records = iter(self.records.stream(new_layer))
-        old_record = next(old_records, None)
-        new_record = next(new_records, None)
-        while old_record is not None or new_record is not None:
-            if old_record is None:
-                yield new_record[new_identity], "added"
-                new_record = next(new_records, None)
-            elif new_record is None:
-                yield old_record[old_identity], "deleted"
-                old_record = next(old_records, None)
-            elif old_record[old_identity] < new_record[new_identity]:
-                yield old_record[old_identity], "deleted"
-                old_record = next(old_records, None)
-            elif old_record[old_identity] > new_record[new_identity]:
-                yield new_record[new_identity], "added"
-                new_record = next(new_records, None)
-            else:
-                if canonical_json_bytes(old_record) != canonical_json_bytes(new_record):
-                    yield old_record[old_identity], "changed"
-                old_record = next(old_records, None)
-                new_record = next(new_records, None)
+        for layer in {old_layer, new_layer}:
+            self.records.verify_members(layer)
+        with closing(self.records.stream(old_layer)) as old_records, closing(self.records.stream(new_layer)) as new_records:
+            old_record = next(old_records, None)
+            new_record = next(new_records, None)
+            while old_record is not None or new_record is not None:
+                if old_record is None:
+                    yield new_record[new_identity], "added"
+                    new_record = next(new_records, None)
+                elif new_record is None:
+                    yield old_record[old_identity], "deleted"
+                    old_record = next(old_records, None)
+                elif old_record[old_identity] < new_record[new_identity]:
+                    yield old_record[old_identity], "deleted"
+                    old_record = next(old_records, None)
+                elif old_record[old_identity] > new_record[new_identity]:
+                    yield new_record[new_identity], "added"
+                    new_record = next(new_records, None)
+                else:
+                    if canonical_json_bytes(old_record) != canonical_json_bytes(new_record):
+                        yield old_record[old_identity], "changed"
+                    old_record = next(old_records, None)
+                    new_record = next(new_records, None)
 
     def stage(self, release: DocumentRelease) -> ArtifactRef:
-        self._verify_release_dependencies(release)
+        plan, _, _ = self.verifier.verify_metadata(release)
         if len(release.file_bytes) > self.max_release_bytes:
             raise LimitExceededError(f"document release exceeds the {self.max_release_bytes}-byte limit")
-        try:
-            plan = ProcessingPlan.from_dict(self.controls.load(release.processing_plan))
-        except (TypeError, ValueError) as error:
-            raise IntegrityError(f"document release processing plan is invalid: {error}") from error
         if release.release_id != derivation_logical_id(plan, release.partition_policy):
             raise IntegrityError("document release identity differs from its processing plan")
         staging_root = _contained(self.root, "document-catalog/.staging/placeholder", create_parents=True).parent
         working = Path(tempfile.mkdtemp(prefix="derivation-", dir=staging_root))
         try:
-            members = write_release_members(working, release, self.records)
+            members = write_release_members(working, release)
             artifact = self.artifact_builder.seal(
                 working,
                 spec=derivation_spec(plan, release.partition_policy),
@@ -279,9 +289,11 @@ class LocalManifestDocumentCatalog:
                 self.root,
                 self._artifact_directory("staged", artifact.pin.artifact_digest),
             )
+            reference = DocumentReleaseRef(release.release_id, locator, artifact.pin.artifact_digest)
             if destination.exists():
                 if destination.is_symlink() or not destination.is_dir():
                     raise IntegrityError("staged derivation path is not a regular directory")
+                self._audit_artifact(reference, staged=True)
                 shutil.rmtree(working)
             else:
                 publish_directory_exclusive(
@@ -289,8 +301,8 @@ class LocalManifestDocumentCatalog:
                     working,
                     destination.relative_to(self.root).as_posix(),
                 )
-            reference = DocumentReleaseRef(release.release_id, locator, artifact.pin.artifact_digest)
-            self._open_artifact(reference, staged=True)
+            published, source = self._admit_artifact(reference, staged=True)
+            self.artifact_verifier.read(published, source)
             root_size = _contained(self.root, locator).stat().st_size
             return ArtifactRef(
                 release.release_id,
@@ -313,7 +325,7 @@ class LocalManifestDocumentCatalog:
         resolved_locator = reference.locator
         if reference.locator == staged_locator and not _contained(self.root, staged_locator).is_file():
             resolved_locator = published_locator
-        artifact, release = self._open_artifact(
+        artifact, release = self._audit_artifact(
             DocumentReleaseRef(reference.artifact_id, resolved_locator, reference.digest),
             staged=True,
         )
@@ -363,52 +375,64 @@ class LocalManifestDocumentCatalog:
         finally:
             temporary.unlink(missing_ok=True)
 
-    def commit(
-        self,
-        staged: ArtifactRef,
-        *,
-        expected_base: DocumentReleaseRef | None,
-        stores: Iterable[StoreRef],
-    ) -> DocumentReleaseRef:
-        artifact, release, resolved_locator = self._load_staged(staged)
-        previous_store_id: str | None = None
-
-        def verified_store_values() -> Iterator[dict[str, Any]]:
-            nonlocal previous_store_id
-            for reference in stores:
-                if previous_store_id is not None and reference.store_id <= previous_store_id:
-                    raise IntegrityError("catalog commit store references must be sorted and distinct")
-                previous_store_id = reference.store_id
-                store = self.stores.load(reference)
-                if store.state != StoreState.SEALED:
-                    raise IntegrityError("catalog commit contains an unsealed document store")
-                yield reference.to_dict()
-
-        if ordered_json_sequence_digest(verified_store_values()) != release.store_receipt_set_digest:
-            raise IntegrityError("catalog commit store receipt set differs from the release")
+    @contextmanager
+    def _write_lock(self, release_id: str) -> Iterator[None]:
         lock = _contained(self.root, "document-catalog/.commit.lock", create_parents=True)
         try:
             descriptor = os.open(lock, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         except FileExistsError as error:
-            raise StateTransitionError("another document catalog commit is in progress") from error
+            raise StateTransitionError("another document catalog write is in progress") from error
         try:
             with os.fdopen(descriptor, "wb") as handle:
-                handle.write(release.release_id.encode("utf-8"))
+                handle.write(release_id.encode("utf-8"))
                 handle.flush()
                 os.fsync(handle.fileno())
-            current = self.current()
+            yield
+        finally:
+            lock.unlink(missing_ok=True)
+
+    def retain(
+        self,
+        staged: ArtifactRef,
+        *,
+        stores: Iterable[StoreRef],
+    ) -> DocumentReleaseRef:
+        """Save verified result bytes without requiring or advancing the current head."""
+
+        reference, _ = self._retain_result(staged, stores=stores)
+        return reference
+
+    def _retain_result(
+        self,
+        staged: ArtifactRef,
+        *,
+        stores: Iterable[StoreRef],
+    ) -> tuple[DocumentReleaseRef, DocumentRelease]:
+        with self._write_lock(staged.artifact_id):
+            artifact, release, resolved_locator = self._load_staged(staged)
+            if release.previous_release is not None:
+                self.audit(release.previous_release)
+            previous_store_id: str | None = None
+
+            def verified_store_values() -> Iterator[dict[str, Any]]:
+                nonlocal previous_store_id
+                for reference in stores:
+                    if previous_store_id is not None and reference.store_id <= previous_store_id:
+                        raise IntegrityError("catalog retention store references must be sorted and distinct")
+                    previous_store_id = reference.store_id
+                    store = self.stores.load(reference)
+                    if store.state != StoreState.SEALED:
+                        raise IntegrityError("catalog retention contains an unsealed document store")
+                    yield reference.to_dict()
+
+            if ordered_json_sequence_digest(verified_store_values()) != release.store_receipt_set_digest:
+                raise IntegrityError("catalog retention store receipt set differs from the release")
             locator = self._release_locator(artifact.pin.artifact_digest)
             new_reference = DocumentReleaseRef(
                 release.release_id,
                 locator,
                 artifact.pin.artifact_digest,
             )
-            if current == new_reference:
-                return new_reference
-            if current != expected_base:
-                raise StaleBaseError("document catalog current release differs from the expected base")
-            if release.previous_release != expected_base:
-                raise IntegrityError("document release lineage differs from the expected catalog base")
             staged_directory = _contained(self.root, resolved_locator).parent
             published_directory = _contained(
                 self.root,
@@ -418,7 +442,7 @@ class LocalManifestDocumentCatalog:
                 if published_directory.exists():
                     if published_directory.is_symlink() or not published_directory.is_dir():
                         raise IntegrityError("published derivation path is not a regular directory")
-                    self._open_artifact(new_reference)
+                    self.audit(new_reference)
                     shutil.rmtree(staged_directory)
                 else:
                     publish_directory_exclusive(
@@ -426,8 +450,49 @@ class LocalManifestDocumentCatalog:
                         staged_directory,
                         published_directory.relative_to(self.root).as_posix(),
                     )
+            # The exclusive rename publishes the directory already audited by
+            # _load_staged. Confirm its pin after publication without rescanning
+            # external data; any existing destination was audited above.
             self.open(new_reference)
-            self._write_current(new_reference)
-            return new_reference
-        finally:
-            lock.unlink(missing_ok=True)
+            return new_reference, release
+
+    def select(
+        self,
+        reference: DocumentReleaseRef,
+        *,
+        expected_current: DocumentReleaseRef | None,
+    ) -> DocumentReleaseRef:
+        """Select a verified result without changing its immutable input lineage.
+
+        The expected current head guards this choice; it need not be the result's
+        base. An already-selected exact reference is an idempotent success.
+        """
+
+        with self._write_lock(reference.release_id):
+            release = self.audit(reference)
+            if release.previous_release is not None:
+                self.audit(release.previous_release)
+            current = self.current()
+            if current == reference:
+                return reference
+            if current != expected_current:
+                raise StaleBaseError("document catalog current release differs from the expected current head")
+            self._write_current(reference)
+            return reference
+
+    def commit(
+        self,
+        staged: ArtifactRef,
+        *,
+        expected_base: DocumentReleaseRef | None,
+        stores: Iterable[StoreRef],
+    ) -> DocumentReleaseRef:
+        """Retain a verified result, then select it while its base remains current.
+
+        A stale selection leaves the retained result available by its exact pin.
+        """
+
+        reference, release = self._retain_result(staged, stores=stores)
+        if release.previous_release != expected_base:
+            raise IntegrityError("document release lineage differs from the expected catalog base")
+        return self.select(reference, expected_current=expected_base)

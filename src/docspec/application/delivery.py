@@ -35,7 +35,6 @@ class StoreDeliveryService:
         self._sinks = sinks
 
     def deliver_store(self, processed_document_store_ref: StoreRef, sink_ref: ArtifactRef) -> StoreRef:
-        self._controls.verify(sink_ref)
         sink_configuration = self._controls.load(sink_ref)
         if set(sink_configuration) != {"sinkId", "profileId"}:
             raise IntegrityError("result sink reference has an invalid closed configuration")

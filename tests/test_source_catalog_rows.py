@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -92,13 +91,12 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
     Pins jsonschema-rs to python-jsonschema on this schema: every row of a real
     built catalog, plus systematic mutations of one (each required key dropped,
     each top-level field type-flipped, an unknown key added), must get the same
-    accept/reject verdict from both engines -- and the gate's own error() must
+    accept/reject verdict from both engines -- and DocSpec's schema check must
     raise exactly when the authority rejects, with the authority's message.
     """
 
-    gate = catalog_schemas._ITEM_VALIDATOR
-    assert gate._fast is not None, "compiled validator failed to build for the item schema"
-    authority = gate._authority
+    compiled = catalog_schemas._ITEM_VALIDATOR
+    authority = catalog_schemas._ITEM_AUTHORITY
 
     source = FakeSource(
         description(),
@@ -112,10 +110,10 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
     assert rows
 
     def verdicts(value: object) -> tuple[bool, bool, bool]:
-        fast_ok = gate._fast.is_valid(value)
+        fast_ok = compiled.is_valid(value)
         authority_ok = not list(authority.iter_errors(value))
         try:
-            gate.error(value, "differential row")
+            catalog_schemas._verify_item_schema(value, "differential row")
             gate_ok = True
         except IntegrityError:
             gate_ok = False
@@ -137,59 +135,6 @@ def test_the_compiled_validator_and_the_authority_agree_on_real_and_mutated_rows
         fast_ok, authority_ok, gate_ok = verdicts(value)
         assert gate_ok == authority_ok, f"gate diverged from authority: {value!r:.120}"
         assert fast_ok == authority_ok, f"engines disagree (authority decides, but pin it): {value!r:.120}"
-
-
-def test_the_fast_canonical_writer_equals_the_rulespec_writer_on_its_guarded_domain(
-    tmp_path: Path,
-) -> None:
-    """The guard is the proof: ASCII keys + no floats => identical bytes.
-
-    Every projection record a real catalog produces must serialize identically
-    through the fast writer and the Rulespec writer, and the guard must route
-    out-of-domain values (non-ASCII keys, floats, non-BMP keys) to the Rulespec
-    writer rather than risk divergence. Unicode VALUES stay in-domain and must
-    still agree byte for byte.
-    """
-
-    from rulespec_artifacts import canonical_json_bytes
-
-    fast = framing.canonical_record_payload
-    from docspec.adapters.framing import is_fast_canonical_safe as safe
-
-    source = FakeSource(
-        description(),
-        (record("2026-00001"), record("2026-00002", malformed_rin=True)),
-        (*renditions("2026-00001"), *renditions("2026-00002")),
-    )
-    store, result = build(tmp_path, source)
-    reader = SourceCatalogArtifactReader(store, producer=producer())
-    reader.verify_snapshot(result.reference)
-    checked = 0
-    for item in reader.open_snapshot(result.reference).items:
-        item_dict = item.to_dict()
-        records: list[Mapping[str, Any]] = [
-            {"sourceItemId": item.source_item_id},
-            {"sourceItemId": item.source_item_id, "disposition": item.disposition.value},
-            {"sourceItemId": item.source_item_id, "reason": item.selection.reason},
-            catalog_digests._rendition_choice_record(item_dict),
-            *catalog_digests._normalized_field_records_for(item_dict),
-            *catalog_digests._joined_field_records_for(item_dict),
-            *catalog_digests._interpretation_records_for(item_dict),
-        ]
-        for value in records:
-            assert fast(value) == canonical_json_bytes(value)
-            checked += 1
-    assert checked > 20
-
-    unicode_value = {"text": "naïve — ünïcode ✓ \U0001f600", "nested": ["🚀", {"k": "é"}]}
-    assert safe(unicode_value)
-    assert fast(unicode_value) == canonical_json_bytes(unicode_value)
-
-    assert not safe({"naïve-key": 1})
-    assert not safe({"ok": [1, {"\U0001f600": 2}]})
-    assert not safe({"ok": 1.5})
-    non_bmp_keys = {"\U0001f600": 1, "\U0001f601": 2}
-    assert fast({"wrap": non_bmp_keys}) == canonical_json_bytes({"wrap": non_bmp_keys})
 
 
 def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(

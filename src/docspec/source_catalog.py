@@ -6,12 +6,17 @@ from docspec.adapters.source_catalog_store import (
     LocalSourceCatalogStore,
 )
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
+from docspec.application.supplied_records_catalog import SuppliedRecordCatalogPolicy
+from docspec.adapters.supplied_records import SuppliedRecordSource
+from docspec.adapters.spicy_docs_source_native import SpicyDocsSourceNativeAdapter, spicy_docs_source_profile
 from docspec.application.regulations_gov_catalog import (
     RegulationsGovCatalogPolicy,
     RegulationsGovSamplePolicy,
 )
 from docspec.adapters.catalog_artifact.reader import (
+    AdmittedSourceCatalog,
     SourceCatalogArtifactReader,
+    open_admitted_source_catalog,
 )
 from docspec.adapters.catalog_artifact.builder import (
     SourceCatalogBuildRequest,
@@ -36,6 +41,7 @@ from docspec.ports.source_catalog import (
     CatalogPolicyWorkspace,
     ImmutableSourceCatalogReader,
     LocatedSourceCatalogItem,
+    LocatedSourceCatalogMapping,
     SourceInputSelector,
     SourceCatalogPolicy,
     SourceCatalogCurrentPointer,
@@ -47,14 +53,19 @@ from docspec.ports.source_catalog import (
     SourceNativeRecordSource,
     SourceNativeRow,
 )
+from docspec.domain.source_outcomes import DEFAULT_ACCEPTED_RECORD_OUTCOMES, RECORD_OUTCOMES
 
 __all__ = [
+    "DEFAULT_ACCEPTED_RECORD_OUTCOMES",
+    "RECORD_OUTCOMES",
+    "AdmittedSourceCatalog",
     "CatalogPolicyInputs",
     "CatalogPolicyWorkspace",
     "CatalogDisposition",
     "FederalRegisterCatalogPolicy",
     "ImmutableSourceCatalogReader",
     "LocatedSourceCatalogItem",
+    "LocatedSourceCatalogMapping",
     "LocalSourceCatalogStore",
     "LocalSourceCatalogCurrentPointer",
     "RegulationsGovCatalogPolicy",
@@ -77,7 +88,12 @@ __all__ = [
     "SourceNativeDescription",
     "SourceNativeRecordSource",
     "SourceNativeRow",
+    "SpicyDocsSourceNativeAdapter",
+    "SuppliedRecordCatalogPolicy",
+    "SuppliedRecordSource",
     "requested_universe_set_digest",
     "selected_source_set_digest",
     "source_catalog_producer",
+    "open_admitted_source_catalog",
+    "spicy_docs_source_profile",
 ]

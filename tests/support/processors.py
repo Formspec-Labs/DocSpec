@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 from typing import Any
 
 from docspec.domain.content import DerivedRecord, ProcessorDisposition
 from docspec.domain.identity import canonical_json_bytes, identity_digest
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import (
     AcceptedFailurePolicy,
     DataUsePolicy,
@@ -51,11 +53,20 @@ class _CountingFetcher:
 
 
 class _CountingExtractor:
-    extractor_id = DefaultExtractorRegistry.extractor_id
-
-    def __init__(self) -> None:
-        self.delegate = DefaultExtractorRegistry()
+    def __init__(self, delegate=None) -> None:
+        self.delegate = DefaultExtractorRegistry() if delegate is None else delegate
         self.calls = 0
+
+    @property
+    def extractor_id(self):
+        return self.delegate.extractor_id
+
+    @property
+    def configuration_digest(self):
+        return self.delegate.configuration_digest
+
+    def selected_identity(self, captured):
+        return self.delegate.selected_identity(captured)
 
     def extract(self, source, content):
         self.calls += 1
@@ -63,11 +74,20 @@ class _CountingExtractor:
 
 
 class _CountingSegmenter:
-    segmenter_id = DefaultSegmenterRegistry.segmenter_id
-
-    def __init__(self) -> None:
-        self.delegate = DefaultSegmenterRegistry()
+    def __init__(self, delegate=None) -> None:
+        self.delegate = DefaultSegmenterRegistry() if delegate is None else delegate
         self.calls = 0
+
+    @property
+    def segmenter_id(self):
+        return self.delegate.segmenter_id
+
+    @property
+    def policy_digest(self):
+        return self.delegate.policy_digest
+
+    def selected_identity(self, representation):
+        return self.delegate.selected_identity(representation)
 
     def segment(self, representation):
         self.calls += 1
@@ -183,11 +203,7 @@ def _plan(
 ) -> ProcessingPlan:
     declared = ProcessorSet(tuple(item.description for item in processors))
     processor_set = ProcessorSet(declared.execution_order)
-    stages = StagePolicy(
-        (DefaultExtractorRegistry.extractor_id,),
-        DefaultSegmenterRegistry.segmenter_id,
-        tuple(item.processor_id for item in processor_set.execution_order),
-    )
+    stages = stage_policy(processor_ids=tuple(item.processor_id for item in processor_set.execution_order))
     return ProcessingPlan.create(
         source_catalog=source,
         base_release=base,

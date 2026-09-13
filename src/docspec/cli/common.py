@@ -86,8 +86,6 @@ def _write_new(path: Path, payload: bytes, *, label: str) -> None:
 def _write_failure_receipt(args: argparse.Namespace, error: Exception) -> None:
     """Best-effort write-once failure evidence for mutating operator commands."""
 
-    if getattr(args, "_suppress_failure_receipt", False):
-        return
     receipt_value = getattr(args, "receipt", None)
     if receipt_value is None:
         return
@@ -121,9 +119,6 @@ def _write_failure_receipt(args: argparse.Namespace, error: Exception) -> None:
         "diagnosticCode": f"DOCSPEC-CLI-{type(error).__name__.upper()}",
         "verdict": "failed",
     }
-    blob_store_evidence = getattr(args, "_source_catalog_blob_store_evidence", None)
-    if blob_store_evidence is not None:
-        content["blobStore"] = blob_store_evidence
     receipt = {
         "format": "docspec-operation-failure-receipt",
         "formatVersion": "1.0",
@@ -235,7 +230,6 @@ def _load_receipt_value(
     controls = object.__new__(LocalJsonControlRepository)
     controls.root = _existing_root(control_root, label="control repository root")
     controls.max_artifact_bytes = _MAX_JSON_BYTES
-    controls.verify(reference)
     return parser(controls.load(reference))
 
 

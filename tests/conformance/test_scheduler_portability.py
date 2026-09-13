@@ -1,38 +1,36 @@
 
 from __future__ import annotations
 
+from docspec.runtime import stage_policy
+
 import importlib
 import json
 import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from docspec.adapters.execution import ExternalExecutionBackend
 from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.cli import main
 from docspec.domain.content import SourceItem, SourceItemState
-from docspec.domain.execution import ExecutionHandoff, ExecutionProfile, StoreTask, StoreTaskResult, iter_store_tasks
+from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult, iter_store_tasks
 from docspec.domain.identity import canonical_json_file_bytes
 from docspec.domain.jobs import StoreState
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
+from docspec.domain.plans import ProcessingPlan, WorkLimits
 from docspec.domain.policies import AcceptedFailurePolicy, DataUsePolicy, RetentionPolicy, RetryPolicy
 from docspec.domain.processors import ProcessorSet
 from docspec.domain.receipts import RunReceipt
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
-from docspec.processing.extraction import DefaultExtractorRegistry
-from docspec.processing.segmentation import DefaultSegmenterRegistry
 from tests import helpers as _helpers
 from tests.support import cli as _cli_helpers
 from tests.support import incremental as _equivalence
@@ -66,8 +64,8 @@ class _Arm:
         return LocalDocumentStoreRepository(Path(self.roots["documentStores"]))
 
     @property
-    def records(self) -> LocalJsonlRecordStorage:
-        return LocalJsonlRecordStorage(Path(self.roots["recordStorage"]))
+    def records(self) -> LocalParquetRecordStorage:
+        return LocalParquetRecordStorage(Path(self.roots["recordStorage"]))
 
     @property
     def catalog(self) -> LocalManifestDocumentCatalog:
@@ -121,10 +119,7 @@ def _seed(root: Path) -> _Arm:
         base_release=None,
         profiles=_portable_local_profiles(),
         limits=WorkLimits(1, 1024 * 1024, 10, 10, 100, 1024 * 1024, 60, retry.max_attempts),
-        stages=StagePolicy(
-            (DefaultExtractorRegistry.extractor_id,),
-            DefaultSegmenterRegistry.segmenter_id,
-        ),
+        stages=stage_policy(),
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},
@@ -280,23 +275,6 @@ def _execute_task_in_subprocess(arm: _Arm, handoff_reference: ArtifactRef, task:
     return destination.read_bytes()
 
 
-class _SubprocessDispatcher:
-    """Deployment-owned dispatcher over the public serialized task seam."""
-
-    def __init__(self, arm: _Arm, handoff_reference: ArtifactRef) -> None:
-        self._arm = arm
-        self._handoff_reference = handoff_reference
-
-    def dispatch(self, *, handoff: bytes, tasks: Iterable[bytes]) -> tuple[bytes, ...]:
-        restored_handoff = ExecutionHandoff.from_bytes(handoff)
-        restored_tasks = tuple(StoreTask.from_bytes(payload) for payload in tasks)
-        assert restored_handoff.handoff_id == self._handoff_reference.artifact_id
-        return tuple(
-            _execute_task_in_subprocess(self._arm, self._handoff_reference, task, f"external-{index}")
-            for index, task in reversed(tuple(enumerate(restored_tasks)))
-        )
-
-
 def _reconcile(arm: _Arm, handoff_reference: ArtifactRef, results_path: Path) -> tuple[ArtifactRef, Path]:
     reconcile_request = arm.root / "reconcile-request.json"
     reconcile_request.write_bytes(
@@ -344,18 +322,14 @@ def _capture_outcome(
     )
 
 
-def _run_external_backend(
+def _run_subprocess_tasks(
     arm: _Arm,
 ) -> tuple[ArtifactRef, DocumentReleaseRef, tuple[StoreTaskResult, ...]]:
-    _, handoff_reference, handoff, tasks = _prepare_handoff(arm)
-    profile = ExecutionProfile.from_dict(arm.controls.load(handoff.execution_profile))
-    backend = ExternalExecutionBackend(
-        profile,
-        _SubprocessDispatcher(arm, handoff_reference),
-        profile_reference=handoff.execution_profile,
-        controls=arm.controls,
+    _, handoff_reference, _, tasks = _prepare_handoff(arm)
+    results = tuple(
+        StoreTaskResult.from_bytes(_execute_task_in_subprocess(arm, handoff_reference, task, f"external-{index}"))
+        for index, task in reversed(tuple(enumerate(tasks)))
     )
-    results = tuple(backend.execute(handoff, tasks))
     replayed = StoreTaskResult.from_bytes(_execute_task_in_subprocess(arm, handoff_reference, tasks[0], "replay"))
     assert replayed == next(result for result in results if result.task == tasks[0])
 
@@ -467,7 +441,7 @@ def test_serialized_tasks_cross_a_real_process_boundary_and_match_the_local_back
     local = _seed(tmp_path / "local")
     external = _seed(tmp_path / "external")
     local_run_ref, local_release = _run_local_backend(local)
-    run_reference, external_release, results = _run_external_backend(external)
+    run_reference, external_release, results = _run_subprocess_tasks(external)
     assert len(results) == 2
 
     _assert_equivalent(
@@ -493,7 +467,7 @@ def test_native_dagster_executes_the_real_graph_and_matches_local_and_external_r
     shutil.rmtree(root)
 
     external = _seed(root)
-    external_run_reference, external_release, external_results = _run_external_backend(external)
+    external_run_reference, external_release, external_results = _run_subprocess_tasks(external)
     assert len(external_results) == 2
     assert _capture_outcome(external, external_run_reference, external_release) == expected
     shutil.rmtree(root)

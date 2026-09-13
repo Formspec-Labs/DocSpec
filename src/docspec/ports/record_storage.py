@@ -25,6 +25,15 @@ class RecordStorage(Protocol):
 
     def verify(self, reference: LayerRef) -> None: ...
 
+    def verify_members(self, reference: LayerRef) -> None:
+        """Freshly check pinned physical files before a group of logical reads.
+
+        Reads check the root and consumed rows. They do not repeat full-file
+        hashes on every query. Callers admit immutable members once per owned
+        reader lifetime; ``verify`` always performs a fresh complete audit.
+        """
+        ...
+
     def stream(
         self,
         reference: LayerRef,

@@ -106,35 +106,6 @@ class LocalSourceCatalogPublication:
         finally:
             os.close(selected.descriptor)
 
-    def write_file(self, name: str, payload: bytes) -> None:
-        if len(Path(name).parts) != 1 or name in {"", ".", ".."}:
-            raise ValueError("source-catalog root member must use one safe path component")
-        flags = (
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0)
-        )
-        try:
-            descriptor = os.open(name, flags, 0o600, dir_fd=self._session.descriptor)
-        except FileExistsError as error:
-            raise IntegrityError(
-                f"refusing to replace source-catalog root member: {name}"
-            ) from error
-        try:
-            with os.fdopen(descriptor, "wb") as stream:
-                stream.write(payload)
-                stream.flush()
-                os.fsync(stream.fileno())
-            _sync_directory_descriptor(self._session)
-        except BaseException:
-            try:
-                os.unlink(name, dir_fd=self._session.descriptor)
-            except FileNotFoundError:
-                pass
-            raise
-
     def publish(self) -> None:
         if self._published:
             raise IntegrityError("source-catalog destination is already published")

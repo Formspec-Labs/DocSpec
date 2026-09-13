@@ -1,5 +1,13 @@
 # Decision 0001: DocumentRelease 2.0 — reconciliation and the text-member extension
 
+> **Retired September 12, 2026.** The owner explicitly removed legacy consumer
+> compatibility and historical byte-for-byte reproduction from the requirements.
+> [Result exports](../result-exports.md) now publish retained active datasets
+> through Rulespec's shared container. The campaign-specific builder, verifier,
+> floor calibration and exclusive schemas/fixtures are removed. The original
+> dated decision below and its mint receipts remain historical evidence, not
+> instructions for current implementation.
+
 - Date: 2026-08-30
 - Status: accepted for local implementation. **Three releases have since been
   minted locally** under this decision's own identity scheme — receipts at

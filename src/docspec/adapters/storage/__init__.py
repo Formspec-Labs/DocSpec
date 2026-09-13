@@ -8,14 +8,14 @@ from docspec.adapters.storage.catalog import (
 from docspec.adapters.storage.controls import LocalJsonControlRepository as LocalJsonControlRepository
 from docspec.adapters.storage.files import publish_directory_exclusive as publish_directory_exclusive
 from docspec.adapters.storage.files import sha256_file as sha256_file
-from docspec.adapters.storage.records import LocalJsonlRecordStorage as LocalJsonlRecordStorage
+from docspec.adapters.storage.records import LocalParquetRecordStorage as LocalParquetRecordStorage
 from docspec.adapters.storage.stores import LocalDocumentStoreRepository as LocalDocumentStoreRepository
 
 __all__ = [
     "LocalContentAddressedBlobStore",
     "LocalDocumentStoreRepository",
     "LocalJsonControlRepository",
-    "LocalJsonlRecordStorage",
+    "LocalParquetRecordStorage",
     "LocalManifestDocumentCatalog",
     "RootOnlyBlobProfileStateReachability",
     "publish_directory_exclusive",

@@ -29,10 +29,12 @@ class MemoryControls:
         return reference
 
     def load(self, reference: ArtifactRef) -> dict:
-        return self.values[reference.locator]
+        value = self.values[reference.locator]
+        assert sha256_digest(canonical_json_file_bytes(value)) == reference.digest
+        return value
 
     def verify(self, reference: ArtifactRef) -> None:
-        assert sha256_digest(canonical_json_file_bytes(self.load(reference))) == reference.digest
+        self.load(reference)
 
 
 @dataclass
@@ -99,6 +101,9 @@ class MemorySourceCatalog:
                 {
                     "logicalId": "urn:test:source-native",
                     "artifactDigest": reference.digest,
+                    "sourceSystemId": "urn:test:source-native", "sourceSystemVersion": "1",
+                    "sourceStateScope": "complete-snapshot", "sourceStateDigest": reference.digest,
+                    "sourceNativeSchemaSetDigest": reference.digest, "collectionOutcome": None,
                 },
             ),
             byte_measurements={

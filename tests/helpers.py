@@ -23,7 +23,6 @@ from docspec.domain.content import CandidateFile, SourceItem, SourceItemState
 from docspec.domain.execution import (
     EXECUTE_AND_DELIVER_OPERATION_ID,
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     StoreTaskResult,
     iter_store_tasks,
@@ -36,7 +35,7 @@ from docspec.domain.identity import (
     sha256_digest,
     stable_urn,
 )
-from docspec.domain.policies import DataUsePolicy, RetentionPolicy
+from docspec.domain.policies import DataUsePolicy
 from docspec.domain.processors import ProcessorPayload, ProcessorRecordRef, ProcessorRequest
 from docspec.domain.profiles import ProfilePin, ProfileRole, ProfileSet
 from docspec.domain.references import ArtifactRef, DocumentReleaseRef, LayerRef, SourceCatalogRef, StoreRef
@@ -61,7 +60,6 @@ from docspec.ports.source_catalog import (
 
 EMPTY_DIGEST = sha256_digest(b"")
 DATA_USE_POLICY = DataUsePolicy.local_content()
-RETENTION_POLICY = RetentionPolicy.retain_all()
 TASK_RESULT_SCHEMA = RecordSchema(
     "docspec-store-task-result-record/1.0",
     ("recordId", "sourceItemId", "result"),
@@ -356,8 +354,15 @@ def source_catalog_reader(root: Path) -> SourceCatalogArtifactReader:
 class SharedFixtureContentFetcher:
     """Resolve the shared test HTTPS namespace through an injected local reader."""
 
+    downloader_id = "docspec.test.shared-fixture-content-fetcher.v1"
+
     def __init__(self, root: Path) -> None:
         self._local = LocalFileContentFetcher(root)
+        self.configuration_digest = identity_digest({
+            "implementationId": self.downloader_id,
+            "sourceOrigin": _FIXTURE_SOURCE_ORIGIN,
+            "localConfigurationDigest": self._local.configuration_digest,
+        })
 
     def fetch(self, candidate: CandidateFile, **kwargs):  # type: ignore[no-untyped-def]
         parsed = urlsplit(candidate.locator)
@@ -366,7 +371,12 @@ class SharedFixtureContentFetcher:
         local = replace(candidate, locator=unquote(parsed.path.lstrip("/")))
         result = self._local.fetch(local, **kwargs)
         return FetchStream(
-            replace(result.metadata, transport_version=candidate.transport_version),
+            replace(
+                result.metadata,
+                downloader_id=self.downloader_id,
+                downloader_configuration_digest=self.configuration_digest,
+                transport_version=candidate.transport_version,
+            ),
             result.chunks,
             result.close_callback,
         )
@@ -409,8 +419,8 @@ def local_profile_set(*, result_profile_id: str = "urn:docspec:profile:result-de
             "docspec.document-catalog.local-manifest.v1",
         ),
         ProfileRole.RECORD_STORAGE: (
-            "urn:docspec:profile:record-storage:local-jsonl:1",
-            "docspec.record-storage.local-jsonl.v1",
+            "urn:docspec:profile:record-storage:local-parquet:1",
+            "docspec.record-storage.local-parquet.v1",
         ),
         ProfileRole.BLOB_STORAGE: (
             "urn:docspec:profile:blob-storage:local-content-addressed:1",
@@ -460,17 +470,9 @@ def persist_execution_evidence(
         artifact_id="urn:docspec:test:worker-composition",
         value={"implementationId": "tests.worker/v1"},
     )
-    scheduler = controls.put(
-        kind="scheduler-configurations",
-        artifact_id="urn:docspec:test:scheduler-configuration",
-        value={"adapterId": "docspec.local-threaded"},
-    )
     profile = ExecutionProfile(
-        "docspec.local-threaded",
-        "1.0.0",
         worker,
-        scheduler,
-        ExecutionLimits(1, 1, 1, 1024**3, 1024**3, 100, 1, 1, 0, 0),
+        1024**3,
         2_000_000_000,
     )
     profile_ref = controls.put(

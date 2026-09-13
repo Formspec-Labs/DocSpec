@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<billStatus>
+  <version>3.0.0</version>
+  <bill>
+    <congress>119</congress><type>HR</type><number>6028</number>
+    <title>Synthetic public access example</title>
+    <originChamber>House</originChamber>
+    <introducedDate>2026-01-01</introducedDate>
+    <updateDate>2026-06-08T12:00:00Z</updateDate>
+    <textVersions>
+      <item>
+        <type>Engrossed in House</type><date>2026-06-08T04:00:00Z</date>
+        <formats>
+          <item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr6028eh/xml/BILLS-119hr6028eh.xml</url><type>XML</type></item>
+          <item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr6028eh/html/BILLS-119hr6028eh.htm</url><type>Formatted Text</type></item>
+          <item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr6028eh/pdf/BILLS-119hr6028eh.pdf</url><type>PDF</type></item>
+        </formats>
+      </item>
+      <item>
+        <type>Introduced in House</type><date>2026-01-01T04:00:00Z</date>
+        <formats>
+          <item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr6028ih/xml/BILLS-119hr6028ih.xml</url><type>XML</type></item>
+          <item><url>https://www.govinfo.gov/content/pkg/BILLS-119hr6028ih/pdf/BILLS-119hr6028ih.pdf</url><type>PDF</type></item>
+        </formats>
+      </item>
+    </textVersions>
+  </bill>
+</billStatus>

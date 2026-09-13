@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 _portable_local_profiles = _cli_helpers._portable_local_profiles
 
-PROFILE_ROOT = ROOT / "profiles"
+PROFILE_ROOT = ROOT / "src" / "docspec" / "storage_profiles"
 # Identity-bearing description fields: changing any one must change the
 # description digest a plan pins, or a deployment could swap executable
 # behavior under an existing pin.
@@ -30,7 +30,6 @@ _IDENTITY_FIELDS = (
     "capabilities",
     "compatibility",
     "configuration",
-    "governancePolicies",
     "implementationId",
     "implementationModule",
     "limits",
@@ -59,7 +58,8 @@ def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable
         assert all(component.isdigit() for component in (major, minor, patch))
         assert description.configuration_digest == identity_digest(description.configuration)
         assert description.capabilities == tuple(sorted(description.capabilities))
-        assert description.capabilities and description.limits
+        assert description.capabilities
+        assert isinstance(description.limits, dict)
         assert registered.description_digest.startswith("sha256:")
 
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -76,19 +76,6 @@ def test_every_description_on_disk_is_closed_versioned_digest_pinned_and_capable
         drifted = tmp_path / f"drifted-{path.name}"
         drifted.write_text(json.dumps(drifted_value), encoding="utf-8")
         assert ProfileRegistry.from_file(drifted).description_digest != registered.description_digest
-
-        evidence_value = json.loads(path.read_text(encoding="utf-8"))
-        evidence_value["verifier"] = {
-            "status": "partial" if value["verifier"]["status"] == "implemented" else "implemented",
-            "testId": value["verifier"]["testId"],
-        }
-        evidence = tmp_path / f"evidence-{path.name}"
-        evidence.write_text(json.dumps(evidence_value), encoding="utf-8")
-        flipped = ProfileRegistry.from_file(evidence)
-        assert flipped.description_digest == registered.description_digest
-        assert flipped.description.pin(description_digest=flipped.description_digest) == description.pin(
-            description_digest=registered.description_digest
-        )
 
 def test_unpinned_descriptions_are_rejected_at_load(tmp_path: Path) -> None:
     for path in _storage_profile_paths():

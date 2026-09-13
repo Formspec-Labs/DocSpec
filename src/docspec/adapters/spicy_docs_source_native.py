@@ -1,8 +1,8 @@
 """Read source-native artifacts through the installed SpicyDocs reader.
 
-The package stays optional and is loaded only at this adapter boundary. Artifact
-producer labels are independent of the reader package: pinned releases from
-both accepted producers remain readable through the current SpicyDocs owner.
+The package stays optional and is loaded only at this adapter boundary. This
+adapter selects the current SpicyDocs producer; the installed reader admits
+the caller's pinned release under its independently accepted verifier identity.
 """
 
 from __future__ import annotations
@@ -18,10 +18,7 @@ from rulespec_artifacts import ArtifactPin, LocalBlobSource, LocalMemberSource, 
 from docspec.errors import DocSpecError, IntegrityError
 from docspec.ports.source_catalog import SourceNativeDescription
 
-#: Producer products DocSpec's source-native adapter accepts. A reader module
-#: whose SUPPORTED_PRODUCER_PRODUCTS is missing or a strict subset of this set
-#: is refused: it would silently hard-refuse releases from the other producer.
-ACCEPTED_PRODUCER_PRODUCTS: frozenset[str] = frozenset({"spicy-regs", "spicy-docs"})
+ACCEPTED_PRODUCER_PRODUCT = "spicy-docs"
 
 
 class SourceNativeReaderError(RuntimeError, DocSpecError):
@@ -41,14 +38,13 @@ def _resolve_producer_module(module_name: str) -> ModuleType:
         ) from error
 
 
-def _require_accepted_reader(module: ModuleType) -> ModuleType:
-    """Refuse a reader module that cannot serve every accepted producer product."""
+def _require_current_reader(module: ModuleType) -> ModuleType:
+    """Require the selected current producer without a predecessor fallback."""
 
-    supported = getattr(module, "SUPPORTED_PRODUCER_PRODUCTS", None)
-    if supported is None or not ACCEPTED_PRODUCER_PRODUCTS.issubset(supported):
+    if getattr(module, "CURRENT_PRODUCER_PRODUCT", None) != ACCEPTED_PRODUCER_PRODUCT:
         raise SourceNativeReaderError(
-            f"{module.__name__} does not declare SUPPORTED_PRODUCER_PRODUCTS covering "
-            f"{sorted(ACCEPTED_PRODUCER_PRODUCTS)}"
+            f"{module.__name__} does not declare CURRENT_PRODUCER_PRODUCT "
+            f"{ACCEPTED_PRODUCER_PRODUCT!r}"
         )
     return module
 
@@ -80,7 +76,7 @@ class SpicyDocsSourceNativeAdapter:
         expected_pin: ArtifactPin | None,
         accepted_verifier_implementation_ids: frozenset[str],
     ) -> None:
-        module = _require_accepted_reader(_resolve_producer_module("source_native"))
+        module = _require_current_reader(_resolve_producer_module("source_native"))
         reader_type = getattr(module, "SourceNativeReleaseReader", None)
         if reader_type is None:
             raise SourceNativeReaderError(f"{module.__name__} has no SourceNativeReleaseReader")
@@ -90,6 +86,22 @@ class SpicyDocsSourceNativeAdapter:
             profile=profile,
             expected_pin=expected_pin,
             accepted_verifier_implementation_ids=accepted_verifier_implementation_ids,
+        )
+        outcome = getattr(self._reader, "collection_outcome", None)
+        if not isinstance(outcome, Mapping) or not all(
+            callable(getattr(self._reader, name, None))
+            for name in ("record_evidence", "iter_failures", "read_evidence")
+        ):
+            raise SourceNativeReaderError("the installed spicy-docs reader lacks the required public collection outcome API")
+        self._description = SourceNativeDescription(
+            logical_id=self._reader.pin.logical_id,
+            artifact_digest=self._reader.pin.artifact_digest,
+            source_system_id=self._reader.source_system_id,
+            source_system_version=self._reader.source_system_version,
+            source_state_scope=self._reader.source_state_scope,
+            source_state_digest=self._reader.source_state_digest,
+            source_native_schema_set_digest=self._reader.source_native_schema_set_digest,
+            collection_outcome=outcome,
         )
 
     @classmethod
@@ -115,15 +127,19 @@ class SpicyDocsSourceNativeAdapter:
         return adapter
 
     def describe(self) -> SourceNativeDescription:
-        return SourceNativeDescription(
-            logical_id=self._reader.pin.logical_id,
-            artifact_digest=self._reader.pin.artifact_digest,
-            source_system_id=self._reader.source_system_id,
-            source_system_version=self._reader.source_system_version,
-            source_state_scope=self._reader.source_state_scope,
-            source_state_digest=self._reader.source_state_digest,
-            source_native_schema_set_digest=self._reader.source_native_schema_set_digest,
-        )
+        return self._description
+
+    def record_evidence(self, source_record_id: str) -> Mapping[str, Any] | None:
+        """Read the provider's admitted observation for one published record."""
+        return self._reader.record_evidence(source_record_id)
+
+    def iter_failures(self, *, limit: int = 100) -> Iterator[Mapping[str, Any]]:
+        """Stream at most limit provider record rejections; IDs may be placeholders."""
+        yield from self._reader.iter_failures(limit=limit)
+
+    def read_evidence(self, blob_ref: str, *, max_bytes: int) -> bytes:
+        """Read bounded original provider evidence with its own membership checks."""
+        return self._reader.read_evidence(blob_ref, max_bytes=max_bytes)
 
     def iter_records(self) -> Iterator[Mapping[str, Any]]:
         yield from self._reader.iter_records()

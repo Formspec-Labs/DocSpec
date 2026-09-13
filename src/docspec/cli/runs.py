@@ -6,14 +6,16 @@ import argparse
 import time
 from collections import Counter
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from docspec.cli.common import _require_new_output_paths, _write_artifact_and_receipt
-from docspec.cli.execution import _execute_local_task, _reconcile_local_run, run_local
-from docspec.cli.local import _compose_local_run, _load_prepared_local_run, _prepare_local_run
-from docspec.cli.requests import _absolute_request_path, _local_run_request, _local_storage_for_run_request
+from docspec.runtime import prepare_local_run
+from docspec.cli.requests import (
+    _absolute_request_path, _local_run_arguments, _local_run_request,
+)
 from docspec.cli_io import (
     CliError,
 )
@@ -33,20 +35,23 @@ from docspec.domain.identity import (
 )
 from docspec.domain.jobs import StoreState, StoreVerdict
 from docspec.domain.references import ArtifactRef
+from docspec.domain.profiles import ProfileRole
+from docspec.runtime.storage import _local_profiles, _local_stores
+from docspec.runtime.composition import _verify_plan_policies
 
 
 def _cmd_local_run_prepare(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     request = _local_run_request(args.request)
-    prepared = _prepare_local_run(_compose_local_run(request), resume=False)
-    receipt = _write_artifact_and_receipt(
-        operation="run.prepare",
-        request_path=args.request,
-        destination=args.destination,
-        receipt_path=args.receipt,
-        artifact_id=prepared.handoff_ref.artifact_id,
-        payload=canonical_json_file_bytes(prepared.handoff_ref.to_dict()),
-    )
+    with prepare_local_run(**_local_run_arguments(request), resume=False) as prepared:
+        receipt = _write_artifact_and_receipt(
+            operation="run.prepare",
+            request_path=args.request,
+            destination=args.destination,
+            receipt_path=args.receipt,
+            artifact_id=prepared.handoff_ref.artifact_id,
+            payload=canonical_json_file_bytes(prepared.handoff_ref.to_dict()),
+        )
     _emit(receipt)
     return 0
 
@@ -68,11 +73,10 @@ def _local_task_request(path: Path) -> tuple[Path, ArtifactRef, StoreTask]:
 def _cmd_local_task_execute(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     run_request_path, handoff_ref, task = _local_task_request(args.request)
-    composition = _compose_local_run(_local_run_request(run_request_path))
-    prepared = _load_prepared_local_run(composition, handoff_ref)
-    if time.time() >= prepared.execution_profile.deadline_epoch_seconds:
-        raise CliError("execution profile deadline has expired")
-    result = _execute_local_task(composition, prepared, task)
+    with prepare_local_run(
+        **_local_run_arguments(_local_run_request(run_request_path)), handoff_ref=handoff_ref,
+    ) as prepared:
+        result = prepared.execute_task(prepared.handoff, task)
     receipt = _write_artifact_and_receipt(
         operation="task.execute",
         request_path=args.request,
@@ -116,13 +120,11 @@ def _iter_task_result_file(path: Path) -> Iterator[StoreTaskResult]:
 def _cmd_local_run_reconcile(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
     run_request_path, handoff_ref, results_path = _local_reconcile_request(args.request)
-    composition = _compose_local_run(_local_run_request(run_request_path))
-    prepared = _load_prepared_local_run(composition, handoff_ref)
-    reference = _reconcile_local_run(
-        composition,
-        prepared,
-        _iter_task_result_file(results_path),
-    )
+    with prepare_local_run(
+        **_local_run_arguments(_local_run_request(run_request_path)), handoff_ref=handoff_ref,
+    ) as prepared:
+        with closing(_iter_task_result_file(results_path)) as results:
+            reference = prepared.reconcile(results)
     receipt = _write_artifact_and_receipt(
         operation="run.reconcile",
         request_path=args.request,
@@ -137,7 +139,9 @@ def _cmd_local_run_reconcile(args: argparse.Namespace) -> int:
 
 def _cmd_local_run(args: argparse.Namespace) -> int:
     _require_new_output_paths(args.destination, args.receipt)
-    reference = run_local(args.request, resume=args.operation == "run.resume")
+    reference = prepare_local_run(
+        **_local_run_arguments(_local_run_request(args.request)), resume=args.operation == "run.resume",
+    ).run()
     receipt = _write_artifact_and_receipt(
         operation=args.operation,
         request_path=args.request,
@@ -155,63 +159,29 @@ def _instant_from_epoch(value: float) -> str:
 
 
 def _cmd_run_active(args: argparse.Namespace) -> int:
-    """Report bounded, honest progress for a run that has not finished.
+    """Observe current saved jobs; filesystem mtimes indicate liveness only.
 
-    `run.status` (below) verifies and summarizes a sealed `RunReceipt` --
-    a post-hoc artifact that exists only once `run.reconcile` has produced
-    one, and it always describes a *completed* run. This command answers the
-    question a still-running or crashed run cannot otherwise answer: what
-    remains, what failed, and has progress stopped. It is a read-only
-    projection over state the run's own machinery already wrote; it writes
-    nothing, seals nothing, and must never become a second run ledger --
-    the sealed `RunReceipt` stays the only sealed evidence a run produces.
-
-    It reads exactly what `_prepare_local_run` and `RunReconciler` already
-    read to resume or finish a run: `has_planned_store_ledger` /
-    `planned_store_ledger` / `stream_planned_stores` name the complete,
-    exact planned population (`run prepare` seals `expected_task_count` and
-    `task_set_digest` against this same ledger, so its `record_count` is
-    already the run's total task count -- there is no separate handoff to
-    load). For each planned store this then loads only that store's *latest
-    saved revision*, the same revision `execute_store` and `deliver_store`
-    read and extend as a run proceeds, so a store's current `state`
-    (planned/running/sealed) and its entries' checkpointed progress are read
-    exactly as they stand right now, however far the run got.
-
-    No domain object carries a wall-clock progress timestamp: every instant
-    a run persists (`CapturedFile.acquired_at`, a `DeliveryReceipt`'s
-    `completed_at`) is the run request's single fixed `completedAt` value,
-    held constant across an entire run so its outputs stay reproducible --
-    it cannot say how long a store has gone untouched. The filesystem mtime
-    of a store's latest saved revision is the only wall-clock signal this
-    repository actually has (`LocalDocumentStoreRepository.latest_with_observed_at`),
-    so "last observed progress" and "stalled" are derived from it, read-only,
-    never written or sealed anywhere.
-
-    Bounded memory: `stream_planned_stores` yields one `StoreRef` at a time
-    (O(1) held per store). For each, `latest_with_observed_at` performs one
-    directory listing bounded by *that store's own* revision count (in turn
-    bounded by the plan's `WorkLimits.max_entries` and the stages each entry
-    passes through, not by the run's total store count) and one JSON read
-    bounded by the repository's own `max_revision_bytes`. Every result folds
-    into fixed-cardinality counters: store state (3 values), store verdict
-    (3 values), entry disposition (6 values), and failure signature (class x
-    diagnostic code -- `_failure()` builds every diagnostic code from only
-    `{stage, exception type name}`, a small closed vocabulary, never from a
-    per-item identifier), plus a `--stalled-sample-limit`-capped sample list.
-    Peak additional memory is therefore one `DocumentStore` in flight (itself
-    bounded by the plan's own limits) plus those fixed-size counters --
-    independent of how many stores the run plans in total, satisfying
-    Spec section 10.2's bar against holding every item in one graph.
+    This is a non-atomic read of each store's latest revision. Fixed evidence
+    timestamps cannot establish elapsed execution time. Failed attempt records
+    remain visible even when a later retry succeeds. Detailed artifact and
+    result questions use the shared inspection API.
     """
-
-    _request, plan, _controls, stores, _records, _blobs, _catalog = _local_storage_for_run_request(args.request)
+    if min(args.stalled_after_seconds, args.stalled_sample_limit, args.failure_sample_limit) < 0:
+        raise CliError("observation limits must be non-negative")
+    arguments = _local_run_arguments(_local_run_request(args.request))
+    plan, workspace = arguments["plan"], arguments["workspace"]
+    _verify_plan_policies(plan, arguments["retry_policy"], arguments["accepted_failure_policy"])
+    profiles = _local_profiles(plan, workspace)
+    root = workspace.roots["documentStores"]
+    stores = None if not root.exists() and not root.is_symlink() else _local_stores(
+        root, profiles[ProfileRole.DOCUMENT_STORE], create=False,
+    )
     generated_at = _instant_from_epoch(time.time())
-    if not stores.has_planned_store_ledger(plan.plan_id):
+    if stores is None or not stores.has_planned_store_ledger(plan.plan_id):
         _emit(
             {
                 "format": "docspec-run-active-view",
-                "formatVersion": "1.0",
+                "formatVersion": "2.0",
                 "planId": plan.plan_id,
                 "phase": "not-planned",
                 "generatedAt": generated_at,
@@ -224,6 +194,8 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
     verdict_counts: Counter[str] = Counter()
     disposition_counts: Counter[str] = Counter()
     failure_counts: Counter[str] = Counter()
+    failure_class_counts: Counter[str] = Counter()
+    unsampled_failures = 0
     entry_total = 0
     entry_terminal = 0
     failure_total = 0
@@ -242,6 +214,8 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
             raise CliError(f"planned store {planned_reference.store_id!r} has no saved revision")
         latest_reference, observed_at = resolved
         store = stores.load(latest_reference)
+        if store.plan_id != plan.plan_id:
+            raise CliError("observed store differs from the processing plan")
         store_state_counts[store.state.value] += 1
         if store.state is not StoreState.PLANNED and (last_observed_at is None or observed_at > last_observed_at):
             last_observed_at = observed_at
@@ -272,7 +246,12 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
                 produced_entries += 1
             for failure in entry.failures:
                 failure_total += 1
-                failure_counts[f"{failure.failure_class.value}:{failure.diagnostic_code}"] += 1
+                failure_class_counts[failure.failure_class.value] += 1
+                signature = f"{failure.failure_class.value}:{failure.diagnostic_code}"
+                if signature in failure_counts or len(failure_counts) < args.failure_sample_limit:
+                    failure_counts[signature] += 1
+                else:
+                    unsampled_failures += 1
 
     planned_count = store_state_counts[StoreState.PLANNED.value]
     running_count = store_state_counts[StoreState.RUNNING.value]
@@ -293,7 +272,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
     _emit(
         {
             "format": "docspec-run-active-view",
-            "formatVersion": "1.0",
+            "formatVersion": "2.0",
             "planId": plan.plan_id,
             "phase": "planned",
             "generatedAt": generated_at,
@@ -316,7 +295,7 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
                 "byDisposition": dict(sorted(disposition_counts.items())),
                 "acquisition": {
                     "capturedEntries": captured_entries,
-                    "newlyCapturedBytes": captured_bytes,
+                    "capturedBytes": captured_bytes,
                 },
                 "processing": {
                     "producedEntries": produced_entries,
@@ -325,6 +304,9 @@ def _cmd_run_active(args: argparse.Namespace) -> int:
             "failures": {
                 "totalRecords": failure_total,
                 "byClassAndDiagnosticCode": dict(sorted(failure_counts.items())),
+                "byClass": dict(sorted(failure_class_counts.items())),
+                "unsampledRecordCount": unsampled_failures,
+                "diagnosticSampleTruncated": unsampled_failures > 0,
             },
             "progress": progress,
             "verificationScope": "planned-store-ledger-and-latest-saved-revisions",

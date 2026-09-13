@@ -39,7 +39,7 @@ from docspec.ports.source_catalog import (
     SourceNativeDescription,
 )
 
-_RENDITION_ORDER = ("body_html_url", "html_url", "pdf_url")
+_RENDITION_ORDER = ("full_text_xml_url", "body_html_url", "html_url", "pdf_url")
 _NORMALIZED_FIELDS = (
     "title",
     "agencies",
@@ -116,7 +116,7 @@ class FederalRegisterCatalogPolicy:
     _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:federal-register:1"
-    policy_version = "1.0.0"
+    policy_version = "1.1.0"
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
@@ -126,7 +126,7 @@ class FederalRegisterCatalogPolicy:
                 "v1",
                 "federal-register-documents",
                 "federal-register-document",
-                "1.0",
+                "1.1",
             ),
         )
 

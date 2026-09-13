@@ -6,6 +6,7 @@ import time
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from threading import Lock
 from typing import Any
 
 from docspec.domain.content import (
@@ -25,7 +26,6 @@ from docspec.domain.jobs import (
 from docspec.domain.plans import ProcessingPlan
 from docspec.domain.policies import (
     AcceptedFailurePolicy,
-    ProcessorExecutionScope,
     RetryPolicy,
 )
 from docspec.domain.processors import (
@@ -33,7 +33,7 @@ from docspec.domain.processors import (
     ProcessorResult,
     ProcessorSet,
 )
-from docspec.domain.references import ArtifactRef, StoreRef
+from docspec.domain.references import ArtifactRef, DocumentReleaseRef, StoreRef
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.content_fetcher import ContentFetcher
@@ -53,9 +53,11 @@ from .execution_checkpoints import EntryCheckpointVerifier, VerifiedEntryCheckpo
 from .execution_evidence import failure_record, put_receipt
 from .processor_rules import (
     flatten_processor_records,
+    verify_processor_policies,
 )
 from .processor_runtime import ProcessorRuntime
 from .store_state import load_latest_store
+from .stage_identity import verify_extraction_identity, verify_segment_identity, verify_stage_implementations
 from .work_budget import MemoryScope, WorkBudget
 
 
@@ -71,8 +73,8 @@ class StoreExecutionService:
         document_catalog: DocumentCatalog,
         blobs: BlobStore,
         fetcher: ContentFetcher,
-        extractor: Extractor[ExtractionResult],
-        segmenter: Segmenter[RepresentationPayload, SegmentPayload],
+        extractor: Extractor[ExtractionResult] | None,
+        segmenter: Segmenter[RepresentationPayload, SegmentPayload] | None,
         processors: Mapping[str, Processor[ProcessorPayload, ProcessorResult]],
         retry_policy: RetryPolicy,
         accepted_failure_policy: AcceptedFailurePolicy,
@@ -85,6 +87,8 @@ class StoreExecutionService:
         self._controls = controls
         self._stores = stores
         self._document_catalog = document_catalog
+        self._base_reader: tuple[DocumentReleaseRef, DocumentCatalogReader] | None = None
+        self._base_reader_lock = Lock()
         self._blobs = blobs
         self._fetcher = fetcher
         self._extractor = extractor
@@ -107,11 +111,12 @@ class StoreExecutionService:
             controls=controls,
             blobs=blobs,
             extractor=extractor,
+            segmenter=segmenter,
             retry_policy=retry_policy,
         )
 
     def execute_store(self, planned_document_store_ref: StoreRef) -> StoreRef:
-        plan = self._load_plan()
+        plan = self.verify_configuration()
         current_ref, store = load_latest_store(self._stores, planned_document_store_ref)
         if store.plan_id != plan.plan_id:
             raise IntegrityError("document store belongs to another processing plan")
@@ -130,7 +135,11 @@ class StoreExecutionService:
             verified_checkpoints[entry.entry_id] = checkpoint
             verified_processor_invocations[entry.entry_id] = checkpoint.processor_invocations
         budget.check_duration()
-        budget.seed_verified_entries(store.entries, verified_processor_invocations)
+        budget.seed_verified_entries(
+            store.entries,
+            verified_processor_invocations,
+            {entry_id: checkpoint.extraction_observations for entry_id, checkpoint in verified_checkpoints.items()},
+        )
         base_reader = self._reprocessing_reader(store, plan)
         attempt_number = len(store.attempts) + 1
         attempt_id = stable_urn("store-attempt", {"storeId": store.store_id, "attempt": attempt_number})
@@ -142,12 +151,13 @@ class StoreExecutionService:
                 continue
             budget.check_duration()
 
-            def checkpoint_entry(partial: DocumentEntry) -> None:
+            def checkpoint_entry(partial: DocumentEntry) -> VerifiedEntryCheckpoint:
                 nonlocal store, current_ref
-                self._checkpoints.verify_entry(partial, plan)
+                verified = self._checkpoints.verify_entry(partial, plan)
                 entries[index] = partial
                 store = store.checkpoint(tuple(entries))
                 current_ref = self._stores.save(store)
+                return verified
 
             entries[index] = self._execute_entry(
                 entry,
@@ -169,15 +179,31 @@ class StoreExecutionService:
         store: DocumentStore,
         plan: ProcessingPlan,
     ) -> DocumentCatalogReader | None:
-        if not any(entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY for entry in store.entries):
+        if not any(entry.execution_mode is not EntryExecutionMode.FULL for entry in store.entries):
             return None
         if plan.base_release is None:
-            raise IntegrityError("processor-only reprocessing requires a pinned base release")
-        return self._document_catalog.open_reader(plan.base_release)
+            raise IntegrityError("prefix reuse requires a pinned base release")
+        # The prepared worker owns one admission of this immutable view. Each
+        # task still verifies the record members, controls and blobs it uses.
+        with self._base_reader_lock:
+            if self._base_reader is None:
+                reader = self._document_catalog.open_reader(plan.base_release)
+                self._base_reader = (plan.base_release, reader)
+            reference, reader = self._base_reader
+            if reference != plan.base_release:
+                raise IntegrityError("execution service base release differs from its admitted reference")
+            return reader
 
-    def _load_plan(self) -> ProcessingPlan:
-        self._controls.verify(self._plan_ref)
+    def close(self) -> None:
+        """Release the admitted base view after workers stop; future work re-admits it."""
+        with self._base_reader_lock:
+            self._base_reader = None
+
+    def verify_configuration(self) -> ProcessingPlan:
+        """Check effective implementations before executing or reusing saved work."""
+
         plan = ProcessingPlan.from_dict(self._controls.load(self._plan_ref))
+        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
         if plan.retry_policy_digest != self._retry_policy.digest:
             raise IntegrityError("injected retry policy differs from the processing plan")
         if plan.accepted_failure_policy_digest != self._accepted_failure_policy.digest:
@@ -188,19 +214,7 @@ class StoreExecutionService:
         processor_set = ProcessorSet(descriptions)
         if processor_set != plan.processors:
             raise IntegrityError("injected processor descriptions differ from the processing plan")
-        expected_data_use = plan.data_use_policy.digest
-        for description in descriptions:
-            if description.data_use_policy_digest != expected_data_use:
-                raise IntegrityError(f"processor {description.processor_id} differs from the plan data-use policy")
-            if (
-                description.execution_scope is ProcessorExecutionScope.DECLARED_EXTERNAL
-                and not plan.data_use_policy.allows_external_processing
-            ):
-                raise IntegrityError(
-                    f"processor {description.processor_id} declares external execution under a local-only data-use policy"
-                )
-            if description.retry_policy_digest != self._retry_policy.digest:
-                raise IntegrityError(f"processor {description.processor_id} differs from the plan retry policy")
+        verify_processor_policies(plan, descriptions)
         return plan
 
     def _execute_entry(
@@ -212,19 +226,25 @@ class StoreExecutionService:
         budget: WorkBudget,
         base_reader: DocumentCatalogReader | None,
         checkpoint: VerifiedEntryCheckpoint,
-        checkpoint_entry: Callable[[DocumentEntry], None],
+        checkpoint_entry: Callable[[DocumentEntry], VerifiedEntryCheckpoint],
     ) -> DocumentEntry:
-        if entry.execution_mode == EntryExecutionMode.PROCESSORS_ONLY:
+        if entry.execution_mode is not EntryExecutionMode.FULL:
             if base_reader is None:
-                raise IntegrityError("processor-only reprocessing requires a verified base release")
-            return self._reprocess_entry(
+                raise IntegrityError("prefix reuse requires a verified base release")
+            seeded = prepare_base_reprocessing(
                 entry,
                 plan,
-                budget,
                 base_reader,
                 checkpoint,
-                checkpoint_entry,
+                plan_ref=self._plan_ref,
+                controls=self._controls,
+                checkpoints=self._checkpoints,
             )
+            if seeded != entry:
+                checkpoint = checkpoint_entry(seeded)
+            else:
+                checkpoint = self._checkpoints.verify_entry(seeded, plan)
+            entry = seeded
 
         captured = list(entry.captured_files)
         representations = list(entry.representations)
@@ -262,9 +282,9 @@ class StoreExecutionService:
             return self._failed_entry(current_entry(), failures)
 
         with budget.materialization_scope() as memory:
-            if not checkpoint.extraction_complete:
+            if not checkpoint.capture_complete or not checkpoint.extraction_complete:
                 try:
-                    if representations:
+                    if representations and plan.stages.requests_segmentation:
                         representation_payloads = self._load_representation_payloads(
                             entry,
                             plan,
@@ -272,7 +292,8 @@ class StoreExecutionService:
                         )
                 except Exception as error:
                     return failed("processing", error)
-                for index in range(len(representations), len(entry.source_item.candidates)):
+                start_index = len(representations) if plan.stages.requests_extraction else len(captured)
+                for index in range(start_index, len(entry.source_item.candidates)):
                     candidate = entry.source_item.candidates[index]
                     budget.check_duration()
                     if index < len(captured):
@@ -291,7 +312,11 @@ class StoreExecutionService:
                             return self._failed_entry(current_entry(), failures)
                         captured.append(captured_file)
                         checkpoint_entry(current_entry())
+                    if not plan.stages.requests_extraction:
+                        continue
                     try:
+                        if self._extractor is None:
+                            raise IntegrityError("requested extraction has no implementation")
                         source_unit = budget.stage_unit_id(entry.entry_id, "source", captured_file.file_id)
                         source_memory = f"source:{source_unit}"
                         source_bytes = self._read_worker_bytes(
@@ -300,17 +325,11 @@ class StoreExecutionService:
                             memory,
                             source_memory,
                         )
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
                         extraction = self._extractor.extract(captured_file, source_bytes)
                         budget.check_duration()
-                        extractor_registry_id = getattr(self._extractor, "extractor_id", None)
-                        actual_extractor_id = extraction.payload.representation.extractor_id
-                        if (
-                            actual_extractor_id not in plan.stages.extractor_ids
-                            and extractor_registry_id not in plan.stages.extractor_ids
-                        ):
-                            raise IntegrityError(
-                                f"extractor {actual_extractor_id} is not pinned by the processing plan"
-                            )
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        verify_extraction_identity(self._extractor, captured_file, extraction.payload.representation)
                         representation_id = extraction.payload.representation.representation_id
                         representation_unit = budget.stage_unit_id(
                             entry.entry_id,
@@ -329,7 +348,10 @@ class StoreExecutionService:
                             metadata=extraction.receipt.metadata,
                         )
                         representation_payload = self._persist_representation(extraction.payload, plan)
-                        representation_payloads.append((representation_payload, representation_unit))
+                        if plan.stages.requests_segmentation:
+                            representation_payloads.append((representation_payload, representation_unit))
+                        else:
+                            memory.release(representation_memory)
                         representations.append(representation_payload.representation)
                         receipt_refs.append(
                             put_receipt(
@@ -343,37 +365,43 @@ class StoreExecutionService:
                     except Exception as error:
                         return failed("processing", error)
                     checkpoint_entry(current_entry())
-            elif not checkpoint.segmentation_complete:
+            elif plan.stages.requests_segmentation and not checkpoint.segmentation_complete:
                 representation_payloads = self._load_representation_payloads(
                     entry,
                     plan,
                     memory,
                 )
 
-            if not checkpoint.segmentation_complete:
+            if plan.stages.requests_segmentation and not checkpoint.segmentation_complete:
                 try:
-                    segmenter_registry_id = getattr(self._segmenter, "segmenter_id", None)
-                    if segmenter_registry_id != plan.stages.segmenter_id:
-                        raise IntegrityError("injected segmenter registry differs from the processing plan")
+                    if self._segmenter is None:
+                        raise IntegrityError("requested segmentation has no implementation")
                     while representation_payloads:
                         representation, representation_unit = representation_payloads.popleft()
                         budget.check_duration()
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        selected_identity = self._segmenter.selected_identity(representation.representation)
                         results = self._segmenter.segment(representation)
+                        verify_stage_implementations(plan.stages, extractor=self._extractor, segmenter=self._segmenter)
+                        if self._segmenter.selected_identity(representation.representation) != selected_identity:
+                            raise IntegrityError("segmenter selection changed during execution")
                         representation_id = representation.representation.representation_id
                         budget.charge_segments(representation_unit, len(results))
                         for result in results:
+                            verify_segment_identity(result.segment, selected_identity)
                             verify_segment_representation(result, representation)
                             memory.reserve(
                                 f"segment:{representation_unit}:{result.segment.segment_id}",
                                 len(result.content),
                             )
+                        for result in results:
                             persisted = self._persist_segment(result, plan)
                             segment_payloads.append(persisted)
                             segments.append(persisted.segment)
                         memory.release(f"representation:{representation_unit}")
                         segmentation_receipt = SegmentationReceipt(
                             representation_id,
-                            plan.stages.segmenter_id,
+                            *selected_identity,
                             tuple(result.segment.segment_id for result in results),
                         )
                         receipt_refs.append(
@@ -390,11 +418,11 @@ class StoreExecutionService:
 
             remaining_processors = tuple(
                 identifier
-                for identifier in plan.stages.processor_ids
+                for identifier in entry.processor_ids_to_run
                 if identifier not in checkpoint.completed_processors
             )
             if remaining_processors and not segment_payloads:
-                segment_payloads = self._load_segment_payloads(entry, plan, memory, budget)
+                segment_payloads = self._load_segment_payloads(current_entry(), plan, memory, budget)
 
             for identifier in remaining_processors:
                 try:
@@ -418,98 +446,6 @@ class StoreExecutionService:
                 current_entry(),
                 disposition=AcquisitionDisposition.CAPTURED,
             )
-
-    def _reprocess_entry(
-        self,
-        entry: DocumentEntry,
-        plan: ProcessingPlan,
-        budget: WorkBudget,
-        reader: DocumentCatalogReader,
-        checkpoint: VerifiedEntryCheckpoint,
-        checkpoint_entry: Callable[[DocumentEntry], None],
-    ) -> DocumentEntry:
-        """Reuse exact base content and run only the invalid processor subgraph."""
-
-        prepared = prepare_base_reprocessing(
-            entry,
-            plan,
-            reader,
-            checkpoint,
-            plan_ref=self._plan_ref,
-            controls=self._controls,
-            checkpoints=self._checkpoints,
-        )
-        captured = prepared.captured
-        representations = prepared.representations
-        segments = prepared.segments
-        warnings = prepared.warnings
-        derived_by_processor = prepared.derived_by_processor
-        result_by_processor_segment = prepared.result_by_processor_segment
-        receipt_refs = prepared.receipt_refs
-        requested = entry.requested_stages.processor_ids
-
-        failures = list(entry.failures)
-
-        def current_entry() -> DocumentEntry:
-            return replace(
-                entry,
-                captured_files=captured,
-                representations=representations,
-                segments=segments,
-                derived_records=flatten_processor_records(plan, derived_by_processor),
-                failures=tuple(failures),
-                stage_receipts=tuple(receipt_refs),
-                warnings=warnings,
-            )
-
-        remaining = tuple(
-            identifier
-            for identifier in requested
-            if identifier not in checkpoint.completed_processors
-        )
-        with budget.materialization_scope() as memory:
-            try:
-                segment_payloads: list[SegmentPayload] = []
-                if remaining:
-                    content_entry = replace(
-                        entry,
-                        representations=representations,
-                        segments=segments,
-                    )
-                    segment_payloads = self._load_segment_payloads(
-                        content_entry,
-                        plan,
-                        memory,
-                        budget,
-                    )
-            except Exception as error:
-                failures.append(failure_record("processing", error, len(failures) + 1))
-                return self._failed_entry(current_entry(), failures)
-
-            for identifier in remaining:
-                try:
-                    self._processor_runtime.run_graph(
-                        entry,
-                        plan,
-                        segment_payloads,
-                        (identifier,),
-                        budget,
-                        derived_by_processor,
-                        result_by_processor_segment,
-                        receipt_refs,
-                    )
-                    budget.check_duration()
-                except Exception as error:
-                    failures.append(failure_record("processing", error, len(failures) + 1))
-                    return self._failed_entry(current_entry(), failures)
-                checkpoint_entry(current_entry())
-
-            completed = replace(
-                current_entry(),
-                disposition=AcquisitionDisposition.CAPTURED,
-            )
-            self._checkpoints.verify_terminal_entry(completed, plan)
-            return completed
 
     def _capture_candidate(
         self,
@@ -640,7 +576,6 @@ class StoreExecutionService:
             if not selected:
                 continue
             budget.check_duration()
-            self._blobs.verify(representation.blob)
             representation_memory = (
                 f"resume-representation:{entry.entry_id}:{representation.representation_id}"
             )
@@ -654,7 +589,6 @@ class StoreExecutionService:
             representation_payload = RepresentationPayload(representation, representation_content)
             for segment in selected:
                 budget.check_duration()
-                self._blobs.verify(segment.content)
                 memory_identity = f"resume-segment:{entry.entry_id}:{segment.segment_id}"
                 memory.reserve(memory_identity, segment.content.byte_size)
                 content = b"".join(

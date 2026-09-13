@@ -48,7 +48,7 @@ def _plan() -> ProcessingPlan:
         base_release=None,
         profiles=profile_set(),
         limits=_limits(),
-        stages=StagePolicy(("text-v1",), "paragraph-v1"),
+        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
         processors=ProcessorSet(()),
         partition_count=4,
         selection={},
@@ -79,12 +79,14 @@ def test_processing_plan_rejects_ambiguous_json_types() -> None:
     with pytest.raises(ValueError, match="positive integers"):
         WorkLimits.from_dict(limits)
 
-    with pytest.raises(ValueError, match="identities must be arrays"):
+    with pytest.raises(ValueError, match="processor identities must be an array"):
         StagePolicy.from_dict(
             {
-                "extractorIds": "text-v1",
+                "extractorId": "text-v1",
+                "extractorConfigurationDigest": EMPTY_DIGEST,
                 "segmenterId": "paragraph-v1",
-                "processorIds": [],
+                "segmenterPolicyDigest": EMPTY_DIGEST,
+                "processorIds": "processor-v1",
             }
         )
 
@@ -109,7 +111,7 @@ def test_processing_plan_pins_the_complete_processor_graph() -> None:
             base_release=None,
             profiles=profile_set(),
             limits=_limits(),
-            stages=StagePolicy(("text-v1",), "paragraph-v1", (processor.processor_id,)),
+            stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=(processor.processor_id,)),
             processors=ProcessorSet((processor,)),
             partition_count=4,
             selection={},
@@ -129,7 +131,7 @@ def test_processing_plan_pins_the_complete_processor_graph() -> None:
 
 
 def test_document_store_is_a_bounded_revisioned_job_and_receipt() -> None:
-    stages = StagePolicy(("text-v1",), "paragraph-v1")
+    stages = StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=())
     entry = DocumentEntry.create(_item(), ChangeKind.ADDED, stages)
     store = DocumentStore.planned(plan_id="plan-1", logical_partition="bucket-00000/store-00000000", entries=(entry,), limits=_limits())
     running = store.start("attempt-1")
@@ -298,3 +300,27 @@ def test_document_release_is_a_complete_versioned_derivation_view() -> None:
     assert DocumentRelease.from_dict(release.to_dict()) == release
     reference = release.reference("memory://release", sha256_digest(b"artifact"))
     assert DocumentReleaseRef.from_dict(reference.to_dict()) == reference
+
+
+@pytest.mark.parametrize("field", ["extractor_configuration_digest", "segmenter_policy_digest"])
+def test_stage_configuration_pins_change_plan_identity_and_round_trip(field: str) -> None:
+    original = _plan()
+    values = {item.name: getattr(original, item.name) for item in fields(original) if item.name != "plan_id"}
+    values["stages"] = replace(original.stages, **{field: sha256_digest(b"different-stage-settings")})
+    changed = ProcessingPlan.create(**values)
+    assert changed.plan_id != original.plan_id
+    assert changed.governing_content() != original.governing_content()
+    assert ProcessingPlan.from_dict(changed.to_dict()) == changed
+    assert changed.to_dict()["formatVersion"] == "3.0"
+
+
+def test_old_or_incomplete_stage_pins_are_not_accepted() -> None:
+    stages = _plan().stages.to_dict()
+    for key in ("extractorConfigurationDigest", "segmenterPolicyDigest"):
+        with pytest.raises(ValueError, match="closed shape"):
+            StagePolicy.from_dict({name: value for name, value in stages.items() if name != key})
+        with pytest.raises(ValueError, match="digest"):
+            StagePolicy.from_dict(stages | {key: "unqualified"})
+    legacy = _plan().to_dict() | {"formatVersion": "1.2"}
+    with pytest.raises(ValueError, match="unknown format"):
+        ProcessingPlan.from_dict(legacy)

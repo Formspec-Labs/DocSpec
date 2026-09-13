@@ -1,95 +1,144 @@
-# One document, from local input to verified release
+# Capture, repair, and compare a small document experiment
 
-Run this example after the [checkout setup](../CONTRIBUTING.md#set-up-a-checkout).
-It needs the core and development dependencies, with no credentials, sibling
-checkout, private corpus, optional PDF libraries, or network access during the run.
+This walkthrough builds a catalog of four synthetic documents, excludes one
+from the run, retains an initial capture with a visible missing-file failure,
+repairs that failure, and processes the captures with a pinned phrase vocabulary.
+It then compares two processor alternatives without fetching or extracting the
+documents again, adds a fifth catalog item, and compares the incremental result
+with a clean rebuild. It uses public Python APIs, local files, and no network.
+
+After [checkout setup](../CONTRIBUTING.md#set-up-a-checkout), run:
 
 ```sh
-demo_root=$(mktemp -d)
-uv run --frozen python -m examples.offline_demo --output "$demo_root/run"
+uv run --frozen python -m examples.offline_demo --output /absolute/new-experiment
 ```
 
-The command finishes with this summary:
+`--output` must name a new directory. Repeating it refuses before changing the
+previous experiment. The final JSON reports five catalog items, four selected
+documents, one exclusion, one initial failure, no remaining failure after repair,
+and seven processed segments. The original, case-sensitive, and updated-resource
+attempts produce four, three, and five phrase matches respectively. The added
+document raises the updated-resource result to seven matches.
 
-```json
-{"recordCounts": {"dispositions": 1, "failures": 0, "files": 1, "receipts": 2, "representations": 1, "segments": 1, "source-items": 1}, "verdict": "pass"}
-```
+## What the experiment demonstrates
 
-## Inputs and processing
+The [walkthrough code](../examples/offline_demo.py) uses
+`SuppliedRecordSource` and `SuppliedRecordCatalogPolicy` to build its catalog through
+`build_local_catalog`. Raw caller fields, source-qualified item IDs, candidate
+byte sizes and hashes remain in the source evidence. All four catalog rows are
+selected by the catalog policy; the processing plan explicitly excludes the
+`out-of-scope` item. `catalog-preview.json` makes that distinction visible.
 
-[`examples/offline/source.json`](../examples/offline/source.json) is one synthetic
-record shaped like Federal Register metadata. Its rendition is
-[`notice.html`](../examples/offline/notice.html), including non-ASCII text to
-exercise UTF-8 evidence coordinates. The URL uses `example.invalid`; an explicit
-local fetcher maps only that URL to the pinned file. It cannot fall back to HTTP.
+The first `prepare_local_experiment(..., stop_after="capture")` uses the real
+`LocalFileContentFetcher`. Two files exist; the selected `late-arrival.txt` does
+not. With one acquisition attempt and explicit acceptance of transient external
+failures, the result retains two captures and a failed item. The example then
+creates the missing file from its pinned fixture bytes and requests a successor
+with `retryFailures: "transient"`. That run captures only the failed item. The
+original result still contains its failure and remains independently inspectable.
 
-The small `ExampleSource` adapter stands at the source-record interface. It pins
-these local inputs; it does not claim they came from an official source-native
-release. The real `FederalRegisterCatalogPolicy`, `SourceCatalogBuilder`, and
-catalog verifier turn them into a sealed, selected catalog item.
+Next, the example supplies `TextExtractor`, `ParagraphSegmenter`, and the
+[example phrase matcher](../examples/phrase_match_processor.py). It processes
+the three retained captures without fetching again. Reopening the saved handoff
+reuses the completed run. Two later attempts start from the same processed base:
+one changes case sensitivity, and the other changes the vocabulary bytes and
+resource pin. Both keep the exact captured-file, representation and segment
+identities.
 
-The example then selects the six existing local profiles, creates a processing
-plan, and calls `docspec.cli.execution.run_local`. This uses the same planning,
-execution, checkpoint, delivery, and reconciliation code as the run commands,
-with the local content fetcher explicitly injected and recorded. The plan runs
-extraction and segmentation without an additional processor.
+The next catalog contains all four original rows plus `added-note`. It records
+the previous catalog's exact reference through `Supersedes`; the preview shows
+one addition and four unchanged rows. Processing from the updated-resource
+result fetches and processes only the added input. A separate clean workspace
+then processes all four selected documents. Exact phrase values, source slices,
+processing settings, dispositions, and failures agree. The inspection comparison
+still records different delivery evidence and add/update classifications: the
+clean run adds every item, while the incremental run updates existing items.
 
-Finally, the existing `document-release commit` and `document-catalog open`
-commands publish and verify the application release. Opening the catalog checks
-the release and its dependencies; it does more than parse the reference JSON.
-This demonstrates the [application release lifecycle](architecture.md#what-comes-out).
-The separate portable-bundle builder has its own sealed fixture checks.
+`retain` keeps each immutable result available; these calls do not choose a
+current catalog result. The example introduces no scheduler, run-control service,
+or additional saved ledger. Dagster supplies scheduling and execution management
+when needed; this script exercises DocSpec's catalog, evidence, reuse and result
+interfaces through the existing direct local helper.
 
 ## Inspect the output
 
-| File or directory inside `run/` | Meaning |
+| File or directory | What to inspect |
 | --- | --- |
-| `implementation.json` | Digests of the local code, schemas, profiles, example, and lockfile, including uncommitted edits; the example producer ID pins this manifest |
-| `source-catalog/`, `source-catalog-reference.json` | Sealed catalog and its small immutable reference |
-| `plan.json`, `run-request.json` | Selected profiles, processing limits, local roots, and execution settings |
-| `blobStorage/`, `documentStores/`, `recordStorage/` | Captured source/representation bytes, job revisions, and immutable record layers |
-| `run-reference.json`, `controlRepository/` | Reconciliation receipt reference and the control artifacts it names |
-| `commit-request.json`, `commit-receipt.json`, `commit-result.json` | Exact publication request and CLI result/evidence |
-| `release-reference.json`, `documentCatalog/` | Published application release reference and catalog |
-| `verification.json` | Complete result of opening and verifying the published release, including counts and layer references |
+| `experiment-summary.json` | Small outcome summary, match counts and verified comparisons |
+| `catalog-preview.json` | All catalog rows and the explicit run exclusion |
+| `catalog-growth.json` | Successor catalog, one added row, and four unchanged rows |
+| `initial-capture.json`, `repaired-capture.json` | Existing plan/run/release/handoff references and inspection results before and after repair |
+| `processed.json`, `case-sensitive.json`, `resource-v2.json` | Retained processor alternatives, their exact settings and recorded work |
+| `grown.json` | Retained result after processing the added document |
+| `matches.json` | Literal quotes, segment byte offsets, resource pins and enclosing source evidence for each alternative |
+| `comparisons.json` | Existing inspection comparisons showing configuration and result differences |
+| `clean-comparison.json` | Incremental versus clean result, including different execution history |
+| `reference-inputs/` | The exact two vocabulary files used by the processor |
+| `sourceContent/` | Four materialized local source files; the excluded file is never fetched |
+| `sourceCatalog/`, `documentCatalog/`, `controlRepository/` | Existing catalog, retained results and their verification dependencies |
+| `clean-comparison/` | Independent clean processing result for the grown catalog and updated vocabulary |
+| `implementation.json` | Example and processor code digests plus the installed DocSpec version; it does not claim to hash the entire installed runtime |
 
-Run `uv run --frozen pytest tests/test_offline_example.py` to exercise the same
-argument-parsing entry point with socket connections forbidden. CI's default
-suite includes this check.
+The stage JSON files contain an ordinary serialized `ProcessingPlan`. For example,
+reopen a result without constructing a processor or fetching anything:
 
-## Repeat or make a small change
+```python
+import json
+from pathlib import Path
+from rulespec_artifacts import Producer
+from docspec.domain.plans import ProcessingPlan
+from docspec.domain.references import DocumentReleaseRef
+from docspec.runtime import open_local_inspection
+from docspec.workspace import LocalWorkspace
 
-`--output` must name a new directory. Repeating the command with the same path
-refuses before modifying the first result. Use another child of `demo_root` for
-a second run. Output paths are part of local storage configuration, so different
-directories may yield different plan and release identities even for identical
-source text; the example does not promise identity equality across locations.
+root = Path("/absolute/new-experiment")
+stage = json.loads((root / "resource-v2.json").read_text())
+view = open_local_inspection(
+    ProcessingPlan.from_dict(stage["plan"]), LocalWorkspace(root),
+    document_release_producer=accepted_document_producer,
+    release_ref=DocumentReleaseRef.from_dict(stage["release"]),
+)
+print(view.summary())
+```
 
-To practice a contribution, change a sentence in `examples/offline/notice.html`,
-run the example into a new directory, and inspect the `files`, `representations`,
-and `segments` layers named in `verification.json`. The captured digest and
-evidence should follow the changed bytes. Restore the fixture when finished,
-or include an intentional example change and its validation in your contribution.
+`accepted_document_producer` is your explicit accepted `Producer`; the inspection
+factory does not infer acceptance from the result being opened. The walkthrough
+declares its producer in its source code from `implementation.json` and the
+ordinary document-release verifier identity. See [inspection](inspection.md) for
+bounded source/record reads and comparisons, and [Python runs](python-runs.md) for
+preparation and recovery without caller-written plan/request files.
+
+## Meaning and evidence limits
+
+The [phrase processor guide](phrase-matching-example.md) defines exact literal
+matching, case and overlap rules. A match helps a reviewer find a passage. It is
+not semantic classification, a conclusion that a requirement applies, or proof
+that a legal reference was resolved. No matches means the requested literals
+were absent under the chosen matching rules, not that the concept was absent.
+
+Each quote has byte offsets within its segment. Its enclosing source evidence
+links back to the captured file. The example checks the quote against stored
+segment bytes and, for its plain-text inputs, checks that the segment equals
+the captured source slice. It does not invent exact raw-source offsets for
+transformed HTML or PDF text. The separate
+[representation example](representations.md) demonstrates those choices.
+
+The automated test forbids network access and observes actual fetch and stage
+calls separately for each phase. The package test runs that same test and copied
+walkthrough against an isolated installed wheel. Test-only instrumentation stays
+outside the example. The separate installed provider test builds a catalog from
+SpicyDocs records, captures one controlled HTML response through the real HTTPS
+fetcher, and processes the retained bytes without a second request. Native
+process interruption and recovery are covered by the
+[Dagster experiment](dagster-experiment.md).
+
+These are local fixture checks; they do not establish live provider coverage, a
+qualified external reference resource, scale, or published-package status.
 
 ## Unfamiliar-contributor exercise
 
-Checklist E5 tests whether these instructions work for someone who has not read
-the implementation or the refactor conversation. The exercise is still pending.
-
-1. Record the checkout commit and start time, then follow the setup and walkthrough
-   using the repository documentation. Record any outside help you need.
-2. Choose one small behavior change from the contributor task map. Find its code,
-   governing rule, and focused tests; explain the intended result before editing.
-3. Make the change, run the focused checks, and review the diff. Record the commands
-   and outcomes, including any failure that required another file or instruction.
-4. Report elapsed time, files consulted, confusing steps, and whether the change
-   worked without private context. Include the diff or commit so a reviewer can
-   verify the result.
-
-A maintainer records the participant's evidence and resolves the observed
-friction before closing E5. Passing the automated example alone does not finish
-this exercise.
-
-The timestamps and source record are synthetic. The result proves this local
-walkthrough worked; it is not upstream acquisition evidence, a scale campaign,
-or a published package.
+The manual contributor exercise remains separate from passing an automated
+example. Follow the setup and walkthrough without implementation context, choose
+a small documented contribution, and record the files consulted, outside help,
+time spent, confusing steps and focused verification. A maintainer should resolve
+the observed friction before closing that exercise.

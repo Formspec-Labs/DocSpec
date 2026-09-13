@@ -44,6 +44,7 @@ def install_fake_pypdf(monkeypatch: pytest.MonkeyPatch) -> None:
             self.pages = [FakePage(text) for text in FAKE_PDF_PAGES]
 
     provider = SimpleNamespace(__version__="conformance-fixture", PdfReader=FakeReader)
+    monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _name: provider.__version__)
     monkeypatch.setattr(
         "docspec.processing.extraction.import_module",
         lambda name: provider if name == "pypdf" else importlib.import_module(name),

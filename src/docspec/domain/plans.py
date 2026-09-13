@@ -65,38 +65,64 @@ class WorkLimits:
         )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, kw_only=True)
 class StagePolicy:
-    extractor_ids: tuple[str, ...]
-    segmenter_id: str
+    extractor_id: str | None
+    extractor_configuration_digest: str | None
+    segmenter_id: str | None
+    segmenter_policy_digest: str | None
     processor_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.extractor_ids, tuple) or not isinstance(self.processor_ids, tuple):
-            raise ValueError("stage identities must be immutable tuples")
-        if not self.extractor_ids:
-            raise ValueError("stage policy requires at least one extractor")
-        for value in (*self.extractor_ids, self.segmenter_id, *self.processor_ids):
-            require_text(value, "stage identity")
-        if len(set(self.extractor_ids)) != len(self.extractor_ids):
-            raise ValueError("extractor identities must be distinct")
+        if not isinstance(self.processor_ids, tuple):
+            raise ValueError("processor identities must be an immutable tuple")
+        for label, identifier, digest in (
+            ("extractor configuration", self.extractor_id, self.extractor_configuration_digest),
+            ("segmenter policy", self.segmenter_id, self.segmenter_policy_digest),
+        ):
+            if (identifier is None) != (digest is None):
+                raise ValueError(f"{label} identity and digest must be present together")
+            if identifier is not None:
+                require_text(identifier, f"{label} identity")
+                require_sha256(digest, f"{label} digest")
+        if self.requests_segmentation and not self.requests_extraction:
+            raise ValueError("segmentation requires extraction")
+        if self.processor_ids and not self.requests_segmentation:
+            raise ValueError("processors require extraction and segmentation")
+        for value in self.processor_ids:
+            require_text(value, "processor identity")
         if len(set(self.processor_ids)) != len(self.processor_ids):
             raise ValueError("processor identities must be distinct")
 
+    @property
+    def requests_extraction(self) -> bool:
+        return self.extractor_id is not None
+
+    @property
+    def requests_segmentation(self) -> bool:
+        return self.segmenter_id is not None
+
     def to_dict(self) -> dict[str, Any]:
         return {
-            "extractorIds": list(self.extractor_ids),
+            "extractorId": self.extractor_id,
+            "extractorConfigurationDigest": self.extractor_configuration_digest,
             "segmenterId": self.segmenter_id,
+            "segmenterPolicyDigest": self.segmenter_policy_digest,
             "processorIds": list(self.processor_ids),
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> StagePolicy:
-        if not isinstance(value, dict) or set(value) != {"extractorIds", "segmenterId", "processorIds"}:
+        fields = {"extractorId", "extractorConfigurationDigest", "segmenterId", "segmenterPolicyDigest", "processorIds"}
+        if not isinstance(value, dict) or set(value) != fields:
             raise ValueError("stage policy has an invalid closed shape")
-        if not isinstance(value["extractorIds"], list) or not isinstance(value["processorIds"], list):
-            raise ValueError("stage policy identities must be arrays")
-        return cls(tuple(value["extractorIds"]), value["segmenterId"], tuple(value["processorIds"]))
+        if not isinstance(value["processorIds"], list):
+            raise ValueError("stage policy processor identities must be an array")
+        return cls(
+            extractor_id=value["extractorId"], extractor_configuration_digest=value["extractorConfigurationDigest"],
+            segmenter_id=value["segmenterId"], segmenter_policy_digest=value["segmenterPolicyDigest"],
+            processor_ids=tuple(value["processorIds"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +241,7 @@ class ProcessingPlan:
         }
 
     def to_dict(self) -> dict[str, Any]:
-        return {"format": "docspec-processing-plan", "formatVersion": "1.2", "planId": self.plan_id, **self.identity_content()}
+        return {"format": "docspec-processing-plan", "formatVersion": "3.0", "planId": self.plan_id, **self.identity_content()}
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ProcessingPlan:
@@ -240,7 +266,7 @@ class ProcessingPlan:
             not isinstance(value, dict)
             or set(value) != expected
             or value["format"] != "docspec-processing-plan"
-            or value["formatVersion"] != "1.2"
+            or value["formatVersion"] != "3.0"
         ):
             raise ValueError("processing plan has an unknown format or invalid closed shape")
         return cls(

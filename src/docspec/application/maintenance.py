@@ -10,7 +10,6 @@ from docspec.application.reconcile import run_ledger_schemas
 from docspec.domain.content import CapturedFile, Representation, Segment
 from docspec.domain.execution import (
     ExecutionHandoff,
-    ExecutionLimits,
     ExecutionProfile,
     summarize_store_tasks,
 )
@@ -36,6 +35,8 @@ from docspec.ports.record_workspace import RecordWorkspace, RecordWorkspaceFacto
 
 _RETENTION_COLLECTION = "maintenance:blob-retention-references"
 _VISITED_STORE_COLLECTION = "maintenance:visited-document-stores"
+_VISITED_RELEASE_COLLECTION = "maintenance:visited-document-releases"
+_PLAN_COLLECTION = "maintenance:processing-plans"
 _RETENTION_SCHEMA = RecordSchema(
     "docspec-blob-retention-reference/1.0",
     (
@@ -119,10 +120,11 @@ class BlobRetentionSetService:
         blob_profile_state: ArtifactRef,
         retained_releases: Iterable[DocumentReleaseRef] = (),
         retained_stores: Iterable[StoreRef] = (),
+        retained_plans: Iterable[ArtifactRef] = (),
     ) -> ArtifactRef:
         releases = _ordered_distinct(
             retained_releases,
-            identity=lambda item: item.release_id,
+            identity=lambda item: (item.release_id, item.digest),
             order=lambda item: (item.release_id, item.locator, item.digest),
             label="retained releases",
         )
@@ -131,6 +133,12 @@ class BlobRetentionSetService:
             identity=lambda item: (item.store_id, item.revision),
             order=lambda item: (item.store_id, item.revision, item.locator, item.digest),
             label="retained stores",
+        )
+        plans = _ordered_distinct(
+            retained_plans,
+            identity=lambda item: item.artifact_id,
+            order=lambda item: (item.artifact_id, item.locator, item.digest),
+            label="retained plans",
         )
         if not releases and not stores:
             raise ValueError("blob retention requires at least one immutable root")
@@ -164,6 +172,10 @@ class BlobRetentionSetService:
                     workspace,
                     metrics,
                 )
+            for reference in plans:
+                plan = self._remember_plan(reference, workspace)
+                if plan.base_release is not None:
+                    self._retain_release(plan.base_release, blob_profile_state, workspace, metrics)
             for reference in stores:
                 self._retain_store(
                     reference,
@@ -184,6 +196,7 @@ class BlobRetentionSetService:
             blob_profile_state=blob_profile_state,
             retained_releases=releases,
             retained_stores=stores,
+            retained_plans=plans,
             references=layer,
             verification_evidence=metrics,
         )
@@ -200,8 +213,53 @@ class BlobRetentionSetService:
         workspace: RecordWorkspace,
         metrics: dict[str, Any],
     ) -> None:
-        release = self._document_catalog.open(reference)
+        # A selected successor still admits its predecessor. Walk the chain
+        # iteratively and retain its required bytes, including shorter-stage
+        # successors whose own active rows no longer contain those bytes.
+        current: DocumentReleaseRef | None = reference
+        while current is not None:
+            visit = {"release": current.to_dict()}
+            identity = stable_urn("retained-release-visit", {"releaseId": current.release_id, "digest": current.digest})
+            previous = workspace.lookup_record(_VISITED_RELEASE_COLLECTION, identity)
+            if previous is not None:
+                if previous != visit:
+                    raise IntegrityError("retained release visit has conflicting immutable references")
+                return
+            workspace.add_record(
+                _VISITED_RELEASE_COLLECTION, identity=identity,
+                source_item_id=current.release_id, record=visit,
+            )
+            current = self._retain_release_content(current, blob_profile_state, workspace, metrics)
+
+    def _remember_plan(self, reference: ArtifactRef, workspace: RecordWorkspace) -> ProcessingPlan:
+        try:
+            plan = ProcessingPlan.from_dict(self._controls.load(reference))
+        except (TypeError, ValueError) as error:
+            raise IntegrityError(f"retained processing plan is invalid: {error}") from error
+        if plan.plan_id != reference.artifact_id:
+            raise IntegrityError("retained processing-plan identity differs from its reference")
+        value = {"plan": reference.to_dict()}
+        previous = workspace.lookup_record(_PLAN_COLLECTION, plan.plan_id)
+        if previous is not None and previous != value:
+            raise IntegrityError("retained processing plan has conflicting immutable references")
+        if previous is None:
+            workspace.add_record(
+                _PLAN_COLLECTION, identity=plan.plan_id, source_item_id=plan.plan_id, record=value,
+            )
+        return plan
+
+    def _retain_release_content(
+        self,
+        reference: DocumentReleaseRef,
+        blob_profile_state: ArtifactRef,
+        workspace: RecordWorkspace,
+        metrics: dict[str, Any],
+    ) -> DocumentReleaseRef | None:
+        release = self._document_catalog.audit(reference)
         metrics["catalogVerifiedReleaseCount"] += 1
+        plan = self._remember_plan(release.processing_plan, workspace)
+        if plan.base_release != release.previous_release:
+            raise IntegrityError("retained release predecessor differs from its processing plan")
         for profile_state in release.blob_roots:
             self._require_profile_state(profile_state, blob_profile_state)
 
@@ -233,6 +291,7 @@ class BlobRetentionSetService:
                 workspace,
                 metrics,
             )
+        return release.previous_release
 
     def _retain_active_release_blobs(
         self,
@@ -295,6 +354,8 @@ class BlobRetentionSetService:
             record=visit_record,
         )
         store = self._stores.load(reference)
+        if workspace.lookup_record(_PLAN_COLLECTION, store.plan_id) is None:
+            raise IntegrityError("retained store requires its explicit processing-plan reference")
         metrics["visitedStoreRevisionCount"] += 1
         for entry in store.entries:
             for captured in entry.captured_files:
@@ -385,6 +446,8 @@ def _logical_layers_state_digest(
 def logical_release_state_digest(records: RecordStorage, release: DocumentRelease) -> str:
     """Digest exact logical records without including their physical layer roots."""
 
+    for layer in release.active_layers:
+        records.verify_members(layer)
     digest, _ = _logical_layers_state_digest(records, release.active_layers)
     return digest
 
@@ -408,7 +471,7 @@ class ReleaseCompactionService:
         self._clock = clock
 
     def compact(self, source_reference: DocumentReleaseRef) -> ArtifactRef:
-        source = self._document_catalog.open(source_reference)
+        source = self._document_catalog.audit(source_reference)
         source_digest, source_digest_reads = _logical_layers_state_digest(
             self._records,
             source.active_layers,
@@ -432,29 +495,10 @@ class ReleaseCompactionService:
             raise StateTransitionError("release layers already match the composed compaction profile")
         rewritten_set = set(rewritten)
         reused = tuple(layer.layer_kind for layer in source.active_layers if layer.layer_kind not in rewritten_set)
-        completed_at = self._clock()
-
-        plan_ref, run_ref = self._maintenance_run(
-            source_reference,
-            source,
-            compacted_layers,
-            rewritten,
-            reused,
-            completed_at,
-        )
-        try:
-            successor_reference = ReleaseCommitService(
-                plan_ref=plan_ref,
-                controls=self._controls,
-                records=self._records,
-                document_catalog=self._document_catalog,
-            ).commit_release(source_reference, run_ref)
-        except (StaleBaseError, StateTransitionError) as commit_error:
-            current = self._document_catalog.current()
-            if current is None or current == source_reference:
-                raise
+        current = self._document_catalog.current()
+        if current is not None and current != source_reference:
+            successor_reference = current
             try:
-                successor_reference = current
                 successor_completed_at = self._verify_successor(
                     source_reference,
                     source,
@@ -463,17 +507,49 @@ class ReleaseCompactionService:
                     source_digest,
                     compacted_digest,
                 )
-            except IntegrityError:
-                raise commit_error
+            except IntegrityError as error:
+                raise StaleBaseError("catalog head is not the intended equivalent compaction successor") from error
         else:
-            successor_completed_at = self._verify_successor(
+            plan_ref, run_ref = self._maintenance_run(
                 source_reference,
                 source,
-                successor_reference,
                 compacted_layers,
-                source_digest,
-                compacted_digest,
+                rewritten,
+                reused,
+                self._clock(),
             )
+            try:
+                successor_reference = ReleaseCommitService(
+                    plan_ref=plan_ref,
+                    controls=self._controls,
+                    records=self._records,
+                    document_catalog=self._document_catalog,
+                ).commit_release(source_reference, run_ref)
+            except (StaleBaseError, StateTransitionError) as commit_error:
+                current = self._document_catalog.current()
+                if current is None or current == source_reference:
+                    raise
+                try:
+                    successor_reference = current
+                    successor_completed_at = self._verify_successor(
+                        source_reference,
+                        source,
+                        successor_reference,
+                        compacted_layers,
+                        source_digest,
+                        compacted_digest,
+                    )
+                except IntegrityError:
+                    raise commit_error
+            else:
+                successor_completed_at = self._verify_successor(
+                    source_reference,
+                    source,
+                    successor_reference,
+                    compacted_layers,
+                    source_digest,
+                    compacted_digest,
+                )
         self._after_catalog_commit(successor_reference)
         logical_record_count = sum(layer.record_count for layer in source.active_layers)
         receipt = ReleaseCompactionReceipt.create(
@@ -489,9 +565,6 @@ class ReleaseCompactionService:
                 "logicalRecordReadCount": (
                     source_digest_reads + rewrite_reads + successor_digest_reads
                 ),
-                "logicalScanPassCount": 3,
-                "explicitCatalogOpenCount": 2,
-                "boundedStreaming": True,
             },
         )
         return self._controls.put(
@@ -509,7 +582,7 @@ class ReleaseCompactionService:
         source_digest: str,
         compacted_digest: str,
     ) -> str:
-        successor = self._document_catalog.open(successor_reference)
+        successor = self._document_catalog.audit(successor_reference)
         if (
             successor.previous_release != source_reference
             or successor.active_layers != compacted_layers
@@ -670,20 +743,7 @@ class ReleaseCompactionService:
             artifact_id=stable_urn("worker-composition", worker_content),
             value=worker_content,
         )
-        scheduler_content = {"adapterId": "docspec.inline-maintenance", "operationId": _COMPACTION_OPERATION_ID}
-        scheduler = self._controls.put(
-            kind="scheduler-configurations",
-            artifact_id=stable_urn("scheduler-configuration", scheduler_content),
-            value=scheduler_content,
-        )
-        profile = ExecutionProfile(
-            "docspec.inline-maintenance",
-            "1.0.0",
-            worker,
-            scheduler,
-            ExecutionLimits(1, 1, 1, 1, 1, 1, 1, 1, 0, 0),
-            2_147_483_647,
-        )
+        profile = ExecutionProfile(worker, 1, 2_147_483_647)
         profile_ref = self._controls.put(
             kind="execution-profiles",
             artifact_id=profile.profile_id,

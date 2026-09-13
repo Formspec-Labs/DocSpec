@@ -12,7 +12,7 @@ from docspec.adapters.storage import (
     LocalContentAddressedBlobStore,
     LocalDocumentStoreRepository,
     LocalJsonControlRepository,
-    LocalJsonlRecordStorage,
+    LocalParquetRecordStorage,
     LocalManifestDocumentCatalog,
 )
 from docspec.application.execution import StoreExecutionService
@@ -57,6 +57,13 @@ class _CrashAfterExtractionOnce:
     @property
     def calls(self) -> int:
         return self._delegate.calls
+
+    @property
+    def configuration_digest(self):
+        return self._delegate.configuration_digest
+
+    def selected_identity(self, captured):
+        return self._delegate.selected_identity(captured)
 
     def extract(self, captured: Any, source_bytes: bytes) -> Any:
         result = self._delegate.extract(captured, source_bytes)
@@ -192,7 +199,7 @@ def _harness(
     controls = LocalJsonControlRepository(tmp_path / "controls")
     stores = LocalDocumentStoreRepository(tmp_path / "stores")
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
-    records = LocalJsonlRecordStorage(tmp_path / "records")
+    records = LocalParquetRecordStorage(tmp_path / "records")
     catalog = LocalManifestDocumentCatalog(
         tmp_path / "catalog",
         records=records,
@@ -365,6 +372,7 @@ def _entry_content(entry: DocumentEntry) -> dict[str, Any]:
         "change": entry.change.value,
         "requestedStages": entry.requested_stages.to_dict(),
         "executionMode": entry.execution_mode.value,
+        "processorIdsToRun": list(entry.processor_ids_to_run),
         "capturedFiles": captured,
         "representations": [item.to_dict() for item in entry.representations],
         "segments": [item.to_dict() for item in entry.segments],
@@ -455,7 +463,10 @@ def test_partial_processor_checkpoint_restores_every_cumulative_budget_counter(
     )
     budget = WorkBudget(limits)
 
-    budget.seed_verified_entries((entry,), {entry.entry_id: (invocation_id,)})
+    verified = harness.service()._checkpoints.verify_entry(entry, harness.plan)
+    budget.seed_verified_entries(
+        (entry,), {entry.entry_id: (invocation_id,)}, {entry.entry_id: verified.extraction_observations},
+    )
 
     assert budget.usage.source_bytes == len(harness.content)
     assert budget.usage.pages_or_frames == 0

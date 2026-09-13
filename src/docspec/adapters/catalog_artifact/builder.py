@@ -36,6 +36,7 @@ from docspec.adapters.catalog_artifact.rows import _require_interpretation_order
 from docspec.adapters.catalog_artifact.rules import (
     _OUTPUT_ACCOUNTING_NAMESPACE,
     CATALOG_FORMAT_VERSION,
+    CATALOG_RECEIPT_FORMAT_VERSION,
     CATALOG_ITEMS_MEDIA_TYPE,
     CATALOG_ITEMS_ROLE,
     CATALOG_JSON_MEDIA_TYPE,
@@ -48,6 +49,7 @@ from docspec.adapters.catalog_artifact.rules import (
     CATALOG_RECEIPT_KEY,
     CATALOG_RECEIPT_ROLE,
     MAX_CATALOG_ROW_BYTES,
+    MAX_SMALL_MEMBER_BYTES,
     _CatalogPartition,
     _partition_id,
     _partition_namespace,
@@ -55,14 +57,17 @@ from docspec.adapters.catalog_artifact.rules import (
     _utf16_key,
 )
 from docspec.adapters.catalog_artifact.schemas import (
-    _ITEM_VALIDATOR,
     _POLICY_VALIDATOR,
     _RECEIPT_VALIDATOR,
     _SCHEMAS,
     _schema_error,
+    _verify_item_schema,
 )
 from docspec.adapters.catalog_artifact.verification import SourceCatalogBuildGateVerifier
 from docspec.domain.identity import require_text
+from docspec.domain.source_outcomes import (
+    DEFAULT_ACCEPTED_RECORD_OUTCOMES, accepted_record_outcomes, require_accepted_outcome,
+)
 from docspec.domain.references import SourceCatalogRef
 from docspec.domain.source_catalog import (
     SOURCE_CATALOG_ITEM_SCHEMA_ID,
@@ -88,14 +93,53 @@ class SourceCatalogBuildRequest:
     catalog_id: str
     producer: Producer
     supersedes: Supersedes | None = None
+    accepted_record_outcomes: frozenset[str] = DEFAULT_ACCEPTED_RECORD_OUTCOMES
 
     def __post_init__(self) -> None:
         require_text(self.catalog_id, "source catalog series catalog_id")
+        object.__setattr__(self, "accepted_record_outcomes", accepted_record_outcomes(self.accepted_record_outcomes))
         if self.supersedes is not None:
             if not isinstance(self.supersedes, Supersedes):
                 raise TypeError("source catalog supersedes must use Rulespec Supersedes")
             Supersedes.from_dict(self.supersedes.as_dict(), path="source-catalog/supersedes")
             require_text(self.supersedes.reason, "source catalog supersedes reason")
+
+
+@dataclass(frozen=True, slots=True)
+class _DescribedSource:
+    source: SourceNativeRecordSource
+    description: SourceNativeDescription
+
+    def describe(self) -> SourceNativeDescription:
+        return self.description
+
+    def iter_records(self) -> Iterator[Mapping[str, Any]]:
+        yield from self.source.iter_records()
+
+    def iter_renditions(self) -> Iterator[Mapping[str, Any]]:
+        yield from self.source.iter_renditions()
+
+
+def _snapshot_sources(
+    sources: Sequence[SourceNativeRecordSource], accepted: frozenset[str],
+) -> tuple[SourceNativeRecordSource, ...]:
+    """Share one immutable description between preflight and publication."""
+
+    if not sources:
+        raise ValueError("a source catalog requires at least one source-native input")
+    accepted = accepted_record_outcomes(accepted)
+    result: list[SourceNativeRecordSource] = []
+    description_bytes = 0
+    for source in sources:
+        description = source.describe()
+        if not isinstance(description, SourceNativeDescription):
+            raise TypeError("source describe() must return SourceNativeDescription")
+        require_accepted_outcome(description.collection_outcome, accepted)
+        description_bytes += len(canonical_json_bytes(description.to_dict()))
+        if description_bytes > MAX_SMALL_MEMBER_BYTES:
+            raise LimitExceededError("source descriptions exceed the catalog metadata byte limit")
+        result.append(source if isinstance(source, _DescribedSource) else _DescribedSource(source, description))
+    return tuple(result)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,7 +149,7 @@ class SourceCatalogBuildResult:
     byte_measurements: Mapping[str, int]
     #: Which engine derived the digests, for the build and for the producer
     #: gate's recomputation: ``{"build": {...}, "gate": {...}}``, each a
-    #: ``DERIVATION_PATHS`` member with its worker count. The parallel engine
+    #: path (serial, parallel, or serial-fallback) with its worker count. The parallel engine
     #: falls back to the serial one silently when workers cannot start, and
     #: nothing else records which path a receipt's digests came from.
     derivation: Mapping[str, Mapping[str, object]]
@@ -168,7 +212,7 @@ class _CatalogRowPartitioner:
                 raise IntegrityError("catalog policy produced duplicate or out-of-order sourceItemId values")
             previous = item.source_item_id
             value = item.to_dict()
-            _ITEM_VALIDATOR.error(value, f"source-catalog row {self.item_count}")
+            _verify_item_schema(value, f"source-catalog row {self.item_count}")
             _require_interpretation_order(value)
             payload = canonical_json_bytes(value)
             if len(payload) > MAX_CATALOG_ROW_BYTES:
@@ -250,8 +294,7 @@ class SourceCatalogBuilder:
         self._workspace_factory = workspace_factory
 
     def build(self, sources: Sequence[SourceNativeRecordSource]) -> SourceCatalogBuildResult:
-        if not sources:
-            raise ValueError("a source catalog requires at least one source-native input")
+        sources = _snapshot_sources(sources, self._request.accepted_record_outcomes)
         descriptions = tuple(source.describe() for source in sources)
         policy = {
             "format": CATALOG_POLICY_FORMAT,
@@ -334,10 +377,8 @@ class SourceCatalogBuilder:
                 "catalogSchemaDigest": catalog_schema_digest,
                 "policyDigest": policy_digest,
                 "producer": self._request.producer.as_dict(),
-                "inputs": [
-                    {"logicalId": value.logical_id, "artifactDigest": value.artifact_digest}
-                    for value in descriptions
-                ],
+                "acceptedRecordOutcomes": sorted(self._request.accepted_record_outcomes),
+                "inputs": [value.to_dict() for value in descriptions],
             }
         )
         row_partitioner = _CatalogRowPartitioner(
@@ -438,9 +479,10 @@ class SourceCatalogBuilder:
             )
         )
         payload_bytes_read = payload_bytes_reused + payload_bytes_written
+        by_pin = {(value.logical_id, value.artifact_digest): value for value in descriptions}
         receipt: dict[str, Any] = {
             "format": CATALOG_RECEIPT_FORMAT,
-            "formatVersion": CATALOG_FORMAT_VERSION,
+            "formatVersion": CATALOG_RECEIPT_FORMAT_VERSION,
             "catalogId": self._request.catalog_id,
             "catalogSchemaDigest": catalog_schema_digest,
             "sourceSystemSetDigest": spec["sourceSystemSetDigest"],
@@ -448,13 +490,8 @@ class SourceCatalogBuilder:
             "selectionPolicyId": self._policy.policy_id,
             "selectionPolicyVersion": self._policy.policy_version,
             "selectionPolicyDigest": policy_digest,
-            "sourceNativeInputs": [
-                {
-                    "logicalId": value.logical_id,
-                    "artifactDigest": value.artifact_digest,
-                }
-                for value in ordered_inputs
-            ],
+            "acceptedRecordOutcomes": sorted(self._request.accepted_record_outcomes),
+            "sourceNativeInputs": [by_pin[(value.logical_id, value.artifact_digest)].to_dict() for value in ordered_inputs],
             "catalogStateDigest": state_digest,
             "requestedUniverseSetDigest": requested_digest,
             "selectedSourceSetDigest": selected_digest,
@@ -535,6 +572,8 @@ class SourceCatalogBuilder:
         else:
             raise IntegrityError("catalog publication byte accounting did not stabilize")
         _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
+        if len(receipt_bytes) > MAX_SMALL_MEMBER_BYTES:
+            raise LimitExceededError("catalog build receipt exceeds its metadata byte limit")
         staging.write(CATALOG_POLICY_KEY, (policy_bytes,))
         staging.write(CATALOG_RECEIPT_KEY, (receipt_bytes,))
         staging.write(CATALOG_MANIFEST_KEY, (manifest_bytes,))
