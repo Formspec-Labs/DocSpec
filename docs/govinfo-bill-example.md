@@ -11,7 +11,7 @@ From this checkout, use the pinned provider wheel and a new absolute output path
 
 ```sh
 uv run --frozen \
-  --find-links ./vendor --with './vendor/spicy_docs-0.6.0-py3-none-any.whl[acquisition]' \
+  --find-links ./vendor --with './vendor/spicy_docs-0.7.0-py3-none-any.whl[acquisition]' \
   python -m examples.govinfo_bills \
   --package-id BILLS-119hr6028ih --output /tmp/my-bill-experiment
 ```

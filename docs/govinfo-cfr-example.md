@@ -11,7 +11,7 @@ Use a new absolute output path from this checkout:
 
 ```sh
 uv run --frozen \
-  --find-links ./vendor --with './vendor/spicy_docs-0.6.0-py3-none-any.whl[acquisition]' \
+  --find-links ./vendor --with './vendor/spicy_docs-0.7.0-py3-none-any.whl[acquisition]' \
   python -m examples.govinfo_cfr \
   --year 2025 --title 1 --volume 1 --section 18.1 --output /tmp/my-cfr-experiment
 ```

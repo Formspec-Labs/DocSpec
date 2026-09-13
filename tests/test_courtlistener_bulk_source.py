@@ -70,7 +70,7 @@ def test_provider_listing_values_reach_selected_candidates_unchanged():
     _page(_entry("bulk-data/x.csv")).replace(b"<IsTruncated>false</IsTruncated>", b""),
 ])
 def test_capture_preserves_provider_refusal_for_ambiguous_listing(payload: bytes):
-    with pytest.raises(ValueError, match="CourtListener S3 bucket|IsTruncated"):
+    with pytest.raises(ValueError, match="requested S3 bucket|IsTruncated"):
         parse_capture([payload])
 
 
