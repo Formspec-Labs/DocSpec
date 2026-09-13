@@ -1,5 +1,13 @@
 # Core model implementation plan: review
 
+**Later correction:** the [swarm validation](2026-09-13-core-plan-swarm-validation.md)
+supersedes the benchmark bounds and broad engine-qualification claims below.
+The ledger probe had unequal commit timing boundaries and an invalid subtractive
+baseline; its production extrapolation is withdrawn. The engine probe covers
+limited membership/extraction queries, not complete revision or canonical-encoding
+semantics. The current plan and task list incorporate the corrections. Earlier
+findings and decisions below remain a dated review record.
+
 Reviewed 2026-09-13 against `docs/core-model-implementation-plan.md` (465
 lines, updated that day) and the refined `docs/core-model.md`. An earlier
 draft of this record judged the plan against prior repository decisions;

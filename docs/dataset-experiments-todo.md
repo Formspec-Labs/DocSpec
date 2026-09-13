@@ -1665,7 +1665,16 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d48"></a>
 
-- [ ] **D48 · P1 · Support bounded dataset recipes beyond segment processors.**
+- **D48 · Shared lifecycle scope moved to Core; external recipe qualification deferred.**
+  The September 13 [Core tasks](core-model-implementation-tasks.md) supersede
+  the Dagster-only ownership below: C11 owns semantic execution, C19 the document
+  integration, C21 the optional job adapter, and C23 retirement. Dagster owns
+  scheduling and native job retries; Core owns retained semantic attempts and
+  results. D49 still requires its external search recipe and pinned inputs.
+  The following September 12 proposal is retained as decision history, not an
+  additional implementation instruction.
+
+  **Earlier proposal: support bounded dataset recipes beyond segment processors.**
   Compose the supplied computation with native Dagster assets/jobs and injected
   resources. Reuse DocSpec's public catalog readers and retained input references,
   plus Rulespec's existing artifact publication. Accept pinned catalog/layer/
@@ -1811,7 +1820,14 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d54"></a>
 
-- [ ] **D54 · P1 · Replace redundant execution and processor evidence machinery
+- **D54 · Replacement scope moved to Core C11/C19/C21/C23.**
+  The September 13 [Core tasks](core-model-implementation-tasks.md) replace this
+  separate prototype/adoption track with the shared local lifecycle and bounded
+  bulk path. Preserve its useful behavior and cleanup checks in those tasks;
+  the earlier instruction to put all dependencies and progress in Dagster is
+  superseded. The dated work below is history, not a second active plan.
+
+  **Earlier proposal: replace redundant execution and processor evidence machinery
   with native stages and batch results.** Implement the
   [reviewed smaller design](tooling-simplification-review.md) through a decisive
   installed prototype, then adopt the path that preserves useful dataset

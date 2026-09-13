@@ -5,6 +5,18 @@ Updated 2026-09-13 after architecture review. This plan implements the
 deployment and interoperability capabilities added when required. It describes
 planned work; implementation checks establish conformance and performance.
 
+The [recursive review record](history/2026-09-13-core-plan-swarm-validation.md)
+documents the semantic, dependency, and tool-evidence corrections applied to this
+version, including the limits of the earlier benchmarks.
+
+The [implementation tasks](core-model-implementation-tasks.md) break this plan
+into dependent deliverables with completion checks and code to retire. Legacy
+support is out of scope: adopt the new APIs and storage formats directly, update
+owned consumers, and remove superseded paths. Build no old-format importer,
+compatibility layer, migration framework, or dual-write path. Preserve useful
+document workflows; retention and recovery apply to data admitted by the new
+implementation.
+
 Keep the public API, operation definitions, job coordination, and decisions made
 once per operation or batch in Python. Use native libraries for bulk state
 resolution, selected-value evaluation, and comparisons.
@@ -30,7 +42,7 @@ a provisional implementation later.
 | Public API and operation coordination | Python | Describe operations and policy, coordinate batches, and expose results and errors. Bulk checks execute through the native paths below. |
 | Typed records and general JSON processing | msgspec | Decode and validate fixed requests, definitions, manifests, and interchange records; encode ordinary JSON and generate schemas from the record types. |
 | Supplied JSON Schema validation | jsonschema-rs | Compile and reuse supplied schemas; validate at admission with explicit draft, reference, and format settings. |
-| Authoritative reference-implementation metadata | SQLite through standard-library `sqlite3` | A focused backend owns SQL, connections, transactions, migrations, and bounded row binding behind four batch operations. |
+| Authoritative reference-implementation metadata | SQLite through standard-library `sqlite3` | A focused backend owns SQL, connections, transactions, schema initialization and version checks, and bounded row binding behind the six operations in §4. |
 | Local artifact content | disk-objectstore | Retain content with packing and physical deduplication, independently of logical artifact identity. |
 | PROV representation and serialization | `prov` | Implement the standards-facing model and bounded exports using Core semantics. |
 | Bulk catalog and dataset operations | DuckDB | Resolve retained states and selected values, compare dependencies, and identify candidate work in SQL over Parquet and Arrow. Typed JSON extraction and SHA-256 are built in. Decided by the §3.3 measurement. |
@@ -90,8 +102,13 @@ generation and provenance. Use shared records or manifests where they preserve
 the required distinctions; Core does not require a database row or task for
 every logical entity or association.
 
-Build `prov` documents for the requested state or subgraph instead of loading
-all historical provenance into memory. Its
+Build `prov` documents only for requests within explicit record and byte budgets;
+the library's [model is in memory](https://prov.readthedocs.io/en/latest/explanation/architecture.html).
+Scope the query to the requested state or subgraph, count or bound expansion,
+and refuse an over-budget export with a clear limit error before materializing
+it. A selected subgraph may itself be too large. Never silently truncate a
+complete membership or dictionary-change claim. The authoritative records remain
+queryable independently of this export limit. Its
 [conformance matrix](https://prov.readthedocs.io/en/latest/reference/conformance.html)
 does not replace checks for Core retention, correspondence, or keyed states.
 
@@ -116,10 +133,12 @@ records together:
 | Value edit | Source occurrence, ordered JSON Patch instructions, new occurrence identity and value reference, and the actual transformation execution and result bindings. |
 | Checkpoint | Logical state identity, complete membership and order references, format version, integrity evidence, and recoverable revision/provenance references. |
 
-A member key addresses a membership slot, not a field in the payload. The initial binding uses string keys. A generated key derives deterministically
-from the source sequence or the first occurrence it addressed, so two builds of
-the same root state agree; generated keys are opaque and never material to
-correspondence unless the application supplied them. Retain
+A member key addresses a membership slot, not a field in the payload. The initial
+binding uses string keys. A generated key derives deterministically from a pinned
+source sequence or the first occurrence it addressed. Retain the assignment;
+reconstructing the same state recovers the same keys. Generated keys are addressing
+metadata by default. Include them in correspondence whenever an operation or
+selected-value definition makes them material, regardless of who assigned them. Retain
 ordering separately: an ordered state has a recoverable sequence containing each
 live member key exactly once. Array positions in a serialized state are not
 persistent member addresses. A positional edit request first resolves against a
@@ -130,7 +149,9 @@ Resolve a revision at two levels:
 1. **Derive changed values.** Apply a partial value edit to the named immutable
    source occurrence using ordered [JSON Patch](https://www.rfc-editor.org/info/rfc6902/)
    instructions. An `add`, `replace`, or `test` without a `value` member is an invalid patch; an
-   explicit null `value` is valid. Reject invalid patches and paths, failed
+   explicit null `value` is valid. JSON Patch requires ignoring unrecognized
+   members of each patch operation; this exception does not relax fixed Core
+   record validation. Reject invalid patches and paths, failed
    preconditions, and results outside the declared codec.
    Recover the complete resulting value and assign a new occurrence identity.
    Record its actual generation, usage,
@@ -227,39 +248,54 @@ encode and hash the selected results. Reuse already verified selected values
 where their parents and definitions remain unchanged. Avoid repeated parsing
 for each field. String extraction alone is insufficient: use `json_extract`,
 which returns typed JSON, never `json_extract_string`, and read `json_type` for
-presence and type. The execution path must pass the type and absence fixtures.
+presence and type. Validate JSON Pointer syntax independently before calling the
+engine; permissive engine behavior must not turn invalid syntax into absence.
+The execution path must pass the type, absence, pointer, and canonical-byte fixtures.
 
 ### 3.3. Engine decision and native functions
 
-DuckDB is the bulk engine. The decision was measured on 2026-09-13 with
-[this probe](history/probes/2026-09-13-engine-resolver-probe.py): the §3.1
-membership resolver and §3.2 evaluator over two million members and forty
-thousand ordered edits with repeated puts and removes on hot keys, identical
-Parquet inputs, each engine in its own process.
+DuckDB is the bulk engine. A 2026-09-13
+[probe](history/probes/2026-09-13-engine-resolver-probe.py) compared last-edit-per-key
+membership reduction and three JSON field extractions over two million members
+and forty thousand edits, using identical Parquet inputs and separate processes.
+It did not implement the complete §§3.1–3.2 behavior: value patches, edit
+preconditions, order changes, general selectors, and canonical encoding were
+outside its scope. Some repeated removals would fail the plan's preconditions.
+These are recorded timings of those query shapes, not equivalent production workloads.
 
 | | DuckDB 1.5.5 | Polars 1.44.2 |
 | --- | --- | --- |
 | Resolve, extract three fields, SHA-256 every row | 0.71–0.76 s | 0.57 s to resolve and extract, plus 0.72 s to hash through a Python callback |
 | Peak process memory | 120–122 MiB | 1,115 MiB; 583 MiB when fully lazy with the engine's own unstable hash instead of SHA-256 |
-| Number 1 versus string "1" after extraction | preserved by `json_extract` | erased; `json_path_match` returns String |
-| SHA-256 inside the engine | built in, byte-identical to `hashlib` | none; a Python callback or a Rust plugin is required |
+| Number 1 versus string "1" in the tested extraction path | preserved by `json_extract` | erased by the tested `json_path_match` path |
+| SHA-256 in the tested path | built in; the `abc` check matches `hashlib` | computed through a Python callback |
 | New dependency | none | one |
 
-Both engines resolved the same 2,001,000 members. Speed is equal within noise
-where both can do the work; only DuckDB does all of it inside the engine, in
-about a tenth of the memory, with no new dependency. It meets the §3.2
-type-preservation and §5 hashing requirements without native code. Its SQLite
-extension can attach the ledger so candidate lookups join ledger rows to state
-content in one statement; it is available but must be installed. The probe did
-not include a state larger than process memory; step 7 qualifies that.
+Both queries returned 2,001,000 members; equal counts do not establish equal
+values or fingerprints. DuckDB is retained for its existing integration and the
+measured behavior of this query shape. The tested path preserves number/string
+types and computes SHA-256 in the engine. It does not establish complete
+canonical-encoding compatibility or a general performance advantage over Polars.
+Larger-than-memory execution and the full semantics remain C03 and C25 checks.
+
+The metadata owner supplies bounded, consistent snapshot batches for DuckDB joins.
+Direct SQLite attachment is optional and must preserve that read boundary and
+transaction visibility; it is not required for the initial implementation.
+All authoritative writes remain in the SQLite backend.
 
 Use SQL, typed JSON extraction, joins, grouping, sorting, and native library
 calls first. Add a focused native function only for a named semantic gap or
 demonstrated capacity failure that SQL and batching cannot address, and include
 any such function in the first implementation of the operation that needs it.
-The first candidate to check is canonical encoding of extracted object values:
-stored payloads are canonical, so an extracted sub-object is canonical only if
-the engine re-serializes with the same escaping; the encoding fixtures decide.
+Canonical encoding is a confirmed integration gap to resolve in C03/C05: DuckDB
+1.5.5 can reserialize a canonical string containing U+001F from `\u001f` to
+`\u001F`, including within extracted objects. Both represent the same JSON value
+but produce different bytes and hashes. Engine extraction must pass through a
+compatible canonical encoding path before correspondence hashing. Qualify that
+path across the admitted domain, including strings and nested values, before
+shipping the evaluator. A native function is conditional on existing batch
+mechanisms failing correctness or capacity; arbitrary engine JSON text is not a
+substitute for canonical bytes.
 The SQLite backend does not require a native component.
 
 ### 3.4. Batch boundaries and cost controls
@@ -314,9 +350,22 @@ DocSpec's ledger owns logical records. This choice supplies local storage, not a
 remote content service; a future remote adapter must establish its own retention,
 publication, and cleanup behavior.
 
+Honor the pinned content library's maintenance restrictions in the adapter.
+The [reviewed source](https://github.com/aiidateam/disk-objectstore/blob/ba13ca67216152fbd7c6df4b84fdec456a9d5478/disk_objectstore/container.py#L2461)
+requires exclusive repository access for deletion and permits partial completion.
+Use a local maintenance gate covering content readers, writers, and publication.
+Record authorized deletion intent durably, mark affected availability, then
+process bounded deletion units and reconcile interrupted outcomes. Protect
+retention commitments outside the authorized scope, including shared bytes and
+selected-value recovery paths. Packed-object deletion does not immediately reclaim
+disk space. Qualify any destructive repacking separately: the reviewed source
+notes a missing directory sync during repacking. Keep that operation
+disabled until the selected adapter path passes crash and durability checks.
+
 Use **SQLite through standard-library `sqlite3`** for the local authoritative
 metadata ledger. One backend owns connections, parameterized SQL, statement reuse,
-bounded parameter/result rows, transactions, migrations, and database constraints.
+bounded parameter/result rows, transactions, schema initialization and version
+checks, and database constraints.
 Use `executemany` for inserts and set-based SQL for bulk checks and candidate
 lookups. No ORM or custom compiled ledger component is required. See
 [Python's SQLite interface](https://docs.python.org/3/library/sqlite3.html).
@@ -331,6 +380,17 @@ Expose a small set of metadata operations instead of individual SQL calls:
 | `read_dependencies(result_batch)` | Return the required dependency relationships for a batch of results. |
 | `select_current(dataset, target, expected_current)` | Move the dataset's guarded current pointer to a retained state or result; refuse a stale expected current; rewrite nothing else. |
 | `remove_under_policy(policy, batch)` | Remove retained content or records only as the cited retention policy permits, recording what was removed and why. |
+
+These six operations do not enumerate every internal metadata write. The same
+backend also records attempt start/progress/failure, dependency omissions and
+supplements, and retention-policy definitions through bounded internal methods.
+Give updates stable identities and defined retry semantics; keep added evidence
+distinct from original execution records. Final successful-retention status and
+its result bindings commit atomically through the publisher. Failure or progress
+records must not imply that their incomplete inputs or outputs were retained.
+The same owner admits imported entities and complete root states through the
+content-readiness and atomic-publication checks, without requiring an invented
+producing execution or operation result.
 
 Define batch schemas independently of the caller's representation. Accept bounded
 parameter rows or convert bounded Arrow metadata batches within this backend;
@@ -350,9 +410,10 @@ Enable foreign-key checks on every connection, use explicit transaction control,
 and define a bounded busy timeout and retry policy. Use WAL with
 `synchronous=FULL` for the authoritative local ledger; qualify any weaker
 [durability setting](https://www.sqlite.org/pragma.html#pragma_synchronous)
-separately rather than comparing it as equivalent. Maintain supported schema
-versions and test reopen and migration behavior. Connection ownership and shutdown
-must be explicit; workers submit publication batches to the local writer.
+separately rather than comparing it as equivalent. Tag the schema version and
+test initialization, reopen, and refusal of unsupported versions. Connection
+ownership and shutdown must be explicit; workers submit publication batches to
+the local writer.
 
 Bulk state content can remain in retained files or manifests named by the ledger;
 its metadata need not duplicate every payload row.
@@ -368,7 +429,18 @@ selection. Define publication units explicitly, keep referenced content protecte
 from cleanup through publication, and use the same transaction mechanism for new
 results and reuse selections. Retry publication with stable identities so an
 uncertain commit response can be reconciled without duplicating logical results.
-A deliberately fresh execution still receives its own attempt identity.
+Publication retry keeps those identities. Verified continuation of an unfinished
+execution may keep its attempt identity; invoking the producer again after an
+interruption records a new attempt and preserves the earlier one. Explicitly fresh
+execution also receives a new attempt identity.
+
+Before admitting execution relationships or publishing successful retention,
+check PROV consistency and reject generation self-dependencies or cycles across
+the incoming batch and retained relationships. Preserve usage/generation ordering
+for streamed entities. This is distinct from ordering operation definitions or
+traversing conservative dependency declarations. Recheck concurrency-sensitive
+availability and evidence versions at publication so cleanup or a newly recorded
+omission cannot invalidate a selection between candidate lookup and commit.
 
 A crash before publication may leave unreferenced content; cleaning it up is one
 retention policy among others, and every removal cites the policy record that
@@ -388,8 +460,10 @@ Use **msgspec** for fixed Core implementation records and ordinary JSON encoding
 and decoding. Define requests, operation descriptions, manifests, and result records as typed
 structures. A resource description marks its identity and version as established
 or uncertain; the marker enters the correspondence preimage, so an unknown version
-never matches an established one, and policy decides whether two uncertain
-descriptions may match (Core §5.2). Reuse typed decoders and encoders; validate JSON
+never matches an established one. Matching uncertain descriptions alone does not
+establish correspondence: operation/dependency evidence must first establish
+adequacy under Core §6.2. Policy may reject an eligible result; it cannot waive a
+material-input or resource-evidence gap. Reuse typed decoders and encoders; validate JSON
 during decoding and use strict conversion for incoming builtin Python values.
 See [msgspec usage](https://msgspec.dev/usage).
 
@@ -402,6 +476,13 @@ generate fixed-record JSON Schemas from the same types. Check that generated sch
 agree on the format's accepted values; library defaults do not define that domain.
 See [msgspec structures](https://msgspec.dev/structs) and
 [JSON Schema generation](https://msgspec.dev/jsonschema).
+
+Reject duplicate object keys at raw JSON admission before a decoder collapses
+them; typed validation after decoding cannot recover that ambiguity. The tested
+msgspec decoder accepts duplicate keys, so it does not supply this check. Reuse
+the shared domain rule, qualify its bounded parsing path in C03/C04, and account
+for the cost. JSON Patch's ignored extra operation members remain the specific
+RFC 6902 exception to unknown-field rejection, not an exception to duplicate keys.
 
 Use **jsonschema-rs** when an application or plugin supplies a JSON Schema for its
 payloads. Compile and reuse each schema with its declared draft, references, and
@@ -454,6 +535,13 @@ and entity identities in each member encoding when the definition requires them.
 For a whole binary artifact, value-comparison evidence names its codec, byte
 length, and verified SHA-256 content digest; retain the bytes separately. A logical
 artifact ID enters comparison only when its identity is declared material.
+
+For large state selections, stream the correctly framed canonical members into
+the digest in bounded chunks after the required sort. Do not build one whole-state
+Python array or assume `list()`/`string_agg()` can spill; DuckDB documents
+[limits on aggregate spilling](https://duckdb.org/docs/current/guides/performance/how_to_tune_workloads#larger-than-memory-workloads-out-of-core-processing).
+Chunk boundaries must not change the encoded bytes or fingerprint. Retaining
+only that fingerprint still does not retain the selected value.
 
 The correspondence preimage is a canonical structure containing a purpose tag,
 encoding version, the effective operation description, and dependencies keyed
@@ -554,7 +642,7 @@ Core workflow remains complete without these additions.
 add a metadata backend when multiple hosts need direct database access or
 sustained concurrent writes exceed the local writer's capacity. Multiple processing
 workers alone do not establish that need. The new backend owns its SQL, migrations,
-and transactions behind the same four operations and passes the same behavior
+and transactions behind the same six operations and passes the same behavior
 checks. SQLite remains the supported local backend.
 
 Remote content, additional value codecs, domain operations, and interoperability
@@ -578,8 +666,8 @@ completion check; none introduces a temporary implementation intended for rewrit
 
 1. **Freeze semantics and fixtures.** Turn §§3.1–3.2 and §5 into concrete
    record definitions and known-answer fixtures. Define metadata batch schemas,
-   publication units, migrations, and execution granularity. Set capacity targets
-   for construction, small edits, selected-value evaluation, and publication.
+   publication units, schema version checks, and execution granularity. Set capacity
+   targets for construction, small edits, selected-value evaluation, and publication.
    Name any native function required under §3.3 and the existing code and
    dependencies to retain or remove. A small independent reference model serves
    as the correctness oracle, not the production engine.
@@ -626,9 +714,10 @@ completion check; none introduces a temporary implementation intended for rewrit
 7. **Qualify the complete workload.** Use pytest and Hypothesis with the independent
    reference model for sequences of revisions, selections, failures, and cleanup.
    Check supplied-schema failures, fixed-record schema agreement, encoding fixtures,
-   batch/scalar agreement, and schema upgrades. Measure request-to-durable-publication
-   performance for full construction, metadata-only reuse, a small edit in a large
-   state, and a long edit history. Record elapsed time, peak process memory, scratch
+   batch/scalar agreement, and schema version checks. Measure performance from
+   request to durable publication for full construction, metadata-only reuse,
+   a small edit in a large state, and a long edit history. Record elapsed time,
+   peak process memory, scratch
    use, rows and bytes scanned, Python conversions/callbacks, queries, transactions,
    encoding/hashing passes, and executed versus reused operations. Attribute time
    to Python, native processing, storage, and waiting, including writer contention.
@@ -639,16 +728,17 @@ completion check; none introduces a temporary implementation intended for rewrit
    measured workload; the roadmap does not depend on replacing provisional Core
    implementations.
 
-Performance evidence must compare equivalent work. The
+Performance evidence must compare equivalent work. The corrected
 [SQLite binding probe](history/probes/2026-09-13-sqlite-ledger-binding-probe.py)
-measured the Python `executemany` path against a pure-SQL insert with value
-formatting forced in the baseline, at one and four million rows: native binding
-could remove at most about half of a ledger cost that stays under a minute for a
-million-document run. It is synthetic and single-writer. Use actual ledger
+times insert and commit on both paths. Earlier numbers excluded SQL commit but
+included Python commit, and subtracted an aggregate query with different work to
+claim an insertion floor. That calculation does not bound native-code savings;
+the associated million-document extrapolation is withdrawn. The corrected probe
+compares synthetic SQL-generated rows with prepared Arrow rows converted through
+Python. Neither is an equivalent native-binding baseline. Use actual ledger
 schemas, transaction sizes, durability settings, and concurrent readers for
-capacity qualification; use an equivalent native path if native binding is ever
-proposed. The sqlite3 choice supplies the required transaction behavior with a
-simpler backend; its actual capacity remains to be established.
+capacity qualification. The sqlite3 choice supplies the required transaction
+behavior with a focused backend; its production capacity remains to be established.
 
 The example and behavioral checks must cover:
 

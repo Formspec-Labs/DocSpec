@@ -1,4 +1,4 @@
-"""Bounded engine decision for the Core resolver and projection path, 2026-09-13.
+"""Limited membership and scalar-extraction query comparison, 2026-09-13.
 
 Run from the repository root:
   uv run --frozen python docs/history/probes/2026-09-13-engine-resolver-probe.py gen
@@ -10,6 +10,13 @@ meta.n as a string, the rest as a number) and E ordered edits with repeated puts
 plus new keys. Each engine resolves membership (last edit per key wins, untouched keys inherit from the
 base), extracts three projected fields, and fingerprints every row with SHA-256, in its own process so
 peak RSS is clean. Results are recorded in docs/core-model-implementation-plan.md §3.3.
+
+This is not the complete Core resolver/evaluator: it omits value patches, edit
+preconditions, order changes, general selectors, and canonical re-encoding.
+Repeated removes in this generated input can target an already absent key.
+The two extraction paths do not preserve the same types, so their timings are
+not equivalent semantic work; equal output counts do not prove equal outputs.
+It is not a larger-than-memory or production capacity qualification.
 """
 import hashlib, json, os, resource, sys, tempfile, time
 D = os.path.join(tempfile.gettempdir(), "docspec-engine-probe"); os.makedirs(D, exist_ok=True)

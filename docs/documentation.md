@@ -16,6 +16,7 @@ same change as the behavior or file move they describe.
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
 | Read the general dataset, provenance, retention, and reuse model | [Core model — editor’s draft](core-model.md) |
 | Plan the Core reference implementation and component choices | [Core implementation plan](core-model-implementation-plan.md) |
+| Choose Core implementation work, dependencies, and completion checks | [Proposed Core implementation tasks](core-model-implementation-tasks.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
 | Capture, repair, process and compare a small supplied-record experiment | [Offline walkthrough](offline-walkthrough.md) |
 | Implement a pinned local processor with literal quote evidence | [Phrase matching example](phrase-matching-example.md) |

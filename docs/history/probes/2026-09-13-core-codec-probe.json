@@ -1,0 +1,140 @@
+{
+  "versions": {
+    "duckdb": "1.5.5",
+    "msgspec": "0.21.1",
+    "pyarrow": "25.0.1",
+    "jsonschema-rs": "0.52.1"
+  },
+  "canonical_extraction": [
+    {
+      "value": null,
+      "expected": "null",
+      "extracted": "null",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": true,
+      "expected": "true",
+      "extracted": "true",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": false,
+      "expected": "false",
+      "extracted": "false",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": 0,
+      "expected": "0",
+      "extracted": "0",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": 9007199254740991,
+      "expected": "9007199254740991",
+      "extracted": "9007199254740991",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": -9007199254740991,
+      "expected": "-9007199254740991",
+      "extracted": "-9007199254740991",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": "1",
+      "expected": "\"1\"",
+      "extracted": "\"1\"",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": [
+        1,
+        "1",
+        null
+      ],
+      "expected": "[1,\"1\",null]",
+      "extracted": "[1,\"1\",null]",
+      "equal_bytes": true,
+      "equal_sha256": true
+    },
+    {
+      "value": "\u001f",
+      "expected": "\"\\u001f\"",
+      "extracted": "\"\\u001F\"",
+      "equal_bytes": false,
+      "equal_sha256": false
+    },
+    {
+      "value": {
+        "a": "\u001f"
+      },
+      "expected": "{\"a\":\"\\u001f\"}",
+      "extracted": "{\"a\":\"\\u001F\"}",
+      "equal_bytes": false,
+      "equal_sha256": false
+    },
+    {
+      "value": {
+        "\ue000": 1,
+        "\ud800\udc00": 2
+      },
+      "expected": "{\"\ud800\udc00\":2,\"\ue000\":1}",
+      "extracted": "{\"\ud800\udc00\":2,\"\ue000\":1}",
+      "equal_bytes": true,
+      "equal_sha256": true
+    }
+  ],
+  "presence": [
+    {
+      "parent": "{\"a\":null}",
+      "value_and_type": [
+        "null",
+        "NULL"
+      ]
+    },
+    {
+      "parent": "{}",
+      "value_and_type": [
+        null,
+        null
+      ]
+    },
+    {
+      "parent": "{\"a\":1}",
+      "value_and_type": [
+        "1",
+        "UBIGINT"
+      ]
+    },
+    {
+      "parent": "{\"a\":\"1\"}",
+      "value_and_type": [
+        "\"1\"",
+        "VARCHAR"
+      ]
+    }
+  ],
+  "invalid_pointer": {
+    "pointer": "/x~2",
+    "duckdb_result": null,
+    "valid_rfc6901_syntax": false
+  },
+  "duplicate_keys": {
+    "input": "{\"a\":1,\"a\":2}",
+    "msgspec_decoded": {
+      "a": 2
+    }
+  },
+  "patch_functions": [
+    "json_merge_patch"
+  ]
+}
