@@ -81,7 +81,7 @@ Run timestamps are sampled before each run; they are not measured finish times.
 Acquisition observation times remain separate. A live success covers only the
 requested volume metadata and section at their observation times.
 
-The [installed-wheel test](../tests/test_govinfo_cfr_installed_wheel.py) runs the
+The [installed-wheel test](../tests/test_provider_examples_installed_wheel.py) runs the
 [same cases](../tests/test_govinfo_cfr_example.py) outside both checkouts and forbids
 network connections during them. The [provider manifest](../vendor/spicy_docs.json)
 pins the wheel; [provider identity](../examples/provider_identity.py) also hashes

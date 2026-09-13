@@ -7,9 +7,10 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 46 of 54 local implementation items complete.** D47 is a moved-task
+**Status: 47 of 55 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
 D55 records the completed annual CFR example and SpicyDocs 0.6.0 adoption.
+D56 records the completed FEC metadata example and combined source wheel adoption.
 The D55 implementation merged through [PR #2](https://github.com/Formspec-Labs/DocSpec/pull/2).
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. Completed entries link their scoped
@@ -1617,12 +1618,13 @@ caller lives; moving imports between modules does not remove a package cycle.
   build and dependency identities. This is a locally built and qualified wheel,
   not an external registry publication. Final independent review is consolidated in D39.
 
-  **Current dependency, September 12:** D55 advances the single optional provider
-  wheel to SpicyDocs `0.6.0` from source `5a9c4e9`. Reading, bill acquisition and
-  annual CFR acquisition share [one manifest](../vendor/spicy_docs.json).
+  **Current dependency, September 12:** D56 adopts the combined SpicyDocs `0.7.0`
+  wheel from source `d9c312c`. FEC source reading, bill acquisition and annual
+  CFR acquisition share [one manifest](../vendor/spicy_docs.json).
   The bill and CFR examples need the provider's acquisition extra; neither needs
-  Dagster. The core wheel still installs without SpicyDocs. D55 records the new
-  installed-package qualification and exact implementation revision.
+  Dagster. The FEC metadata example uses the provider's core reader. The core
+  DocSpec wheel still installs without SpicyDocs. D55 preserves the earlier
+  CFR qualification; D56 owns the combined provider's receiving checks.
 
 <a id="d46"></a>
 
@@ -1787,7 +1789,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   [installed-wheel qualification](../tests/test_govinfo_bill_installed_wheel.py)
   checks offline reuse, source spans, selection, refusals, and provider identity.
   Initially qualified with SpicyDocs 0.3.0 from source `8e485fe`; D55 advances
-  the current [wheel manifest](../vendor/spicy_docs.json) to 0.6.0 and rechecks
+  the [wheel manifest](../vendor/spicy_docs.json) to 0.6.0 and rechecks
   the bill example. Native package IDs now supply source versions; hashes remain
   provenance, and an unstated transport version remains absent.
   The originating worktree passed **11 installed-wheel and package-boundary
@@ -1870,6 +1872,48 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   under `docspec-check/` and `docspec-cfr-live/`. The matching source task is
   SpicyDocs C07, originally on `codex/xml-body-acquisition`. DocSpec merged this
   delivery through PR #2 at `b62a8b5`; that merge passed local and GitHub checks.
+
+<a id="d56"></a>
+
+- [x] **D56 · P1 · Bring the retained FEC census example into DocSpec.** Adopt
+  the combined SpicyDocs 0.7.0 wheel and maintain a small FEC metadata catalog
+  example, focused tests, and usage guide in this repository. Read the provider's
+  admitted records and evidence once, then use the existing supplied-record
+  catalog APIs. Preserve complete native records, unknown fields and evidence
+  references; keep collection scope once in the example summary. Reuse an
+  existing evidence reference as the explicitly labeled observation version.
+  SpicyDocs owns acquisition and parsing; SpicyRegs owns committee-table and
+  relationship interpretation. Retained research data and qualification receipts
+  remain outside this source repository.
+
+  **Done when:** small offline and installed-wheel cases prove metadata/evidence
+  retention, explicit empty results, bounds and source refusals; the existing
+  27,311-row retained census builds through the example with exact field and
+  membership comparison; bill/CFR and core-package checks pass against the same
+  wheel. Metadata rows offer no document-body candidates. Source publication,
+  filing acquisition, relationship interpretation and search adoption are not
+  established by this example. No new core API or runtime framework is needed.
+
+  **Completed locally September 13:** [the FEC guide](fec-committees.md) and
+  example use the provider's public reader and existing DocSpec supplied-record
+  APIs. Dependency commit `694ccef` adopts the qualified SpicyDocs 0.7.0 wheel
+  from source `d9c312c`. Nineteen focused offline cases cover preserved values,
+  evidence, empty input, limits and refusals; the shared installed-wheel check
+  covers FEC and CFR outside both checkouts. Full regression validation passed
+  **1,182 tests**, with one opt-in test deselected. Required regression mapping,
+  Ruff, lock, distribution build and core-wheel installation checks passed.
+
+  The installed example also built the retained 2024/2026 census: **27,311
+  committees across 274 response pages**. Independent comparison matched every
+  complete source record and evidence observation by committee ID, with no
+  Internet requests. The original source verifier remains explicit; this checks
+  the retained handoff, not a fresh FEC semantic replay or body acquisition.
+  Architecture and semi-formal code/documentation reviews approved the approach.
+  Qualification receipts, the exact inputs, completed catalog and reviews are in
+  `~/Work/corpora/docspec-fec-adoption-20260912-233109/`; the full comparison is
+  `consumer/qualification.json`. This delivery is locally committed; GitHub CI
+  and a main merge are separate from these local checks. The eight remaining
+  implementation items retain their existing scope.
 
 ## Suggested delivery order
 

@@ -88,6 +88,11 @@ The [GAO topic example](gao-topics.md) maps admitted source fields and evidence
 into supplied records, then applies an exact-label filter without body capture
 or a new processor type.
 
+The [FEC committee example](fec-committees.md) joins retained committee records
+and evidence once, then builds a bounded metadata catalog through supplied
+records. It preserves full source fields and the original observation references
+without making API requests or treating committee metadata as document bodies.
+
 The [SpicyRegs comment example](spicyregs-comments.md) preserves retained table
 fields, nulls, diagnostics and attachment candidates, then filters by docket ID
 before any document is fetched. Its Parquet fixture uses the provider's optional
