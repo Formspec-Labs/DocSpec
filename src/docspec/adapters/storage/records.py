@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -360,62 +360,88 @@ class LocalParquetRecordStorage:
         sizes: dict[int, int] = {}
         sequences: dict[int, int] = {}
         record_count = 0
-        previous: str | None = None
-        with self._cursor() as cursor, tempfile.TemporaryDirectory(prefix="records-", dir=self._staging) as directory:
-            cursor.execute("CREATE TEMP TABLE writing_records (partition INTEGER, sequence BIGINT, record_identity VARCHAR, partition_value VARCHAR, record_json BLOB)")
+        source_error: BaseException | None = None
+
+        def batches() -> Iterator[pa.RecordBatch]:
+            nonlocal record_count, source_error
             batch: list[tuple[int, int, str, str, bytes]] = []
             batch_bytes = 0
+            previous: str | None = None
 
-            def flush() -> None:
-                nonlocal batch_bytes
-                if batch:
-                    table = pa.Table.from_arrays([pa.array(column, type=field.type) for column, field in zip(zip(*batch), _WRITE_SCHEMA, strict=True)], schema=_WRITE_SCHEMA)
-                    cursor.register("writing_batch", table)
-                    try:
-                        cursor.execute("INSERT INTO writing_records SELECT * FROM writing_batch")
-                    finally:
-                        cursor.unregister("writing_batch")
-                    batch.clear()
-                    batch_bytes = 0
+            def arrow_batch() -> pa.RecordBatch:
+                return pa.RecordBatch.from_arrays([
+                    pa.array(column, type=field.type)
+                    for column, field in zip(zip(*batch), _WRITE_SCHEMA, strict=True)
+                ], schema=_WRITE_SCHEMA)
 
-            for record in records:
-                if set(record) != set(schema.fields):
-                    raise IntegrityError("record does not match its closed logical schema")
-                identity = require_text(record[schema.identity_field], schema.identity_field)
-                value = require_text(record[schema.partition_field], schema.partition_field)
-                if previous is not None and identity <= previous:
-                    raise IntegrityError("record input must be strictly ordered by logical identity")
-                previous = identity
-                partition = self._bucket(value, partition_policy.bucket_count)
-                if replace_partitions is not None and partition not in replace_partitions:
-                    raise IntegrityError("incremental records include a partition not declared for replacement")
-                payload = canonical_json_bytes(record)
-                if len(payload) > self.max_record_bytes:
-                    raise LimitExceededError(f"record exceeds the {self.max_record_bytes}-byte limit")
-                size = len(payload) + len(identity.encode("utf-8")) + len(value.encode("utf-8"))
-                if size > self.max_member_bytes:
-                    raise LimitExceededError(f"record exceeds the {self.max_member_bytes}-byte member limit")
-                sequence = sequences.get(partition, 0)
-                if sizes.get(partition, 0) and sizes[partition] + size > self.max_member_bytes // 2:
-                    sequence += 1
-                    sequences[partition] = sequence
-                    sizes[partition] = 0
-                record_count += 1
-                sizes[partition] = sizes.get(partition, 0) + size
-                if batch and (len(batch) >= _BATCH_ROWS or batch_bytes + size > self._batch_bytes):
-                    flush()
-                batch.append((partition, sequence, identity, value, payload))
-                batch_bytes += size
-            flush()
+            try:
+                source = iter(records)
+                try:
+                    for record in source:
+                        if set(record) != set(schema.fields):
+                            raise IntegrityError("record does not match its closed logical schema")
+                        identity = require_text(record[schema.identity_field], schema.identity_field)
+                        value = require_text(record[schema.partition_field], schema.partition_field)
+                        if previous is not None and identity <= previous:
+                            raise IntegrityError("record input must be strictly ordered by logical identity")
+                        previous = identity
+                        partition = self._bucket(value, partition_policy.bucket_count)
+                        if replace_partitions is not None and partition not in replace_partitions:
+                            raise IntegrityError("incremental records include a partition not declared for replacement")
+                        payload = canonical_json_bytes(record)
+                        if len(payload) > self.max_record_bytes:
+                            raise LimitExceededError(f"record exceeds the {self.max_record_bytes}-byte limit")
+                        size = len(payload) + len(identity.encode("utf-8")) + len(value.encode("utf-8"))
+                        if size > self.max_member_bytes:
+                            raise LimitExceededError(f"record exceeds the {self.max_member_bytes}-byte member limit")
+                        sequence = sequences.get(partition, 0)
+                        if sizes.get(partition, 0) and sizes[partition] + size > self.max_member_bytes // 2:
+                            sequence += 1
+                            sequences[partition] = sequence
+                            sizes[partition] = 0
+                        record_count += 1
+                        sizes[partition] = sizes.get(partition, 0) + size
+                        if batch and (len(batch) >= _BATCH_ROWS or batch_bytes + size > self._batch_bytes):
+                            yield arrow_batch()
+                            batch.clear()
+                            batch_bytes = 0
+                        batch.append((partition, sequence, identity, value, payload))
+                        batch_bytes += size
+                    if batch:
+                        yield arrow_batch()
+                finally:
+                    close_source = getattr(source, "close", None)
+                    if close_source is not None:
+                        close_source()
+            except BaseException as error:
+                # Arrow transports callback failures through a native exception.
+                # Preserve the actual producer/budget error, without parsing it.
+                if not isinstance(error, GeneratorExit):
+                    source_error = error
+                raise
+
+        with (
+            self._cursor() as cursor,
+            tempfile.TemporaryDirectory(prefix="records-", dir=self._staging) as directory,
+            closing(batches()) as source_batches,
+            closing(pa.RecordBatchReader.from_batches(_WRITE_SCHEMA, source_batches)) as reader,
+        ):
             output_directory = Path(directory) / "members"
             output_path = str(output_directory).replace("'", "''")
-            if sizes:
+            try:
+                # The direct C stream avoids DuckDB's threaded Arrow scanner,
+                # preserving caller-thread input consumption in the pinned backend.
+                cursor.register("writing_records", reader.__arrow_c_stream__())
                 cursor.execute(
                     "COPY (SELECT * FROM writing_records "
                     "ORDER BY partition, sequence, partition_value, record_identity) "
                     f"TO '{output_path}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048, "
                     "PARTITION_BY (partition, sequence), WRITE_PARTITION_COLUMNS false, RETURN_STATS)",
                 )
+            except BaseException:
+                if source_error is not None:
+                    raise source_error
+                raise
             written_count = 0
             while sizes and (output := cursor.fetchone()) is not None:
                 filename, count = output[:2]
