@@ -14,6 +14,8 @@ same change as the behavior or file move they describe.
 | Reader's task | Maintained guide |
 | --- | --- |
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
+| Read the general dataset, provenance, retention, and reuse model | [Core model — editor’s draft](core-model.md) |
+| Plan the Core reference implementation and component choices | [Core implementation plan](core-model-implementation-plan.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
 | Capture, repair, process and compare a small supplied-record experiment | [Offline walkthrough](offline-walkthrough.md) |
 | Implement a pinned local processor with literal quote evidence | [Phrase matching example](phrase-matching-example.md) |
@@ -42,6 +44,14 @@ same change as the behavior or file move they describe.
 | Understand supported identity values and the shared encoder | [Canonical JSON](canonical-json.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
 | Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
+
+The Core model and implementation plan were supplied as drafts on 2026-09-13 and
+revised the same day under review; the review records in `history/` show what
+changed and why. The plan keeps DuckDB from the
+[record-storage decision](record-storage.md) as the sole bulk engine, selects
+the rest of its toolset up front, and separates that foundation from later
+additive capabilities. These documents describe target semantics and planned
+work; the current architecture guide describes existing repository behavior.
 
 A catalog can be used without document acquisition or search. The Python runtime
 retains capture, extraction, segmentation, and processing results for later use.
