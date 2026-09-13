@@ -22,7 +22,8 @@ once per operation or batch in Python. Use DuckDB and Arrow for bulk state
 resolution, selected-value evaluation, and comparisons. DocSpec owns these rules
 regardless of where they execute. Use bounded batches across that boundary, keep
 bulk data in native structures, avoid repeated scans and conversions, and batch
-queries and publication. There is no DocSpec native component.
+queries and publication. Bounded Python decoding, validation, and canonical
+encoding remain explicit costs to measure. There is no DocSpec native component.
 
 ## 1. Implementation foundation
 
@@ -111,10 +112,16 @@ records together:
 | Checkpoint | Logical state identity, complete membership references, format version, integrity evidence, and recoverable revision/provenance references. |
 
 A member key addresses a membership slot, not a field in the payload. States are
-unordered dictionaries; any ordering a consumer needs is derived from keys or
-values at read time and is not authored or retained as state. The initial binding
-uses string keys. A generated key derives deterministically from a pinned source
-sequence or the first occurrence it addressed. Retain the assignment;
+unordered dictionaries with no separate position vector or `move` edit. Preserve
+meaningful source positions as ordinary member data. An operation that consumes
+members in a particular order retains its deterministic sorting rule as material
+configuration, including directions and any collation, missing-value, or tie-break
+rules. Its dependencies account for the selected values and the order it consumes.
+Sorting by identity cannot recover source order that was discarded. Imported
+ordered data must retain the positions needed to recover its meaning.
+
+The initial binding uses string keys. A generated key derives deterministically
+from a pinned source sequence or the first occurrence it addressed. Retain the assignment;
 reconstructing the same state recovers the same keys. Generated keys are
 addressing metadata by default. Include them in correspondence whenever an
 operation or selected-value definition makes them material, regardless of who
@@ -174,9 +181,11 @@ retention. Use a versioned definition with these fields:
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `whole` or `json_fields`. A dependency on a whole dataset state binds the state itself as a whole value; Core §6.2 permits that conservative declaration. |
-| `selectors` | For `json_fields`, an ordered list of unique labels and JSON Pointers. |
+| `kind` | `whole`, `json_fields`, or `state_members`. Whole-state dependencies remain available when the complete keyed state is relevant. |
+| `selectors` | For `json_fields`, an ordered list of unique labels and JSON Pointers. For `state_members`, reuse a per-member `whole` or `json_fields` selection. |
+| `scope` | For `state_members`, all members or a named set of string member keys. Reject duplicate requested keys and sort their canonical encodings by byte order, independently of caller order. |
 | `comparison` | Value comparison, or comparison that additionally requires the selected entity identities. |
+| `structure` | For `state_members`, whether member keys are material and an optional reference to the operation's retained sorting rule. Without a sorting rule, compare a multiset and preserve duplicate counts. |
 | `missing` | A distinct absent result for a well-formed address that does not resolve. Invalid syntax or undecodable content is an error. |
 | `version` and parameters | Definition-language version, value codec/version, and every parameter affecting interpretation. |
 
@@ -202,6 +211,19 @@ Implement the following rules:
   against the revised parent; do not silently follow the former element. Stable
   element identity needs an explicitly defined keyed selection. The `-` append
   token used for JSON Patch is not an existing array element to read.
+- **State members.** Apply the per-member selector in bulk to all or the named
+  members. Preserve a missing named key as absent, distinct from a present member
+  whose selected field is absent or null. Preserve membership, multiplicity, and
+  keys when material. When a sorting rule is referenced, evaluate its fields and
+  retain the resulting sequence; otherwise compare a multiset. Origin records
+  retain the exact parent and member context even when those identities and keys
+  are excluded from value comparison. Changes outside the selected scope and
+  fields do not invalidate correspondence by themselves.
+- **Whole states.** A whole-state comparison covers complete keyed membership
+  and member values; include occurrence identities when identity comparison is
+  requested. A whole-state input must remain completely retained even when its
+  declared dependency selects only some fields. Binding a selected value directly
+  instead establishes the narrower retention obligation under Core §5.2.
 - **Retention.** Retain the definition, resulting selected value, and origin.
   The value may be stored directly or recovered exactly from a retained immutable
   parent and the versioned evaluator. Keep that recovery path available for as
@@ -217,16 +239,23 @@ presence and type. Validate JSON Pointer syntax independently before calling the
 engine; permissive engine behavior must not turn invalid syntax into absence.
 The execution path must pass the type, absence, pointer, and canonical-byte fixtures.
 
+For example, a bulk operation depending on all member URLs can reuse its earlier
+result after titles change. A URL change or a membership change affecting that
+selection must be compared. `state_members` supplies this capability through the
+same DuckDB field-evaluation path; it adds no second selection engine.
+
 ### 3.3. Engine decision and the canonical-bytes gap
 
 DuckDB is the bulk engine. A 2026-09-13
 [probe](history/probes/2026-09-13-engine-resolver-probe.py) compared last-edit-per-key
 membership reduction and three JSON field extractions over two million members
 and forty thousand edits on identical Parquet inputs, each engine in its own
-process. DuckDB matched Polars on speed within noise, used about a tenth of the
-memory, preserved number-versus-string types in extraction, computed SHA-256 in
-the engine, and added no dependency. The probe covered those query shapes, not
-full revision semantics or larger-than-memory input; C03 and C25 qualify those.
+process. The tested DuckDB path preserved number-versus-string types, computed
+SHA-256 in the engine, and used less recorded memory. The tested Polars path
+erased that type distinction, so the timings are not equivalent semantic work.
+Equal member counts do not establish equal values or fingerprints. The probe
+omitted edit preconditions, full revision semantics, and larger-than-memory
+input; C03 and C25 qualify the required production paths.
 The [consensus record](history/2026-09-13-core-model-consensus.md) carries the
 figures and their limits.
 
@@ -234,11 +263,14 @@ One gap is confirmed: during extraction, DuckDB 1.5.5 rewrites the lowercase
 hexadecimal escape of a control character such as U+001F to uppercase, including
 inside extracted objects. The values are equal; the bytes and hashes are not.
 Engine extraction therefore passes through the shared canonical encoder before
-correspondence hashing. Stored payloads are already canonical, so the encoder is
-applied only where the extracted text contains a control-character escape; the
-canonical-byte fixtures in C03 and C05 decide whether that filter is complete
-across the admitted domain. Arbitrary engine JSON text is never a substitute for
-canonical bytes.
+correspondence hashing. Use the shared decoder and encoder for every new or
+changed JSON value, including values produced by extraction or editing; already
+decoded values need no second decode. Reuse unchanged admitted canonical bytes
+and verified digests within their declared integrity scope. Do not gate encoding
+on the presence of a control-character escape. C03 and C05 check canonical bytes
+across the admitted domain and measure the remaining Python calls, allocations,
+and conversions. Arbitrary engine JSON text is never a substitute for canonical
+bytes.
 
 The metadata owner supplies bounded, consistent snapshot batches for DuckDB joins.
 All authoritative writes remain in the SQLite backend.
@@ -290,6 +322,17 @@ content-addressed [blob store](../src/docspec/adapters/storage/blobs.py) supplie
 that: SHA-256 keyed, put-if-absent, streamed, verified on read, with an S3
 adapter. Its object names are physical content references; DocSpec's ledger owns
 logical records. Removal goes through the retention policy operation below.
+
+Implement removal in C07/C18. The current
+[retention inventory](retention-preview.md) is read-only, and the existing
+[blob interface](../src/docspec/ports/blob_store.py) has no deletion operation.
+Add bounded backend deletion behind the policy owner, protect shared and
+in-flight references, and record recoverable intent and outcomes before and
+after removal. Qualify local file and directory durability before reporting
+content ready for ledger publication, including after new object names are
+created. Test publication against concurrent cleanup for new and reused content.
+The S3 adapter must establish the same logical guarantees through its own storage
+semantics. Keeping the store does not establish these guarantees by itself.
 
 Use **SQLite through standard-library `sqlite3`** for the authoritative metadata
 ledger. One backend owns connections, parameterized SQL, statement reuse, bounded
@@ -412,6 +455,10 @@ Rulespec decoder, which rejects them. JSON Patch's ignored extra operation
 members remain the specific RFC 6902 exception to unknown-field rejection, not
 an exception to duplicate keys.
 
+Validate the resulting values through msgspec conversion or the supplied payload
+schema as appropriate; do not decode the same raw JSON again merely to run typed
+validation. Preserve the duplicate-key rule across this single admission path.
+
 Use **jsonschema-rs** when an application or plugin supplies a JSON Schema for its
 payloads. Compile and reuse each schema with its declared draft, references, and
 format-validation settings. Return structured validation errors through the
@@ -446,6 +493,20 @@ requires them. For a whole binary artifact, value-comparison evidence names its
 codec, byte length, and verified SHA-256 content digest; retain the bytes
 separately. A logical artifact ID enters comparison only when its identity is
 declared material.
+
+For `state_members`, encode each selected member with an explicit membership
+presence tag, its selected value, and any material key or entity identity. This
+distinguishes a missing named member from an existing member with a missing field.
+Without a sorting rule, sort canonical member encodings by byte order and retain
+duplicates. With a sorting rule, use its resulting sequence. Retain the scope,
+per-member selection, structure, and sort-rule reference in the dependency
+definition used for correspondence.
+
+Stream framed member encodings into the digest in bounded chunks; chunk boundaries
+must not change the bytes. Avoid constructing a whole-state Python array or one
+unbounded list/string aggregate in the engine. Selected values must remain
+recoverable independently of the fingerprint. Complete keyed-state comparison
+uses the same membership encoding with all members, complete values, and keys.
 
 The correspondence preimage is a canonical structure containing a purpose tag,
 encoding version, the effective operation description, and dependencies keyed
@@ -558,6 +619,12 @@ The example and behavioral checks must cover:
   conflicting unordered revisions, and absent replacement versus explicit null.
 - Number versus string selections, present null versus absence, multi-field
   composites, escaped pointers, scalar roots, and array-index changes after edits.
+- Bulk URL selections reused after title-only changes; material URL, membership,
+  key, duplicate-count, or consumed-order changes affect the relevant comparison.
+- Named missing members versus present members with missing fields, and complete
+  selected-value recovery through either direct retention or retained parents.
+- Meaningful source positions retained as data, deterministic sorting rules
+  retained with operation definitions, and equivalent results across chunk sizes.
 - Matching results across different parent state identities when only selected
   values are material.
 - Metadata-only changes that reuse unaffected capture and processing results.
@@ -567,6 +634,8 @@ The example and behavioral checks must cover:
 - An uncertain resource version that never corresponds to an established one.
 - A removal that cites its retention policy, refusal of one that does not, and
   crash leftovers cleaned under such a policy.
+- Local content readiness after file and directory updates, and interrupted or
+  concurrent deletion that preserves shared and in-flight publication references.
 - Selecting a retained state as current, refusing a stale expected current, and
   switching back to an earlier state without rewriting either.
 - An explicitly fresh execution alongside an eligible prior result.

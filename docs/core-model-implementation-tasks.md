@@ -6,9 +6,11 @@ and [implementation plan](core-model-implementation-plan.md), informed by the
 All tasks are proposed; none is marked implemented by this document. Task IDs are
 local planning labels, not newly created jobs or tracker issues.
 
-The [recursive validation](history/2026-09-13-core-plan-swarm-validation.md)
-records the review findings and corrections. C10 admits roots before C11 executes
-operations; task IDs below reflect that corrected dependency order.
+The [consensus record](history/2026-09-13-core-model-consensus.md#current-adopted-decisions)
+records the current adopted scope; the
+[recursive validation](history/2026-09-13-core-plan-swarm-validation.md) records the
+earlier review and its checked versions. C10 admits roots before C11 executes
+operations; task IDs below preserve that dependency order.
 
 The outcome is one simpler shared lifecycle, with the existing document features
 using it, and a bounded bulk data path through DuckDB and Arrow. Python coordinates
@@ -28,6 +30,10 @@ and recovery requirements apply to data admitted by that implementation.
   preserve required sequential edit semantics and account for unavoidable Python work.
 - Reuse unchanged payloads and verified references within their integrity scope.
   A small local edit should not force decoding or encoding every unaffected record.
+- Preserve bulk field-level dependencies across members, meaningful positions as
+  data, and deterministic sorting rules where consumed order affects results.
+- Use the shared JSON decoder and encoder for new or changed values. Measure the
+  bounded Python validation/encoding calls as part of the complete bulk path.
 - Preserve useful document functionality, exact source evidence, retained history,
   failure accounting, and inspectable result selections.
 - Name the old rule or path being replaced and remove it when callers move. New Core
@@ -102,7 +108,7 @@ Specify the versioned occurrence, state, revision, operation definition, executi
 
 **Depends on:** C02. **Status:** proposed.
 
-Exercise DuckDB/Arrow on the actual selected-value encodings, nested JSON edits, schema validation, and hashing requirements. Extend probes to absent/null/type/composite cases, duplicate-key and pointer-syntax admission, canonical escaping of extracted strings/objects, and bounded execution over input larger than the allowed working memory. Measure parsing, Python conversions/callbacks, scratch use, and output streaming.
+Exercise DuckDB/Arrow on the actual selected-value encodings, nested JSON edits, schema validation, and hashing requirements. Cover all/named-member field selection, duplicate counts, deterministic sorting, whole-state framing, absent/null/type/composite cases, duplicate-key and pointer-syntax admission, and canonical encoding of all newly extracted or changed values. Use input larger than the allowed working memory, avoiding unbounded list/string aggregates. Measure shared decoder/encoder calls, Python allocations/conversions, scratch use, and output streaming.
 
 **Done when:** The canonical-bytes path for extracted values passes its fixtures across the admitted domain, and reproducible baselines exist for each required operation without treating the existing membership probe as a complete resolver or production benchmark.
 
@@ -116,7 +122,7 @@ Exercise DuckDB/Arrow on the actual selected-value encodings, nested JSON edits,
 
 **Depends on:** C02. **Status:** proposed.
 
-Implement the fixed records with msgspec; use explicit typed decoding and strict conversion at public boundaries. Reject duplicate JSON keys before decoding loses them. Generate fixed-record schemas from the same types. Compile and reuse jsonschema-rs validators for supplied payload schemas with pinned draft, references, formats, numeric behavior, and structured errors. Keep JSON Patch's ignored extra operation members as its defined exception to unknown-field rejection.
+Implement fixed records with msgspec. Admit raw JSON through the shared Rulespec decoder to reject duplicate keys, then use strict typed conversion or the supplied payload schema without decoding the same bytes again. Generate fixed-record schemas from the same types. Compile and reuse jsonschema-rs validators with pinned draft, references, formats, numeric behavior, and structured errors. Keep JSON Patch's ignored extra operation members as its defined exception to unknown-field rejection.
 
 **Done when:** Valid values round-trip; duplicate keys, unknown fixed-record fields, malformed references, ambiguous presence, unsupported numeric values, and invalid outcomes refuse consistently. Supplied payload schemas remain authoritative for payloads. Fixed schemas and decoding agree on the acceptance fixtures.
 
@@ -128,9 +134,9 @@ Implement the fixed records with msgspec; use explicit typed decoding and strict
 
 **Depends on:** C03, C04. **Status:** proposed.
 
-Reuse the existing canonical JSON codec and SHA-256. Implement purpose-tagged, versioned operation/dependency encodings, explicit absent/present values, labeled composites, and material identities/resources. Preserve exact opaque binary bytes and distinct logical identities.
+Reuse the shared JSON decoder, canonical encoder, and SHA-256. Encode new or changed JSON values, including extracted fields and edited values; reuse unchanged admitted canonical bytes. Implement versioned operation/dependency encodings, explicit absent/present values, labeled composites, state-member multisets or sorted sequences, and material keys/identities/resources. Preserve exact opaque binary bytes and distinct logical identities.
 
-**Done when:** Every encoding has known-answer bytes and digests. Number/string, null/absence, Unicode/control-character escaping, object ordering, and malformed numeric cases match across the chosen execution paths. Extracted JSON is canonically re-encoded or passes a proven byte-equivalent path before hashing. Encoding version changes cannot silently reinterpret retained identities.
+**Done when:** Every encoding has known-answer bytes and digests. Number/string, null/absence, missing member versus missing field, duplicate counts, Unicode/control-character escaping, object ordering, and malformed numeric cases match across paths. Every new/changed extracted JSON value uses the shared encoder; no escape-only shortcut remains. Large selections preserve encoded bytes/digests across bounded chunk sizes. Encoding version changes cannot silently reinterpret retained identities.
 
 **Simplification:** One canonical rule set per codec and one hash family. Ordinary JSON serialization and engine-internal hashes do not become alternate identity encoders.
 
@@ -140,9 +146,9 @@ Reuse the existing canonical JSON codec and SHA-256. Implement purpose-tagged, v
 
 **Depends on:** C03, C04, C05. **Status:** proposed.
 
-Expose bounded Arrow record-batch readers/writers and DuckDB relations for internal work. Carry queryable keys, types, presence, references, and digests alongside encoded payloads. Stream writes and reads; preserve partition selection, physical admission, producer exceptions, cancellation, and iterator closure. Decode Python objects at actual consumer boundaries.
+Expose bounded Arrow record-batch readers/writers and DuckDB relations for internal work. Carry queryable keys, types, presence, references, and digests alongside encoded payloads. Stream writes and reads; preserve partition selection, physical admission, producer exceptions, cancellation, and iterator closure. Keep decoding at explicit admission, changed-value encoding, and consumer boundaries.
 
-**Done when:** Production bulk paths no longer round-trip entire batches through per-row dictionaries. Read/write results match the new record definitions and independent fixtures; early cancellation, oversized values, and producer failures close resources correctly. Row and byte ceilings are enforced.
+**Done when:** Relational handoffs stay in Arrow/DuckDB and do not parse or re-encode unchanged payloads. Required Python admission/encoding work stays bounded and measured. Read/write results match independent fixtures; early cancellation, oversized values, and producer failures close resources correctly. Row and byte ceilings are enforced.
 
 **Simplification:** Replace internal fetch-row/parse/encode handoffs and per-item workspace spooling where relational batches express the same work. Keep a small row convenience API over the shared path.
 
@@ -152,9 +158,9 @@ Expose bounded Arrow record-batch readers/writers and DuckDB relations for inter
 
 **Depends on:** C04, C05. **Status:** proposed.
 
-Keep the existing content-addressed blob store and its S3 adapter. Preserve logical artifact IDs independently of storage addresses. Define the content readiness and protection hooks used by publication and cleanup, and route every removal through `remove_under_policy`.
+Keep the existing content-addressed blob store and its S3 adapter. Preserve logical artifact IDs independently of storage addresses. Implement backend deletion and content-readiness/protection hooks; the current blob interface has no deletion operation. Route removal through C18's policy owner. Establish local file and directory durability before content can be published by the ledger, and qualify equivalent readiness for S3.
 
-**Done when:** Exact bytes survive write and reopen; equal bytes can back distinct entities. Integrity, concurrent creation, stream closure, interruption, and adapter durability checks pass. Nothing deletes content except the policy operation.
+**Done when:** Exact bytes survive write and reopen; equal bytes can back distinct entities. Integrity, concurrent creation, stream closure, interruption, and file/directory durability checks pass. New and reused objects stay protected through publication. Deletion is bounded, retryable, and callable only through the policy owner; the existing inventory is not treated as a deletion implementation.
 
 **Simplification:** No new storage library. Preserve DocSpec retention rules and the provider-neutral content boundary.
 
@@ -188,9 +194,9 @@ Implement successful-retention checks and publication units: retain required byt
 
 **Depends on:** C09. **Status:** proposed.
 
-Create and read root states with scalar or structured admitted values and opaque value references. Keep source/member keys separate from immutable occurrence IDs. Store full membership, multiplicity, and values in retained batch representations.
+Create and read keyed, unordered root states with scalar or structured admitted values and opaque references. Keep source/member keys separate from immutable occurrence IDs. Store full membership, multiplicity, and values in retained batches, including ordinary position fields where needed to preserve source meaning. Use no separate state-order vector or `move` operation.
 
-**Done when:** Equal values remain distinct occurrences; full roots recover after reopen. A source metadata change can keep its member key while receiving a new occurrence identity. Imported roots do not invent construction activities. Single-member and batch APIs use the same implementation.
+**Done when:** Equal values remain distinct occurrences; full roots recover after reopen, including meaningful source positions. A source metadata change can keep its member key while receiving a new occurrence identity. Imported roots do not invent construction activities or silently discard relevant source order. Single-member and batch APIs use the same implementation.
 
 **Simplification:** General roots no longer require a document candidate, extraction, or segmentation. Existing document records become application payloads instead of defining every dataset's shape.
 
@@ -238,9 +244,9 @@ Resolve puts and removals over retained bases using DuckDB and the plan's member
 
 **Depends on:** C13. **Status:** proposed.
 
-Implement whole values and labeled JSON Pointer composites. Preserve types, absent/present/null, keys, multiplicity, and array addressing. Group by definition/codec, extract needed fields together, then use C05 encodings. Support direct retention or exact recovery from retained parents.
+Implement `whole`, `json_fields`, and `state_members`. Apply the existing per-member whole/field selector through DuckDB to all or named members. Preserve types, absent/present/null, material keys/identities, multiplicity, and array addressing. Compare a multiset by default; preserve the consumed sequence when the selection references a retained sorting rule in material operation configuration. Group by definition/codec, extract needed fields together, and use C05 encodings. Support direct retention or exact recovery from retained parents.
 
-**Done when:** Both retention routes produce identical values and fingerprints. Invalid pointer escapes refuse before engine evaluation. Number/string and null/absence never collide semantically. Unrelated parent metadata and state IDs do not invalidate value-only dependencies; relevant membership changes do. Generated keys enter correspondence when declared material. Actual bound values remain recoverable, not just their hashes.
+**Done when:** Both retention routes produce identical values and fingerprints. Invalid pointer escapes and duplicate requested keys refuse. Number/string, null/absence, and missing member versus missing field remain distinct. A bulk URL dependency still corresponds after title-only changes; material URL, membership, duplicate-count, key, or consumed-order changes affect the relevant comparison. Generated keys enter correspondence when declared material. Actual bound values and sorting definitions remain recoverable, not just hashes.
 
 **Simplification:** Replace hard-coded dependency-field projections with retained definitions evaluated by one bulk path. Origin remains separate from equivalence unless material.
 
@@ -304,7 +310,7 @@ Implement guarded current pointers and remove_under_policy with recorded authori
 
 Map source catalogs, captures, extraction, segmentation, processor graphs, evidence coordinates, and result layers to Core operations and bindings. Preserve source-specific interpretation in its application adapters. Route catalog joins, change detection, planning, dependency checks, and output preparation through bounded DuckDB/Arrow batches. Connect new workspace creation, publication, and lookup to the ledger as the sole authority.
 
-**Done when:** Capture-only, later-processing, failure-repair, metadata-only-change, and alternative-result examples use the common lifecycle on newly created workspaces. Publication and reopen use the ledger without falling back to old control records. No bulk internal stage converts the entire population to Python records. Unchanged payloads and verified references are reused within their integrity scope.
+**Done when:** Capture-only, later-processing, failure-repair, metadata-only-change, and alternative-result examples use the common lifecycle on newly created workspaces. Publication and reopen use the ledger without falling back to old control records. Meaningful document positions and consumed-order rules survive. Relational stages use bounded Arrow/DuckDB work; admission/encoding costs are measured without materializing a dataset-scale Python collection. Unchanged payloads and verified references are reused within their integrity scope.
 
 **Simplification:** Remove corresponding bespoke prefix-reuse/planning paths as each caller moves. Domain extraction code remains; a second retention/reuse lifecycle does not.
 
@@ -347,7 +353,7 @@ identifier is retained so earlier records still resolve.
 
 **Depends on:** C20, C21. **Status:** proposed.
 
-Close the C01 retirement map: remove unused old parsers, cache/publication owners, graph algorithms, blob mechanics, stage-specific duplicate rules, obsolete formats, and dead wrappers after their callers have moved. Update registrations, imports, examples, and dependency metadata together.
+Close the C01 retirement map: remove unused old parsers, cache/publication owners, graph algorithms, duplicate blob handling, stage-specific duplicate rules, obsolete formats, and dead wrappers after their callers have moved. Preserve the selected blob store's required mechanics. Update registrations, imports, examples, and dependency metadata together.
 
 **Done when:** Each production lifecycle rule has one owner; all intended consumers use it. The retirement map records retained code and reasons as well as removed paths. Import-direction and package-boundary checks pass, and dependency changes are reflected in the lockfile.
 
@@ -385,10 +391,10 @@ Measure the production request-to-durable-publication path: full construction, m
 | --- | --- |
 | Core §1: explicit scope and checked conformance claims | C01, C02, C24 |
 | Core §2: recoverable PROV interpretation | C02, C11, C24 |
-| Core §3: occurrences, complete states, revisions, and multiplicity | C10, C12–C15 |
+| Core §3: occurrences, complete states, revisions, multiplicity, and meaningful positions | C10, C12–C15, C19 |
 | Core §4: definitions, executions, bindings, contextual roles, and actual provenance | C02, C04, C11, C19 |
 | Core §5: retention, availability, streaming, fusion, history, and authorized deletion | C07–C11, C14, C15, C18 |
-| Core §6: selected values, adequacy, omissions, resources, and nondeterminism | C05, C14, C16, C17 |
+| Core §6: bulk member-field selections, consumed order, adequacy, omissions, resources, and nondeterminism | C05, C14, C16, C17 |
 | Core §7: correspondence, policy, exact retained associations, and provenance preservation | C08, C09, C16, C17, C20 |
 | Core §8: batching, physical sharing, and compaction | C05–C09, C15, C19, C25 |
 | Keyed-State Profile §9 | C02, C10–C13, C24 |
@@ -402,6 +408,10 @@ The initial implementation includes the general Core behavior in these tasks,
 the planned keyed-state implementation and its separately checked profile claim,
 and preservation of the existing document, S3, Dagster, and independent-export
 capabilities. Existing optional adapters remain optional to install and run.
+
+`state_members` and deterministic consumption order are included. States remain
+unordered dictionaries: meaningful positions live in data and sorting rules in
+operation definitions, with no separate authored state-order mechanism.
 
 Not planned: PostgreSQL, packed or remote content services beyond the existing S3 adapter, PROV export, RDF storage, Delta integration, additional value codecs, new schedulers, new source connectors, new domain processors, a native component, and authored state ordering. Any of these is a new decision with its own record if it becomes needed; nothing is prebuilt or held behind a trigger.
 

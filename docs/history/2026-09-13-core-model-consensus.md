@@ -1,7 +1,8 @@
 # Core model and plan: consensus record, 2026-09-13
 
-One page saying what was decided, by whom, on what evidence, and what stays
-open. Parties: the owner; Claude Fable 5.1, which reviewed and refined the
+This record tracks decisions, their owners, evidence, and remaining acceptance
+checks. The [current adopted decisions](#current-adopted-decisions) supersede
+earlier entries where noted. Parties: the owner; Claude Fable 5.1, which reviewed and refined the
 spec, reviewed the plan twice, measured the engine and ledger choices, and
 wrote this record; and GPT-6, which authored the plan and tasks and ran the
 [recursive validation](2026-09-13-core-plan-swarm-validation.md). Versions
@@ -18,9 +19,9 @@ are pinned at the end. Nothing here is implemented; the 24 tasks are proposed.
 | Design the resolver and projections first; they drive tool choices. | Fable and GPT-6 agreed | Plan §3.1–3.2 | Applied |
 | Revision resolves at two levels: a value patch derives a new occurrence with its own provenance, then membership changes at the key. Last writer per key is the algorithm; PROV-Dictionary fixes the outcome, not the algorithm. | GPT-6 correction, accepted | Plan §3.1 | Applied |
 | Projections need more than JSON Pointer: type preservation, absent versus present, composites, an array-index rule, canonical encoding before hashing. | GPT-6 correction, accepted | Plan §3.2; the codec probe shows string extraction erases the number 1 versus the string "1" | Applied |
-| DuckDB is the sole bulk engine. | Owner directed a decision; Fable measured | Engine probe: equal speed within noise, about a tenth of the memory, typed extraction and SHA-256 in the engine, no new dependency; the swarm narrowed the claim to the tested query shape | Agreed |
+| DuckDB is the sole bulk engine. | Owner directed a decision; Fable measured | The tested DuckDB query preserved types and used less recorded memory. The Polars path erased types, so the timings are not equivalent semantic work; full-path capacity remains unqualified. | Agreed |
 | Standard-library `graphlib` and recursive SQL replace rustworkx. | Fable | The operation graph is a handful of nodes | Agreed |
-| SQLite through standard-library `sqlite3`; no native ledger component in the foundation. | Fable measured; the swarm corrected the measurement | Ledger probe; F13 withdrew the subtraction and extrapolation | Agreed; both sides admit native code only on a measured gap |
+| SQLite through standard-library `sqlite3`; no native ledger component. | Fable measured; the swarm corrected the measurement; owner accepted the leaner stack | Ledger probe; F13 withdrew the subtraction and extrapolation | Adopted; no custom native component is planned |
 | SHA-256 throughout. | Fable; GPT-6 | The existing blob store and Rulespec digests are SHA-256 | Agreed |
 | disk-objectstore for local content. | GPT-6; swarm F07 | Source at `ba13ca6`, confirmed below | Superseded the same day; see Simplification below. The existing blob store stays. |
 | msgspec for typed records; jsonschema-rs for supplied payloads; duplicate keys rejected by the shared Rulespec decoder at raw admission. | GPT-6; swarm F06 | Confirmed below | Agreed |
@@ -44,21 +45,26 @@ are pinned at the end. Nothing here is implemented; the 24 tasks are proposed.
 | The engine probe's generated removes can hit absent keys and omit full semantics | Swarm | Read my own script | Confirmed |
 | Full suite on `3ffff83`: 1,189 passed, 1 deselected | Fable | Ran earlier today; only documents changed since | Stands |
 
-## Residual disagreement
+## Earlier assessment before the final adopted scope
 
-None on decisions. One difference of emphasis: the swarm treats the engine and
+At that point there was no decision disagreement. One difference of emphasis:
+the swarm treats the engine and
 ledger probes as diagnostics of query shapes only; Fable holds that the ledger
 probe still shows the whole Python ledger path costing about a second and a
 half per million rows, which is why `sqlite3` needs no native binding. Nothing
-turns on it, because the plan admits native code only on a measured gap.
+turned on it under the then-current conditional-native rule. The current adopted
+scope removes that rule and plans no native component. The diagnostic numbers
+still do not establish production capacity.
 
 ## Open items
 
-- F05's confirmed gap, canonical bytes from engine extraction, is resolved by
-  design in plan §3.3 and by fixtures in C03 and C05: extracted values pass
-  through the shared canonical encoder where they contain a control-character
-  escape. The fixtures decide whether that filter is complete across the
-  admitted domain.
+- C03/C05 must implement and check the shared decoder/encoder path for all new
+  or changed JSON values, including extraction and edits. Unchanged admitted
+  canonical bytes may be reused. The escape-only shortcut is removed; correctness
+  and the bounded Python cost remain acceptance checks on unbuilt code.
+- C07/C18 must implement policy-controlled blob deletion and qualify publication
+  protection and durability. The existing inventory is read-only; retention
+  preview does not implement deletion.
 - Capacity, adapter durability, installed-package behavior, and Core
   conformance remain acceptance checks on unbuilt code.
 
@@ -69,19 +75,20 @@ Commit `185a981` on branch `docs/core-model`. SHA-256: spec
 `9a46a286a572c2550639cbd98dca31c496c493570fd3911c26cd28432217b28d`, tasks
 `6eafa2503ce2b78464ec219d15fef83d9b338e24b0a80f543e2e0e07af208caa`.
 
-## Simplification, 2026-09-13, later
+## Earlier simplification, 2026-09-13
 
 The owner asked how to simplify and ruled out deferrals: nothing is held
 behind a trigger; a component is either needed for the first implementation
-or it is out. Decided on that rule and applied to the plan and tasks:
+or it is out. The following decisions were applied at `d3561a0`. The current
+adopted decisions below refine them; this table preserves their earlier scope.
 
 | Component | Decision | Reason |
 | --- | --- | --- |
-| disk-objectstore | Out; the existing content-addressed blob store stays | Its deletion is non-atomic, needs exclusive access and soft-deletes, so the plan had to wrap it in a maintenance gate. The existing store already deletes under retention machinery and has an S3 adapter. Packing's benefit is unmeasured. |
+| disk-objectstore | Out; the existing content-addressed blob store stays | Packing's benefit is unmeasured and the existing adapter supports retained bytes and S3. The earlier rationale incorrectly said the store already deleted under retention machinery; the current blob interface has no deletion operation. C07/C18 own that work. |
 | `prov` export | Out | Core requires the PROV interpretation to be recoverable, not exported. C24 checks it against the ledger. |
-| Authored state ordering, `move` edits, positional insertion | Out; states are dictionaries | DocSpec's states are keyed and sorted by identity; order is derived, never authored. The initial binding is the Keyed-State Profile. |
-| `state_members` selector kind | Out | A whole-state dependency binds the state as a whole value, which Core §6.2 permits as a conservative declaration. |
-| Native component, conditional or otherwise | Out | No measured gap. The canonical-bytes gap is resolved with the shared encoder. |
+| Authored state ordering, `move` edits, positional insertion | Out; states are dictionaries | Refined below: preserve meaningful positions as ordinary data and consumed-order rules in operation definitions. Sorting by identity cannot recover discarded source order. |
+| `state_members` selector kind | Initially out; superseded below | Whole-state dependencies are permitted but reduce selective reuse for field-level bulk operations. The current adopted scope restores this selector. |
+| Native component, conditional or otherwise | Out | The shared encoder is the chosen response to the confirmed canonical-bytes gap. Its implementation and full-workload cost still need qualification. |
 | PostgreSQL and the rest of §7 | Out | Not needed. Dagster stays because it exists and is used. |
 | Plan §8 implementation steps | Out; §8 is now acceptance only | The tasks file already sequences the work. |
 | msgspec, Hypothesis | In | The only new dependencies. |
@@ -91,8 +98,78 @@ C22 is dropped with its identifier retained; C07, C13, C14, C15 and C18 are
 trimmed; the conditional native task is removed. The task graph has 24 live
 tasks and 37 edges and is acyclic. All 169 local links across the five
 documents resolve. The swarm validation's pinned plan and task hashes are now
-historical; current hashes are below. The spec is unchanged.
+historical; this simplification's hashes are below. The spec is unchanged.
 
 ## Versions after simplification
 
 Spec `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81`, plan `430ba669c39480d6541bcaf6281b04fd735e713ec6e845fd7110955e7a3d44d5`, tasks `7c36ee55f3daf0fd9b834c7f8e89f56d3ba47ddca45f6b29db6d02cee9472f25`.
+
+## Current adopted decisions
+
+After reviewing `d3561a0`, GPT-6 recommended the following scope. The owner
+accepted it with “Execute.” These are the current plan decisions; they do not
+claim implementation completion or a new swarm validation of this revision.
+
+| Area | Adopted decision | Implementation and evidence |
+| --- | --- | --- |
+| Storage | Keep the existing blob store and S3 adapter. | C07/C18 implement backend deletion, policy authorization, recoverable intent/outcomes, shared/in-flight reference protection, and durability. [Current retention preview](../retention-preview.md) explicitly has no deletion operation. |
+| Provenance | No `prov` export library. | Retain the complete PROV interpretation and check it against authoritative records in C02/C09/C24. |
+| States and order | Keyed, unordered states; no separate `move` mechanism. | C10/C14/C19 preserve meaningful positions as member data and deterministic sorting rules as material operation configuration. Relevant consumed order remains part of comparison. |
+| Bulk dependencies | Keep `state_members` for all or named members. | C05/C14/C17 apply the existing per-member field selector through DuckDB, preserving types, missing members/fields, multiplicity, material keys/identities, and consumed order. A title-only change must not invalidate a bulk URL dependency by itself. |
+| Canonical JSON | Use the shared decoder/encoder for all new or changed JSON values. | C03–C05 remove the escape-only shortcut, reuse unchanged admitted canonical bytes, and measure bounded Python work. |
+| Native code | No custom Rust component. | Capacity remains an acceptance requirement for the chosen implementation. No native task or trigger is retained. |
+| Scheduling | Keep Dagster optional. | C11/C21 use one lifecycle for direct Python calls and scheduled jobs. |
+| Planning | One task sequence, with 24 live tasks. | C22 stays dropped; no PostgreSQL, speculative integration, or legacy-support work is added. Each task removes the path it replaces. |
+
+The working stack remains DuckDB, Arrow, sqlite3, the existing blob store, msgspec,
+jsonschema-rs, SHA-256, graphlib, and optional Dagster. Hypothesis supports the
+behavioral checks. Core conformance, crash recovery, and bounded full-workload
+performance are completion criteria, not additional components.
+
+## Verification of the current adopted scope
+
+Checked 24 live task definitions against their overview, 37 dependency edges
+in build order, the isolated C22 stub, and all 173 local links across the plan,
+tasks, this record, and documentation index. Whitespace and adopted-scope checks
+passed. The spec is unchanged. These are document checks; no runtime, capacity,
+or conformance test result is claimed for the unbuilt implementation.
+
+| Artifact | Current SHA-256 |
+| --- | --- |
+| core-model.md | `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81` |
+| core-model-implementation-plan.md | `126bb6ed899e0b103d24a67ee668e565cf3fa3e7b35e2a9ed4c52a0d42d99be5` |
+| core-model-implementation-tasks.md | `768b42631b9bacad8fee6672c21d7d49679025c42e458365e91074e6f978304b` |
+
+## Fable review of the adopted scope, 2026-09-13
+
+Reviewed the uncommitted diff against the four corrections. All four are
+accepted; the diff implements them coherently and the mechanical checks
+re-derive: 24 live tasks and 37 edges, acyclic, C22 isolated; 174 local links
+and the `#current-adopted-decisions` anchor resolve; plan tables are
+consistent; the plan and task hashes above match the files.
+
+- **`state_members` restored.** Right on user value. A bulk operation that
+  consumes only member URLs must survive a title-only change, and a whole-state
+  binding cannot give it that. The design carries the absent-versus-present
+  discipline up one level, distinguishing a missing named member from a present
+  member with a missing field, and bounds the encoding by streaming framed member
+  encodings into the digest in chunks.
+- **Positions as data, sorting rules in operation definitions, no `move`.** A
+  correct refinement. The earlier wording that order is derived from keys or
+  values would have discarded imported source order silently.
+- **Shared encoder for every new or changed value; the escape-only shortcut
+  removed.** Accepted. The shortcut rested on eleven fixture cases, not a proof
+  over the admitted domain. Its cost is a Python canonical encode per newly
+  extracted value on first evaluation, bounded afterwards by change; C03 and C05
+  measure it as they should.
+- **Blob store deletion and durability.** Accepted, and the correction of my
+  claim is right. The `BlobStore` port exposes put, stat, read, read range,
+  materialize and verify, and no delete; the adapters unlink only their own
+  temporary files; the retention inventory is a read-only preview. I asserted
+  that deletion existed without checking the port. C07 and C18 now own it.
+
+One wording drift remains for the next edit of the plan: the §1 DuckDB row
+still lists in-engine SHA-256 as part of the decision, while the adopted
+canonical rule computes correspondence digests in Python over shared-encoder
+bytes. In-engine hashing now serves content-level checks on already canonical
+bytes. Say so in §1 or §3.3. Left unchanged here to keep the pinned hashes.

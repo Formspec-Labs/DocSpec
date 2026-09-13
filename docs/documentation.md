@@ -51,7 +51,8 @@ The Core model, implementation plan and tasks were supplied as drafts on
 [consensus record](history/2026-09-13-core-model-consensus.md) says what was
 decided, by whom, and on what evidence; the other records in `history/` are
 dated history. The plan keeps DuckDB and the existing blob store, adds msgspec
-and Hypothesis, and defers nothing behind a trigger. These documents describe
+and Hypothesis, and includes bulk member-field selections and meaningful positions
+as data. No custom native component or deferred backend is planned. These documents describe
 target semantics and planned work; the current architecture guide describes
 existing repository behavior.
 
