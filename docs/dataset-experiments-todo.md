@@ -1615,11 +1615,14 @@ caller lives; moving imports between modules does not remove a package cycle.
   build and dependency identities. This is a locally built and qualified wheel,
   not an external registry publication. Final independent review is consolidated in D39.
 
-  **Current dependency, September 12:** D53 advances the single optional provider
-  wheel to SpicyDocs `0.3.0`. Source reading and bill acquisition share
+  **Current dependency, September 12:** The annual CFR example advances the
+  single optional provider wheel to SpicyDocs `0.6.0`. Source reading, bill
+  acquisition, and annual CFR acquisition share
   [one manifest](../vendor/spicy_docs.json); the old wheel and separate bill-test
-  wheel are removed. The provider's acquisition extra is required only for the
-  bill example. The core wheel still installs without SpicyDocs.
+  wheel are removed. The provider's acquisition extra is required for the bill
+  and [CFR examples](govinfo-cfr-example.md). The core wheel still installs
+  without SpicyDocs. D53 and D46 retain their earlier, version-specific test
+  evidence; the CFR guide records the later example's scope and qualification.
 
 <a id="d46"></a>
 
