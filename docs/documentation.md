@@ -24,6 +24,7 @@ same change as the behavior or file move they describe.
 | Inspect retained comment fields and attachment candidates | [SpicyRegs comments](spicyregs-comments.md) |
 | Inject provider acquisition and process retained XML later | [GovInfo bill example](govinfo-bill-example.md) |
 | Build from complete MODS metadata and process one annual section | [Annual CFR example](govinfo-cfr-example.md) |
+| Catalog retained committee metadata with its source evidence | [FEC committee example](fec-committees.md) |
 | Retain alternative results, understand resume, and choose the current result | [Dataset experiments](experiments.md) |
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
 | Inject components through native resources and execute with Dagster | [Dagster experiment](dagster-experiment.md) |

@@ -1,0 +1,23 @@
+{
+  "api_version": "1.0",
+  "fixture_notice": "Authored test data, not actual FEC committee observations.",
+  "pagination": {"count": 2, "is_count_exact": true, "page": 1, "pages": 1, "per_page": 100},
+  "results": [
+    {
+      "committee_id": "C00000001",
+      "name": "Café civic records — synthetic",
+      "cycles": [2024, 2026],
+      "candidate_ids": [],
+      "future_metadata": {"unknown": {"empty": [], "null": null}, "labels": ["café", "資料"]},
+      "pdf_url": "https://www.fec.gov/synthetic-example.pdf"
+    },
+    {
+      "committee_id": "C00000002",
+      "name": null,
+      "cycles": [],
+      "candidate_ids": ["H0ZZ00000"],
+      "sponsor_candidate_list": [],
+      "future_metadata": {"enabled": false, "count": 0, "empty_text": ""}
+    }
+  ]
+}

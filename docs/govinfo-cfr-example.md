@@ -11,7 +11,7 @@ Use a new absolute output path from this checkout:
 
 ```sh
 uv run --frozen \
-  --find-links ./vendor --with './vendor/spicy_docs-0.6.0-py3-none-any.whl[acquisition]' \
+  --find-links ./vendor --with './vendor/spicy_docs-0.7.0-py3-none-any.whl[acquisition]' \
   python -m examples.govinfo_cfr \
   --year 2025 --title 1 --volume 1 --section 18.1 --output /tmp/my-cfr-experiment
 ```
@@ -81,7 +81,7 @@ Run timestamps are sampled before each run; they are not measured finish times.
 Acquisition observation times remain separate. A live success covers only the
 requested volume metadata and section at their observation times.
 
-The [installed-wheel test](../tests/test_govinfo_cfr_installed_wheel.py) runs the
+The [installed-wheel test](../tests/test_provider_examples_installed_wheel.py) runs the
 [same cases](../tests/test_govinfo_cfr_example.py) outside both checkouts and forbids
 network connections during them. The [provider manifest](../vendor/spicy_docs.json)
 pins the wheel; [provider identity](../examples/provider_identity.py) also hashes

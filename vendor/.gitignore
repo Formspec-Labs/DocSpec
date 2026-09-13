@@ -1,6 +1,6 @@
 *
 !.gitignore
 !rulespec_artifacts-1.0.12-py3-none-any.whl
-!spicy_docs-0.6.0-py3-none-any.whl
+!spicy_docs-0.7.0-py3-none-any.whl
 !spicy_docs.json
 !README.md

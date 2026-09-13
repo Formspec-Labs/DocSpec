@@ -7,8 +7,11 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 45 of 53 local implementation items complete.** D47 is a moved-task
+**Status: 47 of 55 local implementation items complete.** D47 is a moved-task
 reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
+D55 records the completed annual CFR example and SpicyDocs 0.6.0 adoption.
+D56 records the completed FEC metadata example and combined source wheel adoption.
+The D55 implementation merged through [PR #2](https://github.com/Formspec-Labs/DocSpec/pull/2).
 Compiled on 2026-09-11 against merged revision
 `dd18fb364acdc383643bacf52a108c92e0173aef`. Completed entries link their scoped
 implementation and validation evidence; open entries state what remains to be
@@ -1510,17 +1513,17 @@ caller lives; moving imports between modules does not remove a package cycle.
   | --- | --- |
   | [`SpicyDocsSourceNativeAdapter`](../src/docspec/adapters/spicy_docs_source_native.py), `spicy_docs_source_profile` | Already consume public `source_native` and `source_native_profiles` for admitted records, renditions, outcomes, bounded evidence and failures. D43/D46 qualify the current wheel; no local source reader or replay engine is needed. |
   | [`BillContentFetcher`](../examples/govinfo_bill_fetcher.py), [`run_example`](../examples/govinfo_bills.py) | D12/D44/D53 use `BillAcquirer`, `BillAcquisitionBudget` and `select_bill_xml` from the same wheel. Provider owns URLs, parsing, identity and transport; the example owns the selected version, evidence destination and DocSpec mapping. |
+  | [`AnnualCfrContentFetcher`](../examples/govinfo_cfr_fetcher.py), [`run_example`](../examples/govinfo_cfr.py) | D55 uses `CfrAcquirer` for complete annual MODS metadata and one explicitly selected section. SpicyDocs owns source parsing and acquisition; DocSpec owns catalog selection, generic XML processing and retained-input reuse. |
   | [`courtlistener_bulk_source`](../tools/courtlistener_bulk_source.py): `parse_capture`, `build_source_items`, `coverage_for` | D42 now consumes SpicyDocs `sources.courtlistener_listing.BulkObject` and `parse_listing_page`. The copied parser, object class and filename/media-type rules are removed. DocSpec retains input pins, page-set consistency, dataset selection and coverage assertions; publisher values remain exact. |
   | [`FederalRegisterCatalogPolicy`](../src/docspec/application/federal_register_catalog.py), [`RegulationsGovCatalogPolicy`](../src/docspec/application/regulations_gov_catalog/policy.py) and its [`records`](../src/docspec/application/regulations_gov_catalog/records.py) | Keep catalog normalization, joins, source-path evidence, rendition preference, sampling and disposition policy here. Withholding reason codes and test-fixture exclusions are explicit dataset decisions over retained literal fields. The selected provider has no equivalent DocSpec policy API; moving these classes would couple it to the dataset model. |
   | [`fr_topic_receipt.fetch_live`](../tools/fr_topic_receipt.py), [`fetch_attachment_sample`](../tools/fetch_attachment_sample.py) | Keep these targeted research questions separate from production acquisition. Their exact topic projection and direct Regulations.gov API/attachment probing are not supplied by the current public provider API. Do not add a second general provider framework to share them. Retire or replace the study-specific code with its workflow under D34 when superseded. |
   | Generic catalog/artifact admission and physical blob storage | Use Rulespec Artifacts, not the source provider, for shared encoding and containers. D28/D29 already consume those APIs. D31 records the exact concurrency/root-pinning gap that prevents replacing the remaining local blob writer safely. |
 
-  No DocSpec experiment currently calls the Federal Register/GovInfo body
-  resolver or MODS route directly. SpicyDocs already owns those APIs; select and
-  qualify one only when a dataset needs it, without copying its URL or XML rules.
-  The concrete bill route satisfies D12 without introducing an unused second
-  integration. GAO topics and SpicyRegs public tables retain their named D51/D52
-  consumer tasks.
+  D53 and D55 now exercise the provider's bill and annual CFR routes, including
+  complete MODS mapping. The standalone Federal Register body resolver remains
+  outside these examples. D55 also qualifies publisher XML preference in the
+  existing standalone and joined Federal Register catalog policies. GAO topics
+  and SpicyRegs public tables retain their named D51/D52 consumer tasks.
 
 <a id="d42"></a>
 
@@ -1535,7 +1538,7 @@ caller lives; moving imports between modules does not remove a package cycle.
   optional. Depends on D41.
 
   **Completed September 12 for D41's selected candidates:** the CourtListener
-  tool now uses the same installed SpicyDocs `0.3.0` wheel as the reader and bill
+  tool initially adopted the same SpicyDocs `0.3.0` wheel as the reader and bill
   example. Removing its duplicate parser and filename rules cuts the tool by
   **153 lines**. DocSpec retains its capture-pin, page consistency, selection and
   coverage behavior. New catalog versions preserve exact ETag strings, and URLs
@@ -1615,14 +1618,13 @@ caller lives; moving imports between modules does not remove a package cycle.
   build and dependency identities. This is a locally built and qualified wheel,
   not an external registry publication. Final independent review is consolidated in D39.
 
-  **Current dependency, September 12:** The annual CFR example advances the
-  single optional provider wheel to SpicyDocs `0.6.0`. Source reading, bill
-  acquisition, and annual CFR acquisition share
-  [one manifest](../vendor/spicy_docs.json); the old wheel and separate bill-test
-  wheel are removed. The provider's acquisition extra is required for the bill
-  and [CFR examples](govinfo-cfr-example.md). The core wheel still installs
-  without SpicyDocs. D53 and D46 retain their earlier, version-specific test
-  evidence; the CFR guide records the later example's scope and qualification.
+  **Current dependency, September 12:** D56 adopts the combined SpicyDocs `0.7.0`
+  wheel from source `d9c312c`. FEC source reading, bill acquisition and annual
+  CFR acquisition share [one manifest](../vendor/spicy_docs.json).
+  The bill and CFR examples need the provider's acquisition extra; neither needs
+  Dagster. The FEC metadata example uses the provider's core reader. The core
+  DocSpec wheel still installs without SpicyDocs. D55 preserves the earlier
+  CFR qualification; D56 owns the combined provider's receiving checks.
 
 <a id="d46"></a>
 
@@ -1637,7 +1639,7 @@ caller lives; moving imports between modules does not remove a package cycle.
   switch current imports directly without a legacy fallback chain. Depends on
   D42–D45 for the capabilities actually selected.
 
-  **Completed September 12 for the current reader and bill fetcher:** the
+  **Initial reader and bill qualification, September 12:** the
   combined installed-wheel gate passed **24 tests in 22.43 seconds**. It covers
   source outcomes/evidence, catalog building and admission, successful body
   processing, explicit bill selection, source refusals, and later processing
@@ -1757,7 +1759,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   Depends on D06–D08/D43 and the selected public input API; no package move is required.
 
   **Completed September 12:** the [comment-table example](spicyregs-comments.md)
-  uses the existing pinned SpicyDocs `0.3.0` public profile, retained Parquet
+  initially used the pinned SpicyDocs `0.3.0` public profile, retained Parquet
   evidence and bounded supplied-record policy. It preserves all 16 logical
   fields, nulls, diagnostics, original input pins and provider-declared attachment
   locations. Exact docket filtering and catalog preview create no document run
@@ -1768,9 +1770,12 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   and reader dependency-absence checks run before installing the provider's
   optional Parquet extra. Ruff and lock consistency passed.
   [Independent review](history/2026-09-12-spicyregs-comments-review.md) approved
-  the workflow. Its observed upstream attachment-index limitation is tracked in
+  the workflow. The upstream attachment-index limitation was fixed in
   [SpicyDocs P01](../../spicy-docs/docs/simplification-todo.md#public-comment-attachment-provenance);
-  DocSpec preserves provider declarations and adds no local parser correction.
+  D55 adopts that fix through SpicyDocs 0.6.0 and adds mixed-validity coverage in
+  [the comment tests](../tests/test_spicyregs_comments_example.py). Valid entries
+  after invalid ones retain original positions 1 and 3, media types, diagnostics
+  and raw Parquet evidence. DocSpec adds no local parser correction.
   This qualifies the bounded synthetic example, not live coverage or capacity.
 
 <a id="d53"></a>
@@ -1783,8 +1788,10 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   [the example and guide](govinfo-bill-example.md) implement this composition;
   [installed-wheel qualification](../tests/test_govinfo_bill_installed_wheel.py)
   checks offline reuse, source spans, selection, refusals, and provider identity.
-  Qualified with SpicyDocs 0.3.0 from source `8e485fe`, pinned in the
-  [wheel manifest](../vendor/spicy_docs.json).
+  Initially qualified with SpicyDocs 0.3.0 from source `8e485fe`; D55 advances
+  the [wheel manifest](../vendor/spicy_docs.json) to 0.6.0 and rechecks
+  the bill example. Native package IDs now supply source versions; hashes remain
+  provenance, and an unstated transport version remains absent.
   The originating worktree passed **11 installed-wheel and package-boundary
   checks**, its documented offline command, and changed-file Ruff. Its independent
   semi-formal review approved after distinguishing acquisition start from response
@@ -1793,7 +1800,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   example does not complete GAO/public-comment work, collection-wide acquisition,
   or legal interpretation.
 
-  Current-branch installed qualification passed **24 tests in 22.43 seconds**,
+  Initial integration qualification passed **24 tests in 22.43 seconds**,
   including wrong-bill and placeholder refusals. The original
   [independent review](history/2026-09-12-govinfo-bill-handoff-review.md) covers
   the imported example at `4df1b44`; its provenance note distinguishes these
@@ -1834,6 +1841,79 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   Arrow-reader-to-DuckDB writer experiment is isolated from that workflow
   comparison. Frozen `c898512` capacity evidence remains unchanged. D21/D23/D24
   document the existing implementation; D54 tracks this new replacement scope.
+
+<a id="d55"></a>
+
+- [x] **D55 · P1 · Build an annual CFR experiment through the source wheel.**
+  [The example](govinfo-cfr-example.md) retains complete MODS metadata, selects
+  one publisher-stated annual section XML offer, injects bounded acquisition,
+  and runs generic XML extraction and phrase processing. A changed processor
+  reuses the retained files, representations and segments after acquisition
+  closes. Publisher dates and native publication IDs remain distinct from
+  content hashes. No eCFR substitution or whole-title acquisition is implied.
+
+  **Completed locally at `1d37bcb`:** the same SpicyDocs 0.6.0 wheel serves source
+  reading, bill acquisition and CFR acquisition. Standalone Federal Register
+  policy 1.1.0 and joined Regulations.gov policy 1.3.0 prefer one usable FR XML
+  offer and retain alternatives as evidence. Regulations.gov file priority
+  stays unchanged. Source parsing and metadata mapping remain SpicyDocs-owned.
+
+  Full local validation: **1,162 tests passed**, one opt-in test deselected;
+  required regression map, Ruff, lock, build and installed-wheel checks passed.
+  Minimal examples work without Dagster; core DocSpec works without SpicyDocs.
+  Independent review approved after fixes to joined-format selection and exact
+  policy field types. A bounded live run made two requests: volume metadata
+  with 401 constituents and one section. Later processing created no new
+  captures, representations or segments. This establishes the selected example,
+  not publisher-wide coverage or completion of D54's separate execution work.
+
+  Exact wheel pins, commands, full checks, live bytes and review are retained in
+  `~/Work/corpora/supply-2026-09-02/receipts/source-fidelity-2026-09-12/`
+  under `docspec-check/` and `docspec-cfr-live/`. The matching source task is
+  SpicyDocs C07, originally on `codex/xml-body-acquisition`. DocSpec merged this
+  delivery through PR #2 at `b62a8b5`; that merge passed local and GitHub checks.
+
+<a id="d56"></a>
+
+- [x] **D56 · P1 · Bring the retained FEC census example into DocSpec.** Adopt
+  the combined SpicyDocs 0.7.0 wheel and maintain a small FEC metadata catalog
+  example, focused tests, and usage guide in this repository. Read the provider's
+  admitted records and evidence once, then use the existing supplied-record
+  catalog APIs. Preserve complete native records, unknown fields and evidence
+  references; keep collection scope once in the example summary. Reuse an
+  existing evidence reference as the explicitly labeled observation version.
+  SpicyDocs owns acquisition and parsing; SpicyRegs owns committee-table and
+  relationship interpretation. Retained research data and qualification receipts
+  remain outside this source repository.
+
+  **Done when:** small offline and installed-wheel cases prove metadata/evidence
+  retention, explicit empty results, bounds and source refusals; the existing
+  27,311-row retained census builds through the example with exact field and
+  membership comparison; bill/CFR and core-package checks pass against the same
+  wheel. Metadata rows offer no document-body candidates. Source publication,
+  filing acquisition, relationship interpretation and search adoption are not
+  established by this example. No new core API or runtime framework is needed.
+
+  **Completed locally September 13:** [the FEC guide](fec-committees.md) and
+  example use the provider's public reader and existing DocSpec supplied-record
+  APIs. Dependency commit `694ccef` adopts the qualified SpicyDocs 0.7.0 wheel
+  from source `d9c312c`. Nineteen focused offline cases cover preserved values,
+  evidence, empty input, limits and refusals; the shared installed-wheel check
+  covers FEC and CFR outside both checkouts. Full regression validation passed
+  **1,182 tests**, with one opt-in test deselected. Required regression mapping,
+  Ruff, lock, distribution build and core-wheel installation checks passed.
+
+  The installed example also built the retained 2024/2026 census: **27,311
+  committees across 274 response pages**. Independent comparison matched every
+  complete source record and evidence observation by committee ID, with no
+  Internet requests. The original source verifier remains explicit; this checks
+  the retained handoff, not a fresh FEC semantic replay or body acquisition.
+  Architecture and semi-formal code/documentation reviews approved the approach.
+  Qualification receipts, the exact inputs, completed catalog and reviews are in
+  `~/Work/corpora/docspec-fec-adoption-20260912-233109/`; the full comparison is
+  `consumer/qualification.json`. This delivery is locally committed; GitHub CI
+  and a main merge are separate from these local checks. The eight remaining
+  implementation items retain their existing scope.
 
 ## Suggested delivery order
 

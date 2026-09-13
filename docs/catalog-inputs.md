@@ -78,7 +78,7 @@ uv run --frozen --extra dagster python -m examples.supplied_records --output /ab
 Choose the `spicy-docs` package extra for this integration. In a checkout, add
 `--extra spicy-docs` to the extras you select for `uv sync` and `uv run`.
 The optional provider is pinned to
-SpicyDocs `0.6.0`; its base installation adds source reading without acquisition,
+SpicyDocs `0.7.0`; its base installation adds source reading without acquisition,
 analytics, PDF or Dagster dependencies. See the
 [wheel installation instructions](../CONTRIBUTING.md#install-the-optional-source-reader)
 for use outside the checkout. Ordinary supplied-record experiments need no
@@ -87,6 +87,11 @@ provider package.
 The [GAO topic example](gao-topics.md) maps admitted source fields and evidence
 into supplied records, then applies an exact-label filter without body capture
 or a new processor type.
+
+The [FEC committee example](fec-committees.md) joins retained committee records
+and evidence once, then builds a bounded metadata catalog through supplied
+records. It preserves full source fields and the original observation references
+without making API requests or treating committee metadata as document bodies.
 
 The [SpicyRegs comment example](spicyregs-comments.md) preserves retained table
 fields, nulls, diagnostics and attachment candidates, then filters by docket ID

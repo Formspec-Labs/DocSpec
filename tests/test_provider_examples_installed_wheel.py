@@ -1,4 +1,4 @@
-"""Run the annual-CFR cases outside both repositories using the pinned wheels."""
+"""Run provider examples outside both repositories using the same pinned wheels."""
 
 import hashlib
 import json
@@ -8,10 +8,27 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_cfr_example_uses_installed_packages_and_replays_offline(tmp_path, docspec_wheel):
+@pytest.mark.parametrize("example,provider_extra,example_files,fixture_directory,test_file,support_files", [
+    pytest.param(
+        "cfr", "acquisition",
+        ("dataset_example_support.py", "govinfo_cfr.py", "govinfo_cfr_fetcher.py",
+         "phrase_match_processor.py", "provider_identity.py"),
+        "cfr_fixtures", "test_govinfo_cfr_example.py", ("support/__init__.py", "support/processing.py"),
+        id="annual-cfr",
+    ),
+    pytest.param(
+        "fec", None, ("fec_committees.py",), "fec_fixtures", "test_fec_committees_example.py", (),
+        id="fec-metadata",
+    ),
+])
+def test_provider_example_uses_installed_packages_and_replays_offline(
+    tmp_path, docspec_wheel, example, provider_extra, example_files, fixture_directory, test_file, support_files,
+):
     uv = shutil.which("uv")
     assert uv
     manifest = json.loads((ROOT / "vendor/spicy_docs.json").read_text())
@@ -35,20 +52,21 @@ def test_cfr_example_uses_installed_packages_and_replays_offline(tmp_path, docsp
     venv = tmp_path / "environment"
     run([uv, "venv", "--python", sys.executable, venv])
     python = venv / "bin/python"
-    run([uv, "pip", "install", "--python", python, rulespec, docspec,
-         str(spicy_docs) + "[acquisition]", "pytest"])
+    provider_requirement = str(spicy_docs) + (f"[{provider_extra}]" if provider_extra else "")
+    run([uv, "pip", "install", "--python", python, rulespec, docspec, provider_requirement, "pytest"])
     run([uv, "pip", "check", "--python", python])
     examples = tmp_path / "examples"
     examples.mkdir()
-    for filename in ("__init__.py", "dataset_example_support.py", "govinfo_cfr.py", "govinfo_cfr_fetcher.py",
-                     "phrase_match_processor.py", "provider_identity.py"):
+    for filename in ("__init__.py", *example_files):
         shutil.copy2(ROOT / "examples" / filename, examples / filename)
-    shutil.copytree(ROOT / "examples/cfr_fixtures", examples / "cfr_fixtures")
+    shutil.copytree(ROOT / "examples" / fixture_directory, examples / fixture_directory)
     tests = tmp_path / "tests"
-    (tests / "support").mkdir(parents=True)
-    for filename in ("__init__.py", "support/__init__.py", "support/processing.py", "test_govinfo_cfr_example.py"):
+    tests.mkdir()
+    for filename in ("__init__.py", test_file, *support_files):
+        (tests / filename).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "tests" / filename, tests / filename)
+    absent = ("dagster", "spicy_regs") + (("httpx", "boto3", "polars") if example == "fec" else ())
     run([python, "-c", "import docspec, spicy_docs, importlib.util; from pathlib import Path; "
-         "assert importlib.util.find_spec('dagster') is None; "
+         f"assert all(importlib.util.find_spec(name) is None for name in {absent!r}); "
          "assert all('site-packages' in Path(m.__file__).parts for m in (docspec, spicy_docs))"])
-    run([python, "-m", "pytest", "-q", "tests/test_govinfo_cfr_example.py"])
+    run([python, "-m", "pytest", "-q", "tests/" + test_file])
