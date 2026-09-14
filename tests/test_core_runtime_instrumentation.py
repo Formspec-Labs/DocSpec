@@ -1,4 +1,6 @@
 """Known-count checks for qualification observers, separate from capacity trials."""
+from tests.support.iceberg_records import files
+
 
 from contextlib import closing
 import hashlib
@@ -17,12 +19,12 @@ def test_inline_selection_reads_parent_files_once(tmp_path):
         workspace.create("root", ((str(index), {"x": index, "body": "x" * 1024}) for index in range(513)))
         with workspace.publisher.session() as session:
             parent = workspace.states.layers(session, "root")["entities"]
-            parent_files = {member["path"].split("/")[-1] for member in parent._root["members"]}
+            parent_files = {member["path"].split("/")[-1] for member in files(parent._storage, parent)}
             profiles = QueryProfiles(tmp_path / "profiles")
             definition = core.StateMembers(member_selector=core.JsonFields(selectors=(core.Field(label="x", pointer="/x"),)))
             with observations(workspace, {}, profiles):
                 rows = list(workspace.selections._computed_rows(session, "root", definition))
-            visits = [profile for profile in profiles.profiles if parent_files.intersection(profile["query_files"]) and profile["scans"]]
+            visits = [profile for profile in profiles.profiles if any(any(name in scan["extra_info"].get("Filename(s)", "") for name in parent_files) for scan in profile["scans"])]
             assert len(visits) == 1
             assert len(rows) == 513
             assert {decode_canonical_json_value(row[2])[1][0][2] for row in rows} == set(range(513))

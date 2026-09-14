@@ -14,7 +14,7 @@ from docspec.domain.core_admission import record_value
 from docspec.domain.core_encoding import ABSENT, content_evidence, json_evidence, member_bytes, member_stream_evidence, selector_value
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, sha256_digest
 from docspec.domain.references import BlobRef, LayerRef
-from docspec.domain.storage import RecordSchema, PartitionPolicy, partition_bucket
+from docspec.domain.storage import RecordSchema, PartitionPolicy
 from docspec.domain.selected_values import validate_fields_value
 from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError
@@ -28,7 +28,7 @@ _ROWS = pa.schema([("record_identity", pa.string()), ("partition_value", pa.stri
                    ("occurrence_id", pa.string()), ("sort_key", pa.string()), ("content", pa.binary())])
 _SCHEMA = RecordSchema("core-selected-members:2", tuple(_ROWS.names), "record_identity", "partition_value", _COLUMNS)
 _SOURCE = pa.schema([("member_key", pa.string()), ("occurrence_id", pa.string()), ("payload", pa.string())])
-_POLICY = PartitionPolicy("core-key-buckets:1", 64)
+_POLICY = PartitionPolicy("core-keys:1", 1)
 _COMPUTED = "computed_selection"
 _ROW_COLUMNS = ", ".join(_ROWS.names)
 
@@ -308,16 +308,8 @@ class CoreSelectionStorage:
             evidence = self._plan_evidence(session, definition, plan)
             admitted = plan.layer
             if plan.changes is not None:
-                # Bounded key batches build only the small physical bucket set.
-                with closing(plan.changes.project("record_identity").to_arrow_reader(BATCH_ROWS)) as keys:
-                    touched = frozenset(partition_bucket(key, admitted.partition_policy.bucket_count)
-                        for batch in keys for key in batch.column(0).to_pylist())
-                if touched:
-                    with self.records.relations({"selected": admitted}, partitions={"selected": touched}, cursor=plan.cursor) as relations:
-                        output = self._member_relation(relations["selected"], plan).order("record_identity")
-                        with closing(output.to_arrow_reader(256)) as rows:
-                            admitted = self.records.retain_batches(rows, layer_kind="core-selected-members", schema=_SCHEMA,
-                                partition_policy=admitted.partition_policy, base=admitted, replace_partitions=touched)
+                with closing(plan.changes.to_arrow_reader(256)) as rows:
+                    admitted = self.records.apply_changes(admitted, rows)
         else:
             def rows():
                 with closing(self._computed_rows(session, parent_id, definition)) as values:

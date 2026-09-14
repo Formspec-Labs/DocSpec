@@ -3,6 +3,7 @@
 from contextlib import ExitStack, closing
 from pathlib import Path
 from itertools import chain, islice
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -16,10 +17,10 @@ from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.adapters.storage.core_selections import CoreSelectionStorage
 from docspec.adapters.storage.files import _contained
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_maintenance import CoreMaintenance
 from docspec.application.core_publication import CorePublisher
-from docspec.domain.identity import canonical_value_bytes, identity_digest
+from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, identity_digest
 from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.core_ledger import MetadataBatch
@@ -98,8 +99,32 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                 for key in keys():
                     if key[0] != "state_representation" or index.lookup_record("roots", identity_digest(list(key))) is not None:
                         yield key
+            # Iceberg snapshot IDs and physical file names are intentionally
+            # fresh. Retry identity binds the exact retained source scope, not
+            # newly generated export bytes.
+            request = hashlib.sha256()
+            with owned_iterator(publisher.ledger.read_records(keys(), include_values=False)) as batches:
+                for batch in batches:
+                    for row in batch:
+                        request.update(canonical_value_bytes([row.key, row.row_digest]) + b'\n')
+            for key in keys('roots'):
+                request.update(canonical_value_bytes(['root', key]) + b'\n')
+            request_digest = 'sha256:' + request.hexdigest()
+            def existing_export():
+                try:
+                    with (destination / 'artifact.json').open('rb') as stream:
+                        root = decode_canonical_json_value(stream.read(ROOT_BYTES + 1), label='existing export')
+                except OSError as error:
+                    raise IntegrityError('export destination is not a complete artifact') from error
+                pin = ArtifactPin(root['logicalId'], root['artifactDigest'])
+                with open_result_export(destination, expected_pin=pin, producer=producer, max_output_bytes=max_output_bytes) as existing:
+                    if existing.summary['requestDigest'] != request_digest or existing.summary['stateId'] != state_id:
+                        raise IntegrityError('export destination contains another retained source scope')
+                return pin
+            if destination.exists():
+                return existing_export()
             publisher.ledger.export_snapshot(working / "ledger.sqlite", metadata_keys(), full=keys("full"))
-            target_records = stack.enter_context(closing(LocalParquetRecordStorage(working / "records")))
+            target_records = stack.enter_context(closing(IcebergRecordStorage(working / "records", catalog=records.catalog)))
             ledger = stack.enter_context(closing(LocalSqliteCoreLedger(working / "ledger.sqlite", record_storage=target_records)))
             total = 0
             def charge(size):
@@ -181,7 +206,7 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                     charge(len(payload))
                     output.write(payload)
             add_member("roots.jsonl", "roots", "application/x-ndjson")
-            payload = canonical_value_bytes({"format": "docspec-core-export", "version": 1, "state_id": state_id})
+            payload = canonical_value_bytes({"format": "docspec-core-export", "version": 2, "state_id": state_id, "request_digest": request_digest})
             (working / INDEX_KEY).write_bytes(payload)
             charge(len(payload))
             add_member(INDEX_KEY, "index", "application/json")
@@ -191,7 +216,7 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                     byte_limit=min(MANIFEST_BYTES, max_output_bytes - total))
             charge(manifest.byte_size)
             root = build_artifact_root(kind="docspec-core-export", producer=producer,
-                spec={"stateId": state_id, "schemaId": "urn:docspec:core-export:1"}, manifests=(manifest,))
+                spec={"stateId": state_id, "schemaId": "urn:docspec:core-export:2", "requestDigest": request_digest}, manifests=(manifest,))
             payload = canonical_value_bytes(root)
             if len(payload) > ROOT_BYTES:
                 raise LimitExceededError("result export root exceeds its byte limit")
@@ -207,8 +232,7 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
             try:
                 publish_directory_no_replace(working, destination)
             except FileExistsError:
-                with open_result_export(destination, expected_pin=pin, producer=producer, max_output_bytes=max_output_bytes):
-                    pass
+                return existing_export()
             return pin
     finally:
         if working.exists():

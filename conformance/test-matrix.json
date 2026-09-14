@@ -25,13 +25,13 @@
   ],
   "RECORD-STORAGE-CONTRACT": [
     "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
-    "tests/test_storage_records_catalog.py::test_identical_record_layer_roots_publish_atomically_under_concurrency",
+    "tests/test_storage_records_catalog.py::test_record_snapshots_publish_atomically_under_concurrency",
     "tests/test_storage_records_catalog.py::test_record_layer_rejects_unsorted_open_or_tampered_records",
     "tests/test_bounded_partitions.py::test_parquet_writer_streams_many_partitions_without_whole_python_member_reads",
     "tests/test_record_identity_bounds.py::test_writer_bounds_preserve_long_unicode_identities_and_native_lookup",
-    "tests/test_record_identity_bounds.py::test_full_admission_rejects_repinned_bounds_that_hide_real_rows",
-    "tests/test_record_identity_bounds.py::test_invalid_bounds_are_rejected_before_opening_members",
-    "tests/test_record_identity_bounds.py::test_disjoint_range_union_skips_base_scans_and_keeps_every_file"
+    "tests/test_iceberg_snapshots.py::test_replacing_a_file_and_its_checksum_cannot_repin_a_snapshot",
+    "tests/test_iceberg_snapshots.py::test_failed_pin_leaves_no_catalog_head_or_changed_base",
+    "tests/test_record_identity_bounds.py::test_disjoint_union_keeps_base_files_and_checks_overlap"
   ],
   "BLOB-STORE-CONTRACT": [
     "tests/test_storage_adapters.py::test_blob_store_streams_deduplicates_ranges_and_materializes",
@@ -240,7 +240,7 @@
     "tests/test_core_states.py::test_import_order_is_immaterial_and_duplicate_keys_refuse",
     "tests/test_bounded_partitions.py::test_parquet_writer_streams_many_partitions_without_whole_python_member_reads",
     "tests/test_bounded_partitions.py::test_parquet_writer_shards_a_hot_partition_and_reuses_immutable_members",
-    "tests/test_bounded_partitions.py::test_parquet_refuses_one_member_path_claimed_by_multiple_shards",
+    "tests/test_iceberg_snapshots.py::test_row_edits_keep_base_files_and_independent_branches",
     "tests/test_bounded_partitions.py::test_parquet_scan_rejects_cross_member_duplicates_and_cleans_scratch",
     "tests/test_bounded_partitions.py::test_parquet_refuses_repinned_false_routing_or_payload_schema",
     "tests/test_bounded_partitions.py::test_parquet_physical_member_cap_includes_encoding_overhead",
@@ -250,7 +250,7 @@
     "tests/test_parquet_arrow_stream.py::test_arrow_input_can_stream_from_the_same_storage_connection",
     "tests/test_parquet_arrow_stream.py::test_arrow_sqlite_input_stays_on_each_callers_thread",
     "tests/test_storage_records_catalog.py::test_record_layer_streams_stably_and_reuses_untouched_partitions",
-    "tests/test_storage_records_catalog.py::test_identical_record_layer_roots_publish_atomically_under_concurrency",
+    "tests/test_storage_records_catalog.py::test_record_snapshots_publish_atomically_under_concurrency",
     "tests/test_storage_records_catalog.py::test_parquet_preserves_arbitrary_payloads_and_exact_partition_routing",
     "tests/test_storage_records_catalog.py::test_workspace_names_do_not_override_physical_routing_columns",
     "tests/test_storage_records_catalog.py::test_parquet_live_streams_and_concurrent_point_reads_do_not_clobber_results",
@@ -258,7 +258,10 @@
     "tests/test_storage_records_catalog.py::test_record_lookup_reads_one_root_and_rechecks_later_inputs",
     "tests/test_record_workspace.py::test_sqlite_workspace_streams_one_sorted_collection",
     "tests/test_record_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
-    "tests/test_record_workspace.py::test_sqlite_workspace_enforces_its_spooled_byte_limit"
+    "tests/test_record_workspace.py::test_sqlite_workspace_enforces_its_spooled_byte_limit",
+    "tests/test_iceberg_snapshots.py::test_logical_retry_reuses_publication_but_refuses_changed_input",
+    "tests/test_iceberg_snapshots.py::test_writes_require_a_catalog_but_constructing_storage_does_not",
+    "tests/test_iceberg_snapshots.py::test_partition_replacement_refuses_an_identity_kept_elsewhere"
   ],
   "CORE-LEDGER-PUBLICATION": [
     "tests/test_core_ledger.py::test_initialize_reopen_settings_closed_owner_and_namespaced_identity",

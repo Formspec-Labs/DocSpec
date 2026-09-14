@@ -10,6 +10,7 @@ dependencies = [
     "jsonschema-rs>=0.52,<1",
     "rulespec-artifacts==1.0.12",
     "msgspec>=0.21.1,<1",
+    "pyiceberg==0.12.0",
 ]
 
 [tool.uv.sources]

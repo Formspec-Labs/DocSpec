@@ -8,7 +8,7 @@ from docspec.adapters.storage.core_selections import CoreSelectionStorage
 from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_execution import CoreOperations
 from docspec.application.core_edits import prepare_revision
 from docspec.application.core_inspection import inspect_record
@@ -22,12 +22,12 @@ from docspec.ports.record_storage import BATCH_ROWS
 
 
 class CoreWorkspace:
-    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES):
+    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, catalog=None):
         self.path = Path(path).resolve()
         self._resources = ExitStack()
         try:
-            self.records = self._resources.enter_context(closing(LocalParquetRecordStorage(
-                self.path / "records", engine_memory_bytes=engine_memory_bytes)))
+            self.records = self._resources.enter_context(closing(IcebergRecordStorage(
+                self.path / "records", engine_memory_bytes=engine_memory_bytes, catalog=catalog)))
             self.ledger = self._resources.enter_context(closing(LocalSqliteCoreLedger(
                 self.path / "ledger.sqlite", record_storage=self.records)))
             self.blobs = blobs if blobs is not None else LocalContentAddressedBlobStore(self.path / "blobs")

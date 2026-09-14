@@ -36,6 +36,7 @@ encoding remain explicit costs to measure. There is no DocSpec native component.
 | Authoritative metadata | SQLite through standard-library `sqlite3` | One backend owns SQL, connections, transactions, schema initialization and version checks, and bounded row binding behind the six operations in §4. |
 | Local artifact content | The existing content-addressed blob store | SHA-256 keyed, put-if-absent, streamed, with its S3 adapter. The ledger owns logical identity; the store owns bytes. |
 | Bulk catalog and dataset operations | DuckDB | Resolve retained states and selected values, compare dependencies, and identify candidate work in SQL over Parquet and Arrow. Preserve JSON types; compute correspondence digests in Python over shared-encoder bytes. In-engine SHA-256 serves content checks on already canonical bytes. §3.3 records the decision evidence and its limits. |
+| Bulk snapshot storage | Iceberg through DuckDB; PyIceberg metadata and REST registration | Pin immutable snapshots, preserve base files with positional deletes, and publish logical states through SQLite after file durability. |
 | Columnar interchange and Parquet access | Arrow / PyArrow | Exchange bounded batches and streams; retain opaque payloads alongside queryable columns. |
 | Dependency graph algorithms | Standard-library `graphlib`; recursive SQL | Cycle checks and topological order for the operation graph; traversal of potentially affected results as a recursive query over the ledger. |
 | Content and correspondence hashing | SHA-256 | Separate, versioned encodings for content and correspondence; distinct logical entity identities. |
@@ -327,9 +328,11 @@ Coalesce admitted entity read batches into publication units within the existing
 row and byte limits, reserving receipt space. The ledger owns the exact final
 limit check; native read chunk boundaries do not define transactions.
 
-Sort by bucket and logical identity before assigning file boundaries. The shared
-PyArrow writer packs small byte-bounded row groups into larger files; selective
-reads should use Parquet group pruning rather than require tiny physical files.
+Sort new rows by logical identity. DuckDB's Iceberg writer owns file packing and
+positional deletes; Iceberg manifests describe shared files. Retained roots pin
+metadata instead of repeating file inventories. Reads use exact snapshots,
+including delete files. See [record storage](record-storage.md) for catalog setup,
+publication, retention and remaining full-state comparison costs.
 
 | Work that can dominate | Required design |
 | --- | --- |
@@ -459,8 +462,8 @@ times require a timezone and must be exactly representable at microsecond
 precision; absent times remain unknown. Entity and state IDs share one data
 identity namespace so result bindings resolve without ambiguity.
 
-Materialized roots retain membership and canonical entity rows in the existing
-Parquet store. The ledger keeps immutable entity digests and references to those
+Materialized roots retain membership and canonical entity rows in pinned
+Iceberg snapshots. The ledger keeps immutable entity digests and references to those
 rows; its ordinary record API resolves bounded requests through the same native
 storage queries. Moving a validated entity between inline and bulk storage
 changes its physical location, preserving its logical record and identity.

@@ -151,7 +151,7 @@ def test_direct_selection_survives_parent_storage_loss_but_recovery_requires_par
             expected = selections.evidence(session, direct)
             # Simulate loss outside authorized cleanup. The retained selected
             # value has its own files and does not secretly reread its parent.
-            (records.root / parent._root["members"][0]["path"]).unlink()
+            (records.root / next(ref.locator for ref in records.physical_references(parent.reference) if ref.locator.endswith(".parquet"))).unlink()
         with publisher.session() as session:
             assert selections.evidence(session, direct) == expected
             with pytest.raises(IntegrityError, match="unavailable"):

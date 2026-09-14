@@ -7,7 +7,7 @@ import pytest
 from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
 from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_publication import CorePublisher
 from docspec.domain import core
 from docspec.domain.core_admission import admit_record
@@ -17,7 +17,7 @@ from docspec.ports.record_storage import BATCH_BYTES
 
 
 def open_core(stack, path):
-    records = stack.enter_context(closing(LocalParquetRecordStorage(path / "records")))
+    records = stack.enter_context(closing(IcebergRecordStorage(path / "records")))
     ledger = stack.enter_context(closing(LocalSqliteCoreLedger(path / "ledger.sqlite", record_storage=records)))
     states = CoreStateStorage(records)
     publisher = CorePublisher(ledger, LocalContentAddressedBlobStore(path / "blobs"), states=states)

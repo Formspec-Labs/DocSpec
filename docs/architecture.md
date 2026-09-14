@@ -22,7 +22,7 @@ preserve content identities and evidence coordinates.
 ## What happens to it?
 
 [CoreWorkspace](../src/docspec/runtime/core.py) assembles the existing blob and
-Parquet stores, native bulk engine, SQLite ledger, publisher, operation runner,
+Iceberg snapshots, DuckDB writer and bulk engine, SQLite ledger, publisher, operation runner,
 and maintenance owner. It closes their resources as a context manager.
 
 [Core operations](../src/docspec/application/core_execution.py) record each actual
@@ -35,7 +35,7 @@ history even when no successful result is retained.
 DocSpec records which retained field values it actually evaluated. After a
 revision, it compares member identities in bulk, evaluates changed members and
 reuses unchanged field values. This also works after reopening. Temporary changes
-stay bounded; explicitly retaining a selection uses the same Parquet writer.
+stay bounded; explicitly retaining a selection uses the same DuckDB Iceberg writer.
 Missing or unavailable prior values cause ordinary evaluation of the parent data.
 
 [DocumentPipeline](../src/docspec/application/documents.py) batches captures and
@@ -49,7 +49,7 @@ second document planner, cache, or publication lifecycle.
 | Owner | Data and responsibility |
 | --- | --- |
 | SQLite Core ledger | Identity, provenance links, retention, availability, actual progress, current selections and removal intents |
-| Parquet record/state storage | Immutable occurrence batches, membership, revisions and selected-value files |
+| Iceberg record/state storage | Pinned occurrence, membership and selected-value snapshots; DuckDB writes changed rows and positional deletes through a REST catalog |
 | DuckDB | Relational joins, sorting, state resolution, comparison and bulk selection |
 | Content-addressed blob store | Retained opaque values, capture bytes and recovery documents |
 | Shared encoder and admission | Exact value types, canonical bytes, SHA-256, typed metadata and supplied JSON Schemas |

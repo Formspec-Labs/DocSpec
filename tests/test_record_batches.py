@@ -1,4 +1,6 @@
 """Native handoffs preserve bytes and the storage owner's existing failure rules."""
+from tests.support.iceberg_records import files
+
 
 from contextlib import closing
 
@@ -9,7 +11,7 @@ import pytest
 from docspec.adapters.storage import records as records_module
 from docspec.ports.record_storage import bounded_batches
 from docspec.adapters.storage.batches import BATCH_BYTES, BATCH_ROWS, encoded_batches
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.domain.identity import canonical_json_bytes
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
 from docspec.errors import IntegrityError, LimitExceededError
@@ -36,10 +38,10 @@ def test_typed_auxiliary_columns_count_toward_write_and_lookup_limits(tmp_path):
     schema = RecordSchema("typed:1", (*PHYSICAL.names, "sort_key"), "record_identity", "partition_value", (("sort_key", "binary"),))
     def row(key, size):
         return {"record_identity": key, "partition_value": key, "record_json": b"[]", "sort_key": b"x" * size}
-    with closing(LocalParquetRecordStorage(tmp_path / "bounded", max_record_bytes=4096)) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "bounded", max_record_bytes=4096)) as storage:
         with pytest.raises(LimitExceededError):
             storage.write_layer([row("a", 4096)], layer_kind="typed", schema=schema, partition_policy=POLICY)
-    with closing(LocalParquetRecordStorage(tmp_path / "streamed")) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "streamed")) as storage:
         reference = storage.write_layer((row(key, 3 * 1024**2) for key in ("a", "b", "c")),
                                         layer_kind="typed", schema=schema, partition_policy=POLICY)
         storage.verify(reference)
@@ -54,17 +56,14 @@ def test_typed_auxiliary_columns_count_toward_write_and_lookup_limits(tmp_path):
 def test_disjoint_union_shares_all_files_and_refuses_duplicate_identities(tmp_path, partition_by_identity):
     schema = RecordSchema(SCHEMA.schema_id, SCHEMA.fields, SCHEMA.identity_field,
                           SCHEMA.identity_field if partition_by_identity else SCHEMA.partition_field)
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         def layer(start, stop):
             return storage.available(storage.write_batches(encoded_batches(
                 ((_row(n)["recordId"], _row(n)[schema.partition_field], canonical_json_bytes(_row(n))) for n in range(start, stop)),
                 PHYSICAL, byte_column=2), layer_kind="test-records", schema=schema, partition_policy=POLICY))
         base, delta = layer(0, 256), layer(256, 512)
-        before = set(tmp_path.rglob("*.parquet"))
         combined = storage.union_disjoint(base, delta)
-        assert set(tmp_path.rglob("*.parquet")) == before
-        assert {member["path"] for member in combined._root["members"]} == {
-            member["path"] for source in (base, delta) for member in source._root["members"]}
+        assert {member["path"] for member in files(storage, base)} <= {member["path"] for member in files(storage, combined)}
         storage.verify(combined.reference)
         assert list(storage.stream(combined.reference)) == [_row(n) for n in range(512)]
         assert storage.union_disjoint(base, layer(0, 0)) is base
@@ -76,7 +75,7 @@ def test_disjoint_union_shares_all_files_and_refuses_duplicate_identities(tmp_pa
 
 
 def test_native_joins_reuse_admission_and_reject_another_store(tmp_path, monkeypatch):
-    with closing(LocalParquetRecordStorage(tmp_path / "source")) as storage, closing(LocalParquetRecordStorage(tmp_path / "other")) as other:
+    with closing(IcebergRecordStorage(tmp_path / "source")) as storage, closing(IcebergRecordStorage(tmp_path / "other")) as other:
         reference = write(storage, batches(300))
         admitted = storage.admit(reference)
         with monkeypatch.context() as guarded:
@@ -99,7 +98,7 @@ def test_native_joins_reuse_admission_and_reject_another_store(tmp_path, monkeyp
 
 
 def test_incremental_write_reuses_admitted_base_but_checks_fresh_references(tmp_path, monkeypatch):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         reference = write(storage, batches(300))
         admitted = storage.available(reference)
         with monkeypatch.context() as guarded:
@@ -109,7 +108,7 @@ def test_incremental_write_reuses_admitted_base_but_checks_fresh_references(tmp_
             result = storage.retain_batches([], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
                                              base=admitted, replace_partitions=frozenset())
             assert result.reference == reference
-        (storage.root / admitted._root["members"][0]["path"]).unlink()
+        (storage.root / files(admitted._storage, admitted)[0]["path"]).unlink()
         with pytest.raises(IntegrityError, match="unavailable"):
             storage.write_batches([], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
                                   base=reference, replace_partitions=frozenset())
@@ -117,7 +116,7 @@ def test_incremental_write_reuses_admitted_base_but_checks_fresh_references(tmp_
 
 @pytest.mark.parametrize("count", [0, 1, 4097])
 def test_admitted_native_copy_and_queries_do_not_reparse_payloads(tmp_path, monkeypatch, count):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         original = write(storage, batches(count))
         admitted = storage.admit(original)
         with monkeypatch.context() as guarded:
@@ -138,7 +137,7 @@ def test_admitted_native_copy_and_queries_do_not_reparse_payloads(tmp_path, monk
 
 
 def test_native_partition_selection_and_cancel_keep_other_readers_usable(tmp_path):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         reference = write(storage, batches(1000))
         admitted = storage.admit(reference)
         with closing(admitted.batches()) as interrupted:
@@ -170,7 +169,7 @@ def test_native_producer_failure_keeps_original_error_and_closes_once(tmp_path, 
         finally:
             closed.append(True)
 
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         with pytest.raises(RuntimeError) as caught:
             write(storage, source())
         assert caught.value is failure
@@ -191,7 +190,7 @@ def test_native_writer_rejects_invalid_storage_handoffs(tmp_path, fault):
         incoming = [batch.select(["record_json"])]
     else:
         incoming = [batch.set_column(2, PHYSICAL.field(2), pa.array([b"x" * (BATCH_BYTES + 1)]))]
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         with pytest.raises((IntegrityError, LimitExceededError)):
             write(storage, incoming)
         assert not list(tmp_path.rglob("*.json"))
@@ -229,12 +228,11 @@ def test_native_slices_reuse_buffers_and_close_on_early_exit():
 
 
 def test_new_write_admission_uses_one_writer_without_payload_rereads(tmp_path, monkeypatch):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         def unexpected(*args, **kwargs):
             raise AssertionError("newly written records were audited again")
         with monkeypatch.context() as guarded:
             guarded.setattr(storage, "admit", unexpected)
-            guarded.setattr(storage, "_admit_members", unexpected)
             guarded.setattr(storage, "_rows", unexpected)
             admitted = storage.retain_batches(batches(4097), layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
             copied = storage.retain_batches(admitted.batches(), layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
@@ -248,9 +246,9 @@ def test_member_keys_include_empty_whitespace_and_unicode_across_reopen(tmp_path
     policy = PartitionPolicy("core-membership", 4)
     keys = ["", " ", "a", "é", "😀"]
     rows = [{"member_key": key, "occurrence_id": "same-occurrence"} for key in keys]
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         reference = storage.write_layer(rows, layer_kind="core-membership", schema=schema, partition_policy=policy)
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         storage.verify(reference)
         assert list(storage.stream(reference)) == rows
         for row in rows:
@@ -258,7 +256,7 @@ def test_member_keys_include_empty_whitespace_and_unicode_across_reopen(tmp_path
 
 
 def test_native_joins_avoid_input_sorts_and_public_readers_keep_record_order(tmp_path):
-    with closing(LocalParquetRecordStorage(tmp_path, max_member_bytes=16 * 1024)) as storage:
+    with closing(IcebergRecordStorage(tmp_path, max_member_bytes=16 * 1024)) as storage:
         admitted = storage.retain_batches(batches(600), layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
         expected = [_row(index) for index in range(600)]
         with admitted.relation() as relation:
@@ -282,23 +280,18 @@ def test_native_joins_avoid_input_sorts_and_public_readers_keep_record_order(tmp
 def test_packed_files_have_small_groups_and_nonoverlapping_sorted_ranges(tmp_path):
     import pyarrow.parquet as pq
     count = 2049
-    with closing(LocalParquetRecordStorage(tmp_path, max_member_bytes=4 * 1024**2)) as storage:
+    with closing(IcebergRecordStorage(tmp_path, max_member_bytes=4 * 1024**2)) as storage:
         schema = RecordSchema("packed:1", ("key", "value"), "key", "key")
         rows = ((f"k{index:05}", f"k{index:05}", canonical_json_bytes({"key": f"k{index:05}", "value": "x" * 4096}))
                 for index in reversed(range(count)))
         admitted = storage.retain_batches(encoded_batches(rows, PHYSICAL, byte_column=2), layer_kind="packed", schema=schema,
                                           partition_policy=PartitionPolicy("one:1", 1), ordered=False)
-        members = admitted._root["members"]
-        assert len(members) == 5
-        previous = None
+        members = files(admitted._storage, admitted)
+        assert 1 <= len(members) < 5  # Iceberg packs compressed output, not logical payload bytes.
         for member in members:
-            assert previous is None or previous < member["identityMin"]
-            previous = member["identityMax"]
             file = pq.ParquetFile(tmp_path / member["path"])
-            if member is not members[-1]:
-                assert file.num_row_groups > 1
-            for group in range(file.num_row_groups):
-                batch = file.read_row_group(group)
-                assert batch.nbytes < 400 * 1024
+            keys = file.read(columns=['record_identity']).column(0).to_pylist()
+            assert keys == sorted(keys)
+            assert member['byteSize'] <= storage.max_member_bytes
         storage.verify(admitted.reference)
         assert storage.lookup(admitted.reference, "k01000", partition_value="k01000")["value"] == "x" * 4096

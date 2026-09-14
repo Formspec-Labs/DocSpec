@@ -14,12 +14,14 @@ both document processing and general dataset operations.
 ```sh
 uv sync --frozen --python 3.12
 uv run --frozen docspec --help
-uv run --frozen python -m examples.offline_demo --output /absolute/new-experiment
+uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
 ```
 
 See [contributor setup](CONTRIBUTING.md), the [offline walkthrough](docs/offline-walkthrough.md),
 and the [documentation index](docs/documentation.md). The example runs locally
-and exercises capture, processing, repair, and reuse without a network service.
+and exercises capture, processing, repair, and reuse with local fixtures. The
+helper requires Docker for the local Iceberg catalog; an existing catalog can
+instead be configured through `DOCSPEC_ICEBERG_URI`. Retained reads need no catalog.
 
 ## Current entry points
 
@@ -40,8 +42,8 @@ there is no separate document cache or release ledger.
 
 ## Storage and execution
 
-SQLite stores authoritative metadata and progress. Immutable Parquet stores bulk
-occurrences and state membership; DuckDB handles relational bulk work. The
+SQLite stores authoritative metadata and progress. Iceberg snapshots store bulk
+occurrences and state membership; DuckDB owns bulk queries and Iceberg writes. The
 content-addressed blob store retains opaque bytes. Small Parquet row groups
 are packed into larger files. Incremental selections evaluate changed members
 and reuse saved comparison evidence when exact checks establish equal values.
@@ -49,7 +51,8 @@ Shared canonical encoding
 and SHA-256 preserve identity and comparison meaning across these boundaries.
 
 Changed full-state comparisons still require reading the complete comparison
-stream, and revisions rewrite touched membership buckets. See
+stream. Revisions preserve base data files and write changed rows with positional
+deletes; Iceberg manages shared manifests. See
 [record storage](docs/record-storage.md) for these costs and resource settings.
 
 Python connects the native components and validates control records. Dagster is

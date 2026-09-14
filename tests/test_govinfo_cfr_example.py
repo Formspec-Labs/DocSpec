@@ -2,6 +2,7 @@
 
 import json
 import socket
+from tests.support.network import storage_only
 from dataclasses import asdict, replace
 from contextlib import closing
 
@@ -26,10 +27,8 @@ from tests.support.processing import _captured
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    def refuse(*args, **kwargs):
-        raise AssertionError("the CFR qualification attempted a network connection")
-    monkeypatch.setattr(socket.socket, "connect", refuse)
-    monkeypatch.setattr(socket, "create_connection", refuse)
+    monkeypatch.setattr(socket.socket, "connect", storage_only(socket.socket.connect))
+    monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
 
 
 def _responses(monkeypatch, *, metadata=None, body=None, status=200, content_type="application/xml"):

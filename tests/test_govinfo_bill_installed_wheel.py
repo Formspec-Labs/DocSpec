@@ -48,6 +48,7 @@ def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path, 
     ):
         shutil.copy2(ROOT / "examples" / filename, examples / filename)
     shutil.copytree(ROOT / "examples/bill_fixtures", examples / "bill_fixtures")
+    shutil.copy2(ROOT / "tests/support/network.py", examples / "storage_network.py")
     shutil.copy2(ROOT / "tests/support/govinfo_bill_probe.py", examples / "govinfo_bill_probe.py")
     proof = tmp_path / "proof.json"
     run([python, "-m", "examples.govinfo_bill_probe", tmp_path, proof, spicy_docs, manifest["sha256"]])

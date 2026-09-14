@@ -24,7 +24,9 @@ with open_result_export(output_path, expected_pin=pin,
 The accepted producer and expected pin come from the publisher through a trusted
 channel. Rulespec verifies artifact membership and bytes. DocSpec checks Core
 records, selected membership, content references and required retained evidence.
-The consumer does not need the original workspace or producer implementations.
+The version 2 export pins portable Iceberg snapshots. The consumer does not need
+the original workspace, a catalog service or producer implementations. Creating
+an export requires the configured catalog to materialize selected rows.
 Selected membership is materialized into the export so unrelated values sharing
 an old physical source layer are not included accidentally.
 

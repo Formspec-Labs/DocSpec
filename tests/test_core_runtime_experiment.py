@@ -73,12 +73,9 @@ def test_named_fields_open_only_matching_payload_shards(tmp_path, width):
         assert len(evidence["scans"]) == 1
         # A wide selection may legitimately touch every packed file.
         assert all(scan["files"] <= evidence["parent_files"] for scan in evidence["scans"])
-        if width == 2:
-            # The two identities may route to separate hash buckets. Each
-            # belongs to one payload file; absent keys add no payload reads.
-            assert all(1 <= scan["files"] <= width for scan in evidence["scans"])
-        else:
-            assert all(scan["files"] > 5 and scan["truncated_names_resolved_from_query"] for scan in evidence["scans"])
+        # Native Iceberg scans report the actual opened data files. File count
+        # follows compressed packing, not the removed hash-bucket layout.
+        assert all(1 <= scan["files"] <= evidence["parent_files"] for scan in evidence["scans"])
 
 
 def test_full_oracle_rejects_duplicate_for_missing_member(tmp_path, monkeypatch):

@@ -3,6 +3,7 @@
 import json
 import runpy
 import socket
+from tests.support.network import storage_only
 import sys
 from collections import Counter
 
@@ -15,10 +16,8 @@ from examples.phrase_match_processor import PhraseMatcher
 
 
 def test_reference_experiment_repairs_and_compares_without_repeating_upstream_work(tmp_path, monkeypatch, capfd):
-    def reject_network(*args, **kwargs):
-        pytest.fail("the contributor example attempted a network connection")
-    monkeypatch.setattr(socket.socket, "connect", reject_network)
-    monkeypatch.setattr(socket, "create_connection", reject_network)
+    monkeypatch.setattr(socket.socket, "connect", storage_only(socket.socket.connect))
+    monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
     fetches, extractions, segmentations, invocations = [], [], [], []
     def observe(cls, method, calls):
         original = getattr(cls, method)

@@ -213,3 +213,15 @@ task checklist do not change that historical verification.
 | core-model.md | `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81` |
 | core-model-implementation-plan.md | `20e50c1eab1dbdfa5f914924a779d00544443a3665a17d8ba4ece2daa030ce14` |
 | core-model-implementation-tasks.md | `782bc7fe5dfbf72e8af94c7193cedfc05971a088027e18f58e1a88535be5a7fe` |
+
+## Subsequent storage decision, 2026-09-14
+
+The owner requested adoption of DuckDB's Iceberg writer after the two writer
+probes. The [storage guide](../record-storage.md) records the resulting single
+backend: DuckDB writes data and positional deletes, PyIceberg handles metadata
+and temporary REST catalog registrations, and SQLite retains logical publication,
+provenance and retention ownership. This supersedes earlier descriptions of the
+custom Parquet file inventory and bucket replacement. Earlier pinned hashes in
+this record remain historical; the spec is unchanged. The [task list](../core-model-implementation-tasks.md)
+and [production measurement](probes/2026-09-14-iceberg-core-writer.json) record the
+implemented behavior and limits.

@@ -11,7 +11,7 @@ from rulespec_artifacts import (ArtifactVerificationError, LocalMemberSource, Me
 from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.adapters.storage.core_selections import CoreSelectionStorage
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_publication import CorePublisher
 from docspec.domain.identity import decode_canonical_json_value, identity_digest
 from docspec.domain.core_admission import record_value
@@ -117,7 +117,7 @@ class AdmittedResultExport:
     def _admit(self, artifact, source, *, producer):
         root, spec = artifact.root, artifact.root["spec"]
         if (root["kind"] != "docspec-core-export" or root["producer"] != producer.as_dict()
-                or set(spec) != {"stateId", "schemaId"} or spec["schemaId"] != "urn:docspec:core-export:1"):
+                or set(spec) != {"stateId", "schemaId", "requestDigest"} or spec["schemaId"] != "urn:docspec:core-export:2"):
             raise IntegrityError("export kind, producer or schema is invalid")
         if len(artifact.manifests) != 1 or (artifact.manifests[0].scope_kind, artifact.manifests[0].scope_id,
                 artifact.manifests[0].object_key) != ("global", "selected-core-state", MANIFEST_KEY):
@@ -132,7 +132,7 @@ class AdmittedResultExport:
                     raise IntegrityError("export contains an unsupported member")
                 self._index.add_record("members", identity=key, source_item_id=key, record=member.as_dict())
         index = read_mapping(source, self._member(INDEX_KEY), max_bytes=ROOT_BYTES)
-        if index != {"format": "docspec-core-export", "version": 1, "state_id": spec["stateId"]}:
+        if index != {"format": "docspec-core-export", "version": 2, "state_id": spec["stateId"], "request_digest": spec['requestDigest']}:
             raise IntegrityError("export index differs from its selected state")
         with verified_open(source, self._member("references.jsonl")) as stream:
             while payload := stream.readline(RECORD_BYTES + 1):
@@ -143,7 +143,7 @@ class AdmittedResultExport:
                 self._index.add_record("references", identity=identity_digest(value), source_item_id=reference.locator, record=value)
                 self._reference(reference)
         path = source.root if hasattr(source, "root") else self._path
-        self._records = self._resources.enter_context(closing(LocalParquetRecordStorage(path / "records", create=False)))
+        self._records = self._resources.enter_context(closing(IcebergRecordStorage(path / "records", create=False)))
         self._ledger = self._resources.enter_context(closing(LocalSqliteCoreLedger(path / "ledger.sqlite", read_only=True, record_storage=self._records)))
         self._ledger.verify_snapshot()
         self._states = CoreStateStorage(self._records)
@@ -166,7 +166,7 @@ class AdmittedResultExport:
         if not selected_state_seen:
             raise IntegrityError("export roots omit the selected state")
         self._pin = artifact.pin
-        self._summary = {"stateId": self._state_id, "memberCount": artifact.member_count,
+        self._summary = {"stateId": self._state_id, "requestDigest": spec['requestDigest'], "memberCount": artifact.member_count,
                          "embeddedPayloadBytes": artifact.total_member_byte_size, "rootCount": root_count,
                          "scope": "selected-state-and-explicit-root-evidence"}
 

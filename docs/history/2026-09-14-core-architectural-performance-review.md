@@ -1,16 +1,48 @@
 # Core architectural performance review — 2026-09-14
 
-**Implemented the simplifications that use the current storage backend.**
-One routed parent scan, typed comparison bytes, and coalesced publication now
-also have native incremental selection tables, retained comparison evidence,
-resolver certificates, exact membership checks at alternate-representation
-admission, and packed Parquet row groups. No Iceberg work is included.
-Touched-bucket rewrites and flat file inventories remain. Changed full-sequence
-comparison hashes still require the complete byte stream.
+**DuckDB now writes retained Iceberg snapshots.** The earlier simplifications
+below removed repeated work within the former Parquet backend. The subsequent
+cutover removes touched-bucket rewrites and flat file inventories. SQLite remains
+the logical publication and retention ledger; canonical encoding and comparison
+semantics remain unchanged. See the [storage guide](../record-storage.md).
 
-The [storage guide](../record-storage.md) describes current behavior. The earlier
-measurements below retain their original scope and are not throughput claims
-for the subsequent changes.
+## Iceberg production writer
+
+The [production-path probe](probes/2026-09-14-iceberg-core-writer.py) and
+[receipt](probes/2026-09-14-iceberg-core-writer.json) used 100,000 members with
+compressible 256-byte bodies, DuckDB 1.5.5, PyIceberg 0.12.0 and the local Apache
+REST fixture. One native thread, warm filesystem, one run:
+
+| Operation | Measured result |
+| --- | --- |
+| Create and publish the complete state | 9.38 s |
+| Remove one member and publish its revision | 0.140 s |
+| Compare original and changed states exactly | 0.196 s |
+| Physical work for the removal | No new data files or data rows; one delete file, one delete row, 1,182 bytes |
+| Retained membership root | 861 bytes before, 860 bytes after |
+
+The original data file remained byte-identical. Reopened reads recovered both
+complete states with their exact counts. Separate regression cases cover
+updates plus insertion, independent branches, lost publication responses,
+checksum tampering, compaction, shared-file cleanup and portable exports.
+
+This demonstrates reduced write amplification. It is not an equivalent rerun of
+the earlier million-member, 8 GiB workload or a framework throughput comparison.
+Fresh availability checks and native joins can still examine complete snapshots.
+A changed full-sequence SHA-256 comparison still consumes the complete byte
+stream. Iceberg metadata/history and delete files need physical maintenance;
+there is no independent purge or automatic orphan sweep.
+
+The [required regression report](probes/2026-09-14-iceberg-regression.xml.gz)
+records **1,293 passing tests**, zero failures/errors/skips, and 291.02 seconds;
+one live-service test is deselected. Eighteen additional focused checks cover
+the final storage cleanup and relocated-snapshot behavior. The
+[verification receipt](probes/2026-09-14-iceberg-verification.json) pins the built
+wheel and final source. All 129 packaged files match the source. Ruff, dependency
+lock and whitespace checks pass; the spec is unchanged. These are local checks;
+CI has not run. The temporary catalog containers were removed.
+
+All earlier measurements below retain their original implementation and scope.
 
 ## Native storage simplification verification
 
@@ -156,7 +188,7 @@ owners. [Arrow's stated boundary](https://arrow.apache.org/docs/python/dataset.h
 
 | Candidate | Verified relevant capability | Concrete limit or unresolved fit |
 | --- | --- | --- |
-| Iceberg through DuckDB | Current documentation provides merge-on-read updates/deletes/merges, snapshots and native bulk execution. | Writes require an attached REST catalog. A local catalog lifecycle, writes from independently retained bases, export and DocSpec retention/publication integration have not been exercised. [Writer documentation](https://duckdb.org/docs/current/core_extensions/iceberg/writing) |
+| Iceberg through DuckDB | The local check below verifies updates/deletes preserve unchanged data files, share manifests, and remain readable through both DuckDB and PyIceberg. | Writes require an attached REST catalog. Writes from independently retained bases, portable export and DocSpec retention/publication integration remain untested. [Writer documentation](https://duckdb.org/docs/current/core_extensions/iceberg/writing) |
 | PyIceberg | Branch-targeted writes and historical snapshots; substantial overlap with the proposed custom snapshot manager. | Current `upsert` routes updates through overwrite, and delete falls back to copy-on-write. Adopting it alone does not establish removal of write amplification. [Published implementation](https://py.iceberg.apache.org/reference/pyiceberg/table/) |
 | DuckLake | Native DuckDB snapshots/time travel and SQL-managed file metadata. | Its roadmap lists branching and protected snapshots as future work. Those touch DocSpec's arbitrary retained base revisions and retention directly. Do not equate time travel with independent writable branches. [Time travel](https://ducklake.select/docs/stable/duckdb/usage/time_travel), [roadmap](https://ducklake.select/roadmap) |
 
@@ -168,7 +200,55 @@ update/delete from the same retained base, reopen both, compact one, protect the
 other from cleanup, export/reopen independently, and interrupt between table and
 ledger publication. Count rewritten bytes to ensure the chosen writer actually
 avoids copying untouched membership. This is a concrete adapter decision, not a
-new capacity matrix. No replacement dependency or service was installed here.
+new capacity matrix. The isolated checks below leave DocSpec's runtime and project
+dependencies unchanged.
+
+### Minimal local Iceberg check
+
+A subsequent [4,096-row smoke test](probes/2026-09-14-iceberg-smoke.py), with its
+[actual receipt](probes/2026-09-14-iceberg-smoke.json), used PyIceberg 0.12.0,
+PyArrow 25.0.1, and an isolated local SQLite catalog. Two independently writable
+branches, exact values, fresh-process reopen, catalog-free metadata reads, and
+refusal to expire the protected base all passed. One unchanged data file and
+one manifest were shared across each edit.
+
+The single-row update wrote 2,048 data rows in two new files; the single-row
+delete wrote 2,047 rows in one new file. Neither wrote a separate delete file.
+Inspection of the installed `Transaction.delete` confirms that requesting
+merge-on-read warns and falls back to copy-on-write; `Transaction.upsert` uses
+overwrite. Thus this simplest local writer does not remove file rewrite
+amplification. This is a result about PyIceberg's writer, not every Iceberg writer.
+No DocSpec dependency or runtime code changed. Portable relocation and DocSpec
+publication/crash integration remain untested; the next check tests DuckDB's writer.
+Timings in the receipt include post-write inventory and are diagnostic only.
+
+### DuckDB Iceberg writer check
+
+The [second probe](probes/2026-09-14-iceberg-duckdb-smoke.py) reuses the same
+4,096-row fixture and inventory helpers. DuckDB 1.5.5 with Iceberg extension
+`45163a28` performs every data write through Apache's REST fixture 1.10.1, with
+local files and a SQLite catalog. The [receipt](probes/2026-09-14-iceberg-duckdb-smoke.json)
+pins the container digest and records the complete file inventories.
+
+| Sequential operation | New data rows | New positional delete records | New data/delete bytes, excluding metadata | Reused data files |
+| --- | ---: | ---: | ---: | ---: |
+| Update one row | 1 | 1 | 584 + 981 | 2 |
+| Delete another row | 0 | 1 | 0 + 981 | 3 |
+
+Both original files remain byte-identical. The update shares both original
+manifests, and the delete shares all four preceding manifests. DuckDB and
+PyIceberg independently recover exact current and historical values, including
+through fresh processes and direct metadata reads without a catalog lookup.
+The original files remain in place; this does not test portable relocation.
+
+**This writer avoids the unchanged-row rewrite observed with PyIceberg.** It
+passes the immediate storage-mechanism check and remains a viable replacement
+candidate. These are sequential writes to `main`; independently writable bases,
+compaction, concurrency, scale and DocSpec publication/crash semantics remain
+unqualified. Separate delete files also add read and maintenance work. The tiny
+test does not establish end-to-end speed or asymptotic lookup cost. Operation
+times exclude inventory and setup and are not comparable benchmarks. The test
+removes its local server on exit; it retains the receipt and scratch data.
 
 ### Evidence, preserved requirements and remaining costs
 

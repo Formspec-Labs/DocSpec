@@ -2,22 +2,24 @@ from __future__ import annotations
 
 
 import hashlib
-import json
+from tests.support.iceberg_records import files
+
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from pathlib import Path
 from threading import Event, Lock
 from typing import Any
 
+import docspec.adapters.storage.files as storage_module
+from docspec.domain.identity import canonical_json_bytes
+
 import pytest
 
-import docspec.adapters.storage.files as storage_module
 import docspec.adapters.storage.records as records_module
 from docspec.adapters.storage import (
-    LocalParquetRecordStorage,
+    IcebergRecordStorage,
 )
 
-from docspec.domain.identity import canonical_json_bytes
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError
 
@@ -35,7 +37,7 @@ def _bucket(value: str) -> int:
 
 
 def test_record_layer_streams_stably_and_reuses_untouched_partitions(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records", max_member_bytes=10_000)
+    storage = IcebergRecordStorage(tmp_path / "records", max_member_bytes=10_000)
     initial_records = [
         {"recordId": "a", "sourceItemId": "source-a", "value": 1},
         {"recordId": "b", "sourceItemId": "source-b", "value": 2},
@@ -68,19 +70,15 @@ def test_record_layer_streams_stably_and_reuses_untouched_partitions(tmp_path: P
         {"recordId": "c", "sourceItemId": "source-c", "value": 3},
     ]
     assert list(storage.stream(updated, partitions=frozenset({changed_partition}))) == replacement_records
-    initial_root = json.loads((storage.root / initial.state_ref).read_text())
-    updated_root = json.loads((storage.root / updated.state_ref).read_text())
-    initial_paths = {item["partition"]: item["path"] for item in initial_root["members"]}
-    updated_paths = {item["partition"]: item["path"] for item in updated_root["members"]}
-    for partition in initial_paths.keys() - {changed_partition}:
-        assert updated_paths[partition] == initial_paths[partition]
+    assert {item['path'] for item in files(storage, initial)} <= {item['path'] for item in files(storage, updated)}
+    storage.close()
 
 
-def test_identical_record_layer_roots_publish_atomically_under_concurrency(
+def test_record_snapshots_publish_atomically_under_concurrency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     first_writer_entered = Event()
     release_first_writer = Event()
     call_lock = Lock()
@@ -117,7 +115,9 @@ def test_identical_record_layer_roots_publish_atomically_under_concurrency(
             release_first_writer.set()
         first_reference = first.result(timeout=5)
 
-    assert first_reference == second_reference
+    assert first_reference != second_reference
+    storage.verify(second_reference)
+    assert list(storage.stream(second_reference)) == []
     storage.verify(first_reference)
     storage.verify_members(first_reference)
     assert list(storage.stream(first_reference)) == []
@@ -126,7 +126,7 @@ def test_identical_record_layer_roots_publish_atomically_under_concurrency(
 
 
 def test_parquet_preserves_arbitrary_payloads_and_exact_partition_routing(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     records = [
         {"recordId": "a", "sourceItemId": "z", "value": {"mixed": [None, 1, True, "café 🧪"], "nested": {}}},
         {"recordId": "b", "sourceItemId": "a", "value": {"optional": None}},
@@ -144,7 +144,7 @@ def test_parquet_preserves_arbitrary_payloads_and_exact_partition_routing(tmp_pa
 
 
 def test_workspace_names_do_not_override_physical_routing_columns(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "partition_value=shadow" / "record_identity=shadow" / "quote's")
+    storage = IcebergRecordStorage(tmp_path / "partition_value=shadow" / "record_identity=shadow" / "quote's")
     row = {"recordId": "actual-id", "sourceItemId": "actual-source", "value": 1}
     layer = storage.write_layer([row], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
     storage.verify(layer)
@@ -154,7 +154,7 @@ def test_workspace_names_do_not_override_physical_routing_columns(tmp_path: Path
 
 
 def test_parquet_live_streams_and_concurrent_point_reads_do_not_clobber_results(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     records = [{"recordId": f"record-{index:05d}", "sourceItemId": f"source-{index % 3}", "value": index}
                for index in range(4097)]
     layer = storage.write_layer(records, layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
@@ -179,7 +179,7 @@ def test_parquet_live_streams_and_concurrent_point_reads_do_not_clobber_results(
 
 
 def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     with pytest.raises(IntegrityError, match="strictly ordered"):
         storage.write_layer(
             [
@@ -197,8 +197,7 @@ def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) 
         schema=SCHEMA,
         partition_policy=POLICY,
     )
-    root = json.loads((storage.root / layer.state_ref).read_text())
-    path = storage.root / root["members"][0]["path"]
+    path = storage.root / files(storage, layer)[0]["path"]
     original = path.read_bytes()
     path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
     with pytest.raises(IntegrityError):
@@ -210,13 +209,13 @@ def test_record_layer_rejects_unsorted_open_or_tampered_records(tmp_path: Path) 
 def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str, corruption: str,
 ) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     record = {"recordId": "a", "sourceItemId": "source-a", "value": 1}
     layer = storage.write_layer(
         [record], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
     )
     root_path = storage.root / layer.state_ref
-    root = json.loads(root_path.read_bytes())
+    member_path = storage.root / files(storage, layer)[0]["path"]
     root_reads = []
     read_exact = records_module._read_exact
 
@@ -235,7 +234,7 @@ def test_record_lookup_reads_one_root_and_rechecks_later_inputs(
 
     assert read() == [record]
     assert root_reads == [layer.state_ref]
-    path = root_path if corruption == "root" else storage.root / root["members"][0]["path"]
+    path = root_path if corruption == "root" else member_path
     original = path.read_bytes()
     path.write_bytes(bytes([original[0] ^ 1]) + original[1:])
     with pytest.raises(IntegrityError):

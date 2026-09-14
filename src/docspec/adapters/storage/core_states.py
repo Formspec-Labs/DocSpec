@@ -21,8 +21,8 @@ from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 _ENTITIES = RecordSchema("core-entities:1", ("kind", *core.Entity.__struct_fields__), "entity_id", "entity_id")
 _MEMBERS = RecordSchema("core-membership:1", ("kind", *core.Membership.__struct_fields__), "member_key", "member_key")
 _SCHEMAS = {"entities": _ENTITIES, "membership": _MEMBERS}
-_POLICY = PartitionPolicy("core-key-buckets:1", 64)
-_ENTITY_POLICY = PartitionPolicy("core-value-shards:1", 8)
+_POLICY = PartitionPolicy("core-keys:1", 1)
+_ENTITY_POLICY = PartitionPolicy("core-values:1", 1)
 _READY_STATE_LIMIT = 4
 
 
@@ -113,6 +113,14 @@ class CoreStateStorage:
             state = core.State(format_version=1, state_id=state_id)
             representation = core.StateRepresentation(format_version=1, representation_id=representation_id,
                                                        state_id=state_id, membership=content)
+            existing = next(session.read_records([("state_representation", representation_id)]))[0]
+            if existing is not None:
+                if not existing.available or existing.value.state_id != state_id:
+                    raise IntegrityError("existing representation is unavailable or belongs to another state")
+                retained = self.check_representation(session, record_value(existing.value), retained=True)
+                if not self.same_membership(session, retained, member_layer.reference):
+                    raise IntegrityError("retry changes immutable state membership")
+                representation = existing.value
             session.publish(MetadataBatch(unit_id, records=(state, representation), retained=(("state", state_id),)))
             return state
 
@@ -270,6 +278,14 @@ class CoreStateStorage:
         This physical maintenance also drops unreferenced values from this
         representation; other retained roots keep their own recovery paths.
         """
+        session._active()
+        existing = next(session.read_records([("state_representation", representation_id)]))[0]
+        if existing is not None:
+            if not existing.available or existing.value.state_id != state_id:
+                raise IntegrityError("existing checkpoint is unavailable or belongs to another state")
+            self.check_representation(session, record_value(existing.value), retained=True)
+            session.publish(MetadataBatch(unit_id, records=(existing.value,), retained=(("state", state_id),)))
+            return existing.value
         source = self.representation(session, state_id)
         manifest = session.ready_states[source.membership.digest]
         references = self._layers(manifest)
@@ -377,9 +393,9 @@ class CoreStateStorage:
                     "sample": [dict(zip(("member_key", "older_occurrence", "newer_occurrence", "change", "value_changed"), row, strict=True)) for row in samples]}
 
     def resolve_membership(self, session, revision, *, full=False):
-        """Validate every edit before reducing keys; reuse untouched partitions.
+        """Validate every edit before reducing keys; write only the changed rows.
 
-        The full path and the affected-partition path execute the same query.
+        The full control and row-update path share ordered edit validation.
         They return physical membership, leaving logical publication and actual
         transformation provenance to the operation lifecycle.
         """
@@ -418,9 +434,7 @@ class CoreStateStorage:
         table = pa.Table.from_arrays([pa.array(column, type=kind) for column, kind in zip(zip(*rows, strict=True),
                                       (pa.string(), pa.int64(), pa.string(), pa.binary()), strict=True)],
                                      names=["member_key", "sequence", "action", "payload"])
-        touched = frozenset(partition_bucket(edit.member_key, base.partition_policy.bucket_count) for edit in edits)
-        selected = None if full else touched
-        with self.records.relations({"base": base}, partitions={"base": selected}, tables={"edits": table}) as relations:
+        with self.records.relations({"base": base}, tables={"edits": table}) as relations:
             original = relations["base"].project("record_identity, partition_value, record_json")
             ordered = relations["edits"].project("*, lag(action) OVER (PARTITION BY member_key ORDER BY sequence) AS previous_action")
             checked = ordered.join(original.project("record_identity AS existing_key"), "member_key = existing_key", how="left")
@@ -429,11 +443,13 @@ class CoreStateStorage:
             latest = ordered.project("*, row_number() OVER (PARTITION BY member_key ORDER BY sequence DESC) AS latest").filter("latest = 1")
             kept = original.join(latest.project("member_key"), "record_identity = member_key", how="anti")
             inserted = latest.filter("action = 'put'").project("member_key AS record_identity, member_key AS partition_value, payload AS record_json")
-            output = kept.union(inserted).order("record_identity")
-            with closing(output.to_arrow_reader(256)) as reader:
-                return self.records.retain_batches(reader, layer_kind=reference.layer_kind, schema=base.schema,
-                                                   partition_policy=base.partition_policy, base=base,
-                                                   replace_partitions=frozenset(range(base.partition_policy.bucket_count)) if full else touched)
+            if full:
+                with closing(kept.union(inserted).order("record_identity").to_arrow_reader(256)) as reader:
+                    return self.records.retain_batches(reader, layer_kind=reference.layer_kind, schema=base.schema,
+                                                       partition_policy=base.partition_policy)
+            changes = latest.project("member_key AS record_identity, member_key AS partition_value, payload AS record_json")
+            with closing(changes.to_arrow_reader(256)) as reader:
+                return self.records.apply_changes(base, reader)
 
     def from_occurrences(self, session, *, occurrence_ids, state_id, representation_id, unit_id):
         """Group existing retained occurrences through the ordinary root writer."""

@@ -6,11 +6,12 @@ that input, processes captures, changes processor settings and reference data,
 grows the selected state, and checks the result against a clean run.
 
 ```sh
-uv run --frozen python -m examples.offline_demo --output /absolute/new-experiment
+uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
 ```
 
 The output directory must be new. The example uses local files and needs no
-network during execution. It opens `CoreWorkspace` directly, imports source
+provider network access during execution. Writes use a local Iceberg REST
+catalog, started by the helper through Docker; see [storage setup](record-storage.md#configure-writes). It opens `CoreWorkspace` directly, imports source
 items, and calls the same document operations used elsewhere.
 
 Initial capture records the missing input as an actual failure. Once its fixture

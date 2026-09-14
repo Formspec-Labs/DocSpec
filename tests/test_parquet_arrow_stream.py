@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import LimitExceededError
 
@@ -58,7 +58,7 @@ def test_arrow_producer_failure_preserves_error_and_closes_input(
             self.close_count += 1
 
     source = Source()
-    with closing(LocalParquetRecordStorage(tmp_path / "records")) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "records")) as storage:
         with pytest.raises(error_type) as caught:
             storage.write_layer(
                 source, layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
@@ -80,7 +80,7 @@ def test_arrow_producer_failure_preserves_error_and_closes_input(
 def test_arrow_input_can_stream_from_the_same_storage_connection(tmp_path: Path) -> None:
     count = 5001
     closed = 0
-    with closing(LocalParquetRecordStorage(tmp_path / "records")) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "records")) as storage:
         original = storage.write_layer(
             (_row(index) for index in range(count)),
             layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
@@ -109,7 +109,7 @@ def test_arrow_input_can_stream_from_the_same_storage_connection(tmp_path: Path)
 def test_arrow_sqlite_input_stays_on_each_callers_thread(tmp_path: Path, callers: int) -> None:
     count = 2049
     ready = Barrier(callers)
-    with closing(LocalParquetRecordStorage(tmp_path / "records")) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "records")) as storage:
         def write(caller: int):
             owner = get_ident()
             consumed_on: list[int] = []

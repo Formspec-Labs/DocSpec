@@ -6,13 +6,13 @@ from contextlib import closing
 import pytest
 
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.errors import IntegrityError
 from tests.test_record_batches import batches, write
 
 
 def test_admission_scope_is_bounded_nested_and_thread_local(tmp_path):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         references = [write(storage, batches(index + 1)) for index in range(10)]
         with storage.admission_scope():
             first = storage.admitted(references[0])
@@ -39,7 +39,7 @@ def test_admission_scope_is_bounded_nested_and_thread_local(tmp_path):
 
 @pytest.mark.parametrize("audit", ["available", "admit", "verify_members"])
 def test_explicit_fresh_audit_detects_corruption_and_invalidates_cached_handle(tmp_path, audit):
-    with closing(LocalParquetRecordStorage(tmp_path)) as storage:
+    with closing(IcebergRecordStorage(tmp_path)) as storage:
         reference = write(storage, batches(2))
         with storage.admission_scope():
             storage.admitted(reference)
@@ -51,7 +51,7 @@ def test_explicit_fresh_audit_detects_corruption_and_invalidates_cached_handle(t
 
 
 def test_ledger_reuses_admission_only_under_shared_writable_protection(tmp_path):
-    with closing(LocalParquetRecordStorage(tmp_path / "records")) as storage:
+    with closing(IcebergRecordStorage(tmp_path / "records")) as storage:
         reference = write(storage, batches(2))
         path = tmp_path / "ledger.sqlite"
         with closing(LocalSqliteCoreLedger(path, record_storage=storage)) as ledger:

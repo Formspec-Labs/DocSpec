@@ -1,0 +1,14 @@
+{
+  "tests": 1293,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "deselected": 1,
+  "console_seconds": 291.02,
+  "supplementary_storage_tests_passed": 18,
+  "wheel_sha256": "25a536791d4d1ddeb929498548f7db665a3715479216696ffbc88d6ae238ba12",
+  "packaged_files_matching_source": 129,
+  "source_sha256": "a239850398f1ca3176fb8febe48dd56dedb1bc63cf68ed218699de3b8cc2e71d",
+  "spec_sha256": "977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81",
+  "scope": "Local required regression map, installed-package checks, focused final storage cleanup and relocation checks. CI not run."
+}

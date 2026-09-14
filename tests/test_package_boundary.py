@@ -350,6 +350,9 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert install_test_runner.returncode == 0, install_test_runner.stderr
+    (tmp_path / "tests/support").mkdir(parents=True)
+    for filename in ("__init__.py", "support/__init__.py", "support/network.py"):
+        shutil.copy2(ROOT / "tests" / filename, tmp_path / "tests" / filename)
     shutil.copy2(ROOT / "tests/test_offline_example.py", tmp_path / "test_offline_example.py")
     shutil.copy2(ROOT / "tests/test_core_values_example.py", tmp_path / "test_core_values_example.py")
     example_result = subprocess.run(

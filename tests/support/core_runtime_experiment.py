@@ -69,7 +69,7 @@ class QueryProfiles:
             profile = json.loads(path.read_text())
             scans = []
             def visit(node):
-                if "PARQUET" in node.get("operator_name", "") or "PARQUET" in node.get("extra_info", {}).get("Function", ""):
+                if any(kind in node.get("operator_name", "") or kind in node.get("extra_info", {}).get("Function", "") for kind in ("PARQUET", "ICEBERG_SCAN")):
                     scans.append({key: node.get(key) for key in ("operator_name", "operator_cardinality", "operator_rows_scanned", "extra_info")})
                 for child in node.get("children", []):
                     visit(child)

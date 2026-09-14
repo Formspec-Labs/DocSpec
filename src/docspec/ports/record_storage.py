@@ -122,8 +122,12 @@ class RecordStorage(Protocol):
 
     def delete(self, reference: BlobRef) -> bool: ...
 
+    def apply_changes(self, base: AdmittedRecordLayer, batches: Iterable[pa.RecordBatch]) -> AdmittedRecordLayer:
+        """Upsert changed identities; null record_json removes an identity."""
+        ...
+
     def union_disjoint(self, base: AdmittedRecordLayer, changes: AdmittedRecordLayer, *, exclude_existing=False) -> AdmittedRecordLayer:
-        """Share admitted files after checking disjoint logical identities."""
+        """Append disjoint logical identities while preserving the base snapshot."""
         ...
 
     def compact(self, base: AdmittedRecordLayer) -> AdmittedRecordLayer:
@@ -142,7 +146,7 @@ __all__ = ["PartitionPolicy", "RecordSchema", "RecordStorage"]
 
 def bounded_batches(
     batches: Iterable[pa.RecordBatch], *, byte_column: str | tuple[str, ...],
-    max_value_bytes: int = BATCH_BYTES,
+    max_value_bytes: int = BATCH_BYTES, allow_null: bool = False,
 ) -> Iterator[pa.RecordBatch]:
     """Slice native buffers by payload bytes and rows; never copy payloads to Python.
 
@@ -157,6 +161,8 @@ def bounded_batches(
                 window = batch.slice(offset, BATCH_ROWS)
                 columns = (byte_column,) if isinstance(byte_column, str) else byte_column
                 lengths = pc.binary_length(window.column(columns[0])).cast("int64")
+                if allow_null:
+                    lengths = pc.fill_null(lengths, 0)
                 for name in columns[1:]:
                     lengths = pc.add(lengths, pc.fill_null(pc.binary_length(window.column(name)), 0))
                 lengths = lengths.to_pylist()

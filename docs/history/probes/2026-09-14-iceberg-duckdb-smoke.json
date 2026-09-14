@@ -1,0 +1,144 @@
+{
+  "versions": {
+    "duckdb": "1.5.5",
+    "pyiceberg": "0.12.0",
+    "pyarrow": "25.0.1"
+  },
+  "iceberg_extension": "45163a28",
+  "rest_fixture": "apache/iceberg-rest-fixture:1.10.1",
+  "rest_fixture_digest": [
+    "apache/iceberg-rest-fixture@sha256:f7d679d30ac9c640bdeb2c015dff533cd3c8f1c7d491ebcb5d436f9a42db1d6f"
+  ],
+  "rows": 4096,
+  "base_data_files": 2,
+  "one_row_update": {
+    "seconds": 0.04444412514567375,
+    "new_data_files": 1,
+    "new_data_rows": 1,
+    "new_data_bytes": 584,
+    "reused_data_files": 2,
+    "removed_data_files_from_branch": 0,
+    "delete_files": 1,
+    "reused_manifests": 2,
+    "new_delete_files": 1,
+    "new_delete_rows": 1,
+    "new_delete_bytes": 981
+  },
+  "one_row_delete": {
+    "seconds": 0.029522208031266928,
+    "new_data_files": 0,
+    "new_data_rows": 0,
+    "new_data_bytes": 0,
+    "reused_data_files": 3,
+    "removed_data_files_from_branch": 0,
+    "delete_files": 2,
+    "reused_manifests": 4,
+    "new_delete_files": 1,
+    "new_delete_rows": 1,
+    "new_delete_bytes": 981
+  },
+  "exact_values_both_readers": true,
+  "fresh_process_reopen": true,
+  "catalog_free_historical_reads_both_readers": true,
+  "original_files_byte_unchanged": true,
+  "inventories": {
+    "base": {
+      "snapshot_id": 2748822889959083491,
+      "files": {
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8dad-77c8-ab7a-c5e568be52c5.parquet": {
+          "rows": 2048,
+          "bytes": 69595
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8e03-710a-9dd0-6fbc32c71c72.parquet": {
+          "rows": 2048,
+          "bytes": 69733
+        }
+      },
+      "delete_files": 0,
+      "manifests": [
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/06e28649-3533-4319-942f-1cfaade083a9-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/d0580550-a107-43d6-8a19-4ae0b44fdf2c-m0.avro"
+      ],
+      "delete_file_details": {}
+    },
+    "one_row_update": {
+      "snapshot_id": 1016893803937942424,
+      "files": {
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8dad-77c8-ab7a-c5e568be52c5.parquet": {
+          "rows": 2048,
+          "bytes": 69595
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8e03-710a-9dd0-6fbc32c71c72.parquet": {
+          "rows": 2048,
+          "bytes": 69733
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-91e0-7579-99ab-d7a47cca82e2.parquet": {
+          "rows": 1,
+          "bytes": 584
+        }
+      },
+      "delete_files": 1,
+      "manifests": [
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/06e28649-3533-4319-942f-1cfaade083a9-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/3132a5d6-5f16-4241-946b-8e9f7efd2f35-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/516e3baa-41d1-4380-ac22-368e566d6ad2-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/d0580550-a107-43d6-8a19-4ae0b44fdf2c-m0.avro"
+      ],
+      "delete_file_details": {
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/d33d2807-1be2-4875-b765-a377fce606b4-deletes.parquet": {
+          "rows": 1,
+          "bytes": 981,
+          "content": 1
+        }
+      }
+    },
+    "one_row_delete": {
+      "snapshot_id": 2364023435204380645,
+      "files": {
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8dad-77c8-ab7a-c5e568be52c5.parquet": {
+          "rows": 2048,
+          "bytes": 69595
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-8e03-710a-9dd0-6fbc32c71c72.parquet": {
+          "rows": 2048,
+          "bytes": 69733
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/01a0a067-91e0-7579-99ab-d7a47cca82e2.parquet": {
+          "rows": 1,
+          "bytes": 584
+        }
+      },
+      "delete_files": 2,
+      "manifests": [
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/06e28649-3533-4319-942f-1cfaade083a9-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/3132a5d6-5f16-4241-946b-8e9f7efd2f35-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/516e3baa-41d1-4380-ac22-368e566d6ad2-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/62189a01-c06d-4971-834d-0b707d59e1c5-m0.avro",
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/d0580550-a107-43d6-8a19-4ae0b44fdf2c-m0.avro"
+      ],
+      "delete_file_details": {
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/5a73cbba-5d14-401a-9b2d-3d6cd6b39079-deletes.parquet": {
+          "rows": 1,
+          "bytes": 981,
+          "content": 1
+        },
+        "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/data/d33d2807-1be2-4875-b765-a377fce606b4-deletes.parquet": {
+          "rows": 1,
+          "bytes": 981,
+          "content": 1
+        }
+      }
+    }
+  },
+  "metadata": [
+    "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/00002-0b2e264d-bc91-4055-81bd-732acfce2bdb.metadata.json",
+    "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/00003-bb5168a6-b4ff-4dea-8eaa-e89e954fcfd1.metadata.json",
+    "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72/warehouse/probe/members/metadata/00004-c173ccc7-078f-48dd-a06b-56b0b3d2c7b4.metadata.json"
+  ],
+  "workspace": "/Users/mikewolfd/.cache/docspec-iceberg-duckdb-e7_q7w72",
+  "limitations": [
+    "Sequential main-branch writes; no branch-targeted writes",
+    "No scale, compaction, concurrency, or DocSpec publication/crash qualification",
+    "Operation seconds exclude inventory, startup and setup; not comparable latency benchmarks"
+  ]
+}

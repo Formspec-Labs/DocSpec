@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run --frozen --extra dagster --extra s3 pytest --require-regression-map \
+          uv run --frozen --extra dagster --extra s3 python tools/with_iceberg.py pytest --require-regression-map \
             --junitxml="$RUNNER_TEMP/pytest.xml" 2>&1 | tee "$RUNNER_TEMP/pytest.log"
           test -s "$RUNNER_TEMP/pytest.xml"
 

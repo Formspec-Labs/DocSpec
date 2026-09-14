@@ -6,7 +6,7 @@ the [decision index](docs/decisions/README.md) identifies the rules that govern 
 
 ## Set up a checkout
 
-Use Python 3.12 and `uv`. The checked-in lock and vendored
+Use Python 3.12, `uv` and Docker for the local Iceberg catalog. The checked-in lock and vendored
 `rulespec-artifacts` wheel make development independent of sibling checkouts.
 Development also installs the pinned SpicyDocs reader so source integrations run
 in the default test suite. The built core wheel keeps SpicyDocs optional.
@@ -16,11 +16,13 @@ From the repository root:
 uv python install 3.12
 uv sync --frozen
 uv run --frozen docspec --help
-uv run --frozen pytest tests/test_processing_pipeline.py
+uv run --frozen python tools/with_iceberg.py pytest tests/test_processing_pipeline.py
 ```
 
 The default suite excludes tests marked `integration`. It uses local inputs and
-test doubles for external services. Optional dependencies may cause documented
+test doubles for providers and an actual local Iceberg REST catalog for storage.
+The helper mounts the checkout and its temporary directory, then removes its
+container after the command. See [record storage](docs/record-storage.md). Optional dependencies may cause documented
 skips; the full regression command appears below under “Check the same things as CI.” `uv sync --frozen --extra dagster` enables the real Dagster adapter test.
 Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
@@ -121,7 +123,7 @@ the [CI workflow](.github/workflows/ci.yml) as the command authority:
 uv lock --check
 uv sync --frozen --extra dagster --extra s3
 uv run --frozen --extra dagster --extra s3 ruff check .
-uv run --frozen --extra dagster --extra s3 pytest --require-regression-map \
+uv run --frozen --extra dagster --extra s3 python tools/with_iceberg.py pytest --require-regression-map \
   --junitxml=/tmp/docspec-pytest.xml
 uv build --out-dir dist
 ```

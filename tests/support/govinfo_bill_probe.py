@@ -3,6 +3,7 @@
 import hashlib
 import json
 import socket
+from examples.storage_network import storage_only
 import sys
 import zipfile
 from dataclasses import asdict, replace
@@ -25,10 +26,6 @@ from examples import govinfo_bills as example
 from examples.provider_identity import provider_installation
 from examples.govinfo_bill_fetcher import BillContentFetcher
 from examples.dataset_example_support import retain_refusal, output_value
-
-
-def reject_network(*args, **kwargs):
-    raise AssertionError("the fixture-backed example attempted a network connection")
 
 
 def main():
@@ -83,7 +80,7 @@ def main():
         completed.append(result)
         return result, documents
 
-    with patch.object(socket.socket, "connect", reject_network), patch.object(socket, "create_connection", reject_network):
+    with patch.object(socket.socket, "connect", storage_only(socket.socket.connect)), patch.object(socket, "create_connection", storage_only(socket.create_connection)):
         output = root / "experiment"
         with patch.object(BillAcquirer, "acquire_text", observed_text), patch.object(BillAcquirer, "close", observed_close), \
                 patch.object(example, "run_documents", inspected_finish):

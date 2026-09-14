@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
         "cfr", "acquisition",
         ("dataset_example_support.py", "govinfo_cfr.py", "govinfo_cfr_fetcher.py",
          "phrase_match_processor.py", "provider_identity.py"),
-        "cfr_fixtures", "test_govinfo_cfr_example.py", ("support/__init__.py", "support/processing.py"),
+        "cfr_fixtures", "test_govinfo_cfr_example.py", ("support/__init__.py", "support/processing.py", "support/network.py"),
         id="annual-cfr",
     ),
     pytest.param(

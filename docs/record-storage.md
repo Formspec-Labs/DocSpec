@@ -1,15 +1,64 @@
-# Retained records in Parquet
+# Retained records in Iceberg
 
-DocSpec stores immutable record layers in Parquet and queries their files with
-DuckDB. Bulk state operations use those immutable files directly.
-`RecordStorage` remains the application interface; the local implementation is
-`LocalParquetRecordStorage`.
+DocSpec uses `IcebergRecordStorage` behind the `RecordStorage` interface.
+DuckDB writes Parquet data and positional deletes through an Iceberg REST catalog.
+PyIceberg parses retained metadata and manages temporary catalog registrations.
+SQLite remains the authoritative ledger for provenance, publication, progress and
+retention. Opaque document bytes remain in the content-addressed blob store.
 
-Record roots use `docspec-record-layer/4.0` and the local Parquet profile version 3.
-Core state manifests use version 2; selected-member manifests use version 3.
-They reference those layers; logical identities remain distinct from file digests and
-physical representations. Historical trials retain their original pinned inputs
-and wheels, while current code has one native record implementation.
+A record root contains one pinned Iceberg metadata reference, schema and row count;
+it does not copy the complete file inventory. The format is
+`docspec-iceberg-records`, version 1. Core state manifests remain version 2 and
+selected-member manifests remain version 3. Physical snapshot IDs are fresh;
+logical IDs and canonical comparison digests keep their existing meanings.
+
+## Configure writes
+
+Set `DOCSPEC_ICEBERG_URI` to a REST catalog endpoint and, when needed,
+`DOCSPEC_ICEBERG_TOKEN`. Python callers can instead pass
+`IcebergCatalog(uri, token=...)` from `docspec.adapters.storage` to `CoreWorkspace`.
+The catalog must support table registration, and its service must see the local
+workspace at the same absolute path as DuckDB. The implemented storage profile is
+local filesystem storage; a remote object-store profile is not implemented.
+
+For development and tests, Docker can run Apache's pinned REST fixture:
+
+```sh
+uv run --frozen python tools/with_iceberg.py pytest tests/test_iceberg_snapshots.py
+uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
+```
+
+The helper shares the current directory and its temporary directory with the
+catalog, sets the endpoint for the command, then removes its own container.
+Output workspaces must be under the current directory. With an already configured
+endpoint it simply runs the command; configure shared paths yourself in that case.
+The fixture is for local development, not a deployed catalog recommendation.
+The wheel does not start Docker. Reads of retained states and exports need no
+catalog service. Subsequent writes register pinned metadata with a catalog at
+the original local table path. Relocated snapshots support reads; a writer
+refuses them before creating files at the former location.
+
+## Snapshot publication and maintenance
+
+Each write registers a temporary table from its explicit base metadata. Branches
+therefore start at their named state, regardless of other writes. DuckDB commits
+changed rows and positional deletes together. The adapter syncs new data,
+manifests and metadata before returning a retained reference, then drops the
+catalog name without purging files. SQLite publishes the logical state only after
+those files are durable. Catalog names are disposable write handles.
+
+Updates preserve base data files. The generic partition replacement API selects
+rows for deletion; it no longer rewrites physical hash buckets. New inputs target
+128 MiB files by default, with a 1 MiB row-group target. These are writer targets,
+not exact sizes; actual files must fit the configured 256 MiB member limit.
+Compaction rewrites a snapshot and verifies exact logical equivalence. Appending
+another layer preserves base files and writes the added rows into that table.
+
+Core maintenance follows each retained snapshot's current data files, delete files,
+manifests and metadata. It protects files shared by other retained states before
+removing any bytes. Every retained historical state has its own pin. Do not run
+catalog purge or independent snapshot expiration against DocSpec's files. Failed
+writes can leave unreferenced files; there is no automatic orphan-file sweep.
 
 ## What is stored and queried?
 
@@ -22,7 +71,7 @@ Each Parquet row has three required columns:
 | `record_json`, binary | Canonical record bytes, or canonical comparison bytes for a typed selected-member layer |
 
 Routing columns let DuckDB find one document's rows without Python decoding
-every other document in the same bucket. DuckDB sorts by bucket and identity
+every other document. DuckDB sorts new rows by identity
 before the writer chooses file boundaries. Public row and batch readers
 enforce logical identity order independently of physical row order. Native joins
 leave sorting to the consumer that needs it. The record schema continues to
@@ -36,38 +85,19 @@ The same writer, byte limits, admission, physical sharing and compaction apply t
 both forms. Full selected-row admission checks keys, types, materiality, content
 references and canonical bytes before successful retention.
 
-For SQL analysis, use only the member files listed in the selected layer root.
-Globbing the whole record store also includes other layers and superseded
-results. After admitting the selected layer, a DuckDB query over that explicit
-file list can select `partition_value` and use
-`json_extract_string(decode(record_json), '$.payload.title')` for a payload field.
-Core state APIs provide admitted membership and values. Do not use a string-only
-JSON extraction as a correspondence value: canonical comparison must preserve
-number/string distinctions, absence, null, and composite fields.
-
-The existing hash buckets allow a later result to reuse unchanged files. New
-records enter bounded Arrow batches; DuckDB sorts them and the shared PyArrow
-writer packs them into Parquet. File targets default to half the physical member
-limit (128 MiB with the default settings). Row groups target 384 KiB of logical
-column bytes or 2,048 rows, independently of file size. A larger individual
-record occupies its own group within the existing value limit. DuckDB can prune
-these groups during selective reads. File targets are logical-byte estimates,
-not promises about compressed sizes.
-Each file description retains exact `identityMin` and `identityMax` values
-computed during writing. Admitted identity lookups and union checks skip files
-whose ranges cannot overlap the requested identities. Ranges may overlap, so
-this reduces file opening without promising constant-time lookup. Full logical
-admission checks every row against its declared bounds; raw row readers keep
-their consumed-row checks. Union results preserve all base files.
-
-Logical file allowances guide output sizing, and actual encoded file sizes
-must fit the physical member limit before publication. Very small limits can
-refuse even one row because Parquet has footer and column overhead.
+For SQL analysis, use the admitted layer's `relation()` or `RecordStorage.relations()`.
+These read the exact Iceberg metadata version, including its delete files. A raw
+Parquet glob would also read superseded rows. Core state APIs join admitted
+membership and values. A string-only JSON extraction cannot supply correspondence
+values: canonical comparison preserves number/string distinctions, absence, null
+and composite fields.
 
 ## When are files checked?
 
 `verify_members(reference)` freshly checks the pinned root and physical member
-files, including their bytes, declared counts and Parquet schema. A catalog
+files against a pinned checksum tree that follows Iceberg metadata,
+manifest lists, manifests and data files. Unchanged manifest checksums are shared;
+replacing both a file and its checksum does not change the retained root. `verify(reference)` additionally checks every logical row and count. A catalog
 reader calls it once per complete layer reference when that layer is first
 consumed. Failed admission is retryable. Metadata-only opening remains cheap.
 
@@ -119,10 +149,11 @@ membership when adding another representation of an existing state. Compaction
 transfers its already checked equivalence. New external data still passes full
 record and membership admission.
 
-The flat file inventories and touched-bucket rewrites remain. A changed
+Iceberg owns the shared file inventory and row-level deletes. A changed
 `members-v1` digest also requires the complete comparison stream: SHA-256 chunk
-hashes cannot be combined to reproduce that sequence digest. This implementation
-adds no table-format dependency or second storage backend.
+hashes cannot be combined to reproduce that sequence digest. Iceberg does not
+remove that semantic cost. Native joins and fresh availability checks can also
+still examine the whole snapshot; bounded writes do not imply constant-time reads.
 
 ## Who owns the working resources?
 
@@ -140,7 +171,7 @@ ceiling. Scratch, record, root and member limits still apply. Measure actual
 process memory and temporary files for the intended workload; do not treat the
 engine setting as evidence of a complexity bound.
 
-DuckDB and PyArrow are core dependencies. SQLite is the authoritative Core
+DuckDB, PyArrow and PyIceberg are core dependencies. SQLite is the authoritative Core
 metadata ledger and also supports source-build recovery and disposable record
 spools. Raw bytes remain in the blob store; Dagster owns its execution state.
 

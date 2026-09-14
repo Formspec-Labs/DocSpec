@@ -1,0 +1,39 @@
+{
+  "versions": {
+    "pyiceberg": "0.12.0",
+    "pyarrow": "25.0.1",
+    "sqlalchemy": "2.0.52"
+  },
+  "rows": 4096,
+  "base_data_files": 2,
+  "one_row_update": {
+    "seconds": 0.04680491704493761,
+    "new_data_files": 2,
+    "new_data_rows": 2048,
+    "new_data_bytes": 84664,
+    "reused_data_files": 1,
+    "removed_data_files_from_branch": 1,
+    "delete_files": 0,
+    "reused_manifests": 1
+  },
+  "one_row_delete": {
+    "seconds": 0.022298125084489584,
+    "new_data_files": 1,
+    "new_data_rows": 2047,
+    "new_data_bytes": 83316,
+    "reused_data_files": 1,
+    "removed_data_files_from_branch": 1,
+    "delete_files": 0,
+    "reused_manifests": 1
+  },
+  "exact_branch_values": true,
+  "fresh_process_reopen": true,
+  "catalog_free_read": true,
+  "snapshot_expiration_refused": "Snapshot with ID 5210676473971767849 is protected and cannot be expired.",
+  "workspace": "/var/folders/g8/10vdwk2n07z85vqn_vlv2lfc0000gn/T/docspec-iceberg-smoke-svmf8nmw",
+  "limitations": [
+    "No DuckDB Iceberg writer or REST catalog",
+    "SQLite catalog is exploratory",
+    "No portable file relocation, DocSpec admission/crash boundary, or scale qualification"
+  ]
+}

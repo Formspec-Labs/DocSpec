@@ -32,8 +32,14 @@ membership hashes, and packs small row groups into larger Parquet files. Resolve
 certificates narrow actual change checks; exact comparison still protects
 representation equivalence and untrusted data. See [record storage](record-storage.md)
 for the current behavior. The [final regression report](history/2026-09-14-core-architectural-performance-review.md#native-storage-simplification-verification)
-records 1,293 passing tests, including installed-package checks. No Iceberg
-dependency or prototype is included.
+records 1,293 passing tests for that earlier revision. The subsequent Iceberg
+cutover replaces bucket rewrites and flat file inventories with DuckDB row-level
+writes and pinned snapshots. SQLite still owns logical publication and retention.
+See the [Iceberg measurement](history/probes/2026-09-14-iceberg-core-writer.json)
+and [catalog setup](record-storage.md#configure-writes). The
+[Iceberg regression report](history/probes/2026-09-14-iceberg-regression.xml.gz)
+records 1,293 passing tests; historical performance
+receipts remain tied to the implementation they measured.
 
 ## Completion rules shared by every task
 

@@ -1,4 +1,6 @@
 """Physical maintenance preserves logical states, history and recovery paths."""
+from tests.support.iceberg_records import files
+
 
 from contextlib import ExitStack
 
@@ -47,7 +49,8 @@ def test_checkpoint_repacks_and_prunes_values_without_new_states_or_provenance(t
             compacted = states.manifest(session, "changed")
             new_values = records.available(states._references(compacted)["entities"])
             assert new_values.reference.record_count == 511
-            assert len(new_values._root["members"]) < len(old_values._root["members"])
+            assert {item["path"] for item in files(records, new_values)}.isdisjoint(item["path"] for item in files(records, old_values))
+            assert new_values.reference.record_count < old_values.reference.record_count
             assert old_files <= set(records.root.rglob("*"))
             assert ledger.current("dataset") == ("state", "changed")
             assert next(ledger.read_records([("state_representation", source.representation_id)]))[0].available

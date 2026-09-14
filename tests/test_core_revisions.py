@@ -1,4 +1,6 @@
 """Ordered membership validation and native partition reuse."""
+from tests.support.iceberg_records import files
+
 
 from contextlib import ExitStack
 
@@ -73,10 +75,9 @@ def test_small_edit_reuses_untouched_partition_files_and_avoids_payload_decoding
             monkeypatch.setattr(records, "_rows", no_audit)
             monkeypatch.setattr(records, "admit", no_audit)
             after = states.resolve_membership(session, revision([core.Remove(sequence=0, member_key="key-0")]))
-            bucket = partition_bucket("key-0", before.partition_policy.bucket_count)
-            untouched = [member for member in before._root["members"] if member["partition"] != bucket]
+            untouched = files(records, before)
             assert untouched
-            assert all(member in after._root["members"] for member in untouched)
+            assert all(member in files(after._storage, after) for member in untouched)
             assert len(membership(after)) == 255
             assert len(membership(before)) == 256
 
@@ -227,7 +228,7 @@ def test_revision_shares_base_payload_files_even_when_new_ids_hit_every_bucket(t
                                for i, identity in enumerate([*additions, "e0"])])
             operations.publish((prepare_revision(operations, change, session=session),), session=session)
             after = records.available(states._references(states.manifest(session, "changed"))["entities"])
-            assert {member["path"] for member in before._root["members"]} <= {member["path"] for member in after._root["members"]}
+            assert {member["path"] for member in files(before._storage, before)} <= {member["path"] for member in files(after._storage, after)}
             assert after.reference.record_count == 320  # Repeated e0 adds membership, not another payload.
             records.verify(after.reference)
             with states.relation(session, "changed") as relation:

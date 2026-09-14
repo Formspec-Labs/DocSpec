@@ -17,7 +17,7 @@ _EXPORTS = {
     "HttpsContentFetcherError": "docspec.adapters.content_fetchers",
     "LocalContentAddressedBlobStore": "docspec.adapters.storage",
     "LocalFileContentFetcher": "docspec.adapters.content_fetchers",
-    "LocalParquetRecordStorage": "docspec.adapters.storage",
+    "IcebergRecordStorage": "docspec.adapters.storage",
     "LocalSourceCatalogCurrentPointer": "docspec.adapters.source_catalog_store",
     "LocalSourceCatalogStore": "docspec.adapters.source_catalog_store",
     "LocalSqliteRecordWorkspaceFactory": "docspec.adapters.record_workspace",

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+from tests.support.iceberg_records import files
+
 import hashlib
-import json
 from pathlib import Path
 
 import pytest
 
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError
-from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
 
 # One shared logical layer fixture: every registered record profile must
 # expose exactly these records through the same port surface.
@@ -44,7 +45,7 @@ def test_local_record_storage_passes_the_shared_layer_contract(tmp_path: Path) -
         if _bucket(record["sourceItemId"]) != pruned_partition
     ) + replacement
 
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     base = storage.write_layer(
         BASE_RECORDS,
         layer_kind="conformance-records",
@@ -80,22 +81,11 @@ def test_local_record_storage_passes_the_shared_layer_contract(tmp_path: Path) -
     assert storage.lookup(updated, "prune-me") is None, "a replaced partition must prune its removed records"
     assert storage.lookup(base, "prune-me") == BASE_RECORDS[3], "the base layer must stay immutable"
 
-    base_members = {
-        item["partition"]: item["path"]
-        for item in json.loads((storage.root / base.state_ref).read_text(encoding="utf-8"))["members"]
-    }
-    updated_members = {
-        item["partition"]: item["path"]
-        for item in json.loads((storage.root / updated.state_ref).read_text(encoding="utf-8"))["members"]
-    }
-    for partition in base_members.keys() - {pruned_partition}:
-        assert updated_members[partition] == base_members[partition], (
-            "an untouched partition must be reused, not rewritten"
-        )
+    assert {item['path'] for item in files(storage, base)} <= {item['path'] for item in files(storage, updated)}
 
 
 def test_local_record_storage_rejects_unordered_and_duplicate_identities(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     with pytest.raises(IntegrityError, match="strictly ordered"):
         storage.write_layer(
             (BASE_RECORDS[1], BASE_RECORDS[0]),
@@ -113,7 +103,7 @@ def test_local_record_storage_rejects_unordered_and_duplicate_identities(tmp_pat
 
 
 def test_local_record_storage_fails_closed_on_tampered_member_bytes(tmp_path: Path) -> None:
-    storage = LocalParquetRecordStorage(tmp_path / "records")
+    storage = IcebergRecordStorage(tmp_path / "records")
     layer = storage.write_layer(
         BASE_RECORDS,
         layer_kind="conformance-records",
@@ -121,9 +111,8 @@ def test_local_record_storage_fails_closed_on_tampered_member_bytes(tmp_path: Pa
         partition_policy=POLICY,
     )
     storage.verify(layer)
-    manifest = json.loads((storage.root / layer.state_ref).read_bytes())
-    members = [member for member in manifest["members"] if member["partition"] == _bucket("source-prune")]
-    assert members, "the pinned partition must contain the fixture record"
+    members = files(storage, layer)
+    assert members
     for member in members:
         path = storage.root / member["path"]
         original = path.read_bytes()
