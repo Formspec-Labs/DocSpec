@@ -42,6 +42,12 @@ wheel and final source. All 129 packaged files match the source. Ruff, dependenc
 lock and whitespace checks pass; the spec is unchanged. These are local checks;
 CI has not run. The temporary catalog containers were removed.
 
+The subsequent [retained catalogue check](probes/2026-09-14-iceberg-catalog-reimport.md)
+uses the existing Federal Register and Regulations.gov rows, including every
+disposition. It records complete value comparisons, physical file sharing,
+initial import costs and small-revision timings on the current Iceberg writer.
+Its receipts preserve the input pins and execution limits.
+
 All earlier measurements below retain their original implementation and scope.
 
 ## Native storage simplification verification

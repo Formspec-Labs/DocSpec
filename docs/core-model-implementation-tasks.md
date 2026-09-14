@@ -919,10 +919,15 @@ The table measures the earlier package, not the new storage and selection paths.
 No new large capacity trial is required by this follow-up; its small checks
 establish only their stated scope.
 
-**Performance limits:** Touched-bucket membership rewriting, full membership hashing and file metadata work
-remain costs. The [validated performance assessment](history/2026-09-14-core-performance-assessment.md)
-separates measured results, source-level growth and unmeasured engine comparisons. These measurements support a working reference
-implementation, not a claim of fast incremental processing. The full long-history,
+**Performance limits:** The current Iceberg writer shares original data files and
+writes changed rows and positional deletes; touched-bucket rewrites and eager
+membership hashes are removed. Fresh availability checks still walk retained
+file metadata. Full scans, native joins and a changed complete-sequence comparison
+can still grow with the population or selected bytes. The
+[current storage assessment](history/2026-09-14-core-architectural-performance-review.md#iceberg-production-writer)
+separates the Iceberg measurements from the
+[historical performance assessment](history/2026-09-14-core-performance-assessment.md).
+Neither establishes a framework throughput comparison. The full long-history,
 current-package document-capacity, complete lifecycle repetitions and other unrun
 matrix cells remain unqualified. Earlier
 [document control](history/probes/2026-09-14-core-document-text512-diagnostic.json),
@@ -935,6 +940,12 @@ become current-package performance claims.
 list owns sequence/status, the map owns decisions and the retained target matrix,
 and receipts own measurements. Avoid duplicate verification totals and avoid
 adding implementation complexity merely to satisfy an unneeded benchmark target.
+
+**Subsequent user-requested check:** The
+[retained catalogue reimports](history/probes/2026-09-14-iceberg-catalog-reimport.md)
+exercise the current Iceberg writer with the two preserved source catalogues.
+That record owns their complete value comparisons, small-revision checks, measured
+timings and execution limits.
 
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 

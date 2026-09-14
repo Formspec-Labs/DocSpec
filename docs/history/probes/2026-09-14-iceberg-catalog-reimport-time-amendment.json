@@ -1,0 +1,13 @@
+{
+  "reason": "Observed healthy publication rate makes the initial 45-minute bound insufficient for one complete import and verification.",
+  "initial_bound_seconds": 2700,
+  "timer_extension_seconds_from_adjustment": 3600,
+  "approximate_total_bound_minutes": 81,
+  "restarted": false,
+  "engine_settings_changed": false,
+  "correctness_criteria_changed": false,
+  "debugger_attachments": 2,
+  "evidence": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-20260914/timer-extension.log",
+  "data_run_probe_sha256": "059209d84f7289eb62584f1dab85db6d335fd5a2e75444205b26861ee75b17f4",
+  "final_harness_change": "Optional time limit argument; import and verification logic unchanged."
+}

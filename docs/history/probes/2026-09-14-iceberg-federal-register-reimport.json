@@ -1,0 +1,155 @@
+{
+  "verified": true,
+  "output": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-20260914/federal-register-2",
+  "source": {
+    "artifact": "/Users/mikewolfd/Work/corpora/supply-2026-09-02/catalogs/catalog-B-composite/catalog/0872a608f6f21655887d346a50ae307c071358960ab93a363f0a8227f31f0394",
+    "artifact_digest": "sha256:0872a608f6f21655887d346a50ae307c071358960ab93a363f0a8227f31f0394",
+    "logical_id": "urn:spicy:artifact:docspec-source-catalog:5396ae0cd0858883c8a7d97fb36401bda06a717cc626810f9acfa485ed5ad351",
+    "root_sha256": "26f5476074992e0e16f67df753cdc60535582d990dcfc88a07913da38a10c601",
+    "manifests": [
+      {
+        "byteSize": 16106,
+        "manifestId": "global:catalog",
+        "memberCount": 66,
+        "objectKey": "manifests/catalog.json",
+        "scopeId": "catalog",
+        "scopeKind": "global",
+        "sha256": "sha256:f708c6455d510a4eb03b21c5c1e9e20dfd1dd3f2b5d8f4a4d4b822862b2558d9",
+        "totalMemberByteSize": 7625899698,
+        "totalRecordCount": 1007639
+      }
+    ],
+    "rows": 1007639,
+    "source_bytes": 7625886416,
+    "dispositions": {
+      "selected": 1001945,
+      "failed": 5694
+    }
+  },
+  "software": {
+    "python": "3.12.9 (main, Mar 29 2025, 16:43:11) [Clang 16.0.0 (clang-1600.0.26.6)]",
+    "duckdb": "1.5.5",
+    "pyiceberg": "0.12.0",
+    "pyarrow": "25.0.1",
+    "commit": "dafe6afc1518e4f5d34eaffb627523a6975cb907"
+  },
+  "settings": {
+    "engine_memory_bytes": 6442450944,
+    "engine_threads": 1,
+    "repetitions": 1,
+    "time_bound_seconds": 2700
+  },
+  "checks": {
+    "source_member_hashes": true,
+    "retained_file_hashes": true,
+    "reopened_rows": 1007639,
+    "value_mismatches": 0,
+    "distinct_keys": 1007639,
+    "original_data_files_unchanged": true
+  },
+  "timings": {
+    "import_seconds": 1009.198620375013,
+    "verify_seconds": 249.3486059170682
+  },
+  "storage": {
+    "entities": {
+      "data_files": 5,
+      "data_bytes": 566714046,
+      "root_bytes": 880
+    },
+    "membership": {
+      "data_files": 1,
+      "data_bytes": 46032669,
+      "root_bytes": 862
+    },
+    "workspace_bytes": 1310432138
+  },
+  "revisions": {
+    "remove-1": {
+      "publish_seconds": 0.35262174997478724,
+      "edit_count": 1,
+      "layers": {
+        "entities": {
+          "new_data_files": 0,
+          "new_data_rows": 0,
+          "new_data_bytes": 0,
+          "delete_files": 0,
+          "delete_rows": 0,
+          "delete_bytes": 0
+        },
+        "membership": {
+          "new_data_files": 0,
+          "new_data_rows": 0,
+          "new_data_bytes": 0,
+          "delete_files": 1,
+          "delete_rows": 1,
+          "delete_bytes": 1292
+        }
+      },
+      "compare_seconds": 30.874109082855284,
+      "counts": {
+        "added": 0,
+        "removed": 1,
+        "changed": 0
+      }
+    },
+    "remove-1024": {
+      "publish_seconds": 0.546550250146538,
+      "edit_count": 1024,
+      "layers": {
+        "entities": {
+          "new_data_files": 0,
+          "new_data_rows": 0,
+          "new_data_bytes": 0,
+          "delete_files": 0,
+          "delete_rows": 0,
+          "delete_bytes": 0
+        },
+        "membership": {
+          "new_data_files": 0,
+          "new_data_rows": 0,
+          "new_data_bytes": 0,
+          "delete_files": 1,
+          "delete_rows": 1024,
+          "delete_bytes": 5852
+        }
+      },
+      "compare_seconds": 23.93875900004059,
+      "counts": {
+        "added": 0,
+        "removed": 1024,
+        "changed": 0
+      }
+    },
+    "edit-1": {
+      "publish_seconds": 0.5793185830116272,
+      "edit_count": 1,
+      "layers": {
+        "entities": {
+          "new_data_files": 1,
+          "new_data_rows": 1,
+          "new_data_bytes": 4292,
+          "delete_files": 0,
+          "delete_rows": 0,
+          "delete_bytes": 0
+        },
+        "membership": {
+          "new_data_files": 1,
+          "new_data_rows": 1,
+          "new_data_bytes": 1385,
+          "delete_files": 1,
+          "delete_rows": 1,
+          "delete_bytes": 1292
+        }
+      },
+      "compare_seconds": 21.48202354204841,
+      "counts": {
+        "added": 0,
+        "removed": 0,
+        "changed": 1
+      }
+    }
+  },
+  "peak_rss_bytes": 9447407616,
+  "limits": "One local run per catalogue; one native thread. Import includes input hashing and expected digest output. No equivalent old-backend timing, publisher downloads, concurrent load, or full-population selection benchmark."
+}

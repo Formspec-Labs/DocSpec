@@ -1,0 +1,9 @@
+{
+  "verified": false,
+  "output": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-20260914/federal-register",
+  "error": {
+    "type": "KeyError",
+    "message": "'blobRef'",
+    "traceback": "Traceback (most recent call last):\n  File \"/Users/mikewolfd/Work/DocSpec/docs/history/probes/2026-09-14-iceberg-catalog-reimport.py\", line 257, in main\n    run(artifact, output, receipt)\n  File \"/Users/mikewolfd/Work/DocSpec/docs/history/probes/2026-09-14-iceberg-catalog-reimport.py\", line 72, in run\n    path = artifact.parent / \".blobs/sha256\" / member[\"blobRef\"].split(\":\")[1]\n                                               ~~~~~~^^^^^^^^^^^\nKeyError: 'blobRef'\n"
+  }
+}
