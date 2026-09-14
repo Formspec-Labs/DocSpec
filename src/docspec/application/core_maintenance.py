@@ -8,7 +8,7 @@ from docspec.domain import core
 from docspec.domain.core_admission import admit_record, record_value
 from docspec.domain.core_recovery import recovery_document
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
-from docspec.domain.references import BlobRef, LayerRef
+from docspec.domain.references import BlobRef
 from docspec.domain.streams import bounded_items, owned_iterator
 from docspec.errors import IntegrityError
 from docspec.ports.core_ledger import MetadataBatch, RemovalContent, RemovalOutcome
@@ -116,17 +116,12 @@ class CoreMaintenance:
                 self.inventory_layer(index, layer, protected=protected, scanned=scanned)
         elif isinstance(value, core.SelectedValue) and isinstance(value.definition, core.StateMembers):
             manifest = self._json(reference)
-            layer = LayerRef.from_dict(manifest["layer"])
+            layer = self.publisher.selections._reference(manifest)
             self.inventory_layer(index, layer, protected=protected, scanned=scanned)
-            # Whole opaque members additionally retain their original blobs.
-            with self.records.relations({"selected": layer}) as relations:
-                content_rows = relations["selected"].project("json_extract(decode(record_json), '/content')::VARCHAR AS content")
-                content_rows = content_rows.filter("content IS NOT NULL AND content <> 'null'").distinct()
-                with closing(content_rows.to_arrow_reader(256)) as batches:
-                    for batch in batches:
-                        for payload in batch.column(0).to_pylist():
-                            content = decode_canonical_json_value(payload.encode(), label="selected opaque content")
-                            index.add(RemovalContent("blobs", _blob(content)), protected=protected)
+            # The selected-value owner supplies the same blob obligations as publication.
+            with closing(self.publisher.selections.content_references(layer)) as contents:
+                for content in contents:
+                    index.add(RemovalContent("blobs", _blob(record_value(content, core.ContentRef))), protected=protected)
 
     def _inventory(self, index, *, exclude=(), candidates=False):
         excluded, scanned = set(exclude), set()

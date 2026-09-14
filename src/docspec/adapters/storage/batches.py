@@ -14,13 +14,14 @@ ENCODED_RECORD_SCHEMA = pa.schema([
 
 
 def encoded_batches(
-    rows: Iterable[tuple], schema: pa.Schema, *, byte_column: int,
+    rows: Iterable[tuple], schema: pa.Schema, *, byte_column: int | tuple[int, ...],
     max_value_bytes: int = BATCH_BYTES,
 ) -> Iterator[pa.RecordBatch]:
     """Encode Arrow arrays from bounded tuples; JSON admission belongs to callers."""
     def size(row):
-        value = row[byte_column]
-        return len(value.encode("utf-8") if isinstance(value, str) else value)
+        indexes = (byte_column,) if isinstance(byte_column, int) else byte_column
+        return sum(len(value.encode("utf-8") if isinstance(value, str) else value)
+                   for index in indexes if (value := row[index]) is not None)
     with owned_iterator(bounded_rows(rows, size=size, max_row_bytes=max_value_bytes)) as chunks:
         for chunk in chunks:
             yield pa.record_batch(list(zip(*chunk, strict=True)), schema=schema)

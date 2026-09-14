@@ -16,7 +16,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from docspec.ports.record_storage import bounded_batches, bounded_rows
+from docspec.ports.record_storage import BATCH_ROWS, bounded_batches, bounded_rows
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
@@ -47,13 +47,17 @@ from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket, record_key
 from docspec.errors import IntegrityError, LimitExceededError
 
-_PROFILE_ID = "urn:docspec:profile:record-storage:local-parquet:2"
+_PROFILE_ID = "urn:docspec:profile:record-storage:local-parquet:3"
 _MEDIA_TYPE = "application/vnd.apache.parquet"
 _ADMITTED_LAYER_LIMIT = 8
 _PARQUET_SCHEMA = ENCODED_RECORD_SCHEMA
-_WRITE_SCHEMA = pa.schema([
-    ("partition", pa.int32()), ("sequence", pa.int64()), *_PARQUET_SCHEMA,
-])
+def _physical_schema(schema):
+    return pa.schema([*_PARQUET_SCHEMA, *(pa.field(name, pa.string() if kind == "string" else pa.binary())
+                                         for name, kind in schema.columns)])
+
+
+def _column_list(schema):
+    return ", ".join('"' + name.replace('"', '""') + '"' for name in _physical_schema(schema).names)
 
 
 def _overlapping_members(members, ranges):
@@ -205,6 +209,7 @@ class LocalParquetRecordStorage:
         return {
             "schemaId": schema.schema_id, "fields": list(schema.fields),
             "identityField": schema.identity_field, "partitionField": schema.partition_field,
+            "columns": [list(column) for column in schema.columns],
         }
 
     @staticmethod
@@ -215,13 +220,16 @@ class LocalParquetRecordStorage:
         root = self._load_root(reference)
         if (
             set(root) != {"format", "formatVersion", "layerId", "layerKind", "schema", "profileId", "partitionPolicy", "members", "recordCount"}
-            or root["format"] != "docspec-record-layer" or root["formatVersion"] != "3.0"
+            or root["format"] != "docspec-record-layer" or root["formatVersion"] != "4.0"
         ):
             raise IntegrityError("record layer root has an unknown format or invalid closed shape")
         value = root["schema"]
-        if not isinstance(value, dict) or set(value) != {"schemaId", "fields", "identityField", "partitionField"} or not isinstance(value["fields"], list):
+        if not isinstance(value, dict) or set(value) != {"schemaId", "fields", "identityField", "partitionField", "columns"} or not isinstance(value["fields"], list):
             raise IntegrityError("record layer schema has an invalid closed shape")
-        schema = RecordSchema(value["schemaId"], tuple(value["fields"]), value["identityField"], value["partitionField"])
+        if not isinstance(value["columns"], list) or any(not isinstance(column, list) or len(column) != 2 for column in value["columns"]):
+            raise IntegrityError("record layer typed columns have an invalid shape")
+        schema = RecordSchema(value["schemaId"], tuple(value["fields"]), value["identityField"], value["partitionField"],
+                              tuple(tuple(column) for column in value["columns"]))
         value = root["partitionPolicy"]
         if not isinstance(value, dict) or set(value) != {"policyId", "bucketCount"}:
             raise IntegrityError("record layer partition policy has an invalid closed shape")
@@ -285,7 +293,7 @@ class LocalParquetRecordStorage:
             )
             try:
                 with pq.ParquetFile(path) as parquet:
-                    if not parquet.schema_arrow.equals(_PARQUET_SCHEMA, check_metadata=False):
+                    if not parquet.schema_arrow.equals(_physical_schema(schema), check_metadata=False):
                         raise IntegrityError("record member has an invalid physical Parquet schema")
                     if parquet.metadata.num_rows != member["recordCount"]:
                         raise IntegrityError("record member count differs from its description")
@@ -325,10 +333,7 @@ class LocalParquetRecordStorage:
                  str(_contained(self.root, member["path"])): member for member in members}
         with (self._cursor() if cursor is None else nullcontext(cursor)) as cursor:
             if not paths:
-                yield cursor.sql(
-                    "SELECT NULL::VARCHAR record_identity, NULL::VARCHAR partition_value, "
-                    "NULL::BLOB record_json, NULL::VARCHAR filename WHERE false"
-                )
+                yield cursor.from_arrow(pa.Table.from_batches([], schema=pa.schema([*_physical_schema(schema), ("filename", pa.string())])))
             else:
                 # Parameterized sql() eagerly materializes in DuckDB's Python
                 # API. Keep this relation lazy so callers' field/key filters can
@@ -357,13 +362,13 @@ class LocalParquetRecordStorage:
                                     relation = relation.filter(duckdb.ColumnExpression("record_identity") == duckdb.ConstantExpression(record_id))
                             else:
                                 relation = relation.filter("false")
-                yield relation.project("record_identity, partition_value, record_json, filename")
+                yield relation.project(_column_list(schema) + ", filename")
 
     def _batches(self, members, schema, policy, *, partition_value=None, record_id=None, checked_paths=None):
         with self._relation(members, schema, policy, partition_value=partition_value, record_id=record_id,
                             checked_paths=checked_paths) as relation:
             with closing(relation.order("record_identity").to_arrow_reader(256)) as reader:
-                yield from bounded_batches(reader, byte_column="record_json", max_value_bytes=self.max_record_bytes)
+                yield from bounded_batches(reader, byte_column=tuple(_physical_schema(schema).names) if schema.columns else "record_json", max_value_bytes=self.max_record_bytes)
 
     def admit(self, reference: LayerRef) -> AdmittedRecordLayer:
         """Audit once before repeated native reads of immutable retained content.
@@ -393,12 +398,13 @@ class LocalParquetRecordStorage:
         with closing(self._batches(members, schema, policy, partition_value=partition_value, record_id=record_id)) as batches:
             for batch in batches:
                 for physical in batch.to_pylist():
-                    identity, value, payload, filename = (physical[field] for field in batch.schema.names)
+                    identity, value, payload, filename = (physical[field] for field in ("record_identity", "partition_value", "record_json", "filename"))
                     if not isinstance(payload, bytes):
                         raise IntegrityError("record member payload must be binary")
                     if len(payload) > self.max_record_bytes:
                         raise LimitExceededError(f"record exceeds the {self.max_record_bytes}-byte limit")
-                    record = thaw_json(parse_canonical_json(payload, label="record member", file_form=False))
+                    record = ({field: physical[field] for field in schema.fields} if schema.columns else
+                              thaw_json(parse_canonical_json(payload, label="record member", file_form=False)))
                     if not isinstance(record, dict) or set(record) != set(schema.fields):
                         raise IntegrityError("record member row does not match its closed logical schema")
                     if (
@@ -463,13 +469,13 @@ class LocalParquetRecordStorage:
                 with self._relation(admitted._root["members"], admitted.schema, admitted.partition_policy,
                                     record_ids=keys, checked_paths=admitted._paths) as relation:
                     with closing(relation.order("record_identity").to_arrow_reader(256)) as reader:
-                        for batch in bounded_batches(reader, byte_column="record_json", max_value_bytes=self.max_record_bytes):
-                            yield batch.select(_PARQUET_SCHEMA.names)
+                        for batch in bounded_batches(reader, byte_column=tuple(_physical_schema(admitted.schema).names) if admitted.schema.columns else "record_json", max_value_bytes=self.max_record_bytes):
+                            yield batch.select(_physical_schema(admitted.schema).names)
 
     @contextmanager
-    def relations(self, references: Mapping[str, LayerRef | AdmittedRecordLayer], *, partitions=None, tables=None, identities=None, identity_ranges=None):
+    def relations(self, references: Mapping[str, LayerRef | AdmittedRecordLayer], *, partitions=None, tables=None, identities=None, identity_ranges=None, cursor=None):
         """Read unordered admitted layers on one connection for native joins."""
-        with self._cursor() as cursor, ExitStack() as stack:
+        with (self._cursor() if cursor is None else nullcontext(cursor)) as cursor, ExitStack() as stack:
             result = {}
             for name, reference in references.items():
                 if isinstance(reference, AdmittedRecordLayer):
@@ -516,7 +522,7 @@ class LocalParquetRecordStorage:
             if incoming.join(existing, "record_identity = existing_key", how="semi").limit(1).fetchone():
                 if not exclude_existing:
                     raise IntegrityError("record union requires disjoint logical identities")
-                added = relations["changes"].project("record_identity, partition_value, record_json").join(
+                added = relations["changes"].project(_column_list(changes.schema)).join(
                     existing, "record_identity = existing_key", how="anti").order("record_identity")
                 with closing(added.to_arrow_reader(256)) as batches:
                     changes = self.retain_batches(batches, layer_kind=changes.reference.layer_kind,
@@ -539,11 +545,15 @@ class LocalParquetRecordStorage:
             compacted = self.retain_batches(batches, layer_kind=base.reference.layer_kind, schema=base.schema,
                                              partition_policy=base.partition_policy)
         with self.relations({"before": base, "after": compacted}) as relations:
-            before = relations["before"].project("record_identity AS old_key, partition_value AS old_partition, record_json AS old_payload")
-            after = relations["after"].project("record_identity AS new_key, partition_value AS new_partition, record_json AS new_payload")
-            if before.join(after, "old_key = new_key", how="outer").filter(
-                "old_key IS NULL OR new_key IS NULL OR old_partition IS DISTINCT FROM new_partition OR old_payload IS DISTINCT FROM new_payload"
-            ).limit(1).fetchone():
+            names = _physical_schema(base.schema).names
+            def renamed(prefix):
+                return ", ".join('"' + name.replace('"', '""') + '" AS "' + prefix + str(index) + '"'
+                                 for index, name in enumerate(names))
+            before = relations["before"].project(renamed("old"))
+            after = relations["after"].project(renamed("new"))
+            mismatch = "old0 IS NULL OR new0 IS NULL OR " + " OR ".join(
+                f"old{index} IS DISTINCT FROM new{index}" for index in range(1, len(names)))
+            if before.join(after, "old0 = new0", how="outer").filter(mismatch).limit(1).fetchone():
                 raise IntegrityError("compaction changed logical records")
         return compacted
 
@@ -577,6 +587,9 @@ class LocalParquetRecordStorage:
                 for record in source:
                     if set(record) != set(schema.fields):
                         raise IntegrityError("record does not match its closed logical schema")
+                    if schema.columns:
+                        yield tuple(record[name] for name in schema.fields)
+                        continue
                     yield (
                         record_key(record[schema.identity_field], schema.identity_field),
                         record_key(record[schema.partition_field], schema.partition_field),
@@ -584,7 +597,7 @@ class LocalParquetRecordStorage:
                     )
 
         return self.write_batches(
-            encoded_batches(rows(), _PARQUET_SCHEMA, byte_column=2, max_value_bytes=self.max_record_bytes),
+            encoded_batches(rows(), _physical_schema(schema), byte_column=tuple(range(len(schema.fields))) if schema.columns else 2, max_value_bytes=self.max_record_bytes),
             layer_kind=layer_kind, schema=schema, partition_policy=partition_policy,
             base=base, replace_partitions=replace_partitions,
         )
@@ -631,6 +644,8 @@ class LocalParquetRecordStorage:
         target_member_bytes=None,
     ) -> AdmittedRecordLayer:
         require_text(layer_kind, "layer_kind")
+        physical_schema = _physical_schema(schema)
+        write_schema = pa.schema([("partition", pa.int32()), *physical_schema])
         target_member_bytes = self.max_member_bytes // 2 if target_member_bytes is None else target_member_bytes
         if type(target_member_bytes) is not int or not 0 < target_member_bytes <= self.max_member_bytes:
             raise ValueError("target member bytes must be positive and within the member limit")
@@ -655,9 +670,6 @@ class LocalParquetRecordStorage:
             if reference.layer_kind != layer_kind or base_schema != schema or policy != partition_policy:
                 raise IntegrityError("incremental layer is incompatible with its base")
             members = {(member["partition"], member["sequence"]): member for member in root["members"] if member["partition"] not in replace_partitions}
-        sizes: dict[int, int] = {}
-        sequences: dict[int, int] = {}
-        bounds: dict[tuple[int, int], tuple[str, str]] = {}
         record_count = 0
         source_error: BaseException | None = None
 
@@ -667,19 +679,18 @@ class LocalParquetRecordStorage:
             try:
                 with owned_iterator(batches) as source:
                     for batch in source:
-                        if not batch.schema.equals(_PARQUET_SCHEMA, check_metadata=False):
+                        if not batch.schema.equals(physical_schema, check_metadata=False):
                             raise IntegrityError("record batch has an invalid physical schema")
-                        if any(column.null_count for column in batch.columns):
+                        if any(batch.column(name).null_count for name in _PARQUET_SCHEMA.names):
                             raise IntegrityError("record batch columns must not contain nulls")
-                        with closing(bounded_batches([batch], byte_column="record_json",
+                        with closing(bounded_batches([batch], byte_column=tuple(physical_schema.names) if schema.columns else "record_json",
                                                      max_value_bytes=self.max_record_bytes)) as bounded:
                             for part in bounded:
-                                partitions, shard_sequences = [], []
-                                row_sizes = pc.add(
-                                    pc.add(pc.binary_length(part.column("record_identity")).cast(pa.int64()),
-                                           pc.binary_length(part.column("partition_value"))),
-                                    pc.binary_length(part.column("record_json")),
-                                ).to_pylist()
+                                partitions = []
+                                lengths = pc.binary_length(part.column(0)).cast(pa.int64())
+                                for column in part.columns[1:]:
+                                    lengths = pc.add(lengths, pc.fill_null(pc.binary_length(column), 0))
+                                row_sizes = lengths.to_pylist()
                                 for identity, value, size in zip(
                                     part.column("record_identity").to_pylist(),
                                     part.column("partition_value").to_pylist(), row_sizes, strict=True,
@@ -692,22 +703,11 @@ class LocalParquetRecordStorage:
                                         raise IntegrityError("incremental records include a partition not declared for replacement")
                                     if size > self.max_member_bytes:
                                         raise LimitExceededError(f"record exceeds the {self.max_member_bytes}-byte member limit")
-                                    sequence = sequences.get(partition, 0)
-                                    if sizes.get(partition, 0) and sizes[partition] + size > target_member_bytes:
-                                        sequence += 1
-                                        sequences[partition] = sequence
-                                        sizes[partition] = 0
-                                    sizes[partition] = sizes.get(partition, 0) + size
-                                    shard = partition, sequence
-                                    lower, upper = bounds.get(shard, (identity, identity))
-                                    bounds[shard] = (lower, identity) if ordered else (min(lower, identity), max(upper, identity))
                                     partitions.append(partition)
-                                    shard_sequences.append(sequence)
                                 record_count += part.num_rows
                                 yield pa.RecordBatch.from_arrays([
-                                    pa.array(partitions, type=pa.int32()),
-                                    pa.array(shard_sequences, type=pa.int64()), *part.columns,
-                                ], schema=_WRITE_SCHEMA)
+                                    pa.array(partitions, type=pa.int32()), *part.columns,
+                                ], schema=write_schema)
             except BaseException as error:
                 # Arrow transports callback failures through a native exception.
                 # Preserve the original producer/budget error, without parsing it.
@@ -719,44 +719,87 @@ class LocalParquetRecordStorage:
             self._cursor() as cursor,
             tempfile.TemporaryDirectory(prefix="records-", dir=self._staging) as directory,
             closing(writing_batches()) as source_batches,
-            closing(pa.RecordBatchReader.from_batches(_WRITE_SCHEMA, source_batches)) as reader,
+            closing(pa.RecordBatchReader.from_batches(write_schema, source_batches)) as reader,
         ):
-            output_directory = Path(directory) / "members"
-            output_path = str(output_directory).replace("'", "''")
+            output_directory = Path(directory)
+            completed = []
+            writer = None
+            partition = None
+            sequence = count = file_bytes = group_bytes = group_rows = 0
+            lower = upper = None
+            pending = []
+            # Small byte-bounded groups provide selective reads independently
+            # of file packing. A large single record forms its own group.
+            group_target = min(384 * 1024, target_member_bytes)
+
+            def flush_group():
+                nonlocal group_bytes, group_rows
+                if pending:
+                    writer.write_table(pa.Table.from_batches(pending, schema=physical_schema), row_group_size=group_rows)
+                    pending.clear()
+                    group_bytes = group_rows = 0
+
+            def finish_file():
+                nonlocal writer
+                if writer is not None:
+                    flush_group()
+                    writer.close()
+                    completed.append((partition, sequence, temporary, count, lower, upper))
+                    writer = None
+
             try:
-                # The direct C stream avoids DuckDB's threaded Arrow scanner,
-                # preserving caller-thread input consumption in the pinned backend.
+                # Consume once, sort natively, then choose tight file/group
+                # boundaries. Arrow slices retain bytes without Python decoding.
                 cursor.register("writing_records", reader.__arrow_c_stream__())
-                cursor.execute(
-                    "COPY (SELECT * FROM writing_records "
-                    "ORDER BY partition, sequence, partition_value, record_identity) "
-                    f"TO '{output_path}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048, "
-                    "PARTITION_BY (partition, sequence), WRITE_PARTITION_COLUMNS false, RETURN_STATS)",
-                )
+                with closing(cursor.sql("SELECT * FROM writing_records ORDER BY partition, record_identity").to_arrow_reader(256)) as sorted_rows:
+                    for batch in sorted_rows:
+                        physical = batch.select(physical_schema.names)
+                        lengths = pc.binary_length(physical.column(0)).cast(pa.int64())
+                        for column in physical.columns[1:]:
+                            lengths = pc.add(lengths, pc.fill_null(pc.binary_length(column), 0))
+                        start = 0
+                        for index, (bucket, identity, size) in enumerate(zip(batch.column("partition").to_pylist(),
+                                physical.column("record_identity").to_pylist(), lengths.to_pylist(), strict=True)):
+                            new_file = partition != bucket or (file_bytes and file_bytes + size > target_member_bytes)
+                            new_group = group_rows and (group_bytes + size > group_target or group_rows >= BATCH_ROWS)
+                            if new_file or new_group:
+                                if index > start:
+                                    pending.append(physical.slice(start, index - start))
+                                start = index
+                                if new_file:
+                                    finish_file()
+                                    sequence = sequence + 1 if partition == bucket else 0
+                                    partition, count, file_bytes = bucket, 0, 0
+                                else:
+                                    flush_group()
+                            if writer is None:
+                                temporary = output_directory / f"{bucket}-{sequence}.parquet"
+                                writer = pq.ParquetWriter(temporary, physical_schema, compression="zstd")
+                                lower = identity
+                            upper = identity
+                            count += 1
+                            file_bytes += size
+                            group_bytes += size
+                            group_rows += 1
+                        if start < batch.num_rows:
+                            pending.append(physical.slice(start))
+                    finish_file()
             except BaseException:
                 if source_error is not None:
                     raise source_error
                 raise
+            finally:
+                if writer is not None:
+                    writer.close()
             if not ordered and record_count:
-                # Import streams need not arrive in key order. Check uniqueness
-                # natively before publishing any physical member, reading only
-                # the identity column from the writer's completed temporary files.
-                with self._cursor() as checker:
-                    if checker.execute(
-                        "SELECT 1 FROM read_parquet(?,hive_partitioning=false) GROUP BY record_identity HAVING count(*)>1 LIMIT 1",
-                        [[str(path) for path in output_directory.rglob("*.parquet")]],
-                    ).fetchone():
-                        raise IntegrityError("record input contains duplicate logical identities")
+                # Validate global uniqueness before any file is published.
+                if cursor.execute(
+                    "SELECT 1 FROM read_parquet(?,hive_partitioning=false) GROUP BY record_identity HAVING count(*)>1 LIMIT 1",
+                    [[str(item[2]) for item in completed]],
+                ).fetchone():
+                    raise IntegrityError("record input contains duplicate logical identities")
             written_count = 0
-            while sizes and (output := cursor.fetchone()) is not None:
-                filename, count = output[:2]
-                temporary = Path(filename)
-                parts = temporary.relative_to(output_directory).parts
-                if len(parts) != 3 or not parts[0].startswith("partition=") or not parts[1].startswith("sequence="):
-                    raise IntegrityError("native record writer produced an unexpected member path")
-                partition, sequence = int(parts[0][10:]), int(parts[1][9:])
-                if partition not in sizes or not 0 <= sequence <= sequences.get(partition, 0) or (partition, sequence) in members:
-                    raise IntegrityError("native record writer produced an unexpected partition shard")
+            for partition, sequence, temporary, count, lower, upper in completed:
                 _sync_file(temporary)
                 digest, byte_size = sha256_file(temporary)
                 if byte_size > self.max_member_bytes:
@@ -768,7 +811,7 @@ class LocalParquetRecordStorage:
                     "partition": partition, "sequence": sequence, "path": locator,
                     "mediaType": _MEDIA_TYPE, "byteSize": byte_size, "digest": digest,
                     "recordCount": count, "schemaId": schema.schema_id,
-                    "identityMin": bounds[(partition, sequence)][0], "identityMax": bounds[(partition, sequence)][1],
+                    "identityMin": lower, "identityMax": upper,
                 }
                 written_count += count
             if written_count != record_count:
@@ -784,7 +827,7 @@ class LocalParquetRecordStorage:
             "recordCount": sum(member["recordCount"] for member in members),
         }
         layer_id = stable_urn("record-layer", content)
-        root = {"format": "docspec-record-layer", "formatVersion": "3.0", "layerId": layer_id, **content}
+        root = {"format": "docspec-record-layer", "formatVersion": "4.0", "layerId": layer_id, **content}
         payload = canonical_json_file_bytes(root)
         if len(payload) > self.max_root_bytes:
             raise LimitExceededError(f"record layer root exceeds the {self.max_root_bytes}-byte limit")
@@ -820,10 +863,10 @@ class AdmittedRecordLayer:
     def relation(self, *, partitions: frozenset[int] | None = None) -> Iterator[duckdb.DuckDBPyRelation]:
         """Read unordered rows for native joins inside the protection scope."""
         with self._storage._relation(self._members(partitions), self.schema, self.partition_policy, checked_paths=self._paths) as relation:
-            yield relation.project("record_identity, partition_value, record_json")
+            yield relation.project(_column_list(self.schema))
 
     def batches(self, *, partitions: frozenset[int] | None = None) -> Iterator[pa.RecordBatch]:
         """Stream admitted canonical bytes without another JSON conversion."""
         with closing(self._storage._batches(self._members(partitions), self.schema, self.partition_policy, checked_paths=self._paths)) as batches:
             for batch in batches:
-                yield batch.select(_PARQUET_SCHEMA.names)
+                yield batch.select(_physical_schema(self.schema).names)

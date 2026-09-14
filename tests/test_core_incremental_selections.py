@@ -44,9 +44,11 @@ def parent_evidence(selections, session, state, definition):
 
 def observe_computed(monkeypatch, selections):
     actual, calls = selections._computed_rows, []
-    def computed(session, parent, definition):
-        calls.append((parent, definition.scope))
-        yield from actual(session, parent, definition)
+    def computed(session, parent, definition, **kwargs):
+        addresses = kwargs.get("addresses")
+        scope = definition.scope if addresses is None else tuple(row[0] for row in addresses.order("wanted_key").fetchall())
+        calls.append((parent, scope))
+        yield from actual(session, parent, definition, **kwargs)
     monkeypatch.setattr(selections, "_computed_rows", computed)
     return calls
 
@@ -129,7 +131,7 @@ def test_supplied_direct_values_cannot_certify_or_poison_parent_evaluation(tmp_p
             assert calls == [("root", None)]
             with pytest.raises(IntegrityError, match="immutable retained record"):
                 select(selections, session, supplied.selected_value_id, definition)
-            assert not session.computed_selections
+            assert not session.computed_records
             assert not [link for batch in ledger.read_links([("state", "root")]) for link in batch if link.relation == "computed_selection"]
             # An untrusted portable ledger may contain forged relationship rows.
             # Its read-only admission must never treat them as local evaluation.
@@ -175,25 +177,71 @@ def test_computation_witness_must_match_exact_published_record(tmp_path):
             source = select(selections, session, "base", definition)
             wrong = msgspec.structs.replace(source, selected_value_id="other")
             key = "selected_value", "other"
-            session.computed_selections[key] = (canonical_value_bytes(record_value(source)),
+            session.computed_records[key] = (canonical_value_bytes(record_value(source)),
                 MetadataLink(("state", "root"), "computed_selection", _selector_key(definition), key))
             with pytest.raises(IntegrityError, match="publication witness"):
                 session.publish(MetadataBatch("mismatch", records=(wrong,), retained=(key,)))
 
 
-@pytest.mark.parametrize("limit", ["BATCH_ROWS", "BATCH_BYTES"])
-def test_overlay_budget_falls_back_without_retaining_partial_values(tmp_path, monkeypatch, limit):
+@pytest.mark.parametrize("count,width", [(2047, 8), (2048, 8), (2049, 4096)])
+def test_native_delta_reuses_exact_multiset_above_former_limits(tmp_path, monkeypatch, count, width):
     from docspec.adapters.storage import core_selections
-    definition = core.StateMembers(member_selector=fields("/url"), material_keys=True)
+    definition = core.StateMembers(member_selector=core.Whole())
+    with ExitStack() as stack:
+        _, _, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            def values(prefix, rotate):
+                for index in range(count + 11):
+                    changed = index < count
+                    identity = f"{prefix if changed else 'kept'}-{index:05}"
+                    value = (index + rotate) % count if changed else index
+                    yield f"k{index:05}", occurrence(identity, {"x": value, "body": "x" * width})
+            states.create_keyed(session, state_id="root", representation_id="root-r", unit_id="root", rows=values("old", 0))
+            base = select(selections, session, "base", definition)
+            expected = selections.evidence(session, base)
+            states.create_keyed(session, state_id="changed", representation_id="new-r", unit_id="new", rows=values("new", 1))
+            # Uncertified ancestry locates the base but must not hide real edits.
+            revision = core.Revision(format_version=1, revision_id="r", base_state_id="root", result_state_id="changed", edits=())
+            representation = msgspec.structs.replace(states.representation(session, "changed"), representation_id="r-claimed", revision_id="r")
+            session.publish(MetadataBatch("ancestry", records=(revision, representation), retained=(("state", "changed"),)))
+        with publisher.session() as session:
+            calls = observe_computed(monkeypatch, selections)
+            def no_full_hash(*args, **kwargs):
+                raise AssertionError("unchanged multiset repeated the full comparison hash")
+            monkeypatch.setattr(core_selections, "member_stream_evidence", no_full_hash)
+            assert selections.binding_evidence(session, core.StateInput(label="x", state_id="changed"), definition)[1] == expected
+            assert len(calls) == 1 and len(calls[0][1]) == count
+            current = select(selections, session, "current", definition, parent="changed")
+            assert selections.evidence(session, current) == expected
+            origins = dict((key, entity) for key, entity, _ in selections.rows(session, current))
+            assert origins["k00000"] == "new-00000" and len(origins) == count + 11
+            assert len(calls) == 1
+
+
+def test_changed_duplicate_counts_require_new_evidence(tmp_path):
+    definition = core.StateMembers(member_selector=fields("/url"))
+    with ExitStack() as stack:
+        _, _, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            import_root(states, session, [("a", "a", {"url": 1}), ("b", "b", {"url": 1}), ("c", "c", {"url": 2})])
+            base = select(selections, session, "base", definition)
+            revision = core.Revision(format_version=1, revision_id="r", base_state_id="root", result_state_id="changed",
+                edits=(core.Put(sequence=0, member_key="b", occurrence_id="c"),))
+            operations = CoreOperations(publisher)
+            operations.publish((prepare_revision(operations, revision, session=session),), session=session)
+            actual = selections.binding_evidence(session, core.StateInput(label="x", state_id="changed"), definition)[1]
+            assert actual == parent_evidence(selections, session, "changed", definition)
+            assert actual != selections.evidence(session, base)
+
+
+def test_retained_evidence_is_checked_at_external_admission(tmp_path):
     with ExitStack() as stack:
         _, _, states, selections, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
             import_root(states, session, VALUES)
-            select(selections, session, "base", definition)
-            revise(publisher, session)
-            expected = parent_evidence(selections, session, "changed", definition)
-            monkeypatch.setattr(core_selections, limit, 1)
-            calls = observe_computed(monkeypatch, selections)
-            assert selections.binding_evidence(session, core.StateInput(label="source", state_id="changed"), definition)[1] == expected
-            assert calls[-1] == ("changed", None)
-            assert not any(key[0] == "changed" for key in session.member_selections)
+            selected = select(selections, session, "base", core.StateMembers(member_selector=fields("/url")))
+            manifest = selections._manifest(session, selected)
+            content = session.retain_value({**manifest, "evidence": {**manifest["evidence"], "digest": "sha256:" + "0" * 64}}, media_type=selected.value.media_type)
+            wrong = msgspec.structs.replace(selected, selected_value_id="wrong", value=content, member_origins=content)
+            with pytest.raises(IntegrityError, match="evidence differs"):
+                session.publish(MetadataBatch("wrong", records=(wrong,), retained=(("selected_value", "wrong"),)))

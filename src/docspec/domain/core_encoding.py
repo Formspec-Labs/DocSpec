@@ -17,18 +17,6 @@ from docspec.errors import IntegrityError
 ABSENT = object()
 
 
-def membership_digester() -> OrderedJsonSequenceDigester:
-    return OrderedJsonSequenceDigester(prefix=("docspec-membership", 1))
-
-
-def membership_digest(members: Iterable[dict]) -> str:
-    """Logical keyed membership, independent of physical checkpoint files."""
-    digester = membership_digester()
-    for member in sorted(members, key=lambda member: member["member_key"]):
-        digester.accept_admitted_payload(canonical_value_bytes(member))
-    return digester.finish()
-
-
 def selected_fields(fields: Iterable[tuple[str, Any]]) -> list:
     """Labels preserve definition order; ABSENT differs from present null."""
     result, labels = [], set()

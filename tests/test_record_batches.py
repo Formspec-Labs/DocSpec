@@ -32,6 +32,24 @@ def write(storage, values):
     return storage.write_batches(values, layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
 
 
+def test_typed_auxiliary_columns_count_toward_write_and_lookup_limits(tmp_path):
+    schema = RecordSchema("typed:1", (*PHYSICAL.names, "sort_key"), "record_identity", "partition_value", (("sort_key", "binary"),))
+    def row(key, size):
+        return {"record_identity": key, "partition_value": key, "record_json": b"[]", "sort_key": b"x" * size}
+    with closing(LocalParquetRecordStorage(tmp_path / "bounded", max_record_bytes=4096)) as storage:
+        with pytest.raises(LimitExceededError):
+            storage.write_layer([row("a", 4096)], layer_kind="typed", schema=schema, partition_policy=POLICY)
+    with closing(LocalParquetRecordStorage(tmp_path / "streamed")) as storage:
+        reference = storage.write_layer((row(key, 3 * 1024**2) for key in ("a", "b", "c")),
+                                        layer_kind="typed", schema=schema, partition_policy=POLICY)
+        storage.verify(reference)
+        with closing(storage.lookup_batches(reference, ["a", "b", "c"])) as batches:
+            sizes = [batch.nbytes for batch in batches]
+        assert len(sizes) == 2
+        # Arrow offsets add a little overhead beyond the logical byte budget.
+        assert max(sizes) < BATCH_BYTES
+
+
 @pytest.mark.parametrize("partition_by_identity", [False, True])
 def test_disjoint_union_shares_all_files_and_refuses_duplicate_identities(tmp_path, partition_by_identity):
     schema = RecordSchema(SCHEMA.schema_id, SCHEMA.fields, SCHEMA.identity_field,
@@ -259,3 +277,28 @@ def test_native_joins_avoid_input_sorts_and_public_readers_keep_record_order(tmp
         with closing(storage.lookup_batches(admitted.reference, [row["recordId"] for row in reversed(expected)])) as incoming:
             selected = [payload for batch in incoming for payload in batch.column("record_json").to_pylist()]
         assert selected == payloads
+
+
+def test_packed_files_have_small_groups_and_nonoverlapping_sorted_ranges(tmp_path):
+    import pyarrow.parquet as pq
+    count = 2049
+    with closing(LocalParquetRecordStorage(tmp_path, max_member_bytes=4 * 1024**2)) as storage:
+        schema = RecordSchema("packed:1", ("key", "value"), "key", "key")
+        rows = ((f"k{index:05}", f"k{index:05}", canonical_json_bytes({"key": f"k{index:05}", "value": "x" * 4096}))
+                for index in reversed(range(count)))
+        admitted = storage.retain_batches(encoded_batches(rows, PHYSICAL, byte_column=2), layer_kind="packed", schema=schema,
+                                          partition_policy=PartitionPolicy("one:1", 1), ordered=False)
+        members = admitted._root["members"]
+        assert len(members) == 5
+        previous = None
+        for member in members:
+            assert previous is None or previous < member["identityMin"]
+            previous = member["identityMax"]
+            file = pq.ParquetFile(tmp_path / member["path"])
+            if member is not members[-1]:
+                assert file.num_row_groups > 1
+            for group in range(file.num_row_groups):
+                batch = file.read_row_group(group)
+                assert batch.nbytes < 400 * 1024
+        storage.verify(admitted.reference)
+        assert storage.lookup(admitted.reference, "k01000", partition_value="k01000")["value"] == "x" * 4096

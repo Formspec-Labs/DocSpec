@@ -26,6 +26,15 @@ build no old-format importer, compatibility layer, migration framework, or dual-
 path. Preserve useful product behavior through the new implementation. Retention
 and recovery requirements apply to data admitted by that implementation.
 
+The subsequent storage simplification replaces bounded Python selection overlays
+with native temporary tables, retains checked comparison evidence, removes eager
+membership hashes, and packs small row groups into larger Parquet files. Resolver
+certificates narrow actual change checks; exact comparison still protects
+representation equivalence and untrusted data. See [record storage](record-storage.md)
+for the current behavior. The [final regression report](history/2026-09-14-core-architectural-performance-review.md#native-storage-simplification-verification)
+records 1,293 passing tests, including installed-package checks. No Iceberg
+dependency or prototype is included.
+
 ## Completion rules shared by every task
 
 - Deliver the named observable behavior, its meaningful checks, and its caller changes together.
@@ -820,14 +829,14 @@ Complete the Core requirement-to-test map and Hypothesis sequences begun in C02,
 
 **Simplification:** Use the existing pytest/JUnit and CI workflow. Do not add another test runner or a report format that merely restates pass/fail.
 
-**Completion evidence (2026-09-14):** The
+**Original completion evidence (2026-09-14, before the performance simplification):** The
 [strict JUnit run](history/probes/2026-09-14-core-bounded-writer-regression.xml.gz)
 passes 1,283 tests, including every required parameter case. One live-service
 test outside the required map is deselected. Current Core, document, export and
 scheduler behavior defines acceptance; retired formats do not. Installed CFR/FEC
 example cases are now explicitly required by the map.
 
-The [current installed-wheel acceptance](history/probes/2026-09-14-core-installed-bounded-writer.json)
+The [original installed-wheel acceptance](history/probes/2026-09-14-core-installed-bounded-writer.json)
 pins wheel `bc73eb47c51b4fd359b43af9a9412b39058998307e1948aa1b31aaeae64200bc`,
 Python 3.12.9 and the locked dependencies. Its
 [native JUnit report](history/probes/2026-09-14-core-installed-bounded-writer.xml.gz)
@@ -843,6 +852,13 @@ Unicode/empty identities and complete union membership.
 C25 records measured capacity and explicitly unqualified claims under the
 [acceptance amendment](core-model-implementation-map.md#implementation-acceptance--2026-09-14).
 Subsequent runtime changes require affected behavior checks and a new package pin.
+
+**Performance simplification follow-up:** The
+[architectural review](history/2026-09-14-core-architectural-performance-review.md)
+owns the new verification and package pin for single-scan selection, typed
+selected bytes, publication coalescing, named comparison pruning and shared
+selected-content retention checks. Those format changes supersede the original
+package for current implementation claims; the earlier receipts remain historical.
 
 **Start from:** [conformance/test-matrix.json](../conformance/test-matrix.json), [tests/conformance](../tests/conformance), [tests/support](../tests/support), [tests/conftest.py](../tests/conftest.py), [.github/workflows/ci.yml](../.github/workflows/ci.yml), [docs/qualification.md](qualification.md).
 
@@ -868,17 +884,22 @@ bounds admission reuse; explicit audits remain fresh. Revisions verify every put
 and its provenance while sharing unchanged payload files. Verified per-file
 identity bounds prune lookup and union inputs. The common writer and digest
 framer handle existing batches without another native component or cache layer.
-The [complexity audit](history/2026-09-14-core-batching-complexity-audit.md) and
+Selection now scans its parent once and stores canonical comparison bytes in
+typed rows through that writer. Entity publication combines small read batches;
+named change comparisons use the existing file bounds. The
+[architectural review](history/2026-09-14-core-architectural-performance-review.md)
+records these follow-up changes and their verification. The
+[complexity audit](history/2026-09-14-core-batching-complexity-audit.md) and
 [paired measurements](history/probes/2026-09-14-core-identity-bounds-capacity.json)
 record the reasons, gains and rejected alternatives.
 
 **Evidence:** [C24](#c24--complete-conformance-regression-and-installed-package-checks)
 is the sole owner of current regression and installed-package acceptance. The
-[current performance receipt](history/probes/2026-09-14-core-bounded-writer-capacity.json)
+[pre-simplification performance receipt](history/probes/2026-09-14-core-bounded-writer-capacity.json)
 pins package `bc73eb47c51b4fd359b43af9a9412b39058998307e1948aa1b31aaeae64200bc`,
 Python/dependencies, input bytes, machine, settings, raw receipts and limitations.
 
-| Current-package check | Result |
+| Pinned baseline check | Result |
 | --- | --- |
 | Million-member durable build | 281.73 s; 11.28 GiB process peak. |
 | Metadata and named selection | Open 0.37 s with no member payload reads; named evaluation 6.12 s after 0.86 s admission. Conservative payload-column scan bound 30.4 MB. |
@@ -887,6 +908,10 @@ Python/dependencies, input bytes, machine, settings, raw receipts and limitation
 | Parent recovery and cleanup/publication race | Exact recovered evidence matches; protected content survives; interrupted removal resumes. |
 | 100 writer batches with four readers | Every one of 102,400 edit events across the same 1,024 addresses reconciles after reopen, including provenance and stale updates. Total 1,155.26 s; writer peak 2.73 GiB; conservative sum of individual peaks 9.34 GiB. These fail the original time and memory targets. Reader metadata p95 remains below 6 ms. |
 | Larger-than-memory population | All 2,097,152 values independently checked; exact digest matches. Build 669.24 s/11.88 GiB; selection 435.12 s/8.24 GiB; verification 407.46 s/9.60 GiB. Original applicable limits pass. |
+
+The table measures the earlier package, not the new storage and selection paths.
+No new large capacity trial is required by this follow-up; its small checks
+establish only their stated scope.
 
 **Performance limits:** Touched-bucket membership rewriting, full membership hashing and file metadata work
 remain costs. The [validated performance assessment](history/2026-09-14-core-performance-assessment.md)

@@ -178,6 +178,13 @@ using it, and preserve every still-retained state's recovery path and required
 provenance through compaction. Full-state access may scan all members; point
 access need not replay all history.
 
+Ordinary state creation and revisions do not compute a full membership digest.
+Validate new membership once. Compare exact canonical rows when admitting another
+representation of the same state; compaction transfers its existing exact check.
+Resolver-created publication certificates bind the exact revision and immutable
+result, so later selections can diff only certified edit keys. Missing certificates
+require the actual full comparison; supplied revision metadata cannot certify itself.
+
 ### 3.2. Selected-value definitions and evaluation
 
 Core calls a defined selection a **projection**; this plan says selected value to
@@ -245,6 +252,20 @@ presence and type. Validate JSON Pointer syntax independently before calling the
 engine; permissive engine behavior must not turn invalid syntax into absence.
 The execution path must pass the type, absence, pointer, and canonical-byte fixtures.
 
+Read each selected parent once and route inline JSON, external JSON and opaque
+content from that stream. The selected-member storage profile keeps canonical
+comparison bytes in a binary column beside typed origin, sort and content-reference
+columns. Sorting and hashing consume those bytes directly. Full external admission
+still checks selected values, their routing and materiality before retention.
+
+Keep incremental changed addresses and results in session-owned native temporary
+tables, with configured spill. Batch row/byte limits must not cap the whole delta
+or cause partial extraction followed by full recomputation. Retain checked evidence
+in the selected-member manifest and verify it during external admission. Reuse it
+for unordered values only when canonical bytes and signed counts agree; for ordered
+values, unchanged bytes and ordering tokens at affected keys are a sufficient proof.
+Otherwise compute the full comparison stream. Always update retained origins.
+
 For example, a bulk operation depending on all member URLs can reuse its earlier
 result after titles change. A URL change or a membership change affecting that
 selection must be compared. `state_members` supplies this capability through the
@@ -302,6 +323,13 @@ keep complete opaque payloads in their declared encoding. Use Arrow/PyArrow batc
 or streams between compatible components and avoid whole-table materialization.
 The SQLite adapter converts only bounded metadata batches to its parameter rows;
 that conversion is an explicit measured cost, not a zero-copy Arrow interface.
+Coalesce admitted entity read batches into publication units within the existing
+row and byte limits, reserving receipt space. The ledger owns the exact final
+limit check; native read chunk boundaries do not define transactions.
+
+Sort by bucket and logical identity before assigning file boundaries. The shared
+PyArrow writer packs small byte-bounded row groups into larger files; selective
+reads should use Parquet group pruning rather than require tiny physical files.
 
 | Work that can dominate | Required design |
 | --- | --- |

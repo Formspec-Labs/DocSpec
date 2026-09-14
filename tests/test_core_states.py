@@ -138,6 +138,63 @@ def test_root_larger_than_metadata_unit_and_empty_root_use_same_path(tmp_path):
         assert next(ledger.read_records([("entity", "entity-04096")]))[0].value.value.value == 4096
 
 
+def test_entity_publication_coalesces_reads_and_retries_across_chunk_sizes(tmp_path, monkeypatch):
+    from docspec.adapters.storage import core_states
+
+    count = 2305
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
+                                rows=((str(i), occurrence(f"e{i:05}", i)) for i in range(count)))
+            admitted = states.layers(session, "root")["entities"]
+            with closing(admitted.batches()) as batches:
+                assert sum(1 for _ in batches) == 10
+            with ledger._transaction() as connection:
+                original_units = connection.execute("SELECT * FROM units ORDER BY unit_id").fetchall()
+                assert connection.execute("SELECT count(*) FROM units WHERE unit_id LIKE ?",
+                                          (admitted.reference.layer_id + ":entities:%",)).fetchone() == (2,)
+            batches = type(admitted).batches
+            def smaller_batches(layer, **kwargs):
+                with closing(batches(layer, **kwargs)) as source:
+                    for batch in source:
+                        for offset in range(0, batch.num_rows, 37):
+                            yield batch.slice(offset, 37)
+            monkeypatch.setattr(type(admitted), "batches", smaller_batches)
+            canonical = core_states.canonical_value_bytes
+            def identity_only(value):
+                assert isinstance(value, str), "entity publication re-encoded an admitted record"
+                return canonical(value)
+            monkeypatch.setattr(core_states, "canonical_value_bytes", identity_only)
+            states._retain_entities(session, admitted)
+            with ledger._transaction() as connection:
+                assert connection.execute("SELECT * FROM units ORDER BY unit_id").fetchall() == original_units
+            rows = [row for batch in ledger.read_records(("entity", f"e{i:05}") for i in range(count)) for row in batch]
+            assert [row.value.value.value for row in rows] == list(range(count))
+
+
+def test_entity_publication_reserves_metadata_receipt_bytes(tmp_path):
+    from docspec.domain.core_admission import encode_record
+
+    # Both payloads fit one read batch, but their publication receipt does not.
+    identities = ('escaped"identity', 'other\\identity')
+    entities = [occurrence(identity, "x" * (BATCH_BYTES // 2 - len(encode_record(occurrence(identity, ""))) - 8))
+                for identity in identities]
+    assert sum(len(encode_record(entity)) for entity in entities) == BATCH_BYTES - 16
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
+                                rows=zip(identities, entities, strict=True))
+            admitted = states.layers(session, "root")["entities"]
+            with closing(admitted.batches()) as batches:
+                assert [batch.num_rows for batch in batches] == [2]
+            with ledger._transaction() as connection:
+                assert connection.execute("SELECT count(*) FROM units WHERE unit_id LIKE ?",
+                                          (admitted.reference.layer_id + ":entities:%",)).fetchone() == (2,)
+            assert [row.value for batch in ledger.read_records(("entity", identity) for identity in identities) for row in batch] == entities
+
+
 def test_missing_member_and_conflicting_occurrence_do_not_publish_root(tmp_path):
     with ExitStack() as stack:
         _, ledger, states, publisher = open_core(stack, tmp_path)

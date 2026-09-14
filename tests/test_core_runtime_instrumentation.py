@@ -6,9 +6,26 @@ import json
 
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
 from docspec.runtime import CoreWorkspace
+from docspec.domain import core
 from tests.support.core_runtime_experiment import (
     QueryProfiles, StorageSamples, allocation_observations, observations,
 )
+
+
+def test_inline_selection_reads_parent_files_once(tmp_path):
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        workspace.create("root", ((str(index), {"x": index, "body": "x" * 1024}) for index in range(513)))
+        with workspace.publisher.session() as session:
+            parent = workspace.states.layers(session, "root")["entities"]
+            parent_files = {member["path"].split("/")[-1] for member in parent._root["members"]}
+            profiles = QueryProfiles(tmp_path / "profiles")
+            definition = core.StateMembers(member_selector=core.JsonFields(selectors=(core.Field(label="x", pointer="/x"),)))
+            with observations(workspace, {}, profiles):
+                rows = list(workspace.selections._computed_rows(session, "root", definition))
+            visits = [profile for profile in profiles.profiles if parent_files.intersection(profile["query_files"]) and profile["scans"]]
+            assert len(visits) == 1
+            assert len(rows) == 513
+            assert {decode_canonical_json_value(row[2])[1][0][2] for row in rows} == set(range(513))
 
 
 def test_codec_observers_count_exact_bytes_without_nested_double_charging(tmp_path):

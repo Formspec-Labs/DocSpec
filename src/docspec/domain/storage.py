@@ -14,6 +14,7 @@ class RecordSchema:
     fields: tuple[str, ...]
     identity_field: str
     partition_field: str
+    columns: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         require_text(self.schema_id, "schema_id")
@@ -21,6 +22,12 @@ class RecordSchema:
             raise ValueError("record schema fields must be non-empty and distinct")
         if self.identity_field not in self.fields or self.partition_field not in self.fields:
             raise ValueError("identity and partition fields must belong to the closed schema")
+        if self.columns:
+            names = ("record_identity", "partition_value", "record_json", *(name for name, _ in self.columns))
+            if self.fields != names or len(set(names)) != len(names) or any(kind not in {"string", "binary"} for _, kind in self.columns):
+                raise ValueError("typed record columns must match the closed physical schema")
+            if (self.identity_field, self.partition_field) != ("record_identity", "partition_value"):
+                raise ValueError("typed records use their native routing columns")
 
 
 @dataclass(frozen=True, slots=True)

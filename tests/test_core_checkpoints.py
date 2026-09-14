@@ -120,8 +120,10 @@ def test_changed_membership_is_refused_before_selecting_a_checkpoint(tmp_path, m
             root(states, session)
             states.create(session, state_id="empty", representation_id="empty-r", unit_id="empty", entities=[], members=[])
             empty = records.available(states._references(states.manifest(session, "empty"))["membership"])
-            monkeypatch.setattr(records, "compact", lambda _: empty)
-            with pytest.raises(IntegrityError, match="logical membership"):
+            # Corrupt the native copy, keeping the compaction owner
+            # responsible for its exact equality check.
+            monkeypatch.setattr(records, "retain_batches", lambda *args, **kwargs: empty)
+            with pytest.raises(IntegrityError, match="logical records"):
                 states.checkpoint(session, "root", representation_id="bad", unit_id="bad")
             assert not ledger.is_committed("bad")
             assert states.representation(session, "root").representation_id == "root-r"

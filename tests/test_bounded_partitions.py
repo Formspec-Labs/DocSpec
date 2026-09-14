@@ -66,7 +66,7 @@ def test_parquet_writer_streams_many_partitions_without_whole_python_member_read
     storage.verify_members(second)
     storage.verify(second)
     root = json.loads((storage.root / second.state_ref).read_text())
-    assert root["formatVersion"] == "3.0"
+    assert root["formatVersion"] == "4.0"
     assert len(root["members"]) == len(records)
     assert all(member["mediaType"] == "application/vnd.apache.parquet" for member in root["members"])
     assert all((storage.root / member["path"]).stat().st_size == member["byteSize"] for member in root["members"])
@@ -135,12 +135,12 @@ def _pin_layer(storage, schema, policy, members):
     content = {
         "layerKind": "fixture-records",
         "schema": {"schemaId": schema.schema_id, "fields": list(schema.fields),
-                   "identityField": schema.identity_field, "partitionField": schema.partition_field},
-        "profileId": "urn:docspec:profile:record-storage:local-parquet:2",
+                   "identityField": schema.identity_field, "partitionField": schema.partition_field, "columns": []},
+        "profileId": "urn:docspec:profile:record-storage:local-parquet:3",
         "partitionPolicy": {"policyId": policy.policy_id, "bucketCount": policy.bucket_count},
         "members": members, "recordCount": sum(member["recordCount"] for member in members),
     }
-    root = {"format": "docspec-record-layer", "formatVersion": "3.0",
+    root = {"format": "docspec-record-layer", "formatVersion": "4.0",
             "layerId": stable_urn("record-layer", content), **content}
     payload = canonical_json_file_bytes(root)
     digest = sha256_digest(payload)
@@ -293,15 +293,16 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
             "fields": ["recordId", "sourceItemId", "value"],
             "identityField": "recordId",
             "partitionField": "sourceItemId",
+            "columns": [],
         },
-        "profileId": "urn:docspec:profile:record-storage:local-parquet:2",
+        "profileId": "urn:docspec:profile:record-storage:local-parquet:3",
         "partitionPolicy": {"policyId": "all-supported-partitions-v1", "bucketCount": 65_536},
         "members": members,
         "recordCount": 65_536,
     }
     root = {
         "format": "docspec-record-layer",
-        "formatVersion": "3.0",
+        "formatVersion": "4.0",
         "layerId": stable_urn("record-layer", content),
         **content,
     }

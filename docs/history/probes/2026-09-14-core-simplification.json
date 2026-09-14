@@ -1,0 +1,71 @@
+{
+  "baseline_commit": "9736e97a245656af020d85cbe45dd4d95bbd76cb",
+  "current_wheel_sha256": "75471255143c1bfab620c363d0e3c32c354a69ebda26d603b84594a4271b5e85",
+  "script_sha256": "24164288057d3ecc508c815cff17368fb3befeba162a1729efc76be1126b4d76",
+  "python": "3.12.9",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "dependencies": {
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1",
+    "rulespec-artifacts": "1.0.12"
+  },
+  "settings": {
+    "native_threads": 1,
+    "engine_memory_bytes": 6442450944,
+    "fresh_workspaces": true
+  },
+  "scope": "One sequential before/after pair, 8192 rows with escaped JSON bodies. Selection timers include retention and evidence. Every selected value is checked outside its timer. Exact digests and byte counts agree across revisions.",
+  "limitations": [
+    "No repetitions; baseline ran first.",
+    "OS cache was not flushed; machine load was uncontrolled.",
+    "No CPU profiler or RSS measurement.",
+    "Not a million-member capacity, incremental-update, concurrency or engine-comparison benchmark.",
+    "Measures the combined change, not separate attribution."
+  ],
+  "results": {
+    "baseline": {
+      "rows": 8192,
+      "input_bytes": 38188884,
+      "stages": {
+        "build": {
+          "seconds": 1.4198404159396887
+        },
+        "fields": {
+          "seconds": 0.4858962909784168,
+          "digest": "sha256:ef53fbb4809647724607e4d3aa10df31f6887302836b9b3d49a402923048aaac",
+          "bytes": 490442
+        },
+        "whole": {
+          "seconds": 1.0207761670462787,
+          "digest": "sha256:77ea23e44a0145fb3b988a9b5dc812fdce820a472b446a70edd98e0b3d1ad2c5",
+          "bytes": 38393716
+        }
+      },
+      "package_source_manifest_sha256": "22dbba3cba2a8677f175b1338f3329b3bd49d892c60d0bc750f7beb6f8dce480",
+      "package_files": 128
+    },
+    "current": {
+      "rows": 8192,
+      "input_bytes": 38188884,
+      "stages": {
+        "build": {
+          "seconds": 1.242645625025034
+        },
+        "fields": {
+          "seconds": 0.3778981249779463,
+          "digest": "sha256:ef53fbb4809647724607e4d3aa10df31f6887302836b9b3d49a402923048aaac",
+          "bytes": 490442
+        },
+        "whole": {
+          "seconds": 0.6668688750360161,
+          "digest": "sha256:77ea23e44a0145fb3b988a9b5dc812fdce820a472b446a70edd98e0b3d1ad2c5",
+          "bytes": 38393716
+        }
+      },
+      "package_source_manifest_sha256": "39adf13d334dcfed151ab7617f8177b85cf58c75c1fa6a13409ccdbb21cc7d56",
+      "package_files": 128
+    }
+  }
+}

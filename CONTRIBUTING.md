@@ -17,14 +17,11 @@ uv python install 3.12
 uv sync --frozen
 uv run --frozen docspec --help
 uv run --frozen pytest tests/test_processing_pipeline.py
-uv run --frozen ruff check .
-uv run --frozen pytest
 ```
 
 The default suite excludes tests marked `integration`. It uses local inputs and
 test doubles for external services. Optional dependencies may cause documented
-skips; a default pass is local validation, not full conformance or a published
-release. `uv sync --frozen --extra dagster` enables the real Dagster adapter test.
+skips; the full regression command appears below under “Check the same things as CI.” `uv sync --frozen --extra dagster` enables the real Dagster adapter test.
 Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
 the adapter you are exercising. Core imports must work without them.
@@ -37,7 +34,7 @@ the [GovInfo bill example](docs/govinfo-bill-example.md) or
 fetching and later XML processing. Use [result exports](docs/result-exports.md)
 for independent consumers.
 
-## Find a bounded change
+## Find the implementation and its tests
 
 | Task | Start here | Representative implementation and focused checks | Preserve |
 | --- | --- | --- | --- |
@@ -92,8 +89,9 @@ Keep optional SDK imports at the adapter that selects them.
 
 Give each module one explainable responsibility. Put a shared rule with the
 component that owns it, and share it only when the callers mean the same thing.
-Prefer a small function with explicit inputs and outputs over a new utility
-layer, inheritance hierarchy, or collection of mixins. Source-specific policy
+Reuse the existing owner, refactor it, or replace it. Give shared behavior one
+implementation. Prefer a small function with explicit inputs and outputs over
+a new utility layer, inheritance hierarchy, or collection of mixins. Source-specific policy
 decisions stay with their source. Separate scheduling mechanics from common
 digest rules; preserve streaming and checkpoint verification where they protect
 resource limits and recovery.

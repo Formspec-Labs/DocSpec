@@ -1,23 +1,16 @@
 # Documentation guide and ownership
 
-Start with the [README](../README.md) for DocSpec's purpose: build a catalog,
-capture selected documents through an injected fetcher, process retained inputs
-now or later, and inspect comparable attempts. That is the intended experiment
-workflow. The README distinguishes current entry points from the interfaces and
-qualification still tracked in the
-[Core implementation checklist](core-model-implementation-tasks.md).
+Start with the [README](../README.md), run the
+[offline walkthrough](offline-walkthrough.md), then choose the guide for the
+behavior you want to use or change. [Contributing](../CONTRIBUTING.md) covers
+setup, code ownership, and focused tests.
 
-Maintainers edit `README.md`, `CONTRIBUTING.md`, and the guides directly under
-`docs/`. Update the relevant guide, code links, and contributor task map in the
-same change as the behavior or file move they describe.
+Maintainers edit these guides directly alongside their code changes.
 
 | Reader's task | Maintained guide |
 | --- | --- |
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
 | Read the general dataset, provenance, retention, and reuse model | [Core model — editor’s draft](core-model.md) |
-| Plan the Core reference implementation and component choices | [Core implementation plan](core-model-implementation-plan.md) |
-| Choose Core implementation work, dependencies, and completion checks | [Core implementation tasks](core-model-implementation-tasks.md) |
-| Find replacement owners, preserved workflows, and capacity targets | [Core ownership and acceptance map](core-model-implementation-map.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
 | Capture, repair, process and compare a small supplied-record experiment | [Offline walkthrough](offline-walkthrough.md) |
 | Implement a pinned local processor with literal quote evidence | [Phrase matching example](phrase-matching-example.md) |
@@ -45,17 +38,17 @@ same change as the behavior or file move they describe.
 | Change schemas or sealed fixtures | [Schema maintenance](schema-maintenance.md) |
 | Understand supported identity values and the shared encoder | [Canonical JSON](canonical-json.md) |
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
-| Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
 
-The Core model defines semantics; the implementation plan selects components,
-and the ordered task list records current completion and remaining acceptance.
-The runtime now uses Core directly for document processing, reuse, inspection,
-maintenance and portable export. C01 baseline tables in the ownership map are
-historical context; its live retirement notes describe replacement owners.
+The Core model defines semantics; the [architecture guide](architecture.md)
+describes the implementation. Core owns document processing, reuse, inspection,
+cleanup, and portable export.
 
-The [consensus record](history/2026-09-13-core-model-consensus.md) records planning
-decisions and their evidence. Other dated reviews and measurements describe their
-recorded revision, not current code or an automatic qualification claim.
+Planning records remain available for maintainers: the
+[implementation plan](core-model-implementation-plan.md) records component choices,
+the [completed task list](core-model-implementation-tasks.md) records delivery,
+and the [ownership map](core-model-implementation-map.md) records replaced owners.
+The [consensus record](history/2026-09-13-core-model-consensus.md) preserves planning
+evidence. Dated reviews and measurements apply to their recorded code revision.
 
 A catalog can be used without document acquisition or search. The Python runtime
 retains capture, extraction, segmentation, and processing results for later use.

@@ -1,46 +1,52 @@
 """Typed selections, exact retained values, and recovery from immutable parents."""
 
-from contextlib import closing
+from contextlib import ExitStack, closing
 from dataclasses import dataclass
 
+import duckdb
 import pyarrow as pa
 import msgspec
 
-from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
+from docspec.adapters.storage.batches import encoded_batches
 from docspec.adapters.storage.selection import extracted_rows, field_paths
 from docspec.domain import core
-from docspec.domain.core_admission import admit_record, record_value
+from docspec.domain.core_admission import record_value
 from docspec.domain.core_encoding import ABSENT, content_evidence, json_evidence, member_bytes, member_stream_evidence, selector_value
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, sha256_digest
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import RecordSchema, PartitionPolicy, partition_bucket
 from docspec.domain.selected_values import validate_fields_value
 from docspec.domain.streams import owned_iterator
-from docspec.errors import IntegrityError
+from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.core_ledger import MetadataBatch, MetadataLink
-from docspec.ports.record_storage import AdmittedRecordLayer, BATCH_BYTES, BATCH_ROWS
+from docspec.ports.record_storage import AdmittedRecordLayer, BATCH_BYTES, BATCH_ROWS, bounded_batches
 
 
 _MEDIA = "application/vnd.docspec.selected-members+json"
-_SCHEMA = RecordSchema("core-selected-members:1", ("member_key", "occurrence_id", "comparison_json", "sort_key", "content"), "member_key", "member_key")
+_COLUMNS = (("occurrence_id", "string"), ("sort_key", "string"), ("content", "binary"))
+_ROWS = pa.schema([("record_identity", pa.string()), ("partition_value", pa.string()), ("record_json", pa.binary()),
+                   ("occurrence_id", pa.string()), ("sort_key", pa.string()), ("content", pa.binary())])
+_SCHEMA = RecordSchema("core-selected-members:2", tuple(_ROWS.names), "record_identity", "partition_value", _COLUMNS)
 _SOURCE = pa.schema([("member_key", pa.string()), ("occurrence_id", pa.string()), ("payload", pa.string())])
 _POLICY = PartitionPolicy("core-key-buckets:1", 64)
 _COMPUTED = "computed_selection"
-_DELTA = pa.schema([("member_key", pa.string()), ("payload", pa.binary())])
+_ROW_COLUMNS = ", ".join(_ROWS.names)
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Members:
-    """An evaluator-certified retained layer plus bounded transient changes."""
+    """Retained base and optional session-owned native changes."""
     selected: core.SelectedValue
     layer: AdmittedRecordLayer
-    changes: dict[str, bytes | None]
-    metadata_bytes: int
+    evidence: core.ComparisonEvidence
+    owner: ExitStack | None = None
+    cursor: duckdb.DuckDBPyConnection | None = None
+    changes: duckdb.DuckDBPyRelation | None = None
+    resolved_evidence: core.ComparisonEvidence | None = None
 
-    @property
-    def byte_size(self):
-        return self.metadata_bytes + sum(len(key.encode()) + (len(value) if value is not None else 0) + 16
-                                         for key, value in self.changes.items())
+    def close(self):
+        if self.owner is not None:
+            self.owner.close()
 
 
 def _selector_key(definition):
@@ -48,8 +54,11 @@ def _selector_key(definition):
 
 
 def _member_record(key, entity, comparison, sort_key, content):
-    return canonical_value_bytes({"member_key": key, "occurrence_id": entity, "comparison_json": comparison.decode(),
-                                  "sort_key": sort_key, "content": content})
+    return key, key, comparison, entity, sort_key, None if content is None else canonical_value_bytes(content)
+
+
+def _member_size(row):
+    return 0 if row is None else sum(len(value.encode() if isinstance(value, str) else value) for value in row if value is not None)
 
 
 
@@ -84,42 +93,55 @@ class CoreSelectionStorage:
         field_paths([(str(index), pointer) for index, pointer in enumerate(config["pointers"])])
         return tuple(config["pointers"]), config["descending"]
 
-    def _member_values(self, session, parent_id, definition, *, sort_fields=()):
+    def _member_values(self, session, parent_id, definition, *, sort_fields=(), addresses=None, cursor=None):
         selector = definition.member_selector
         fields = None if isinstance(selector, core.Whole) else [(field.label, field.pointer) for field in selector.selectors]
-        with self.states.relation(session, parent_id, scope=definition.scope) as relation:
-            inline = relation.filter("occurrence_id IS NULL OR json_extract_string(decode(occurrence_record), '/value/kind') = 'inline'")
-            source = inline.project("member_key, occurrence_id, json_extract(decode(occurrence_record), '/value/value')::VARCHAR AS payload")
-            with closing(extracted_rows(source, fields=fields, sort_fields=sort_fields)) as rows:
-                for key, entity, value, sort_key in rows:
-                    yield key, entity, value, sort_key, None
-            external = relation.filter("json_extract_string(decode(occurrence_record), '/value/kind') = 'content'")
-            json_values = external.filter("json_extract_string(decode(occurrence_record), '/value/codec') = 'json-v1'")
-            def inputs():
-                with closing(json_values.to_arrow_reader(256)) as reader:
-                    for batch in reader:
-                        for key, entity, payload in zip(*(column.to_pylist() for column in batch.columns), strict=True):
-                            content = admit_record(payload).value
-                            yield key, entity, _content_bytes(session, content).decode("utf-8")
-            with self.records._cursor() as cursor, closing(inputs()) as source:
-                for batch in encoded_batches(source, _SOURCE, byte_column=2):
-                    with closing(extracted_rows(cursor.from_arrow(batch), fields=fields, sort_fields=sort_fields)) as rows:
-                        for key, entity, value, sort_key in rows:
-                            yield key, entity, value, sort_key, None
-            opaque = external.filter("json_extract_string(decode(occurrence_record), '/value/codec') = 'bytes-v1'")
-            with closing(opaque.to_arrow_reader(256)) as reader:
-                for batch in reader:
-                    if batch.num_rows and (fields is not None or sort_fields):
-                        raise IntegrityError("JSON fields require JSON values, not opaque bytes")
-                    for key, entity, payload in zip(*(column.to_pylist() for column in batch.columns), strict=True):
-                        content = admit_record(payload).value
+        pending, size = [], 0
+
+        def external_values():
+            with self.records._cursor() as cursor:
+                source = cursor.from_arrow(pa.Table.from_pylist(pending, schema=_SOURCE))
+                with closing(extracted_rows(source, fields=fields, sort_fields=sort_fields)) as rows:
+                    for key, entity, value, sort_key in rows:
+                        yield key, entity, value, sort_key, None
+
+        with self.states.relation(session, parent_id, scope=definition.scope if addresses is None else None, addresses=addresses, cursor=cursor) as relation:
+            # One parent scan feeds native inline extraction and external routing.
+            # Only the small ContentRef crosses Python for external values.
+            source = relation.project(
+                "member_key, occurrence_id, "
+                "CASE WHEN json_extract_string(decode(occurrence_record), '/value/kind') = 'content' "
+                "THEN 'null' ELSE json_extract(decode(occurrence_record), '/value/value')::VARCHAR END AS payload, "
+                "CASE WHEN json_extract_string(decode(occurrence_record), '/value/kind') = 'content' "
+                "THEN json_extract(decode(occurrence_record), '/value')::VARCHAR END AS external_content")
+            with closing(extracted_rows(source, fields=fields, sort_fields=sort_fields, passthrough=("external_content",))) as rows:
+                for key, entity, value, sort_key, external in rows:
+                    if external is None:
+                        yield key, entity, value, sort_key, None
+                        continue
+                    content = msgspec.convert(msgspec.json.decode(external), type=core.ContentRef, strict=True)
+                    if content.codec == "bytes-v1":
+                        if fields is not None or sort_fields:
+                            raise IntegrityError("JSON fields require JSON values, not opaque bytes")
                         session.blobs.stat(BlobRef(content.locator, content.digest, content.byte_size, content.media_type))
                         yield key, entity, ["opaque", content.codec, content.digest, content.byte_size], "[]", record_value(content, core.ContentRef)
+                    else:
+                        payload = _content_bytes(session, content)
+                        row_size = _member_size((key, entity, payload))
+                        if row_size > BATCH_BYTES:
+                            raise LimitExceededError("external selected input exceeds the batch byte limit")
+                        if pending and (len(pending) == BATCH_ROWS or size + row_size > BATCH_BYTES):
+                            yield from external_values()
+                            pending, size = [], 0
+                        pending.append({"member_key": key, "occurrence_id": entity, "payload": payload.decode("utf-8")})
+                        size += row_size
+                if pending:
+                    yield from external_values()
 
-    def _computed_rows(self, session, parent_id, definition):
+    def _computed_rows(self, session, parent_id, definition, *, addresses=None, cursor=None):
         sort_fields, descending = self._sort(session, definition)
         material_entities = definition.member_selector.comparison == "identity"
-        with closing(self._member_values(session, parent_id, definition, sort_fields=sort_fields)) as values:
+        with closing(self._member_values(session, parent_id, definition, sort_fields=sort_fields, addresses=addresses, cursor=cursor)) as values:
             for key, entity, value, sort_key, content in values:
                 comparison = member_bytes(value, member_key=key if definition.material_keys else None,
                                           entity_id=entity if material_entities else None)
@@ -127,27 +149,26 @@ class CoreSelectionStorage:
 
     def _remember(self, session, parent_id, definition, plan):
         key = parent_id, _selector_key(definition)
-        session.member_selections.pop(key, None)
-        size = plan.byte_size
-        if size > BATCH_BYTES:
-            return
-        while session.member_selections and (len(session.member_selections) >= BATCH_ROWS or
-                sum(value.byte_size for value in session.member_selections.values()) + size > BATCH_BYTES):
-            session.member_selections.pop(next(iter(session.member_selections)))
+        previous = session.member_selections.pop(key, None)
+        if previous is not None and previous is not plan:
+            previous.close()
+        # Bound native resource owners, never the number/bytes of changed rows.
+        while len(session.member_selections) >= 32:
+            session.member_selections.pop(next(iter(session.member_selections))).close()
         session.member_selections[key] = plan
 
     def _certified(self, session, parent_id, definition):
+        if getattr(session.ledger, "read_only", False):
+            return None
         label = _selector_key(definition)
         cached = session.member_selections.get((parent_id, label))
         if cached is not None:
             row = next(session.read_records([("selected_value", cached.selected.selected_value_id)]))[0]
             if row is not None and row.retained and row.available:
                 return cached
-            session.member_selections.pop((parent_id, label), None)
+            session.member_selections.pop((parent_id, label)).close()
         # Export admission cannot treat links supplied in an external snapshot
         # as evidence that this process's evaluator computed a parent value.
-        if getattr(session.ledger, "read_only", False):
-            return None
         for links in session.read_links([("state", parent_id)]):
             keys = [link.target for link in links if link.relation == _COMPUTED and link.label == label]
             for batch in session.read_records(keys):
@@ -160,8 +181,7 @@ class CoreSelectionStorage:
                             or not isinstance(selected.value, core.ContentRef) or selected.member_origins != selected.value):
                         raise IntegrityError("computed selection certificate differs from its retained record")
                     manifest = self._manifest(session, selected)
-                    plan = _Members(selected, self.records.available(self._reference(manifest)), {},
-                                    len(canonical_value_bytes(record_value(selected))))
+                    plan = _Members(selected, self.records.available(self._reference(manifest)), self._manifest_evidence(manifest))
                     self._remember(session, parent_id, definition, plan)
                     return plan
         return None
@@ -185,32 +205,15 @@ class CoreSelectionStorage:
                             return revision.value.base_state_id
         return None
 
-    def _changed_members(self, session, parent_id, definition, plan):
-        membership = self.states.layers(session, parent_id)["membership"]
-        tables = {"changes": self._changes(plan)}
-        if definition.scope is not None:
-            tables["wanted"] = pa.table({"wanted_key": pa.array(definition.scope, type=pa.string())})
-        with self.records.relations({"membership": membership, "selected": plan.layer}, tables=tables) as relations:
-            current = relations["membership"].project(
-                "record_identity AS current_key, json_extract_string(decode(record_json), '/occurrence_id') AS current_id")
-            if definition.scope is not None:
-                current = current.join(relations["wanted"], "current_key = wanted_key", how="semi")
-            prior = self._member_relation(relations, plan).project(
-                "record_identity AS prior_key, json_extract_string(decode(record_json), '/occurrence_id') AS prior_id")
-            changed = prior.join(current, "prior_key = current_key", how="outer").filter("prior_id IS DISTINCT FROM current_id")
-            return [row[0] for row in changed.project("coalesce(prior_key, current_key) AS member_key").limit(BATCH_ROWS + 1).fetchall()]
-
     def _members(self, session, parent_id, definition):
-        """Use certified values and compare actual compact member addresses.
-
-        Revision metadata locates a retained candidate; it is not proof that
-        its advertised edits are complete. Immutable occurrence IDs establish
-        unchanged values only after a native diff of the actual memberships.
-        No retained bytes or metadata are written by this evaluation path.
+        """Diff actual addresses against a certified retained base, then evaluate
+        only changed values. Temporary tables may spill; batch limits never
+        turn a large delta into a second full evaluation. Revision metadata
+        locates candidates and cannot certify advertised edits.
         """
         _record(session, ("state", parent_id))
         current, seen = parent_id, set()
-        while current is not None and len(seen) < BATCH_ROWS:
+        while current is not None:
             if current in seen:
                 raise IntegrityError("computed selection revision history contains a cycle")
             seen.add(current)
@@ -220,69 +223,114 @@ class CoreSelectionStorage:
             current = self._base_state(session, current)
         else:
             return None
-        if plan.selected.origin.parent_entity_id == parent_id and not plan.changes:
+        if current == parent_id:
             return plan
-        changed = self._changed_members(session, parent_id, definition, plan)
-        if len(changed) > BATCH_ROWS or len(set(changed) | plan.changes.keys()) > BATCH_ROWS:
-            return None
-        if not changed:
-            self._remember(session, parent_id, definition, plan)
-            return plan
-        updates = dict(plan.changes)
-        scoped = msgspec.structs.replace(definition, scope=tuple(sorted(changed)))
-        size = plan.byte_size
-        with closing(self._computed_rows(session, parent_id, scoped)) as rows:
-            for row in rows:
-                key, entity = row[:2]
-                payload = None if entity is None and definition.scope is None else _member_record(*row)
-                previous = updates.get(key)
-                size += (len(payload) if payload is not None else 0) - (len(previous) if previous is not None else 0)
-                if key not in updates:
-                    size += len(key.encode()) + 16
-                if size > BATCH_BYTES:
-                    return None
-                updates[key] = payload
-        result = _Members(plan.selected, plan.layer, updates, plan.metadata_bytes)
-        self._remember(session, parent_id, definition, result)
-        return result
+        owner = ExitStack()
+        try:
+            cursor = owner.enter_context(self.records._cursor())
+            membership = self.states.layers(session, parent_id)["membership"]
+            certified_keys = self.states.changed_keys(session, parent_id, plan.selected.origin.parent_entity_id, cursor)
+            tables = {} if definition.scope is None else {"wanted": pa.table({"wanted_key": pa.array(definition.scope, type=pa.string())})}
+            identities = None if definition.scope is None else {"membership": list(definition.scope), "selected": list(definition.scope)}
+            with self.records.relations({"membership": membership, "selected": plan.layer}, tables=tables,
+                                        identities=identities, cursor=cursor) as relations:
+                current_rows = relations["membership"].project("record_identity AS current_key, json_extract_string(decode(record_json), '/occurrence_id') AS current_id")
+                if definition.scope is not None:
+                    current_rows = current_rows.join(relations["wanted"], "current_key = wanted_key", how="semi")
+                prior = relations["selected"].project("record_identity AS prior_key, occurrence_id AS prior_id")
+                if certified_keys is not None:
+                    current_rows = current_rows.join(certified_keys, "current_key = changed_key", how="semi")
+                    prior = prior.join(certified_keys, "prior_key = changed_key", how="semi")
+                delta = prior.join(current_rows, "prior_key = current_key", how="outer").filter("prior_id IS DISTINCT FROM current_id")
+                delta.project("coalesce(prior_key, current_key) AS wanted_key").create_view("selection_delta_input")
+                cursor.execute("CREATE TEMP TABLE selection_delta AS SELECT * FROM selection_delta_input")
+            addresses = cursor.table("selection_delta")
+            def rows():
+                with closing(self._computed_rows(session, parent_id, definition, addresses=addresses, cursor=cursor)) as values:
+                    for row in values:
+                        key, entity = row[:2]
+                        yield (key, key, None, None, None, None) if entity is None and definition.scope is None else _member_record(*row)
+            output_cursor = owner.enter_context(self.records._cursor())
+            batches = encoded_batches(rows(), _ROWS, byte_column=tuple(range(len(_ROWS))))
+            with closing(batches), closing(pa.RecordBatchReader.from_batches(_ROWS, batches)) as source:
+                output_cursor.register("selection_updates", source.__arrow_c_stream__())
+                output_cursor.execute("CREATE TEMP TABLE selection_changes AS SELECT * FROM selection_updates")
+                output_cursor.unregister("selection_updates")
+            cursor.execute("DROP VIEW selection_delta_input")
+            cursor.execute("DROP TABLE selection_delta")
+            cursor.close()
+            result = _Members(plan.selected, plan.layer, plan.evidence, owner, output_cursor, output_cursor.table("selection_changes"))
+            # Always diff the retained base directly: intermediate edits that
+            # revert disappear without a growing Python overlay/history.
+            self._remember(session, parent_id, definition, result)
+            return result
+        except BaseException:
+            owner.close()
+            raise
 
-    def _member_relation(self, relations, plan):
-        original = relations["selected"].project("record_identity, partition_value, record_json")
-        if not plan.changes:
+    def _member_relation(self, original, plan):
+        original = original.project(_ROW_COLUMNS)
+        if plan.changes is None:
             return original
-        changes = relations["changes"]
-        kept = original.join(changes.project("member_key"), "record_identity = member_key", how="anti")
-        added = changes.filter("payload IS NOT NULL").project(
-            "member_key AS record_identity, member_key AS partition_value, payload AS record_json")
-        return kept.union(added)
+        kept = original.join(plan.changes.project("record_identity AS change_key"), "record_identity = change_key", how="anti")
+        return kept.union(plan.changes.filter("record_json IS NOT NULL").project(_ROW_COLUMNS))
 
-    @staticmethod
-    def _changes(plan):
-        return pa.Table.from_arrays([pa.array(list(plan.changes), type=pa.string()),
-                                     pa.array(list(plan.changes.values()), type=pa.binary())], schema=_DELTA)
+    def _plan_evidence(self, session, definition, plan):
+        if plan.resolved_evidence is not None:
+            return plan.resolved_evidence
+        if plan.changes is None:
+            return plan.evidence
+        with self.records.relations({"selected": plan.layer}, cursor=plan.cursor) as relations:
+            old = relations["selected"].join(plan.changes.project("record_identity AS change_key"), "record_identity = change_key", how="semi")
+            new = plan.changes.filter("record_json IS NOT NULL")
+            if definition.sort_rule is None:
+                delta = old.project("record_json AS encoded, -1::BIGINT AS weight").union(new.project("record_json AS encoded, 1::BIGINT AS weight"))
+                differs = delta.aggregate("encoded, sum(weight) AS balance").filter("balance != 0").limit(1).fetchone()
+            else:
+                # Sufficient proof only: unchanged bytes and ordering tokens.
+                before = old.project("record_identity AS old_key, record_json AS old_bytes, sort_key AS old_sort")
+                after = new.project("record_identity AS new_key, record_json AS new_bytes, sort_key AS new_sort")
+                differs = before.join(after, "old_key = new_key", how="outer").filter(
+                    "old_key IS DISTINCT FROM new_key OR old_bytes IS DISTINCT FROM new_bytes OR old_sort IS DISTINCT FROM new_sort").limit(1).fetchone()
+            if not differs:
+                plan.resolved_evidence = plan.evidence
+                return plan.evidence
+            _, descending = self._sort(session, definition)
+            with closing(self._comparison_rows(self._member_relation(relations["selected"], plan),
+                    ordered=definition.sort_rule is not None, descending=descending)) as rows:
+                plan.resolved_evidence = member_stream_evidence((encoded for _, _, encoded in rows), ordered=definition.sort_rule is not None)
+                return plan.resolved_evidence
 
     def _write_members(self, session, parent_id, definition):
         _, descending = self._sort(session, definition)
         plan = self._members(session, parent_id, definition)
         if plan is not None:
+            evidence = self._plan_evidence(session, definition, plan)
             admitted = plan.layer
-            if plan.changes:
-                touched = frozenset(partition_bucket(key, admitted.partition_policy.bucket_count) for key in plan.changes)
-                with self.records.relations({"selected": admitted}, partitions={"selected": touched},
-                                            tables={"changes": self._changes(plan)}) as relations:
-                    output = self._member_relation(relations, plan).order("record_identity")
-                    with closing(output.to_arrow_reader(256)) as rows:
-                        admitted = self.records.retain_batches(rows, layer_kind="core-selected-members", schema=_SCHEMA,
-                            partition_policy=admitted.partition_policy, base=admitted, replace_partitions=touched)
+            if plan.changes is not None:
+                # Bounded key batches build only the small physical bucket set.
+                with closing(plan.changes.project("record_identity").to_arrow_reader(BATCH_ROWS)) as keys:
+                    touched = frozenset(partition_bucket(key, admitted.partition_policy.bucket_count)
+                        for batch in keys for key in batch.column(0).to_pylist())
+                if touched:
+                    with self.records.relations({"selected": admitted}, partitions={"selected": touched}, cursor=plan.cursor) as relations:
+                        output = self._member_relation(relations["selected"], plan).order("record_identity")
+                        with closing(output.to_arrow_reader(256)) as rows:
+                            admitted = self.records.retain_batches(rows, layer_kind="core-selected-members", schema=_SCHEMA,
+                                partition_policy=admitted.partition_policy, base=admitted, replace_partitions=touched)
         else:
             def rows():
                 with closing(self._computed_rows(session, parent_id, definition)) as values:
                     for row in values:
-                        yield row[0], row[0], _member_record(*row)
-            admitted = self.records.retain_batches(encoded_batches(rows(), ENCODED_RECORD_SCHEMA, byte_column=2),
+                        yield _member_record(*row)
+            admitted = self.records.retain_batches(encoded_batches(rows(), _ROWS, byte_column=tuple(range(len(_ROWS)))),
                                                    layer_kind="core-selected-members", schema=_SCHEMA, partition_policy=_POLICY, ordered=False)
-        manifest = {"format": "docspec-selected-members", "version": 1, "layer": admitted.reference.to_dict(),
+        manifest = {"format": "docspec-selected-members", "version": 3, "layer": admitted.reference.to_dict(),
                     "ordered": definition.sort_rule is not None, "descending": descending}
+        if plan is None:
+            with closing(self._ordered_rows(manifest, reference=admitted.reference)) as rows:
+                evidence = member_stream_evidence((encoded for _, _, encoded in rows), ordered=manifest["ordered"])
+        manifest["evidence"] = record_value(evidence, core.ComparisonEvidence)
         return manifest, admitted
 
     def _recover_rows(self, session, parent_id, definition):
@@ -290,12 +338,12 @@ class CoreSelectionStorage:
         _, descending = self._sort(session, definition)
         schema = pa.schema([("member_key", pa.string()), ("occurrence_id", pa.string()), ("encoded", pa.binary()), ("sort_key", pa.string())])
         with closing(self._computed_rows(session, parent_id, definition)) as values:
-            batches = encoded_batches((row[:4] for row in values), schema, byte_column=2)
+            batches = encoded_batches((row[:4] for row in values), schema, byte_column=(0, 1, 2, 3))
             with closing(batches), closing(pa.RecordBatchReader.from_batches(schema, batches)) as source, self.records._cursor() as cursor:
                 cursor.register("computed", source.__arrow_c_stream__())
                 order = self._ordering(definition.sort_rule is not None, descending)
                 with closing(cursor.sql(f"SELECT member_key, occurrence_id, encoded FROM computed ORDER BY {order}").to_arrow_reader(256)) as reader:
-                    for batch in reader:
+                    for batch in bounded_batches(reader, byte_column=("member_key", "occurrence_id", "encoded")):
                         yield from zip(*(column.to_pylist() for column in batch.columns), strict=True)
 
     @staticmethod
@@ -304,28 +352,32 @@ class CoreSelectionStorage:
 
     def _comparison_rows(self, relation, *, ordered, descending):
         rows = relation.project(
-            "record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id, "
-            "encode(json_extract_string(decode(record_json), '/comparison_json')) AS encoded, "
-            "json_extract_string(decode(record_json), '/sort_key') AS sort_key")
+            "record_identity AS member_key, occurrence_id, record_json AS encoded, sort_key")
         with closing(rows.order(self._ordering(ordered, descending)).project("member_key, occurrence_id, encoded").to_arrow_reader(256)) as reader:
-            for batch in reader:
+            for batch in bounded_batches(reader, byte_column=("member_key", "occurrence_id", "encoded")):
                 yield from zip(*(column.to_pylist() for column in batch.columns), strict=True)
 
-    def _ordered_rows(self, manifest):
-        with self.records.relations({"selected": self._reference(manifest)}) as relations:
+    def _ordered_rows(self, manifest, *, reference=None):
+        with self.records.relations({"selected": reference or self._reference(manifest)}) as relations:
             yield from self._comparison_rows(relations["selected"], ordered=manifest["ordered"], descending=manifest["descending"])
 
-    def _planned_rows(self, session, definition, plan):
-        _, descending = self._sort(session, definition)
-        with self.records.relations({"selected": plan.layer}, tables={"changes": self._changes(plan)}) as relations:
-            yield from self._comparison_rows(self._member_relation(relations, plan),
-                                            ordered=definition.sort_rule is not None, descending=descending)
+    @staticmethod
+    def _manifest_evidence(manifest):
+        try:
+            evidence = msgspec.convert(manifest["evidence"], type=core.ComparisonEvidence, strict=True)
+            record_value(evidence, core.ComparisonEvidence)
+            if evidence.codec != "members-v1" or evidence.entity_id is not None:
+                raise ValueError("invalid member evidence")
+            return evidence
+        except (KeyError, ValueError, TypeError) as error:
+            raise IntegrityError("invalid selected-member evidence") from error
 
     def _reference(self, manifest):
-        if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "layer", "ordered", "descending"}
-                or manifest["format"] != "docspec-selected-members" or type(manifest["version"]) is not int or manifest["version"] != 1
+        if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "layer", "ordered", "descending", "evidence"}
+                or manifest["format"] != "docspec-selected-members" or type(manifest["version"]) is not int or manifest["version"] != 3
                 or type(manifest["ordered"]) is not bool or type(manifest["descending"]) is not bool):
             raise IntegrityError("invalid selected-member manifest")
+        self._manifest_evidence(manifest)
         reference = LayerRef.from_dict(manifest["layer"])
         if reference.layer_kind != "core-selected-members" or self.records.schema(reference) != _SCHEMA:
             raise IntegrityError("invalid selected-member layer")
@@ -343,6 +395,10 @@ class CoreSelectionStorage:
                 self.records.available(reference)
             else:
                 self._admit_rows(self.records.admit(reference), selected.definition)
+                with closing(self._ordered_rows(manifest)) as rows:
+                    evidence = member_stream_evidence((encoded for _, _, encoded in rows), ordered=manifest["ordered"])
+                if evidence != self._manifest_evidence(manifest):
+                    raise IntegrityError("selected-member evidence differs from its retained rows")
             session.ready_selections[content.digest] = manifest
         _, descending = self._sort(session, selected.definition)
         if manifest["ordered"] != (selected.definition.sort_rule is not None) or manifest["descending"] != descending:
@@ -355,18 +411,17 @@ class CoreSelectionStorage:
         wanted = None if definition.scope is None else set(definition.scope)
         with closing(admitted.batches()) as batches:
             for batch in batches:
-                for payload in batch.column("record_json").to_pylist():
-                    row = decode_canonical_json_value(payload, label="selected-member row")
-                    key, entity = row["member_key"], row["occurrence_id"]
-                    if not isinstance(key, str) or (entity is not None and (not isinstance(entity, str) or not entity)):
+                for row in batch.to_pylist():
+                    key, entity = row["record_identity"], row["occurrence_id"]
+                    if not isinstance(key, str) or row["partition_value"] != key or (entity is not None and (not isinstance(entity, str) or not entity)):
                         raise IntegrityError("invalid selected-member origin")
-                    if not isinstance(row["comparison_json"], str) or not isinstance(row["sort_key"], str):
-                        raise IntegrityError("selected-member encodings must be canonical JSON strings")
+                    if not isinstance(row["record_json"], bytes) or not isinstance(row["sort_key"], str):
+                        raise IntegrityError("selected-member encodings must be canonical bytes and sort keys")
                     if wanted is not None:
                         if key not in wanted:
                             raise IntegrityError("selected-member rows differ from their named scope")
                         wanted.remove(key)
-                    encoded = row["comparison_json"].encode("utf-8")
+                    encoded = row["record_json"]
                     value = decode_canonical_json_value(encoded, label="selected-member comparison")
                     if entity is None:
                         selected = ABSENT
@@ -387,7 +442,7 @@ class CoreSelectionStorage:
                     if opaque != (row["content"] is not None):
                         raise IntegrityError("opaque selection requires its recoverable content reference")
                     if opaque:
-                        content = record_value(row["content"], core.ContentRef)
+                        content = record_value(decode_canonical_json_value(row["content"], label="selected content reference"), core.ContentRef)
                         if selected != ["opaque", content["codec"], content["digest"], content["byte_size"]]:
                             raise IntegrityError("opaque selection differs from its retained bytes")
                     sort_key = decode_canonical_json_value(row["sort_key"].encode(), label="selected-member sort key")
@@ -439,13 +494,13 @@ class CoreSelectionStorage:
         if computed:
             payload = canonical_value_bytes(record_value(selected))
             link = MetadataLink(("state", origin.parent_entity_id), _COMPUTED, _selector_key(definition), key)
-            session.computed_selections[key] = payload, link
+            session.computed_records[key] = payload, link
         try:
             session.publish(MetadataBatch(unit_id or selected_value_id + ":retain", records=(selected,), retained=(key,)))
         finally:
-            session.computed_selections.pop(key, None)
+            session.computed_records.pop(key, None)
         if computed:
-            self._remember(session, origin.parent_entity_id, definition, _Members(selected, admitted, {}, len(payload)))
+            self._remember(session, origin.parent_entity_id, definition, _Members(selected, admitted, self._manifest_evidence(manifest)))
         return selected
 
     def rows(self, session, selected):
@@ -471,21 +526,26 @@ class CoreSelectionStorage:
             if selected.member_origins != selected.value:
                 raise IntegrityError("direct selected members require their complete retained origins")
             reference = self._reference(manifest)
-            with self.records.relations({"rows": reference}) as relations:
-                contents = relations["rows"].filter("json_type(decode(record_json), '/content') != 'NULL'").project("json_extract(decode(record_json), '/content')::VARCHAR AS content")
-                with closing(contents.to_arrow_reader(256)) as reader:
-                    for batch in reader:
-                        for payload in batch.column(0).to_pylist():
-                            # Content references are records, never new values
-                            # extracted from the user's opaque bytes.
-                            content = msgspec.convert(msgspec.json.decode(payload), type=core.ContentRef, strict=True)
-                            session.check_content(content, retained=retained)
+            with closing(self.content_references(reference)) as contents:
+                for content in contents:
+                    session.check_content(content, retained=retained)
         elif isinstance(selected.value, core.FromParent) and not retained:
             self._single(session, selected.definition, selected.origin.parent_entity_id)
+
+    def content_references(self, reference):
+        """Stream distinct retained blob obligations for publication and cleanup."""
+        with self.records.relations({"rows": reference}) as relations:
+            contents = relations["rows"].filter("content IS NOT NULL").project("content").distinct()
+            with closing(contents.to_arrow_reader(256)) as reader:
+                for batch in bounded_batches(reader, byte_column="content"):
+                    for payload in batch.column(0).to_pylist():
+                        yield msgspec.convert(msgspec.json.decode(payload), type=core.ContentRef, strict=True)
 
     def evidence(self, session, selected):
         session._active()
         if isinstance(selected.definition, core.StateMembers):
+            if not isinstance(selected.value, core.FromParent):
+                return self._manifest_evidence(self._manifest(session, selected))
             with closing(self.rows(session, selected)) as rows:
                 return member_stream_evidence((encoded for _, _, encoded in rows), ordered=selected.definition.sort_rule is not None)
         value = self._value_reference(session, selected)
@@ -528,8 +588,7 @@ class CoreSelectionStorage:
         else:
             if guard is not None:
                 guard([("selected_value", plan.selected.selected_value_id)])
-            with closing(self._planned_rows(session, selector, plan)) as rows:
-                evidence = member_stream_evidence((encoded for _, _, encoded in rows), ordered=selector.sort_rule is not None)
+            evidence = self._plan_evidence(session, selector, plan)
         if identity_selector is not None:
             return identity_selector, json_evidence([evidence.codec, evidence.digest, evidence.byte_size], entity_id=parent_id)
         return selector, evidence
@@ -553,7 +612,6 @@ class CoreSelectionStorage:
         if isinstance(value, core.InlineValue):
             payload = canonical_value_bytes(value.value)
             if max_bytes is not None and len(payload) > max_bytes:
-                from docspec.errors import LimitExceededError
                 raise LimitExceededError("selected value exceeds the requested byte limit")
             yield payload
         else:

@@ -10,12 +10,11 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
 from docspec.domain.core_admission import AdmittedRecord, admit_record, encode_record, record_value
-from docspec.domain.core_encoding import membership_digester
-from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
+from docspec.domain.identity import canonical_value_bytes, sha256_digest, decode_canonical_json_value
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
 from docspec.errors import IntegrityError, LimitExceededError
-from docspec.ports.core_ledger import MetadataBatch
+from docspec.ports.core_ledger import MetadataBatch, MetadataLink
 from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 
@@ -24,7 +23,6 @@ _MEMBERS = RecordSchema("core-membership:1", ("kind", *core.Membership.__struct_
 _SCHEMAS = {"entities": _ENTITIES, "membership": _MEMBERS}
 _POLICY = PartitionPolicy("core-key-buckets:1", 64)
 _ENTITY_POLICY = PartitionPolicy("core-value-shards:1", 8)
-_ENTITY_SHARD_BYTES = 384 * 1024
 _READY_STATE_LIMIT = 4
 
 
@@ -99,7 +97,6 @@ class CoreStateStorage:
             entity_layer = self.records.retain_batches(
                 encoded_batches(_entity_rows(entity_source, session.generated_row), ENCODED_RECORD_SCHEMA, byte_column=2), layer_kind="core-entities",
                 schema=_ENTITIES, partition_policy=_ENTITY_POLICY, ordered=False,
-                target_member_bytes=min(_ENTITY_SHARD_BYTES, self.records.max_member_bytes // 2),
             )
             def member_rows():
                 for member in member_source:
@@ -121,8 +118,8 @@ class CoreStateStorage:
 
     def _state_content(self, session, entities, members):
         """Retain a state after its caller establishes complete membership."""
-        manifest = {"format": "docspec-core-state", "version": 1, "entities": entities.reference.to_dict(),
-                    "membership": members.reference.to_dict(), "membership_digest": self._membership_digest(members)}
+        manifest = {"format": "docspec-core-state", "version": 2, "entities": entities.reference.to_dict(),
+                    "membership": members.reference.to_dict()}
         content = session.retain_value(manifest)
         self._remember(session, content.digest, manifest)
         return content
@@ -137,33 +134,36 @@ class CoreStateStorage:
             session.ready_states.pop(next(iter(session.ready_states)))
 
     def _retain_entities(self, session, admitted, *, publish=True):
-        with closing(admitted.batches()) as batches:
-            for index, batch in enumerate(batches):
-                records = tuple(AdmittedRecord(payload) for payload in batch.column("record_json").to_pylist())
-                values = tuple(record.value for record in records)
-                if any(value["kind"] != "entity" or value["entity_type"] != "occurrence" for value in values):
-                    raise IntegrityError("root values must be occurrence entities")
-                if not publish:
-                    for value in values:
+        def entities():
+            with closing(admitted.batches()) as batches:
+                for batch in batches:
+                    for payload in batch.column("record_json").to_pylist():
+                        record = AdmittedRecord(payload)
+                        value = record.value
+                        if value["kind"] != "entity" or value["entity_type"] != "occurrence":
+                            raise IntegrityError("root values must be occurrence entities")
+                        if publish:
+                            # The ledger receipt repeats the identity twice and
+                            # adds its digest and framing. Reserve that space;
+                            # keep the admitted entity bytes unchanged.
+                            # A near-limit singleton still reaches the ledger's
+                            # exact framing check; this estimate only groups rows.
+                            size = min(BATCH_BYTES, len(payload) + 2 * len(canonical_value_bytes(value["entity_id"])) + 160)
+                            yield record, value["entity_id"], size
+                            continue
                         if value["value"]["kind"] == "content":
                             session.check_content(value["value"])
-                    continue
+
+        with closing(bounded_rows(entities(), size=lambda row: row[2])) as groups:
+            for index, group in enumerate(groups):
                 session.publish(MetadataBatch(
-                    f"{admitted.reference.layer_id}:entities:{index}", records=records,
-                    retained=tuple(("entity", value["entity_id"]) for value in values), record_layer=admitted.reference,
+                    f"{admitted.reference.layer_id}:entities:{index}", records=tuple(row[0] for row in group),
+                    retained=tuple(("entity", row[1]) for row in group), record_layer=admitted.reference,
                 ))
 
-    @staticmethod
-    def _membership_digest(admitted):
-        digest = membership_digester()
-        with closing(admitted.batches()) as batches:
-            for batch in batches:
-                digest.accept_admitted_batch(batch.column("record_json").to_pylist())
-        return digest.finish()
-
     def _references(self, manifest):
-        if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership", "membership_digest"}
-                or manifest["format"] != "docspec-core-state" or type(manifest["version"]) is not int or manifest["version"] != 1):
+        if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership"}
+                or manifest["format"] != "docspec-core-state" or type(manifest["version"]) is not int or manifest["version"] != 2):
             raise IntegrityError("invalid Core state storage manifest")
         try:
             references = {name: LayerRef.from_dict(manifest[name]) for name in ("entities", "membership")}
@@ -203,11 +203,33 @@ class CoreStateStorage:
             layers = self._layers(manifest, retained=retained)
             if not retained:
                 self._match_members(layers)
-                if self._membership_digest(layers["membership"]) != manifest["membership_digest"]:
-                    raise IntegrityError("state membership digest differs from its retained rows")
                 self._retain_entities(session, layers["entities"], publish=publish_entities)
             self._remember(session, content["digest"], manifest)
-        return manifest["membership_digest"]
+        return self._references(manifest)["membership"]
+
+    def same_membership(self, session, left, right):
+        """Compare another representation exactly, only at admission.
+
+        Inputs are small inline memberships or admitted bulk references. Equal
+        physical roots and compaction's exact proof avoid another row scan.
+        """
+        if left == right:
+            return True
+        if isinstance(left, LayerRef) and isinstance(right, LayerRef):
+            if tuple(sorted((left.digest, right.digest))) in session.membership_equivalence:
+                return True
+        references, tables = {}, {}
+        for name, value in (("left_members", left), ("right_members", right)):
+            if isinstance(value, LayerRef):
+                references[name] = value
+            else:
+                tables[name] = pa.table({"record_identity": pa.array([row["member_key"] for row in value], type=pa.string()),
+                    "record_json": pa.array([canonical_value_bytes(row) for row in value], type=pa.binary())})
+        with self.records.relations(references, tables=tables) as relations:
+            before = relations["left_members"].project("record_identity AS old_key, record_json AS old_value")
+            after = relations["right_members"].project("record_identity AS new_key, record_json AS new_value")
+            return not before.join(after, "old_key = new_key", how="outer").filter(
+                "old_key IS NULL OR new_key IS NULL OR old_value IS DISTINCT FROM new_value").limit(1).fetchone()
 
     def representation(self, session, state_id):
         """Find the available bulk representation within publication protection."""
@@ -257,12 +279,12 @@ class CoreStateStorage:
             entities = relations["entities"].join(used, "record_identity = used_id").order("first_key, record_identity").project("record_identity, partition_value, record_json")
             with closing(entities.to_arrow_reader(256)) as reader:
                 values = self.records.retain_batches(reader, layer_kind="core-entities", schema=_ENTITIES,
-                                                     partition_policy=_ENTITY_POLICY, ordered=False,
-                                                     target_member_bytes=min(_ENTITY_SHARD_BYTES, self.records.max_member_bytes // 2))
+                                                     partition_policy=_ENTITY_POLICY, ordered=False)
         self._match_members({"entities": values, "membership": members})
         content = self._state_content(session, values, members)
-        if session.ready_states[content.digest]["membership_digest"] != manifest["membership_digest"]:
-            raise IntegrityError("checkpoint changed logical membership")
+        # compact() already compared exact canonical rows. Transfer that scoped
+        # proof to publication instead of hashing/comparing membership again.
+        session.membership_equivalence.add(tuple(sorted((members.reference.digest, references["membership"].reference.digest))))
         # This same metadata path compares every immutable occurrence digest
         # before updating its physical location. No generation is asserted.
         self._retain_entities(session, values)
@@ -272,7 +294,7 @@ class CoreStateStorage:
         return result
 
     @contextmanager
-    def relation(self, session, state_id, *, scope=None):
+    def relation(self, session, state_id, *, scope=None, addresses=None, cursor=None):
         """Recover unordered keyed values within the caller's protection scope."""
         tables, partitions = {}, None
         if scope is not None:
@@ -280,6 +302,21 @@ class CoreStateStorage:
             record_value(core.StateMembers(member_selector=core.Whole(), scope=scope), core.Selector)
             tables["wanted"] = pa.table({"wanted_key": pa.array(scope, type=pa.string())})
         references = self.layers(session, state_id)
+        if addresses is not None:
+            if scope is not None or cursor is None:
+                raise ValueError("native addresses require their owning cursor and no named scope")
+            with self.records.relations(references, cursor=cursor) as relations:
+                members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
+                members = addresses.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
+                # Materialize compact addresses once before the payload join.
+                members.create_view("selection_address_input")
+                cursor.execute("CREATE TEMP TABLE selection_addresses AS SELECT * FROM selection_address_input")
+                try:
+                    yield self._keyed_rows(cursor.table("selection_addresses"), relations["entities"])
+                finally:
+                    cursor.execute("DROP TABLE selection_addresses")
+                    cursor.execute("DROP VIEW selection_address_input")
+            return
         if scope is not None:
             bucket_count = references["membership"].partition_policy.bucket_count
             partitions = {"membership": frozenset(partition_bucket(key, bucket_count) for key in scope)}
@@ -428,8 +465,59 @@ class CoreStateStorage:
         # or inserts checked IDs; the union contains both sources. This proves
         # completeness without joining all unchanged members again.
         content = self._state_content(session, entities, members)
-        return core.StateRepresentation(format_version=1, representation_id=representation_id, state_id=revision.result_state_id,
-                                        membership=content, revision_id=revision.revision_id)
+        representation = core.StateRepresentation(format_version=1, representation_id=representation_id, state_id=revision.result_state_id,
+                                                   membership=content, revision_id=revision.revision_id)
+        key = "state_representation", representation_id
+        session.computed_records[key] = (encode_record(representation), MetadataLink(
+            ("state", revision.result_state_id), "resolved_revision", sha256_digest(encode_record(revision)), key))
+        return representation
+
+    def changed_keys(self, session, state_id, base_id, cursor):
+        """Locate certified edit keys without scanning complete memberships.
+
+        Only publisher-created resolver links certify completeness. Their exact
+        revision digest and immutable result bind the proof. The caller still
+        diffs old/new addresses at these keys to discard canceled edits. Missing
+        history and external ledgers fall back to a complete native comparison.
+        """
+        if getattr(session.ledger, "read_only", False):
+            return None
+        cursor.execute("CREATE TEMP TABLE revision_keys (changed_key VARCHAR)")
+        seen = set()
+        while state_id != base_id:
+            if state_id in seen:
+                raise IntegrityError("resolved revision history contains a cycle")
+            seen.add(state_id)
+            certified = None
+            for links in session.read_links([("state", state_id)]):
+                for link in links:
+                    if link.relation != "resolved_revision":
+                        continue
+                    row = next(session.read_records([link.target]))[0]
+                    if row is None or not row.retained or not row.available or not isinstance(row.value, core.StateRepresentation):
+                        continue
+                    representation = row.value
+                    if representation.state_id != state_id or representation.revision_id is None:
+                        raise IntegrityError("resolved revision certificate names another state")
+                    row = next(session.read_records([("revision", representation.revision_id)]))[0]
+                    if row is None or not row.retained or not row.available:
+                        continue
+                    revision = row.value
+                    if not isinstance(revision, core.Revision) or sha256_digest(encode_record(revision)) != link.label or revision.result_state_id != state_id:
+                        raise IntegrityError("resolved revision certificate differs from its revision")
+                    certified = revision
+                    break
+                if certified is not None:
+                    break
+            if certified is None:
+                cursor.execute("DROP TABLE revision_keys")
+                return None
+            keys = pa.table({"changed_key": pa.array([edit.member_key for edit in self._edits(session, certified)], type=pa.string())})
+            cursor.register("revision_key_input", keys)
+            cursor.execute("INSERT INTO revision_keys SELECT DISTINCT changed_key FROM revision_key_input")
+            cursor.unregister("revision_key_input")
+            state_id = certified.base_state_id
+        return cursor.table("revision_keys").distinct()
 
     def _check_puts(self, edits, base, delta):
         identities = (edit.occurrence_id for edit in edits if isinstance(edit, core.Put))

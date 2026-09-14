@@ -18,9 +18,8 @@ uv run --frozen python -m examples.offline_demo --output /absolute/new-experimen
 ```
 
 See [contributor setup](CONTRIBUTING.md), the [offline walkthrough](docs/offline-walkthrough.md),
-and the [documentation index](docs/documentation.md). The
-[implementation task list](docs/core-model-implementation-tasks.md) records
-remaining work and qualification; a working example is not a capacity claim.
+and the [documentation index](docs/documentation.md). The example runs locally
+and exercises capture, processing, repair, and reuse without a network service.
 
 ## Current entry points
 
@@ -43,8 +42,15 @@ there is no separate document cache or release ledger.
 
 SQLite stores authoritative metadata and progress. Immutable Parquet stores bulk
 occurrences and state membership; DuckDB handles relational bulk work. The
-content-addressed blob store retains opaque bytes. Shared canonical encoding
+content-addressed blob store retains opaque bytes. Small Parquet row groups
+are packed into larger files. Incremental selections evaluate changed members
+and reuse saved comparison evidence when exact checks establish equal values.
+Shared canonical encoding
 and SHA-256 preserve identity and comparison meaning across these boundaries.
+
+Changed full-state comparisons still require reading the complete comparison
+stream, and revisions rewrite touched membership buckets. See
+[record storage](docs/record-storage.md) for these costs and resource settings.
 
 Python connects the native components and validates control records. Dagster is
 an optional scheduler over the same Core lifecycle; it owns worker management,

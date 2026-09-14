@@ -266,11 +266,50 @@ def test_external_selected_rows_are_admitted_before_successful_retention(tmp_pat
             definition = core.StateMembers(member_selector=fields("/x"))
             good = select(selections, session, "good", definition)
             manifest = selections._manifest(session, good)
-            layer = records.write_layer([{"member_key": "k", "occurrence_id": "e", "comparison_json": comparison, "sort_key": "[]", "content": None}],
+            layer = records.write_layer([{"record_identity": "k", "partition_value": "k", "occurrence_id": "e", "record_json": comparison.encode(), "sort_key": "[]", "content": None}],
                                         layer_kind="core-selected-members", schema=_SCHEMA, partition_policy=_POLICY)
             content = session.retain_value({**manifest, "layer": layer.to_dict()}, media_type=good.value.media_type)
             bad = core.SelectedValue(format_version=1, selected_value_id="bad", definition=definition, origin=good.origin, value=content, member_origins=content)
             with pytest.raises(IntegrityError):
+                session.publish(MetadataBatch("bad", records=(bad,), retained=(("selected_value", "bad"),)))
+            assert next(ledger.read_records([("selected_value", "bad")]))[0] is None
+
+
+def test_selected_bytes_are_native_columns_and_compaction_preserves_them(tmp_path):
+    from docspec.domain.identity import canonical_value_bytes
+    with ExitStack() as stack:
+        records, _, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            value = {"text": 'quote"\\\n\u0000' * 1024, "n": 1, "s": "1"}
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root", entities=[occurrence("e", value)],
+                          members=[core.Membership(member_key=key, occurrence_id="e") for key in ("a", "alias")])
+            selected = select(selections, session, "whole", core.StateMembers(member_selector=core.Whole(), scope=("a", "alias", "missing")))
+            layer = records.admit(selections._reference(selections._manifest(session, selected)))
+            native = [row for batch in layer.batches() for row in batch.to_pylist()]
+            assert {row["record_identity"] for row in native} == {"a", "alias", "missing"}
+            assert native[0]["record_json"] == canonical_value_bytes(["present", ["present", value]])
+            assert native[0]["content"] is None
+            assert "comparison_json" not in native[0]
+            compacted = records.compact(layer)
+            records.verify(compacted.reference)
+            assert list(records.stream(compacted.reference)) == native
+
+
+def test_external_selected_rows_refuse_mismatched_routing(tmp_path):
+    from docspec.adapters.storage.core_selections import _SCHEMA, _POLICY
+    with ExitStack() as stack:
+        records, ledger, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            import_root(states, session, [("k", "e", {"x": 1})])
+            good = select(selections, session, "good", core.StateMembers(member_selector=fields("/x")))
+            manifest = selections._manifest(session, good)
+            row = list(records.stream(selections._reference(manifest)))[0]
+            row["partition_value"] = "different-key"
+            layer = records.write_layer([row], layer_kind="core-selected-members", schema=_SCHEMA, partition_policy=_POLICY)
+            content = session.retain_value({**manifest, "layer": layer.to_dict()}, media_type=good.value.media_type)
+            bad = core.SelectedValue(format_version=1, selected_value_id="bad", definition=good.definition, origin=good.origin,
+                                     value=content, member_origins=content)
+            with pytest.raises(IntegrityError, match="origin"):
                 session.publish(MetadataBatch("bad", records=(bad,), retained=(("selected_value", "bad"),)))
             assert next(ledger.read_records([("selected_value", "bad")]))[0] is None
 

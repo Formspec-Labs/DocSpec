@@ -5,29 +5,36 @@ DuckDB. Bulk state operations use those immutable files directly.
 `RecordStorage` remains the application interface; the local implementation is
 `LocalParquetRecordStorage`.
 
-Record roots use `docspec-record-layer/3.0`. Core state and selection manifests
-reference those layers; logical identities remain distinct from file digests and
+Record roots use `docspec-record-layer/4.0` and the local Parquet profile version 3.
+Core state manifests use version 2; selected-member manifests use version 3.
+They reference those layers; logical identities remain distinct from file digests and
 physical representations. Historical trials retain their original pinned inputs
 and wheels, while current code has one native record implementation.
 
 ## What is stored and queried?
 
-Each Parquet row has three columns:
+Each Parquet row has three required columns:
 
 | Column | Purpose |
 | --- | --- |
 | `record_identity`, string | The logical identity named by the layer's `RecordSchema` |
 | `partition_value`, string | The source or other grouping value named by that schema |
-| `record_json`, binary | The complete canonical JSON record, preserving arbitrary accepted payload fields and values |
+| `record_json`, binary | Canonical record bytes, or canonical comparison bytes for a typed selected-member layer |
 
 Routing columns let DuckDB find one document's rows without Python decoding
-every other document in the same bucket. The writer requests grouping by
-partition value and identity for efficient queries. Public row and batch readers
+every other document in the same bucket. DuckDB sorts by bucket and identity
+before the writer chooses file boundaries. Public row and batch readers
 enforce logical identity order independently of physical row order. Native joins
 leave sorting to the consumer that needs it. The record schema continues to
-govern the complete value. Payload fields are not separately typed Parquet
-columns: querying those fields requires JSON extraction. This avoids inferring
-a new physical schema for every processor payload or internal ledger.
+govern the complete value. Ordinary payload fields stay in canonical JSON;
+querying those fields requires JSON extraction. `RecordSchema.columns` can name
+explicit string/binary columns for internal records, without inferring a physical
+schema from user payloads. Selected-member layers use this facility for occurrence
+IDs, sorting keys and external content references. Their comparison bytes stay
+directly in `record_json`, so ordering and hashing require no JSON unwrapping.
+The same writer, byte limits, admission, physical sharing and compaction apply to
+both forms. Full selected-row admission checks keys, types, materiality, content
+references and canonical bytes before successful retention.
 
 For SQL analysis, use only the member files listed in the selected layer root.
 Globbing the whole record store also includes other layers and superseded
@@ -39,7 +46,13 @@ JSON extraction as a correspondence value: canonical comparison must preserve
 number/string distinctions, absence, null, and composite fields.
 
 The existing hash buckets allow a later result to reuse unchanged files. New
-records enter bounded Arrow batches; DuckDB handles sorting and Parquet writing.
+records enter bounded Arrow batches; DuckDB sorts them and the shared PyArrow
+writer packs them into Parquet. File targets default to half the physical member
+limit (128 MiB with the default settings). Row groups target 384 KiB of logical
+column bytes or 2,048 rows, independently of file size. A larger individual
+record occupies its own group within the existing value limit. DuckDB can prune
+these groups during selective reads. File targets are logical-byte estimates,
+not promises about compressed sizes.
 Each file description retains exact `identityMin` and `identityMax` values
 computed during writing. Admitted identity lookups and union checks skip files
 whose ranges cannot overlap the requested identities. Ranges may overlap, so
@@ -47,7 +60,7 @@ this reduces file opening without promising constant-time lookup. Full logical
 admission checks every row against its declared bounds; raw row readers keep
 their consumed-row checks. Union results preserve all base files.
 
-Logical shard allowances guide output sizing, and actual encoded file sizes
+Logical file allowances guide output sizing, and actual encoded file sizes
 must fit the physical member limit before publication. Very small limits can
 refuse even one row because Parquet has footer and column overhead.
 
@@ -80,11 +93,43 @@ unchanged base files. Producing that layer reference does not certify inherited
 file contents; full verification or retention checks the resulting dependencies.
 Application code admits inherited files before consuming their rows.
 
+## Incremental selections and comparison evidence
+
+Retained selected-member manifests include their checked `ComparisonEvidence`.
+External admission recomputes it from the admitted rows. Later reads reuse the
+saved evidence under the same retention and availability checks.
+
+An evaluator-certified earlier selection supplies unchanged canonical values.
+The state resolver records which revision it actually applied; its publisher-created
+certificate binds the exact revision and immutable result. Certified edit keys
+narrow the address comparison. Untrusted or missing certificates use a full native
+membership comparison. The selected-value owner always checks actual occurrence
+IDs and evaluates only changed members.
+
+Changed addresses and selected rows live in session-owned DuckDB temporary
+tables. They may spill to scratch; 2,048 rows and 8 MiB are batch limits, not
+limits on the complete change set. Comparison against the retained base removes
+intermediate edits that revert. Unordered equality compares canonical bytes and
+signed duplicate counts. Ordered equality can reuse evidence when changed keys
+keep the same bytes and sorting tokens; otherwise it computes the full ordered
+comparison. Origins are updated even when the comparison stays equal.
+
+Ordinary state writes do not hash complete membership. Admission checks exact
+membership when adding another representation of an existing state. Compaction
+transfers its already checked equivalence. New external data still passes full
+record and membership admission.
+
+The flat file inventories and touched-bucket rewrites remain. A changed
+`members-v1` digest also requires the complete comparison stream: SHA-256 chunk
+hashes cannot be combined to reproduce that sequence digest. This implementation
+adds no table-format dependency or second storage backend.
+
 ## Who owns the working resources?
 
 The storage adapter creates its DuckDB connection lazily and uses separate
 cursors for independent reads and writes. Iterators close their cursors when
-exhausted or closed. `CoreWorkspace` releases its connections when it closes; later work can reopen
+exhausted or closed. Selection caches retain at most 32 native plans; eviction
+and session exit close their temporary-table connections. `CoreWorkspace` releases its connections when it closes; later work can reopen
 the workspace. Close iterators that are not exhausted.
 
 Arrow batch counts and estimated input bytes are bounded. DuckDB runs one native

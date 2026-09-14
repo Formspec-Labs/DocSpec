@@ -54,7 +54,8 @@ class RecordStorage(Protocol):
         """Retain admitted canonical bytes; callers own payload/routing admission.
 
         Batches have record_identity/string, partition_value/string and
-        record_json/binary columns. External logical rows use write_layer.
+        record_json/binary columns, plus any typed columns declared by the
+        schema. External logical rows use write_layer.
         """
         ...
 
@@ -140,7 +141,7 @@ __all__ = ["PartitionPolicy", "RecordSchema", "RecordStorage"]
 
 
 def bounded_batches(
-    batches: Iterable[pa.RecordBatch], *, byte_column: str,
+    batches: Iterable[pa.RecordBatch], *, byte_column: str | tuple[str, ...],
     max_value_bytes: int = BATCH_BYTES,
 ) -> Iterator[pa.RecordBatch]:
     """Slice native buffers by payload bytes and rows; never copy payloads to Python.
@@ -154,7 +155,11 @@ def bounded_batches(
         for batch in source:
             for offset in range(0, batch.num_rows, BATCH_ROWS):
                 window = batch.slice(offset, BATCH_ROWS)
-                lengths = pc.binary_length(window.column(byte_column)).to_pylist()
+                columns = (byte_column,) if isinstance(byte_column, str) else byte_column
+                lengths = pc.binary_length(window.column(columns[0])).cast("int64")
+                for name in columns[1:]:
+                    lengths = pc.add(lengths, pc.fill_null(pc.binary_length(window.column(name)), 0))
+                lengths = lengths.to_pylist()
                 start = size = 0
                 for index, length in enumerate(lengths):
                     if length is None:

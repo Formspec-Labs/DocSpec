@@ -6,7 +6,6 @@ from dataclasses import replace
 from docspec.application.core_dependencies import CoreDependencies, corresponds
 from docspec.domain import core
 from docspec.domain.core_admission import AdmittedRecord, admit_record, record_parts, record_value
-from docspec.domain.core_encoding import membership_digest
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, sha256_digest
 from docspec.domain.references import BlobRef
 from docspec.domain.selected_values import validate_fields_value
@@ -32,6 +31,8 @@ class CorePublisher:
                 yield session
             finally:
                 session.active = False
+                for plan in session.member_selections.values():
+                    plan.close()
 
 
 class Publication:
@@ -43,8 +44,9 @@ class Publication:
         self.ready = {}
         self.states, self.ready_states = states, {}
         self.selections, self.ready_selections = selections, {}
-        self.computed_selections = {}
+        self.computed_records = {}
         self.member_selections = {}
+        self.membership_equivalence = set()
         self._generated_row_observer = None
 
     @contextmanager
@@ -132,7 +134,11 @@ class Publication:
             raise IntegrityError("the publisher owns retention relationship construction")
         if not isinstance(batch.records, (tuple, list)) or len(batch.records) > BATCH_ROWS:
             raise LimitExceededError("publication requires a bounded collection of at most 2048 records")
-        return _PublicationCheck(self, batch).publish()
+        check = _PublicationCheck(self, batch)
+        result = check.publish()
+        for key in check.incoming & check.required:
+            self.computed_records.pop(key, None)
+        return result
 
     def retention_scope(self, batch: MetadataBatch) -> tuple[tuple, tuple]:
         """Check retained or staged roots and return their complete obligations."""
@@ -233,17 +239,31 @@ class _PublicationCheck:
         choices = list(self.representations.get(identity, {}).items())
         if not choices:
             raise IntegrityError("complete state retention requires its membership representation")
+        # Previously admitted representations already agree. Validate incoming
+        # data, and compare only when adding a new physical representation.
+        comparable = [(key, value) for key, value in choices if key in self.incoming or
+                      (key in self.stored and self.stored[key].available) or isinstance(value["membership"], list)]
+        known = [key for key, _ in comparable if key in self.stored]
+        if any(key in self.stored for key, _ in choices) and not known:
+            raise IntegrityError("state membership restoration requires a previously admitted representation")
         memberships = []
-        for key, value in choices:
+        for key, value in comparable:
             if not isinstance(value["membership"], list):
                 if self.session.states is None:
                     raise IntegrityError("external state membership requires state-storage admission")
-                memberships.append(self.session.states.check_representation(
-                    self.session, value, retained=key in self.stored and self.stored[key].available))
+                membership = self.session.states.check_representation(
+                    self.session, value, retained=key in self.stored and self.stored[key].available)
             else:
-                memberships.append(membership_digest(value["membership"]))
-        if any(members != memberships[0] for members in memberships):
-            raise IntegrityError("state representations disagree about the immutable membership")
+                membership = sorted(value["membership"], key=lambda row: row["member_key"])
+            memberships.append((key, membership))
+        if memberships:
+            baseline_key, baseline = next(((key, rows) for key, rows in memberships if key in self.stored), memberships[0])
+            for key, rows in memberships:
+                if key == baseline_key or (key in self.stored and baseline_key in self.stored):
+                    continue
+                same = self.session.states.same_membership(self.session, baseline, rows) if self.session.states else baseline == rows
+                if not same:
+                    raise IntegrityError("state representations disagree about the immutable membership")
         eligible = sorted(key for key, _ in choices if key in self.incoming)
         if not eligible:
             eligible = sorted(key for key, _ in choices if key in self.stored and self.stored[key].available)
@@ -421,12 +441,12 @@ class _PublicationCheck:
             if key not in self.stored or not self.stored[key].retained:
                 raise IntegrityError("required existing data or descriptions were not retained")
             versions.setdefault(key, self.stored[key].evidence_version)
-        # Only an actual evaluator computation can supply this session witness.
-        # Direct SelectedValue admission cannot assert a computed parent value.
-        for key, (payload, link) in self.session.computed_selections.items():
+        # Only an actual owner computation can supply this session witness.
+        # Supplied records cannot assert evaluator or resolver certificates.
+        for key, (payload, link) in self.session.computed_records.items():
             if key in self.required and key in self.incoming:
                 if canonical_value_bytes(self.values[key]) != payload:
-                    raise IntegrityError("computed selection differs from its publication witness")
+                    raise IntegrityError("computed record differs from its publication witness")
                 self.links.add(link)
         prepared = replace(self.batch, retained=tuple(sorted(self.required)), links=tuple(sorted(self.links, key=lambda link: (link.owner, link.relation, link.label, link.target))),
                            expected_versions=tuple(sorted(versions.items())))

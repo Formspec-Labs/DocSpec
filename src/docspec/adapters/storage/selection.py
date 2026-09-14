@@ -23,7 +23,7 @@ def field_paths(fields):
     return [""] if fields is None else [pointer for _, pointer in fields]
 
 
-def extracted_rows(relation, *, fields=None, sort_fields=(), read_rows=256, metrics=None):
+def extracted_rows(relation, *, fields=None, sort_fields=(), read_rows=256, metrics=None, passthrough=()):
     """Yield key, occurrence and typed selection from admitted JSON source rows.
 
     The source has member_key, occurrence_id and payload columns. A missing
@@ -42,11 +42,12 @@ def extracted_rows(relation, *, fields=None, sort_fields=(), read_rows=256, metr
     column, constant, function = duckdb.ColumnExpression, duckdb.ConstantExpression, duckdb.FunctionExpression
     query = relation.project(column("member_key"), column("occurrence_id"),
                              function("json_extract", column("payload"), constant(paths)).alias("selected"),
-                             function("json_type", column("payload"), constant(paths)).alias("types"))
+                             function("json_type", column("payload"), constant(paths)).alias("types"),
+                             *(column(name) for name in passthrough))
     with closing(query.to_arrow_reader(read_rows)) as reader:
         for batch in reader:
             metrics["largest_arrow_batch_bytes"] = max(metrics["largest_arrow_batch_bytes"], batch.nbytes)
-            for key, entity, selections, types in zip(*(column.to_pylist() for column in batch.columns), strict=True):
+            for key, entity, selections, types, *extra in zip(*(column.to_pylist() for column in batch.columns), strict=True):
                 if entity is None:
                     value = ABSENT
                 else:
@@ -66,7 +67,7 @@ def extracted_rows(relation, *, fields=None, sort_fields=(), read_rows=256, metr
                 sort_key = canonical_value_bytes([["absent"] if item is ABSENT else ["present", item]
                                                   for item in extracted[selected_count:]]).decode() if sort_fields and entity is not None else "[]"
                 metrics["converted_rows"] += 1
-                yield key, entity, value, sort_key
+                yield key, entity, value, sort_key, *extra
 
 
 def encoded_members(relation, *, fields=None, material_keys=False, material_entities=False, read_rows=256, metrics=None):
