@@ -92,6 +92,18 @@ membership and values. A string-only JSON extraction cannot supply correspondenc
 values: canonical comparison preserves number/string distinctions, absence, null
 and composite fields.
 
+`CoreWorkspace.compare` compares canonical membership bytes first and materializes
+the changed addresses once. Counts need no occurrence values. It decodes only
+changed addresses and restricts value reads to the requested sample IDs. The
+membership comparison still grows with the population; sampling bounds value
+work, not the membership scan.
+
+Core publication hands off immutable `AdmittedRecord` bytes. The shared canonical
+codec and typed checks admit each input; `msgspec` then decodes detached values
+for internal readers, including record defaults. This avoids retaining and
+recursively copying a second mutable Python tree. Stored bytes and identity
+digests remain unchanged.
+
 ## When are files checked?
 
 `verify_members(reference)` freshly checks the pinned root and physical member

@@ -947,6 +947,11 @@ exercise the current Iceberg writer with the two preserved source catalogues.
 That record owns their complete value comparisons, small-revision checks, measured
 timings and execution limits.
 
+The [import and comparison follow-up](history/probes/2026-09-14-core-import-compare.md)
+removes full-value joins from state comparison and recursive copies from admitted
+record handoffs. It records exact catalogue comparisons, isolated snapshot-read
+measurements, and the limits of the whole-import timings.
+
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 
 ## Coverage against the spec and plan

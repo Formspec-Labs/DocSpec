@@ -48,6 +48,10 @@ disposition. It records complete value comparisons, physical file sharing,
 initial import costs and small-revision timings on the current Iceberg writer.
 Its receipts preserve the input pins and execution limits.
 
+The [import and comparison follow-up](probes/2026-09-14-core-import-compare.md)
+then restricts value reads to comparison samples and replaces recursive snapshot
+copies with native decoding. Its report owns the subsequent measurements.
+
 All earlier measurements below retain their original implementation and scope.
 
 ## Native storage simplification verification

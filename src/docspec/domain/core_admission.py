@@ -9,7 +9,6 @@ JSON object inside a Python record. Ledger admission owns cross-record checks.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from copy import deepcopy
 from functools import lru_cache
 import re
 from typing import Any
@@ -234,20 +233,18 @@ class AdmittedRecord:
     readers receive detached values so mutation cannot invalidate their snapshot.
     """
 
-    __slots__ = ("_payload", "_value")
+    __slots__ = ("_payload",)
 
     def __init__(self, value: core.CoreRecord | dict[str, Any] | bytes):
         if isinstance(value, bytes):
             payload = value
-            plain = _plain(admit_record(payload))
+            admit_record(payload)
         else:
-            plain = deepcopy(record_value(value))
             try:
-                payload = canonical_value_bytes(plain)
+                payload = canonical_value_bytes(record_value(value))
             except (TypeError, ValueError) as error:
                 raise IntegrityError(f"Core record is outside its JSON codec: {error}") from error
         object.__setattr__(self, "_payload", payload)
-        object.__setattr__(self, "_value", plain)
 
     def __setattr__(self, name, value):
         raise AttributeError("admitted record snapshots are immutable")
@@ -258,7 +255,10 @@ class AdmittedRecord:
 
     @property
     def value(self) -> dict[str, Any]:
-        return deepcopy(self._value)
+        # Entry admission already established canonical bytes and semantics.
+        # Native decoding detaches each reader and supplies record defaults,
+        # without retaining or recursively copying another full Python tree.
+        return _plain(msgspec.json.decode(self._payload, type=core.CoreRecord))
 
 
 def record_parts(value: core.CoreRecord | dict[str, Any] | AdmittedRecord) -> tuple[dict[str, Any], bytes]:

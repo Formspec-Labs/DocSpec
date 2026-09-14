@@ -1,6 +1,7 @@
 """General roots retain native values while SQLite owns their logical identities."""
 
-from contextlib import ExitStack, closing
+from contextlib import ExitStack, closing, contextmanager
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -26,6 +27,61 @@ def open_core(stack, path):
 
 def occurrence(identity, value):
     return core.Entity(format_version=1, entity_id=identity, entity_type="occurrence", value=core.InlineValue(value=value))
+
+
+def test_compare_counts_membership_and_reads_only_sampled_occurrences(tmp_path, monkeypatch):
+    before = {"": occurrence("null-old", None), "alias-a": occurrence("shared-old", {"x": 1}),
+              "alias-b": occurrence("shared-old", {"x": 1}), "gone": occurrence("gone", None),
+              "typed": occurrence("bool", True), "unchanged": occurrence("large", "x" * 65536)}
+    after = {"": occurrence("null-new", None), "alias-a": occurrence("shared-new", {"x": 1}),
+             "alias-b": occurrence("shared-new", {"x": 1}), "new": occurrence("added", None),
+             "typed": occurrence("int", 1), "unchanged": before["unchanged"]}
+    expected = [("", "null-old", "null-new", "changed", False),
+                ("alias-a", "shared-old", "shared-new", "changed", False),
+                ("alias-b", "shared-old", "shared-new", "changed", False),
+                ("gone", "gone", None, "removed", True),
+                ("new", None, "added", "added", True),
+                ("typed", "bool", "int", "changed", True)]
+    with ExitStack() as stack:
+        records, _, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            for name, rows in (("old", before), ("new", after), ("empty", {})):
+                states.create(session, state_id=name, representation_id=name + ":physical", unit_id=name,
+                              entities={entity.entity_id: entity for entity in rows.values()}.values(),
+                              members=[core.Membership(member_key=key, occurrence_id=entity.entity_id)
+                                       for key, entity in rows.items()])
+        read_ids = set()
+        original = records._relation
+        @contextmanager
+        def sampled(layer, **kwargs):
+            if layer.reference.layer_kind == "core-entities":
+                identities = kwargs.get("record_ids")
+                assert identities is not None, "comparison scanned unsampled occurrence values"
+                read_ids.update(identities)
+            with original(layer, **kwargs) as relation:
+                yield relation
+        monkeypatch.setattr(records, "_relation", sampled)
+        for limit in (0, 2, 20):
+            read_ids.clear()
+            with publisher.session() as session:
+                result = states.compare(session, "old", "new", sample_limit=limit)
+            assert result["counts"] == {"added": 1, "removed": 1, "changed": 4}
+            assert [tuple(row.values()) for row in result["sample"]] == expected[:limit]
+            assert read_ids <= {identity for row in expected[:limit] for identity in row[1:3] if identity is not None}
+        with publisher.session() as session:
+            read_ids.clear()
+            for state in ("old", "empty"):
+                result = states.compare(session, state, state)
+                assert result["counts"] == {"added": 0, "removed": 0, "changed": 0}
+                assert result["sample"] == []
+            assert not read_ids
+        def compare(limit):
+            with publisher.session() as session:
+                return states.compare(session, "old", "new", sample_limit=limit)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(compare, (2, 20)))
+        assert [len(result["sample"]) for result in results] == [2, 6]
+        assert all(result["counts"] == {"added": 1, "removed": 1, "changed": 4} for result in results)
 
 
 def test_ready_state_descriptors_are_bounded_and_eviction_readmits(tmp_path, monkeypatch):

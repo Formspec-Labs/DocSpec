@@ -377,18 +377,42 @@ class CoreStateStorage:
         layers = {}
         for prefix, identity in (("old", older), ("new", newer)):
             layers.update({prefix + "_" + name: ref for name, ref in self.layers(session, identity).items()})
-        with self.records.relations(layers) as relations:
+        memberships = {name: layer for name, layer in layers.items() if name.endswith("_membership")}
+        with self.records._cursor() as cursor, self.records.relations(memberships, cursor=cursor) as relations:
             sides = []
             for prefix in ("old", "new"):
-                members = relations[prefix + "_membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
-                sides.append(self._keyed_rows(members, relations[prefix + "_entities"]).project(
-                    f"member_key AS {prefix}_key, occurrence_id AS {prefix}_id, occurrence_record AS {prefix}_record"))
-            changes = sides[0].join(sides[1], "old_key = new_key", how="outer").filter("old_id IS DISTINCT FROM new_id").project(
-                "coalesce(old_key,new_key) AS member_key, old_id, new_id, "
-                "CASE WHEN old_id IS NULL THEN 'added' WHEN new_id IS NULL THEN 'removed' ELSE 'changed' END AS change, "
-                "json_extract(decode(old_record), '/value') IS DISTINCT FROM json_extract(decode(new_record), '/value') AS value_changed")
-            counts = dict(changes.aggregate("change, count(*)", "change").fetchall())
-            samples = changes.order("member_key").limit(sample_limit).fetchall()
+                sides.append(relations[prefix + "_membership"].project(
+                    f"record_identity AS {prefix}_key, record_json AS {prefix}_member"))
+            # Membership has exactly a key and an occurrence ID, canonically
+            # encoded. Compare those bytes before decoding the changed addresses.
+            changes = sides[0].join(sides[1], "old_key = new_key", how="outer").filter("old_member IS DISTINCT FROM new_member").project(
+                "coalesce(old_key,new_key) AS member_key, "
+                "json_extract_string(decode(old_member), '/occurrence_id') AS old_id, "
+                "json_extract_string(decode(new_member), '/occurrence_id') AS new_id, "
+                "CASE WHEN old_key IS NULL THEN 'added' WHEN new_key IS NULL THEN 'removed' ELSE 'changed' END AS change")
+            # Materialize compact changes once. Counts need no occurrence values;
+            # only the bounded sample crosses Python or opens payload columns.
+            try:
+                cursor.execute("CREATE TEMP TABLE comparison_changes AS " + changes.sql_query())
+                changed = cursor.table("comparison_changes")
+                counts = dict(changed.aggregate("change, count(*)", "change").fetchall())
+                sample = changed.order("member_key").limit(sample_limit).to_arrow_table()
+            finally:
+                cursor.execute("DROP TABLE IF EXISTS comparison_changes")
+            samples = []
+            if sample.num_rows:
+                entities = {prefix: layers[prefix + "_entities"] for prefix in ("old", "new")}
+                identities = {prefix: list({identity for identity in sample.column(prefix + "_id").to_pylist()
+                                           if identity is not None}) for prefix in entities}
+                with self.records.relations(entities, identities=identities, tables={"sample": sample}, cursor=cursor) as values:
+                    selected = values["sample"]
+                    for prefix in entities:
+                        records = values[prefix].project(f"record_identity AS {prefix}_entity_id, record_json AS {prefix}_record")
+                        selected = selected.join(records, f"{prefix}_id = {prefix}_entity_id", how="left")
+                    samples = selected.project(
+                        "member_key, old_id, new_id, change, "
+                        "json_extract(decode(old_record), '/value') IS DISTINCT FROM json_extract(decode(new_record), '/value') AS value_changed"
+                    ).order("member_key").fetchall()
             return {"older": older, "newer": newer, "counts": {name: counts.get(name, 0) for name in ("added", "removed", "changed")},
                     "sample": [dict(zip(("member_key", "older_occurrence", "newer_occurrence", "change", "value_changed"), row, strict=True)) for row in samples]}
 

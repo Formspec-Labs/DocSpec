@@ -72,6 +72,20 @@ def test_snapshot_detaches_input_and_public_values_without_stale_bytes(tmp_path)
         assert workspace.inspect("entity", "one")["record"]["value"]["value"]["nested"] == [True]
 
 
+def test_snapshot_native_reads_preserve_defaults_types_and_original_bytes():
+    # Raw admission permits omitted defaults, but every value reader receives
+    # the complete typed record. The original canonical bytes remain immutable.
+    payload = b'{"entity_id":"one","entity_type":"occurrence","format_version":1,"kind":"entity","value":{"kind":"inline","value":[null,true,1,"1",{"nested":[]}]}}'
+    snapshot = AdmittedRecord(payload)
+    plain, original = record_parts(snapshot)
+    assert original == payload
+    assert plain["value"]["codec"] == "json-v1"
+    values = plain["value"]["value"]
+    assert [type(value) for value in values] == [type(None), bool, int, str, dict]
+    values[-1]["nested"].append("mutated")
+    assert snapshot.value["value"]["value"][-1] == {"nested": []}
+
+
 def test_publication_commits_its_admitted_snapshot_without_reencoding(tmp_path, monkeypatch):
     value = {"nested": [True]}
     entity = core.Entity(format_version=1, entity_id="one", entity_type="occurrence", value=core.InlineValue(value=value))
