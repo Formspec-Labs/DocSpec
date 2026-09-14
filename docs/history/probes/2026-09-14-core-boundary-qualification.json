@@ -1,0 +1,39 @@
+{
+  "wheel_sha256": "9793ece850c203cd9c3b74762c3f2a3a53f529c06609abaa74da5282b9b9ca02",
+  "requirements_sha256": "de22369a9c2be03f8abbef6d6ef78e29a8427d4d18aaf9ad9bf83879636b2c32",
+  "versions": {
+    "docspec": "0.3.0",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1",
+    "rulespec-artifacts": "1.0.12"
+  },
+  "stages": {
+    "nested": {
+      "elapsed_seconds": 2.262946000089869,
+      "peak_rss_bytes": 257294336,
+      "sources_unchanged": true,
+      "members": 1024,
+      "activities": 16,
+      "operation_seconds": 1.744088958017528
+    },
+    "schema": {
+      "elapsed_seconds": 0.4052389580756426,
+      "peak_rss_bytes": 221282304,
+      "sources_unchanged": true,
+      "members": 1024,
+      "admission": {
+        "fixed_record_admissions": 1025,
+        "payload_schema_calls": 1025,
+        "fixed_record_admission_seconds": 0.0454599941149354,
+        "payload_schema_seconds": 0.0005923847202211618
+      }
+    },
+    "boundary": {
+      "elapsed_seconds": 0.1995663749985397,
+      "peak_rss_bytes": 253100032,
+      "sources_unchanged": true
+    }
+  }
+}

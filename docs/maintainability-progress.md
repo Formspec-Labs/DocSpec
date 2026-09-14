@@ -1,5 +1,9 @@
 # Maintainability implementation evidence
 
+This dated pre-Core record preserves its original findings. Current implementation
+owners and retirement evidence are in the [Core ownership map](core-model-implementation-map.md);
+use the [architecture guide](architecture.md) for current APIs.
+
 This records local work against the [to-do list](maintainability-todo.md), begun
 from `b1736e9` on 2026-09-11. Git history records the logical local commits;
 this evidence does not establish remote CI, a merge, publication, or full

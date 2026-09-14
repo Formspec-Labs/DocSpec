@@ -1,61 +1,22 @@
-# Inspect shared experiment storage
+# Inspect retention and authorized cleanup
 
-Keep explicit result and checkpoint references, then build a retention set and
-inspect the local blob inventory. This answers which stored bytes those roots
-require, including their shared bases. The current pointer alone does not name
-all alternatives you may want to keep.
+Retention and availability are recorded per Core record. Current selection is
+one protected root, while retained results, required observations, selected
+values and recoverable operations can also require shared bytes.
 
-```python
-from docspec.runtime import build_local_retention_set, preview_local_blob_inventory
+Use `workspace.inspect(kind, id)` to read recorded status. For removal, retain a
+Core `RetentionPolicy` with an explicit record-key scope, then call
+`workspace.maintenance.remove_under_policy`. The maintenance owner inventories
+state and selected-value files, current bulk sources, direct content references
+and recoverable checkpoints/publications under the publication lock.
 
-retention = build_local_retention_set(
-    plan, workspace,
-    document_release_producer=accepted_document_producer,
-    retained_releases=(first_result, second_result),
-    max_spooled_bytes=64 * 1024**2,
-)
-inventory = preview_local_blob_inventory(
-    plan, workspace, retention,
-    document_release_producer=accepted_document_producer,
-    max_spooled_bytes=64 * 1024**2,
-    sample_limit=20,
-)
-print(inventory["retainedByteCount"], inventory["candidateByteCount"])
-```
+Explicit orphan candidates can be supplied through the Python API when the
+policy allows unreferenced collection. That inventory is shared with portable
+export; callers should not build another reachability model or infer garbage
+from a directory listing. A file shared with an available record stays protected.
 
-For unfinished work, also pass exact saved `retained_stores` references and
-their `retained_plans`. A prepared task exposes its original store as
-`task.input_store`; its plan reference is `prepared.handoff.processing_plan`.
-If you want to preserve a later checkpoint, retain that exact later store
-revision. A planned store may contain no captured bytes yet, but its saved plan
-can require a captured base. Missing or conflicting plan references refuse.
-
-The plan argument selects local storage profiles. It does not automatically
-select the plan's work or every attempt in the workspace. All selected roots
-must use the same admitted local blob profile state. No execution plugins are
-constructed for either operation.
-
-The builder verifies selected results, checkpoints, their required predecessors
-and bases, and exact blob references. It uses the existing record workspace to
-deduplicate visits and refuses conflicting immutable references. Retention-set
-format 2.0 records explicitly supplied plan references alongside result/store
-roots. Previous retention-set formats are retired.
-
-The inventory checks a supplied set and each listed blob. Its candidates are
-objects unreferenced by that set at inspection time. An imported set's complete
-relationship to its declared roots is not rederived by this reader. Build a
-fresh set from all required roots; concurrent work and omitted alternatives can
-change which bytes are needed. This is a storage preview, not deletion authority.
-
-Building a set writes immutable retention evidence. Reading the inventory
-changes no dataset files. Both use disposable SQLite scratch outside the
-dataset; `max_spooled_bytes` bounds canonical record payloads, excluding SQLite
-overhead. Samples and the SQLite memory cache are bounded separately. An
-interrupted preview can be repeated; there is no deletion operation or
-destructive-cleanup recovery claim.
-
-[The runtime tests](../tests/test_retention_runtime.py) demonstrate shortened
-successors, standalone planned work, shared alternatives, and interrupted
-read-only inventory. Tests remove candidate blobs only inside disposable
-fixtures to prove that the chosen roots remain usable. These tests do not
-authorize cleanup of existing datasets or qualify corpus-scale capacity.
+The current implementation performs authorized removal and records durable
+per-file outcomes. It has no separate blob-store dry-run command or imported
+retention-set format. Use [operations](operations.md) for the removal and resume
+sequence, and [maintenance tests](../tests/test_core_maintenance.py) for shared
+bytes, interruption and restoration behavior.

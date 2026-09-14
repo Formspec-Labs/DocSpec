@@ -15,7 +15,7 @@ from docspec.runtime import build_local_catalog, open_local_catalog
 from docspec.source_catalog import (
     SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource,
 )
-from docspec.workspace import LocalWorkspace
+from pathlib import Path
 
 namespace = "urn:example:my-notes"
 source = SuppliedRecordSource(({
@@ -26,7 +26,7 @@ source = SuppliedRecordSource(({
     ).to_dict()],
 },), source_system_id=namespace, source_system_version="1",
     source_state_scope="complete-snapshot", max_records=100, max_bytes=1024**2)
-workspace = LocalWorkspace(absolute_workspace_path)
+workspace = Path(absolute_workspace_path)
 result = build_local_catalog(
     (source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
     catalog_id="urn:example:my-notes:catalog", producer=catalog_output_producer,
@@ -206,13 +206,14 @@ catalog bytes and other concurrent work. Supplied-record memory is separately
 bounded by `max_records` and canonical `max_bytes`; those limits do not bound
 arbitrary Python objects the caller already owns.
 
-Pass `result.reference` to [prepare_local_experiment](python-runs.md) to capture
-and process documents now or later. A local-file fetcher resolves `notes.txt`
-under the workspace's `sourceContent` root; building this catalog does not create
-that file. Catalog succession uses the explicit existing `supersedes` argument.
-Neither building nor opening silently selects a current catalog or document
-result. The CLI uses the same catalog artifact and retains its atomic destination
-publication checks.
+Open the admitted catalog, then pass its `SourceCatalogItem` rows to
+`workspace.documents(fetcher=...).import_sources(...)` in a `CoreWorkspace`.
+Run the resulting source state to capture and process now or later. An explicitly
+configured `LocalFileContentFetcher` resolves relative candidates below its input
+root; catalog construction does not create the source files. See [Python runs](python-runs.md).
+
+Catalog succession uses `supersedes`. Neither building nor opening silently
+selects current. The CLI retains the same atomic catalog publication checks.
 
 ## CLI build reports and verification
 

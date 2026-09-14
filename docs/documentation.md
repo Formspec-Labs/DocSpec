@@ -5,7 +5,7 @@ capture selected documents through an injected fetcher, process retained inputs
 now or later, and inspect comparable attempts. That is the intended experiment
 workflow. The README distinguishes current entry points from the interfaces and
 qualification still tracked in the
-[dataset experimentation checklist](dataset-experiments-todo.md).
+[Core implementation checklist](core-model-implementation-tasks.md).
 
 Maintainers edit `README.md`, `CONTRIBUTING.md`, and the guides directly under
 `docs/`. Update the relevant guide, code links, and contributor task map in the
@@ -16,7 +16,8 @@ same change as the behavior or file move they describe.
 | Understand the inputs, processing flow, outputs, and checks | [Current architecture](architecture.md) |
 | Read the general dataset, provenance, retention, and reuse model | [Core model — editor’s draft](core-model.md) |
 | Plan the Core reference implementation and component choices | [Core implementation plan](core-model-implementation-plan.md) |
-| Choose Core implementation work, dependencies, and completion checks | [Proposed Core implementation tasks](core-model-implementation-tasks.md) |
+| Choose Core implementation work, dependencies, and completion checks | [Core implementation tasks](core-model-implementation-tasks.md) |
+| Find replacement owners, preserved workflows, and capacity targets | [Core ownership and acceptance map](core-model-implementation-map.md) |
 | Set up a checkout and choose a bounded contribution | [Contributing](../CONTRIBUTING.md) |
 | Capture, repair, process and compare a small supplied-record experiment | [Offline walkthrough](offline-walkthrough.md) |
 | Implement a pinned local processor with literal quote evidence | [Phrase matching example](phrase-matching-example.md) |
@@ -35,7 +36,7 @@ same change as the behavior or file move they describe.
 | Configure document transports and understand acquisition evidence | [Fetchers](fetchers.md) |
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
 | Understand SDK requests, item attempts, and native task retries | [Retry ownership](retry-ownership.md) |
-| Add a source, fetcher, processor, Dagster resource, sink, or storage adapter | [Extensions](extensions.md) |
+| Add a source, fetcher, processor, Dagster resource, or storage adapter | [Extensions](extensions.md) |
 | Inspect saved work, output, failures, reuse, or differences | [Inspection](inspection.md) |
 | Export active results and read them without the original workspace | [Result exports](result-exports.md) |
 | Account for shared inputs and preview local blob storage | [Retention preview](retention-preview.md) |
@@ -46,15 +47,15 @@ same change as the behavior or file move they describe.
 | Choose a catalog, fixture, mint, or reporting tool | [Tool inventory](../tools/README.md) |
 | Plan the dataset experiment workflow and further simplification | [Dataset experimentation to-do list](dataset-experiments-todo.md) |
 
-The Core model, implementation plan and tasks were supplied as drafts on
-2026-09-13 and revised the same day under review. The
-[consensus record](history/2026-09-13-core-model-consensus.md) says what was
-decided, by whom, and on what evidence; the other records in `history/` are
-dated history. The plan keeps DuckDB and the existing blob store, adds msgspec
-and Hypothesis, and includes bulk member-field selections and meaningful positions
-as data. No custom native component or deferred backend is planned. These documents describe
-target semantics and planned work; the current architecture guide describes
-existing repository behavior.
+The Core model defines semantics; the implementation plan selects components,
+and the ordered task list records current completion and remaining acceptance.
+The runtime now uses Core directly for document processing, reuse, inspection,
+maintenance and portable export. C01 baseline tables in the ownership map are
+historical context; its live retirement notes describe replacement owners.
+
+The [consensus record](history/2026-09-13-core-model-consensus.md) records planning
+decisions and their evidence. Other dated reviews and measurements describe their
+recorded revision, not current code or an automatic qualification claim.
 
 A catalog can be used without document acquisition or search. The Python runtime
 retains capture, extraction, segmentation, and processing results for later use.
@@ -65,8 +66,8 @@ Broader scale and acceptance exercises remain separate.
 
 Retain results in the workspace for later experiments. Use the optional
 [result export](result-exports.md) when another consumer needs an independent
-dataset. Both use Rulespec's shared artifact checks; DocSpec checks the document
-meaning. The [architecture comparison](architecture.md#what-comes-out) identifies
+dataset. Core checks retained state; Rulespec verifies portable artifact membership and
+bytes, and DocSpec admits their Core meaning. The [architecture comparison](architecture.md#what-comes-out) identifies
 their different purposes and readers.
 
 The [decision index](decisions/README.md) distinguishes accepted rules, later

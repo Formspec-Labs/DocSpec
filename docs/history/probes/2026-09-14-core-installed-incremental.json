@@ -1,0 +1,100 @@
+{
+  "environment": {
+    "python": "3.12.9 (main, Mar 29 2025, 16:43:11) [Clang 16.0.0 (clang-1600.0.26.6)]",
+    "executable": "/tmp/docspec-core-installed-c24-optimized/environment/bin/python",
+    "docspec_import": "/tmp/docspec-core-installed-c24-optimized/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "sys_path": [
+      "",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python312.zip",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python3.12",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload",
+      "/tmp/docspec-core-installed-c24-optimized/environment/lib/python3.12/site-packages"
+    ],
+    "wheel": "/tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+    "packages": {
+      "rulespec-artifacts": "1.0.12",
+      "docspec": "0.3.0",
+      "packaging": "26.3",
+      "iniconfig": "2.3.0",
+      "msgspec": "0.21.1",
+      "pyarrow": "25.0.1",
+      "jsonschema_rs": "0.52.1",
+      "pytest": "9.1.1",
+      "duckdb": "1.5.5",
+      "Pygments": "2.20.0",
+      "sortedcontainers": "2.4.0",
+      "pluggy": "1.6.0",
+      "hypothesis": "6.168.0"
+    },
+    "optional_services_absent": {
+      "boto3": true,
+      "dagster": true,
+      "httpx": true,
+      "pypdf": true,
+      "spicy_docs": true
+    }
+  },
+  "wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+    "snapshot_manifest_sha256": "76cf94e371e70e9bb4634ee42ec41414bce27788c086bbc0c6fbe8cc5052ed52",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-installed-c24-optimized/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "pytest": {
+    "tests": 339,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "pytest_seconds": 38.048,
+  "incremental_selection_cases": 10,
+  "scope": [
+    "tests.test_core_admission_pipeline",
+    "tests.test_core_checkpoints",
+    "tests.test_core_dependencies",
+    "tests.test_core_encoding",
+    "tests.test_core_execution",
+    "tests.test_core_ledger",
+    "tests.test_core_maintenance",
+    "tests.test_core_publication_provenance",
+    "tests.test_core_publisher",
+    "tests.test_core_records",
+    "tests.test_core_reuse",
+    "tests.test_core_revisions",
+    "tests.test_core_selections",
+    "tests.test_core_states",
+    "tests.test_core_value_edits",
+    "tests.test_core_values_example",
+    "tests.test_record_batches",
+    "tests.test_core_incremental_selections"
+  ],
+  "copied_test_example_source_files": 171,
+  "copied_sources_unchanged": true,
+  "source_originals_changed_since_copy": [],
+  "copied_source_manifest_sha256": "19225fcd6bfa65e897cf0967d16112db143a5e0e5ed2d665f870c751ad85f694",
+  "installed_runtime_probe": "passed",
+  "offline_export_and_corruption_rejection": "passed",
+  "cli_help": "passed",
+  "junit": "/tmp/docspec-core-installed-c24-optimized/core-acceptance.xml",
+  "runtime_stdout": "/tmp/docspec-core-installed-c24-optimized/installed-runtime.stdout",
+  "start": {
+    "start_utc": "2026-09-14T08:25:41.707845+00:00",
+    "overlap": "Authorized concurrent correctness gate with optimized Core baseline/edit diagnostic and text512 diagnostic; timings are not performance qualification."
+  },
+  "checks_complete_by_utc": "2026-09-14T08:26:51+00:00",
+  "receipt_created_utc": "2026-09-14T08:28:04.563613+00:00",
+  "qualification_scope": "Installed Core semantic acceptance and offline document/export/CLI path. Root runs full repository regression separately; no optional-service integration or capacity qualification is claimed. Correctness checks overlapped authorized diagnostic workloads.",
+  "pytest_reported_elapsed_seconds": 38.41,
+  "pytest_seconds_scope": "JUnit suite time; pytest_reported_elapsed_seconds is the console total."
+}

@@ -1,0 +1,616 @@
+{
+  "scope": "Read diagnostics on a copied million-member fixture with the exact optimized sealed wheel; full admission on this package remains pending. Each stage uses a fresh process.",
+  "sealed_artifact": {
+    "wheel": "/private/tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+    "snapshot_manifest_sha256": "76cf94e371e70e9bb4634ee42ec41414bce27788c086bbc0c6fbe8cc5052ed52",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-optimized-diagnostic-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "stages": {
+    "open": {
+      "state_id": "root",
+      "current": [
+        "state",
+        "url"
+      ],
+      "metrics": {
+        "sqlite_statements": 12,
+        "sqlite_transactions": 2,
+        "python_fsync_calls": 0,
+        "python_fsync_seconds": 0.0,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 0,
+        "canonical_encoded_bytes": 0,
+        "canonical_decoder_calls": 1,
+        "canonical_decoded_bytes": 53,
+        "blob_reads_by_media_type": {}
+      },
+      "stage": "open",
+      "elapsed_seconds": 1.7829848749097437,
+      "peak_rss_bytes": 111296512,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 9962579427,
+        "scratch_bytes": 0,
+        "retained_bytes": 5334683336,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 0,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; previously built and fully audited fixture; filesystem caches not cleared; no competing large native workload",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/open-runtime.json",
+        "sha256": "c5b80e8dacf82e2a9393211ff69b053d9085123390a827cac57b2633ee6700a3"
+      }
+    },
+    "named": {
+      "rows": 1025,
+      "selected_evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:d8c08a7f3b0037ae5efad61c5fab45f41f6a4f1316dee70bc38a008ebbe4aeb6",
+        "byte_size": 113639,
+        "entity_id": null
+      },
+      "warm_evaluation_seconds": 8.284899875055999,
+      "retained_position_order_checked": false,
+      "fresh_state_manifest_seconds": 5.136074249865487,
+      "manifest_check_is_full_integrity_audit": false,
+      "oracle_seconds": 0.09663254185579717,
+      "oracle_checked_selected_bytes": 112582,
+      "parent_payload_scan_bound": {
+        "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+        "parent_files": 17190,
+        "scans": [
+          {
+            "profile": "query-000013.json",
+            "files": 17,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 8784847
+          },
+          {
+            "profile": "query-000014.json",
+            "files": 17,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 8784847
+          },
+          {
+            "profile": "query-000015.json",
+            "files": 17,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 8784847
+          }
+        ],
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 26354541,
+        "within_64_mib": true,
+        "is_physical_io_measurement": false
+      },
+      "metrics": {
+        "sqlite_statements": 133,
+        "sqlite_transactions": 17,
+        "python_fsync_calls": 462,
+        "python_fsync_seconds": 0.0026118357200175524,
+        "extraction": {
+          "engine_json_decodes": 1920,
+          "converted_rows": 1025,
+          "selected_json_bytes": 37034,
+          "largest_arrow_batch_bytes": 31504,
+          "sql_calls": 1
+        },
+        "selection_member_encoder_calls": 1025,
+        "selection_member_encoded_bytes": 112582,
+        "canonical_encoder_calls": 5182,
+        "canonical_encoded_bytes": 92289774,
+        "canonical_decoder_calls": 1036,
+        "canonical_decoded_bytes": 127823,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 2,
+            "returned_chunks": 2,
+            "returned_bytes": 2094,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "named",
+      "elapsed_seconds": 22.927664291113615,
+      "peak_rss_bytes": 732626944,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 9969897746,
+        "scratch_bytes": 0,
+        "retained_bytes": 5334683336,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 0,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; original named record retained; new optimized:selected:named identity avoids old publication replay; unchanged fixture and evaluation; filesystem caches not cleared",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/named-runtime.json",
+        "sha256": "9ffc40432c86e11f01c473c463b01d1e704fe18ddbb7e00abda5137feba46c44"
+      }
+    },
+    "fields": {
+      "rows": 1048576,
+      "selected_evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:4395c38fbdcd2bbdcfbcaac4dfc9a908f281ec7633795adcd14dc73cf1b29598",
+        "byte_size": 119475162,
+        "entity_id": null
+      },
+      "warm_evaluation_seconds": 62.670720415888354,
+      "retained_position_order_checked": false,
+      "fresh_state_manifest_seconds": 4.474049207987264,
+      "manifest_check_is_full_integrity_audit": false,
+      "oracle_seconds": 73.18361158296466,
+      "oracle_checked_selected_bytes": 118426554,
+      "metrics": {
+        "sqlite_statements": 112,
+        "sqlite_transactions": 14,
+        "python_fsync_calls": 396,
+        "python_fsync_seconds": 0.0005357207264751196,
+        "extraction": {
+          "engine_json_decodes": 1966080,
+          "converted_rows": 1048576,
+          "selected_json_bytes": 41094074,
+          "largest_arrow_batch_bytes": 33504,
+          "sql_calls": 1
+        },
+        "selection_member_encoder_calls": 1048576,
+        "selection_member_encoded_bytes": 118426554,
+        "canonical_encoder_calls": 2097193,
+        "canonical_encoded_bytes": 439485523,
+        "canonical_decoder_calls": 1048584,
+        "canonical_decoded_bytes": 118430039,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "fields",
+      "elapsed_seconds": 142.15232541714795,
+      "peak_rss_bytes": 1556234240,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 10005253535,
+        "scratch_bytes": 0,
+        "retained_bytes": 5357185030,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 66,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; new retained full URL/metadata field selection on previously audited fixture; no competing large native workload; caches not cleared",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/fields-runtime.json",
+        "sha256": "6c4e83cca00c97a8ebab41f60977fab654f78c42f27b3fde401d4e954210f2c8"
+      }
+    },
+    "recover": {
+      "direct_and_parent_evidence_equal": true,
+      "evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:4395c38fbdcd2bbdcfbcaac4dfc9a908f281ec7633795adcd14dc73cf1b29598",
+        "byte_size": 119475162,
+        "entity_id": null
+      },
+      "metrics": {
+        "sqlite_statements": 114,
+        "sqlite_transactions": 13,
+        "python_fsync_calls": 0,
+        "python_fsync_seconds": 0.0,
+        "extraction": {
+          "engine_json_decodes": 3932160,
+          "converted_rows": 2097152,
+          "selected_json_bytes": 82188148,
+          "largest_arrow_batch_bytes": 33504,
+          "sql_calls": 2
+        },
+        "selection_member_encoder_calls": 2097152,
+        "selection_member_encoded_bytes": 236853108,
+        "canonical_encoder_calls": 2097192,
+        "canonical_encoded_bytes": 305651918,
+        "canonical_decoder_calls": 10,
+        "canonical_decoded_bytes": 4556,
+        "blob_reads_by_media_type": {
+          "application/vnd.docspec.selected-members+json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 549,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          },
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "recover",
+      "elapsed_seconds": 117.65652237506583,
+      "peak_rss_bytes": 1572241408,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 10014050559,
+        "scratch_bytes": 0,
+        "retained_bytes": 5357185030,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 0,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; direct retained and parent-recovered complete field evidence; filesystem caches not cleared; separate small history diagnostic may overlap",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/recover-runtime.json",
+        "sha256": "f6178f82a161cd1a3feec0ebaabb7fd52526f5615b7b7235e4b37f1b1582f0db"
+      },
+      "overlap_note": "Small four-case allowance helper gate5.81s overlapped end of recovery; history metadata diagnostics may also overlap. Not isolated final qualification."
+    },
+    "ordered-fields": {
+      "rows": 1048576,
+      "selected_evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:11730a7d9bcb8d035dc89d3e00de11d0553e0dd911690819cfe9874147c735c8",
+        "byte_size": 119475162,
+        "entity_id": null
+      },
+      "warm_evaluation_seconds": 63.98836629209109,
+      "retained_position_order_checked": true,
+      "fresh_state_manifest_seconds": 4.696244542021304,
+      "manifest_check_is_full_integrity_audit": false,
+      "oracle_seconds": 76.17423454183154,
+      "oracle_checked_selected_bytes": 118426554,
+      "metrics": {
+        "sqlite_statements": 192,
+        "sqlite_transactions": 23,
+        "python_fsync_calls": 396,
+        "python_fsync_seconds": 0.0002962390426546335,
+        "extraction": {
+          "engine_json_decodes": 3014656,
+          "converted_rows": 1048576,
+          "selected_json_bytes": 47322996,
+          "largest_arrow_batch_bytes": 39200,
+          "sql_calls": 1
+        },
+        "selection_member_encoder_calls": 1048576,
+        "selection_member_encoded_bytes": 118426554,
+        "canonical_encoder_calls": 4194349,
+        "canonical_encoded_bytes": 502213956,
+        "canonical_decoder_calls": 1048590,
+        "canonical_decoded_bytes": 118431760,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "ordered-fields",
+      "elapsed_seconds": 146.03510891692713,
+      "peak_rss_bytes": 1573994496,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 10048399919,
+        "scratch_bytes": 0,
+        "retained_bytes": 5382022316,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 66,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; new full fields selection with explicit retained position/key ordering; caches not cleared; small correctness/history diagnostics may overlap",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/ordered-fields-runtime.json",
+        "sha256": "e77c6b0a83beb0b47d850256d98b13a5960932a75f3f056db00a82e5bf3e3fa5"
+      }
+    },
+    "whole": {
+      "rows": 1048576,
+      "selected_evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:7a83602692699312823bc75e92a2e8f5e56c77535553a93ef956a0314b796e86",
+        "byte_size": 8759878478,
+        "entity_id": null
+      },
+      "warm_evaluation_seconds": 199.33104412513785,
+      "retained_position_order_checked": false,
+      "fresh_state_manifest_seconds": 4.580851375125349,
+      "manifest_check_is_full_integrity_audit": false,
+      "oracle_seconds": 139.31908987509087,
+      "oracle_checked_selected_bytes": 8758829870,
+      "metrics": {
+        "sqlite_statements": 112,
+        "sqlite_transactions": 14,
+        "python_fsync_calls": 780,
+        "python_fsync_seconds": 0.0033771859016269445,
+        "extraction": {
+          "engine_json_decodes": 1048576,
+          "converted_rows": 1048576,
+          "selected_json_bytes": 8714789678,
+          "largest_arrow_batch_bytes": 2147840,
+          "sql_calls": 1
+        },
+        "selection_member_encoder_calls": 1048576,
+        "selection_member_encoded_bytes": 8758829870,
+        "canonical_encoder_calls": 2097193,
+        "canonical_encoded_bytes": 17730820103,
+        "canonical_decoder_calls": 1048584,
+        "canonical_decoded_bytes": 8758833222,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "whole",
+      "elapsed_seconds": 345.0927518750541,
+      "peak_rss_bytes": 9555116032,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 21320874941,
+        "scratch_bytes": 8809398719,
+        "retained_bytes": 9957083661,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 130,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; full whole-value selection and independent complete-value oracle over8GiBbodyfixture; caches not cleared; small history diagnostics may overlap",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "receipt": {
+        "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/whole-runtime.json",
+        "sha256": "d946f81650bd9f75b37be91e41a2acf4f9acbaa5302fa06e4c5d49478351315e"
+      }
+    }
+  },
+  "named_identity_scope": "The source clone includes an older named selected value. Replaying its old publication identity refused immutable-content drift as expected; retained named-runtime-inherited-identity-refusal.json. External run_named_unique.py changes only selected identity to optimized:selected:named; fixture, shared evaluator and independent oracle unchanged.",
+  "interpretation": {
+    "completed_stages": [
+      "open",
+      "named",
+      "fields",
+      "recover",
+      "ordered-fields",
+      "whole"
+    ],
+    "all_stage_correctness_checks_passed": true,
+    "open_under_5_seconds": true,
+    "named_warm_evaluation_under_10_seconds": true,
+    "named_parent_column_bound_under_64mib": true,
+    "full_operations_including_oracles_under_600_seconds": true,
+    "full_operation_rss_under_12gib": true,
+    "root_member_count": 1048576,
+    "body_bytes": 8589934592,
+    "fresh_current_package_build_complete": false,
+    "larger_than_memory_trial_complete": false,
+    "isolated_final_qualification": false
+  }
+}

@@ -1,157 +1,53 @@
-# Extend processors, execution, and storage
+# Extend source, processing, execution, and storage
 
-Start an extension at the interface that owns the behavior. Keep provider SDKs
-inside adapters and connect them in composition code. The
-[architecture guide](architecture.md) explains the dependency direction;
-[CONTRIBUTING](../CONTRIBUTING.md#find-a-bounded-change) maps changes to tests.
+Put an extension at the owner of its behavior. Provider SDKs stay in adapters;
+`CoreWorkspace` and application composition connect them to the shared lifecycle.
+See [CONTRIBUTING](../CONTRIBUTING.md#find-a-bounded-change) for focused tests.
 
-## Add a source or fetcher at its existing interface
+## Sources and fetchers
 
-Start with [supplied records or the installed source reader](catalog-inputs.md).
-Small metadata mappings can use `SuppliedRecordSource` and its existing policy,
-as the [GAO example](gao-topics.md) does. A new provider adapter implements
-`SourceNativeRecordSource`: `describe()` identifies the admitted source, and
-`iter_records()` / `iter_renditions()` stream its records and candidate files.
-These types are public imports from `docspec.source_catalog`. Keep source
-validation and publisher parsing in the provider; choose dataset interpretation
-through `SourceCatalogPolicy` only when the supplied-record mapping is insufficient.
+Use `SuppliedRecordSource` for bounded metadata mappings or implement
+`SourceNativeRecordSource` for a provider reader. `describe()` identifies the
+admitted source; record and rendition iterators expose literal facts and candidate
+files. Dataset interpretation belongs in `SourceCatalogPolicy`. Preserve collection
+outcomes, source namespaces, bounded evidence and per-field provenance.
 
-A document fetcher implements `ContentFetcher` and returns bounded `FetchStream`
-bytes and acquisition facts. Pass it directly to `prepare_local_experiment` or
-inject it through a native Dagster resource. The [fetcher guide](fetchers.md)
-defines identities and lifetime; the [GovInfo bill example](govinfo-bill-example.md)
-shows an installed provider and later processing after the source client closes.
+A `ContentFetcher` returns `FetchStream` with bytes, observed transport identity
+and cleanup. Pass it explicitly to `workspace.documents(fetcher=...)`. The
+[fetcher guide](fetchers.md) and [GovInfo example](govinfo-bill-example.md) show
+existing local, network and provider adapters.
 
-## Add a processor with explicit inputs and stable identity
+## Extraction and segmentation
 
-1. Implement the [processor interface](../src/docspec/ports/processor.py).
-   [`ContentStatisticsProcessor`](../src/docspec/processing/processors.py) is a
-   small working example. Its `description` declares its identity; `process()`
-   receives the request, permitted payload, and prerequisite results.
-   The [phrase processor example](phrase-matching-example.md) shows configuration,
-   pinned reference data, and literal quote evidence in a complete experiment.
-2. Build a [`ProcessorDescription`](../src/docspec/domain/processors.py) with the
-   implementation version, configuration, accepted inputs, output schemas,
-   resource identities, cache policy, data-use policy digest, and item limits.
-   Changes that affect results must change the appropriate identity inputs.
-3. Add the description to the plan's processor set and register the matching
-   implementation with execution. The set validates the dependency graph and
-   supplies `execution_order`. Prerequisites refer to declared results for the
-   same segment; they are not an unrestricted view of another task's state.
-4. Read only permitted fields through the payload interface. Return the declared
-   result and evidence. Let the runtime own retries, invocation receipts, and
-   cumulative accounting rather than introducing a second retry loop.
+Implement `Extractor` or `Segmenter`, including `selected_identity(input)` and
+their actual extraction/segmentation methods. Pass the objects directly to
+`workspace.documents`. The selected implementation and settings become Core
+operation definitions; outputs retain their own source and evidence identities.
+Changes that affect output must change the relevant pinned settings.
 
-External processing also needs the plan's data-use permission, declared resource
-identities, and the required provider evidence. Keep credentials out of durable
-requests, receipts, and errors. A processor description declares what is allowed;
-the application must still validate the actual invocation and returned result.
+## Processors
 
-[`processor_rules`](../src/docspec/application/processor_rules.py) supplies shared
-request and result checks for new work, checkpoints, and reuse.
-[`ProcessorRuntime`](../src/docspec/application/processor_runtime.py) owns
-invocation, retries, and caching. Exercise
-[processor behavior](../tests/conformance/test_processor_contract.py),
-[data-use restrictions](../tests/test_policy_security.py), and
-[reprocessing](../tests/test_processor_reprocessing.py) when changing this path.
+`DocumentProcessor` describes a named Core operation and its prerequisite names.
+Its callback receives an operation context and declared input bindings. Use that
+context to read required values, record actual uses and generate outputs.
+`content_statistics_processor` is the built-in bulk example.
 
-## Replace extraction or segmentation
+For bounded segment callbacks, use
+[`provider_processor`](../src/docspec/adapters/document_processor.py). It connects
+input-field permission, resource identity, processor limits, output schema and
+provider evidence to Core. Shared rules live in
+[`processor_policy`](../src/docspec/domain/processor_policy.py). Credentials stay
+in live dependencies; reject secrets in durable evidence and diagnostics.
+The [phrase matcher](phrase-matching-example.md) demonstrates pinned resources
+and source-grounded outputs.
 
-Implement the [extractor](../src/docspec/ports/extractor.py) or
-[segmenter](../src/docspec/ports/segmenter.py) interface. An extractor exposes
-`extractor_id`, `configuration_digest`, and `extract()`; a segmenter exposes
-`segmenter_id`, `policy_digest`, and `segment()`. Each also implements
-`selected_identity(input)`, returning the output implementation's ID and digest.
-An ordinary implementation returns its own pair. A registry selects a child
-using captured-file or representation metadata and shares that selection logic
-with execution.
+## Scheduling and storage
 
-Use `docspec.runtime.stage_policy` to derive the plan's stage settings from the
-actual objects, then pass those objects to `prepare_local_run`. The
-[Python guide](python-runs.md#choose-extraction-and-segmentation) shows that path;
-[the installed probe](../tests/support/installed_runtime_probe.py) demonstrates
-small custom implementations without private application imports. Credentials
-belong in live dependencies, not retained settings. Output-affecting changes,
-including parser/tokenizer versions, must change the relevant digest.
+Dagster resources supply `DagsterRuntime` with `CoreOperations`, a stream of
+`ScheduledOperation` values and a producer resolver. Native Dagster owns execution
+and retries; the adapter delegates meaning and selection recovery to Core.
 
-Representations and extraction receipts retain the selected extractor's identity.
-Segments and segmentation receipts retain the selected segmenter's identity and
-policy, including an invocation that returns no segments. DocSpec checks these
-values before accepting outputs and when saved entries are opened as checkpoints,
-along with the existing source, byte, and evidence checks. The registry's aggregate settings remain in
-the plan; they do not replace the identities of individual outputs.
-
-## Make cache reuse conditional on verified evidence
-
-The [cache interface](../src/docspec/ports/processor_cache.py) returns immutable
-references. `put_if_absent()` may return another writer's entry, so execution
-must verify that entry before accepting it. `discard()` takes the expected
-reference so cleanup cannot remove a newer replacement.
-
-Use the same request, input, resource, policy, and result checks as uncached
-execution. A cache outage can cause more work; it must not make an invalid result
-acceptable. [Cache tests](../tests/test_processor_cache.py) cover this boundary.
-
-## Inject implementations through Dagster resources
-
-[`build_dagster_definitions`](../src/docspec/adapters/dagster.py) accepts native
-resource definitions. The `docspec_runtime` resource supplies a prepared run;
-other resources inject its fetcher, processors, workspace and settings. Native
-Dagster configuration controls execution, retries and cancellation. See the
-[installed example](dagster-experiment.md) for resource construction and cleanup.
-
-The [task model](../src/docspec/domain/execution.py) carries immutable references
-and identity pins. Worker-local Python objects and document bytes stay inside
-their resources. The small direct local runner uses the same task handler.
-
-The [profile registry](../src/docspec/profile_registry.py) validates and selects
-machine descriptions; it does not import or instantiate their implementations.
-Command and worker composition constructs runtime adapters and application
-services. Keep profile implementation strings, actual composition, and
-installed-package checks aligned when moving code. Keep optional imports at the
-adapter that selects them. A valid profile object alone does not demonstrate
-that a deployed worker enforces its declared resource limits.
-
-Storage-description format `2.0` retains concrete implementation settings and
-limits. It removes the five placeholder governance labels: those labels never
-enforced access, encryption, location, retention or redistribution. Configure
-deployment controls through the actual storage implementation. DocSpec's
-implemented plan data-use and retention policies remain separate.
-
-Keep task scheduling separate from document meaning. A successful task result
-identifies durable output; reconciliation still verifies it against the complete
-planned population before publication. Check message portability, retries, and
-local/adapter behavior with [backend tests](../tests/test_execution_backends.py).
-
-## Implement a result sink that accounts for the full stream
-
-The [sink interface](../src/docspec/ports/result_sink.py) accepts a store and an
-iterable of delivery records. Preserve bounded iteration, record order, stable
-identities, and retry behavior. Its receipt must account for the complete stream.
-The current [delivery service](../src/docspec/application/delivery.py) rejects
-receipts with missing, rejected, or undelivered records; partial acceptance is
-not a supported completion state.
-
-Returned references must identify the actual stored result. Repeating delivery
-must preserve the same accepted meaning even if an earlier attempt wrote data
-before its receipt was saved. See [sink checks](../tests/conformance/test_result_sink_contract.py)
-and [delivery recovery](../tests/test_result_sinks_and_recovery.py).
-
-## Put storage behavior behind its existing interface
-
-Choose the interface for the data being stored: captured bytes use
-[`BlobStore`](../src/docspec/ports/blob_store.py), record layers use
-[record storage](../src/docspec/ports/record_storage.py), and document publication
-uses the [document catalog](../src/docspec/ports/document_catalog.py).
-The [local adapters](../src/docspec/adapters/storage/) keep these responsibilities
-separate. Immutable writes, containment, atomic publication, and stale-base
-rejection are observable behavior, not incidental file operations.
-
-Reference validation has several depths: a type validates fields, a reader
-checks referenced bytes, and a workflow verifier checks their meaning together.
-An adapter must perform the checks required by its interface rather than treating
-a well-formed reference as proof of valid content. Preserve incremental record
-partition behavior and memory bounds. Use
-[storage checks](../tests/test_storage_adapters.py),
-[record/catalog checks](../tests/test_storage_records_catalog.py), and the
-[maintenance guide](operations.md) for retention and publication constraints.
+Storage extensions implement the existing blob, record or ledger ports. Bulk
+members belong in native layers, not a per-member ledger graph. Publication,
+retention and physical reachability remain shared owners. Do not add a second
+cache, state resolver, metadata writer or compatibility API during an extension.

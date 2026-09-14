@@ -1,5 +1,9 @@
 # Maintained cleanup decisions
 
+This dated pre-Core record preserves its original findings. Current implementation
+owners and retirement evidence are in the [Core ownership map](core-model-implementation-map.md);
+use the [architecture guide](architecture.md) for current APIs.
+
 These decisions accompany the maintainability work begun at `b1736e9` on
 2026-09-11. They explain deliberate API changes and cases where a few repeated
 lines preserve useful ownership. The maintainer subsequently clarified that

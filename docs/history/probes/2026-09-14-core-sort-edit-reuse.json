@@ -1,0 +1,144 @@
+{
+  "changed_members_per_revision": 1024,
+  "edit_through_reuse_seconds": {
+    "title": 198.04565254203044,
+    "url": 253.52629845798947
+  },
+  "actual_executions": [
+    "root-urls",
+    "url-urls"
+  ],
+  "exact_title_reuse": true,
+  "url_result_changed": true,
+  "metrics": {
+    "sqlite_statements": 58811,
+    "sqlite_transactions": 326,
+    "python_fsync_calls": 2682,
+    "python_fsync_seconds": 0.019676705356687307,
+    "extraction": {
+      "engine_json_decodes": 8388608,
+      "converted_rows": 8388608,
+      "selected_json_bytes": 267907794,
+      "largest_arrow_batch_bytes": 31410,
+      "sql_calls": 8
+    },
+    "selection_member_encoder_calls": 8388608,
+    "selection_member_encoded_bytes": 687338194,
+    "canonical_encoder_calls": 10541860,
+    "canonical_encoded_bytes": 2112444754,
+    "canonical_decoder_calls": 37216,
+    "canonical_decoded_bytes": 191804505,
+    "blob_reads_by_media_type": {
+      "application/json": {
+        "stream_calls": 2,
+        "returned_chunks": 2,
+        "returned_bytes": 2094,
+        "range_calls": 0,
+        "range_returned_bytes": 0,
+        "verified_calls": 0,
+        "verified_bytes": 0
+      }
+    }
+  },
+  "stage": "edits",
+  "elapsed_seconds": 625.8561157498043,
+  "peak_rss_bytes": 2030977024,
+  "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+  "sampled_peak": {
+    "storage_bytes": 9929972158,
+    "scratch_bytes": 0,
+    "retained_bytes": 5334731935,
+    "clean_storage_bytes": 0,
+    "clean_scratch_bytes": 0,
+    "clean_retained_bytes": 0
+  },
+  "storage_file_changes": {
+    "new_durable_files": 447,
+    "clean_new_durable_files": 0
+  },
+  "sample_interval_seconds": 0.25,
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "python": "3.12.9",
+  "cache_description": "Fresh process; mutable ledger copied from prior flush-only fixture, immutable CAS hardlinked; stock baseline/title/URL identities absent before run; filesystem caches not cleared",
+  "cache_state_declared": true,
+  "python_allocations": null,
+  "versions": {
+    "docspec": "0.3.0",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1"
+  },
+  "engine_memory_bytes": 6442450944,
+  "engine_threads": 1,
+  "sources_unchanged_during_run": true,
+  "limitations": [
+    "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+    "Storage is sampled; native record scratch is directed into the measured output tree.",
+    "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+    "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+    "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+    "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+    "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+    "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+    "Cache description is operator supplied; the probe does not flush or warm caches.",
+    "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+  ],
+  "evidence_scope": "Diagnostic of native sort relocation and admitted-handle reuse. Stock edits() includes initial full URL baseline in this process; reported title/URL phases exclude that baseline. Later incremental-selection work supersedes this code.",
+  "sealed_artifact": {
+    "wheel": "/private/tmp/docspec-core-sort-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "693815c552ff6bae7ec37eb400a59a1d7869819b208364d6ff687e293839dc6b",
+    "snapshot_manifest_sha256": "c2ef65c4c96ed2743c40188a18c0a4e416c46c8b1b52e15898bcef6efb327853",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-sort-diagnostic-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-sort-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "full_receipt": {
+    "path": "/tmp/docspec-core-sort-diagnostic-20260914/trial/edits-runtime.json",
+    "sha256": "d73bf3c2135aa6cbd9dab14da002b2c7b0ad9776f5c033da71f7a56fa4f62562"
+  },
+  "clone": {
+    "source": "/tmp/docspec-core-qualification-20260914/flush-full-six/workspace",
+    "target": "/tmp/docspec-core-sort-diagnostic-20260914/trial/workspace",
+    "immutable_files_hardlinked": 17806,
+    "mutable_files_copied": 1,
+    "ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2",
+    "fresh_stock_ids_checked": true,
+    "limitations": [
+      "Contains unrelated earlier diagnostic states, explicitly preserving rather than deleting them.",
+      "The read-only SQLite metadata check initially could not initialize missing WAL sidecars in the clone; opening the copied database read-write initialized them. Source database stayed unchanged; byte-for-byte database checksum verified afterward.",
+      "No source SQLite/control file is hardlinked; immutable CAS files only."
+    ]
+  },
+  "host_overlap": {
+    "overlap_occurred": false,
+    "benchmark_receipt_written_utc": "2026-09-14T08:16:11.109586+00:00",
+    "first_correctness_gate_utc": "approximately2026-09-14T08:16:50\u201308:16:53Z",
+    "second_correctness_gate_utc": "2026-09-14T08:17:17\u201308:17:22Z",
+    "note": "Both small correctness runs began after the benchmark receipt was written; overlap authorization did not cause actual concurrent testing."
+  },
+  "targets": {
+    "edit_through_reuse_seconds_per_revision": 120,
+    "small_edit_peak_rss_bytes": 2147483648
+  },
+  "interpretation": {
+    "correctness_passed": true,
+    "both_phase_time_targets_passed": false,
+    "combined_process_rss_under_2gib": true,
+    "rss_includes_initial_baseline": true,
+    "full_member_extraction_passes_including_baseline": 8
+  },
+  "query_profile_scope": {
+    "raw_profiles": "/tmp/docspec-core-sort-diagnostic-20260914/trial/profiles/edits",
+    "profile_count": 134,
+    "payload_read_bound_not_claimed_from_sort_cleanup": true
+  }
+}

@@ -1,0 +1,2229 @@
+{
+  "format": "docspec-core-history-admission-reuse-diagnostic",
+  "fixture": {
+    "rows": 1048576,
+    "sha256": "019402bb59cace267f58a3e6bdd8f89ca3860882b17be252f8962f7196180b23",
+    "byte_size": 4428154048
+  },
+  "runs": {
+    "false_control": {
+      "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+      "start_utc": "2026-09-14T08:50:12.442769+00:00",
+      "end_utc": "2026-09-14T08:51:20.935403+00:00",
+      "elapsed_seconds": 68.4928267498035,
+      "peak_rss_bytes": 1399078912,
+      "revisions": [
+        {
+          "state": "history:0",
+          "elapsed_seconds": 24.321963999886066
+        },
+        {
+          "state": "history:1",
+          "elapsed_seconds": 21.562837375095114
+        },
+        {
+          "state": "history:2",
+          "elapsed_seconds": 22.55266383290291
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.004908289760351181,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 473,
+        "canonical_encoded_bytes": 297718907,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "false"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "receipts": {
+        "/tmp/docspec-core-history-cache-control-20260914/runtime.json": "bbb71a2f5727074322440a685268a87e61afc2626eee4789d77ed98ae1325da2",
+        "/tmp/docspec-core-history-cache-control-20260914/measure.py": "8e2c19a36ba1f0fdf3aa79427ba847caa41b3fb778375fae91f9727e13e629b2",
+        "/tmp/docspec-core-history-cache-control-20260914/clone-receipt.json": "f5fb3a9853d4f7a86149d92a08b995a99e15799105c0021e00e31cc0976cc5f5"
+      },
+      "input_ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2"
+    },
+    "metadata_cache_enabled": {
+      "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+      "start_utc": "2026-09-14T08:48:38.387540+00:00",
+      "end_utc": "2026-09-14T08:49:42.923501+00:00",
+      "elapsed_seconds": 64.53615416702814,
+      "peak_rss_bytes": 1143734272,
+      "revisions": [
+        {
+          "state": "history:0",
+          "elapsed_seconds": 23.152612624922767
+        },
+        {
+          "state": "history:1",
+          "elapsed_seconds": 20.38105670805089
+        },
+        {
+          "state": "history:2",
+          "elapsed_seconds": 20.948205415857956
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.005131951766088605,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 473,
+        "canonical_encoded_bytes": 297718907,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "true"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "receipts": {
+        "/tmp/docspec-core-history-cache-20260914/runtime.json": "2790b1bb5624dbc26c4109bf49d83fb52f2a485bc6a2d62da70c2ed7916bfa1f",
+        "/tmp/docspec-core-history-cache-20260914/measure.py": "19ccdf02224628738756ce93a5afc4c30701679345f811dd58592d3e3c9a250e",
+        "/tmp/docspec-core-history-cache-20260914/clone-receipt.json": "15e052d0c4b0e2dca71e79bfd0c2ae87f71c046ffd15063a53e9b1fa4b0a19a1"
+      },
+      "input_ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2"
+    },
+    "admission_reuse_candidate": {
+      "wheel_sha256": "51fbcf2dbb86c4fb11c214939e5593f42b0a22a8facc942515682e0072e0c0e9",
+      "start_utc": "2026-09-14T08:55:58.051942+00:00",
+      "end_utc": "2026-09-14T08:56:42.608530+00:00",
+      "elapsed_seconds": 44.55668874992989,
+      "peak_rss_bytes": 1511489536,
+      "revisions": [
+        {
+          "state": "history:0",
+          "elapsed_seconds": 16.569093291880563
+        },
+        {
+          "state": "history:1",
+          "elapsed_seconds": 13.957686958136037
+        },
+        {
+          "state": "history:2",
+          "elapsed_seconds": 13.938404165906832
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.004527127370238304,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 373,
+        "canonical_encoded_bytes": 148871229,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "true"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "receipts": {
+        "/tmp/docspec-core-history-candidate-20260914/runtime.json": "f287aef415143a6d1dfbc4d2be6af7807e1eacf12624f471d8d3ba0c0067d269",
+        "/tmp/docspec-core-history-candidate-20260914/measure.py": "5db9c7421f40e844da937e53b8b6abaa69c62479a6a23a92caace7469f5a1298",
+        "/tmp/docspec-core-history-candidate-20260914/clone-receipt.json": "858b86a2434357a177498ef738c33f58186c8da51c920c4488688964b327b2fe"
+      },
+      "input_ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2"
+    },
+    "shared_admission_and_incremental_proof": {
+      "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+      "start_utc": "2026-09-14T09:06:32.277369+00:00",
+      "end_utc": "2026-09-14T09:06:52.228485+00:00",
+      "elapsed_seconds": 19.95106791704893,
+      "peak_rss_bytes": 1481342976,
+      "revisions": [
+        {
+          "state": "history:0",
+          "elapsed_seconds": 9.946964542148635
+        },
+        {
+          "state": "history:1",
+          "elapsed_seconds": 4.9538381670136005
+        },
+        {
+          "state": "history:2",
+          "elapsed_seconds": 4.966173583874479
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.006010830402374268,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 349,
+        "canonical_encoded_bytes": 46331235,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "true"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "receipts": {
+        "/tmp/docspec-core-history-scoped-20260914/runtime.json": "5f014c2613358adf5435d186390f7e1a590ad985af393663a425b3bb8d8077e4",
+        "/tmp/docspec-core-history-scoped-20260914/measure.py": "0708bdca773a6f24b26eb0cb245ea10d9e4ecfa2755a8371ff9053d1b67d48c1",
+        "/tmp/docspec-core-history-scoped-20260914/clone-receipt.json": "f41f24300cc68b3be9f52b00ef15474fb12bd829873d932d4a61a7468df90c67",
+        "/tmp/docspec-core-history-scoped-20260914/wheel-verification.json": "df7ce83dbbf2249f01482828d54cd29e7a2da5c050790901233d1f42dc784d0f"
+      }
+    },
+    "shared_admission_metadata_cache_disabled": {
+      "wheel_sha256": "837affe4ddd87347d86314fea501aec9a38e3628561172df5c304a3fbc21d42b",
+      "start_utc": "2026-09-14T09:16:44.823706+00:00",
+      "end_utc": "2026-09-14T09:17:05.255985+00:00",
+      "elapsed_seconds": 20.43217712501064,
+      "peak_rss_bytes": 1224916992,
+      "revisions": [
+        {
+          "state": "history:0",
+          "elapsed_seconds": 8.932233041152358
+        },
+        {
+          "state": "history:1",
+          "elapsed_seconds": 5.704628958832473
+        },
+        {
+          "state": "history:2",
+          "elapsed_seconds": 5.737243834184483
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.0039295474998652935,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 349,
+        "canonical_encoded_bytes": 46331235,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "false"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "receipts": {
+        "/tmp/docspec-core-scoped-cachefalse-history-20260914/runtime.json": "fed5d7a4c4e4f85ecdb2258ef0e6ec3f41d09d962819e7511e4f98898b4e0d30",
+        "/tmp/docspec-core-scoped-cachefalse-history-20260914/measure.py": "d3838beb8ba48949f1a6e62c3e9391636cb26c3174c7cc4c661cce9a371ebdd4",
+        "/tmp/docspec-core-scoped-cachefalse-history-20260914/clone-receipt.json": "d7958632aac467fb48126a24c7d172df6482fb67f0fda8f630ca0dfb05066e14"
+      }
+    }
+  },
+  "candidate_wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-history-candidate-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "51fbcf2dbb86c4fb11c214939e5593f42b0a22a8facc942515682e0072e0c0e9",
+    "snapshot_manifest_sha256": "b3ca3bf69b74e1a047b956b106fa02c340c54372c6393d0e037f31301b0ad6f6",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-history-candidate-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-history-candidate-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "interpretation": [
+    "Configuration-only metadata caching improved this pair from 68.49 to 64.54 seconds; file cache validation remained VALIDATE_ALL.",
+    "Checked paths, bounded state descriptors and one shared union duplicate check reduced three revisions to 44.56 seconds; warm revisions still took 13.94 seconds.",
+    "Owner timers measured small entity lookups at 10.804 seconds within one 18.813-second cold revision; the membership digest took 0.565 seconds. This directed the next change toward shared admission reuse.",
+    "Sharing admission under the existing writable content guard and checking inserted occurrence coverage reduced three revisions to 19.95 seconds, with warm revisions at 4.95 and 4.97 seconds. The 1,000-revision/1,800-second bound remains unmet.",
+    "Optional Parquet metadata caching caused the warmed optimizer to build a hash table of full entity records. Explicit RIGHT JOIN syntax did not prevent that choice.",
+    "With Parquet metadata caching disabled and VALIDATE_ALL retained, the fresh URL baseline succeeded in 100.790 seconds at 1.530 GB RSS. Three history revisions took 20.432 seconds. Keep the optional cache disabled pending contrary evidence."
+  ],
+  "limitations": [
+    "One sequential pair per configuration, concurrent authorized diagnostics and uncontrolled OS caches; these are directional diagnostics rather than isolated final qualification.",
+    "The shared run_stage(history, history_length=3) ran without the CLI background storage sampler or cProfile. Per-revision timer wrappers add small, unquantified overhead.",
+    "The first candidate wheel predates the safety patch that freshly admits physical members when incremental writes receive a raw LayerRef. The measured Core route used admitted bases throughout.",
+    "The full 1,000-revision history and checkpoint suffix remain required.",
+    "Wheel 837affe4 predates the later bounded check for 2,049 or more Put entries. The measured single-member and 1,024-member edits do not exercise that limit. The next qualification wheel must include the fix."
+  ],
+  "focused_checks": {
+    "affected_suite": "80passed in11.95s",
+    "later_raw_reference_and_cache_lifetime_safety": "2passed in1.26s",
+    "ruff": "passed",
+    "shared_scope": "58passed in3.50s, including thread isolation/nesting/bounds/fresh corruption/exclusive and read-only bypass"
+  },
+  "candidate_owner_timing": {
+    "wheel_sha256": "51fbcf2dbb86c4fb11c214939e5593f42b0a22a8facc942515682e0072e0c0e9",
+    "start_utc": "2026-09-14T08:59:14.943480+00:00",
+    "end_utc": "2026-09-14T08:59:33.843311+00:00",
+    "elapsed_seconds": 18.900916625047103,
+    "peak_rss_bytes": 1222737920,
+    "owner_metrics": {
+      "_contained <- records.py:__init__": {
+        "calls": 1,
+        "seconds": 0.0001005418598651886
+      },
+      "_contained <- files.py:_read_exact": {
+        "calls": 6,
+        "seconds": 0.0007655005902051926
+      },
+      "_verified_root": {
+        "calls": 6,
+        "seconds": 1.3217464163899422
+      },
+      "_contained <- records.py:_relation": {
+        "calls": 51571,
+        "seconds": 4.199237836059183
+      },
+      "_relation construction": {
+        "calls": 14,
+        "seconds": 9.841107208048925
+      },
+      "_relation lifetime (overlapping)": {
+        "calls": 14,
+        "seconds": 20.56691712467
+      },
+      "lookup_batches advancement": {
+        "calls": 4,
+        "seconds": 10.80400470783934,
+        "batches": 4
+      },
+      "_contained <- files.py:_link_content": {
+        "calls": 7,
+        "seconds": 0.0011517489328980446
+      },
+      "_contained <- files.py:_write_once": {
+        "calls": 4,
+        "seconds": 0.0007560420781373978
+      },
+      "_retain_root": {
+        "calls": 4,
+        "seconds": 0.2523959167301655
+      },
+      "_membership_digest": {
+        "calls": 2,
+        "seconds": 0.5647212918847799
+      },
+      "_match_members": {
+        "calls": 2,
+        "seconds": 1.642190083861351
+      },
+      "_state_content": {
+        "calls": 2,
+        "seconds": 2.208939207950607
+      },
+      "_contained <- records.py:available": {
+        "calls": 17254,
+        "seconds": 1.3898404671344906
+      },
+      "available": {
+        "calls": 2,
+        "seconds": 1.9095363330561668
+      },
+      "union_disjoint": {
+        "calls": 1,
+        "seconds": 3.690520500065759
+      },
+      "revision_representation": {
+        "calls": 1,
+        "seconds": 7.876031999941915
+      }
+    },
+    "receipts": {
+      "/tmp/docspec-core-history-candidate-owner-20260914/runtime.json": "e8d0c7307ba88c25bf8e51c651f8b11e2d674e97713a5be8201dc3c1616bdb7c",
+      "/tmp/docspec-core-history-candidate-owner-20260914/measure.py": "794363865804b0e1759c8e0ba2c17584f92fda1051c395a5e744091626c01d1a"
+    },
+    "limitation": "Nested owner timers overlap; do not add inclusive durations. No cProfile or background storage sampler was enabled."
+  },
+  "scoped_wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-history-scoped-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+    "snapshot_manifest_sha256": "190f4ac45b28667bb9005240e76990258e6547009ab57f825e2b7324c70041d9",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-history-scoped-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-history-scoped-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "scoped_1024_edit_through_reuse": {
+    "changed_members_per_revision": 1024,
+    "edit_through_reuse_seconds": {
+      "title": 35.25402129115537,
+      "url": 37.23732875008136
+    },
+    "actual_executions": [
+      "root-urls",
+      "url-urls"
+    ],
+    "exact_title_reuse": true,
+    "url_result_changed": true,
+    "elapsed_seconds": 212.83911841688678,
+    "peak_rss_bytes": 10117840896,
+    "sampled_peak": {
+      "storage_bytes": 13031069166,
+      "scratch_bytes": 3356164096,
+      "retained_bytes": 5352737327,
+      "clean_storage_bytes": 0,
+      "clean_scratch_bytes": 0,
+      "clean_retained_bytes": 0
+    },
+    "metrics": {
+      "sqlite_statements": 59071,
+      "sqlite_transactions": 363,
+      "python_fsync_calls": 2682,
+      "python_fsync_seconds": 0.012732920702546835,
+      "extraction": {
+        "engine_json_decodes": 2099200,
+        "converted_rows": 2099200,
+        "selected_json_bytes": 67033886,
+        "largest_arrow_batch_bytes": 31406,
+        "sql_calls": 4
+      },
+      "selection_member_encoder_calls": 2099200,
+      "selection_member_encoded_bytes": 171993886,
+      "canonical_encoder_calls": 3205722,
+      "canonical_encoded_bytes": 754714068,
+      "canonical_decoder_calls": 37242,
+      "canonical_decoded_bytes": 192713926,
+      "blob_reads_by_media_type": {
+        "application/json": {
+          "stream_calls": 3,
+          "returned_chunks": 3,
+          "returned_bytes": 3141,
+          "range_calls": 0,
+          "range_returned_bytes": 0,
+          "verified_calls": 0,
+          "verified_bytes": 0
+        }
+      }
+    },
+    "sources_unchanged_during_run": true,
+    "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+    "receipts": {
+      "/tmp/docspec-core-history-scoped-20260914/trial/edits-runtime.json": "1ebff49bc21f87f0e4280e2cc84a0950854a5569dfab3435372980b026779ccf",
+      "/tmp/docspec-core-history-scoped-20260914/edits-process.json": "1fbed91296b7411d714680250fbd46034ef302764e4a0a39b8671be302bcf825"
+    },
+    "limitations": [
+      "The stock stage freshly computed its baseline URL selection before the two edit timers. Whole-process RSS, elapsed time, SQL counts and profiles include that baseline.",
+      "The 64 MiB parent-payload bound is not qualified by aggregate profiles; no baseline bytes were silently subtracted.",
+      "Initial query profiles build the full entity record_json side before applying inline/content filters. The high memory usage belongs to the baseline and does not establish edit-phase memory."
+    ],
+    "initial_profile_summary": [
+      {
+        "path": "/tmp/docspec-core-history-scoped-20260914/trial/profiles/edits/query-000002.json",
+        "sha256": "0f9763e3243f567c710209197e873957586fc3b8b601ec7eb4ac783dbcad5490",
+        "latency": 65.600099209,
+        "system_peak_buffer_memory": 1993690529,
+        "system_peak_temp_dir_size": 0,
+        "rows_returned": 1048576
+      },
+      {
+        "path": "/tmp/docspec-core-history-scoped-20260914/trial/profiles/edits/query-000004.json",
+        "sha256": "2388c3e32ee6974f24bfc21c31fc8dc57d5da1cef1261b575aa2167f92f93a33",
+        "latency": 17.653568917,
+        "system_peak_buffer_memory": 12884858824,
+        "system_peak_temp_dir_size": 3217948672,
+        "rows_returned": 0
+      },
+      {
+        "path": "/tmp/docspec-core-history-scoped-20260914/trial/profiles/edits/query-000006.json",
+        "sha256": "b2856fc0bee81d81a783fc3a852a2ba51f2814145f6f6825393e2c83d1dfaf47",
+        "latency": 71.829429917,
+        "system_peak_buffer_memory": 12871937992,
+        "system_peak_temp_dir_size": 3195961344,
+        "rows_returned": 64
+      },
+      {
+        "path": "/tmp/docspec-core-history-scoped-20260914/trial/profiles/edits/query-000007.json",
+        "sha256": "43cd493e3374da5e77d3f84044cfeae764a347b09cc573b264bae82352e97144",
+        "latency": 36.478154875,
+        "system_peak_buffer_memory": 12884838344,
+        "system_peak_temp_dir_size": 3195961344,
+        "rows_returned": 1048576
+      }
+    ]
+  },
+  "metadata_cache_join_plan_evidence": {
+    "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+    "method": "Inspect equivalent LEFT and RIGHT expressions on the same full fixture and connection, before and after count(*) warms Parquet metadata. Only count queries execute; the wide joins are inspected with EXPLAIN.",
+    "observations": [
+      "Cold estimates are 17,190,000 entities versus 1,045,760 membership rows; both expressions select a RIGHT join that builds compact membership.",
+      "After metadata warming, both estimates are 1,048,576 rows. Both expressions optimize to a LEFT join that builds full entity record_json.",
+      "The explicit RIGHT rewrite was not implemented because the warmed optimizer reversed it. Production parquet_metadata_cache returned to false; VALIDATE_ALL remains enabled."
+    ],
+    "plans": {
+      "left-keyed-plan.txt": {
+        "sha256": "211ee6e94cf7fcaf8ec45689318676c56d7ecef806be4b81044035a3f05d14ad",
+        "plan": "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         PROJECTION        \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         member_key        \u2502\n\u2502       occurrence_id       \u2502\n\u2502     occurrence_record     \u2502\n\u2502                           \u2502\n\u2502      ~17,190,000 rows     \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         HASH_JOIN         \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502      Join Type: RIGHT     \u2502\n\u2502                           \u2502\n\u2502        Conditions:        \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 entity_id = occurrence_id \u2502              \u2502\n\u2502                           \u2502              \u2502\n\u2502      ~17,190,000 rows     \u2502              \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518              \u2502\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502        PARQUET_SCAN       \u2502\u2502         PROJECTION        \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         Function:         \u2502\u2502         member_key        \u2502\n\u2502        PARQUET_SCAN       \u2502\u2502       occurrence_id       \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502        Projections:       \u2502\u2502                           \u2502\n\u2502      record_identity      \u2502\u2502                           \u2502\n\u2502        record_json        \u2502\u2502                           \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502      ~17,190,000 rows     \u2502\u2502      ~1,045,760 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n                             \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n                             \u2502        PARQUET_SCAN       \u2502\n                             \u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n                             \u2502         Function:         \u2502\n                             \u2502        PARQUET_SCAN       \u2502\n                             \u2502                           \u2502\n                             \u2502        Projections:       \u2502\n                             \u2502      record_identity      \u2502\n                             \u2502        record_json        \u2502\n                             \u2502                           \u2502\n                             \u2502      ~1,045,760 rows      \u2502\n                             \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+      },
+      "right-keyed-plan.txt": {
+        "sha256": "211ee6e94cf7fcaf8ec45689318676c56d7ecef806be4b81044035a3f05d14ad",
+        "plan": "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         PROJECTION        \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         member_key        \u2502\n\u2502       occurrence_id       \u2502\n\u2502     occurrence_record     \u2502\n\u2502                           \u2502\n\u2502      ~17,190,000 rows     \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         HASH_JOIN         \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502      Join Type: RIGHT     \u2502\n\u2502                           \u2502\n\u2502        Conditions:        \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 entity_id = occurrence_id \u2502              \u2502\n\u2502                           \u2502              \u2502\n\u2502      ~17,190,000 rows     \u2502              \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518              \u2502\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502        PARQUET_SCAN       \u2502\u2502         PROJECTION        \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         Function:         \u2502\u2502         member_key        \u2502\n\u2502        PARQUET_SCAN       \u2502\u2502       occurrence_id       \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502        Projections:       \u2502\u2502                           \u2502\n\u2502      record_identity      \u2502\u2502                           \u2502\n\u2502        record_json        \u2502\u2502                           \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502      ~17,190,000 rows     \u2502\u2502      ~1,045,760 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n                             \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n                             \u2502        PARQUET_SCAN       \u2502\n                             \u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n                             \u2502         Function:         \u2502\n                             \u2502        PARQUET_SCAN       \u2502\n                             \u2502                           \u2502\n                             \u2502        Projections:       \u2502\n                             \u2502      record_identity      \u2502\n                             \u2502        record_json        \u2502\n                             \u2502                           \u2502\n                             \u2502      ~1,045,760 rows      \u2502\n                             \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+      },
+      "left-warm-keyed-plan.txt": {
+        "sha256": "40eda141e771f1432268fc7be0bf78ef97588f35204d8766ac351def84befab9",
+        "plan": "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         HASH_JOIN         \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502      Join Type: LEFT      \u2502\n\u2502                           \u2502\n\u2502        Conditions:        \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 occurrence_id = entity_id \u2502              \u2502\n\u2502                           \u2502              \u2502\n\u2502      ~1,048,576 rows      \u2502              \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518              \u2502\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         PROJECTION        \u2502\u2502        PARQUET_SCAN       \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         member_key        \u2502\u2502         Function:         \u2502\n\u2502       occurrence_id       \u2502\u2502        PARQUET_SCAN       \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502                           \u2502\u2502        Projections:       \u2502\n\u2502                           \u2502\u2502      record_identity      \u2502\n\u2502                           \u2502\u2502        record_json        \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502      ~1,048,576 rows      \u2502\u2502      ~1,048,576 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502        PARQUET_SCAN       \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         Function:         \u2502\n\u2502        PARQUET_SCAN       \u2502\n\u2502                           \u2502\n\u2502        Projections:       \u2502\n\u2502      record_identity      \u2502\n\u2502        record_json        \u2502\n\u2502                           \u2502\n\u2502      ~1,048,576 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+      },
+      "right-warm-keyed-plan.txt": {
+        "sha256": "40eda141e771f1432268fc7be0bf78ef97588f35204d8766ac351def84befab9",
+        "plan": "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         HASH_JOIN         \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502      Join Type: LEFT      \u2502\n\u2502                           \u2502\n\u2502        Conditions:        \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502 occurrence_id = entity_id \u2502              \u2502\n\u2502                           \u2502              \u2502\n\u2502      ~1,048,576 rows      \u2502              \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518              \u2502\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502         PROJECTION        \u2502\u2502        PARQUET_SCAN       \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         member_key        \u2502\u2502         Function:         \u2502\n\u2502       occurrence_id       \u2502\u2502        PARQUET_SCAN       \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502                           \u2502\u2502        Projections:       \u2502\n\u2502                           \u2502\u2502      record_identity      \u2502\n\u2502                           \u2502\u2502        record_json        \u2502\n\u2502                           \u2502\u2502                           \u2502\n\u2502      ~1,048,576 rows      \u2502\u2502      ~1,048,576 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u252c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502        PARQUET_SCAN       \u2502\n\u2502    \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500   \u2502\n\u2502         Function:         \u2502\n\u2502        PARQUET_SCAN       \u2502\n\u2502                           \u2502\n\u2502        Projections:       \u2502\n\u2502      record_identity      \u2502\n\u2502        record_json        \u2502\n\u2502                           \u2502\n\u2502      ~1,048,576 rows      \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+      }
+    }
+  },
+  "metadata_cache_disabled_fresh_url_baseline": {
+    "actual_executions": [
+      "root-urls"
+    ],
+    "result_id": "urn:docspec:execution:97c8773d-d191-445d-9807-402bb0f11f52:result",
+    "outcome": "success",
+    "metrics": {
+      "sqlite_statements": 426,
+      "sqlite_transactions": 44,
+      "python_fsync_calls": 402,
+      "python_fsync_seconds": 0.00082035968080163,
+      "extraction": {
+        "engine_json_decodes": 2097152,
+        "shared_encoder_calls": 0,
+        "converted_rows": 2097152,
+        "selected_json_bytes": 66983796,
+        "largest_arrow_batch_bytes": 28096,
+        "sql_calls": 2
+      },
+      "selection_member_encoder_calls": 2097152,
+      "selection_member_encoded_bytes": 171841396,
+      "canonical_encoder_calls": 3145811,
+      "canonical_encoded_bytes": 420300009,
+      "canonical_decoder_calls": 48,
+      "canonical_decoded_bytes": 18020,
+      "blob_reads_by_media_type": {
+        "application/json": {
+          "stream_calls": 1,
+          "returned_chunks": 1,
+          "returned_bytes": 1047,
+          "range_calls": 0,
+          "range_returned_bytes": 0,
+          "verified_calls": 0,
+          "verified_bytes": 0
+        }
+      }
+    },
+    "elapsed_seconds": 100.78953083395027,
+    "peak_rss_bytes": 1530347520,
+    "installed_package": "/tmp/docspec-core-scoped-cachefalse-20260914/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "launcher_sha256": "be636022d03447d245422864666f1baab7852d0c727db1a99705921cbf3807c3",
+    "snapshot_manifest_sha256": "ea194eef5a9471746d3226450fc6beb49d547e6cf52556c6a2d482806bd05739",
+    "cache_description": "Fresh process; previously built workspace; filesystem caches not cleared.",
+    "limitations": [
+      "Initial full-state URL evaluation is separate from later small-edit-through-reuse timing. No query profiling or allocation tracing."
+    ],
+    "wheel_sha256": "837affe4ddd87347d86314fea501aec9a38e3628561172df5c304a3fbc21d42b",
+    "receipts": {
+      "/tmp/docspec-core-scoped-cachefalse-20260914/trial/url-baseline-runtime.json": "10007a85f33630a84f9682b0794b55c8f7469862eec45e82d30cc62e9927d8e0",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/prepare_url_baseline.py": "be636022d03447d245422864666f1baab7852d0c727db1a99705921cbf3807c3",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/baseline-process.json": "0c12cde7214f15d843a1104d67b5137d980a600e8086412184dc68435f8b8209",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/wheel-verification.json": "855b65523ec3ffc2615938fb3dd0748e8a5f214626bbf95e36b1a830477f19ad"
+    },
+    "comparison_limits": "This standalone baseline helper has no query profiler or storage sampler. The cache-enabled baseline/setup remainder of 140.35 seconds is inferred from the profiled stage minus its explicit 35.25- and 37.24-second edit timers. Actual warm physical plans support the memory explanation; timing is not a strictly isolated pair."
+  },
+  "contention_five_batch_prefix": {
+    "scope": "Bounded diagnostic using the unchanged native five-process contention helper. This is not the required 100-batch qualification.",
+    "wheel_sha256": "837affe4ddd87347d86314fea501aec9a38e3628561172df5c304a3fbc21d42b",
+    "snapshot_manifest_sha256": "ea194eef5a9471746d3226450fc6beb49d547e6cf52556c6a2d482806bd05739",
+    "start_utc": "2026-09-14T09:24:12.068928+00:00",
+    "report_written_utc": "2026-09-14T09:26:28.625553+00:00",
+    "raw_receipt": "/tmp/docspec-core-contention5-20260914/trial/contention-contention-report.json",
+    "raw_receipt_sha256": "b9996cc68c521071683d0eadfc81ce5348ef3f087c99a9914a864d0876d0458d",
+    "source_sha256": {
+      "/tmp/docspec-core-scoped-cachefalse-20260914/snapshot/tests/support/core_contention_experiment.py": "28cee8459d09d04072d005e80c8fc41097f23e84c01029994620ab5afd969f26",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/snapshot/tests/support/core_runtime_experiment.py": "32b94fe511820ea30dd48005371ac8757dcc0e7c86cd22ee41dabace9a5f2fcd",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/snapshot/tests/support/core_bulk_experiment.py": "060987c8f4a29414b4db41c7cbfb69d16aec0076f6860802fbd808e3b5e5e8b8",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/snapshot/tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+      "/tmp/docspec-core-scoped-cachefalse-20260914/snapshot/tests/support/core_reference.py": "d46d04b33041b3c6613f707317254cdffec8bd4cff27b0d34aad2baf4d088538"
+    },
+    "sources_unchanged_during_run": true,
+    "clone": {
+      "source": "/tmp/docspec-core-qualification-20260914/flush-full-six/workspace",
+      "target": "/private/tmp/docspec-core-contention5-20260914/trial/workspace",
+      "immutable_files_hardlinked": 17806,
+      "mutable_files_copied": 1,
+      "ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2",
+      "records_columns": [
+        [
+          0,
+          "kind",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "record_id",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "payload",
+          "BLOB",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "outcome",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "row_digest",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "source_layer",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "byte_size",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "fresh_stock_ids_checked": true,
+      "limitations": [
+        "Clone contains the original root and unrelated prior title-scan/title256 diagnostic states; no stock title/url/root-urls results were intentionally created in the source. Fresh stock state, revision and request/selection IDs were checked absent in the cloned ledger.",
+        "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+      ]
+    },
+    "fixture_members": 1048576,
+    "changed_members_per_batch": 1024,
+    "requested_batches": 5,
+    "reader_processes": 4,
+    "concurrent_seconds": 104.72788933292031,
+    "elapsed_including_reconciliation_seconds": 134.46937745809555,
+    "acknowledged_batches_reconciled": 5,
+    "reconciled_value_edits": 5120,
+    "sum_individual_peak_rss_bytes": 5187731456,
+    "parent_peak_rss_bytes": 747159552,
+    "workers": [
+      {
+        "batches": [
+          {
+            "batch": 0,
+            "state": "contention:0",
+            "changed_members": 1024,
+            "seconds": 43.455641916021705,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 1,
+            "state": "contention:1",
+            "changed_members": 1024,
+            "seconds": 14.363884834107012,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 2,
+            "state": "contention:2",
+            "changed_members": 1024,
+            "seconds": 14.830542874988168,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 3,
+            "state": "contention:3",
+            "changed_members": 1024,
+            "seconds": 15.763743792194873,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 4,
+            "state": "contention:4",
+            "changed_members": 1024,
+            "seconds": 15.33515699999407,
+            "stale_update_refused": true
+          }
+        ],
+        "changed_members": 5120,
+        "metrics": {
+          "sqlite_statements": 144727,
+          "sqlite_transactions": 591,
+          "python_fsync_calls": 4715,
+          "python_fsync_seconds": 0.022410714300349355,
+          "extraction": {},
+          "selection_member_encoder_calls": 0,
+          "selection_member_encoded_bytes": 0,
+          "canonical_encoder_calls": 139268,
+          "canonical_encoded_bytes": 1011792189,
+          "canonical_decoder_calls": 92760,
+          "canonical_decoded_bytes": 483192826,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 15,
+              "returned_chunks": 15,
+              "returned_bytes": 15705,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "writer",
+        "pid": 21430,
+        "elapsed_seconds": 103.87606741697527,
+        "peak_rss_bytes": 1276002304
+      },
+      {
+        "metadata_p95_seconds": 0.011610083049163222,
+        "named_p95_seconds": 8.787939625093713,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40948,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 162005482,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:1",
+        "pid": 21432,
+        "elapsed_seconds": 104.00282341707498,
+        "peak_rss_bytes": 791035904
+      },
+      {
+        "metadata_p95_seconds": 0.010013874853029847,
+        "named_p95_seconds": 8.788212707964703,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40948,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 162005482,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:0",
+        "pid": 21431,
+        "elapsed_seconds": 104.41109737497754,
+        "peak_rss_bytes": 793264128
+      },
+      {
+        "metadata_p95_seconds": 0.01443787501193583,
+        "named_p95_seconds": 8.78268591593951,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40948,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 162005482,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:2",
+        "pid": 21433,
+        "elapsed_seconds": 104.41182287503034,
+        "peak_rss_bytes": 795410432
+      },
+      {
+        "metadata_p95_seconds": 0.010641125030815601,
+        "named_p95_seconds": 8.7880666248966,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40948,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 162005482,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:3",
+        "pid": 21434,
+        "elapsed_seconds": 104.41573883313686,
+        "peak_rss_bytes": 784859136
+      }
+    ],
+    "targets": {
+      "elapsed_600s": true,
+      "each_process_2gib": true,
+      "sum_peak_upper_bound_8gib": true,
+      "reader_metadata_p95_5s": true
+    },
+    "full_C01_dimensions": false,
+    "limitations": [
+      "A separate full million-member 8-bucket layout build overlapped, starting at 2026-09-14T09:23:58.538610+00:00. These timings include external host load.",
+      "The first batch reads original fixture source layers; subsequent batches edit generated occurrences. The sustained approximately 15 seconds per batch does not establish the required 100 batches within 600 seconds.",
+      "The sealed wheel predates the later 2049-plus Put coverage batching fix; this 1024-edit path is unchanged.",
+      "Peak memory is a sum of separate process maxima, not a simultaneous sample. OS cache state was uncontrolled."
+    ]
+  },
+  "contention_warm_owner_profile": {
+    "pid": 31248,
+    "start_utc": "2026-09-14T09:30:00.285392+00:00",
+    "wheel_sha256": "837affe4ddd87347d86314fea501aec9a38e3628561172df5c304a3fbc21d42b",
+    "scope": "One warm1024 batch using unchanged revised() on copied completed contention workspace. No concurrent readers; separate fullbuild overlap possible. Owner timers inclusive and overlapping; do not sum them.",
+    "elapsed_seconds": 13.368973084026948,
+    "peak_rss_bytes": 1036746752,
+    "end_utc": "2026-09-14T09:30:13.710799+00:00",
+    "owner_metrics": {
+      "encode <- record_storage.py:bounded_rows": {
+        "calls": 1024,
+        "seconds": 0.0018601033370941877,
+        "bytes": 103424
+      },
+      "encode <- core_edits.py:prepare_value_edits": {
+        "calls": 2052,
+        "seconds": 0.008481530472636223,
+        "bytes": 200756
+      },
+      "decode <- core_edits.py:prepare_value_edits": {
+        "calls": 1024,
+        "seconds": 0.005088008474558592,
+        "bytes": 66560
+      },
+      "encode <- core_admission.py:encode_record": {
+        "calls": 10276,
+        "seconds": 0.2205124308820814,
+        "bytes": 51226183
+      },
+      "decode <- core_admission.py:admit_record": {
+        "calls": 13414,
+        "seconds": 0.4644721723161638,
+        "bytes": 79677164
+      },
+      "encode <- core_admission.py:__init__": {
+        "calls": 2083,
+        "seconds": 0.0938895686995238,
+        "bytes": 21633505
+      },
+      "encode <- ledger.py:_encode": {
+        "calls": 30,
+        "seconds": 0.010215205606073141,
+        "bytes": 883278
+      },
+      "commit": {
+        "calls": 15,
+        "seconds": 1.2641071665566415
+      },
+      "decode <- ledger.py:read_records": {
+        "calls": 16,
+        "seconds": 0.0003887948114424944,
+        "bytes": 6992
+      },
+      "encode <- records.py:_load_root": {
+        "calls": 5,
+        "seconds": 0.16518308292143047,
+        "bytes": 11508871
+      },
+      "_load_root": {
+        "calls": 5,
+        "seconds": 0.32301299809478223
+      },
+      "encode <- records.py:_verified_root": {
+        "calls": 5,
+        "seconds": 0.15633537503890693,
+        "bytes": 11508076
+      },
+      "_verified_root": {
+        "calls": 5,
+        "seconds": 0.6584600424394011
+      },
+      "available": {
+        "calls": 5,
+        "seconds": 3.4756609147880226
+      },
+      "admitted": {
+        "calls": 24,
+        "seconds": 3.475752664497122
+      },
+      "_relation construction": {
+        "calls": 25,
+        "seconds": 0.3140684994868934
+      },
+      "_relation lifetime inclusive": {
+        "calls": 25,
+        "seconds": 9.716441331896931
+      },
+      "lookup_batches advancement": {
+        "calls": 16,
+        "seconds": 0.3945111706852913,
+        "batches": 16
+      },
+      "read_records advancement": {
+        "calls": 69,
+        "seconds": 1.145974540617317,
+        "batches": 70
+      },
+      "encode <- json_values.py:apply_patch": {
+        "calls": 4096,
+        "seconds": 0.020265386207029223,
+        "bytes": 17158312
+      },
+      "decode <- json_values.py:apply_patch": {
+        "calls": 4096,
+        "seconds": 0.04525653691962361,
+        "bytes": 17158312
+      },
+      "encode <- core_edits.py:transform": {
+        "calls": 1024,
+        "seconds": 0.006009793607518077,
+        "bytes": 8512596
+      },
+      "encode <- core_execution.py:publish": {
+        "calls": 5,
+        "seconds": 1.7958227545022964e-05,
+        "bytes": 310
+      },
+      "encode <- core_publication.py:retain_value": {
+        "calls": 7,
+        "seconds": 0.039338627364486456,
+        "bytes": 10422938
+      },
+      "encode <- core_publication.py:_cache": {
+        "calls": 1087,
+        "seconds": 0.07489556656219065,
+        "bytes": 11413737
+      },
+      "encode <- core_edits.py:prepare_revision": {
+        "calls": 2,
+        "seconds": 0.008845125325024128,
+        "bytes": 530513
+      },
+      "encode <- core_states.py:_entity_rows": {
+        "calls": 1024,
+        "seconds": 0.013511211145669222,
+        "bytes": 8703060
+      },
+      "encode <- records.py:_retain_root": {
+        "calls": 8,
+        "seconds": 0.15733879036270082,
+        "bytes": 11563728
+      },
+      "_retain_root": {
+        "calls": 4,
+        "seconds": 0.24360829242505133
+      },
+      "retain_batches": {
+        "calls": 3,
+        "seconds": 1.7643695010337979
+      },
+      "encode <- core_states.py:member_rows": {
+        "calls": 1024,
+        "seconds": 0.0027135375421494246,
+        "bytes": 169984
+      },
+      "encode <- core_encoding.py:membership_digester": {
+        "calls": 2,
+        "seconds": 1.3082986697554588e-05,
+        "bytes": 48
+      },
+      "_state_content": {
+        "calls": 2,
+        "seconds": 0.5302413329482079
+      },
+      "encode <- core_publication.py:_load": {
+        "calls": 1024,
+        "seconds": 0.012043825350701809,
+        "bytes": 8703060
+      },
+      "read_links advancement": {
+        "calls": 8,
+        "seconds": 0.003414374776184559,
+        "batches": 6
+      },
+      "encode <- core_edits.py:check_group": {
+        "calls": 2048,
+        "seconds": 0.012741583632305264,
+        "bytes": 17025192
+      },
+      "decode <- core_states.py:check_representation": {
+        "calls": 2,
+        "seconds": 6.65830448269844e-05,
+        "bytes": 2094
+      },
+      "encode <- core_states.py:_resolve_edits": {
+        "calls": 1024,
+        "seconds": 0.002806591335684061,
+        "bytes": 120832
+      },
+      "_check_puts": {
+        "calls": 1,
+        "seconds": 0.055496999993920326
+      },
+      "union_disjoint": {
+        "calls": 1,
+        "seconds": 3.6023170410189778
+      },
+      "revision_representation": {
+        "calls": 1,
+        "seconds": 7.703197166090831
+      }
+    },
+    "sql_counts": {
+      "INSERT INTO wanted VALUES (?,?,?)": 10337,
+      "INSERT INTO incoming_events VALUES (?,?,?,?,NULL)": 4099,
+      "INSERT INTO retaining VALUES (?,?)": 3142,
+      "INSERT INTO provenance_roots VALUES (?,?)": 3076,
+      "INSERT INTO links VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING": 2102,
+      "INSERT INTO expected VALUES (?,?,?)": 1069,
+      "INSERT INTO incoming VALUES (?,?,x?/*+? bytes*/,NULL,?,NULL,?)": 1034,
+      "INSERT INTO derivations VALUES (?,?) ON CONFLICT DO NOTHING": 1026,
+      "INSERT INTO provenance_scope VALUES (?,?)": 1026,
+      "INSERT INTO incoming VALUES (?,?,NULL,NULL,?,?,?)": 1024,
+      "PRAGMA user_version": 114,
+      "PRAGMA application_id": 114,
+      "COMMIT": 108,
+      "BEGIN": 88,
+      "CREATE TEMP TABLE wanted (ordinal INTEGER PRIMARY KEY,kind TEXT NOT NULL,record_id TEXT NOT NULL)": 77,
+      "SELECT w.kind,w.record_id,r.payload,t.unit_id,t.available,t.evidence_version,r.row_digest,l.reference,r.byte_size,r.outcome FROM wanted w LEFT JOIN records r USING(kind,record_id) ": 69,
+      "BEGIN IMMEDIATE": 26,
+      "SELECT operation,digest FROM units WHERE unit_id=?": 26,
+      "INSERT INTO units VALUES (?,?,?)": 26,
+      "CREATE TEMP TABLE incoming AS SELECT * FROM records WHERE ?": 15,
+      "SELECT ? FROM incoming i JOIN records r USING(kind,record_id) WHERE i.row_digest!=r.row_digest LIMIT ?": 15,
+      "CREATE TEMP TABLE expected (kind TEXT,record_id TEXT,version INTEGER)": 15,
+      "SELECT ? FROM expected e LEFT JOIN retention r USING(kind,record_id) WHERE r.available IS NOT ? OR r.evidence_version!=e.version LIMIT ?": 15,
+      "SELECT r.kind,r.record_id FROM records r JOIN incoming i USING(kind,record_id)": 15,
+      "CREATE TEMP TABLE new_evidence (result_id TEXT NOT NULL,evidence_id TEXT PRIMARY KEY)": 15,
+      "CREATE INDEX new_evidence_result ON new_evidence(result_id)": 15,
+      "INSERT INTO records SELECT * FROM incoming WHERE true ON CONFLICT DO NOTHING": 15,
+      "CREATE TEMP TABLE retaining (kind TEXT,record_id TEXT,PRIMARY KEY(kind,record_id))": 15,
+      "INSERT INTO retention(kind,record_id,unit_id,available) SELECT kind,record_id,?,? FROM retaining WHERE true ON CONFLICT(kind,record_id) DO UPDATE SET available=?,evidence_version=e": 15,
+      "SELECT ? FROM retaining t JOIN records r USING(kind,record_id) WHERE r.kind=? AND r.outcome!=? LIMIT ?": 15,
+      "SELECT ? FROM new_evidence e LEFT JOIN retention r ON r.kind=? AND r.record_id=e.result_id WHERE r.record_id IS NULL LIMIT ?": 15,
+      "UPDATE retention SET evidence_version=evidence_version+(SELECT count(*) FROM new_evidence WHERE result_id=retention.record_id) WHERE kind=? AND record_id IN (SELECT result_id FROM ": 15,
+      "INSERT INTO links SELECT ?,result_id,?,evidence_id,?,evidence_id FROM new_evidence": 15,
+      "UPDATE records SET payload=(SELECT i.payload FROM incoming i WHERE i.kind=records.kind AND i.record_id=records.record_id),source_layer=NULL WHERE source_layer IS NOT NULL AND (kind": 11,
+      "SELECT ? FROM units WHERE unit_id=?": 11,
+      "INSERT INTO incoming VALUES (?,?,x?,NULL,?,NULL,?)": 10,
+      "INSERT INTO progress(update_id,execution_id,status,payload) VALUES (?,?,?,x?)": 10,
+      "SELECT l.owner_kind,l.owner_id,l.relation,l.label,l.target_kind,l.target_id FROM wanted w JOIN links l ON l.owner_kind=w.kind AND l.owner_id=w.record_id ORDER BY w.ordinal,l.relati": 8,
+      "ROLLBACK": 6,
+      "INSERT INTO incoming VALUES (?,?,x?/*+? bytes*/,?,?,NULL,?)": 5,
+      "CREATE TEMP TABLE incoming_events (event_id TEXT PRIMARY KEY,event_kind TEXT,entity_id TEXT,execution_id TEXT,instant INTEGER)": 5,
+      "SELECT ? FROM incoming_events i JOIN provenance_events e USING(event_id) WHERE i.event_kind!=e.event_kind OR i.entity_id!=e.entity_id OR i.execution_id!=e.execution_id OR i.instant": 5,
+      "SELECT ? FROM incoming_events i JOIN provenance_events e USING(entity_id) WHERE i.event_kind=? AND e.event_kind=? AND i.event_id!=e.event_id LIMIT ?": 5,
+      "INSERT INTO provenance_events(event_id,event_kind,entity_id,execution_id,instant) SELECT * FROM incoming_events WHERE true ON CONFLICT(event_id) DO NOTHING": 5,
+      "SELECT ? FROM (SELECT DISTINCT entity_id FROM incoming_events) changed JOIN provenance_events g ON g.entity_id=changed.entity_id AND g.event_kind=? JOIN provenance_events u ON u.en": 5,
+      "CREATE TEMP TABLE provenance_roots (direction TEXT,entity_id TEXT,PRIMARY KEY(direction,entity_id))": 5,
+      "CREATE TEMP TABLE provenance_scope (child TEXT,parent TEXT,PRIMARY KEY(child,parent))": 5,
+      "WITH RECURSIVE scope(entity_id) AS (SELECT entity_id FROM provenance_roots WHERE direction=? UNION SELECT d.parent FROM derivations d JOIN scope s ON d.child=s.entity_id) INSERT IN": 5,
+      "WITH RECURSIVE scope(entity_id) AS (SELECT entity_id FROM provenance_roots WHERE direction=? UNION SELECT d.child FROM derivations d JOIN scope s ON d.parent=s.entity_id) INSERT IN": 5,
+      "SELECT child,parent FROM provenance_scope": 5,
+      "SELECT e.entity_id,e.instant FROM provenance_events e JOIN (SELECT child AS entity_id FROM provenance_scope UNION SELECT parent FROM provenance_scope) s USING(entity_id) WHERE e.ev": 5,
+      "SELECT reference FROM record_layers WHERE layer_id=?": 4,
+      "INSERT INTO record_layers VALUES (?,x?) ON CONFLICT DO NOTHING": 4,
+      "UPDATE records SET payload=NULL,source_layer=? WHERE (kind,record_id) IN (SELECT kind,record_id FROM incoming)": 4,
+      "DELETE FROM links WHERE owner_kind=? AND owner_id=? AND relation=?": 4,
+      "SELECT kind,record_id FROM heads WHERE dataset=?": 1,
+      "SELECT available FROM retention WHERE kind=? AND record_id=?": 1,
+      "INSERT INTO heads VALUES (?,?,?,?) ON CONFLICT(dataset) DO UPDATE SET kind=excluded.kind,record_id=excluded.record_id,update_id=excluded.update_id": 1
+    },
+    "changed_members": 1024,
+    "raw_receipt": "/tmp/docspec-core-contention-warm-owner-20260914/runtime.json",
+    "raw_receipt_sha256": "4c6f85fb2e3b5eb2397ed74d75c166b799e937f54e2451a760e80f542e97048e",
+    "probe_sha256": "2dac0986231668fb3039f0f9f52ed8d69031fd911db7cb0b3d9223a9b4d9945c",
+    "interpretation": "The largest measured owners are fresh physical member admission and the native union identity check. Ledger row counts mostly describe executemany bindings; ledger commit consumes 1.264 seconds inclusive of encoding and provenance. Canonical encoding byte totals alone do not establish a dominant encoder cost. Inclusive owner timings overlap and cannot be summed.",
+    "limitations": [
+      "One instrumented warm batch without concurrent readers, from a separate copied ledger and hardlinked immutable CAS after the five-batch run.",
+      "A separate full layout build overlapped. Timing is diagnostic, not an isolated capacity qualification.",
+      "The unchanged shared revised() path generated 1024 distinct occurrences and published the next state; the current head was checked after publication."
+    ]
+  },
+  "shared_parent_containment_pair": {
+    "reference": {
+      "layerId": "urn:docspec:record-layer:v1:a310ba0db22fa816747da4d8ccc484e5f18cd01792f7290363c8ce74d8fb0214",
+      "layerKind": "core-entities",
+      "schemaId": "core-entities:1",
+      "profileId": "urn:docspec:profile:record-storage:local-parquet:1",
+      "stateRef": "record-layers/sha256/34/3480375e470c51e20780135038d34d26c4146da46c818c0eb7dd1a9979473e96.json",
+      "digest": "sha256:3480375e470c51e20780135038d34d26c4146da46c818c0eb7dd1a9979473e96",
+      "recordCount": 1053696
+    },
+    "results": [
+      {
+        "owner": "installed837a",
+        "seconds": 1.7950343750417233,
+        "members": 17280
+      },
+      {
+        "owner": "candidate",
+        "seconds": 0.5788721248973161,
+        "members": 17280
+      },
+      {
+        "owner": "installed837a",
+        "seconds": 1.8155698331538588,
+        "members": 17280
+      },
+      {
+        "owner": "candidate",
+        "seconds": 0.60781425004825,
+        "members": 17280
+      }
+    ],
+    "source_sha256": {
+      "/Users/mikewolfd/Work/DocSpec/src/docspec/adapters/storage/files.py": "5138c98bc6096bbbc5990ad78224fb5969afd76d06237206be1e48c2d8d85955",
+      "/Users/mikewolfd/Work/DocSpec/src/docspec/adapters/storage/records.py": "e0f964f6f9b199cea247af9c910f69d44b85eab4d2337176e205c92443066641"
+    },
+    "limitations": [
+      "Diagnostic pair on identical retained layer, uncontrolled warmed OS cache, separate fullbuild overlap. Candidate modules loaded from pinned checkout files with all remaining dependencies from installed837a."
+    ],
+    "raw_receipt": "/tmp/docspec-core-contention-warm-owner-20260914/available-pair.json",
+    "raw_receipt_sha256": "3a0e5d2c03597e2ef77aec2e170b9bc58eff4144b70e301ade819462113b9fb1",
+    "probe_sha256": "c4557a4ee7384ef37c897a428e6b11b5a21a0580bd36e56dadfb4a5c1153c9b6",
+    "implementation": "Existing containment owner shares at most 256 checked parent directories within each available() call. Every member still receives one lstat check for a regular non-symlink file and the expected byte size; later admissions start fresh.",
+    "validation": {
+      "command": "uv run --no-sync pytest -q tests/test_record_admission_scope.py tests/test_record_batches.py tests/test_storage_adapters.py",
+      "passed": 40,
+      "seconds": 1.46,
+      "ruff": "passed"
+    },
+    "interpretation": "The paired observations reduce same-layer physical admission time by about 67 percent. They do not measure full contention throughput or remove the separate native union identity scan."
+  },
+  "combined_layout8_contention_prefix": {
+    "wheel": "/tmp/docspec-core-shared-admission-layout8-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "974d4765d27cbf6e2d09d329cad1386d00a916085094788fdab94251d2792d79",
+    "snapshot_manifest_sha256": "ae3742a3b5285a41b57eeac0e7f3cbab3a2e979de8a371a49dee62caa19abefb",
+    "scope": "Stock native5\u00d71024 writes plus four readers; full100 held.",
+    "started_utc": "2026-09-14T09:44:58.072372+00:00",
+    "raw_receipt": "/tmp/docspec-core-contention5-layout8-20260914/trial/contention-contention-report.json",
+    "raw_receipt_sha256": "9e613b4e668d601a82940d66ffc4ff1c7c5b0376368833f1e3c9744028e067af",
+    "report_written_utc": "2026-09-14T09:47:04.152579+00:00",
+    "clone": {
+      "source": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/workspace",
+      "target": "/private/tmp/docspec-core-contention5-layout8-20260914/trial/workspace",
+      "immutable_files_hardlinked": 23864,
+      "mutable_files_copied": 1,
+      "ledger_sha256": "bdd76b4ce2e884a100ebb4609e344d7d0b8b8ce1d409fe8f32fc8ed0cf562975",
+      "records_columns": [
+        [
+          0,
+          "kind",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "record_id",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "payload",
+          "BLOB",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "outcome",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "row_digest",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "source_layer",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "byte_size",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "fresh_contention_ids_checked": true,
+      "limitations": [
+        "Clone contains the full 8-bucket root plus completed title/URL/named-selection diagnostics. Contention state, revision and initial current-selection IDs are absent. Existing unrelated immutable history is preserved.",
+        "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+      ]
+    },
+    "source_sha256": {
+      "/tmp/docspec-core-shared-admission-layout8-20260914/snapshot/tests/support/core_contention_experiment.py": "28cee8459d09d04072d005e80c8fc41097f23e84c01029994620ab5afd969f26",
+      "/tmp/docspec-core-shared-admission-layout8-20260914/snapshot/tests/support/core_runtime_experiment.py": "32b94fe511820ea30dd48005371ac8757dcc0e7c86cd22ee41dabace9a5f2fcd",
+      "/tmp/docspec-core-shared-admission-layout8-20260914/snapshot/tests/support/core_bulk_experiment.py": "060987c8f4a29414b4db41c7cbfb69d16aec0076f6860802fbd808e3b5e5e8b8",
+      "/tmp/docspec-core-shared-admission-layout8-20260914/snapshot/tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+      "/tmp/docspec-core-shared-admission-layout8-20260914/snapshot/tests/support/core_reference.py": "d46d04b33041b3c6613f707317254cdffec8bd4cff27b0d34aad2baf4d088538"
+    },
+    "sources_unchanged_during_run": true,
+    "fixture_members": 1048576,
+    "full_C01_dimensions": false,
+    "concurrent_seconds": 95.39113820903003,
+    "elapsed_including_reconciliation_seconds": 121.4968195001129,
+    "acknowledged_batches_reconciled": 5,
+    "reconciled_value_edits": 5120,
+    "changed_members_per_batch": 1024,
+    "process_count": 5,
+    "parent_peak_rss_bytes": 886996992,
+    "sum_individual_peak_rss_bytes": 6096306176,
+    "targets": {
+      "elapsed_600s": true,
+      "each_process_2gib": true,
+      "sum_peak_upper_bound_8gib": true,
+      "reader_metadata_p95_5s": true
+    },
+    "workers": [
+      {
+        "batches": [
+          {
+            "batch": 0,
+            "state": "contention:0",
+            "changed_members": 1024,
+            "seconds": 47.20529962494038,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 1,
+            "state": "contention:1",
+            "changed_members": 1024,
+            "seconds": 10.80630970816128,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 2,
+            "state": "contention:2",
+            "changed_members": 1024,
+            "seconds": 10.388932416914031,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 3,
+            "state": "contention:3",
+            "changed_members": 1024,
+            "seconds": 10.949969875160605,
+            "stale_update_refused": true
+          },
+          {
+            "batch": 4,
+            "state": "contention:4",
+            "changed_members": 1024,
+            "seconds": 11.936113333096728,
+            "stale_update_refused": true
+          }
+        ],
+        "changed_members": 5120,
+        "metrics": {
+          "sqlite_statements": 144727,
+          "sqlite_transactions": 591,
+          "python_fsync_calls": 4937,
+          "python_fsync_seconds": 0.04482622118666768,
+          "extraction": {},
+          "selection_member_encoder_calls": 0,
+          "selection_member_encoded_bytes": 0,
+          "canonical_encoder_calls": 134098,
+          "canonical_encoded_bytes": 1039904717,
+          "canonical_decoder_calls": 92760,
+          "canonical_decoded_bytes": 483192826,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 15,
+              "returned_chunks": 15,
+              "returned_bytes": 15705,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "writer",
+        "pid": 57181,
+        "elapsed_seconds": 91.40977937495336,
+        "peak_rss_bytes": 1505738752
+      },
+      {
+        "metadata_p95_seconds": 0.0027900829445570707,
+        "named_p95_seconds": 9.317933749873191,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40956,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 217999938,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:2",
+        "pid": 57184,
+        "elapsed_seconds": 93.01044470909983,
+        "peak_rss_bytes": 929955840
+      },
+      {
+        "metadata_p95_seconds": 0.004381250124424696,
+        "named_p95_seconds": 9.311451292131096,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40956,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 217999938,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:1",
+        "pid": 57183,
+        "elapsed_seconds": 94.56912150001153,
+        "peak_rss_bytes": 930414592
+      },
+      {
+        "metadata_p95_seconds": 0.003537750104442239,
+        "named_p95_seconds": 9.317358209053054,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40956,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 217999938,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:0",
+        "pid": 57182,
+        "elapsed_seconds": 95.12913145916536,
+        "peak_rss_bytes": 927727616
+      },
+      {
+        "metadata_p95_seconds": 0.008237167028710246,
+        "named_p95_seconds": 9.354444666998461,
+        "maximum_backlog_batches": 1,
+        "observed_states": [
+          "contention:0",
+          "contention:1",
+          "contention:2",
+          "contention:3",
+          "root"
+        ],
+        "metrics": {
+          "sqlite_statements": 462,
+          "sqlite_transactions": 70,
+          "python_fsync_calls": 0,
+          "python_fsync_seconds": 0.0,
+          "extraction": {
+            "engine_json_decodes": 28672,
+            "shared_encoder_calls": 0,
+            "converted_rows": 14350,
+            "selected_json_bytes": 650482,
+            "largest_arrow_batch_bytes": 40956,
+            "sql_calls": 14
+          },
+          "selection_member_encoder_calls": 14350,
+          "selection_member_encoded_bytes": 1668730,
+          "canonical_encoder_calls": 14406,
+          "canonical_encoded_bytes": 217999938,
+          "canonical_decoder_calls": 14406,
+          "canonical_decoded_bytes": 1691123,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 14,
+              "returned_chunks": 14,
+              "returned_bytes": 14658,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        },
+        "role": "reader:3",
+        "pid": 57185,
+        "elapsed_seconds": 95.13125416706316,
+        "peak_rss_bytes": 915472384
+      }
+    ],
+    "limitations": [
+      "Exact combined974d installed wheel; independent copied ledger and shared immutable CAS from the admitted full eight-bucket fixture. Existing unrelated title/URL/named-selection history remains in the source clone.",
+      "An installed-package small correctness gate overlapped from 2026-09-14T09:46:04.129295+00:00 until approximately 09:47:03 UTC. No other large build/history trial overlapped.",
+      "Only five batches ran. Full100/600-second qualification remains unproven; approximately11-second warm batches do not justify the full trial.",
+      "Individual process peak RSS values form a conservative sum, not simultaneous memory sampling; operating-system cache state was uncontrolled."
+    ]
+  },
+  "combined_layout8_metadata_cache_true_warm_pair": {
+    "pid": 77486,
+    "start_utc": "2026-09-14T09:51:08.405859+00:00",
+    "scope": "Two consecutive1024 warm revised() batches, one CoreWorkspace, separate normal publication sessions, native parquet_metadata_cache=true only. No concurrent readers or skipped checks. Production remains false.",
+    "wheel_sha256": "974d4765d27cbf6e2d09d329cad1386d00a916085094788fdab94251d2792d79",
+    "elapsed_seconds": 26.94490054110065,
+    "peak_rss_bytes": 1716568064,
+    "end_utc": "2026-09-14T09:51:35.351017+00:00",
+    "settings": [
+      [
+        [
+          "enable_external_file_cache",
+          "true"
+        ],
+        [
+          "parquet_metadata_cache",
+          "true"
+        ],
+        [
+          "validate_external_file_cache",
+          "VALIDATE_ALL"
+        ]
+      ]
+    ],
+    "batches": [
+      {
+        "state": "contention:5",
+        "seconds": 13.134150417055935,
+        "peak_rss_bytes": 1328087040,
+        "union_seconds": [
+          6.249564583878964
+        ],
+        "metrics": {
+          "sqlite_statements": 28928,
+          "sqlite_transactions": 114,
+          "python_fsync_calls": 996,
+          "python_fsync_seconds": 0.006819071481004357,
+          "extraction": {},
+          "selection_member_encoder_calls": 0,
+          "selection_member_encoded_bytes": 0,
+          "canonical_encoder_calls": 26816,
+          "canonical_encoded_bytes": 193048409,
+          "canonical_decoder_calls": 18552,
+          "canonical_decoded_bytes": 96911122,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 2,
+              "returned_chunks": 2,
+              "returned_bytes": 2094,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        }
+      },
+      {
+        "state": "contention:6",
+        "seconds": 8.740478000137955,
+        "peak_rss_bytes": 1582071808,
+        "union_seconds": [
+          1.8958741668611765
+        ],
+        "metrics": {
+          "sqlite_statements": 28928,
+          "sqlite_transactions": 114,
+          "python_fsync_calls": 990,
+          "python_fsync_seconds": 0.009422483621165156,
+          "extraction": {},
+          "selection_member_encoder_calls": 0,
+          "selection_member_encoded_bytes": 0,
+          "canonical_encoder_calls": 26816,
+          "canonical_encoded_bytes": 193100693,
+          "canonical_decoder_calls": 18552,
+          "canonical_decoded_bytes": 96911122,
+          "blob_reads_by_media_type": {
+            "application/json": {
+              "stream_calls": 2,
+              "returned_chunks": 2,
+              "returned_bytes": 2094,
+              "range_calls": 0,
+              "range_returned_bytes": 0,
+              "verified_calls": 0,
+              "verified_bytes": 0
+            }
+          }
+        }
+      }
+    ],
+    "final_named_values_checked": 1025,
+    "raw_receipt": "/tmp/docspec-core-contention-cachetrue-20260914/runtime.json",
+    "raw_receipt_sha256": "dcdb1ceaf1332d95e110d766114bbe5e34fd102104cc973c682973d8d5671dbf",
+    "probe_sha256": "ea89f6f01f9458a918d42d45188d2ce595885524df3baa9665b4ebba0c65fec0",
+    "clone": {
+      "source": "/tmp/docspec-core-contention5-layout8-20260914/trial/workspace",
+      "target": "/private/tmp/docspec-core-contention-cachetrue-20260914/trial/workspace",
+      "immutable_files_hardlinked": 24686,
+      "mutable_files_copied": 1,
+      "ledger_sha256": "18776329a83c020be61e605f6b53ff81068f3bcf9917af751e32b9150cac1eeb",
+      "records_columns": [
+        [
+          0,
+          "kind",
+          "TEXT",
+          1,
+          null,
+          1
+        ],
+        [
+          1,
+          "record_id",
+          "TEXT",
+          1,
+          null,
+          2
+        ],
+        [
+          2,
+          "payload",
+          "BLOB",
+          0,
+          null,
+          0
+        ],
+        [
+          3,
+          "outcome",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          4,
+          "row_digest",
+          "TEXT",
+          1,
+          null,
+          0
+        ],
+        [
+          5,
+          "source_layer",
+          "TEXT",
+          0,
+          null,
+          0
+        ],
+        [
+          6,
+          "byte_size",
+          "INTEGER",
+          1,
+          null,
+          0
+        ]
+      ],
+      "fresh_contention_ids_checked": true,
+      "limitations": [
+        "Clone contains five fully reconciled contention revisions. Next state IDs contention:5 and contention:6 are absent; all previous immutable history is preserved.",
+        "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+      ]
+    },
+    "limitations": [
+      "Two consecutive warm-generated-source batches in one workspace; each uses a new normal publication session. No four-reader contention or fresh whole-value baseline was run.",
+      "The first batch starts with a cold native metadata cache, despite prior retained source history. The second can reuse native file metadata. OS cache was uncontrolled.",
+      "Production parquet_metadata_cache remains false. The earlier wide-baseline memory/plan regression remains relevant and is not resolved by this narrow write measurement.",
+      "Second-batch elapsed8.740seconds exceeds the six-second target; the full100-batch qualification remains held."
+    ]
+  },
+  "value_edit_batch_size_pair": {
+    "candidate384": {
+      "pid": 88730,
+      "start_utc": "2026-09-14T09:55:50.011164+00:00",
+      "scope": "Two consecutive1024 warm revised() batches, one CoreWorkspace, separate normal publication sessions, VALUE_EDIT_BATCH_ROWS=384 in core_edits and runtime helper; native parquet_metadata_cache=false. No concurrent readers or skipped checks. Production remains false.",
+      "wheel_sha256": "974d4765d27cbf6e2d09d329cad1386d00a916085094788fdab94251d2792d79",
+      "elapsed_seconds": 23.72690441692248,
+      "peak_rss_bytes": 1715453952,
+      "end_utc": "2026-09-14T09:56:13.738381+00:00",
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "false"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "batches": [
+        {
+          "state": "contention:5",
+          "seconds": 9.224630165845156,
+          "peak_rss_bytes": 1480015872,
+          "union_seconds": [
+            2.1700332921463996
+          ],
+          "metrics": {
+            "sqlite_statements": 28771,
+            "sqlite_transactions": 101,
+            "python_fsync_calls": 990,
+            "python_fsync_seconds": 0.00876240455545485,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 26791,
+            "canonical_encoded_bytes": 193041809,
+            "canonical_decoder_calls": 18534,
+            "canonical_decoded_bytes": 96907288,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 2,
+                "returned_chunks": 2,
+                "returned_bytes": 2094,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          }
+        },
+        {
+          "state": "contention:6",
+          "seconds": 9.279067124938592,
+          "peak_rss_bytes": 1580597248,
+          "union_seconds": [
+            2.0640912079252303
+          ],
+          "metrics": {
+            "sqlite_statements": 28759,
+            "sqlite_transactions": 101,
+            "python_fsync_calls": 978,
+            "python_fsync_seconds": 0.0038096781354397535,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 26788,
+            "canonical_encoded_bytes": 193090877,
+            "canonical_decoder_calls": 18531,
+            "canonical_decoded_bytes": 96906847,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 2,
+                "returned_chunks": 2,
+                "returned_bytes": 2094,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          }
+        }
+      ],
+      "final_named_values_checked": 1025,
+      "raw_receipt": "/tmp/docspec-core-contention-batch384-20260914/runtime.json",
+      "raw_receipt_sha256": "0f6da7d204bd1e09f8e525d0c23a2440d6b749898894d8c50d0a639c7e1515cf",
+      "probe_sha256": "2cd77d114d4f105668a57caa37f804c01ba46b071432b5399350c1289d54ba8a",
+      "clone": {
+        "source": "/tmp/docspec-core-contention5-layout8-20260914/trial/workspace",
+        "target": "/private/tmp/docspec-core-contention-batch384-20260914/trial/workspace",
+        "immutable_files_hardlinked": 24686,
+        "mutable_files_copied": 1,
+        "ledger_sha256": "18776329a83c020be61e605f6b53ff81068f3bcf9917af751e32b9150cac1eeb",
+        "records_columns": [
+          [
+            0,
+            "kind",
+            "TEXT",
+            1,
+            null,
+            1
+          ],
+          [
+            1,
+            "record_id",
+            "TEXT",
+            1,
+            null,
+            2
+          ],
+          [
+            2,
+            "payload",
+            "BLOB",
+            0,
+            null,
+            0
+          ],
+          [
+            3,
+            "outcome",
+            "TEXT",
+            0,
+            null,
+            0
+          ],
+          [
+            4,
+            "row_digest",
+            "TEXT",
+            1,
+            null,
+            0
+          ],
+          [
+            5,
+            "source_layer",
+            "TEXT",
+            0,
+            null,
+            0
+          ],
+          [
+            6,
+            "byte_size",
+            "INTEGER",
+            1,
+            null,
+            0
+          ]
+        ],
+        "fresh_contention_ids_checked": true,
+        "limitations": [
+          "Clone contains five fully reconciled contention revisions. Next state IDs contention:5 and contention:6 are absent; all previous immutable history is preserved.",
+          "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+        ]
+      }
+    },
+    "control256": {
+      "pid": 90127,
+      "start_utc": "2026-09-14T09:56:47.403129+00:00",
+      "scope": "Two consecutive1024 warm revised() batches, one CoreWorkspace, separate normal publication sessions, VALUE_EDIT_BATCH_ROWS=256 in core_edits and runtime helper; native parquet_metadata_cache=false. No concurrent readers or skipped checks. Production remains false.",
+      "wheel_sha256": "974d4765d27cbf6e2d09d329cad1386d00a916085094788fdab94251d2792d79",
+      "elapsed_seconds": 22.770469999872148,
+      "peak_rss_bytes": 1735049216,
+      "end_utc": "2026-09-14T09:57:10.173893+00:00",
+      "settings": [
+        [
+          [
+            "enable_external_file_cache",
+            "true"
+          ],
+          [
+            "parquet_metadata_cache",
+            "false"
+          ],
+          [
+            "validate_external_file_cache",
+            "VALIDATE_ALL"
+          ]
+        ]
+      ],
+      "batches": [
+        {
+          "state": "contention:5",
+          "seconds": 8.831754208076745,
+          "peak_rss_bytes": 1551319040,
+          "union_seconds": [
+            1.9985714168287814
+          ],
+          "metrics": {
+            "sqlite_statements": 28928,
+            "sqlite_transactions": 114,
+            "python_fsync_calls": 996,
+            "python_fsync_seconds": 0.012778579723089933,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 26816,
+            "canonical_encoded_bytes": 193048395,
+            "canonical_decoder_calls": 18552,
+            "canonical_decoded_bytes": 96911122,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 2,
+                "returned_chunks": 2,
+                "returned_bytes": 2094,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          }
+        },
+        {
+          "state": "contention:6",
+          "seconds": 8.815892624901608,
+          "peak_rss_bytes": 1607712768,
+          "union_seconds": [
+            1.9583059158176184
+          ],
+          "metrics": {
+            "sqlite_statements": 28928,
+            "sqlite_transactions": 114,
+            "python_fsync_calls": 996,
+            "python_fsync_seconds": 0.006454020272940397,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 26816,
+            "canonical_encoded_bytes": 193102627,
+            "canonical_decoder_calls": 18552,
+            "canonical_decoded_bytes": 96911122,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 2,
+                "returned_chunks": 2,
+                "returned_bytes": 2094,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          }
+        }
+      ],
+      "final_named_values_checked": 1025,
+      "raw_receipt": "/tmp/docspec-core-contention-batch256-control-20260914/runtime.json",
+      "raw_receipt_sha256": "a550c8289eedc01e82415340b8a279133028fc2f67df0fdb347ec98cc383a9f9",
+      "probe_sha256": "bca4bcf409cab5afa6400b02a1b8494a411e81cdf99b65aeb2b1c5904201460a",
+      "clone": {
+        "source": "/tmp/docspec-core-contention5-layout8-20260914/trial/workspace",
+        "target": "/private/tmp/docspec-core-contention-batch256-control-20260914/trial/workspace",
+        "immutable_files_hardlinked": 24686,
+        "mutable_files_copied": 1,
+        "ledger_sha256": "18776329a83c020be61e605f6b53ff81068f3bcf9917af751e32b9150cac1eeb",
+        "records_columns": [
+          [
+            0,
+            "kind",
+            "TEXT",
+            1,
+            null,
+            1
+          ],
+          [
+            1,
+            "record_id",
+            "TEXT",
+            1,
+            null,
+            2
+          ],
+          [
+            2,
+            "payload",
+            "BLOB",
+            0,
+            null,
+            0
+          ],
+          [
+            3,
+            "outcome",
+            "TEXT",
+            0,
+            null,
+            0
+          ],
+          [
+            4,
+            "row_digest",
+            "TEXT",
+            1,
+            null,
+            0
+          ],
+          [
+            5,
+            "source_layer",
+            "TEXT",
+            0,
+            null,
+            0
+          ],
+          [
+            6,
+            "byte_size",
+            "INTEGER",
+            1,
+            null,
+            0
+          ]
+        ],
+        "fresh_contention_ids_checked": true,
+        "limitations": [
+          "Clone contains five fully reconciled contention revisions. Next state IDs contention:5 and contention:6 are absent; all previous immutable history is preserved.",
+          "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+        ]
+      }
+    },
+    "decision": "Keep production VALUE_EDIT_BATCH_ROWS=256. The 384-row candidate passed limits and integrity checks but showed no timing benefit over the same two-batch256-row control.",
+    "limitations": [
+      "Same installed974d wheel, metadata cache false, no readers, equivalent cloned contention:4 workspaces; only the two imported batch-size constants differ. No production configuration changed.",
+      "Candidate ran before control; operating-system caches were not reset. Small installed correctness checks overlapped this diagnostic period and ended at 2026-09-14T09:56:39.754158+00:00. No other large workload was reported.",
+      "One pair does not establish a statistically stable regression or gain; it provides no evidence to adopt the larger batch. The complete write target remains unmet."
+    ]
+  }
+}

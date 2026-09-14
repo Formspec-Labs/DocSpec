@@ -1,0 +1,23 @@
+{
+  "diagnostic_not_qualification": true,
+  "fixture": "/tmp/docspec-core-history1-owner-20260914/trial",
+  "original_seconds": 0.9989189999178052,
+  "optimized_seconds": 0.14723454206250608,
+  "durable_counts": {
+    "": 17818,
+    "clean_": 0
+  },
+  "sizes": {
+    "storage_bytes": 9650283648,
+    "scratch_bytes": 0,
+    "retained_bytes": 5222129600,
+    "clean_storage_bytes": 0,
+    "clean_scratch_bytes": 0,
+    "clean_retained_bytes": 0
+  },
+  "source_sha256": "1179b4fda0de37c44387b906cccd4049bae6a26ed17063acc5b99eaa09944e3a",
+  "limitations": [
+    "Single overlapping warm-cache comparison; not an isolated performance qualification.",
+    "Sampling interval and storage classifications unchanged; sizes are logical file bytes, not allocation quotas."
+  ]
+}

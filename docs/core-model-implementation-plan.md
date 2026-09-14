@@ -1,8 +1,9 @@
 # DocSpec Core implementation plan
 
-Updated 2026-09-13. This plan implements the [Core model](core-model.md) on one
-local foundation. It describes planned work; implementation checks establish
-conformance and performance. The [implementation tasks](core-model-implementation-tasks.md)
+Updated 2026-09-14. This plan records the [Core model](core-model.md) implementation
+on one local foundation. The [implementation acceptance](core-model-implementation-map.md#implementation-acceptance--2026-09-14)
+records its accepted scope and separates behavioral evidence from performance
+claims. The [implementation tasks](core-model-implementation-tasks.md)
 break it into dependent deliverables with completion checks and code to retire.
 The [consensus record](history/2026-09-13-core-model-consensus.md) says what
 was decided, by whom, and on what evidence.
@@ -34,7 +35,7 @@ encoding remain explicit costs to measure. There is no DocSpec native component.
 | Supplied JSON Schema validation | jsonschema-rs | Compile and reuse supplied schemas; validate at admission with explicit draft, reference, and format settings. |
 | Authoritative metadata | SQLite through standard-library `sqlite3` | One backend owns SQL, connections, transactions, schema initialization and version checks, and bounded row binding behind the six operations in §4. |
 | Local artifact content | The existing content-addressed blob store | SHA-256 keyed, put-if-absent, streamed, with its S3 adapter. The ledger owns logical identity; the store owns bytes. |
-| Bulk catalog and dataset operations | DuckDB | Resolve retained states and selected values, compare dependencies, and identify candidate work in SQL over Parquet and Arrow. Typed JSON extraction and SHA-256 are built in. Decided by the §3.3 measurement. |
+| Bulk catalog and dataset operations | DuckDB | Resolve retained states and selected values, compare dependencies, and identify candidate work in SQL over Parquet and Arrow. Preserve JSON types; compute correspondence digests in Python over shared-encoder bytes. In-engine SHA-256 serves content checks on already canonical bytes. §3.3 records the decision evidence and its limits. |
 | Columnar interchange and Parquet access | Arrow / PyArrow | Exchange bounded batches and streams; retain opaque payloads alongside queryable columns. |
 | Dependency graph algorithms | Standard-library `graphlib`; recursive SQL | Cycle checks and topological order for the operation graph; traversal of potentially affected results as a recursive query over the ledger. |
 | Content and correspondence hashing | SHA-256 | Separate, versioned encodings for content and correspondence; distinct logical entity identities. |
@@ -104,7 +105,7 @@ records together:
 | Record | Required information |
 | --- | --- |
 | Occurrence | `occurrence_id`, value codec/version, and immutable inline value or content reference. Equal-valued root occurrences remain distinct. |
-| State | `state_id`, format version, and membership representation. A composed representation pins its base state and revision; a materialized representation names complete membership. |
+| State | `state_id`, format version, and a representation naming complete membership. Revision history pins the base state and edits; each published revision has a complete checkpoint. |
 | Membership | `member_key`, `occurrence_id`, and value reference recoverable through that occurrence. Keys are unique within a state. |
 | Revision | `revision_id`, `base_state_id`, `result_state_id`, and an explicitly ordered edit sequence. |
 | Membership edit | Unique sequence number, `member_key`, and `put` or `remove`. A `put` identifies the replacement occurrence. |
@@ -164,8 +165,13 @@ relation. A value patch is a derivation of a new entity followed by its insertio
 at the key, never an insertion alone.
 
 Store base membership and edits with key/partition indexes so small edits can
-read affected partitions and reuse unchanged references. Define checkpoint
-thresholds by replay length and touched bytes. A checkpoint materializes the same
+read affected partitions and reuse unchanged references. The reference implementation
+checkpoints membership after every revision: published states have zero pending
+edits to replay. Touched membership partitions determine rewrite work. Immutable
+occurrence payload files remain shared; native identity joins exclude repeated
+occurrences before composing their existing file references. There is no separate
+deferred-checkpoint scheduler. Explicit compaction repacks files and removes values
+unused by that representation. A checkpoint materializes the same
 logical state, including full values, multiplicity, and keys; it creates no new
 logical occurrence or state merely to change storage. Verify equivalence before
 using it, and preserve every still-retained state's recovery path and required
@@ -263,7 +269,10 @@ One gap is confirmed: during extraction, DuckDB 1.5.5 rewrites the lowercase
 hexadecimal escape of a control character such as U+001F to uppercase, including
 inside extracted objects. The values are equal; the bytes and hashes are not.
 Engine extraction therefore passes through the shared canonical encoder before
-correspondence hashing. Use the shared decoder and encoder for every new or
+correspondence hashing. Python feeds those bytes and the versioned framing to
+`hashlib.sha256`, in bounded chunks. In-engine hashing is limited to content
+checks on already canonical bytes; the probe's extraction hashes do not define
+correspondence. Use the shared decoder and encoder for every new or
 changed JSON value, including values produced by extraction or editing; already
 decoded values need no second decode. Reuse unchanged admitted canonical bytes
 and verified digests within their declared integrity scope. Do not gate encoding
@@ -325,8 +334,8 @@ logical records. Removal goes through the retention policy operation below.
 
 Implement removal in C07/C18. The current
 [retention inventory](retention-preview.md) is read-only, and the existing
-[blob interface](../src/docspec/ports/blob_store.py) has no deletion operation.
-Add bounded backend deletion behind the policy owner, protect shared and
+[blob interface](../src/docspec/ports/blob_store.py) now provides bounded backend
+deletion and existing-content readiness. Connect deletion to the policy owner, protect shared and
 in-flight references, and record recoverable intent and outcomes before and
 after removal. Qualify local file and directory durability before reporting
 content ready for ledger publication, including after new object names are
@@ -411,6 +420,24 @@ for streamed entities. This is distinct from ordering operation definitions or
 traversing conservative dependency declarations. Recheck concurrency-sensitive
 availability and evidence versions at publication so cleanup or a newly recorded
 omission cannot invalidate a selection between candidate lookup and commit.
+
+The local publisher holds the ledger's shared content lock from byte production
+through commit; cleanup holds it exclusively through removal completion. The
+kernel releases the lock if a process dies. New writes carry readiness directly;
+already admitted immutable blobs need an availability check, while explicit
+verification performs a fresh byte audit. The ledger indexes actual provenance
+in the publication transaction and checks only the relevant graph. Stated event
+times require a timezone and must be exactly representable at microsecond
+precision; absent times remain unknown. Entity and state IDs share one data
+identity namespace so result bindings resolve without ambiguity.
+
+Materialized roots retain membership and canonical entity rows in the existing
+Parquet store. The ledger keeps immutable entity digests and references to those
+rows; its ordinary record API resolves bounded requests through the same native
+storage queries. Moving a validated entity between inline and bulk storage
+changes its physical location, preserving its logical record and identity.
+Root publication follows a native membership-to-occurrence completeness check.
+Root reads join these retained layers directly in DuckDB.
 
 A crash before publication may leave unreferenced content; cleaning it up is one
 retention policy among others, and every removal cites the policy record that
@@ -597,8 +624,12 @@ lifecycle without it. Nothing else is planned.
 
 The [implementation tasks](core-model-implementation-tasks.md) sequence the work
 and carry each task's completion check. The assembled implementation is complete
-when this example runs through the installed public API, every case below passes
-with recorded evidence, and the capacity targets fixed in C01 are met.
+when this example runs through the installed public API and the behavioral cases
+below pass with recorded evidence. The
+[acceptance record](core-model-implementation-map.md#implementation-acceptance--2026-09-14)
+states the completed scope. C01's performance targets and recipes remain available
+for specific capacity claims; unrun or unmet targets remain unqualified and do
+not block implementation acceptance.
 
 ```text
 create root state
@@ -656,5 +687,6 @@ The example and behavioral checks must cover:
 Performance evidence compares equivalent work: a change counts when the same
 observable results and provenance require less measured work. Measure the
 production path from request to durable publication with actual ledger schemas,
-transaction sizes, durability settings, and concurrent readers. The probes in
-`history/probes/` are recorded diagnostics of query shapes, not capacity claims.
+transaction sizes, durability settings, and concurrent readers. Preserve each
+receipt's stated scope: diagnostic timings in `history/probes/` do not establish
+broader capacity claims.

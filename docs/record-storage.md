@@ -1,16 +1,14 @@
 # Retained records in Parquet
 
 DocSpec stores immutable record layers in Parquet and queries their files with
-DuckDB. This replaces the local JSONL record backend and its custom external
-merge code. It does not create a second database copy for each experiment.
+DuckDB. Bulk state operations use those immutable files directly.
 `RecordStorage` remains the application interface; the local implementation is
 `LocalParquetRecordStorage`.
 
-This is a greenfield format change. The new profile is
-`urn:docspec:profile:record-storage:local-parquet:1`; record roots use
-`docspec-record-layer/2.0`. There is no legacy JSONL record reader or alias.
-Rebuild a dataset with the selected implementation and profile. Historical trials
-retain their original pinned wheels and inputs.
+Record roots use `docspec-record-layer/3.0`. Core state and selection manifests
+reference those layers; logical identities remain distinct from file digests and
+physical representations. Historical trials retain their original pinned inputs
+and wheels, while current code has one native record implementation.
 
 ## What is stored and queried?
 
@@ -24,8 +22,9 @@ Each Parquet row has three columns:
 
 Routing columns let DuckDB find one document's rows without Python decoding
 every other document in the same bucket. The writer requests grouping by
-partition value and identity for efficient queries. Queries enforce logical
-identity order independently of physical row order. The record schema continues to
+partition value and identity for efficient queries. Public row and batch readers
+enforce logical identity order independently of physical row order. Native joins
+leave sorting to the consumer that needs it. The record schema continues to
 govern the complete value. Payload fields are not separately typed Parquet
 columns: querying those fields requires JSON extraction. This avoids inferring
 a new physical schema for every processor payload or internal ledger.
@@ -35,11 +34,19 @@ Globbing the whole record store also includes other layers and superseded
 results. After admitting the selected layer, a DuckDB query over that explicit
 file list can select `partition_value` and use
 `json_extract_string(decode(record_json), '$.payload.title')` for a payload field.
-The public catalog reader provides the same selected-layer access without
-requiring callers to understand file layout.
+Core state APIs provide admitted membership and values. Do not use a string-only
+JSON extraction as a correspondence value: canonical comparison must preserve
+number/string distinctions, absence, null, and composite fields.
 
 The existing hash buckets allow a later result to reuse unchanged files. New
 records enter bounded Arrow batches; DuckDB handles sorting and Parquet writing.
+Each file description retains exact `identityMin` and `identityMax` values
+computed during writing. Admitted identity lookups and union checks skip files
+whose ranges cannot overlap the requested identities. Ranges may overlap, so
+this reduces file opening without promising constant-time lookup. Full logical
+admission checks every row against its declared bounds; raw row readers keep
+their consumed-row checks. Union results preserve all base files.
+
 Logical shard allowances guide output sizing, and actual encoded file sizes
 must fit the physical member limit before publication. Very small limits can
 refuse even one row because Parquet has footer and column overhead.
@@ -51,8 +58,18 @@ files, including their bytes, declared counts and Parquet schema. A catalog
 reader calls it once per complete layer reference when that layer is first
 consumed. Failed admission is retryable. Metadata-only opening remains cheap.
 
-Subsequent queries check the root and the logical rows they consume. They do
-not hash whole files for every document lookup. A reader observes immutable
+Queries opened from references check the root and the logical rows they consume.
+Native joins and streamed batches reuse the descriptor and checked file paths
+from an existing layer admission within its owning operation. The record store
+keeps at most eight admitted layers per thread during shared publication
+protection. State reads and ledger entity lookups use this same bounded cache.
+Nested operations share it; leaving the outer protection scope clears it. An
+evicted layer checks availability again. Within each fresh availability check,
+up to 256 shared parent directories are checked once; every member still receives
+its own regular-file and byte-size check. This directory reuse ends with the
+call. Exclusive cleanup and unprotected
+read-only exports do not reuse this cache, and explicit audits remain fresh.
+Readers do not hash whole files for every document lookup. A reader observes immutable
 files; it does not lock or copy them. External mutation after admission can
 affect later queries. A new reader re-admits the files, and `verify(reference)`
 always performs a fresh physical and complete logical audit. Retention,
@@ -67,31 +84,27 @@ Application code admits inherited files before consuming their rows.
 
 The storage adapter creates its DuckDB connection lazily and uses separate
 cursors for independent reads and writes. Iterators close their cursors when
-exhausted or closed. A prepared run releases the connection after its workers
-stop; later work can reopen it. Close iterators that are not exhausted.
+exhausted or closed. `CoreWorkspace` releases its connections when it closes; later work can reopen
+the workspace. Close iterators that are not exhausted.
 
 Arrow batch counts and estimated input bytes are bounded. DuckDB runs one native
 thread per query and uses its native memory and temporary-storage settings.
-Managed memory has a 128 MiB floor; a native 512-partition probe failed with
-16, 32 and 64 MiB and passed with 128 MiB. The fixed native partition-writer
-open-file setting is one. These observations do not establish a general minimum,
-and the memory setting is not a hard process-resident-memory ceiling. The profile
-keeps record, root, physical member and scratch limits, and removes the obsolete
-Python merge fan-in limit. Capacity qualification must measure the actual
-process and temporary files.
+The shared default memory allowance is 6 GiB, configurable through
+`CoreWorkspace(engine_memory_bytes=...)`. It is not a hard process-resident-memory
+ceiling. Scratch, record, root and member limits still apply. Measure actual
+process memory and temporary files for the intended workload; do not treat the
+engine setting as evidence of a complexity bound.
 
-DuckDB and PyArrow are core dependencies for this default backend. SQLite
-remains appropriate for processor-cache updates, source-build resume state and
-current scratch bookkeeping. Raw document bytes stay in the blob store. Dagster
-continues to own its own execution state. Portable result exports keep their
-existing independent format.
+DuckDB and PyArrow are core dependencies. SQLite is the authoritative Core
+metadata ledger and also supports source-build recovery and disposable record
+spools. Raw bytes remain in the blob store; Dagster owns its execution state.
 
 ## Evidence and remaining qualification
 
-The [prototype measurements](capacity-workloads.md#direct-parquet-query-prototype)
-support the choice of direct file queries. They do not qualify this adapter's
-complete experiment lifecycle. Independent review approved the implementation;
-the strict suite passed 1,129 tests, including installed-package examples, with
-one live integration deselected. The failed JSONL text4096 trial remains
-recorded. Fresh larger workloads must pass the same declared time and memory
-allowances before capacity qualification closes.
+[Record tests](../tests/test_storage_records_catalog.py),
+[layer conformance](../tests/conformance/test_record_storage_contract.py),
+[batch tests](../tests/test_record_batches.py), and
+[state tests](../tests/test_core_states.py) verify native storage behavior.
+[Historical measurements](capacity-workloads.md#direct-parquet-query-prototype)
+record their actual inputs; current capacity acceptance remains in the
+[Core task list](core-model-implementation-tasks.md).

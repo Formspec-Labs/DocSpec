@@ -1,0 +1,279 @@
+{
+  "classification": "Bounded empirical validator A: source-file dependence, diagnostic only.",
+  "decision_note": {
+    "path": "/tmp/docspec-core-file-scaling-a-20260914/experiment.md",
+    "sha256": "cbc009b0c4fe246ac8e67eedd86d32ed8526ca757851ca29a4e2a5bcc5bbefb1"
+  },
+  "launcher": {
+    "path": "/tmp/docspec-core-file-scaling-a-20260914/measure.py",
+    "sha256": "e1be3f83b12dd6d8aa871b2015699cef8a6e69831622e8e83e980f73964f19d0"
+  },
+  "package": {
+    "wheel": "/private/tmp/docspec-core-layout8-uri-fixed-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "6fd4443ff8e6afac08b2f545da577c50cc63b4449564fbbedd381aecbba51bc5",
+    "snapshot_manifest_sha256": "ec79a15cb36a4fc7cae235ec66af3ac537300d27cecad507a6fbf9dce31a31d0",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-layout8-uri-fixed-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-layout8-uri-fixed-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "dimensions": {
+    "F": "Physical parent entity Parquet file count",
+    "N": "Logical parent member count",
+    "E": "Edited occurrences per sibling revision, fixed1024",
+    "H": "Revision ancestry depth, fixed0: each revision derives from root"
+  },
+  "cases": [
+    {
+      "N": 16384,
+      "F_root": 361,
+      "E": 1024,
+      "H": 0,
+      "phases": [
+        {
+          "phase": "cold",
+          "revision_seconds": 3.50262612500228,
+          "owner_observations": {
+            "available": {
+              "calls": 2,
+              "inclusive_seconds": 0.04567445791326463
+            },
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 0.7990107922814786
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 0.9256084603257477
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.056449499912559986
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 0.033481167163699865
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 0.6926601256709546
+        },
+        {
+          "phase": "warm",
+          "revision_seconds": 3.2169810419436544,
+          "owner_observations": {
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 0.6873769606463611
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 0.752274040132761
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.055632334202528
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 0.03246270818635821
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 0.5780815002508461
+        },
+        {
+          "phase": "warm-unobserved-control",
+          "revision_seconds": 3.26001316588372,
+          "owner_observations": {},
+          "parent_discovery_calls": 0,
+          "parent_discovery_seconds": 0
+        }
+      ],
+      "peak_rss_bytes": 343818240,
+      "verification_seconds": 0.8901379168964922,
+      "all_changed_values_and_complete_membership_checked": true,
+      "start_utc": "2026-09-14T10:01:23.392882+00:00",
+      "end_utc": "2026-09-14T10:01:34.275038+00:00",
+      "raw_receipt": "/tmp/docspec-core-file-scaling-a-20260914/16384/scaling.json",
+      "raw_sha256": "e7a0d2adf601a490077a7f871c7d26a78d7287196e0f19107ca99509a7951552"
+    },
+    {
+      "N": 131072,
+      "F_root": 2878,
+      "E": 1024,
+      "H": 0,
+      "phases": [
+        {
+          "phase": "cold",
+          "revision_seconds": 6.053432374959812,
+          "owner_observations": {
+            "available": {
+              "calls": 2,
+              "inclusive_seconds": 0.08782083308324218
+            },
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 3.33864054386504
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 3.486364542040974
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.054638374829664826
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 0.19768091710284352
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 3.2318056270014495
+        },
+        {
+          "phase": "warm",
+          "revision_seconds": 5.648090292001143,
+          "owner_observations": {
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 2.9380265423096716
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 2.9969020429998636
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.053872124990448356
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 0.1869214589241892
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 2.8310740429442376
+        },
+        {
+          "phase": "warm-unobserved-control",
+          "revision_seconds": 5.784191249869764,
+          "owner_observations": {},
+          "parent_discovery_calls": 0,
+          "parent_discovery_seconds": 0
+        }
+      ],
+      "peak_rss_bytes": 452657152,
+      "verification_seconds": 2.4034471660852432,
+      "all_changed_values_and_complete_membership_checked": true,
+      "start_utc": "2026-09-14T10:03:02.417289+00:00",
+      "end_utc": "2026-09-14T10:03:22.323090+00:00",
+      "raw_receipt": "/tmp/docspec-core-file-scaling-a-20260914/131072/scaling.json",
+      "raw_sha256": "014594f4d31d6dc91b41868da63727638ccb51bae7030d9ee6a6ee518dc0f3c9"
+    },
+    {
+      "N": 1048576,
+      "F_root": 23269,
+      "E": 1024,
+      "H": 0,
+      "phases": [
+        {
+          "phase": "cold",
+          "revision_seconds": 57.590681958943605,
+          "owner_observations": {
+            "available": {
+              "calls": 2,
+              "inclusive_seconds": 0.749528749845922
+            },
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 49.502898207865655
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 50.330593045568094
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.05675062513910234
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 2.169793749926612
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 49.3583329974208
+        },
+        {
+          "phase": "warm",
+          "revision_seconds": 60.12956495792605,
+          "owner_observations": {
+            "relation_entry": {
+              "calls": 25,
+              "inclusive_seconds": 53.053071041358635
+            },
+            "lookup_batches": {
+              "calls": 16,
+              "inclusive_seconds": 53.15007341862656
+            },
+            "_check_puts": {
+              "calls": 1,
+              "inclusive_seconds": 0.05819816701114178
+            },
+            "union_disjoint": {
+              "calls": 1,
+              "inclusive_seconds": 2.117669959086925
+            }
+          },
+          "parent_discovery_calls": 12,
+          "parent_discovery_seconds": 52.80033320770599
+        },
+        {
+          "phase": "warm-unobserved-control",
+          "revision_seconds": 60.20949074998498,
+          "owner_observations": {},
+          "parent_discovery_calls": 0,
+          "parent_discovery_seconds": 0
+        }
+      ],
+      "peak_rss_bytes": 1658830848,
+      "verification_seconds": 16.148359958082438,
+      "all_changed_values_and_complete_membership_checked": true,
+      "start_utc": "2026-09-14T10:03:34.695741+00:00",
+      "end_utc": "2026-09-14T10:06:48.853963+00:00",
+      "raw_receipt": "/tmp/docspec-core-file-scaling-a-20260914/1048576/scaling.json",
+      "raw_sha256": "c7114c17acbe8556d7a84be18ebd8dd8827f3fbc35888f3054a6c7004e644a1c"
+    }
+  ],
+  "supported": [
+    "A root-relative1024 value revision performs12 parent compact-identity filename-discovery entries, independent of N, plus one union identity check. The12 entries traverse the full parent file population before choosing payload files.",
+    "Measured warm source discovery dominates fixed-E latency at1m:52.800s of60.130s. Small changed-layer checks stay~0.054\u20130.058s while F grows64x.",
+    "Zero warm available admissions separate repeated native discovery from fresh filesystem validation. Warm unobserved controls are close to observed timings, so the wrapper is not the measured dominant cost."
+  ],
+  "refuted": [
+    "Fresh file admission alone explains the warm-session root-edit bottleneck: warmavailable calls are zero.",
+    "Payload volume E alone determines this operation cost: E stays1024 while input file count and latency grow."
+  ],
+  "inconclusive": [
+    "No mathematical growth exponent inferred from3 timings: N/F are coupled, filesystem caches not flushed, one case per size, and strict tests/tiny metadata checks may overlap.",
+    "No end-to-end contention extrapolation: these sibling-root requests read original large-layer occurrences. Latest-generated occurrences may live in small incoming layers. Contention opens a fresh publisher session each batch; warm here reuses one session."
+  ],
+  "practical_next_change": "Reduce full-parent file discovery at the shared record-store owner using existing physical member metadata, if exact or conservative identity bounds can be produced and independently validated. Preserve compact-identity fallback where bounds cannot exclude a file; do not add another payload cache. Also avoid repeating discovery for the same bounded requested identities across source validation stages when existing admitted data can be reused. This is a proposed change, not an adopted implementation.",
+  "limitations": [
+    "Owner timings are inclusive and overlap; never sum them as disjoint phases.",
+    "Cold means first operation in a fresh process/session, not guaranteed cold OS cache. Warm means subsequent sibling operation in the same publication session.",
+    "The unobserved control runs third and is confounded with later cache warmth.",
+    "All changed entity values and all membership key/occurrence pairs were checked after timing; no full unchanged-body scan was performed.",
+    "No production changes, engine changes, query profiles, cProfile, allocation tracing or new benchmark framework."
+  ],
+  "overlap": "Root ordinary strict regression may overlap; validatorB requested a<1s RETURN_STATS metadata correctness check during full case. No other large empirical probe overlapped."
+}

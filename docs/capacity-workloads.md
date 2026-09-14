@@ -1,36 +1,35 @@
 # Reproduce a local capacity workload
 
-The [workload recipe](../tests/support/capacity_experiment.py) exercises catalog
-construction, capture, later processing, processor changes, saved-task recovery
-and clean comparison through the existing local runtime. Run its operations as
-ordinary processes; the operating system measures them. It supplies no scheduler,
-capacity verdict or replacement for native run and result references.
+The [Core C01 map](core-model-implementation-map.md#capacity-targets-fixed-before-tuning)
+fixes the next implementation's workload inputs and time, memory and scan targets.
+C03 qualifies its bulk operations and C25 measures the assembled runtime. The
+observations below retain their original revisions and scopes.
 
-Install the wheel being measured in an isolated environment outside the checkout.
-Copy the recipe and [phrase processor](../examples/phrase_match_processor.py)
-there, preserving the processor's `examples/` directory. Record the wheel,
-dependencies and interpreter actually installed. Use a new output directory for
-each workload. Set `TMPDIR` before starting Python when measuring temporary files.
+The [workload recipe](../tests/support/capacity_experiment.py) exercises catalog
+construction, capture, later processing, processor changes, retained-prefix
+recovery and clean comparison through `CoreWorkspace` and its document pipeline.
+Run each operation in a fresh process; the operating system measures it.
+
+Install the measured wheel in an isolated environment outside the checkout.
+Copy the recipe, [dataset helpers](../examples/dataset_example_support.py) and
+[phrase processor](../examples/phrase_match_processor.py) there, preserving the
+two helpers' `examples/` directory. Record the wheel, dependencies and interpreter
+actually installed. Use a new output directory for each workload. Set `TMPDIR`
+before starting Python when measuring temporary files.
 
 Generation records the recipe's whole-file digest in `arguments.json` as
-reproduction evidence. Source and retained-result producer identities use the
-DocSpec wheel digest; processing identities remain in the existing pinned stage
-and processor descriptions, configuration and vocabulary resources. Later
-operations still refuse changed wheel or processor bytes. An edit to measurement
-or checking code alone does not invalidate those dataset pins.
-
-Record the recipe actually invoked alongside each operation's native measurement
-output, for example with `shasum -a 256 capacity_experiment.py`. Keep the original
-copied recipe and saved arguments with completed trials. A revised recipe's
-results need their own recorded digest; the generation digest does not describe
-later edits.
+reproduction evidence. Source producer identity uses the DocSpec wheel digest;
+processing definitions pin the stage configuration and vocabulary resource.
+Later operations refuse changed wheel or phrase-processor bytes. Record the
+recipe and both helpers alongside each operation's native measurement output,
+for example with `shasum -a 256`. Keep the original copied files and saved
+arguments with completed trials. A revised recipe needs its own recorded digest.
 
 For example, from that copied directory with its environment active:
 
 ```sh
 python capacity_experiment.py generate /absolute/path/to/text-trial \
-  --workload text512 --wheel /absolute/path/to/docspec.whl \
-  --completed-at 2026-09-12T12:00:00Z --deadline 4000000000
+  --workload text4096 --wheel /absolute/path/to/docspec.whl
 python capacity_experiment.py build /absolute/path/to/text-trial
 python capacity_experiment.py verify /absolute/path/to/text-trial
 python capacity_experiment.py capture /absolute/path/to/text-trial
@@ -42,20 +41,46 @@ python capacity_experiment.py check /absolute/path/to/text-trial
 python capacity_experiment.py changed /absolute/path/to/text-trial
 python capacity_experiment.py clean /absolute/path/to/text-trial
 python capacity_experiment.py compare /absolute/path/to/text-trial
+python capacity_experiment.py behavior /absolute/path/to/text-trial
 ```
 
-Choose the recorded timestamp and absolute deadline for the actual trial.
-Alternatively, use `process` instead of `prefix` and `resume`. Recovery here means
-a completed, nonempty task prefix followed by a fresh process; it does not mean
-an operating-system kill during a stage. The clean workspace shares original
-source files and catalog input, with separate result storage and processor cache.
-Checks compare every selected source, captured byte sequence, representation,
-segment and derived value, including quote positions and source associations.
-Observed component calls also establish which upstream work was reused.
-The compare operation opens one inspection view for each result, checks both
-complete fixture outputs, then passes those same views to the native comparison.
-Record and blob reads retain their checks; this avoids repeating full admission
-solely to construct another view in the same operation.
+Use `--workload markup256` and a separate root for the markup candidate. Core
+attempts record their real execution times. Use native process limits to enforce the
+[C01 allowances](core-model-implementation-map.md#capacity-targets-fixed-before-tuning).
+Alternatively, use `process` instead of `prefix` and `resume`.
+
+`prefix` injects an exception before the next document processor operation after
+N operations complete. The shared Core owner retains the completed choices and
+the interrupted attempt. `resume` opens the same workspace in a fresh process
+and reuses those exact choices. The count is document processor operations, one
+per captured file; phrase calls are counted independently for every segment.
+This checks retained-prefix recovery, not an operating-system crash or recovery
+from an in-flight Core checkpoint. The generic Core capacity probe covers the
+separate checkpoint-resume path.
+
+The clean workspace shares original source files and catalog input, with separate
+Core storage. Checks independently compare every selected source, captured byte
+sequence, representation, segment and phrase value, including exact quote
+positions and source spans. Excluded catalog inputs must have no stage results.
+The shared implementations' observed calls prove that later processing avoids
+fetches and vocabulary changes avoid extraction and segmentation. The comparison
+checks both complete streams against the fixture oracle, then compares their
+logical digests while excluding attempt identities and acquisition timestamps.
+Fresh `inspect` uses the ordinary Core state inspector. Each `run.json` retains
+the actual Core state and observed calls.
+
+The separate `behavior` operation uses the same complete frozen population and
+excluded inputs in a new `behavior/` workspace. It fails one identified extraction,
+reopens and repairs it while selecting the exact retained capture results, then
+changes only source titles and requires every stage result to remain unchanged.
+It changes vocabulary A to B and back to A; the final selection must return the
+original A results with zero algorithm calls. Each completed state passes the
+same complete value and source-span oracle. Its `behavior-report.json` records
+failed result identities, exact reuse, observed calls and checked digests.
+A native measurement covers several stages together; that total is not a
+single-run latency measurement. Count this additional workspace in the trial's storage receipt. These are actual
+document operations; they do not substitute generic Core fixtures for document
+coverage. The workspace reopens between stages within this one command.
 
 | Workload | Selected documents | Captured files | Captured bytes | Segments |
 | --- | ---: | ---: | ---: | ---: |
@@ -67,7 +92,20 @@ solely to construct another view in the same operation.
 
 Each workload also includes explicitly excluded catalog inputs. The two smoke
 cases check the recipe's branches and are not capacity claims. Use a prefix of
-four tasks for `text16`; the default would complete all its tasks.
+four processor operations for `text16`; the default would complete all its files.
+
+On September 14, the migrated Core recipe passed both smoke workloads using an
+isolated Python 3.12.13 and wheel SHA-256
+`afcf7489c828632dfb8c5508c6faaa56b7ff61f23328fc447912d68eb73efcbe`.
+Each completed catalog build/verification, capture, an injected interrupted
+processor attempt, fresh-process prefix recovery, inspection, changed vocabulary,
+and clean comparison. Both also passed the separate failed-input repair,
+title-only revision, and A→B→A document cases. Complete oracles checked 80 text
+and 288 markup segments per result. Changed-resource processing made exactly
+those phrase calls and no upstream calls; title changes and return to A made none.
+Native receipts and copied inputs remain under `/tmp/docspec-core-capacity-smoke`.
+These smoke observations validate the recipe; they do not qualify either full
+capacity candidate. The dated observations below retain their original scope.
 
 On September 12, 2026, both smoke cases completed through isolated Python 3.12.13
 and the core-only wheel built from `930ad06` (SHA-256
@@ -81,6 +119,99 @@ Before making a capacity claim, follow the [qualification guide](qualification.m
 declare the intended workload and resource budgets, collect native time and peak
 memory per operation, account for workspace and temporary storage, and retain
 the actual results. A fresh process does not imply a cold operating-system cache.
+
+## Core writer/readers and cleanup races
+
+The [contention probe](../tests/support/core_contention_experiment.py) uses the
+existing built Core fixture (`base.parquet` and `workspace/`). It runs one writer
+and four readers in separate spawned processes. Every writer batch transforms
+1,024 existing occurrence values and publishes a membership revision through the
+shared Core owners. Readers repeatedly inspect the selected state and consume
+named title/URL fields, checking each result against the fixture. The probe
+records reader latency, observed versions, batch backlog, real SQLite activity,
+per-process memory and durable acknowledgements. After reopening, it reconciles
+every acknowledged revision, replacement identity and changed value.
+
+Run the two independent cases after the ordinary Core build:
+
+```sh
+python -m tests.support.core_contention_experiment contention /absolute/path/to/core-trial
+python -m tests.support.core_contention_experiment cleanup /absolute/path/to/core-trial
+```
+
+Defaults are the C01 workload: 100 batches, 1,024 changed members and four readers.
+For a small already-built eight-member fixture, use `--batches 2 --changed-members 2`.
+Each reader checks those named members plus one absent key. The 600-second
+contention target includes acknowledgement reconciliation; the live workers also
+have a default 600-second deadline. Reports retain failed targets. Summing each
+worker's and the parent process's peak resident memory gives a conservative
+upper bound, not a simultaneous memory sample.
+
+The cleanup case uses its own `cleanup-race-workspace/`. Two processes attempt
+cleanup during an in-flight publication and publication during actual deletion.
+The retained shared bytes and newly published bytes must remain intact. An
+injected interruption after deleting an unreferenced file must leave a durable
+unfinished removal; reopening and resuming must finish it correctly.
+
+For an isolated wheel run, copy this probe and its existing helpers
+`core_runtime_experiment.py`, `core_bulk_experiment.py`, `core_workload.py` and
+`core_reference.py` under `tests/support/`, with empty package `__init__.py` files.
+Keep the build recipe's `uv.lock` when invoking its command-line entry point.
+No checkout imports or optional providers are needed. The probe pins its copied
+sources in the receipt and records installed versions. Preserve the wheel and
+native time/memory evidence separately. Small smoke success does not qualify the
+full contention workload.
+
+## Generic Core state workloads
+
+The [runtime recipe](../tests/support/core_runtime_experiment.py) uses the frozen
+million-member fixture and the actual Core publication, revision, selection and
+recovery owners. Run it from the isolated copied package described above, with
+the wheel's matching source snapshot and lockfile retained for its source pins.
+Each command starts a fresh process. For the default full-size history:
+
+```sh
+python -m tests.support.core_runtime_experiment generate /absolute/path/to/core-trial
+core_cache_description='Filesystem cache not cleared; fresh process'
+for stage in build open fields named ordered-fields whole recover checkpoint edits membership history history-suffix audit; do
+  python -m tests.support.core_runtime_experiment "$stage" /absolute/path/to/core-trial --cache-description "$core_cache_description"
+done
+python -m tests.support.core_runtime_experiment clean /absolute/path/to/core-trial --state history:1015 --cache-description "$core_cache_description"
+python -m tests.support.core_runtime_experiment compare /absolute/path/to/core-trial --state history:1015 --cache-description "$core_cache_description"
+```
+
+`ordered-fields` retains an explicit canonical-JSON position ordering rule and
+checks member-key tie breaks independently, including equal-position values.
+`membership` removes and restores 1,024 keys, verifies the complete address
+population, and requires restoration to select the original URL-dependent result.
+`history-suffix` checks the 1,000-revision prefix before and after checkpointing,
+then appends 16 revisions and reopens both histories. `clean` regenerates expected
+values in a separate sibling directory named `core-trial-clean`, preserving the
+actual occurrence identities. `compare` reopens both workspaces and checks every
+key, identity and value. The clean directory has its own 80 GiB allowance and
+appears separately in sampled storage measurements.
+
+The recipe refuses an existing stage receipt. Use fresh trial directories for
+repeated qualification, keeping the inputs, stage order, package and settings
+fixed. Record cache conditions for each trial; a fresh process does not establish
+a cold filesystem cache. Receipts distinguish timed work, independent oracle
+work, sampled storage, native settings and whole-process memory. A passing small
+test validates a recipe path only. Full repeated trials, scan accounting and the
+[larger-than-memory case](core-larger-than-memory.md) remain required.
+
+Receipts count calls and bytes at the shared canonical encoding/decoding functions,
+blob reads, selected-row conversions, SQLite statements and transactions, Python
+fsync calls, and newly retained file paths. Main and clean scratch/retained storage
+are sampled separately. Query receipts keep compact identifiers; raw profiles
+retain the full SQL. Native SQLite fsync calls and gross allocation counts remain
+outside these observers. Use `--trace-allocations` for a separate diagnostic to
+record Python peak allocation bytes and the change in live allocation count;
+it adds overhead and does not measure native allocations.
+
+The [boundary recipe](../tests/support/core_boundary_experiment.py) supplies the
+separate `nested`, `schema` and `boundary` stages. These exercise nested JSON
+changes, supplied-schema validation, and the differences between record, commit
+and content-value byte limits through the production owners.
 
 ## Local comparison after removing duplicate row storage
 

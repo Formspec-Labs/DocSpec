@@ -1,0 +1,426 @@
+{
+  "scope": "Initial C03 typed extraction, shared encoding and byte-order comparison. Not a complete Core runtime qualification.",
+  "host": {
+    "model": "Apple M4 Pro",
+    "memory_bytes": 51539607552,
+    "physical_cpus": 14
+  },
+  "filesystem_cache": "Not cleared; repeated local reads. Timed engine stages ran sequentially. Independent expected-value checks ran afterwards.",
+  "selected_settings": {
+    "engine": "duckdb",
+    "engine_memory_bytes": 8589934592,
+    "engine_threads": 1,
+    "process_allowance_bytes": 12884901888,
+    "reason": "User requested more memory and a fast working implementation; full same-value comparison succeeds under these settings."
+  },
+  "checks": {
+    "full_regression": "1343 passed; 1 live-service test deselected; Dagster and S3 extras enabled",
+    "focused_after_experiment": "134 passed",
+    "bulk_cases": 42
+  },
+  "files": {
+    "/tmp/docspec-core-c03-full-20260913/base.parquet": {
+      "byte_size": 4428154048,
+      "sha256": "019402bb59cace267f58a3e6bdd8f89ca3860882b17be252f8962f7196180b23"
+    },
+    "/tmp/docspec-core-c03-full-20260913/fields.parquet": {
+      "byte_size": 2027097,
+      "sha256": "31c2fd34addddb761970addf949f756c5be29dd6caf705c2db8d8e01ba06a8ab"
+    },
+    "/tmp/docspec-core-c03-fast-20260913/whole.parquet": {
+      "byte_size": 4431909085,
+      "sha256": "9583b56434b26fc56daa09308cfbf7f088aa07390645367a5c74052f7711e80c"
+    },
+    "/tmp/docspec-core-c03-fast-20260913/named.parquet": {
+      "byte_size": 3120,
+      "sha256": "51e6a1efb34f7bb6b0d31447cd4368181b3088f5af1e8765878c298007065acf"
+    }
+  },
+  "runs": {
+    "/tmp/docspec-core-c03-full-20260913/generate.json": {
+      "rows": 1048576,
+      "encoded_bytes": 8714789678,
+      "largest_write_batch_bytes": 8388594,
+      "shared_encoder_calls": 1048576,
+      "stage": "generate",
+      "elapsed_seconds": 75.83775054197758,
+      "peak_rss_bytes": 743964672,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 536870912,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 0,
+        "retained_bytes": 4426696797
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "791dd9c40f59ce9c95332cb86e04dc01f2d83a06e6f76e2341eca913a470beef",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 4428154048,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-full-20260913/fields.json": {
+      "extraction": {
+        "rows": 1048576,
+        "encoded_bytes": 99552186,
+        "largest_write_batch_bytes": 196608,
+        "engine_json_decodes": 1966080,
+        "shared_encoder_calls": 1048576,
+        "converted_rows": 1048576,
+        "selected_json_bytes": 41094074,
+        "largest_arrow_batch_bytes": 27104,
+        "sql_calls": 1,
+        "seconds": 14.424594499869272
+      },
+      "comparison": {
+        "digest": "sha256:a143bc3fa44184d6d4b5170aafd97fbc587ed18952f796186e337d2567299dbe",
+        "rows": 1048576,
+        "encoded_bytes": 99552186,
+        "largest_sorted_arrow_batch_bytes": 25646,
+        "seconds": 0.7938254170585424
+      },
+      "stage": "fields",
+      "elapsed_seconds": 15.227994875051081,
+      "peak_rss_bytes": 355811328,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 536870912,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 0,
+        "retained_bytes": 4430182261
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "791dd9c40f59ce9c95332cb86e04dc01f2d83a06e6f76e2341eca913a470beef",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 4430181145,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-full-20260913/fields-expected.json": {
+      "mode": "fields",
+      "count": 1048576,
+      "expected": "sha256:a143bc3fa44184d6d4b5170aafd97fbc587ed18952f796186e337d2567299dbe",
+      "actual": "sha256:a143bc3fa44184d6d4b5170aafd97fbc587ed18952f796186e337d2567299dbe",
+      "matches": true,
+      "elapsed_seconds": 61.34441229212098,
+      "peak_rss_bytes": 226476032
+    },
+    "/tmp/docspec-core-c03-full-20260913/whole-original-failure.json": {
+      "stage": "whole",
+      "source_sha256": "791dd9c40f59ce9c95332cb86e04dc01f2d83a06e6f76e2341eca913a470beef",
+      "status": "failed during ORDER BY encoded after whole.parquet was fully written",
+      "exception": "_duckdb.OutOfMemoryException",
+      "message": "failed to pin block of size 256.0 KiB (511.7 MiB/512.0 MiB used)",
+      "engine_memory_bytes": 536870912,
+      "engine_threads": 1,
+      "timing_and_rss": "unavailable: initial experiment wrote only success receipts; failure preserved from terminal output"
+    },
+    "/tmp/docspec-core-c03-full-20260913/whole-no-cache.json": {
+      "variant": "fresh connection; external file cache disabled",
+      "source": "whole.parquet",
+      "engine_memory_bytes": 536870912,
+      "engine_threads": 1,
+      "error": "OutOfMemoryException: Out of Memory Error: failed to pin block of size 256.0 KiB (511.7 MiB/512.0 MiB used)\n\nPossible solutions:\n* Reducing the number of threads (SET threads=X)\n* Disabling insertion-order preservation (SET preserve_insertion_order=false)\n* Increasing the memory limit (SET memory_limit='...GB')\n\nSee also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads",
+      "elapsed_seconds": 11.74830379197374,
+      "peak_rss_bytes": 1198981120
+    },
+    "/tmp/docspec-core-c03-full-20260913/whole-string.json": {
+      "variant": "sort decoded canonical UTF-8 strings; fresh connection",
+      "engine_memory_bytes": 536870912,
+      "engine_threads": 1,
+      "error": "OutOfMemoryException: Out of Memory Error: failed to pin block of size 256.0 KiB (511.7 MiB/512.0 MiB used)\n\nPossible solutions:\n* Reducing the number of threads (SET threads=X)\n* Disabling insertion-order preservation (SET preserve_insertion_order=false)\n* Increasing the memory limit (SET memory_limit='...GB')\n\nSee also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads",
+      "elapsed_seconds": 9.29164008400403,
+      "peak_rss_bytes": 1202307072
+    },
+    "/tmp/docspec-core-c03-full-20260913/whole-comparison.json": {
+      "error": {
+        "type": "OSError",
+        "message": "Out of Memory Error: failed to pin block of size 256.0 KiB (3.9 GiB/4.0 GiB used)\n\nPossible solutions:\n* Reducing the number of threads (SET threads=X)\n* Disabling insertion-order preservation (SET preserve_insertion_order=false)\n* Increasing the memory limit (SET memory_limit='...GB')\n\nSee also https://duckdb.org/docs/stable/guides/performance/how_to_tune_workloads"
+      },
+      "stage": "whole",
+      "compare_only": true,
+      "elapsed_seconds": 11.49080195906572,
+      "peak_rss_bytes": 5366415360,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 4294967296,
+      "engine_threads": 4,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 6592102400,
+        "retained_bytes": 8862094698
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "1efcb031001784a166c229a64ed38adc9295edbcd09e7f2efe7ee3a53a2f3813",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 8862090230,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-full-20260913/whole-comparison-8g-1t.json": {
+      "comparison": {
+        "digest": "sha256:7a83602692699312823bc75e92a2e8f5e56c77535553a93ef956a0314b796e86",
+        "rows": 1048576,
+        "encoded_bytes": 8758829870,
+        "largest_sorted_arrow_batch_bytes": 2140007
+      },
+      "stage": "whole",
+      "compare_only": true,
+      "elapsed_seconds": 38.70163895795122,
+      "peak_rss_bytes": 9958703104,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 8589934592,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 4472242176,
+        "retained_bytes": 8862096155
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 8862090230,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-fast-20260913/whole.json": {
+      "extraction": {
+        "rows": 1048576,
+        "encoded_bytes": 8758829870,
+        "largest_write_batch_bytes": 8386675,
+        "engine_json_decodes": 1048576,
+        "shared_encoder_calls": 1048576,
+        "converted_rows": 1048576,
+        "selected_json_bytes": 8714789678,
+        "largest_arrow_batch_bytes": 2144192,
+        "sql_calls": 1,
+        "seconds": 37.1168242089916
+      },
+      "comparison": {
+        "digest": "sha256:7a83602692699312823bc75e92a2e8f5e56c77535553a93ef956a0314b796e86",
+        "rows": 1048576,
+        "encoded_bytes": 8758829870,
+        "largest_sorted_arrow_batch_bytes": 2140007,
+        "seconds": 38.77603308297694
+      },
+      "stage": "whole",
+      "compare_only": false,
+      "elapsed_seconds": 75.91011675004847,
+      "peak_rss_bytes": 10674323456,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 8589934592,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 4469489664,
+        "retained_bytes": 8860063133
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 8860063133,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-fast-20260913/whole-expected.json": {
+      "mode": "whole",
+      "count": 1048576,
+      "expected": "sha256:7a83602692699312823bc75e92a2e8f5e56c77535553a93ef956a0314b796e86",
+      "actual": "sha256:7a83602692699312823bc75e92a2e8f5e56c77535553a93ef956a0314b796e86",
+      "matches": true,
+      "elapsed_seconds": 76.45561283291318,
+      "peak_rss_bytes": 670236672
+    },
+    "/tmp/docspec-core-c03-fast-20260913/named.json": {
+      "extraction": {
+        "rows": 1025,
+        "encoded_bytes": 94132,
+        "largest_write_batch_bytes": 94132,
+        "engine_json_decodes": 1920,
+        "shared_encoder_calls": 1025,
+        "converted_rows": 1025,
+        "selected_json_bytes": 37034,
+        "largest_arrow_batch_bytes": 25104,
+        "sql_calls": 1,
+        "seconds": 3.9526422498747706
+      },
+      "comparison": {
+        "digest": "sha256:cee2a4fb6f5574df188c81a9e9312af1e4cbe166201bd6a8e9fa9140390f254e",
+        "rows": 1025,
+        "encoded_bytes": 94132,
+        "largest_sorted_arrow_batch_bytes": 24651,
+        "seconds": 0.0012811669148504734
+      },
+      "stage": "named",
+      "compare_only": false,
+      "elapsed_seconds": 3.9597067499998957,
+      "peak_rss_bytes": 177831936,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 8589934592,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 0,
+        "retained_bytes": 8860064766
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": null,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 8860066253,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-fast-20260913/named-expected.json": {
+      "mode": "named",
+      "count": 1048576,
+      "expected": "sha256:cee2a4fb6f5574df188c81a9e9312af1e4cbe166201bd6a8e9fa9140390f254e",
+      "actual": "sha256:cee2a4fb6f5574df188c81a9e9312af1e4cbe166201bd6a8e9fa9140390f254e",
+      "matches": true,
+      "elapsed_seconds": 0.061291541904211044,
+      "peak_rss_bytes": 28524544
+    },
+    "/tmp/docspec-core-c03-allocation-20260913/generate.json": {
+      "rows": 4096,
+      "encoded_bytes": 34014974,
+      "largest_write_batch_bytes": 8388331,
+      "shared_encoder_calls": 4096,
+      "stage": "generate",
+      "compare_only": false,
+      "elapsed_seconds": 1.410129375057295,
+      "peak_rss_bytes": 230408192,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 8589934592,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 0,
+        "retained_bytes": 8473907
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": 76427592,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 12984614,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    },
+    "/tmp/docspec-core-c03-allocation-20260913/fields.json": {
+      "extraction": {
+        "rows": 4096,
+        "encoded_bytes": 379818,
+        "largest_write_batch_bytes": 190464,
+        "engine_json_decodes": 7680,
+        "shared_encoder_calls": 4096,
+        "converted_rows": 4096,
+        "selected_json_bytes": 151466,
+        "largest_arrow_batch_bytes": 25568,
+        "sql_calls": 1,
+        "seconds": 0.4482916658744216
+      },
+      "comparison": {
+        "digest": "sha256:39ac8addcc42708d37c06294bda38c3e6e030725e9cc14494e25d61c1dc8fcad",
+        "rows": 4096,
+        "encoded_bytes": 379818,
+        "largest_sorted_arrow_batch_bytes": 24924,
+        "seconds": 0.011921541066840291
+      },
+      "stage": "fields",
+      "compare_only": false,
+      "elapsed_seconds": 0.46416283305734396,
+      "peak_rss_bytes": 151126016,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "versions": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 8589934592,
+      "engine_threads": 1,
+      "sampled_peak_storage_bytes": {
+        "scratch_bytes": 0,
+        "retained_bytes": 12990799
+      },
+      "storage_sample_interval_seconds": 0.1,
+      "traced_python_peak_bytes": 1530289,
+      "source_sha256": {
+        "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+        "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+        "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+      },
+      "retained_file_bytes": 12993706,
+      "limitations": "C03 extraction/encoding only; no runtime publication, retention, or full qualification"
+    }
+  },
+  "current_sources": {
+    "tests/support/core_bulk_experiment.py": "96c235be56372ac5e2b6c8e5bf061ef17341bbf1f67ddbd9a222fcb3c0cb5ea5",
+    "tests/support/core_bulk_expected.py": "92a857ad3622c2405e0d3e32a5b6536d1a7e001c590373149bdb2fc96b5ec89c",
+    "tests/support/core_workload.py": "9599b40f9ee779a5904e6eb7977f6f416d7a80e806682efcbef33c3fa2089c21",
+    "tests/test_core_bulk_experiment.py": "840f8499b996c42ca5a6c6322545c7beceb7ba3719f2be40de9978bec47fcee6",
+    "uv.lock": "d184c1d7a42654244ac1d0ff24c05411a78100e98d1bcd2a5091920f2bfc18a9"
+  }
+}

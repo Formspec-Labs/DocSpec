@@ -1,23 +1,23 @@
 # Choose how an experiment fetches document bytes
 
-Pass a configured fetcher as `content_fetcher` to
-[`prepare_local_experiment`](python-runs.md). Omitting it uses local files under
-the workspace's `sourceContent` root. The selected catalog still determines the
-documents and candidate files; the fetcher supplies bytes and acquisition facts.
+Pass a configured fetcher explicitly to `CoreWorkspace.documents(fetcher=...)`.
+The selected source state determines documents and candidate files; the fetcher
+supplies bounded bytes and acquisition facts. [Python runs](python-runs.md)
+shows document import and execution.
 
 The [GovInfo bill example](govinfo-bill-example.md) injects an installed SpicyDocs
 fetcher for one explicitly selected XML version, then processes retained bytes
 again after closing the source client.
 
 `RoutingContentFetcher` accepts any nonempty combination of `local`, `https`, and
-`s3`. Unconfigured schemes refuse. It applies the smaller of the task's remaining
+`s3`. Unconfigured schemes refuse. It applies the smaller of the caller's
 byte allowance and an optional `max_object_bytes` allowance.
 
 ```python
 from docspec.adapters.content_fetchers import LocalFileContentFetcher, RoutingContentFetcher
 
 fetcher = RoutingContentFetcher(
-    local=LocalFileContentFetcher(workspace.roots["sourceContent"]),
+    local=LocalFileContentFetcher(input_directory),
     max_object_bytes=8 * 1024**2,
 )
 ```
@@ -79,8 +79,8 @@ local-file adapter records its filesystem observation; DocSpec preserves it in
 the capture. A missing or different observed version refuses when the candidate
 explicitly required one. Expected digest and byte-size checks remain independent.
 
-Prepared workers recheck effective settings before executing tasks or reusing
-sealed results, including runs with zero tasks. Changing a configured route or
-delegate settings therefore refuses reuse instead of silently changing the
-meaning of saved work. Build another explicitly configured experiment when you
-intend a new attempt.
+The bound fetcher validates its implementation and configuration before reading
+bytes. Those settings contribute to the Core operation definition; changing
+them changes the requested operation. Existing results are selected only when
+the common correspondence and policy checks permit reuse. An explicit
+continuation must still match its pinned definition.

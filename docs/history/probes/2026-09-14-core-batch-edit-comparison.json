@@ -1,0 +1,96 @@
+{
+  "scope": "One profiled batch of1024 real changes,2048-member byte-identical fixture,4 concurrent readers. Diagnostic only, not full C01 qualification.",
+  "runs": [
+    {
+      "name": "cached",
+      "wheel_sha256": "1beac551bc753e30c3632c0921650125a428a73034d6b8adaff32214d0181f3b",
+      "fixture_sha256": "9512e889a068eacc326ecddbb3d7f10644f260e6aee16e973a38fe884d213061",
+      "changed_python_files_since_previous": [],
+      "batch_seconds": 47.38367895781994,
+      "writer_peak_rss_bytes": 295714816,
+      "metrics": {
+        "sqlite_statements": 137579,
+        "sqlite_transactions": 8631,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0
+      },
+      "total_with_reconciliation_seconds": 48.117445333860815,
+      "acknowledged_batches_reconciled": 1,
+      "reconciled_value_edits": 1024,
+      "functions": {
+        "_record": {
+          "calls": 1024,
+          "cumulative_seconds": 0.958027218
+        }
+      }
+    },
+    {
+      "name": "batched",
+      "wheel_sha256": "ac475c7d93a3d4c8e4b76a9581ed939bb44b0b060802e49c4fad6b98489e5da0",
+      "fixture_sha256": "9512e889a068eacc326ecddbb3d7f10644f260e6aee16e973a38fe884d213061",
+      "changed_python_files_since_previous": [
+        "docspec/application/core_edits.py",
+        "docspec/application/core_execution.py",
+        "docspec/application/core_publication.py"
+      ],
+      "batch_seconds": 26.915296792052686,
+      "writer_peak_rss_bytes": 264519680,
+      "metrics": {
+        "sqlite_statements": 50011,
+        "sqlite_transactions": 3311,
+        "python_fsync_calls": 919,
+        "python_fsync_seconds": 0.005038040224462748,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0
+      },
+      "total_with_reconciliation_seconds": 27.646584208123386,
+      "acknowledged_batches_reconciled": 1,
+      "reconciled_value_edits": 1024,
+      "functions": {
+        "_record": {
+          "calls": 1024,
+          "cumulative_seconds": 4.4972702380000005
+        },
+        "_entity": {
+          "calls": 2048,
+          "cumulative_seconds": 0.0022947220000000003
+        }
+      }
+    },
+    {
+      "name": "windowed",
+      "wheel_sha256": "d70328d93869f534c37185038907d57626452f33c0b3b97eda4b0845ccd591a8",
+      "fixture_sha256": "9512e889a068eacc326ecddbb3d7f10644f260e6aee16e973a38fe884d213061",
+      "changed_python_files_since_previous": [
+        "docspec/application/core_edits.py",
+        "docspec/application/core_execution.py"
+      ],
+      "batch_seconds": 6.270298916846514,
+      "writer_peak_rss_bytes": 282542080,
+      "metrics": {
+        "sqlite_statements": 30763,
+        "sqlite_transactions": 271,
+        "python_fsync_calls": 919,
+        "python_fsync_seconds": 0.005384771153330803,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0
+      },
+      "total_with_reconciliation_seconds": 6.932264750124887,
+      "acknowledged_batches_reconciled": 1,
+      "reconciled_value_edits": 1024,
+      "functions": {
+        "_record": {
+          "calls": 16,
+          "cumulative_seconds": 0.07596179
+        },
+        "_entity": {
+          "calls": 4096,
+          "cumulative_seconds": 0.005080866000000001
+        }
+      }
+    }
+  ]
+}

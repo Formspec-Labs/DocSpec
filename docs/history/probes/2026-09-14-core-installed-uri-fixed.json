@@ -1,0 +1,71 @@
+{
+  "classification": "Installed Core semantic and offline document/export/CLI acceptance passed; no capacity qualification claimed.",
+  "wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-layout8-uri-fixed-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "6fd4443ff8e6afac08b2f545da577c50cc63b4449564fbbedd381aecbba51bc5",
+    "snapshot_manifest_sha256": "ec79a15cb36a4fc7cae235ec66af3ac537300d27cecad507a6fbf9dce31a31d0",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-installed-c24-uri-fixed/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-layout8-uri-fixed-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "environment": {
+    "python": "3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0 ]",
+    "executable": "/tmp/docspec-core-installed-c24-uri-fixed/environment/bin/python",
+    "docspec_import": "/tmp/docspec-core-installed-c24-uri-fixed/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "packages": {
+      "rulespec-artifacts": "1.0.12",
+      "docspec": "0.3.0",
+      "packaging": "26.3",
+      "iniconfig": "2.3.0",
+      "msgspec": "0.21.1",
+      "pyarrow": "25.0.1",
+      "jsonschema_rs": "0.52.1",
+      "pytest": "9.1.1",
+      "duckdb": "1.5.5",
+      "Pygments": "2.20.0",
+      "sortedcontainers": "2.4.0",
+      "pluggy": "1.6.0",
+      "hypothesis": "6.168.0"
+    },
+    "optional_services_absent": {
+      "boto3": true,
+      "dagster": true,
+      "httpx": true,
+      "pypdf": true,
+      "spicy_docs": true
+    }
+  },
+  "pytest": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "348",
+    "time": "19.404",
+    "timestamp": "2026-09-14T05:55:50.626651-04:00",
+    "hostname": "Michaels-MacBook-Pro.local"
+  },
+  "pytest_reported_elapsed_seconds": 19.42,
+  "copied_source_files": 171,
+  "copied_sources_changed": [],
+  "copied_source_manifest_sha256": "a0ee0ac69d66234d5a0258fa6093c4ebdb8dd6bbe68c85fe08984a4766e98f12",
+  "installed_runtime_probe": "passed",
+  "offline_export_and_corruption_rejection": "passed",
+  "runtime_stdout": "/tmp/docspec-core-installed-c24-uri-fixed/installed-runtime.stdout",
+  "cli_help": "passed",
+  "start": {
+    "start_utc": "2026-09-14T09:55:25.294525+00:00",
+    "overlap": "Independent correctness checks may overlap root performance investigation; no capacity timing claim."
+  },
+  "checks_complete_by_utc": "2026-09-14T09:56:39.754158+00:00",
+  "junit": "/tmp/docspec-core-installed-c24-uri-fixed/core-acceptance.xml",
+  "scope": "Existing18-file installed Core scope,348 cases including URI-path regression. Uses failing interpreter build from974d; only sealed package change from974d is ledger.py URI handling. Original failed package and receipts preserved."
+}

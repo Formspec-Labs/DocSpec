@@ -1,0 +1,83 @@
+{
+  "classification": "Installed Core semantic, bounded writer/batch hashing, and offline document/export/CLI acceptance passed; no capacity qualification claimed.",
+  "wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-bounded-writer-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "bc73eb47c51b4fd359b43af9a9412b39058998307e1948aa1b31aaeae64200bc",
+    "snapshot_manifest_sha256": "b9677416c9ff6be39d660c3c1eb7381612b098cd7e243570244c2bd626023a62",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-installed-c24-bounded-writer/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-bounded-writer-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "environment": {
+    "python": "3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0 ]",
+    "executable": "/tmp/docspec-core-installed-c24-bounded-writer/environment/bin/python",
+    "docspec_import": "/tmp/docspec-core-installed-c24-bounded-writer/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "optional_services_absent": {
+      "boto3": true,
+      "dagster": true,
+      "httpx": true,
+      "pypdf": true,
+      "spicy_docs": true
+    }
+  },
+  "pytest": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "393",
+    "time": "28.466",
+    "timestamp": "2026-09-14T07:07:14.624522-04:00",
+    "hostname": "Michaels-MacBook-Pro.local"
+  },
+  "pytest_reported_elapsed_seconds": 28.47,
+  "cases_by_module": {
+    "tests.test_core_admission_pipeline": 7,
+    "tests.test_core_checkpoints": 5,
+    "tests.test_core_dependencies": 21,
+    "tests.test_core_encoding": 37,
+    "tests.test_core_execution": 22,
+    "tests.test_core_ledger": 17,
+    "tests.test_core_maintenance": 17,
+    "tests.test_core_publication_provenance": 9,
+    "tests.test_core_publisher": 10,
+    "tests.test_core_records": 84,
+    "tests.test_core_reuse": 10,
+    "tests.test_core_revisions": 20,
+    "tests.test_core_selections": 21,
+    "tests.test_core_states": 13,
+    "tests.test_core_value_edits": 47,
+    "tests.test_core_values_example": 1,
+    "tests.test_record_batches": 21,
+    "tests.test_core_incremental_selections": 10,
+    "tests.test_record_identity_bounds": 8,
+    "tests.test_bounded_partitions": 13
+  },
+  "copied_source_files": 172,
+  "copied_sources_changed": [],
+  "original_copied_sources_changed": [],
+  "current_package_source_changes": [],
+  "copied_source_manifest_sha256": "c5e61537e0a5a281fc4f13a1173d92547f5b08021a04e89b413952772f4a41b0",
+  "installed_runtime_probe": "passed",
+  "offline_export_and_corruption_rejection": "passed",
+  "runtime_stdout": "/tmp/docspec-core-installed-c24-bounded-writer/installed-runtime.stdout",
+  "runtime_stdout_sha256": "4685e698cf5084956fc5a1d197d78a438fe2738349be65a8734fde707ed52311",
+  "cli_help": "passed",
+  "start": {
+    "start_utc": "2026-09-14T11:07:14.370517+00:00",
+    "overlap": "Root full source regression session60778 overlaps installed correctness checks. No capacity timing claim."
+  },
+  "checks_complete_by_utc": "2026-09-14T11:08:33.804037+00:00",
+  "native_junit": "/Users/mikewolfd/Work/DocSpec/docs/history/probes/2026-09-14-core-installed-bounded-writer.xml.gz",
+  "native_junit_sha256": "1e6ad24b65f696e7e19c2439d385d4aa10dab69d60373ef931126d9de4c9d16f",
+  "scope": "Same20-file installed acceptance scope as identity-bounds package, with current encoding parametrization. Independent root source regression is separate. Gate timestamps include pauses between commands; pytest duration comes from native console.",
+  "native_junit_uncompressed_sha256": "5a6c358d13bc17d15fe259484566d4ec96121f50328783449fe70a6835e52282"
+}

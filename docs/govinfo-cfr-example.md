@@ -35,7 +35,7 @@ or segments; only processor work changes.
 | `source-evidence/cfr-mods-acquisition.json` | Metadata URL, status, media type, observation time, byte/hash pins, and request limits. |
 | `catalog-preview.json` | Complete SpicyDocs MODS mapping, typed edition facts, explicit selection, and paths to the chosen constituent and URL. |
 | `source-evidence/cfr-text-*.json` | Annual selection, body identity, metadata pin, capture facts, and effective limits. |
-| `processed.json`, `reprocessed.json` | Normal DocSpec plans, run/result references, inspection, and work counts. |
+| `processed.json`, `reprocessed.json` | Core selected state and document result records. |
 | `cfr-example-summary.json` | Captured digest, phrase results, and checked upstream reuse. |
 | `source-evidence/*refusal*`, `processed-failures.json` | Selection/capture failures and available refused response bytes. |
 

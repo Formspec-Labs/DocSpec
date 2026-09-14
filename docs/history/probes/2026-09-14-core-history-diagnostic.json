@@ -1,0 +1,110 @@
+{
+  "created_utc": "2026-09-14T08:41:56.805774+00:00",
+  "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+  "fixture_members": 1048576,
+  "diagnostic_not_qualification": true,
+  "requested_history_length": 20,
+  "actual_completed_prefix": [
+    "history:0",
+    "history:1",
+    "history:2",
+    "history:3",
+    "history:4"
+  ],
+  "stop": {
+    "stopped_utc": "2026-09-14T08:37:52.632126+00:00",
+    "signal": "SIGINT",
+    "reason": "Parent-directed bounded stop: slow completed prefix suffices to diagnose; full20 not proven,1000 remains required",
+    "committed_prefix_before_signal": [
+      "history:0",
+      "history:1",
+      "history:2",
+      "history:3",
+      "history:4"
+    ],
+    "exit_code": 130,
+    "observed_end_utc": "2026-09-14T08:38:10.615672+00:00",
+    "committed_prefix_after_stop": [
+      "history:0",
+      "history:1",
+      "history:2",
+      "history:3",
+      "history:4"
+    ],
+    "peak_sampled_rss_bytes": 1232633856,
+    "last_process_sample": {
+      "elapsed": "03:46",
+      "rss_bytes": 1163116544
+    },
+    "counter_limitation": "Stock helper does not write in-memory counters on KeyboardInterrupt; counters unavailable for interrupted run, not inferred. Separate one-revision profile will provide completed counters.",
+    "interrupt_owner": "CoreStateStorage.revision_representation -> records.available -> _contained -> pathlib.is_symlink/lstat"
+  },
+  "completed_single_revision": {
+    "revision_count": 1,
+    "state_id": "history:0",
+    "creation_seconds": 45.14816520805471,
+    "metrics": {
+      "sqlite_statements": 553,
+      "sqlite_transactions": 48,
+      "python_fsync_calls": 66,
+      "python_fsync_seconds": 0.0021410046610981226,
+      "extraction": {},
+      "selection_member_encoder_calls": 0,
+      "selection_member_encoded_bytes": 0,
+      "canonical_encoder_calls": 159,
+      "canonical_encoded_bytes": 114482456,
+      "canonical_decoder_calls": 60,
+      "canonical_decoded_bytes": 108689,
+      "blob_reads_by_media_type": {
+        "application/json": {
+          "stream_calls": 1,
+          "returned_chunks": 1,
+          "returned_bytes": 1047,
+          "range_calls": 0,
+          "range_returned_bytes": 0,
+          "verified_calls": 0,
+          "verified_bytes": 0
+        }
+      }
+    },
+    "query_profiles": null,
+    "elapsed_seconds": 45.198549082968384,
+    "peak_rss_bytes": 1070137344,
+    "end_utc": "2026-09-14T08:40:51.046786+00:00",
+    "pid": 45222,
+    "start_utc": "2026-09-14T08:40:05.848297+00:00",
+    "diagnostic": "Direct unchanged run_stage history length1; cProfile enabled; CLI background storage sampler omitted to isolate profiler. Concurrent diagnostics.",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9"
+  },
+  "findings": {
+    "contained_calls": 137826,
+    "contained_calls_from_native_relation_paths": 103277,
+    "contained_calls_from_available": 34509,
+    "verified_root_calls": 24,
+    "available_calls": 5,
+    "duplicate_probe_source_locations": [
+      "src/docspec/adapters/storage/core_states.py:414",
+      "src/docspec/adapters/storage/records.py:427"
+    ]
+  },
+  "proposal": "Reuse checked physical paths through the existing admitted layer owner while protected; consolidate duplicate occurrence-union proof in storage. Preserve first admission, retention/content guards and corruption tests. No new store/index.",
+  "limitations": [
+    "Five revisions are committed; neither20 nor1000 revisions are proven. Full1000 plus checkpoint suffix remains required after optimization.",
+    "The interrupted stock helper did not persist in-memory SQL/codec counters; no missing counters are inferred.",
+    "All timings overlap other authorized diagnostics and uncontrolled OS caches.",
+    "First cProfile call graph was inconsistent with background sampling and is not used for owner attribution.",
+    "No-sampler cProfile reports generator accounting exceeding wall time; use closed-function call counts/callers, not summed cumulative times or percentages.",
+    "No production or sealed-source files were changed."
+  ],
+  "receipts_sha256": {
+    "/tmp/docspec-core-history20-diagnostic-20260914/clone-receipt.json": "560d5a0c285c3e31c066a9f42611e41254d5de8a4a58425c7137f943de9a5e1e",
+    "/tmp/docspec-core-history20-diagnostic-20260914/stopped-diagnostic.json": "ed5e0c66e5e41f97d9c66bd0f93104a99623fc9a8c0eee7ebef23aa9d748803f",
+    "/tmp/docspec-core-history20-diagnostic-20260914/history-owner-sample.txt": "1169fb07eef8903a96812768bf9cf03064d1aec532601041daa5b5823eb43e88",
+    "/tmp/docspec-core-history1-owner-20260914/owner-runtime.json": "d37f899c5c128f739508c6021df54737225990b30cdb98b7880585bae3c7f8d0",
+    "/tmp/docspec-core-history1-owner-20260914/profile-callers.txt": "e14adc50ee457995c3154e6b5152651eb7788c11818a569cfdebac8f6ee0a5c5",
+    "/tmp/docspec-core-history1-owner-20260914/profile-cumulative.txt": "bc873cbe8f33b928feecf585a5a7128cb2495b8c6310a81889c0ef283bd1e9e7",
+    "/tmp/docspec-core-history1-owner-20260914/history.pstats": "1339ec2f270663091e47429b824e31799010659721544fe40015aaa6d6d60e08",
+    "/tmp/docspec-core-history1-profile-20260914/trial/history-runtime.json": "5b86d067fbae160bc7ee6ec5eff4168eb6510a88252541913a1c73b2cd139b19",
+    "/tmp/docspec-core-history1-profile-20260914/history.pstats": "e2fe744f0280f3ab345e03d22a2fc56bade4704430fb768aab65c82390aaebf9"
+  }
+}

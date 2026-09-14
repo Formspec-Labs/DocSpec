@@ -13,7 +13,7 @@ an original file.
 
 ## Supported default routes
 
-`stage_policy()` uses `DefaultExtractorRegistry` and
+`DocumentPipeline` defaults to `DefaultExtractorRegistry` and
 `DefaultSegmenterRegistry`, with no processors. The registries choose by media
 type and representation kind. These are the current routes:
 
@@ -34,8 +34,8 @@ publisher's XML schema. Unsupported media types are refused.
 
 Source captures and representations are logically separate records even when
 they refer to identical bytes. Content-addressed storage can share those bytes.
-Use `stop_after="capture"` when the next extraction choice is not settled, or
-`stop_after="extraction"` to inspect representations before choosing segments.
+Use `pipeline.run(..., extract=False, segment=False)` for capture only, or
+`segment=False` to inspect extraction before choosing segments.
 See [the Python lifecycle](python-runs.md).
 
 ## Pin the same choices that execute
@@ -44,26 +44,16 @@ For a known HTML input, make markup retention explicit:
 
 ```python
 from docspec.processing import HtmlExtractor, ParagraphSegmenter
-from docspec.runtime import stage_policy
 
 extractor = HtmlExtractor()
 segmenter = ParagraphSegmenter()
-stages = stage_policy(
-    stop_after="segmentation",
-    extractor=extractor,
-    segmenter=segmenter,
-)
+pipeline = workspace.documents(fetcher=fetcher, extractor=extractor, segmenter=segmenter)
 ```
 
-Supply `stages` when creating the `ProcessingPlan`, and pass the same
-`extractor` and `segmenter` to `prepare_local_run`. For a mixed-format catalog,
-use the registries instead of supplying a single-format implementation.
-
-The plan records the configured stage identities and settings. Each retained
-representation and segment records the selected implementation that produced
-it. Recovery checks those identities; changing a setting requires a new plan.
-Use a retained result as `base_release` to reuse its compatible captures or
-representations in that new experiment.
+The selected objects become pinned Core operation definitions. Retained
+representations and segments record the actual implementation that produced
+them. For mixed-format inputs, use the registries rather than one single-format
+implementation. A later run checks compatible retained stages for reuse.
 
 ## Visible text and source markup
 
@@ -75,19 +65,13 @@ from docspec.processing.visible_text_runtime import (
     VisibleTextBlockSegmenter,
     VisibleTextExtractor,
 )
-from docspec.runtime import stage_policy
 
 extractor = VisibleTextExtractor()
 segmenter = VisibleTextBlockSegmenter()
-stages = stage_policy(
-    stop_after="segmentation",
-    extractor=extractor,
-    segmenter=segmenter,
-)
+pipeline = workspace.documents(fetcher=fetcher, extractor=extractor, segmenter=segmenter)
 ```
 
-Pass these objects to `prepare_local_run` along with the plan containing
-`stages`. The extractor chooses the existing HTML or XML parser from the
+The extractor chooses the existing HTML or XML parser from the
 captured media type and requires UTF-8 input. It retains a `visible-text`
 representation and one source mapping per complete text block. The original HTML/XML capture remains
 available independently.

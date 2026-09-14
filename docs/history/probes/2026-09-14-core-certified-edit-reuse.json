@@ -1,0 +1,600 @@
+{
+  "changed_members_per_revision": 1024,
+  "edit_through_reuse_seconds": {
+    "title": 117.85419216612354,
+    "url": 116.34589333296753
+  },
+  "actual_executions": [
+    "url-urls"
+  ],
+  "exact_title_reuse": true,
+  "url_result_changed": true,
+  "metrics": {
+    "sqlite_statements": 58740,
+    "sqlite_transactions": 332,
+    "python_fsync_calls": 2280,
+    "python_fsync_seconds": 0.019210078520700336,
+    "extraction": {
+      "engine_json_decodes": 2048,
+      "converted_rows": 2048,
+      "selected_json_bytes": 50090,
+      "largest_arrow_batch_bytes": 31406,
+      "sql_calls": 2
+    },
+    "selection_member_encoder_calls": 2048,
+    "selection_member_encoded_bytes": 152490,
+    "canonical_encoder_calls": 60131,
+    "canonical_encoded_bytes": 837854161,
+    "canonical_decoder_calls": 37211,
+    "canonical_decoded_bytes": 192702396,
+    "blob_reads_by_media_type": {
+      "application/json": {
+        "stream_calls": 2,
+        "returned_chunks": 2,
+        "returned_bytes": 2094,
+        "range_calls": 0,
+        "range_returned_bytes": 0,
+        "verified_calls": 0,
+        "verified_bytes": 0
+      },
+      "application/vnd.docspec.selected-members+json": {
+        "stream_calls": 1,
+        "returned_chunks": 1,
+        "returned_bytes": 549,
+        "range_calls": 0,
+        "range_returned_bytes": 0,
+        "verified_calls": 0,
+        "verified_bytes": 0
+      }
+    }
+  },
+  "stage": "edits",
+  "elapsed_seconds": 245.89033508277498,
+  "peak_rss_bytes": 1640759296,
+  "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+  "sampled_peak": {
+    "storage_bytes": 9866654512,
+    "scratch_bytes": 13672431,
+    "retained_bytes": 5334683336,
+    "clean_storage_bytes": 0,
+    "clean_scratch_bytes": 0,
+    "clean_retained_bytes": 0
+  },
+  "storage_file_changes": {
+    "new_durable_files": 380,
+    "clean_new_durable_files": 0
+  },
+  "sample_interval_seconds": 0.25,
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "python": "3.12.9",
+  "cache_description": "Fresh process; certified initial URL baseline retained separately; immutable-CAS fixture clone; filesystem caches not cleared; concurrent small document/acceptance diagnostics explicitly recorded",
+  "cache_state_declared": true,
+  "python_allocations": null,
+  "versions": {
+    "docspec": "0.3.0",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1"
+  },
+  "engine_memory_bytes": 6442450944,
+  "engine_threads": 1,
+  "sources_unchanged_during_run": true,
+  "limitations": [
+    "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+    "Storage is sampled; native record scratch is directed into the measured output tree.",
+    "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+    "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+    "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+    "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+    "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+    "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+    "Cache description is operator supplied; the probe does not flush or warm caches.",
+    "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+  ],
+  "evidence_scope": "Installed sealed optimized candidate diagnostic: certified URL baseline prepared separately, then fresh-process stock edits(). Small document and correctness workloads overlapped. Not an isolated final capacity qualification.",
+  "sealed_artifact": {
+    "wheel": "/private/tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+    "snapshot_manifest_sha256": "76cf94e371e70e9bb4634ee42ec41414bce27788c086bbc0c6fbe8cc5052ed52",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-optimized-diagnostic-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-optimized-diagnostic-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "full_receipt": {
+    "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/edits-runtime.json",
+    "sha256": "5fb0762aaf25e772e1900666332415d137d32f76947944cdccec1aeb58f5371a"
+  },
+  "clone": {
+    "source": "/tmp/docspec-core-qualification-20260914/flush-full-six/workspace",
+    "target": "/private/tmp/docspec-core-optimized-diagnostic-20260914/trial/workspace",
+    "immutable_files_hardlinked": 17806,
+    "mutable_files_copied": 1,
+    "ledger_sha256": "36af811e8c98470080db7612afdad5ee492b8e0db9aa40275757d5e6a4c0dab2",
+    "records_columns": [
+      [
+        0,
+        "kind",
+        "TEXT",
+        1,
+        null,
+        1
+      ],
+      [
+        1,
+        "record_id",
+        "TEXT",
+        1,
+        null,
+        2
+      ],
+      [
+        2,
+        "payload",
+        "BLOB",
+        0,
+        null,
+        0
+      ],
+      [
+        3,
+        "outcome",
+        "TEXT",
+        0,
+        null,
+        0
+      ],
+      [
+        4,
+        "row_digest",
+        "TEXT",
+        1,
+        null,
+        0
+      ],
+      [
+        5,
+        "source_layer",
+        "TEXT",
+        0,
+        null,
+        0
+      ],
+      [
+        6,
+        "byte_size",
+        "INTEGER",
+        1,
+        null,
+        0
+      ]
+    ],
+    "fresh_stock_ids_checked": true,
+    "limitations": [
+      "Clone contains the original root and unrelated prior title-scan/title256 diagnostic states; no stock title/url/root-urls results were intentionally created in the source. Fresh stock state, revision and request/selection IDs were checked absent in the cloned ledger.",
+      "No source SQLite/WAL/control file is hardlinked. Immutable content remains shared."
+    ]
+  },
+  "host_overlap": {
+    "authorized_utc": "2026-09-14T08:22:54.000256+00:00",
+    "scope": "Root authorized concurrent old-wheel text512 document processing during optimized Core diagnostic for early bottleneck detection. Neither result is final isolated qualification.",
+    "exact_intervals_pending": false,
+    "intervals": [
+      {
+        "workload": "Old sort-only wheel text512 process",
+        "start_utc": "2026-09-14T08:22:37Z",
+        "end_utc": "2026-09-14T08:24:43Z",
+        "end_time_precision": "approximate from125.95s native elapsed",
+        "peak_rss_bytes": 630600000
+      },
+      {
+        "workload": "Optimized exact-wheel installed acceptance, offline runtime/export and CLI",
+        "start_utc": "2026-09-14T08:25:41.707845Z",
+        "end_utc": "2026-09-14T08:26:51Z",
+        "result": "339 tests passed; offline probe and CLI passed"
+      },
+      {
+        "workload": "Root strict full regression",
+        "start_utc": "2026-09-14T08:24:28.157993Z",
+        "end_utc": "2026-09-14T08:27:50.442413Z",
+        "result": "1229 passed;1integration deselected;201.95s",
+        "timestamp_evidence": "file birth/mtime;JUnit confirms start"
+      }
+    ],
+    "other_workloads": [],
+    "later_audit_overlaps": [
+      {
+        "workload": "History20 diagnostic, separate copied ledger and immutable shared fixture",
+        "start_utc": "2026-09-14T08:34:06.256538Z",
+        "end_utc": "2026-09-14T08:37:52.632126Z",
+        "scope": "Title full-state audit overlap; did not overlap completed timed edits",
+        "result": "Stopped by root after five committed history states; diagnostic only"
+      },
+      {
+        "workload": "One profiled Core history revision, low memory",
+        "start_utc": "2026-09-14T08:37:14Z",
+        "end_utc": null,
+        "scope": "URL audit overlap only; exact terminal pending"
+      }
+    ],
+    "document_phase_intervals": {
+      "00-generate": {
+        "native_elapsed_seconds": 4.07,
+        "native_peak_rss_bytes": 100515840,
+        "receipt_created_utc": "2026-09-14T08:19:33.529954+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:19:37.604237+00:00"
+      },
+      "01-build": {
+        "native_elapsed_seconds": 1.1,
+        "native_peak_rss_bytes": 110575616,
+        "receipt_created_utc": "2026-09-14T08:19:47.040569+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:19:48.148335+00:00"
+      },
+      "02-verify": {
+        "native_elapsed_seconds": 0.55,
+        "native_peak_rss_bytes": 103989248,
+        "receipt_created_utc": "2026-09-14T08:19:56.118710+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:19:56.672678+00:00"
+      },
+      "03-capture": {
+        "native_elapsed_seconds": 25.29,
+        "native_peak_rss_bytes": 205635584,
+        "receipt_created_utc": "2026-09-14T08:20:04.329148+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:20:29.626892+00:00"
+      },
+      "04-process": {
+        "native_elapsed_seconds": 125.95,
+        "native_peak_rss_bytes": 630636544,
+        "receipt_created_utc": "2026-09-14T08:22:37.008616+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:24:42.959981+00:00"
+      },
+      "04b-process-check": {
+        "native_elapsed_seconds": 15.89,
+        "native_peak_rss_bytes": 394379264,
+        "receipt_created_utc": "2026-09-14T08:24:52.016921+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:25:07.909857+00:00"
+      },
+      "05-changed": {
+        "native_elapsed_seconds": 103.7,
+        "native_peak_rss_bytes": 542605312,
+        "receipt_created_utc": "2026-09-14T08:25:23.038291+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:27:06.747339+00:00"
+      },
+      "06-clean": {
+        "native_elapsed_seconds": 138.0,
+        "native_peak_rss_bytes": 656162816,
+        "receipt_created_utc": "2026-09-14T08:27:26.306960+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:29:44.313311+00:00"
+      },
+      "07-compare": {
+        "native_elapsed_seconds": 28.28,
+        "native_peak_rss_bytes": 401244160,
+        "receipt_created_utc": "2026-09-14T08:29:54.869187+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:30:23.154249+00:00"
+      },
+      "07b-inspect": {
+        "native_elapsed_seconds": 0.32,
+        "native_peak_rss_bytes": 100302848,
+        "receipt_created_utc": "2026-09-14T08:30:33.044792+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:30:33.367285+00:00"
+      },
+      "08-behavior": {
+        "native_elapsed_seconds": 440.3,
+        "native_peak_rss_bytes": 694501376,
+        "receipt_created_utc": "2026-09-14T08:30:42.568953+00:00",
+        "receipt_last_written_utc": "2026-09-14T08:38:02.878313+00:00"
+      }
+    },
+    "edits_interval": {
+      "start_utc_approximate": "2026-09-14T08:24:48.096715+00:00",
+      "receipt_written_utc": "2026-09-14T08:28:53.987050+00:00",
+      "method": "Receipt mtime minus measured elapsed; process setup is additional"
+    },
+    "url-baseline_interval": {
+      "start_utc_approximate": "2026-09-14T08:21:57.476528+00:00",
+      "receipt_written_utc": "2026-09-14T08:23:43.099801+00:00",
+      "method": "Receipt mtime minus measured elapsed; process setup is additional"
+    }
+  },
+  "baseline": {
+    "receipt": {
+      "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/url-baseline-runtime.json",
+      "sha256": "6b205e8e11b6b40390753f3cb8255575014171a729a4041fa24b4f38f49e165b"
+    },
+    "elapsed_seconds": 105.6232734171208,
+    "peak_rss_bytes": 1579401216,
+    "actual_executions": [
+      "root-urls"
+    ],
+    "metrics": {
+      "sqlite_statements": 426,
+      "sqlite_transactions": 44,
+      "python_fsync_calls": 402,
+      "python_fsync_seconds": 0.0003144035581499338,
+      "extraction": {
+        "engine_json_decodes": 2097152,
+        "shared_encoder_calls": 0,
+        "converted_rows": 2097152,
+        "selected_json_bytes": 66983796,
+        "largest_arrow_batch_bytes": 28096,
+        "sql_calls": 2
+      },
+      "selection_member_encoder_calls": 2097152,
+      "selection_member_encoded_bytes": 171841396,
+      "canonical_encoder_calls": 3145835,
+      "canonical_encoded_bytes": 477570941,
+      "canonical_decoder_calls": 48,
+      "canonical_decoded_bytes": 18020,
+      "blob_reads_by_media_type": {
+        "application/json": {
+          "stream_calls": 1,
+          "returned_chunks": 1,
+          "returned_bytes": 1047,
+          "range_calls": 0,
+          "range_returned_bytes": 0,
+          "verified_calls": 0,
+          "verified_bytes": 0
+        }
+      }
+    },
+    "setup_failure": "First external launcher omitted its scratch mkdir and failed before evaluation; error and exact launcher retained separately. Installed package was unchanged; corrected launcher completed once."
+  },
+  "payload_scan_bound": {
+    "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+    "parent_files": 17190,
+    "scans": [
+      {
+        "profile": "query-000002.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000004.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000006.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000008.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000010.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000012.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000014.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000016.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000026.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000030.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000034.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000038.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000060.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000062.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000064.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000066.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000068.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000070.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000072.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000074.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000084.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000088.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000092.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000096.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      }
+    ],
+    "uncompressed_encoded_payload_column_bytes_upper_bound": 62010930,
+    "within_64_mib": true,
+    "is_physical_io_measurement": false,
+    "scope": "Both actual1024title and1024URL edit-through-reuse phases, plus retained baseline recovery; postprocessed from original timed-query profiles.",
+    "postprocessing_seconds": 4.37026954209432
+  },
+  "query_profile_scope": {
+    "raw_profiles": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/profiles/edits",
+    "profile_count": 120,
+    "scope": "Actual baseline recovery and both title/URL edits; raw profiles retain full SQL."
+  },
+  "targets": {
+    "edit_through_reuse_seconds_per_revision": 120,
+    "small_edit_peak_rss_bytes": 2147483648,
+    "parent_payload_column_bytes": 67108864
+  },
+  "interpretation": {
+    "correctness_passed": true,
+    "both_phase_time_targets_passed": true,
+    "combined_process_rss_under_2gib": true,
+    "combined_parent_payload_bound_under_64mib": true,
+    "changed_member_extraction_rows": 2048,
+    "isolated_final_qualification": false,
+    "full_state_value_oracle_completed": true,
+    "complete_retained_url_key_value_and_result_digest_oracle_passed": true
+  },
+  "independent_state_audits": {
+    "title": {
+      "receipt": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/audit-title-runtime.json",
+      "sha256": "a82a826cb4a5dc6395600e625a015142a7b0937639def5175edd715125f94ce9",
+      "members": 1048576,
+      "verified_value_bytes": 8714801028,
+      "physical_integrity_and_schema_checked": true,
+      "elapsed_seconds": 249.71811479097232,
+      "peak_rss_bytes": 11217960960,
+      "sources_unchanged_during_run": true,
+      "scope": "Separate fresh-process full audit; history20 and small document diagnostic overlap recorded in host sidecar"
+    },
+    "url": {
+      "receipt": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/audit-url-runtime.json",
+      "sha256": "8f6b93c41635f77a3c94a072e4edff83cce79f6cc8338d9f60118c82153f1f23",
+      "members": 1048576,
+      "verified_value_bytes": 8714780548,
+      "physical_integrity_and_schema_checked": true,
+      "elapsed_seconds": 242.0438391668722,
+      "peak_rss_bytes": 8783331328,
+      "sources_unchanged_during_run": true,
+      "scope": "Separate fresh-process full audit; history and small document diagnostic overlap recorded in host sidecar"
+    }
+  },
+  "retained_url_selection_oracle": {
+    "root": {
+      "members": 1048576,
+      "selected_bytes_checked": 85920698,
+      "exact_key_domain_and_encoded_values": true,
+      "producer_digest_and_count_equal": true,
+      "digest": "79d04a5fab5c309576ee3de88e78fcd58b9c90c874bfde738f47b84920e9c5cd",
+      "elapsed_seconds": 57.95565691613592
+    },
+    "url": {
+      "members": 1048576,
+      "selected_bytes_checked": 85911568,
+      "exact_key_domain_and_encoded_values": true,
+      "producer_digest_and_count_equal": true,
+      "digest": "4ab7c434d299f6060a8ea11a8da2b70d2b0fbd95bfbd79a1b9719f23c70340c7",
+      "elapsed_seconds": 57.29734395816922
+    },
+    "elapsed_seconds": 115.25706800003536,
+    "peak_rss_bytes": 375767040,
+    "scope": "Independent retained URL selection/key canonical-byte oracle and producer result count/digest; separate from timed edits",
+    "wheel_sha256": "4fa638bb94324d3a1a344d2a2d7661c03529e4bc04170c097caa39bc4d4228e9",
+    "receipt": {
+      "path": "/tmp/docspec-core-optimized-diagnostic-20260914/trial/url-selection-oracle.json",
+      "sha256": "ff8e2ca92e7c2aa14bbf63afdd75820c79c2bcd11c6a9573413c1d5fade47951"
+    },
+    "external_oracle_correction": "First launcher incorrectly assumed numeric key ordering for an unordered StateMembers selection. Corrected to existing reference pattern: exact integer key domain plus duplicate-detecting bitset and per-key canonical value equality; original launcher/error retained. No production change."
+  }
+}

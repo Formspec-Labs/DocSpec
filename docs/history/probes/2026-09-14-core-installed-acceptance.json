@@ -1,0 +1,71 @@
+{
+  "environment": {
+    "python": "3.12.9 (main, Mar 29 2025, 16:43:11) [Clang 16.0.0 (clang-1600.0.26.6)]",
+    "executable": "/tmp/docspec-core-installed-c24-final/environment/bin/python",
+    "docspec_import": "/tmp/docspec-core-installed-c24-final/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "sys_path": [
+      "",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python312.zip",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python3.12",
+      "/Users/mikewolfd/.pyenv/versions/3.12.9/lib/python3.12/lib-dynload",
+      "/tmp/docspec-core-installed-c24-final/environment/lib/python3.12/site-packages"
+    ],
+    "wheel": "/tmp/docspec-core-qualification-20260914-final/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "e6e842871b6b444f1f6221556d2b009298b1a14ab9beacd15e20333b4749faf0",
+    "packages": {
+      "rulespec-artifacts": "1.0.12",
+      "docspec": "0.3.0",
+      "packaging": "26.3",
+      "iniconfig": "2.3.0",
+      "msgspec": "0.21.1",
+      "pyarrow": "25.0.1",
+      "jsonschema_rs": "0.52.1",
+      "pytest": "9.1.1",
+      "duckdb": "1.5.5",
+      "Pygments": "2.20.0",
+      "sortedcontainers": "2.4.0",
+      "pluggy": "1.6.0",
+      "hypothesis": "6.168.0"
+    },
+    "optional_services_absent": {
+      "boto3": [],
+      "dagster": [],
+      "httpx": [],
+      "pypdf": [],
+      "spicy_docs": []
+    }
+  },
+  "pytest": {
+    "tests": 330,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "pytest_seconds": 28.567,
+  "scope": [
+    "tests.test_core_admission_pipeline",
+    "tests.test_core_checkpoints",
+    "tests.test_core_dependencies",
+    "tests.test_core_encoding",
+    "tests.test_core_execution",
+    "tests.test_core_ledger",
+    "tests.test_core_maintenance",
+    "tests.test_core_publication_provenance",
+    "tests.test_core_publisher",
+    "tests.test_core_records",
+    "tests.test_core_reuse",
+    "tests.test_core_revisions",
+    "tests.test_core_selections",
+    "tests.test_core_states",
+    "tests.test_core_value_edits",
+    "tests.test_core_values_example",
+    "tests.test_record_batches"
+  ],
+  "copied_test_example_source_files": 170,
+  "copied_sources_unchanged": true,
+  "installed_runtime_probe": "passed",
+  "cli_help": "passed",
+  "junit": "/tmp/docspec-core-installed-c24-final/core-acceptance.xml",
+  "runtime_stdout": "/tmp/docspec-core-installed-c24-final/installed-runtime.stdout",
+  "qualification_scope": "Installed Core semantic acceptance and offline document/export path; full repository regression map was separately run by root, no optional-service integration claimed."
+}

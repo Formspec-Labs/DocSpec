@@ -6,7 +6,8 @@ earlier entries where noted. Parties: the owner; Claude Fable 5.1, which reviewe
 spec, reviewed the plan twice, measured the engine and ledger choices, and
 wrote this record; and GPT-6, which authored the plan and tasks and ran the
 [recursive validation](2026-09-13-core-plan-swarm-validation.md). Versions
-are pinned at the end. Nothing here is implemented; the 24 tasks are proposed.
+at planning closure are pinned below. The [task checklist](../core-model-implementation-tasks.md)
+owns subsequent implementation status and evidence; this record owns decisions.
 
 ## Decisions
 
@@ -126,7 +127,7 @@ jsonschema-rs, SHA-256, graphlib, and optional Dagster. Hypothesis supports the
 behavioral checks. Core conformance, crash recovery, and bounded full-workload
 performance are completion criteria, not additional components.
 
-## Verification of the current adopted scope
+## Verification before C01
 
 Checked 24 live task definitions against their overview, 37 dependency edges
 in build order, the isolated C22 stub, and all 173 local links across the plan,
@@ -134,11 +135,10 @@ tasks, this record, and documentation index. Whitespace and adopted-scope checks
 passed. The spec is unchanged. These are document checks; no runtime, capacity,
 or conformance test result is claimed for the unbuilt implementation.
 
-| Artifact | Current SHA-256 |
-| --- | --- |
-| core-model.md | `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81` |
-| core-model-implementation-plan.md | `126bb6ed899e0b103d24a67ee668e565cf3fa3e7b35e2a9ed4c52a0d42d99be5` |
-| core-model-implementation-tasks.md | `768b42631b9bacad8fee6672c21d7d49679025c42e458365e91074e6f978304b` |
+These checks describe the adopted scope committed at `e7c2d70`. The plan and
+task hashes were `126bb6ed899e0b103d24a67ee668e565cf3fa3e7b35e2a9ed4c52a0d42d99be5`
+and `768b42631b9bacad8fee6672c21d7d49679025c42e458365e91074e6f978304b`.
+The current hashes follow the C01 record below.
 
 ## Fable review of the adopted scope, 2026-09-13
 
@@ -146,7 +146,7 @@ Reviewed the uncommitted diff against the four corrections. All four are
 accepted; the diff implements them coherently and the mechanical checks
 re-derive: 24 live tasks and 37 edges, acyclic, C22 isolated; 174 local links
 and the `#current-adopted-decisions` anchor resolve; plan tables are
-consistent; the plan and task hashes above match the files.
+consistent; the plan and task hashes above matched the files reviewed at `e7c2d70`.
 
 - **`state_members` restored.** Right on user value. A bulk operation that
   consumes only member URLs must survive a title-only change, and a whole-state
@@ -168,8 +168,48 @@ consistent; the plan and task hashes above match the files.
   temporary files; the retention inventory is a read-only preview. I asserted
   that deletion existed without checking the port. C07 and C18 now own it.
 
-One wording drift remains for the next edit of the plan: the §1 DuckDB row
+One wording drift remained at that review: the §1 DuckDB row
 still lists in-engine SHA-256 as part of the decision, while the adopted
 canonical rule computes correspondence digests in Python over shared-encoder
 bytes. In-engine hashing now serves content-level checks on already canonical
-bytes. Say so in §1 or §3.3. Left unchanged here to keep the pinned hashes.
+bytes. This was left unchanged at that review to keep its pinned hashes; the
+owner subsequently requested the correction and C01 work recorded below.
+
+## Planning closure and C01, 2026-09-13
+
+GPT-6 applied the owner's instruction after Fable's accepted review at `e7c2d70`.
+Plan §§1 and 3.3 now assign correspondence hashing to Python's `hashlib.sha256`
+over shared-encoder bytes and versioned framing. In-engine SHA-256 serves content
+checks on already canonical bytes. No tool choice or spec meaning changed.
+
+C01 delivered the [ownership and acceptance map](../core-model-implementation-map.md):
+current and target owners, preserved workflows and checks, direct API/format
+retirement, and fixed workload time/memory/scan budgets. D31/D37/D48/D54 route to
+the Core owners; maintainability E5 routes to D40. External campaign/search
+qualification and the human contribution exercise remain separate. C02 supplies
+executable fixtures; C03 and C25 measure the chosen implementation. The new
+capacity budgets are engineering targets, not measured performance or a claim
+that Fable reviewed this C01 deliverable.
+
+The task list records C01 complete and 23 live tasks proposed. Planning is closed
+on the adopted architecture; implementation starts from this map. No runtime
+code, dependencies or retained data changed in C01.
+
+## C01 verification and versions
+
+Checked all 24 live task definitions against the overview: 37 prerequisite
+edges, acyclic and in build order, C22 isolated, C01 complete and 23 proposed.
+The dataset checklist has 47 completed items, four separate open items and five
+routing references; maintainability E5 no longer duplicates D40's open task.
+All 475 local links across the nine affected documents resolve, including 76
+fragment references. Whitespace checks pass. These are document and source-map
+checks, not runtime, conformance or capacity qualification. The spec is unchanged.
+
+These hashes pin the C01 planning snapshot. Later implementation updates to the
+task checklist do not change that historical verification.
+
+| Artifact | SHA-256 at C01 completion |
+| --- | --- |
+| core-model.md | `977e13b341e1ca7524b85d04e624c1f8ffd3455aac597a53e206d72addc10b81` |
+| core-model-implementation-plan.md | `20e50c1eab1dbdfa5f914924a779d00544443a3665a17d8ba4ece2daa030ce14` |
+| core-model-implementation-tasks.md | `782bc7fe5dfbf72e8af94c7193cedfc05971a088027e18f58e1a88535be5a7fe` |

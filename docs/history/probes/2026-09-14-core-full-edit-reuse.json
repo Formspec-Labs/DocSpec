@@ -1,0 +1,399 @@
+{
+  "changed_members_per_revision": 1024,
+  "edit_through_reuse_seconds": {
+    "title": 250.55748162511736,
+    "url": 344.41404466703534
+  },
+  "actual_executions": [
+    "url-urls"
+  ],
+  "exact_title_reuse": true,
+  "url_result_changed": true,
+  "metrics": {
+    "sqlite_statements": 59623,
+    "sqlite_transactions": 412,
+    "python_fsync_calls": 2280,
+    "python_fsync_seconds": 0.015660181641578674,
+    "extraction": {
+      "engine_json_decodes": 5242880,
+      "converted_rows": 5242880,
+      "selected_json_bytes": 167432100,
+      "largest_arrow_batch_bytes": 31448,
+      "sql_calls": 5
+    },
+    "selection_member_encoder_calls": 5242880,
+    "selection_member_encoded_bytes": 429576100,
+    "canonical_encoder_calls": 6347534,
+    "canonical_encoded_bytes": 1571785595,
+    "canonical_decoder_calls": 37190,
+    "canonical_decoded_bytes": 191796025,
+    "blob_reads_by_media_type": {
+      "application/json": {
+        "stream_calls": 2,
+        "returned_chunks": 2,
+        "returned_bytes": 2094,
+        "range_calls": 0,
+        "range_returned_bytes": 0,
+        "verified_calls": 0,
+        "verified_bytes": 0
+      }
+    }
+  },
+  "stage": "edits",
+  "elapsed_seconds": 606.1900184999686,
+  "peak_rss_bytes": 13368492032,
+  "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+  "sampled_peak": {
+    "storage_bytes": 19929068779,
+    "scratch_bytes": 10191044608,
+    "retained_bytes": 5204581373,
+    "clean_storage_bytes": 0,
+    "clean_scratch_bytes": 0,
+    "clean_retained_bytes": 0
+  },
+  "storage_file_changes": {
+    "new_durable_files": 380,
+    "clean_new_durable_files": 0
+  },
+  "sample_interval_seconds": 0.25,
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "python": "3.12.9",
+  "cache_description": "Fresh process; initial full URL result retained by separate baseline process; filesystem caches not cleared",
+  "cache_state_declared": true,
+  "python_allocations": null,
+  "versions": {
+    "docspec": "0.3.0",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1"
+  },
+  "engine_memory_bytes": 6442450944,
+  "engine_threads": 1,
+  "sources_unchanged_during_run": true,
+  "limitations": [
+    "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+    "Storage is sampled; native record scratch is directed into the measured output tree.",
+    "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+    "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+    "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+    "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+    "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+    "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+    "Cache description is operator supplied; the probe does not flush or warm caches.",
+    "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+  ],
+  "evidence_scope": "Diagnostic of the sealed physical-reader build; later record/state sort relocation and reader retirement supersede this code. Correctness passed; original120-second/2GiB small-edit targets failed.",
+  "sealed_artifact": {
+    "wheel": "/private/tmp/docspec-core-qualification-20260914-final/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "e6e842871b6b444f1f6221556d2b009298b1a14ab9beacd15e20333b4749faf0",
+    "snapshot_manifest_sha256": "478c3e63e8d4001a407a9e2798999e9271425ea02163bb501fd33d23771bbf0e",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-qualification-20260914-final/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-qualification-20260914-final/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "full_receipt": {
+    "path": "/tmp/docspec-core-qualification-20260914-final/trial/edits-runtime.json",
+    "sha256": "7c0c839c16055f13a9cb5e8da32ec10f6489fc9a9c41337f54d10a8838d92f90"
+  },
+  "payload_scan_bound": {
+    "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+    "parent_files": 17190,
+    "scans": [
+      {
+        "profile": "query-000002.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000004.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000006.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000008.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000010.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000012.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000014.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000016.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000025.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000029.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000033.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000037.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000050.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000051.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000052.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000055.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000056.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000057.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000059.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000061.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000063.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000065.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000067.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000069.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000071.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000073.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000082.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583412
+      },
+      {
+        "profile": "query-000086.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583861
+      },
+      {
+        "profile": "query-000090.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2583865
+      },
+      {
+        "profile": "query-000094.json",
+        "files": 5,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": false,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 2584017
+      },
+      {
+        "profile": "query-000107.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000108.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000109.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000111.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000112.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000113.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000119.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000120.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      },
+      {
+        "profile": "query-000121.json",
+        "files": 17190,
+        "truncated_names_resolved_from_query": false,
+        "truncated_names_charge_whole_layer": true,
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 8895546346
+      }
+    ],
+    "uncompressed_encoded_payload_column_bytes_upper_bound": 133495206120,
+    "within_64_mib": false,
+    "is_physical_io_measurement": false
+  },
+  "targets": {
+    "edit_through_reuse_seconds_per_revision": 120,
+    "small_edit_peak_rss_bytes": 2147483648,
+    "payload_bytes_per_revision": 67108864
+  },
+  "scan_scope": "Aggregate parent payload-column bound for BOTH title and URL phases. Counts all record_json chunks in touched parent files per scan, including empty filtering passes; not physical I/O. No per-phase split is inferred.",
+  "baseline_receipt": {
+    "path": "/tmp/docspec-core-qualification-20260914-final/trial/url-baseline-runtime.json",
+    "sha256": "978af88f40ae839d1bc58a7e307e1a5debb37a60b26242e1af99b67ea6d01393"
+  }
+}

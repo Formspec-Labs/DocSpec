@@ -1,5 +1,11 @@
 # Contributor maintainability to-do list
 
+This pre-Core backlog preserves product questions and earlier acceptance records.
+Use the [Core implementation tasks](core-model-implementation-tasks.md) for current
+execution order and completion, and the [ownership map](core-model-implementation-map.md)
+for replacement owners. References below to retired runtime APIs describe their
+earlier implementation; they are not instructions to restore those APIs.
+
 The next phase is tracked in the [dataset experimentation and simplification
 to-do list](dataset-experiments-todo.md). This checklist retains the earlier
 refactor's completion evidence; its open human contributor exercise (E5) carries
@@ -314,7 +320,12 @@ separate simplification; keep those changes reviewable independently.
   **Done when:** a reviewer can assess a contribution without chat history and
   the checklist works equally for human- and AI-authored code.
 
-- [ ] **E5 · P3 · Measure whether contribution actually became easier.** Have
+- **E5 · Moved to [D40](dataset-experiments-todo.md#d40).** Track the human
+  contributor exercise and its completion evidence there; this is a reference,
+  not a second open task. The [C01 map](core-model-implementation-map.md#checklist-ownership)
+  preserves that ownership during Core implementation.
+
+  **Original acceptance: measure whether contribution actually became easier.** Have
   someone unfamiliar with the implementation follow the walkthrough, locate one
   change, explain the governing rule, modify it, and run the focused checks.
   Record confusing steps, files needed, and time spent; resolve the observed

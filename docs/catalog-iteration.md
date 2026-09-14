@@ -44,35 +44,19 @@ stream and exhaust or close it.
 ## Review selection and actual work separately
 
 A catalog policy selects candidate documents and records why other rows are
-excluded, unavailable, deleted, or failed. A processing plan can apply additional
-run filters. A catalog preview does not apply those filters or predict cost.
+excluded, unavailable, deleted, or failed. Applications choose which complete source state to import for processing.
+A catalog preview does not predict processing cost.
 
-Prepare the chosen experiment against an explicit retained base, then inspect
-the saved work before calling `run()`:
+Import admitted `SourceCatalogItem` rows into a Core source state, then run the
+chosen document stages through `CoreWorkspace.documents`. Inspect selections and
+results afterward with `workspace.inspect`, and compare resulting states with
+`workspace.compare`. The current runtime resolves work in bounded batches;
+there is no separate saved planner report that predicts every task or its cost.
 
-```python
-from docspec.runtime import open_local_inspection, prepare_local_experiment
-
-# settings contains the same explicit work limits, producer acceptance,
-# timestamps, and chosen implementations used for this experiment.
-with prepare_local_experiment(
-    new_catalog.reference, workspace, base_release=retained_base, **settings,
-) as prepared:
-    work = open_local_inspection(
-        prepared.plan, workspace,
-        document_release_producer=accepted_document_producer,
-    )
-    print(work.summary()["work"])
-    print(work.source(chosen_source_item_id)["work"])
-    result = prepared.retain(prepared.run())
-```
-
-Preparation saves the actual jobs; this is the same plan execution will use.
-The inspection view shows their requested stages and reuse modes. Its scheduled
-item count includes changes, repairs, and removals. It does not count every
-item matching the run filter: unchanged and held failed items may have no job.
-See [work and result inspection](inspection.md) for those distinctions and
-recorded cost evidence.
+Catalog preview counts the full source universe independently of processing.
+[Inspection](inspection.md) reports actual retained results, availability and
+attempt progress. A failed run may still have useful completed stages available
+for the next requested run.
 
 ## Build successive full snapshots
 
@@ -96,8 +80,8 @@ new_catalog = build_local_catalog(
 ```
 
 Succession records provenance; it does not merge inputs or select a current
-catalog. A prior item omitted from the new catalog enters processing planning
-as a removal, subject to run filters. Preview labels it `removedFromCatalog`
+catalog. A prior item omitted from the new catalog is absent from the newly imported
+source state. Earlier retained states remain immutable. Preview labels it `removedFromCatalog`
 because absence does not prove publisher deletion. This also applies to an
 `observed-crawl`: that scope describes incomplete upstream observation, not an
 instruction to append records or preserve omitted items. Include every item
@@ -125,8 +109,8 @@ processing prefix. Unchanged processors do not run again.
 The new result keeps the exact new source description. Its reused files retain
 their original acquisition timestamps, downloader identity, task references,
 and observed transport version. A source metadata refresh is not a new
-acquisition. Changed acquisition inputs or other governing policies still
-require full work; changed stage settings use their existing prefix-reuse rules.
+acquisition. Changed material acquisition inputs require new capture; changed stage settings
+are checked through the shared Core correspondence rules.
 Missing or corrupt promised evidence refuses reuse.
 
 A permanent failed item is not retried merely because catalog metadata or an

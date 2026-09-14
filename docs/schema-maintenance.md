@@ -6,24 +6,31 @@ existing schema bytes and identities unless the behavior changes intentionally.
 For a deliberate format change, update current producers and readers together.
 Legacy readers and fixture reproduction are not requirements.
 
-Catalog rows use the required `jsonschema-rs` validator directly. Python
-`jsonschema` supplies the detailed rejection messages; it is not a fallback
-execution mode. `tests/test_source_catalog_rows.py` compares both engines on
-real rows and mutations. Keep DocSpec's schemas and error meaning here; the
-existing libraries already provide validation mechanics.
+Catalog rows use the required `jsonschema-rs` validator for acceptance and
+structured rejection messages through `adapters/schema_validation.py`.
+`tests/test_source_catalog_rows.py` checks real rows and invalid mutations.
+Supplied schemas use the explicit Draft 2020-12 binding, a frozen reference
+snapshot, and an optional base URI. Format assertions must be enabled explicitly;
+catalog schemas retain their annotation-only format behavior. The schema adapter
+does not retrieve missing references from the network.
+
+Core version 1 records use `msgspec` declarations and generated structural
+schemas. Their admission gateway decodes canonical JSON with the shared Rulespec
+decoder, converts strictly to the declared types, and applies record-local
+semantic checks. Cross-record validity remains with the ledger admission owner.
+Payload schema checks follow JSON value-domain admission; a schema cannot widen
+the supported numeric or Unicode domain.
 
 ## Find the authoritative definition
 
 | Family | Edit and generate | Installed location under `docspec/schemas/` | Checks |
 | --- | --- | --- | --- |
 | Source catalog 1.0 | `source_catalog_schemas()` in `src/docspec/domain/source_catalog.py`; serialize with `canonical_json_file_bytes` | `source_catalog/1.0/` | `tests/test_package_boundary.py` compares all three files byte for byte with domain generation and checks the wheel |
+| Core 1 | Types in `src/docspec/domain/core.py`; `record_schema()` in `src/docspec/domain/core_admission.py` | Generated on demand; no copied schema files | `tests/test_core_records.py` compares generated schema and typed admission on structural acceptance fixtures |
 
-Profiles under `src/docspec/storage_profiles/` are maintained machine descriptions
-in `docspec-storage-profile` format `2.0`, not generated schemas. The format
-records concrete settings and omits unenforced governance labels.
-`tests/test_machine_files.py` checks their implementation strings,
-roles, references, and conformance mapping. Update descriptions deliberately
-when supported behavior changes, not merely because an internal file moved.
+Runtime composition chooses concrete adapters directly. Their configuration and
+Core definitions live with the implementation; there is no separate installed
+machine-profile registry to regenerate.
 
 ## Regenerate generated schemas deliberately
 
@@ -40,7 +47,7 @@ for name, schema in source_catalog_schemas().items():
     (root / name).write_bytes(canonical_json_file_bytes(schema))
 PY
 
-uv run --frozen pytest tests/test_machine_files.py tests/test_package_boundary.py
+uv run --frozen pytest tests/test_schema_validation.py tests/test_package_boundary.py
 ```
 
 Review the JSON diff and its identity consequences. Do not run generation to

@@ -1,5 +1,11 @@
 # Dataset experimentation and simplification to-do list
 
+This pre-Core backlog preserves product questions and earlier acceptance records.
+Use the [Core implementation tasks](core-model-implementation-tasks.md) for current
+execution order and completion, and the [ownership map](core-model-implementation-map.md)
+for replacement owners. References below to retired runtime APIs describe their
+earlier implementation; they are not instructions to restore those APIs.
+
 DocSpec should make it easy to build a catalog, fetch selected documents, retain
 them, run chosen processors now or later, and compare iterations while reusing
 unchanged work. This checklist organizes the next changes around that outcome.
@@ -7,8 +13,11 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 47 of 55 local implementation items complete.** D47 is a moved-task
-reference; D51–D52 retain the named dataset examples moved here from SpicyDocs.
+**Status: 47 completed items, four open items, and five routing references.**
+D31/D37/D48/D54 route overlapping replacement work to the [Core tasks](core-model-implementation-tasks.md);
+D47 routes to the search repositories. The [C01 map](core-model-implementation-map.md#checklist-ownership)
+names one owner for each change. D22/D40/D49/D50 remain separate open items.
+D51–D52 retain the named dataset examples moved here from SpicyDocs.
 D55 records the completed annual CFR example and SpicyDocs 0.6.0 adoption.
 D56 records the completed FEC metadata example and combined source wheel adoption.
 The D55 implementation merged through [PR #2](https://github.com/Formspec-Labs/DocSpec/pull/2).
@@ -983,7 +992,14 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d31"></a>
 
-- [ ] **D31 · P2 · Remove DocSpec's side of demonstrated shared-code duplication.**
+- **D31 · Replacement scope moved to Core C04/C07/C23.**
+  C04 owns validator consolidation, C07 keeps and completes the existing blob
+  store, and C23 audits remaining duplicates. The earlier conditional shared-writer
+  adoption is out of the adopted Core scope; an upstream Rulespec fix is not a
+  prerequisite. This is a routing reference, not a second implementation item.
+  The following earlier scope and measurements remain historical evidence.
+
+  **Earlier scope: remove DocSpec's side of demonstrated shared-code duplication.**
   Recheck DocSpec's CourtListener listing grammar, blob writes, publication
   helpers, and compiled schema-gate mechanics against their actual callers.
   Directory publication already shares a Rulespec helper. Blob writers differ
@@ -1230,7 +1246,13 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d37"></a>
 
-- [ ] **D37 · P1 · Separate regression gates from capacity and conformance claims.**
+- **D37 · Remaining qualification moved to Core C24/C25.**
+  C24 owns regression/conformance and installed-package checks; C25 owns the
+  [C01 capacity targets](core-model-implementation-map.md#capacity-targets-fixed-before-tuning).
+  This routing does not complete qualification. Earlier passing and failed
+  observations below retain their original code, scope and limits.
+
+  **Earlier scope: separate regression gates from capacity and conformance claims.**
   Map the nine previously partial qualification requirements to the clarified
   product scope. Keep and implement useful requirements; explicitly revise or
   retire unjustified ones. Choose representative workload sizes instead of
@@ -1932,6 +1954,10 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   implementation items retain their existing scope.
 
 ## Suggested delivery order
+
+The [Core tasks](core-model-implementation-tasks.md) now own replacement sequencing.
+The order below records the earlier document-workflow delivery; D31/D37/D48/D54
+are routing references. D22/D40/D49/D50 retain only their separate scopes above.
 
 1. **Usable local experiment:** D01–D07, D11, D13–D17, D19–D20, D24, and D38.
    Build D05 early and extend it as each capability becomes usable. D51–D52

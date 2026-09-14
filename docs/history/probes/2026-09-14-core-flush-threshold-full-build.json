@@ -1,0 +1,41 @@
+{
+  "members": 1048576,
+  "state_id": "root",
+  "metrics": {
+    "sqlite_statements": 4358241,
+    "sqlite_transactions": 16395,
+    "python_fsync_calls": 103542,
+    "python_fsync_seconds": 0.04536058963276446,
+    "extraction": {},
+    "selection_member_encoder_calls": 0,
+    "selection_member_encoded_bytes": 0,
+    "fixture_rows_decoded": 1048576
+  },
+  "query_profiles": null,
+  "elapsed_seconds": 242.71085300017148,
+  "peak_rss_bytes": 16642686976,
+  "maximum_active_record_cursors": 2,
+  "copy_queries": [
+    {
+      "sql": "COPY (SELECT * FROM writing_records ORDER BY partition, sequence, partition_value, record_identity) TO '/private/tmp/docspec-core-qualification-20260914/flush-full-six/workspace/records/.staging/records-hgj56mce/members' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048, PARTITION_BY (partition, sequence), WRITE_PARTITION_COLUMNS false, RETURN_STATS)",
+      "active_record_cursors": 1,
+      "started_seconds": 0.01796245900914073,
+      "completed_seconds": 91.11589833395556
+    },
+    {
+      "sql": "COPY (SELECT * FROM writing_records ORDER BY partition, sequence, partition_value, record_identity) TO '/private/tmp/docspec-core-qualification-20260914/flush-full-six/workspace/records/.staging/records-vhja983l/members' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 2048, PARTITION_BY (partition, sequence), WRITE_PARTITION_COLUMNS false, RETURN_STATS)",
+      "active_record_cursors": 1,
+      "started_seconds": 110.47671516705304,
+      "completed_seconds": 117.09824454202317
+    }
+  ],
+  "installed_package": "/tmp/docspec-core-qualification-20260914/environment/lib/python3.12/site-packages/docspec/__init__.py",
+  "launcher_sha256": "272d643340b281cf858fda40076d8630ec6ba3cfa8f81a6ff84bae2f3f01d609",
+  "snapshot_manifest_sha256": "3ac139140defda732160b93f57e7e971c279c542d80e1e4cb6339c86d37c31b5",
+  "override": {
+    "partitioned_write_flush_threshold": 2048
+  },
+  "limitations": [
+    "Diagnostic changes only the native partition flush threshold; sealed package bytes and production query remain unchanged."
+  ]
+}

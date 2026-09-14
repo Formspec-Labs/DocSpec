@@ -1,0 +1,43 @@
+{
+  "physical_files": 512,
+  "rows": 1024,
+  "matched_rows": 2,
+  "results": [
+    {
+      "case": "unpruned",
+      "seconds": 0.07061941595748067,
+      "native_read_calls": 2,
+      "native_file_arguments": 514,
+      "distinct_files_opened": 512
+    },
+    {
+      "case": "bounded",
+      "seconds": 0.001722416142001748,
+      "native_read_calls": 2,
+      "native_file_arguments": 4,
+      "distinct_files_opened": 2
+    },
+    {
+      "case": "unpruned",
+      "seconds": 0.033508624881505966,
+      "native_read_calls": 2,
+      "native_file_arguments": 514,
+      "distinct_files_opened": 512
+    },
+    {
+      "case": "bounded",
+      "seconds": 0.0016955831088125706,
+      "native_read_calls": 2,
+      "native_file_arguments": 4,
+      "distinct_files_opened": 2
+    }
+  ],
+  "source_sha256": "1b37eff8756eb0a4cf5416663e40e06675abe5c6d3f0b2e8f3114db473d3392f",
+  "limitations": [
+    "Small correctness diagnostic on one identical admitted layer; the control disables only the bounds predicate, preserving all native queries and returned-row checks.",
+    "Timing overlaps strict regression and has uncontrolled OS cache; actual file counts establish pruning, not full-scale capacity."
+  ],
+  "raw_receipt": "/tmp/docspec-core-bounds-smoke-20260914/result.json",
+  "raw_receipt_sha256": "a58b2ed0097c404099c84c2479d56124f4795f89bed4a11365c512b9242369e4",
+  "probe_sha256": "37f1d36f291b454c1e55f4de29984ad3016bed4871e5d3141d0587cf7dce9483"
+}

@@ -1,0 +1,1109 @@
+{
+  "classification": "Isolated layout diagnostics; no production changes",
+  "fixture": {
+    "source": "/tmp/docspec-core-qualification-20260914/flush-small-six/base.parquet",
+    "sha256": "8ac32d9799036ae01c37bfdabc910b088e916cf158e2ed297c271d5e7bfef6a7",
+    "byte_size": 64927389,
+    "both_inputs_hardlinked": true
+  },
+  "members": 16384,
+  "edits_per_revision": 1024,
+  "payload_column_byte_ceiling_per_edit": 67108864,
+  "shared_settings": {
+    "native_memory_bytes": 6442450944,
+    "native_threads": 1,
+    "value_edit_batch_rows": 256,
+    "parquet_metadata_cache": true
+  },
+  "source_baseline": {
+    "wheel": "/private/tmp/docspec-core-history-scoped-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+    "snapshot_manifest_sha256": "190f4ac45b28667bb9005240e76990258e6547009ab57f825e2b7324c70041d9",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-history-scoped-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-history-scoped-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "variant_scope": "Entity bucket count/shard target plus guarded native hash-bucket pruning for known identities and disjoint-union base checks. Identity!=partition-field schemas stay unpruned. Partition validation precedes filtering and all base files remain in union outputs. No index/cache/codec/API/writer added.",
+  "variants": {
+    "1x512": {
+      "bucket_count": 1,
+      "shard_target_bytes": 524288,
+      "wheel_sha256": "7b307a49133dd6721a178bedbfd97c3fafc39f496a0cade305f9bb248485ab06",
+      "manifest_sha256": "190f4ac45b28667bb9005240e76990258e6547009ab57f825e2b7324c70041d9",
+      "receipts": {
+        "build": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-one/build-runtime.json",
+          "sha256": "15736881374483d37dd588a2fec9e2ee0cb6e579a710e63e1ca4564e81e136cb"
+        },
+        "named": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-one/named-runtime.json",
+          "sha256": "f76b8b508290d748b3539df12595cb076bf16060a75908b0415128ddd299a8bb"
+        },
+        "edits": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-one/edits-runtime.json",
+          "sha256": "53f19022c1dd7146bd2d4fe8d060ec356dee34c708f13a9994219bf2c77ab96a"
+        }
+      },
+      "build": {
+        "elapsed_seconds": 3.8437022499274462,
+        "peak_rss_bytes": 1171030016,
+        "storage_file_changes": {
+          "new_durable_files": 337,
+          "clean_new_durable_files": 0
+        }
+      },
+      "named": {
+        "warm_evaluation_seconds": 0.34653087495826185,
+        "peak_rss_bytes": 298450944,
+        "rows": 1025,
+        "parent_payload_column_bytes": 26354541,
+        "file_counts_per_scan": [
+          17,
+          17,
+          17
+        ]
+      },
+      "edits": {
+        "edit_through_reuse_seconds": {
+          "title": 3.4095277921296656,
+          "url": 3.6586184159386903
+        },
+        "elapsed_seconds": 8.785748708061874,
+        "peak_rss_bytes": 907984896,
+        "actual_executions": [
+          "root-urls",
+          "url-urls"
+        ],
+        "exact_title_reuse": true,
+        "url_result_changed": true,
+        "phase_boundaries": {
+          "title": {
+            "first_profile_index": 12,
+            "last_profile_index_exclusive": 69
+          },
+          "url": {
+            "first_profile_index": 69,
+            "last_profile_index_exclusive": 130
+          }
+        },
+        "parent_payload_columns": {
+          "title": {
+            "bytes": 31005465,
+            "file_counts_per_scan": [
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5
+            ],
+            "passes_ceiling": true
+          },
+          "url": {
+            "bytes": 31005465,
+            "file_counts_per_scan": [
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5
+            ],
+            "passes_ceiling": true
+          }
+        }
+      },
+      "scan_budget_passed": true
+    },
+    "16x512": {
+      "bucket_count": 16,
+      "shard_target_bytes": 524288,
+      "wheel_sha256": "27d137b696b65f94b05fdc91d1a1f7cbb98f025bd66db674b1af6352d6e32e54",
+      "manifest_sha256": "016302777fcd05d59385a60a6c12a097d2dc2f708f66f0c068c6560551222862",
+      "receipts": {
+        "build": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-sixteen/build-runtime.json",
+          "sha256": "fa1bac9eb1a1431b13ecd6a998308f59415bb2217b3279ece433919ec2444a2e"
+        },
+        "named": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-sixteen/named-runtime.json",
+          "sha256": "433173f011e5f610a54bf8470907fc64e65476196f5a1fb80aa594af33d40396"
+        },
+        "edits": {
+          "path": "/tmp/docspec-core-layout16-diagnostic-20260914/small-sixteen/edits-runtime.json",
+          "sha256": "40eb5e71284c5c28430a912baa73a49cb4076b55a3eee518cb079e4def3b0348"
+        }
+      },
+      "build": {
+        "elapsed_seconds": 3.4931019998621196,
+        "peak_rss_bytes": 1163280384,
+        "storage_file_changes": {
+          "new_durable_files": 344,
+          "clean_new_durable_files": 0
+        }
+      },
+      "named": {
+        "warm_evaluation_seconds": 0.40771837485954165,
+        "peak_rss_bytes": 306659328,
+        "rows": 1025,
+        "parent_payload_column_bytes": 38763294,
+        "file_counts_per_scan": [
+          25,
+          25,
+          25
+        ]
+      },
+      "edits": {
+        "edit_through_reuse_seconds": {
+          "title": 3.5326213331427425,
+          "url": 3.8612301251851022
+        },
+        "elapsed_seconds": 10.460835540900007,
+        "peak_rss_bytes": 915439616,
+        "actual_executions": [
+          "root-urls",
+          "url-urls"
+        ],
+        "exact_title_reuse": true,
+        "url_result_changed": true,
+        "phase_boundaries": {
+          "title": {
+            "first_profile_index": 12,
+            "last_profile_index_exclusive": 69
+          },
+          "url": {
+            "first_profile_index": 69,
+            "last_profile_index_exclusive": 130
+          }
+        },
+        "parent_payload_columns": {
+          "title": {
+            "bytes": 113175312,
+            "file_counts_per_scan": [
+              16,
+              16,
+              16,
+              16,
+              16,
+              16,
+              25,
+              25,
+              16,
+              16,
+              16,
+              25
+            ],
+            "passes_ceiling": false
+          },
+          "url": {
+            "bytes": 113175312,
+            "file_counts_per_scan": [
+              16,
+              16,
+              16,
+              16,
+              16,
+              16,
+              25,
+              25,
+              16,
+              16,
+              16,
+              25
+            ],
+            "passes_ceiling": false
+          }
+        }
+      },
+      "scan_budget_passed": false
+    },
+    "8x512": {
+      "bucket_count": 8,
+      "shard_target_bytes": 524288,
+      "wheel_sha256": "564c21fa959660166ebeb062c005bf9d2c0510722a5ecd6c1a6aa1cd650de567",
+      "manifest_sha256": "a847baf79829bef98b4fb37aaae531d89ec02a6807514a2e85f0b7ea7bbe57ad",
+      "receipts": {
+        "build": {
+          "path": "/tmp/docspec-core-layout8-diagnostic-20260914/small-eight/build-runtime.json",
+          "sha256": "cb7ad5bd303f320a0e7c49bfa33d1f59842f90188a990235d6d9a78262a42252"
+        },
+        "named": {
+          "path": "/tmp/docspec-core-layout8-diagnostic-20260914/small-eight/named-runtime.json",
+          "sha256": "4ffa9c51ed09262b00dae7aea5830588ecd479e899acb95a5d42493ecdd77eac"
+        },
+        "edits": {
+          "path": "/tmp/docspec-core-layout8-diagnostic-20260914/small-eight/edits-runtime.json",
+          "sha256": "d10c89ee677f1e20f897f4ed01744654c5d41421e4265fd9f5ee5cd076d71ada"
+        }
+      },
+      "build": {
+        "elapsed_seconds": 3.527756500057876,
+        "peak_rss_bytes": 1029013504,
+        "storage_file_changes": {
+          "new_durable_files": 339,
+          "clean_new_durable_files": 0
+        }
+      },
+      "named": {
+        "warm_evaluation_seconds": 0.3902806250844151,
+        "peak_rss_bytes": 299876352,
+        "rows": 1025,
+        "parent_payload_column_bytes": 34109250,
+        "file_counts_per_scan": [
+          22,
+          22,
+          22
+        ]
+      },
+      "edits": {
+        "edit_through_reuse_seconds": {
+          "title": 3.5552480411715806,
+          "url": 3.7137101660482585
+        },
+        "elapsed_seconds": 10.098184541100636,
+        "peak_rss_bytes": 913244160,
+        "actual_executions": [
+          "root-urls",
+          "url-urls"
+        ],
+        "exact_title_reuse": true,
+        "url_result_changed": true,
+        "phase_boundaries": {
+          "title": {
+            "first_profile_index": 12,
+            "last_profile_index_exclusive": 69
+          },
+          "url": {
+            "first_profile_index": 69,
+            "last_profile_index_exclusive": 130
+          }
+        },
+        "parent_payload_columns": {
+          "title": {
+            "bytes": 71315850,
+            "file_counts_per_scan": [
+              8,
+              8,
+              13,
+              13,
+              11,
+              11,
+              14,
+              14,
+              8,
+              13,
+              11,
+              14
+            ],
+            "passes_ceiling": false
+          },
+          "url": {
+            "bytes": 71315850,
+            "file_counts_per_scan": [
+              8,
+              8,
+              13,
+              13,
+              11,
+              11,
+              14,
+              14,
+              8,
+              13,
+              11,
+              14
+            ],
+            "passes_ceiling": false
+          }
+        }
+      },
+      "scan_budget_passed": false
+    },
+    "4x512": {
+      "bucket_count": 4,
+      "shard_target_bytes": 524288,
+      "wheel_sha256": "a54ffa2a19fc4127e0e9d5f6ae9730a58bab6891d23a937b589b9009169711c2",
+      "manifest_sha256": "804b72fdd04dfe775356ef71662f766d9634cbcd4fa3f33e7665776afaf48b7c",
+      "receipts": {
+        "build": {
+          "path": "/tmp/docspec-core-layout4-diagnostic-20260914/small/build-runtime.json",
+          "sha256": "35c0f2438c19d24848f30bf8debebf191691b388cd33f457d0707ae59bd7638f"
+        },
+        "named": {
+          "path": "/tmp/docspec-core-layout4-diagnostic-20260914/small/named-runtime.json",
+          "sha256": "cefe411551e7716adfa96a937179b5ba250bbb41c65bb1e536f421af299bd481"
+        },
+        "edits": {
+          "path": "/tmp/docspec-core-layout4-diagnostic-20260914/small/edits-runtime.json",
+          "sha256": "4d1186ec948a4c459274b7d08c9e8441b101c4b96154477e59a2ce0cea83e08c"
+        }
+      },
+      "build": {
+        "elapsed_seconds": 3.4680163750890642,
+        "peak_rss_bytes": 1059241984,
+        "storage_file_changes": {
+          "new_durable_files": 339,
+          "clean_new_durable_files": 0
+        }
+      },
+      "named": {
+        "warm_evaluation_seconds": 0.35980237484909594,
+        "peak_rss_bytes": 300777472,
+        "rows": 1025,
+        "parent_payload_column_bytes": 29456997,
+        "file_counts_per_scan": [
+          19,
+          19,
+          19
+        ]
+      },
+      "edits": {
+        "edit_through_reuse_seconds": {
+          "title": 3.4871912919916213,
+          "url": 3.711993790930137
+        },
+        "elapsed_seconds": 10.013410957995802,
+        "peak_rss_bytes": 906756096,
+        "actual_executions": [
+          "root-urls",
+          "url-urls"
+        ],
+        "exact_title_reuse": true,
+        "url_result_changed": true,
+        "phase_boundaries": {
+          "title": {
+            "first_profile_index": 12,
+            "last_profile_index_exclusive": 69
+          },
+          "url": {
+            "first_profile_index": 69,
+            "last_profile_index_exclusive": 130
+          }
+        },
+        "parent_payload_columns": {
+          "title": {
+            "bytes": 48060966,
+            "file_counts_per_scan": [
+              6,
+              6,
+              9,
+              9,
+              8,
+              8,
+              8,
+              8,
+              6,
+              9,
+              8,
+              8
+            ],
+            "passes_ceiling": true
+          },
+          "url": {
+            "bytes": 48060966,
+            "file_counts_per_scan": [
+              6,
+              6,
+              9,
+              9,
+              8,
+              8,
+              8,
+              8,
+              6,
+              9,
+              8,
+              8
+            ],
+            "passes_ceiling": true
+          }
+        }
+      },
+      "scan_budget_passed": true,
+      "root_layout": {
+        "entity_files": 271,
+        "files_per_bucket": {
+          "0": 67,
+          "1": 68,
+          "2": 67,
+          "3": 69
+        },
+        "max_identity_lookup_files": 69,
+        "canonical_root_bytes": 89636
+      }
+    },
+    "8x384": {
+      "bucket_count": 8,
+      "shard_target_bytes": 393216,
+      "wheel_sha256": "d05a7080eca69514a6c3562f4294c766972d06ce2cad264c98ae9018b3e99705",
+      "manifest_sha256": "0e759e2ee6ee874ffdde98b2d911b1111037653690dda099c962c5ebc3012f42",
+      "receipts": {
+        "build": {
+          "path": "/tmp/docspec-core-layout8-shard384-diagnostic-20260914/small/build-runtime.json",
+          "sha256": "af07b48f7934cd7e311de034175b02e8b1f377549ead09994cb65f20fdd286c1"
+        },
+        "named": {
+          "path": "/tmp/docspec-core-layout8-shard384-diagnostic-20260914/small/named-runtime.json",
+          "sha256": "6ee8fde4bc9b902e509a7d45f2c3a1654d912f08e1574e2eedda185618d3128b"
+        },
+        "edits": {
+          "path": "/tmp/docspec-core-layout8-shard384-diagnostic-20260914/small/edits-runtime.json",
+          "sha256": "138bdd4e0e0013235e6bb2ea92f0e9133acf614f5ab1dec49e27a10234e04385"
+        }
+      },
+      "build": {
+        "elapsed_seconds": 3.6467319999355823,
+        "peak_rss_bytes": 1018413056,
+        "storage_file_changes": {
+          "new_durable_files": 429,
+          "clean_new_durable_files": 0
+        }
+      },
+      "named": {
+        "warm_evaluation_seconds": 0.3834803330246359,
+        "peak_rss_bytes": 304398336,
+        "rows": 1025,
+        "parent_payload_column_bytes": 30397359,
+        "file_counts_per_scan": [
+          26,
+          26,
+          26
+        ]
+      },
+      "edits": {
+        "edit_through_reuse_seconds": {
+          "title": 3.592626125086099,
+          "url": 3.8467353750020266
+        },
+        "elapsed_seconds": 10.448179583065212,
+        "peak_rss_bytes": 910934016,
+        "actual_executions": [
+          "root-urls",
+          "url-urls"
+        ],
+        "exact_title_reuse": true,
+        "url_result_changed": true,
+        "phase_boundaries": {
+          "title": {
+            "first_profile_index": 12,
+            "last_profile_index_exclusive": 69
+          },
+          "url": {
+            "first_profile_index": 69,
+            "last_profile_index_exclusive": 130
+          }
+        },
+        "parent_payload_columns": {
+          "title": {
+            "bytes": 58455756,
+            "file_counts_per_scan": [
+              8,
+              8,
+              16,
+              16,
+              13,
+              13,
+              13,
+              13,
+              8,
+              16,
+              13,
+              13
+            ],
+            "passes_ceiling": true
+          },
+          "url": {
+            "bytes": 58455756,
+            "file_counts_per_scan": [
+              8,
+              8,
+              16,
+              16,
+              13,
+              13,
+              13,
+              13,
+              8,
+              16,
+              13,
+              13
+            ],
+            "passes_ceiling": true
+          }
+        }
+      },
+      "scan_budget_passed": true,
+      "root_layout": {
+        "entity_files": 361,
+        "files_per_bucket": {
+          "0": 45,
+          "1": 47,
+          "2": 45,
+          "3": 46,
+          "4": 44,
+          "5": 44,
+          "6": 44,
+          "7": 46
+        },
+        "max_identity_lookup_files": 47,
+        "canonical_root_bytes": 119204
+      }
+    }
+  },
+  "storage_gate": {
+    "passed": 33,
+    "seconds": 8.21,
+    "junit": {
+      "path": "/tmp/docspec-core-layout16-diagnostic-20260914/acceptance.xml",
+      "sha256": "c3d49ea451feb706ee4d8578c1b4cc7feda8002280e1c4e369f38dc3d6708f71"
+    },
+    "package": "16x512",
+    "coverage": "Existing native handoff, partition selection/validation, generic different partition fields, duplicate/excluding union, admission and failure checks. Other old-snapshot variants differ only in numeric policy/shard constants."
+  },
+  "decision": "Reject16x512 and8x512:113175312 and71315850bytes/edit exceed64MiB.4x512 and8x384 pass at48060966 and58455756bytes/edit. Select8x384 for fullscale diagnostic:47maxcandidatefiles per identity bucket vs69for4x512, with larger metadata119204vs89636bytes on16Kroot. Fullscale benefit remains unproven.",
+  "measurement_scope": "Exact unchanged stock edits(), with observer-only per-phase profile indices. Initial full URL baseline excluded from each edit time/scan; processRSS includes it and scan-bound postprocessing. Bound charges full uncompressed record_json column chunks of every parent file opened; physical I/O and warm caches are separate.",
+  "limitations": [
+    "Smallfixture cannot establish fullscale time/memory/history benefits.",
+    "Caches were not cleared and small fullfixture diagnostics may overlap; timings do not prove intrinsic speedups.",
+    "Small variants use the older frozen scoped baseline with metadata cache true. Fullscale candidate was refreshed from current cachefalse/boundedputs/newprofilehelper source; packages are explicitly distinct."
+  ],
+  "refreshed_fullscale_candidate": {
+    "status": "Full million-row build, three-revision history, named selection, and actual1024 title/URL edit-through-reuse passed as a diagnostic. Root adopted constants and guarded pruning afterward; combined production still needs qualification.",
+    "package": {
+      "wheel": "/private/tmp/docspec-core-layout8-shard384-current-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+      "wheel_sha256": "80612db2b984ff05c9ccaddac4ac6d609724936a955c521328d2d8c65cb0e6b1",
+      "snapshot_manifest_sha256": "431b2bd85144815a696907fb4d1d789b454d716332e5bd1fad712709d155a89f",
+      "package_files_verified": 128,
+      "installed_package": "/private/tmp/docspec-core-layout8-shard384-current-20260914/environment/lib/python3.12/site-packages/docspec",
+      "python": "3.12.9",
+      "dependencies": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1",
+        "rulespec-artifacts": "1.0.12"
+      },
+      "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-layout8-shard384-current-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+    },
+    "variant_patch": {
+      "path": "/tmp/docspec-core-layout8-shard384-current-20260914/variant.patch",
+      "sha256": "606e9809bf6ef7d2a3d9daa2542a5946c3ace123a9f3e17cc149f55e350a6ff3"
+    },
+    "process_id": 20913,
+    "console_created_utc": "2026-09-14T09:23:58.538610Z",
+    "scope": "Only8/384constants and same guardedpruning applied to current snapshot; mainproduction untouched; separate contention diagnostic overlaps",
+    "build": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/build-runtime.json",
+      "sha256": "690e620a8fbbc97b4613aec6479fc1277ca2a66e45ce76bd5de8470f614bcbd4",
+      "elapsed_seconds": 287.9096567921806,
+      "peak_rss_bytes": 12278382592,
+      "metrics": {
+        "sqlite_statements": 4358241,
+        "sqlite_transactions": 16395,
+        "python_fsync_calls": 140016,
+        "python_fsync_seconds": 0.20203963527455926,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 2105362,
+        "canonical_encoded_bytes": 9212991132,
+        "canonical_decoder_calls": 2097155,
+        "canonical_decoded_bytes": 17605679090,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        },
+        "fixture_rows_decoded": 1048576
+      },
+      "sources_unchanged_during_run": true
+    },
+    "history3": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/history-diagnostic/runtime.json",
+      "sha256": "6c7a1ebfba62ec77bf8e12df58724b58358b3e3f281b8e04ef364cf10a702f66",
+      "elapsed_seconds": 8.893122332869098,
+      "peak_rss_bytes": 1011941376,
+      "creation_seconds": 8.850279707927257,
+      "revisions": [
+        {
+          "state": "history:0",
+          "seconds": 5.380188375012949
+        },
+        {
+          "state": "history:1",
+          "seconds": 1.729456708068028
+        },
+        {
+          "state": "history:2",
+          "seconds": 1.736561292083934
+        }
+      ],
+      "metrics": {
+        "sqlite_statements": 1753,
+        "sqlite_transactions": 152,
+        "python_fsync_calls": 198,
+        "python_fsync_seconds": 0.007639904506504536,
+        "extraction": {},
+        "selection_member_encoder_calls": 0,
+        "selection_member_encoded_bytes": 0,
+        "canonical_encoder_calls": 349,
+        "canonical_encoded_bytes": 62308655,
+        "canonical_decoder_calls": 190,
+        "canonical_decoded_bytes": 328726,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "start_utc": "2026-09-14T09:31:48.415283+00:00",
+      "end_utc": "2026-09-14T09:31:57.308440+00:00"
+    },
+    "overlap": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/host-overlap.json",
+      "description": "Full build overlapped independent five-writer-batch/four-reader contention diagnostic. History remains a short diagnostic, not the required 1000-revision qualification."
+    },
+    "url_baseline": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/url-baseline-runtime.json",
+      "sha256": "6d23d9d3915894fc2b3ba931d9539cb88827f71e5acc4ca722bd1a81db46db55",
+      "elapsed_seconds": 106.87568683410063,
+      "peak_rss_bytes": 1711308800,
+      "actual_executions": [
+        "root-urls"
+      ],
+      "metrics": {
+        "sqlite_statements": 426,
+        "sqlite_transactions": 44,
+        "python_fsync_calls": 402,
+        "python_fsync_seconds": 0.00039563048630952835,
+        "extraction": {
+          "engine_json_decodes": 2097152,
+          "shared_encoder_calls": 0,
+          "converted_rows": 2097152,
+          "selected_json_bytes": 66983796,
+          "largest_arrow_batch_bytes": 28096,
+          "sql_calls": 2
+        },
+        "selection_member_encoder_calls": 2097152,
+        "selection_member_encoded_bytes": 171841396,
+        "canonical_encoder_calls": 3145811,
+        "canonical_encoded_bytes": 424294367,
+        "canonical_decoder_calls": 48,
+        "canonical_decoded_bytes": 18020,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 1047,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "cache_description": "Fresh process; previously built workspace; filesystem caches not cleared.",
+      "limitations": [
+        "Initial full-state URL evaluation is separate from later small-edit-through-reuse timing. No query profiling or allocation tracing."
+      ]
+    },
+    "edits": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/edits-runtime.json",
+      "sha256": "462f62982b76680660b39af55f90e26fa24f6c014601f606ff1a68f3a65ad359",
+      "elapsed_seconds": 101.51350095914677,
+      "peak_rss_bytes": 2073788416,
+      "edit_through_reuse_seconds": {
+        "title": 44.55406420887448,
+        "url": 47.407134457957
+      },
+      "actual_executions": [
+        "url-urls"
+      ],
+      "exact_title_reuse": true,
+      "url_result_changed": true,
+      "parent_payload_scan_bound": {
+        "title": {
+          "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+          "parent_files": 23269,
+          "scans": [
+            {
+              "profile": "query-000002.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000004.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000006.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000008.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000010.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000012.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000014.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            },
+            {
+              "profile": "query-000016.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            },
+            {
+              "profile": "query-000026.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000030.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000034.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000038.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            }
+          ],
+          "uncompressed_encoded_payload_column_bytes_upper_bound": 58455756,
+          "within_64_mib": true,
+          "is_physical_io_measurement": false
+        },
+        "url": {
+          "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+          "parent_files": 23269,
+          "scans": [
+            {
+              "profile": "query-000059.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000061.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000063.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000065.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000067.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000069.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000071.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            },
+            {
+              "profile": "query-000073.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            },
+            {
+              "profile": "query-000083.json",
+              "files": 8,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 3117111
+            },
+            {
+              "profile": "query-000087.json",
+              "files": 16,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 6234856
+            },
+            {
+              "profile": "query-000091.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066409
+            },
+            {
+              "profile": "query-000095.json",
+              "files": 13,
+              "truncated_names_resolved_from_query": true,
+              "truncated_names_charge_whole_layer": false,
+              "uncompressed_encoded_payload_column_bytes_upper_bound": 5066876
+            }
+          ],
+          "uncompressed_encoded_payload_column_bytes_upper_bound": 58455756,
+          "within_64_mib": true,
+          "is_physical_io_measurement": false
+        }
+      },
+      "metrics": {
+        "sqlite_statements": 58761,
+        "sqlite_transactions": 335,
+        "python_fsync_calls": 2370,
+        "python_fsync_seconds": 0.013252659002318978,
+        "extraction": {
+          "engine_json_decodes": 2048,
+          "converted_rows": 2048,
+          "selected_json_bytes": 50090,
+          "largest_arrow_batch_bytes": 31412,
+          "sql_calls": 2
+        },
+        "selection_member_encoder_calls": 2048,
+        "selection_member_encoded_bytes": 152490,
+        "canonical_encoder_calls": 59949,
+        "canonical_encoded_bytes": 388899310,
+        "canonical_decoder_calls": 37215,
+        "canonical_decoded_bytes": 192704943,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 4,
+            "returned_chunks": 4,
+            "returned_bytes": 4188,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          },
+          "application/vnd.docspec.selected-members+json": {
+            "stream_calls": 1,
+            "returned_chunks": 1,
+            "returned_bytes": 549,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "sources_unchanged_during_run": true
+    },
+    "named": {
+      "receipt": "/tmp/docspec-core-layout8-shard384-current-20260914/trial/named-runtime.json",
+      "sha256": "e00fb66800a1b48638893ef70d789b2ca26d421752f9878ae194d7139ba6dbe4",
+      "rows": 1025,
+      "selected_evidence": {
+        "kind": "ComparisonEvidence",
+        "codec": "members-v1",
+        "digest": "sha256:d8c08a7f3b0037ae5efad61c5fab45f41f6a4f1316dee70bc38a008ebbe4aeb6",
+        "byte_size": 113639,
+        "entity_id": null
+      },
+      "warm_evaluation_seconds": 4.733172209002078,
+      "retained_position_order_checked": false,
+      "fresh_state_manifest_seconds": 3.462303499924019,
+      "manifest_check_is_full_integrity_audit": false,
+      "oracle_seconds": 0.08737504202872515,
+      "oracle_checked_selected_bytes": 112582,
+      "parent_payload_scan_bound": {
+        "method": "All record_json chunks in each profiled parent file per scan. Truncated names use the full SQL file union when its count matches Total Files Read; otherwise charge the complete layer.",
+        "parent_files": 23269,
+        "scans": [
+          {
+            "profile": "query-000005.json",
+            "files": 26,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 10132453
+          },
+          {
+            "profile": "query-000006.json",
+            "files": 26,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 10132453
+          },
+          {
+            "profile": "query-000007.json",
+            "files": 26,
+            "truncated_names_resolved_from_query": true,
+            "truncated_names_charge_whole_layer": false,
+            "uncompressed_encoded_payload_column_bytes_upper_bound": 10132453
+          }
+        ],
+        "uncompressed_encoded_payload_column_bytes_upper_bound": 30397359,
+        "within_64_mib": true,
+        "is_physical_io_measurement": false
+      },
+      "metrics": {
+        "sqlite_statements": 133,
+        "sqlite_transactions": 17,
+        "python_fsync_calls": 396,
+        "python_fsync_seconds": 0.00027432688511908054,
+        "extraction": {
+          "engine_json_decodes": 1920,
+          "converted_rows": 1025,
+          "selected_json_bytes": 37034,
+          "largest_arrow_batch_bytes": 31482,
+          "sql_calls": 1
+        },
+        "selection_member_encoder_calls": 1025,
+        "selection_member_encoded_bytes": 112582,
+        "canonical_encoder_calls": 5154,
+        "canonical_encoded_bytes": 46915766,
+        "canonical_decoder_calls": 1036,
+        "canonical_decoded_bytes": 127813,
+        "blob_reads_by_media_type": {
+          "application/json": {
+            "stream_calls": 2,
+            "returned_chunks": 2,
+            "returned_bytes": 2094,
+            "range_calls": 0,
+            "range_returned_bytes": 0,
+            "verified_calls": 0,
+            "verified_bytes": 0
+          }
+        }
+      },
+      "stage": "named",
+      "elapsed_seconds": 14.173301833914593,
+      "peak_rss_bytes": 890535936,
+      "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+      "sampled_peak": {
+        "storage_bytes": 9904412948,
+        "scratch_bytes": 0,
+        "retained_bytes": 5232690941,
+        "clean_storage_bytes": 0,
+        "clean_scratch_bytes": 0,
+        "clean_retained_bytes": 0
+      },
+      "storage_file_changes": {
+        "new_durable_files": 66,
+        "clean_new_durable_files": 0
+      },
+      "sample_interval_seconds": 0.25,
+      "platform": "macOS-26.6-arm64-arm-64bit",
+      "python": "3.12.9",
+      "cache_description": "Fresh process; retained fixture previously admitted; filesystem cache not cleared. Diagnostic package; independent small regression work may overlap.",
+      "cache_state_declared": true,
+      "python_allocations": null,
+      "versions": {
+        "docspec": "0.3.0",
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1"
+      },
+      "engine_memory_bytes": 6442450944,
+      "engine_threads": 1,
+      "sources_unchanged_during_run": true,
+      "limitations": [
+        "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+        "Storage is sampled; native record scratch is directed into the measured output tree.",
+        "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+        "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+        "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+        "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+        "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+        "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+        "Cache description is operator supplied; the probe does not flush or warm caches.",
+        "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+      ],
+      "timing_scope": "The10-second threshold applies to warm_evaluation_seconds4.733, not elapsed_seconds14.173, which also includes initial admission, oracle and profile inventory."
+    }
+  }
+}

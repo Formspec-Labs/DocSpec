@@ -1,0 +1,16 @@
+{
+  "wheel": "/private/tmp/docspec-core-qualification-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+  "wheel_sha256": "7935348a711b5d98ea509ec78035b967228f6890389f35e2135ccc36177ec7c4",
+  "snapshot_manifest_sha256": "3ac139140defda732160b93f57e7e971c279c542d80e1e4cb6339c86d37c31b5",
+  "package_files_verified": 128,
+  "installed_package": "/private/tmp/docspec-core-qualification-20260914/environment/lib/python3.12/site-packages/docspec",
+  "python": "3.12.9",
+  "dependencies": {
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1",
+    "rulespec-artifacts": "1.0.12"
+  },
+  "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-qualification-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+}

@@ -4,6 +4,11 @@ DocSpec's regression checks establish behavior for the inputs and environments
 they exercise. Capacity, live source reliability, and package publication each
 need their own evidence. A passing test suite does not establish those claims.
 
+The [2026-09-14 implementation acceptance](core-model-implementation-map.md#implementation-acceptance--2026-09-14)
+records the completed implementation scope and the limits of its evidence.
+Unrun or unmet performance targets remain unqualified claims; completing the
+expanded capacity matrix is not a prerequisite for accepting the implementation.
+
 ## Run the regression checks
 
 Use the same command as [CI](../.github/workflows/ci.yml):
@@ -35,24 +40,33 @@ DocSpec report. Its dataset artifact lists were empty, byte counts were zero,
 and peak memory was unmeasured. Native test results now carry regression
 evidence; there is no replacement DocSpec report format or runner.
 
-## Disposition of the nine previously partial requirements
+## Current Core regression scope
 
-These decisions revise scope. They do not turn unrun checks into passes.
+The regression map follows the implemented Core owners: typed records and exact
+value identity; batch storage; SQLite admission and provenance; actual attempts
+and recovery; value and membership revisions; selected values; checkpoints;
+dependency adequacy and exact reuse; current selection and policy-authorized
+removal. Document, source, scheduler and independent-export checks exercise
+those owners through their public interfaces.
 
-| Previous requirement | Current proof and remaining boundary |
-| --- | --- |
-| `BOUNDARY-IMPORT` | Keep actual imports and isolated dependency checks. The shared canonical encoder is an intentional dependency. |
-| `BOUNDARY-CODE` | Retire historical symbol/archive absence checks. Current import and installed-package checks establish ownership. Git retains old code. |
-| `SOURCE-CATALOG-CONTRACT` | Keep public catalog, provider, coverage and refusal checks. Capacity and unsupported physical formats remain separate. |
-| `RELEASE-MANIFEST` | Check current retained releases and result-container admission. The superseded campaign export format stays retired. |
-| `COMPLETE-SEARCH-CORPUS` | Rename to `RETAINED-RESULT-EVIDENCE`: check retained population, bytes and relationships. Search products own search completeness. |
-| `SCHEDULER-PORTABILITY` | Keep real local and native Dagster process, retry and recovery checks. Other executors and deployment capacity remain unqualified. |
-| `DOCUMENT-RELEASE-INTEGRITY` | Keep lineage, blob and malformed-reference checks. Fixture coverage does not establish corpus capacity. |
-| `SCALE` | Retire the unused scale profile/result formats and their `SCALE-FORMAT` parsing checks. Capacity claims require the measurements described below. |
-| `PACKAGE-RELEASE` | Rename to `INSTALLED-PACKAGE`: build and run isolated wheels. Publishing a release requires separate registry and exact-wheel evidence. |
+Profile registries, document stores, release manifests and saved handoffs were
+retired with their runtime. Their format-only tests are retired too. Useful
+behavior now belongs to Core checks: immutable publication and guarded pointers,
+complete retained states, actual failed attempts, repeatable source evidence,
+recovery, bounded streams, and independent export admission. The
+[implementation map](core-model-implementation-map.md) records the dispositions.
+Git history retains the earlier regression map and test implementations.
 
-The [independent architecture review](history/2026-09-12-regression-qualification-architecture.md)
-records the reasoning and the pytest hook boundaries.
+A generic state export retains the explicitly selected state and its evidence.
+A document export supplies the document pipeline's explicit retained roots to
+include source and stage selections. Tests check complete requested populations,
+original execution provenance, exact bytes, unavailable content, corruption and
+reopening without the original workspace. They establish neither search-corpus
+completeness nor unspecified application semantics inside arbitrary JSON values.
+
+The [earlier review](history/2026-09-12-regression-qualification-architecture.md)
+explains the retained pytest hook boundaries. The current map contains selectors,
+not stored pass statuses; only an actual strict run establishes its result.
 
 ## Qualify a capacity claim
 
@@ -63,7 +77,7 @@ segments, formats, and processing costs; a convenient prefix alone cannot
 establish representativeness.
 
 Before running, pin the source revision and installed wheels, inputs or fixture
-generator, selected stages and components, storage profiles, resource limits,
+generator, selected stages and components, storage settings, resource limits,
 machine, cache state, operations, recovery scenario, and acceptance thresholds.
 Use the existing local runner or native Dagster job. The
 [local capacity recipe](capacity-workloads.md) supplies reproducible fixture
@@ -71,15 +85,18 @@ workloads and links exact measured revisions and remaining gaps. Retain actual
 input and result
 artifacts, elapsed time, peak memory, storage and scratch use, and the results of
 independent admission and comparison with a clean run.
-Use saved DocSpec plan, handoff, run and release references alongside the
-measurement tool's output and reproduction commands. The retired `ScaleProfile`
+Retain Core state, request, execution, result and selection identities alongside
+the measurement tool's output and reproduction commands. The retired `ScaleProfile`
 and `ScaleResult` formats only validated supplied declarations; no runtime
-measured or executed through them. Existing work and execution limits continue
-to govern execution. There is no replacement DocSpec capacity report format.
+measured or executed through them. Document invocation limits count new source bytes and generated rows; common
+operation limits bound control records and journals. Native schedulers and
+provider clients own their retry limits. There is no replacement DocSpec capacity report format.
 
-Capacity results apply to their exact installed wheels and workloads. In particular,
-`DocumentReleaseVerifier.verify` keeps a set of distinct blob identities that
-grows with the result. [D37](dataset-experiments-todo.md#d37) remains open: the
+Capacity results apply to their exact installed wheels and workloads. The old
+release verifier and its dataset-sized Python identity set are retired; Core
+performance claims still require measurement against the
+[C01 targets](core-model-implementation-map.md#capacity-targets-fixed-before-tuning).
+[D37](dataset-experiments-todo.md#d37) retains the earlier qualification history: the
 original text workload exceeded its changed-resource time limit. The
 [fresh Parquet trial](history/2026-09-12-parquet-capacity-observations.md) qualifies
 markup256; text4096 passed processing but exceeded its complete-comparison time

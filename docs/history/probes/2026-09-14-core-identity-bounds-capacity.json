@@ -1,0 +1,2187 @@
+{
+  "package": {
+    "wheel": "/private/tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+    "snapshot_manifest_sha256": "f5f57e457939b778ec566256b96ae781d378de9b82efc557c6e6fdd6c283fc1f",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-identity-bounds-20260914/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "source_manifest_sha256": "f5f57e457939b778ec566256b96ae781d378de9b82efc557c6e6fdd6c283fc1f",
+  "input": {
+    "path": "/tmp/docspec-core-identity-bounds-20260914/trial/base.parquet",
+    "bytes": 4428154048,
+    "sha256": "019402bb59cace267f58a3e6bdd8f89ca3860882b17be252f8962f7196180b23",
+    "sha256_rechecked_after_measurements": true
+  },
+  "build": {
+    "members": 1048576,
+    "state_id": "root",
+    "metrics": {
+      "sqlite_statements": 4358241,
+      "sqlite_transactions": 16395,
+      "python_fsync_calls": 140016,
+      "python_fsync_seconds": 0.13990291277877986,
+      "extraction": {},
+      "selection_member_encoder_calls": 0,
+      "selection_member_encoded_bytes": 0,
+      "canonical_encoder_calls": 2105360,
+      "canonical_encoded_bytes": 9223044383,
+      "canonical_decoder_calls": 2097155,
+      "canonical_decoded_bytes": 17605679090,
+      "blob_reads_by_media_type": {
+        "application/json": {
+          "stream_calls": 1,
+          "returned_chunks": 1,
+          "returned_bytes": 1047,
+          "range_calls": 0,
+          "range_returned_bytes": 0,
+          "verified_calls": 0,
+          "verified_bytes": 0
+        }
+      },
+      "fixture_rows_decoded": 1048576
+    },
+    "query_profiles": null,
+    "stage": "build",
+    "elapsed_seconds": 272.2233812089544,
+    "peak_rss_bytes": 11509350400,
+    "peak_rss_scope": "whole fresh process including setup, independent oracle and enabled observers",
+    "sampled_peak": {
+      "storage_bytes": 15604445547,
+      "scratch_bytes": 8360519275,
+      "retained_bytes": 5105450155,
+      "clean_storage_bytes": 0,
+      "clean_scratch_bytes": 0,
+      "clean_retained_bytes": 0
+    },
+    "storage_file_changes": {
+      "new_durable_files": 23337,
+      "clean_new_durable_files": 0
+    },
+    "sample_interval_seconds": 0.25,
+    "platform": "macOS-26.6-arm64-arm-64bit",
+    "python": "3.12.9",
+    "cache_description": "Fresh process; new v3 workspace; reused pinned immutable input; OS cache not cleared; no competing DocSpec capacity process.",
+    "cache_state_declared": true,
+    "python_allocations": null,
+    "versions": {
+      "docspec": "0.3.0",
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1"
+    },
+    "engine_memory_bytes": 6442450944,
+    "engine_threads": 1,
+    "sources_unchanged_during_run": true,
+    "limitations": [
+      "Fresh process RSS includes independent verification; per-phase RSS not isolated.",
+      "Storage is sampled; native record scratch is directed into the measured output tree.",
+      "DuckDB profile bytes are reported I/O, not proven uncompressed payload column bytes.",
+      "Query profiles cover the observed stage, including its independent verification; raw profile files retain full SQL.",
+      "Codec counters count successful DocSpec gateway calls/bytes, not recursive or Rulespec-internal work; conversion metrics cover the shared selection extractor.",
+      "Blob counters count returned stream/range bytes plus successful whole-blob verification bytes by media type; media type does not establish the Core codec.",
+      "Optional allocation tracing reports Python peak bytes and net live blocks, not gross allocations or native memory; tracing adds overhead.",
+      "New durable file counts compare final vs initial paths, exclude scratch/staging/locks/WAL/SHM, and do not count transient creations or overwrites.",
+      "Cache description is operator supplied; the probe does not flush or warm caches.",
+      "Fsync metrics cover Python file and directory sync calls; SQLite/native sync calls are not intercepted."
+    ]
+  },
+  "root_relative": {
+    "N": 1048576,
+    "E": 1024,
+    "H": 0,
+    "package": {
+      "wheel": "/private/tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+      "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+      "snapshot_manifest_sha256": "f5f57e457939b778ec566256b96ae781d378de9b82efc557c6e6fdd6c283fc1f",
+      "package_files_verified": 128,
+      "installed_package": "/private/tmp/docspec-core-identity-bounds-20260914/environment/lib/python3.12/site-packages/docspec",
+      "python": "3.12.9",
+      "dependencies": {
+        "duckdb": "1.5.5",
+        "pyarrow": "25.0.1",
+        "msgspec": "0.21.1",
+        "jsonschema-rs": "0.52.1",
+        "rulespec-artifacts": "1.0.12"
+      },
+      "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+    },
+    "start_utc": "2026-09-14T10:29:02.894805+00:00",
+    "observer_scope": "Inclusive owner timings; relation entry includes native identity discovery, not later payload consumption. F_in is the descriptor input before internal bounds pruning, not files opened. No profiler or allocation sampler.",
+    "phases": [
+      {
+        "phase": "cold",
+        "seconds": 11.460842749802396,
+        "events": [
+          {
+            "owner": "available",
+            "seconds": 0.7569808340631425,
+            "F_out": 23269,
+            "N": 1048576
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.6960404589772224
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 1.4593712911009789,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.31417041597887874
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.3187891240231693,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.5719799168873578
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.5807734997943044,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2827965000178665
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2905982080847025,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.5634923339821398
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.5706569170579314,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2948990829754621
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.30116845900192857,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.5957988749723881
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.602985333185643,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.27969766687601805
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.28602804290130734,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0004538751672953367
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.00034383288584649563
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.0003198329359292984
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0002742079086601734
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.3135160419624299
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.31793125020340085,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.015008792048320174
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.02486958308145404,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.28627962502650917
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2934300000779331,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.014757582917809486
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.024527000030502677,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2889583751093596
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2950477502308786,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.014569458784535527
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.02430133312009275,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.28148995782248676
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2877966670785099,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.015576041070744395
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.02578854188323021,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "available",
+            "seconds": 0.00543808308430016,
+            "F_out": 64,
+            "N": 1048576
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.0006906250491738319
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 1024,
+            "schema": "core-entities:1",
+            "seconds": 0.051574334036558867
+          },
+          {
+            "owner": "_check_puts",
+            "seconds": 0.059423083905130625
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0011039171367883682
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0002454589121043682
+          },
+          {
+            "owner": "union_disjoint",
+            "F_base": 23269,
+            "F_changes": 26,
+            "seconds": 0.3516989580821246
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.0005603749305009842
+          }
+        ]
+      },
+      {
+        "phase": "warm",
+        "seconds": 8.375230791978538,
+        "events": [
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.3159772919025272
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.32053304091095924,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.3110090419650078
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.3154554159846157,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2833922498393804
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2904776253271848,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2902348341885954
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2973961669486016,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.29736091708764434
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.3035750431008637,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2842640420421958
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.29046208411455154,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.29376645805314183
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.3000875008292496,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.27762966719456017
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2838984571862966,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0003191661089658737
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.00026216614060103893
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.00030991598032414913
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0002273751888424158
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.3121177919674665
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.31645824993029237,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.014874708140268922
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.02433333406224847,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.28280208399519324
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.2898665841203183,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.014686166075989604
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.024015832925215364,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.2867098751012236
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.29295745794661343,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.014906249940395355
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.02421920793130994,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.27933770790696144
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.285519250202924,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 256,
+            "schema": "core-entities:1",
+            "seconds": 0.01534870802424848
+          },
+          {
+            "owner": "lookup_batches",
+            "seconds": 0.025215498870238662,
+            "rows": 256,
+            "batches": 1
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.00046620797365903854
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": 1024,
+            "schema": "core-entities:1",
+            "seconds": 0.05129670794121921
+          },
+          {
+            "owner": "_check_puts",
+            "seconds": 0.059187958016991615
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 23269,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.001116124913096428
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 26,
+            "ids": null,
+            "schema": "core-entities:1",
+            "seconds": 0.0002568748313933611
+          },
+          {
+            "owner": "union_disjoint",
+            "F_base": 23269,
+            "F_changes": 26,
+            "seconds": 0.34753308398649096
+          },
+          {
+            "owner": "relation_entry",
+            "F_in": 64,
+            "ids": null,
+            "schema": "core-membership:1",
+            "seconds": 0.0005582920275628567
+          }
+        ]
+      },
+      {
+        "phase": "warm-unobserved-control",
+        "seconds": 8.513687500031665,
+        "events": []
+      }
+    ],
+    "F_root": 23269,
+    "verification_seconds": 3.38856808305718,
+    "all_changed_values_and_complete_membership_checked": true,
+    "peak_rss_bytes": 1386119168,
+    "end_utc": "2026-09-14T10:29:34.673303+00:00",
+    "launcher_sha256": "eace984681d1142a12f7f912c9b560fafab4106f50a32e26834790b743b3cf6c"
+  },
+  "contention5": {
+    "contention": {
+      "fixture_members": 1048576,
+      "full_C01_dimensions": false,
+      "workers": [
+        {
+          "batches": [
+            {
+              "batch": 0,
+              "state": "contention:0",
+              "changed_members": 1024,
+              "seconds": 13.63410274987109,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 1,
+              "state": "contention:1",
+              "changed_members": 1024,
+              "seconds": 8.604337624972686,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 2,
+              "state": "contention:2",
+              "changed_members": 1024,
+              "seconds": 8.743109167087823,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 3,
+              "state": "contention:3",
+              "changed_members": 1024,
+              "seconds": 9.157835416961461,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 4,
+              "state": "contention:4",
+              "changed_members": 1024,
+              "seconds": 9.021966083906591,
+              "stale_update_refused": true
+            }
+          ],
+          "changed_members": 5120,
+          "metrics": {
+            "sqlite_statements": 144727,
+            "sqlite_transactions": 591,
+            "python_fsync_calls": 4949,
+            "python_fsync_seconds": 0.037050334736704826,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 134098,
+            "canonical_encoded_bytes": 1140918767,
+            "canonical_decoder_calls": 92760,
+            "canonical_decoded_bytes": 483192826,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 15,
+                "returned_chunks": 15,
+                "returned_bytes": 15705,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "writer",
+          "pid": 68577,
+          "elapsed_seconds": 49.26052491692826,
+          "peak_rss_bytes": 1430896640
+        },
+        {
+          "metadata_seconds": [
+            0.004210625076666474,
+            0.0020319169852882624,
+            0.0011903748381882906,
+            0.0034502081107348204,
+            0.001408125041052699,
+            0.0016916661988943815,
+            0.00232758279889822,
+            0.0021769171580672264,
+            0.004625458037480712,
+            0.0019086250104010105,
+            0.0013925840612500906,
+            0.006465124897658825,
+            0.0017558750696480274,
+            0.002256541047245264,
+            0.003252999857068062,
+            0.0016814591363072395,
+            0.0016782088205218315,
+            0.0013164589181542397,
+            0.002256625099107623,
+            0.001528874970972538,
+            0.001563624944537878,
+            0.003167291870340705,
+            0.003511124989017844,
+            0.0036282080691307783,
+            0.0033123749308288097,
+            0.002107250038534403,
+            0.00211825012229383,
+            0.0017220000736415386,
+            0.002288915915414691,
+            0.001858250005170703,
+            0.002173417015001178,
+            0.003500791033729911,
+            0.001689624972641468,
+            0.0020257080905139446,
+            0.0023167498875409365
+          ],
+          "named_seconds": [
+            3.510563125135377,
+            4.391328749945387,
+            3.3389958338811994,
+            3.324917833087966,
+            1.101166999898851,
+            1.1034502091351897,
+            1.0682582079898566,
+            1.0832646670751274,
+            1.0903402080293745,
+            1.1014584167860448,
+            1.1004652080591768,
+            1.1195555001031607,
+            1.1253200420178473,
+            1.0958854160271585,
+            1.129300625063479,
+            1.1044571669772267,
+            1.1242072919849306,
+            1.1090088749770075,
+            1.1092544158454984,
+            1.1238532920833677,
+            1.135601167101413,
+            1.488350790925324,
+            1.1021706669125706,
+            1.1304614171385765,
+            1.1234251249115914,
+            1.1477236249484122,
+            1.1385279591195285,
+            1.1492635828908533,
+            1.1440774579532444,
+            1.3963362919166684,
+            1.1386262911837548,
+            1.123870792100206,
+            1.1479651669505984,
+            1.0831523339729756,
+            1.098103707889095
+          ],
+          "metadata_p95_seconds": 0.004625458037480712,
+          "named_p95_seconds": 3.510563125135377,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1155,
+            "sqlite_transactions": 175,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 71680,
+              "shared_encoder_calls": 0,
+              "converted_rows": 35875,
+              "selected_json_bytes": 1779430,
+              "largest_arrow_batch_bytes": 40945,
+              "sql_calls": 35
+            },
+            "selection_member_encoder_calls": 35875,
+            "selection_member_encoded_bytes": 4325050,
+            "canonical_encoder_calls": 36015,
+            "canonical_encoded_bytes": 722334166,
+            "canonical_decoder_calls": 36015,
+            "canonical_decoded_bytes": 4382288,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 35,
+                "returned_chunks": 35,
+                "returned_bytes": 36645,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:0",
+          "pid": 68578,
+          "elapsed_seconds": 49.97802279214375,
+          "peak_rss_bytes": 1007763456
+        },
+        {
+          "metadata_seconds": [
+            0.0027383749838918447,
+            0.0014635419938713312,
+            0.001164000015705824,
+            0.0020039579831063747,
+            0.003627584083005786,
+            0.0015157079324126244,
+            0.0033366249408572912,
+            0.0016289169434458017,
+            0.0014303750358521938,
+            0.0015479170251637697,
+            0.008065040921792388,
+            0.001954041188582778,
+            0.0016104159876704216,
+            0.0022492920979857445,
+            0.003422040957957506,
+            0.0014230001252144575,
+            0.0017714169807732105,
+            0.0036040418781340122,
+            0.006229958031326532,
+            0.001533583039417863,
+            0.0015731249004602432,
+            0.0017730409745126963,
+            0.003323625074699521,
+            0.0031936250161379576,
+            0.003117291023954749,
+            0.002337041776627302,
+            0.0016020829789340496,
+            0.0014517921954393387,
+            0.0019152911845594645,
+            0.0014709588140249252,
+            0.003097665961831808,
+            0.0019003329798579216,
+            0.0017803329974412918,
+            0.0019469999242573977,
+            0.0017305840738117695
+          ],
+          "named_seconds": [
+            3.513615957926959,
+            4.390692167216912,
+            3.339102084049955,
+            3.311988041969016,
+            1.1130858329124749,
+            1.1121597499586642,
+            1.0597704590763897,
+            1.0837019169703126,
+            1.0928103749174625,
+            1.100717999972403,
+            1.0949676670134068,
+            1.123780625173822,
+            1.1252982919104397,
+            1.0956785418093204,
+            1.1301766249816865,
+            1.103891583159566,
+            1.1235786250326782,
+            1.106977374991402,
+            1.1056040418334305,
+            1.1238311671186239,
+            1.1358257089741528,
+            1.4897384168580174,
+            1.103129040915519,
+            1.130792957963422,
+            1.122665958944708,
+            1.148744042031467,
+            1.1385464579798281,
+            1.149469125084579,
+            1.1443314170464873,
+            1.397960958071053,
+            1.1359952909406275,
+            1.1254216670058668,
+            1.147975916042924,
+            1.1281636250205338,
+            1.1273342499043792
+          ],
+          "metadata_p95_seconds": 0.006229958031326532,
+          "named_p95_seconds": 3.513615957926959,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1155,
+            "sqlite_transactions": 175,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 71680,
+              "shared_encoder_calls": 0,
+              "converted_rows": 35875,
+              "selected_json_bytes": 1779430,
+              "largest_arrow_batch_bytes": 40945,
+              "sql_calls": 35
+            },
+            "selection_member_encoder_calls": 35875,
+            "selection_member_encoded_bytes": 4325050,
+            "canonical_encoder_calls": 36015,
+            "canonical_encoded_bytes": 722334166,
+            "canonical_decoder_calls": 36015,
+            "canonical_decoded_bytes": 4382288,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 35,
+                "returned_chunks": 35,
+                "returned_bytes": 36645,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:3",
+          "pid": 68581,
+          "elapsed_seconds": 50.050555374938995,
+          "peak_rss_bytes": 918192128
+        },
+        {
+          "metadata_seconds": [
+            0.0027322918176651,
+            0.0066791248973459005,
+            0.0014711669646203518,
+            0.006188707891851664,
+            0.0016362920869141817,
+            0.002205250086262822,
+            0.0020665000192821026,
+            0.0020947500597685575,
+            0.0014398328494280577,
+            0.001633667154237628,
+            0.0017283749766647816,
+            0.0032828329131007195,
+            0.0013582080136984587,
+            0.001928082900121808,
+            0.006321708904579282,
+            0.0013635840732604265,
+            0.006455499911680818,
+            0.0016554170288145542,
+            0.014125582994893193,
+            0.0014879170339554548,
+            0.0012406657915562391,
+            0.001369542209431529,
+            0.0018335420172661543,
+            0.0032032919116318226,
+            0.003193542128428817,
+            0.001903708092868328,
+            0.0012743750121444464,
+            0.0014387078117579222,
+            0.0025661250110715628,
+            0.0015622498467564583,
+            0.001717583043500781,
+            0.0012338748201727867,
+            0.0017090830951929092,
+            0.0012788749299943447,
+            0.0037496250588446856
+          ],
+          "named_seconds": [
+            3.512806458165869,
+            4.385238250019029,
+            3.34653641609475,
+            3.301145042059943,
+            1.1129996669478714,
+            1.1129452500026673,
+            1.0613674581982195,
+            1.0826449999585748,
+            1.0935918339528143,
+            1.1025253341067582,
+            1.09934070892632,
+            1.1230197090189904,
+            1.125660124933347,
+            1.095689124893397,
+            1.127144416095689,
+            1.1035291659645736,
+            1.1190514161717147,
+            1.1088246658910066,
+            1.098033000016585,
+            1.125392041867599,
+            1.1354018340352923,
+            1.489038750063628,
+            1.104811541037634,
+            1.1303312499076128,
+            1.1230698327999562,
+            1.1525210421532393,
+            1.1354205838870257,
+            1.1489561661146581,
+            1.1442139998544008,
+            1.397263125050813,
+            1.1394053751137108,
+            1.12522116699256,
+            1.1489714998751879,
+            1.1276402501389384,
+            1.1259787501767278
+          ],
+          "metadata_p95_seconds": 0.0066791248973459005,
+          "named_p95_seconds": 3.512806458165869,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1155,
+            "sqlite_transactions": 175,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 71680,
+              "shared_encoder_calls": 0,
+              "converted_rows": 35875,
+              "selected_json_bytes": 1779430,
+              "largest_arrow_batch_bytes": 40945,
+              "sql_calls": 35
+            },
+            "selection_member_encoder_calls": 35875,
+            "selection_member_encoded_bytes": 4325050,
+            "canonical_encoder_calls": 36015,
+            "canonical_encoded_bytes": 722334166,
+            "canonical_decoder_calls": 36015,
+            "canonical_decoded_bytes": 4382288,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 35,
+                "returned_chunks": 35,
+                "returned_bytes": 36645,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:2",
+          "pid": 68580,
+          "elapsed_seconds": 50.05149345798418,
+          "peak_rss_bytes": 1008009216
+        },
+        {
+          "metadata_seconds": [
+            0.0025510000996291637,
+            0.0027470840141177177,
+            0.0012744581326842308,
+            0.0012609579134732485,
+            0.0013109170831739902,
+            0.0014052910264581442,
+            0.0016628331504762173,
+            0.001906791003420949,
+            0.001708792056888342,
+            0.0040509579703211784,
+            0.0017672500107437372,
+            0.0037357090041041374,
+            0.0015046249609440565,
+            0.0016780421137809753,
+            0.002078917110338807,
+            0.003599541960284114,
+            0.003099875058978796,
+            0.0012559171300381422,
+            0.006404082989320159,
+            0.0017054590862244368,
+            0.0012443340383470058,
+            0.0017129590269178152,
+            0.001480791950598359,
+            0.0024355000350624323,
+            0.0017372500151395798,
+            0.0022369169164448977,
+            0.0034614591859281063,
+            0.0014749160036444664,
+            0.0024016250390559435,
+            0.0017929589375853539,
+            0.0020514579955488443,
+            0.0036748750135302544,
+            0.0019262500572949648,
+            0.0029263750184327364,
+            0.0014544168952852488
+          ],
+          "named_seconds": [
+            3.5130775419529527,
+            4.39131149998866,
+            3.343674249947071,
+            3.323734291829169,
+            1.0980517081916332,
+            1.1130408749449998,
+            1.0602157919202,
+            1.0832402920350432,
+            1.0932603331748396,
+            1.098424541996792,
+            1.1009064591489732,
+            1.1227242080494761,
+            1.1260977920610458,
+            1.0957638749387115,
+            1.1304462919943035,
+            1.102794541977346,
+            1.1221275420393795,
+            1.1088505000807345,
+            1.1054055409040302,
+            1.1244102499913424,
+            1.1356877908110619,
+            1.4898199159651995,
+            1.10390679189004,
+            1.1326750421430916,
+            1.1239961669780314,
+            1.147141708061099,
+            1.1379124580416828,
+            1.1491595411207527,
+            1.144043792039156,
+            1.3964275838807225,
+            1.1385107089299709,
+            1.123664083890617,
+            1.1481786251533777,
+            1.1272604169789702,
+            1.127243041060865
+          ],
+          "metadata_p95_seconds": 0.0040509579703211784,
+          "named_p95_seconds": 3.5130775419529527,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1155,
+            "sqlite_transactions": 175,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 71680,
+              "shared_encoder_calls": 0,
+              "converted_rows": 35875,
+              "selected_json_bytes": 1779430,
+              "largest_arrow_batch_bytes": 40945,
+              "sql_calls": 35
+            },
+            "selection_member_encoder_calls": 35875,
+            "selection_member_encoded_bytes": 4325050,
+            "canonical_encoder_calls": 36015,
+            "canonical_encoded_bytes": 722334166,
+            "canonical_decoder_calls": 36015,
+            "canonical_decoded_bytes": 4382288,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 35,
+                "returned_chunks": 35,
+                "returned_bytes": 36645,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:1",
+          "pid": 68579,
+          "elapsed_seconds": 50.05198087496683,
+          "peak_rss_bytes": 1039007744
+        }
+      ],
+      "concurrent_seconds": 50.23125845915638,
+      "elapsed_including_reconciliation_seconds": 55.43186845909804,
+      "acknowledged_batches_reconciled": 5,
+      "reconciled_value_edits": 5120,
+      "changed_members_per_batch": 1024,
+      "process_count": 5,
+      "parent_peak_rss_bytes": 543096832,
+      "sum_individual_peak_rss_bytes": 5946966016,
+      "targets": {
+        "elapsed_600s": true,
+        "each_process_2gib": true,
+        "sum_peak_upper_bound_8gib": true,
+        "reader_metadata_p95_5s": true
+      }
+    },
+    "stage": "contention",
+    "requested_batches": 5,
+    "requested_changed_members": 1024,
+    "process_deadline_seconds": 600.0,
+    "sources_unchanged_during_run": true,
+    "elapsed_seconds": 56.1908937911503,
+    "parent_peak_rss_bytes": 543096832,
+    "platform": "macOS-26.6-arm64-arm-64bit",
+    "python": "3.12.9",
+    "versions": {
+      "docspec": "0.3.0",
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1"
+    },
+    "engine_threads": 1,
+    "engine_memory_bytes": 6442450944,
+    "limitations": [
+      "Sum of individual process RSS peaks is a conservative upper bound, not a simultaneous sample.",
+      "Named-read latency includes consuming and independently checking returned fields.",
+      "A fresh process does not establish a cold operating-system cache."
+    ]
+  },
+  "raw_receipts": {
+    "build": {
+      "path": "/tmp/docspec-core-identity-bounds-20260914/trial/build-runtime.json",
+      "sha256": "69b030f6a7c1256f69d49f15195131474511baa18ce1994f81d7b0f868f1ea90"
+    },
+    "root_relative": {
+      "path": "/tmp/docspec-core-identity-bounds-20260914/root-relative/trial/scaling.json",
+      "sha256": "9e5a9770aef65ae7a6c17d1caa6098d02b0fccc379db60682095543f3749155b"
+    },
+    "contention5": {
+      "path": "/tmp/docspec-core-identity-bounds-20260914/contention5/trial/contention-contention-report.json",
+      "sha256": "6b48a188a639b95c5b3a2025ea104b4143fb0f47076889efe6d09d6f6bb96a8d"
+    }
+  },
+  "interpretation": {
+    "root_relative_warm_seconds": 8.375230791978538,
+    "previous_unbounded_warm_seconds": 60.13,
+    "all_5120_contended_changes_reconciled": true,
+    "full_contention_qualified": false,
+    "remaining": "Grouped warmfive-batch durations7.48\u20137.98s still do not support100batches plus reconciliation within600s. Fullhistory/read/document/larger-than-memory trials and repetitions remain."
+  },
+  "limitations": [
+    "Build and diagnostic revisions ran sequentially on current package; OS caches were not cleared.",
+    "Root-relative paired comparison uses earlier fixed6fd444 package with same fixture/layout; scopes and exact oracles match, but OS cache is uncontrolled.",
+    "Root-relative F_in counters precede internal bounds pruning and do not count actual native files opened.",
+    "Five-batch target booleans are dimensionally limited; full_C01_dimensions is false.",
+    "Process peak sums are conservative, not simultaneous samples."
+  ],
+  "warm_owner": {
+    "raw_receipt": "/tmp/docspec-core-bounds-warm-owner-20260914/runtime.json",
+    "sha256": "680f8e98b48ac40aee7d67dd3c4bdfd5c4361d04c9c81e8b497bf8945876ed4c",
+    "elapsed_seconds": 8.57,
+    "oracle_seconds": 1.469,
+    "membership_rewrite_seconds": 1.839,
+    "fresh_availability_seconds": 1.695,
+    "ledger_commit_inclusive_seconds": 1.49,
+    "provenance_included_seconds": 0.29,
+    "membership_digest_seconds": 0.612,
+    "union_seconds": 0.384,
+    "lookup_seconds": 0.441,
+    "admission_hits": 19,
+    "admission_misses": 5,
+    "admission_evictions": 0,
+    "scope": "One generated-source batch, separate process without readers; owner timings overlap. Complete changed-value and1m membership oracle passed. New-result admission occurs after publication scope ends."
+  },
+  "grouped_contention5": {
+    "contention": {
+      "fixture_members": 1048576,
+      "full_C01_dimensions": false,
+      "workers": [
+        {
+          "batches": [
+            {
+              "batch": 0,
+              "state": "contention:0",
+              "changed_members": 1024,
+              "seconds": 11.068279625149444,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 1,
+              "state": "contention:1",
+              "changed_members": 1024,
+              "seconds": 7.475647166138515,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 2,
+              "state": "contention:2",
+              "changed_members": 1024,
+              "seconds": 7.695146749960259,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 3,
+              "state": "contention:3",
+              "changed_members": 1024,
+              "seconds": 7.947303584078327,
+              "stale_update_refused": true
+            },
+            {
+              "batch": 4,
+              "state": "contention:4",
+              "changed_members": 1024,
+              "seconds": 7.9823853329289705,
+              "stale_update_refused": true
+            }
+          ],
+          "changed_members": 5120,
+          "metrics": {
+            "sqlite_statements": 144727,
+            "sqlite_transactions": 591,
+            "python_fsync_calls": 4955,
+            "python_fsync_seconds": 0.03130111796781421,
+            "extraction": {},
+            "selection_member_encoder_calls": 0,
+            "selection_member_encoded_bytes": 0,
+            "canonical_encoder_calls": 134074,
+            "canonical_encoded_bytes": 1017806473,
+            "canonical_decoder_calls": 92760,
+            "canonical_decoded_bytes": 483192826,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 15,
+                "returned_chunks": 15,
+                "returned_bytes": 15705,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "writer",
+          "pid": 97343,
+          "elapsed_seconds": 42.25560525013134,
+          "peak_rss_bytes": 1368408064
+        },
+        {
+          "metadata_seconds": [
+            0.003845999948680401,
+            0.0035475417971611023,
+            0.0033339159563183784,
+            0.0016716669779270887,
+            0.0013751660007983446,
+            0.0031281670089811087,
+            0.002031833166256547,
+            0.003569499822333455,
+            0.0034130411222577095,
+            0.0034102080389857292,
+            0.0019285411108285189,
+            0.0016064161900430918,
+            0.0019661670085042715,
+            0.00420095887966454,
+            0.0038110411260277033,
+            0.001793124945834279,
+            0.002608124865218997,
+            0.0018072910606861115,
+            0.0015268749557435513,
+            0.001950833946466446,
+            0.0024211672134697437,
+            0.0015677500050514936,
+            0.006155458046123385,
+            0.0016437920276075602,
+            0.0014437499921768904,
+            0.0031932920683175325,
+            0.0016050420235842466,
+            0.0015830409247428179,
+            0.0014752920251339674,
+            0.003495250130072236,
+            0.00373095809482038,
+            0.0012619579210877419,
+            0.0022017089650034904
+          ],
+          "named_seconds": [
+            4.2635586250107735,
+            2.8572350840549916,
+            2.7681354579981416,
+            2.8747212919406593,
+            1.0013572499155998,
+            0.9886561669409275,
+            0.9900603329297155,
+            1.003735916921869,
+            1.0141489170491695,
+            1.0095679168589413,
+            1.0247604579199106,
+            1.015672791050747,
+            1.0027223331853747,
+            1.0124954581260681,
+            1.022135250037536,
+            1.026518041966483,
+            1.0151073751039803,
+            1.014042458962649,
+            1.025839249836281,
+            1.0453513751272112,
+            1.0300556658767164,
+            1.0460543751250952,
+            1.0320635410025716,
+            1.0170271671377122,
+            1.0016604580450803,
+            1.0217240420170128,
+            1.0400800409261137,
+            1.041160416090861,
+            1.0384902080986649,
+            1.0121991250198334,
+            1.0432430421933532,
+            1.0400686250068247,
+            1.018783750012517
+          ],
+          "metadata_p95_seconds": 0.00420095887966454,
+          "named_p95_seconds": 2.8747212919406593,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1089,
+            "sqlite_transactions": 165,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 67584,
+              "shared_encoder_calls": 0,
+              "converted_rows": 33825,
+              "selected_json_bytes": 1675154,
+              "largest_arrow_batch_bytes": 40947,
+              "sql_calls": 33
+            },
+            "selection_member_encoder_calls": 33825,
+            "selection_member_encoded_bytes": 4075310,
+            "canonical_encoder_calls": 33957,
+            "canonical_encoded_bytes": 681095120,
+            "canonical_decoder_calls": 33957,
+            "canonical_decoded_bytes": 4129256,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 33,
+                "returned_chunks": 33,
+                "returned_bytes": 34551,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:1",
+          "pid": 97345,
+          "elapsed_seconds": 42.52274620789103,
+          "peak_rss_bytes": 1021394944
+        },
+        {
+          "metadata_seconds": [
+            0.004362332867458463,
+            0.0012490409426391125,
+            0.001603999873623252,
+            0.0023759170435369015,
+            0.0014274588320404291,
+            0.0019027909729629755,
+            0.0020452088210731745,
+            0.0013451669365167618,
+            0.0017371249850839376,
+            0.0030537499114871025,
+            0.0017102921847254038,
+            0.0018449998460710049,
+            0.0024862501304596663,
+            0.0016857078298926353,
+            0.0035398330073803663,
+            0.003422041889280081,
+            0.00606487481854856,
+            0.003656083019450307,
+            0.001352833118289709,
+            0.0019304580055177212,
+            0.0030268339905887842,
+            0.0036633750423789024,
+            0.0020775417797267437,
+            0.0061742078978568316,
+            0.0013162079267203808,
+            0.0015959169249981642,
+            0.001617291010916233,
+            0.0015476250555366278,
+            0.0016962080262601376,
+            0.0061761250253766775,
+            0.0017948749009519815,
+            0.0017218331340700388,
+            0.001953667029738426
+          ],
+          "named_seconds": [
+            4.263434750027955,
+            2.8589498340152204,
+            2.767513332888484,
+            2.876929708989337,
+            1.0010976670309901,
+            0.989727291977033,
+            0.990597500000149,
+            1.00528341694735,
+            1.0155988750047982,
+            1.010613291990012,
+            1.0243960830848664,
+            1.0153893339447677,
+            1.0023432921152562,
+            1.015231000026688,
+            1.0229461248964071,
+            1.0244530839845538,
+            1.0115531671326607,
+            1.0125244159717113,
+            1.0259673341643065,
+            1.0449226249475032,
+            1.0295955420006067,
+            1.0444586661178619,
+            1.0368477921001613,
+            1.0116796251386404,
+            1.0014358749613166,
+            1.0232586250640452,
+            1.04097008286044,
+            1.0401390418410301,
+            1.0392059159930795,
+            1.0088106249459088,
+            1.0442707920446992,
+            1.040731874993071,
+            1.018474374897778
+          ],
+          "metadata_p95_seconds": 0.0061742078978568316,
+          "named_p95_seconds": 2.876929708989337,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1089,
+            "sqlite_transactions": 165,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 67584,
+              "shared_encoder_calls": 0,
+              "converted_rows": 33825,
+              "selected_json_bytes": 1675154,
+              "largest_arrow_batch_bytes": 40947,
+              "sql_calls": 33
+            },
+            "selection_member_encoder_calls": 33825,
+            "selection_member_encoded_bytes": 4075310,
+            "canonical_encoder_calls": 33957,
+            "canonical_encoded_bytes": 681095120,
+            "canonical_decoder_calls": 33957,
+            "canonical_decoded_bytes": 4129256,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 33,
+                "returned_chunks": 33,
+                "returned_bytes": 34551,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:2",
+          "pid": 97346,
+          "elapsed_seconds": 42.52317399997264,
+          "peak_rss_bytes": 1009188864
+        },
+        {
+          "metadata_seconds": [
+            0.0024531250819563866,
+            0.0015877920668572187,
+            0.0011725830845534801,
+            0.0016799999866634607,
+            0.0014210420195013285,
+            0.0065794161055237055,
+            0.001780458027496934,
+            0.0017382078804075718,
+            0.0012993328273296356,
+            0.0019268339965492487,
+            0.001742041204124689,
+            0.0017785828094929457,
+            0.0019080000929534435,
+            0.0014434170443564653,
+            0.002482959069311619,
+            0.0014800000935792923,
+            0.0034044580534100533,
+            0.0018174578435719013,
+            0.0013330001384019852,
+            0.0019419998861849308,
+            0.003831540932878852,
+            0.0016503329388797283,
+            0.003164749825373292,
+            0.0017583330627530813,
+            0.001347375102341175,
+            0.0018915419932454824,
+            0.0013009998947381973,
+            0.0017765839584171772,
+            0.0013240000698715448,
+            0.0021767090074718,
+            0.0012717919889837503,
+            0.0036127918865531683,
+            0.001874083187431097
+          ],
+          "named_seconds": [
+            4.263228334020823,
+            2.8596998751163483,
+            2.792486625025049,
+            2.8525552090723068,
+            1.0007820001337677,
+            0.9857387500815094,
+            0.9899436249397695,
+            1.0064699999056756,
+            1.0157735410612077,
+            1.0108970829751343,
+            1.024580917088315,
+            1.0160874999128282,
+            1.0026486250571907,
+            1.015038707992062,
+            1.0238750001881272,
+            1.0273789591155946,
+            1.013302625156939,
+            1.014448249945417,
+            1.026079999981448,
+            1.0447356249205768,
+            1.0287416658829898,
+            1.0463854998815805,
+            1.034923000028357,
+            1.017106082988903,
+            1.0011170420330018,
+            1.0240444589871913,
+            1.0392316670622677,
+            1.0415641660802066,
+            1.0387741669546813,
+            1.0137781251687557,
+            1.0443317089229822,
+            1.0390363750047982,
+            1.0222785000223666
+          ],
+          "metadata_p95_seconds": 0.003831540932878852,
+          "named_p95_seconds": 2.8596998751163483,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1089,
+            "sqlite_transactions": 165,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 67584,
+              "shared_encoder_calls": 0,
+              "converted_rows": 33825,
+              "selected_json_bytes": 1675154,
+              "largest_arrow_batch_bytes": 40947,
+              "sql_calls": 33
+            },
+            "selection_member_encoder_calls": 33825,
+            "selection_member_encoded_bytes": 4075310,
+            "canonical_encoder_calls": 33957,
+            "canonical_encoded_bytes": 681095120,
+            "canonical_decoder_calls": 33957,
+            "canonical_decoded_bytes": 4129256,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 33,
+                "returned_chunks": 33,
+                "returned_bytes": 34551,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:0",
+          "pid": 97344,
+          "elapsed_seconds": 42.52676950022578,
+          "peak_rss_bytes": 925843456
+        },
+        {
+          "metadata_seconds": [
+            0.00243537500500679,
+            0.001275333110243082,
+            0.0013040828052908182,
+            0.0017477080691605806,
+            0.0017434998881071806,
+            0.0022681669797748327,
+            0.002634042175486684,
+            0.0024174582213163376,
+            0.0023561250418424606,
+            0.0017077920492738485,
+            0.0025075830053538084,
+            0.0015154588036239147,
+            0.001708833035081625,
+            0.0026229999493807554,
+            0.0024082919117063284,
+            0.0025364591274410486,
+            0.002447624923661351,
+            0.0024407501332461834,
+            0.001609541941434145,
+            0.0013899579644203186,
+            0.0015589999966323376,
+            0.00227041682228446,
+            0.007377415895462036,
+            0.002361791906878352,
+            0.00227462500333786,
+            0.0026528341695666313,
+            0.0013514170423150063,
+            0.0014284579083323479,
+            0.0013955000322312117,
+            0.002422500168904662,
+            0.0023672080133110285,
+            0.002677750075235963,
+            0.002617291873320937,
+            0.0025424999184906483
+          ],
+          "named_seconds": [
+            4.265236457809806,
+            2.8594100419431925,
+            2.774123542010784,
+            2.870027458993718,
+            0.9921452919952571,
+            0.9813805839512497,
+            0.9774757497943938,
+            0.9862499579321593,
+            0.9819724170956761,
+            0.9847146661486477,
+            1.0069081250112504,
+            0.9900129581801593,
+            0.9772272920235991,
+            0.9816346250008792,
+            0.9809527080506086,
+            0.9813546249642968,
+            0.9801337909884751,
+            0.9883700001519173,
+            0.9991368327755481,
+            0.9958597088698298,
+            0.9960454581305385,
+            0.9960032501257956,
+            0.9743692500051111,
+            0.9905039160512388,
+            0.9910032919142395,
+            0.9935905421152711,
+            0.9965187080670148,
+            1.0057643339969218,
+            0.993071167031303,
+            0.9921198340598494,
+            0.9967241659760475,
+            1.0078751249238849,
+            1.0027661661151797,
+            1.0055142920464277
+          ],
+          "metadata_p95_seconds": 0.002677750075235963,
+          "named_p95_seconds": 2.870027458993718,
+          "maximum_backlog_batches": 1,
+          "observed_states": [
+            "contention:0",
+            "contention:1",
+            "contention:2",
+            "contention:3",
+            "contention:4",
+            "root"
+          ],
+          "metrics": {
+            "sqlite_statements": 1122,
+            "sqlite_transactions": 170,
+            "python_fsync_calls": 0,
+            "python_fsync_seconds": 0.0,
+            "extraction": {
+              "engine_json_decodes": 69632,
+              "shared_encoder_calls": 0,
+              "converted_rows": 34850,
+              "selected_json_bytes": 1727292,
+              "largest_arrow_batch_bytes": 40947,
+              "sql_calls": 34
+            },
+            "selection_member_encoder_calls": 34850,
+            "selection_member_encoded_bytes": 4200180,
+            "canonical_encoder_calls": 34986,
+            "canonical_encoded_bytes": 701752630,
+            "canonical_decoder_calls": 34986,
+            "canonical_decoded_bytes": 4255772,
+            "blob_reads_by_media_type": {
+              "application/json": {
+                "stream_calls": 34,
+                "returned_chunks": 34,
+                "returned_bytes": 35598,
+                "range_calls": 0,
+                "range_returned_bytes": 0,
+                "verified_calls": 0,
+                "verified_bytes": 0
+              }
+            }
+          },
+          "role": "reader:3",
+          "pid": 97347,
+          "elapsed_seconds": 42.647729916963726,
+          "peak_rss_bytes": 1071349760
+        }
+      ],
+      "concurrent_seconds": 42.8190880829934,
+      "elapsed_including_reconciliation_seconds": 47.60894074989483,
+      "acknowledged_batches_reconciled": 5,
+      "reconciled_value_edits": 5120,
+      "changed_members_per_batch": 1024,
+      "process_count": 5,
+      "parent_peak_rss_bytes": 551206912,
+      "sum_individual_peak_rss_bytes": 5947392000,
+      "targets": {
+        "elapsed_600s": true,
+        "each_process_2gib": true,
+        "sum_peak_upper_bound_8gib": true,
+        "reader_metadata_p95_5s": true
+      }
+    },
+    "stage": "contention",
+    "requested_batches": 5,
+    "requested_changed_members": 1024,
+    "process_deadline_seconds": 600.0,
+    "sources_unchanged_during_run": true,
+    "elapsed_seconds": 48.57191841700114,
+    "parent_peak_rss_bytes": 551272448,
+    "platform": "macOS-26.6-arm64-arm-64bit",
+    "python": "3.12.9",
+    "versions": {
+      "docspec": "0.3.0",
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1"
+    },
+    "engine_threads": 1,
+    "engine_memory_bytes": 6442450944,
+    "limitations": [
+      "Sum of individual process RSS peaks is a conservative upper bound, not a simultaneous sample.",
+      "Named-read latency includes consuming and independently checking returned fields.",
+      "A fresh process does not establish a cold operating-system cache."
+    ],
+    "raw_receipt": "/tmp/docspec-core-grouped-contention-20260914/trial/contention-contention-report.json",
+    "raw_sha256": "5c9817b7ec7e97596c5bac066fab5df927fdf53417979e36983d9d5baeeeaa70",
+    "snapshot_manifest": "/tmp/docspec-core-grouped-contention-20260914/snapshot-manifest.json",
+    "snapshot_manifest_sha256": "ac17eac953f9776121a4b84bfea1282965a069299bd0f5ba422bcb96f86d7544",
+    "helper_change": "Successful and deliberately stale current selections remain inside one fresh publication scope perbatch, matching production document runs. Ack/fsync after exit. Same4baf47 package; allsourcefiles except helper identical to parent snapshot.",
+    "focused_checks": "2 passed in5.13s"
+  },
+  "membership_policy_diagnostic": {
+    "raw_receipt": "/tmp/docspec-core-membership-buckets-20260914/runtime.json",
+    "raw_sha256": "766a19e6d8f48ebeb045cdf2238206a3a32418ec4a6d0787cf5b3a5292e57305",
+    "warm_rewrite_plus_digest_seconds": {
+      "64": 2.121,
+      "1024": 2.275,
+      "4096": 1.994
+    },
+    "decision": "Keep64.4096 adds0.148/0.131s fresh admission and1.56MB descriptions versus about0.005s/25KB for64; no compelling net benefit. All3 full1m oracles/digests match.",
+    "setup_excluded": true
+  },
+  "writer_ledger_pair": {
+    "raw_receipt": "/tmp/docspec-core-writer-ledger-pair-20260914/runtime.json",
+    "raw_sha256": "a40738cb53736fc0716dc2b32d22eb48868c7a434db3d5d01e002032b0628aaa",
+    "measurement": {
+      "start_utc": "2026-09-14T10:50:54.155187+00:00",
+      "pid": 13476,
+      "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+      "snapshot_sha256": "f5f57e457939b778ec566256b96ae781d378de9b82efc557c6e6fdd6c283fc1f",
+      "probe_sha256": "8adde786502d0acf62202a866bf1d97dc469d1d67513d9333d0b21258058354c",
+      "results": [
+        {
+          "phase": "membership",
+          "label": "observed",
+          "rewrite_seconds": 2.018496665870771,
+          "digest_seconds": 0.47603620821610093,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "oracle_seconds": 0.4080465408042073,
+          "oracle_rows": 1048576,
+          "metrics": {
+            "writer upstream advancement": {
+              "calls": 4097,
+              "seconds": 0.055179323768243194
+            },
+            "writer producer inclusive": {
+              "calls": 4097,
+              "seconds": 1.0718262908048928
+            },
+            "writer COPY inclusive": {
+              "calls": 1,
+              "seconds": 1.6321733337827027
+            }
+          },
+          "producer_exclusive_upstream_seconds": 1.0166469670366496,
+          "COPY_exclusive_producer_seconds": 0.5603470429778099
+        },
+        {
+          "phase": "membership",
+          "label": "control",
+          "rewrite_seconds": 1.8220280001405627,
+          "digest_seconds": 0.4695967501029372,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "oracle_seconds": 0.4072865000925958,
+          "oracle_rows": 1048576,
+          "metrics": {}
+        },
+        {
+          "phase": "revision",
+          "label": "observed",
+          "elapsed_seconds": 6.887737957993522,
+          "metrics": {
+            "ledger record_parts": {
+              "calls": 2073,
+              "seconds": 0.0508785923011601
+            },
+            "ledger pretransaction including guard": {
+              "calls": 15,
+              "seconds": 0.07379316608421504
+            },
+            "ledger transaction inclusive": {
+              "calls": 15,
+              "seconds": 1.0465815828647465
+            },
+            "ledger commit inclusive": {
+              "calls": 15,
+              "seconds": 1.1209318332839757
+            }
+          },
+          "oracle_changed_values": 1024,
+          "oracle_membership_rows": 1048576,
+          "oracle_seconds": 1.4331139589194208
+        },
+        {
+          "phase": "revision",
+          "label": "control",
+          "elapsed_seconds": 6.947471083840355,
+          "metrics": {},
+          "oracle_changed_values": 1024,
+          "oracle_membership_rows": 1048576,
+          "oracle_seconds": 1.4152242080308497
+        }
+      ],
+      "elapsed_seconds": 23.293922333046794,
+      "end_utc": "2026-09-14T10:51:17.448959+00:00",
+      "peak_rss_bytes": 1184940032,
+      "limitations": [
+        "Sequential observed then control trials; OS caches uncontrolled. No throughput qualification claim.",
+        "Writer COPY minus producer time is native execution outside producer callbacks, not pure CPU; producer-exclusive time includes ordinary row validation, routing, shard/bounds work and Arrow batch assembly.",
+        "Ledger transaction includes SQL/provenance/commit/connection lifecycle. No SQL trace callback or regex normalization.",
+        "Current selection remains inside each revision publication lifetime for observed and control.",
+        "Membership control repeats identical immutable output; subsequent revision controls begin from identical copied ledgers and immutable CAS; observed clone also completed the separately measured membership rewrite."
+      ]
+    },
+    "decision": "Do not add a metadata accessor or ledger connection pool: record_parts contributes only 0.051 seconds; transaction time includes validation, SQL and durability, with connection setup not isolated."
+  },
+  "writer_simplification": {
+    "raw_receipt": "/tmp/docspec-core-writer-simplification-20260914/runtime.json",
+    "raw_sha256": "39dfd92abc45bd477d980f0e3ff019aef57d74f1159d7f5f3a6c9e25c4f264d8",
+    "measurement": {
+      "start_utc": "2026-09-14T10:54:38.670020+00:00",
+      "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+      "candidate_records_sha256": "1584676a40f3d9518b4d174eb6792b37e7bf32cd92257bdf6ed21a9f6ef447eb",
+      "probe_sha256": "d8eb6842615011a3e75db7c420ed834ad40bfa5141ca3992b0c214343dc6eefe",
+      "scope": "Sealed installed package; only exact candidate _write_batches method compiled from pinned source into the existing owner for candidate runs. No configuration or other source change.",
+      "results": [
+        {
+          "label": "old",
+          "rewrite_seconds": 1.9431587089784443,
+          "digest_seconds": 0.45858487486839294,
+          "oracle_seconds": 0.404245916986838,
+          "oracle_rows": 1048576,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "layer_id": "urn:docspec:record-layer:v1:71064a7c1b48fe21995fc2fc9b9242e2a385f7ee813a5220b250ca74c32d6de3"
+        },
+        {
+          "label": "candidate",
+          "rewrite_seconds": 1.64695050008595,
+          "digest_seconds": 0.4693364999257028,
+          "oracle_seconds": 0.3995469999499619,
+          "oracle_rows": 1048576,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "layer_id": "urn:docspec:record-layer:v1:71064a7c1b48fe21995fc2fc9b9242e2a385f7ee813a5220b250ca74c32d6de3"
+        },
+        {
+          "label": "candidate-repeat",
+          "rewrite_seconds": 1.6414243751205504,
+          "digest_seconds": 0.4564448338933289,
+          "oracle_seconds": 0.3984945840202272,
+          "oracle_rows": 1048576,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "layer_id": "urn:docspec:record-layer:v1:71064a7c1b48fe21995fc2fc9b9242e2a385f7ee813a5220b250ca74c32d6de3"
+        },
+        {
+          "label": "old-repeat",
+          "rewrite_seconds": 1.7408137919846922,
+          "digest_seconds": 0.45747462497092783,
+          "oracle_seconds": 0.4014909591060132,
+          "oracle_rows": 1048576,
+          "digest": "sha256:75aff6c718e3aaa37f3919519dfa38e82f483a52037ff3722e1d2d8e251e916a",
+          "layer_id": "urn:docspec:record-layer:v1:71064a7c1b48fe21995fc2fc9b9242e2a385f7ee813a5220b250ca74c32d6de3"
+        }
+      ],
+      "elapsed_seconds": 11.317506833933294,
+      "end_utc": "2026-09-14T10:54:49.987454+00:00",
+      "peak_rss_bytes": 1048690688,
+      "limitations": [
+        "Old/candidate/candidate/old order checks warm order sensitivity in one admitted-reader session; OS cache uncontrolled.",
+        "No per-row/SQL/profiler callbacks. All normal producer checks/native file writing and complete membership/digest remain.",
+        "Identical immutable output preexists; CAS reuse applies equally to both methods. This isolates writer computation, not fresh-output fsync throughput qualification."
+      ]
+    },
+    "decision": "Adopt native row byte lengths and remove redundant per-row string validation after exact Arrow schema/null checks. Preserve int64 size arithmetic, greedy shard assignment, ordering, limits and exact physical layer identity. Warm rewrite 1.741 to 1.641 seconds; diagnostic, not full throughput qualification."
+  },
+  "bounded_membership_hashing": {
+    "raw_receipt": "/tmp/docspec-core-batched-membership-digest-production-20260914/runtime.json",
+    "raw_sha256": "7abc66ebd8454a0dc53a4dfd6f2348b914f493ff3c941fdc9d25a1983638a40c",
+    "measurement": {
+      "start_utc": "2026-09-14T11:05:32.196424+00:00",
+      "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+      "probe_sha256": "dbaf6827a264b6beab30bdad875370f5680ccb84e53b84f1769687505c6c34dc",
+      "scope": "Actual checked production accept_admitted_batch and membership reader methods AST-compiled from pinned source into sealed installed owner; includes every bytes-only and finished check. No other installed source/configuration changes.",
+      "candidate_identity_sha256": "c6f499569a82a366ab2d874f23983ab23b57766b8df718147f0218e7af832f69",
+      "candidate_core_states_sha256": "05b3c5a41759878b3aa18a60df4bf7c19da92f154dae3a34434dc14a260b08f8",
+      "results": [
+        {
+          "label": "old",
+          "digest_seconds": 0.4749246670398861,
+          "digest": "sha256:dfdb3e031bb244428240c14dc33742acf94ea7a7a5baeafafdcfd15b0ef86a4e",
+          "canonical_byte_size": 105865258,
+          "oracle_seconds": 0.38956533395685256,
+          "oracle_rows": 1048576
+        },
+        {
+          "label": "candidate",
+          "digest_seconds": 0.41152333305217326,
+          "digest": "sha256:dfdb3e031bb244428240c14dc33742acf94ea7a7a5baeafafdcfd15b0ef86a4e",
+          "canonical_byte_size": 105865258,
+          "oracle_seconds": 0.387746499851346,
+          "oracle_rows": 1048576
+        },
+        {
+          "label": "candidate-repeat",
+          "digest_seconds": 0.4001303748227656,
+          "digest": "sha256:dfdb3e031bb244428240c14dc33742acf94ea7a7a5baeafafdcfd15b0ef86a4e",
+          "canonical_byte_size": 105865258,
+          "oracle_seconds": 0.3972055420745164,
+          "oracle_rows": 1048576
+        },
+        {
+          "label": "old-repeat",
+          "digest_seconds": 0.447918833931908,
+          "digest": "sha256:dfdb3e031bb244428240c14dc33742acf94ea7a7a5baeafafdcfd15b0ef86a4e",
+          "canonical_byte_size": 105865258,
+          "oracle_seconds": 0.3909950000233948,
+          "oracle_rows": 1048576
+        }
+      ],
+      "elapsed_seconds": 4.036043958971277,
+      "end_utc": "2026-09-14T11:05:36.232443+00:00",
+      "peak_rss_bytes": 892256256,
+      "limitations": [
+        "Old/candidate/candidate/old in same admitted reader lifetime; OS caches uncontrolled; no contention qualification claim.",
+        "Empty input, intervening empty batches, typed canonical values and string payload refusal checked.",
+        "Candidate framing memory is limited to one existing bounded Arrow payload batch plus comma separators.",
+        "Tracking factory executes once per digest in both implementations; no per-row/SQL observer."
+      ]
+    },
+    "decision": "Adopt shared bounded-batch framing with bytes-only checks. Actual checked implementation warm 0.448 to 0.400 seconds. Exact digest, canonical byte count and all 1,048,576 membership rows match. O(N) total hashing remains; no native extension, alternate encoding or unbounded materialization."
+  },
+  "bounded_writer_regression": {
+    "native_junit": "2026-09-14-core-bounded-writer-regression.xml.gz",
+    "native_junit_sha256": "47310f0ab24e3abf845164f832d68a9b8929ecd6d2e7c92eadfaf8aaddd199d3",
+    "passed": 1283,
+    "deselected": 1,
+    "elapsed_seconds": 168.3,
+    "scope": "Current bounded writer and shared checked batch hashing; full strict requirement map; one live-service integration outside map deselected. Source freeze matches bc73eb package."
+  }
+}

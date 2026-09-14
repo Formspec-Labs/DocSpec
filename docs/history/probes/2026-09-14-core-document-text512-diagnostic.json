@@ -1,0 +1,280 @@
+{
+  "status": "passed diagnostic; not final qualification",
+  "scope": "Diagnostic only: sort-only wheel precedes current selection optimization, and phases overlapped optimized Core diagnostics plus installed acceptance. No final-source or isolated timing qualification claimed.",
+  "wheel_sha256": "693815c552ff6bae7ec37eb400a59a1d7869819b208364d6ff687e293839dc6b",
+  "snapshot_manifest_sha256": "c2ef65c4c96ed2743c40188a18c0a4e416c46c8b1b52e15898bcef6efb327853",
+  "python": "3.12.9 (main, Mar 29 2025, 16:43:11) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "runtime_versions": {
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "msgspec": "0.21.1",
+    "jsonschema-rs": "0.52.1",
+    "rulespec-artifacts": "1.0.12"
+  },
+  "source_and_installed_files_unchanged": true,
+  "inventory": {
+    "documents": 512,
+    "excluded": 32,
+    "files": 512,
+    "captured_bytes": 10485760,
+    "segments": 2560
+  },
+  "measurements": {
+    "00-generate": {
+      "native_elapsed_seconds": 4.07,
+      "native_peak_rss_bytes": 100515840,
+      "receipt_created_utc": "2026-09-14T08:19:33.529954+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:19:37.604237+00:00"
+    },
+    "01-build": {
+      "native_elapsed_seconds": 1.1,
+      "native_peak_rss_bytes": 110575616,
+      "receipt_created_utc": "2026-09-14T08:19:47.040569+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:19:48.148335+00:00"
+    },
+    "02-verify": {
+      "native_elapsed_seconds": 0.55,
+      "native_peak_rss_bytes": 103989248,
+      "receipt_created_utc": "2026-09-14T08:19:56.118710+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:19:56.672678+00:00"
+    },
+    "03-capture": {
+      "native_elapsed_seconds": 25.29,
+      "native_peak_rss_bytes": 205635584,
+      "receipt_created_utc": "2026-09-14T08:20:04.329148+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:20:29.626892+00:00"
+    },
+    "04-process": {
+      "native_elapsed_seconds": 125.95,
+      "native_peak_rss_bytes": 630636544,
+      "receipt_created_utc": "2026-09-14T08:22:37.008616+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:24:42.959981+00:00"
+    },
+    "04b-process-check": {
+      "native_elapsed_seconds": 15.89,
+      "native_peak_rss_bytes": 394379264,
+      "receipt_created_utc": "2026-09-14T08:24:52.016921+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:25:07.909857+00:00"
+    },
+    "05-changed": {
+      "native_elapsed_seconds": 103.7,
+      "native_peak_rss_bytes": 542605312,
+      "receipt_created_utc": "2026-09-14T08:25:23.038291+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:27:06.747339+00:00"
+    },
+    "06-clean": {
+      "native_elapsed_seconds": 138.0,
+      "native_peak_rss_bytes": 656162816,
+      "receipt_created_utc": "2026-09-14T08:27:26.306960+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:29:44.313311+00:00"
+    },
+    "07-compare": {
+      "native_elapsed_seconds": 28.28,
+      "native_peak_rss_bytes": 401244160,
+      "receipt_created_utc": "2026-09-14T08:29:54.869187+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:30:23.154249+00:00"
+    },
+    "07b-inspect": {
+      "native_elapsed_seconds": 0.32,
+      "native_peak_rss_bytes": 100302848,
+      "receipt_created_utc": "2026-09-14T08:30:33.044792+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:30:33.367285+00:00"
+    },
+    "08-behavior": {
+      "native_elapsed_seconds": 440.3,
+      "native_peak_rss_bytes": 694501376,
+      "receipt_created_utc": "2026-09-14T08:30:42.568953+00:00",
+      "receipt_last_written_utc": "2026-09-14T08:38:02.878313+00:00"
+    }
+  },
+  "oracles": {
+    "original_process": {
+      "checked": {
+        "documents": 512,
+        "excluded": 32,
+        "files": 512,
+        "representations": 512,
+        "segments": 2560
+      },
+      "inventory": {
+        "bytes": 10485760,
+        "documents": 512,
+        "files": 512,
+        "segments": 2560
+      },
+      "logicalStreamSha256": "sha256:986ec92a48d4054e52579d5daf9bf560fca008b659fbd90022091d31985e55e4"
+    },
+    "changed_equals_independent_clean": {
+      "checked": {
+        "checked": {
+          "documents": 512,
+          "excluded": 32,
+          "files": 512,
+          "representations": 512,
+          "segments": 2560
+        },
+        "inventory": {
+          "bytes": 10485760,
+          "documents": 512,
+          "files": 512,
+          "segments": 2560
+        },
+        "logicalStreamSha256": "sha256:a785f10031f724781075ec3a326f7dc11cc3c0e50773b0f0bec35534d67f6cd6"
+      },
+      "equal": true
+    },
+    "failed_input": {
+      "candidateId": "body",
+      "errorType": "_InjectedExtractionFailure",
+      "failedResultIds": [
+        "urn:docspec:execution:dbb9a35c-9383-449b-b5fa-78a9c5e0ddf1:result"
+      ],
+      "observedCalls": {
+        "extract": 1,
+        "fetch": 31
+      },
+      "retainedCaptures": 31,
+      "sourceItemId": "urn:docspec:supplied-source-item:v1:00450fda0f4b2ac6f86a6cf2792d61024856d315f7a5dd715df9555780f268d4"
+    },
+    "repair": {
+      "checked": {
+        "checked": {
+          "documents": 512,
+          "excluded": 32,
+          "files": 512,
+          "representations": 512,
+          "segments": 2560
+        },
+        "inventory": {
+          "bytes": 10485760,
+          "documents": 512,
+          "files": 512,
+          "segments": 2560
+        },
+        "logicalStreamSha256": "sha256:986ec92a48d4054e52579d5daf9bf560fca008b659fbd90022091d31985e55e4"
+      },
+      "observedCalls": {
+        "extract": 512,
+        "fetch": 481,
+        "process": 2560,
+        "segment": 512
+      },
+      "retainedCapturesReused": 31,
+      "totalCalls": {
+        "extract": 513,
+        "fetch": 512,
+        "process": 2560,
+        "segment": 512
+      }
+    },
+    "title_only_revision": {
+      "allStageResultsUnchanged": true,
+      "checked": {
+        "checked": {
+          "documents": 512,
+          "excluded": 32,
+          "files": 512,
+          "representations": 512,
+          "segments": 2560
+        },
+        "inventory": {
+          "bytes": 10485760,
+          "documents": 512,
+          "files": 512,
+          "segments": 2560
+        },
+        "logicalStreamSha256": "sha256:129b3c2b5053d7ca9b174121236a6035842fd26d45ed58d4d2933959aea8449a"
+      },
+      "observedCalls": {}
+    },
+    "resource_b": {
+      "checked": {
+        "checked": {
+          "documents": 512,
+          "excluded": 32,
+          "files": 512,
+          "representations": 512,
+          "segments": 2560
+        },
+        "inventory": {
+          "bytes": 10485760,
+          "documents": 512,
+          "files": 512,
+          "segments": 2560
+        },
+        "logicalStreamSha256": "sha256:7ffa5e98f3c29b7628c8ce468464ae0c09193d99a8ee15885a83a1e2eada4923"
+      },
+      "observedCalls": {
+        "process": 2560
+      }
+    },
+    "return_to_original_a": {
+      "checked": {
+        "checked": {
+          "documents": 512,
+          "excluded": 32,
+          "files": 512,
+          "representations": 512,
+          "segments": 2560
+        },
+        "inventory": {
+          "bytes": 10485760,
+          "documents": 512,
+          "files": 512,
+          "segments": 2560
+        },
+        "logicalStreamSha256": "sha256:129b3c2b5053d7ca9b174121236a6035842fd26d45ed58d4d2933959aea8449a"
+      },
+      "observedCalls": {},
+      "originalAResultsSelected": true
+    }
+  },
+  "observed_algorithm_calls": {
+    "03-capture": {
+      "fetch": 512
+    },
+    "04-process": {
+      "extract": 512,
+      "process": 2560,
+      "segment": 512
+    },
+    "05-changed": {
+      "process": 2560
+    },
+    "06-clean": {
+      "extract": 512,
+      "fetch": 512,
+      "process": 2560,
+      "segment": 512
+    }
+  },
+  "storage_allocated_bytes_at_completion": {
+    "dataset": 248434688,
+    "clean": 166662144,
+    "behavior": 280154112,
+    "sourceContent": 11141120,
+    "scratch": 0
+  },
+  "overlap": {
+    "recorded_at": "2026-09-14T08:22:38.193940+00:00",
+    "scope": "sort-only text512 process and subsequent document diagnostic phases may overlap Core optimized diagnostic and routine focused tests; not final timing qualification",
+    "authorization": "Parent explicitly prioritized concurrent early bottleneck detection after capture measured205635584 bytes peak RSS. Larger text4096 and markup256 remain staged.",
+    "other_diagnostic": "/tmp/docspec-core-optimized-diagnostic-20260914",
+    "wheel_sha256": "693815c552ff6bae7ec37eb400a59a1d7869819b208364d6ff687e293839dc6b",
+    "installed_acceptance": {
+      "started_utc": "2026-09-14T08:25:41.707845Z",
+      "complete_by_utc": "2026-09-14T08:26:51Z",
+      "scope": "339 installed pytest checks plus offline runtime/export/CLI in separate optimized-wheel environment, as reported by core_cleanup"
+    }
+  },
+  "prefix_resume": "This diagnostic uses the guide-supported direct process alternative. Final capacity command lists retain prefix/resume.",
+  "native_receipts": "/tmp/docspec-document-capacity-diagnostic-20260914-sort-only/logs",
+  "complete_receipt": "/tmp/docspec-document-capacity-diagnostic-20260914-sort-only/qualification-summary.json",
+  "commands": "/tmp/docspec-document-capacity-diagnostic-20260914-sort-only/commands.txt",
+  "limitations": [
+    "Native timing overlaps the named Core diagnostic and acceptance checks.",
+    "The sort-only wheel predates the final history/selection implementation.",
+    "Storage readings are samples and final allocated bytes, not guaranteed hard peaks.",
+    "The behavior time combines multiple complete operations and oracles; it is not a single-run latency claim."
+  ]
+}

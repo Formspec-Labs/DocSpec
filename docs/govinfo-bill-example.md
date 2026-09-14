@@ -33,7 +33,7 @@ or segments. Changing the phrase resource produces a distinct processor identity
 | `source-evidence/bill-status.xml` | Exact BILLSTATUS response bytes, which describe the bill and offered versions. |
 | `source-evidence/*acquisition.json`, `bill-text-*.json` | Observed URLs, HTTP status, media type, time, digest, bytes, request count, and effective limits. |
 | `catalog-preview.json` | All parsed status fields and format URLs, plus the one chosen XML candidate. |
-| `processed.json`, `reprocessed.json` | Normal DocSpec plans, run references, retained result references, and inspection summaries. |
+| `processed.json`, `reprocessed.json` | Core selected state and document result records. |
 | `bill-example-summary.json` | Selected package, captured digest, lexical matches, and verified upstream reuse. |
 | `source-evidence/*refusal*`, `processed-failures.json` | Available bounded refused bytes and acquisition/run failures when a request fails. |
 
@@ -52,11 +52,12 @@ The three seams are small and explicit:
    Review every `text_versions` entry, then pass an offered package ID. Missing XML
    stops with an explanation and preserved status evidence.
 2. [Inject `BillContentFetcher`](../examples/govinfo_bill_fetcher.py) through
-   `content_fetcher`. Its configured identity includes the installed provider
+   `workspace.documents(fetcher=...)`. Its configured identity includes the installed provider
    files, actual acquisition budget, status digest, and selected package.
-3. Pass an injected processor to `prepare_local_experiment`. To process retained
-   bytes again, provide the earlier `base_release` and changed processor. The
-   example saves normal references; [Python runs](python-runs.md) describes the API.
+3. Open `CoreWorkspace`, create its document pipeline with the selected fetcher,
+   import source items and run with the injected processor. A later run over the
+   same source state can select retained capture, extraction and segmentation
+   results while executing a changed processor definition or resource.
 
 `VisibleTextExtractor` is qualified here for a small classic bill XML fixture,
 including inline markup, entities, Unicode, and source spans. It includes XML

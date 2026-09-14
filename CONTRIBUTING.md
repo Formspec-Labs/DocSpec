@@ -42,18 +42,18 @@ for independent consumers.
 | Task | Start here | Representative implementation and focused checks | Preserve |
 | --- | --- | --- | --- |
 | Add a source adapter | `ports/source_catalog.py`, [catalog inputs](docs/catalog-inputs.md) | `adapters/spicy_docs_source_native.py`, `adapters/supplied_records.py`; `tests/test_spicy_docs_source_native.py`, `tests/test_local_catalogs.py`, `tests/test_source_catalog_installed_wheel.py` | Admitted source identity, literal fields, collection outcomes, bounded evidence |
-| Add a fetcher | `ports/content_fetcher.py`, [fetchers](docs/fetchers.md) | `examples/govinfo_bill_fetcher.py`; `tests/test_runtime_fetchers.py`, `tests/test_govinfo_bill_installed_wheel.py` | Bounded streams, source and transport identity, exact bytes, cleanup, retained failure evidence |
+| Add a fetcher | `ports/content_fetcher.py`, [fetchers](docs/fetchers.md) | `examples/govinfo_bill_fetcher.py`; `tests/test_runtime_s3_fetcher.py`, `tests/test_govinfo_bill_installed_wheel.py` | Bounded streams, source and transport identity, exact bytes, cleanup, retained failure evidence |
 | Extract a format | `ports/extractor.py`, `processing/extraction.py` | `processing/visible_text.py`; `tests/test_visible_text.py`, `tests/test_processing_pipeline.py` | Exact source bytes, byte offsets, extraction identity, evidence round trips |
 | Change segmentation | `ports/segmenter.py`, `processing/segmentation.py` | `processing/bounded_segmentation.py`; `tests/test_bounded_segmentation.py`, `tests/conformance/test_segmentation.py` | Deterministic order, size bounds, source coordinates |
 | Change a source policy | `application/catalog_policy.py` | `application/regulations_gov_catalog/`; `tests/test_catalog_policy.py`, the focused Regulations.gov suites below, and `tests/test_cross_filed_collapse.py` | Source meaning, selection precedence, field provenance, reason codes, catalog digests |
-| Add a processor | `ports/processor.py`, `domain/processors.py` | `processing/processors.py`; `tests/test_processor_reprocessing.py`, `tests/conformance/test_processor_contract.py` | Declared inputs/outputs, dependency order, stable IDs, retry and cache behavior |
-| Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/document_catalog.py` | `adapters/storage/` (blobs, controls, stores, records, catalog), `adapters/s3_blob.py`; `tests/test_storage_adapters.py`, `tests/test_storage_records_catalog.py`, `tests/test_s3_blob_adapter.py` | Immutable writes, containment, atomic publication, bounded memory, stale-base rejection |
-| Change a command | `cli/parser.py` registers commands; `cli/` groups their implementations; `runtime/` connects local services for commands and Python callers; `cli_io.py` owns bounded JSON I/O | `tests/test_cli.py`, `tests/test_cli_io.py`, `tests/test_run_active_view.py`, `tests/test_execution_backends.py`; catalog commands live in `cli/source_catalog.py` and `cli/catalog_policy.py`, with `tests/test_catalog_policy_cli.py` covering policy creation | Help, JSON shape, error/exit behavior, secret redaction, installed entry point |
-| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_machine_files.py`, `tests/test_package_boundary.py` | Closed shapes, canonical bytes, current version/identity rules |
+| Add a processor | `application/documents.py`, `adapters/document_processor.py`, `domain/processor_policy.py` | `application/document_processors.py`; `tests/test_core_document_providers.py`, `tests/test_core_documents.py` | Declared material inputs, graph order, resources, allowed fields, observed evidence and limits |
+| Change storage | `ports/blob_store.py`, `ports/record_storage.py`, `ports/core_ledger.py` | `adapters/storage/`; `tests/test_core_ledger.py`, `tests/test_core_states.py`, `tests/test_core_maintenance.py` | Immutable writes, shared reachability, publication ordering, bounded batches and expected-current selection |
+| Change a command | `cli/parser.py` connects Core commands; source commands remain in `cli/source_catalog.py` and `cli/catalog_policy.py` | `tests/test_core_runtime_cli.py`, `tests/test_cli_io.py`, `tests/test_catalog_policy_cli.py` | Shared Python meaning, bounded JSON I/O, errors and installed entry points |
+| Change a published schema | [Schema maintenance](docs/schema-maintenance.md) | `tests/test_schema_validation.py`, `tests/test_package_boundary.py` | Closed shapes, canonical bytes, current version/identity rules |
 | Change result export or consumer admission | [Result exports](docs/result-exports.md), `adapters/result_export/` | `tests/test_result_export.py`, `tests/test_result_export_admission.py` | Complete outcomes, exact bytes and typed evidence, shared generic verification, independent reading |
 
 Source paths in this table are relative to `src/docspec/`. Shared test setup
-lives in focused `tests/support/` modules and `tests/helpers.py`. Import setup
+lives in focused `tests/support/` modules . Import setup
 from there; test modules should not import other test modules.
 
 For catalog and result changes, choose the suite for the behavior:
@@ -73,15 +73,14 @@ For catalog and result changes, choose the suite for the behavior:
 
 Each suite imports only the setup it needs. Family setup lives in
 `tests/support/source_catalog_builds.py`, `source_catalog_cli.py`,
-`exports.py`, and `regulations_gov.py`. Shared pytest fixtures are
+`catalog_publication.py`, and `regulations_gov.py`. Shared pytest fixtures are
 registered explicitly in the suites that use them.
 
-For a local experiment, `docspec.runtime.prepare_local_experiment` builds the
-plan from a catalog, workspace, selected implementations and explicit limits.
-Advanced callers can supply a plan to `prepare_local_run`. Their prepared object
-executes or recovers the same work used by CLI commands. Import supported catalog,
-inspection, retention and export operations from the runtime package entry point;
-see [Python runs](docs/python-runs.md) and the [guide index](docs/documentation.md).
+For a local experiment, open `CoreWorkspace` from `docspec.runtime`. Its
+`documents(fetcher=...)` pipeline imports source items and runs the chosen stages.
+`workspace.operations` supplies the common operation and reuse lifecycle;
+`workspace.maintenance` owns selection and cleanup. See [Python runs](docs/python-runs.md)
+and the [guide index](docs/documentation.md).
 
 ## Organize code for its reader
 
@@ -106,7 +105,7 @@ tables may be longer; record why they belong together. Splitting a declaration
 across files just to satisfy a counter makes it harder to read.
 
 Keep current entry points (`docspec.source_catalog`, application services, CLI
-commands, and profile implementation strings) coherent during moves. Update
+commands, and concrete adapter selection) coherent during moves. Update
 their callers directly; this project does not require legacy import wrappers,
 aliases, or obsolete format support.
 An underscore is an internal-use signal, not proof that code is unused. Check

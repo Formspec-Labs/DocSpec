@@ -1,0 +1,26 @@
+{
+  "edit_seconds": 55.680246291914955,
+  "edits": 1024,
+  "metrics": {
+    "sqlite_statements": 28756,
+    "sqlite_transactions": 99,
+    "python_fsync_calls": 942,
+    "python_fsync_seconds": 0.005698142806068063,
+    "extraction": {},
+    "selection_member_encoder_calls": 0,
+    "selection_member_encoded_bytes": 0
+  },
+  "query_profiles": null,
+  "elapsed_seconds": 55.72399308299646,
+  "peak_rss_bytes": 1460371456,
+  "installed_package": "/tmp/docspec-core-qualification-20260914/environment/lib/python3.12/site-packages/docspec/__init__.py",
+  "launcher_sha256": "15ed75fbae1b9e06bf1934f120af85c3af39d2ee1d53713ac90e990488d5bd7f",
+  "snapshot_manifest_sha256": "3ac139140defda732160b93f57e7e971c279c542d80e1e4cb6339c86d37c31b5",
+  "override": {
+    "partitioned_write_flush_threshold": 2048,
+    "VALUE_EDIT_BATCH_ROWS": 256
+  },
+  "limitations": [
+    "Installed sealed package; configuration and batch-size overrides; no alternate algorithms. OS filesystem caches not cleared. Title edit timing excludes the separately measured full-value audit."
+  ]
+}

@@ -69,7 +69,7 @@ to an earlier catalog.
 
 For a real bounded retained input, open `SpicyDocsSourceNativeAdapter` with the
 public `SPICY_REGS_PUBLIC_COMMENT_PROFILE`, exact artifact pin and independently
-accepted source verifier. Pass it and a `LocalWorkspace` to
+accepted source verifier. Pass it and a filesystem `Path` or `CoreWorkspace` to
 [`build_comment_catalog`](../examples/spicyregs_comments.py), then use
 `open_local_catalog`, `preview_local_catalog` or `inspect_comments`. The example
 accepts at most ten records, forty candidates and 1 MiB of canonical supplied

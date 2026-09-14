@@ -1,5 +1,9 @@
 # A smaller DocSpec using existing tools
 
+This dated pre-Core record preserves its original findings. Current implementation
+owners and retirement evidence are in the [Core ownership map](core-model-implementation-map.md);
+use the [architecture guide](architecture.md) for current APIs.
+
 **Recommendation: test a thinner DocSpec built around native Dagster stages and
 batch tables.** Keep document selection, exact captured inputs, source
 coordinates, processor configuration and retained alternatives as DocSpec data.

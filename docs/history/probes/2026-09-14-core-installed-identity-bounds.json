@@ -1,0 +1,83 @@
+{
+  "classification": "Installed Core semantics, identity-bounds admission and offline document/export/CLI acceptance passed; no capacity qualification claimed.",
+  "wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "4baf47a1b0f67c5c553984900c766d688a1a109d22a5998a974137b7f5704bcc",
+    "snapshot_manifest_sha256": "f5f57e457939b778ec566256b96ae781d378de9b82efc557c6e6fdd6c283fc1f",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-installed-c24-bounds/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-identity-bounds-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "environment": {
+    "python": "3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0 ]",
+    "executable": "/tmp/docspec-core-installed-c24-bounds/environment/bin/python",
+    "docspec_import": "/tmp/docspec-core-installed-c24-bounds/environment/lib/python3.12/site-packages/docspec/__init__.py",
+    "optional_services_absent": {
+      "boto3": true,
+      "dagster": true,
+      "httpx": true,
+      "pypdf": true,
+      "spicy_docs": true
+    }
+  },
+  "pytest": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "369",
+    "time": "32.466",
+    "timestamp": "2026-09-14T06:20:11.200793-04:00",
+    "hostname": "Michaels-MacBook-Pro.local"
+  },
+  "pytest_reported_elapsed_seconds": 32.47,
+  "cases_by_module": {
+    "tests.test_core_admission_pipeline": 7,
+    "tests.test_core_checkpoints": 5,
+    "tests.test_core_dependencies": 21,
+    "tests.test_core_encoding": 13,
+    "tests.test_core_execution": 22,
+    "tests.test_core_ledger": 17,
+    "tests.test_core_maintenance": 17,
+    "tests.test_core_publication_provenance": 9,
+    "tests.test_core_publisher": 10,
+    "tests.test_core_records": 84,
+    "tests.test_core_reuse": 10,
+    "tests.test_core_revisions": 20,
+    "tests.test_core_selections": 21,
+    "tests.test_core_states": 13,
+    "tests.test_core_value_edits": 47,
+    "tests.test_core_values_example": 1,
+    "tests.test_record_batches": 21,
+    "tests.test_core_incremental_selections": 10,
+    "tests.test_record_identity_bounds": 8,
+    "tests.test_bounded_partitions": 13
+  },
+  "copied_source_files": 172,
+  "copied_sources_changed": [],
+  "original_copied_sources_changed": [],
+  "current_package_source_changes": [],
+  "copied_source_manifest_sha256": "3e549029816b9a6e58776088ff994d76a10da4ab094fec5f4442663ee45e78f4",
+  "installed_runtime_probe": "passed",
+  "offline_export_and_corruption_rejection": "passed",
+  "runtime_stdout": "/tmp/docspec-core-installed-c24-bounds/installed-runtime.stdout",
+  "runtime_stdout_sha256": "4685e698cf5084956fc5a1d197d78a438fe2738349be65a8734fde707ed52311",
+  "cli_help": "passed",
+  "start": {
+    "start_utc": "2026-09-14T10:20:10.934195+00:00",
+    "overlap": "Root full source regression may overlap installed correctness checks. No heavy performance workload."
+  },
+  "checks_complete_by_utc": "2026-09-14T10:21:44.527926+00:00",
+  "native_junit": "/Users/mikewolfd/Work/DocSpec/docs/history/probes/2026-09-14-core-installed-identity-bounds.xml.gz",
+  "native_junit_sha256": "3541a18044980ba78affd1411631a9f9e6052845c0401762a50c41c17f5b40d5",
+  "scope": "Prior348-case18-file installed scope plus8identity-bounds and13bounded-partition cases. New v3/profile2 records and original package imports verified. Root source regression is separate. Gate timestamps include pauses between commands; only pytest has an isolated reported duration.",
+  "native_junit_uncompressed_sha256": "1b614eeb235a5a023969699bd0dbd97cd26d4385d20c7d779b70ab56636a6625"
+}

@@ -1,0 +1,156 @@
+{
+  "fixture_members": 2048,
+  "batches": 1,
+  "changed_members": 1024,
+  "reader_processes": 4,
+  "comparison": [
+    {
+      "variant": "before",
+      "batch_seconds_with_profiler": 64.84030454210006,
+      "total_seconds": 67.61737029184587,
+      "writer_peak_rss_bytes": 1866563584,
+      "writer_sqlite": {
+        "sqlite_statements": 137579,
+        "sqlite_transactions": 8631
+      },
+      "metadata_p95_seconds": [
+        0.002489374950528145,
+        0.002763500204309821,
+        0.002723375102505088,
+        0.002883416833356023
+      ],
+      "named_p95_seconds": [
+        0.24269308312796056,
+        0.24443183420225978,
+        0.2444809158332646,
+        0.2443770410027355
+      ],
+      "typed_metadata_profile": [
+        {
+          "file": "/tmp/docspec-contention-1024-diagnostic/venv/lib/python3.12/site-packages/docspec/domain/core_admission.py",
+          "line": 213,
+          "function": "record_value",
+          "calls": 55368,
+          "internal_seconds": 0.056283232,
+          "cumulative_seconds": 18.828542447
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-diagnostic/venv/lib/python3.12/site-packages/msgspec/_utils.py",
+          "line": 109,
+          "function": "get_class_annotations",
+          "calls": 313686,
+          "internal_seconds": 2.358433346,
+          "cumulative_seconds": 16.322169203
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-diagnostic/venv/lib/python3.12/site-packages/msgspec/structs.py",
+          "line": 64,
+          "function": "fields",
+          "calls": 313652,
+          "internal_seconds": 0.7224177110000001,
+          "cumulative_seconds": 17.274145997
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-diagnostic/venv/lib/python3.12/site-packages/docspec/domain/core_admission.py",
+          "line": 189,
+          "function": "_plain",
+          "calls": 1406410,
+          "internal_seconds": 0.7563208330000001,
+          "cumulative_seconds": 18.315580004
+        }
+      ],
+      "wheel_sha256": "e480d40634b41bd2100ca4c99670eafc62add2fedd8e0e5a3a6aee9c8de5d8f3",
+      "fixture_sha256": "9512e889a068eacc326ecddbb3d7f10644f260e6aee16e973a38fe884d213061",
+      "targets": {
+        "elapsed_600s": true,
+        "each_process_2gib": true,
+        "sum_peak_upper_bound_8gib": true,
+        "reader_metadata_p95_5s": true
+      }
+    },
+    {
+      "variant": "after",
+      "batch_seconds_with_profiler": 47.38367895781994,
+      "total_seconds": 48.117445333860815,
+      "writer_peak_rss_bytes": 295714816,
+      "writer_sqlite": {
+        "sqlite_statements": 137579,
+        "sqlite_transactions": 8631
+      },
+      "metadata_p95_seconds": [
+        0.0027771249879151583,
+        0.002628333866596222,
+        0.0025983748491853476,
+        0.002867333823814988
+      ],
+      "named_p95_seconds": [
+        0.24779183301143348,
+        0.24735091696493328,
+        0.24639600003138185,
+        0.24668341595679522
+      ],
+      "typed_metadata_profile": [
+        {
+          "file": "/tmp/docspec-contention-1024-cached/venv/lib/python3.12/site-packages/docspec/domain/core_admission.py",
+          "line": 190,
+          "function": "_struct_fields",
+          "calls": 21,
+          "internal_seconds": 1.6589e-05,
+          "cumulative_seconds": 0.002002128
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-cached/venv/lib/python3.12/site-packages/docspec/domain/core_admission.py",
+          "line": 221,
+          "function": "record_value",
+          "calls": 55368,
+          "internal_seconds": 0.039157847,
+          "cumulative_seconds": 1.3044269430000002
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-cached/venv/lib/python3.12/site-packages/msgspec/_utils.py",
+          "line": 109,
+          "function": "get_class_annotations",
+          "calls": 55,
+          "internal_seconds": 0.000521558,
+          "cumulative_seconds": 0.0036848310000000004
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-cached/venv/lib/python3.12/site-packages/msgspec/structs.py",
+          "line": 64,
+          "function": "fields",
+          "calls": 21,
+          "internal_seconds": 8.7693e-05,
+          "cumulative_seconds": 0.001985539
+        },
+        {
+          "file": "/tmp/docspec-contention-1024-cached/venv/lib/python3.12/site-packages/docspec/domain/core_admission.py",
+          "line": 197,
+          "function": "_plain",
+          "calls": 1406410,
+          "internal_seconds": 0.542468256,
+          "cumulative_seconds": 0.7821593200000001
+        }
+      ],
+      "wheel_sha256": "1beac551bc753e30c3632c0921650125a428a73034d6b8adaff32214d0181f3b",
+      "fixture_sha256": "9512e889a068eacc326ecddbb3d7f10644f260e6aee16e973a38fe884d213061",
+      "targets": {
+        "elapsed_600s": true,
+        "each_process_2gib": true,
+        "sum_peak_upper_bound_8gib": true,
+        "reader_metadata_p95_5s": true
+      }
+    }
+  ],
+  "wheel_python_files_changed": [
+    "docspec/adapters/document_processor.py",
+    "docspec/application/document_processors.py",
+    "docspec/domain/core_admission.py"
+  ],
+  "full_100_batch_600_second_qualification": false,
+  "limitations": [
+    "One before/after profiled pair with simultaneous readers; host and OS cache were uncontrolled.",
+    "Writer timing includes cProfile and SQLite tracing overhead; cumulative profile times overlap.",
+    "Other changed wheel files are document processor adapters not exercised by this generic Core operation.",
+    "No full population, repeatability or 100-batch qualification is claimed."
+  ]
+}

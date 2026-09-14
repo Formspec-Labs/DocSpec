@@ -1,0 +1,44 @@
+{
+  "classification": "Installed acceptance: semantic scope and CLI pass; offline export failure preserved. Combined package is not fully accepted.",
+  "wheel_verification": {
+    "wheel": "/private/tmp/docspec-core-shared-admission-layout8-20260914/wheels/docspec-0.3.0-py3-none-any.whl",
+    "wheel_sha256": "974d4765d27cbf6e2d09d329cad1386d00a916085094788fdab94251d2792d79",
+    "snapshot_manifest_sha256": "ae3742a3b5285a41b57eeac0e7f3cbab3a2e979de8a371a49dee62caa19abefb",
+    "package_files_verified": 128,
+    "installed_package": "/private/tmp/docspec-core-installed-c24-layout8/environment/lib/python3.12/site-packages/docspec",
+    "python": "3.12.9",
+    "dependencies": {
+      "duckdb": "1.5.5",
+      "pyarrow": "25.0.1",
+      "msgspec": "0.21.1",
+      "jsonschema-rs": "0.52.1",
+      "rulespec-artifacts": "1.0.12"
+    },
+    "installed_distribution_source": "{\"url\":\"file:///tmp/docspec-core-shared-admission-layout8-20260914/wheels/docspec-0.3.0-py3-none-any.whl\",\"archive_info\":{}}"
+  },
+  "pytest": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "347",
+    "time": "28.477",
+    "timestamp": "2026-09-14T05:46:04.355126-04:00",
+    "hostname": "Michaels-MacBook-Pro.local"
+  },
+  "pytest_reported_elapsed_seconds": 28.81,
+  "copied_source_files": 171,
+  "copied_sources_changed": [],
+  "copied_source_manifest_sha256": "0b85e0e03e40d8f43af1bb7bea0690896d0010f69b7a73b55402407cbc655ee9",
+  "installed_runtime_probe": "failed",
+  "failure": "ledger.verify_snapshot ATTACH file URI unable to open database",
+  "traceback": "/tmp/docspec-core-installed-c24-layout8/installed-runtime.stdout",
+  "cli_help": "passed",
+  "start": {
+    "start_utc": "2026-09-14T09:46:04.129295+00:00",
+    "overlap": "Authorized installed correctness checks overlap combined-wheel contention diagnostic; no capacity timing claim."
+  },
+  "receipt_created_utc": "2026-09-14T09:47:50.675266+00:00",
+  "junit": "/tmp/docspec-core-installed-c24-layout8/core-acceptance.xml",
+  "scope": "Same18-file installed Core scope as prior acceptance; exact347 cases. No optional-service packages. Python3.12.9 uv-managed build; prior acceptance pyenv build. Failure awaiting owner diagnosis."
+}

@@ -46,7 +46,7 @@ filter. Changing a filter neither captures documents nor edits the catalog.
 
 For another retained GAO release, open it with `SpicyDocsSourceNativeAdapter`,
 the public GAO profile, its exact artifact pin and your independently accepted
-source verifier. Pass that reader and a `LocalWorkspace` to
+source verifier. Pass that reader and a filesystem `Path` or `CoreWorkspace` to
 [`build_topic_catalog`](../examples/gao_topics.py); inspect or filter the result
 through `open_local_catalog` and `topic_selection`. The example bounds its mapping
 to ten records and 1 MiB of supplied metadata. General dataset needs can use the
