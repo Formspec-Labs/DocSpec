@@ -17,7 +17,6 @@ from docspec.domain.references import SourceCatalogRef
 from docspec.errors import LimitExceededError
 from docspec.runtime import open_local_catalog
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
-from docspec.workspace import LocalWorkspace
 from examples import spicyregs_comments as example
 
 
@@ -30,7 +29,7 @@ def no_network(monkeypatch):
 
 
 def _catalog(report, output):
-    return open_local_catalog(SourceCatalogRef.from_dict(report["catalog"]), LocalWorkspace(output / "dataset"),
+    return open_local_catalog(SourceCatalogRef.from_dict(report["catalog"]), Path(output / "dataset"),
                               producer=example.catalog_producer())
 
 
@@ -93,8 +92,8 @@ def test_table_facts_nulls_diagnostics_and_candidates_survive_installed_mapping(
     assert report["partitionSha256"] == sha256_digest((output / "input.parquet").read_bytes())
     assert report["documentProcessing"] == {"status": "not requested", "capturedFiles": 0, "capturedBytes": 0}
     assert json.loads((output / "spicyregs-comments.json").read_text()) == report
-    workspace = LocalWorkspace(output / "dataset")
-    assert all(not root.exists() for role, root in workspace.roots.items() if role != "sourceCatalog")
+    workspace = Path(output / "dataset")
+    assert {path.name for path in workspace.iterdir()} == {"sourceCatalog"}
 
 
 def test_metadata_filter_reuses_catalog_and_does_not_treat_null_or_empty_as_text(tmp_path):

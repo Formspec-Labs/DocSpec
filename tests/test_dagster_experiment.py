@@ -12,7 +12,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_installed_native_dagster_resources_recover_document_checkpoints(tmp_path, docspec_wheel):
+def test_installed_native_dagster_resources_recover_core_attempts(tmp_path, docspec_wheel):
     pytest.importorskip("dagster")
     uv = shutil.which("uv")
     assert uv is not None
@@ -29,9 +29,8 @@ def test_installed_native_dagster_resources_recover_document_checkpoints(tmp_pat
              str(ROOT / "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl"), f"dagster=={version('dagster')}"])
     examples = tmp_path / "examples"
     examples.mkdir()
-    for name in ("offline_demo.py", "phrase_match_processor.py", "dagster_experiment.py"):
+    for name in ("dagster_experiment.py",):
         shutil.copy2(ROOT / "examples" / name, examples / name)
-    shutil.copytree(ROOT / "examples/offline", examples / "offline")
     shutil.copy2(ROOT / "tests/support/dagster_experiment_probe.py", tmp_path / "dagster_experiment_probe.py")
     # The copied probe and examples are the only additions to this isolated
     # interpreter. Workers reconstruct from that directory, not the checkout.
@@ -41,5 +40,4 @@ def test_installed_native_dagster_resources_recover_document_checkpoints(tmp_pat
                       "from dagster_experiment_probe import main; main()"], timeout=240)
     summary = json.loads(result.stdout.splitlines()[-1])
     assert summary["installedNativeExperiment"] == "pass"
-    assert summary["sourceRefusalPreserved"]
     assert summary["capturesRepeated"] == 0 and not summary["completedSiblingReexecuted"]

@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+from pathlib import Path
+
 import pytest
 from rulespec_artifacts import ArtifactVerificationError
 
@@ -12,7 +14,6 @@ from docspec.source_catalog import (
     SourceCatalogCandidate, SqliteCatalogPolicyWorkspace,
     SuppliedRecordCatalogPolicy, SuppliedRecordSource,
 )
-from docspec.workspace import LocalWorkspace
 from examples.supplied_records import demonstrate
 from tests.support.source_catalog import producer
 
@@ -58,7 +59,7 @@ def test_supplied_snapshot_is_order_independent_and_isolated_from_caller_mutatio
 
 def test_catalog_only_build_matches_explicit_assembly_and_keeps_source_facts(tmp_path):
     source = _source([_record(), _record("without-body", candidates=False)])
-    workspace = LocalWorkspace(tmp_path / "convenient")
+    workspace = Path(tmp_path / "convenient")
     result = _build(source, workspace)
     explicit = SourceCatalogBuilder(
         store=LocalSourceCatalogStore(tmp_path / "explicit"),
@@ -67,8 +68,8 @@ def test_catalog_only_build_matches_explicit_assembly_and_keeps_source_facts(tmp
         workspace_factory=SqliteCatalogPolicyWorkspace,
     ).build((source,))
     assert result.reference == explicit.reference
-    assert {path.name for path in workspace.root.iterdir()} == {"sourceCatalog"}
-    before = {path: path.stat().st_mtime_ns for path in workspace.root.rglob("*")}
+    assert {path.name for path in workspace.iterdir()} == {"sourceCatalog"}
+    before = {path: path.stat().st_mtime_ns for path in workspace.rglob("*")}
     admitted = open_local_catalog(result.reference, workspace, producer=producer())
     rows = tuple(admitted.iter_mappings())
     assert admitted.summary.item_count == 2
@@ -80,12 +81,12 @@ def test_catalog_only_build_matches_explicit_assembly_and_keeps_source_facts(tmp
     assert selected["sourceObservedTopics"] == []
     assert selected["sourceObservations"] == [{"observationKey": "docspec.input-origin", "observationValue": "caller-supplied-records"}]
     assert next(row for row in rows if row["selection"]["disposition"] == "unavailable")["selection"]["reasonCode"] == "supplied.no-candidate"
-    assert {path: path.stat().st_mtime_ns for path in workspace.root.rglob("*")} == before
+    assert {path: path.stat().st_mtime_ns for path in workspace.rglob("*")} == before
 
 
 def test_empty_supplied_snapshot_is_an_explicit_empty_catalog(tmp_path):
     source = _source([])
-    workspace = LocalWorkspace(tmp_path / "empty")
+    workspace = Path(tmp_path / "empty")
     result = _build(source, workspace)
     assert result.summary.item_count == 0
     assert tuple(open_local_catalog(result.reference, workspace, producer=producer()).iter_mappings()) == ()
@@ -103,11 +104,11 @@ def test_supplied_metadata_refuses_unsupported_integers_and_closes_input(tmp_pat
         finally:
             closed.append(True)
 
-    workspace = LocalWorkspace(tmp_path / "unsupported")
+    workspace = Path(tmp_path / "unsupported")
     with pytest.raises(ValueError, match="safe"):
         _build(_source(records()), workspace)
     assert closed == [True]
-    assert not workspace.root.exists()
+    assert not workspace.exists()
 
 
 def test_supplied_record_example_uses_only_catalog_storage(tmp_path):
@@ -120,7 +121,7 @@ def test_supplied_record_example_uses_only_catalog_storage(tmp_path):
 
 def test_source_namespaces_prevent_equal_local_record_ids_from_colliding(tmp_path):
     first, second = _source([_record()]), _source([_record()], namespace="urn:example:other")
-    first_workspace, second_workspace = LocalWorkspace(tmp_path / "first"), LocalWorkspace(tmp_path / "second")
+    first_workspace, second_workspace = Path(tmp_path / "first"), Path(tmp_path / "second")
     left, right = _build(first, first_workspace), _build(second, second_workspace)
     left_row = tuple(open_local_catalog(left.reference, first_workspace, producer=producer()).iter_mappings())[0]
     right_row = tuple(open_local_catalog(right.reference, second_workspace, producer=producer()).iter_mappings())[0]
@@ -131,22 +132,22 @@ def test_source_namespaces_prevent_equal_local_record_ids_from_colliding(tmp_pat
 
 def test_supplied_policy_refuses_another_source_namespace(tmp_path):
     with pytest.raises(IntegrityError, match="matched no source-native input"):
-        _build(_source([_record()]), LocalWorkspace(tmp_path / "dataset"),
+        _build(_source([_record()]), Path(tmp_path / "dataset"),
             policy=SuppliedRecordCatalogPolicy("urn:example:unavailable-source", "1"))
 
 
 def test_catalog_open_requires_exact_ref_and_independent_producer(tmp_path):
     source = _source([_record()])
-    workspace = LocalWorkspace(tmp_path / "dataset")
+    workspace = Path(tmp_path / "dataset")
     result = _build(source, workspace)
     with pytest.raises(IntegrityError):
         open_local_catalog(result.reference, workspace, producer=replace(producer(), implementation_id="another"))
     with pytest.raises((IntegrityError, FileNotFoundError)):
         open_local_catalog(replace(result.reference, digest="sha256:" + "0" * 64), workspace, producer=producer())
-    missing = LocalWorkspace(tmp_path / "missing")
+    missing = Path(tmp_path / "missing")
     with pytest.raises(ValueError, match="root is missing"):
         open_local_catalog(result.reference, missing, producer=producer())
-    assert not missing.root.exists()
+    assert not missing.exists()
 
 
 @pytest.mark.parametrize("invalid", ["count", "bytes", "duplicate", "unknown-field", "duplicate-candidate", "bad-scope"])
@@ -179,25 +180,25 @@ def test_invalid_supplied_snapshot_refuses_and_closes_input(invalid):
 
 
 def test_bad_catalog_scratch_limit_refuses_before_creating_source_storage(tmp_path):
-    workspace = LocalWorkspace(tmp_path / "dataset")
+    workspace = Path(tmp_path / "dataset")
     with pytest.raises(LimitExceededError, match="minimum SQLite"):
         _build(_source([_record()]), workspace, max_scratch_bytes=1)
-    assert not workspace.root.exists()
+    assert not workspace.exists()
 
 
 def test_invalid_output_producer_refuses_before_creating_catalog_or_resume_state(tmp_path):
-    workspace = LocalWorkspace(tmp_path / "dataset")
+    workspace = Path(tmp_path / "dataset")
     resume = tmp_path / "scratch" / "resume.sqlite3"
     invalid = replace(producer(), implementation_id="not-an-absolute-implementation-id")
     with pytest.raises(ArtifactVerificationError, match="absolute identifier"):
         _build(_source([_record()]), workspace, producer=invalid, resume_workspace=resume)
-    assert not workspace.root.exists()
+    assert not workspace.exists()
     assert not resume.parent.exists()
 
 
 def test_catalog_recovery_uses_existing_durable_builder_state(tmp_path):
     source = _source([_record()])
-    workspace = LocalWorkspace(tmp_path / "dataset")
+    workspace = Path(tmp_path / "dataset")
     resume = tmp_path / "catalog-resume.sqlite3"
     failure = RuntimeError("stop after source rows are staged")
     policy = SuppliedRecordCatalogPolicy("urn:example:caller", "1")
@@ -215,5 +216,5 @@ def test_catalog_recovery_uses_existing_durable_builder_state(tmp_path):
         _build(source, workspace, policy=StopOnce(), resume_workspace=resume)
     assert resume.exists()
     resumed = _build(source, workspace, resume_workspace=resume)
-    clean = _build(source, LocalWorkspace(tmp_path / "clean"))
+    clean = _build(source, Path(tmp_path / "clean"))
     assert resumed.reference == clean.reference

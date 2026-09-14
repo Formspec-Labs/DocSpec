@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 from contextlib import ExitStack
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -19,17 +19,15 @@ from spicy_docs.sources.congress.bill_acquisition import BillAcquirer, BillAcqui
 from spicy_docs.sources.congress.bill_status import BillIdentity, bill_status_locator, bill_xml_locator, select_bill_xml
 
 from docspec.domain.identity import identity_digest, sha256_digest
-from docspec.domain.plans import WorkLimits
-from docspec.domain.policies import RetryPolicy
-from docspec.domain.references import BlobRef
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import build_local_catalog, open_local_catalog, prepare_local_experiment
+from docspec.runtime import CoreWorkspace, build_local_catalog, open_local_catalog
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
+from docspec.domain.source_catalog import SourceCatalogItem
+from docspec.domain.core_admission import record_value
 from examples.provider_identity import provider_installation
 from examples.govinfo_bill_fetcher import BillContentFetcher
 from examples.dataset_example_support import (
-    capture_facts, finish_run, matches, phrase_processor, retain_refusal, write_json,
+    capture_facts, run_documents, matches, output_value, phrase_processor, retain_refusal, write_json,
 )
 
 FIXTURES = Path(__file__).with_name("bill_fixtures")
@@ -109,48 +107,31 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             })
             source_producer = Producer("docspec-example", implementation,
                                       "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
-            release_producer = replace(source_producer, verifier_id="urn:docspec:verifier:document-release")
-            workspace = LocalWorkspace(output)
+            workspace = views.enter_context(CoreWorkspace(output))
             catalog = build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
                 catalog_id="urn:docspec:example:govinfo-bills:catalog", producer=source_producer,
                 max_scratch_bytes=16 * 1024**2)
             rows = list(open_local_catalog(catalog.reference, workspace, producer=source_producer).iter_mappings())
             write_json(output / "catalog-preview.json", {"reference": catalog.reference.to_dict(), "items": rows})
-            retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
-            first = phrase_processor("1", ("public access",), retry, output,
-                                     resource_id="urn:docspec:example:bill-phrases")
-            second = phrase_processor("2", ("public access", "machine readable"), retry, output,
-                                      resource_id="urn:docspec:example:bill-phrases")
-            fetcher = BillContentFetcher(acquirer, status, package_id, evidence, clock=clock)
-            settings = {
-                "limits": WorkLimits(1, 2 * 1024**2, 500, 500, 1000, 32 * 1024**2, 120, 1),
-                "source_catalog_producer": source_producer, "document_release_producer": release_producer,
-                "deadline_epoch_seconds": 4_000_000_000,
-                "content_fetcher": fetcher, "retry_policy": retry,
-                "extractor": VisibleTextExtractor(xml_heading_levels=BILL_HEADINGS),
-                "segmenter": VisibleTextBlockSegmenter(),
-            }
-            run_time = clock().isoformat().replace("+00:00", "Z")
-            with prepare_local_experiment(catalog.reference, workspace, processors=(first,),
-                                          completed_at=run_time, **settings) as prepared:
-                base, initial = finish_run(prepared, workspace, source_producer, release_producer, "processed", output, views)
+            first = phrase_processor("1", ("public access",), output, resource_id="urn:docspec:example:bill-phrases")
+            second = phrase_processor("2", ("public access", "machine readable"), output, resource_id="urn:docspec:example:bill-phrases")
+            pipeline = workspace.documents(fetcher=BillContentFetcher(acquirer, status, package_id, evidence, clock=clock),
+                extractor=VisibleTextExtractor(xml_heading_levels=BILL_HEADINGS), segmenter=VisibleTextBlockSegmenter())
+            source_state = pipeline.import_sources((SourceCatalogItem.from_dict(row) for row in rows), state_id="source-catalog")
+            _, initial_documents = run_documents(workspace, pipeline, source_state.state_id,
+                name="processed", processors=(first,), output=output)
 
-        # The provider client is now closed. This independent run must reuse the
-        # retained capture/representation/segments when only its phrases change.
-        run_time = clock().isoformat().replace("+00:00", "Z")
-        with prepare_local_experiment(catalog.reference, workspace, processors=(second,), base_release=base,
-                                      completed_at=run_time,
-                                      **settings) as prepared:
-            retained, later = finish_run(prepared, workspace, source_producer, release_producer, "reprocessed", output, views)
-        layers = ("files", "representations", "segments")
-        preserved = all([row["payload"] for row in initial.records(kind)] ==
-                        [row["payload"] for row in later.records(kind)] for kind in layers)
-        captured = list(later.records("files"))[0]["payload"]
-        original = b"".join(later.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=2 * 1024**2))
-        representation = list(later.records("representations"))[0]["payload"]
-        visible = b"".join(later.read_blob(BlobRef.from_dict(representation["blob"]), max_bytes=2 * 1024**2))
-        counts = later.summary()["work"]["counts"]
-        if not preserved or any(counts[key] for key in ("newCapturedFiles", "newRepresentations", "newSegments")):
+        # Reprocessing after the acquisition client closes reuses retained stages.
+        retained, later_documents = run_documents(workspace, pipeline, source_state.state_id,
+            name="reprocessed", processors=(second,), output=output)
+        initial, later = initial_documents[0][1], later_documents[0][1]
+        preserved = initial[:3] == later[:3]
+        captured = output_value(workspace, later[0], "capture")
+        original = output_value(workspace, later[0], "content")
+        visible = output_value(workspace, later[1], "content")
+        counts = {"newCapturedFiles": int(initial[0] != later[0]), "newRepresentations": int(initial[1] != later[1]),
+                  "newSegments": int(initial[2] != later[2])}
+        if not preserved or any(counts.values()):
             raise AssertionError("processor-only iteration repeated or changed upstream work")
         summary = {
             "scope": "one explicitly selected bill version; synthetic responses" if not live else
@@ -160,8 +141,8 @@ def run_example(output: Path, *, package_id: str, identity: BillIdentity = FIXTU
             "offeredFormats": sum(len(version.formats) for version in status.status.text_versions),
             "selectedXmlUrl": rendition.url, "capturedSha256": captured["blob"]["digest"],
             "capturedByteSize": len(original), "visibleText": visible.decode("utf-8"),
-            "matches": {"first": matches(initial, first), "later": matches(later, second)},
-            "retainedResult": retained.to_dict(), "originalLayersPreserved": preserved,
+            "matches": {"first": matches(workspace, pipeline, "processed"), "later": matches(workspace, pipeline, "reprocessed")},
+            "retainedResult": record_value(retained), "originalLayersPreserved": preserved,
             "reprocessingNewCaptureCount": counts["newCapturedFiles"],
             "fixtureRequests": requests if not live else None,
             "interpretation": "literal phrase occurrences, not legal meaning or applicability",

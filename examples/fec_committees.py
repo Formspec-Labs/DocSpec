@@ -26,7 +26,6 @@ from spicy_docs.storage.blobs import LocalSourceNativeBlobStore
 from docspec.domain.identity import sha256_digest
 from docspec.runtime import build_local_catalog, open_local_catalog
 from docspec.source_catalog import SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
 
 NAMESPACE = "urn:docspec:example:fec-committees"
 FIXTURES = Path(__file__).with_name("fec_fixtures")
@@ -55,7 +54,7 @@ def source_description(reader: SourceNativeReleaseReader) -> dict:
     }
 
 
-def build_committee_catalog(reader: SourceNativeReleaseReader, workspace: LocalWorkspace, *,
+def build_committee_catalog(reader: SourceNativeReleaseReader, workspace: Path, *,
                             max_records: int, max_bytes: int, max_scratch_bytes: int):
     """Retain admitted source facts and join ordered record/evidence streams once.
 
@@ -158,7 +157,7 @@ def run_example(output: Path, *, source_root: Path | None = None, blob_root: Pat
         blob_source=LocalBlobSource(inputs["blob_root"]), profile=PROFILE,
         expected_pin=ArtifactPin(inputs["logical_id"], inputs["artifact_digest"]),
         accepted_verifier_implementation_ids=frozenset({inputs["source_implementation_id"]}))
-    workspace = LocalWorkspace(output / "dataset")
+    workspace = Path(output / "dataset")
     built = build_committee_catalog(reader, workspace, max_records=max_records, max_bytes=max_bytes,
                                    max_scratch_bytes=max_scratch_bytes)
     catalog = open_local_catalog(built.reference, workspace, producer=catalog_producer())

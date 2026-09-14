@@ -11,22 +11,16 @@ from typing import Any, BinaryIO
 
 from rulespec_artifacts import ArtifactVerificationError, LocalMemberSource, MemberDescriptor, MemberSourceError
 
-from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
-from docspec.domain.identity import parse_canonical_json, thaw_json
+from docspec.adapters.record_workspace import LocalSqliteRecordWorkspaceFactory
+from docspec.domain.identity import decode_canonical_json_value
 from docspec.errors import IntegrityError, LimitExceededError
 
 ROOT_BYTES = 1024**2
 RECORD_BYTES = 8 * 1024**2
-ITEM_BYTES = 64 * 1024**2
-EVIDENCE_BYTES = 64 * 1024**2
 MANIFEST_BYTES = 64 * 1024**2
 CHUNK_BYTES = 256 * 1024
 INDEX_KEY = "export.json"
-INDEX_SCHEMA = "urn:docspec:result-export-index:1.0"
-ROW_SCHEMA = "urn:docspec:delivery-record:1.0"
-CONTROL_SCHEMA = "urn:docspec:control-artifact:1.0"
 MANIFEST_KEY = "members.json"
-ADMISSIONS = ("retained-evidence", "nonempty-text")
 
 
 def require_limit(value: int) -> int:
@@ -36,7 +30,7 @@ def require_limit(value: int) -> int:
 
 
 def scratch(max_bytes: int):
-    return LocalSqliteReconciliationWorkspaceFactory(
+    return LocalSqliteRecordWorkspaceFactory(
         Path(gettempdir()).resolve(), max_spooled_bytes=max_bytes,
         max_record_bytes=RECORD_BYTES, read_batch_size=1,
     ).create()
@@ -73,29 +67,7 @@ def read_mapping(source: LocalMemberSource, descriptor: MemberDescriptor, *, max
     if descriptor.byte_size > max_bytes:
         raise LimitExceededError("export metadata exceeds its byte limit")
     with verified_open(source, descriptor) as stream:
-        value = thaw_json(parse_canonical_json(stream.read(max_bytes + 1), label=descriptor.object_key))
+        value = decode_canonical_json_value(stream.read(max_bytes + 1), label=descriptor.object_key)
     if not isinstance(value, dict):
         raise IntegrityError("export metadata must be a JSON object")
     return value
-
-
-def rows(source: LocalMemberSource, descriptor: MemberDescriptor) -> Iterator[dict[str, Any]]:
-    count = 0
-    previous = None
-    with verified_open(source, descriptor) as stream:
-        while raw := stream.readline(RECORD_BYTES + 1):
-            if len(raw) > RECORD_BYTES:
-                raise LimitExceededError("export row exceeds its byte limit")
-            value = thaw_json(parse_canonical_json(raw, label=descriptor.object_key))
-            if not isinstance(value, dict):
-                raise IntegrityError("export record must be a JSON object")
-            identity = value.get("recordId")
-            if not isinstance(identity, str) or not identity or (previous is not None and identity <= previous):
-                raise IntegrityError("export records must have sorted distinct record identities")
-            previous = identity
-            count += 1
-            if descriptor.record_count is None or count > descriptor.record_count:
-                raise IntegrityError("export row count differs from its descriptor")
-            yield value
-    if count != descriptor.record_count:
-        raise IntegrityError("export row count differs from its descriptor")

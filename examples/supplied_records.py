@@ -14,7 +14,6 @@ from rulespec_artifacts import Producer
 from docspec.domain.identity import sha256_digest
 from docspec.runtime import build_local_catalog, open_local_catalog
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
 
 
 def demonstrate(output: Path) -> dict[str, object]:
@@ -33,7 +32,7 @@ def demonstrate(output: Path) -> dict[str, object]:
        max_records=10, max_bytes=1024**2)
     implementation = "urn:docspec:example:supplied-records:" + sha256_digest(Path(__file__).read_bytes())
     producer = Producer("docspec", implementation, "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
-    workspace = LocalWorkspace(output)
+    workspace = Path(output)
     result = build_local_catalog((source,), workspace,
         policy=SuppliedRecordCatalogPolicy(namespace, "1"), catalog_id="urn:example:contributor-notes:catalog",
         producer=producer, max_scratch_bytes=8 * 1024**2)

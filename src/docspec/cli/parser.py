@@ -1,266 +1,186 @@
-"""One operator entry point for the standalone DocSpec lifecycle."""
-
-from __future__ import annotations
+"""Commands over the shared Core runtime and source-catalog tooling."""
 
 import argparse
+import importlib
 from pathlib import Path
-from typing import Any
 
-from docspec.cli.blobs import _cmd_blob_store_gc, _cmd_blob_store_verify
-from docspec.cli.catalog import (
-    _cmd_document_catalog_audit, _cmd_document_catalog_compare, _cmd_document_catalog_open, _cmd_document_catalog_select,
-)
-from docspec.cli.common import _write_failure_receipt
-from docspec.cli.evidence import _cmd_run_status, _cmd_sink_verify
-from docspec.cli.inspection import add_inspection_command
-from docspec.cli.plans import _cmd_document_store_create, _cmd_document_store_verify, _cmd_plan_create
-from docspec.cli.profiles import (
-    _cmd_profile_list,
-    _cmd_profile_verify,
-)
-from docspec.cli.releases import (
-    _cmd_document_release_save,
-    _cmd_document_release_compact,
-    _cmd_document_release_diff,
-    _cmd_document_release_verify,
-)
-from docspec.cli.runs import (
-    _cmd_local_run,
-    _cmd_local_run_prepare,
-    _cmd_local_run_reconcile,
-    _cmd_local_task_execute,
-    _cmd_run_active,
-)
-from docspec.cli_io import (
-    CliError,
-)
-from docspec.cli_io import (
-    emit as _emit,
-)
-from docspec.domain.security import redact_text
-from docspec.errors import DocSpecError
+from rulespec_artifacts import Producer
+
+from docspec.adapters.content_fetchers.local_file import LocalFileContentFetcher
 from docspec.cli.source_catalog import add_source_catalog_command
+from docspec.cli_io import CliError, emit, emit_error, read_bytes
+from docspec.domain import core
+from docspec.domain.content import SourceItem
+from docspec.domain.core_admission import admit_record, encode_record, record_value
+from docspec.domain.identity import parse_closed_json, thaw_json
+from docspec.domain.streams import owned_iterator
+from docspec.errors import DocSpecError
+from docspec.ports.record_storage import BATCH_BYTES
+from docspec.runtime.core import CoreWorkspace
 
 
-def _add_local_catalog_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--catalog-root", type=Path, required=True, help="Existing local document-catalog root")
-    parser.add_argument("--blob-root", type=Path, required=True, help="Existing local immutable-blob root")
-    parser.add_argument("--record-root", type=Path, required=True, help="Existing local record-storage root")
-    parser.add_argument("--store-root", type=Path, required=True, help="Existing local document-store root")
-    parser.add_argument("--control-root", type=Path, required=True, help="Existing local control-artifact root")
-    parser.add_argument("--implementation-id", required=True)
-    parser.add_argument("--verifier-implementation-id", required=True)
+def _json_rows(path):
+    with Path(path).open("rb") as source:
+        while payload := source.readline(BATCH_BYTES + 1):
+            if len(payload) > BATCH_BYTES:
+                raise CliError("JSON row exceeds the 8 MiB input limit")
+            if payload.strip():
+                yield thaw_json(parse_closed_json(payload, label="input row"))
 
 
-def _add_mutating_paths(
-    parser: argparse.ArgumentParser,
-    *,
-    operation: str,
-    func: Any,
-) -> None:
-    parser.add_argument("--request", type=Path, required=True, help="Closed JSON operation request")
-    parser.add_argument("--destination", type=Path, required=True, help="New destination; replacement is refused")
-    parser.add_argument("--receipt", type=Path, required=True, help="New machine receipt; replacement is refused")
-    parser.set_defaults(func=func, operation=operation)
+def _record(path):
+    value = thaw_json(parse_closed_json(read_bytes(path, label="Core record", max_bytes=BATCH_BYTES)))
+    return admit_record(encode_record(value))
 
 
-def _subcommands(parser: argparse.ArgumentParser, *, dest: str) -> argparse._SubParsersAction:
-    return parser.add_subparsers(dest=dest, required=True)
+def _producer(name):
+    module, separator, attribute = name.partition(":")
+    if not separator or not module or not attribute:
+        raise CliError("producer must be an importable module:function")
+    value = getattr(importlib.import_module(module), attribute)
+    if not callable(value):
+        raise CliError("producer must be callable")
+    return value
 
 
-def build_parser() -> argparse.ArgumentParser:
+def _run(args):
+    with CoreWorkspace(args.workspace) as workspace:
+        command = args.action
+        if command == "create":
+            def rows():
+                with owned_iterator(_json_rows(args.rows)) as source:
+                    for row in source:
+                        if not isinstance(row, dict) or set(row) != {"key", "value"}:
+                            raise CliError("state input rows require exactly key and value")
+                        yield row["key"], row["value"]
+            result = record_value(workspace.create(args.state, rows()))
+        elif command == "revise":
+            result = record_value(workspace.revise(_record(args.revision)))
+        elif command == "rows":
+            with owned_iterator(workspace.rows(args.state)) as rows:
+                for key, entity in rows:
+                    emit({"key": key, "entity": record_value(entity)})
+            return 0
+        elif command == "inspect":
+            result = workspace.inspect(args.kind, args.id, progress_limit=args.limit)
+        elif command == "compare":
+            result = workspace.compare(args.older, args.newer, sample_limit=args.limit)
+        elif command == "retain":
+            with owned_iterator(_json_rows(args.records)) as rows:
+                result = {"committed": workspace.retain(rows, unit_id=args.unit,
+                                                          roots=(tuple(key) for key in args.root))}
+        elif command == "select":
+            result = {"changed": workspace.maintenance.select_current(args.unit, args.dataset, tuple(args.target),
+                         None if args.expected is None else tuple(args.expected)), "current": list(workspace.ledger.current(args.dataset))}
+        elif command == "remove":
+            workspace.maintenance.remove_under_policy(args.unit, args.policy, (tuple(key) for key in args.key))
+            result = {"removal_id": args.unit, "complete": workspace.ledger.removal(args.unit)[2]}
+        elif command == "resume-removal":
+            workspace.maintenance.resume(args.unit)
+            result = {"removal_id": args.unit, "complete": workspace.ledger.removal(args.unit)[2]}
+        elif command == "export":
+            producer = Producer.from_dict(thaw_json(parse_closed_json(read_bytes(args.producer, label="export producer"))), path="export/producer")
+            with owned_iterator(() if args.roots is None else _json_rows(args.roots)) as roots:
+                pin = workspace.export(args.state, args.destination, producer=producer, max_output_bytes=args.max_bytes,
+                                       additional_roots=(tuple(key) for key in roots))
+            result = pin.as_dict()
+        elif command == "execute":
+            result = workspace.operations.resolve(_record(args.definition), _record(args.request), _producer(args.producer),
+                selection_id=args.selection, target=core.Origin(parent_entity_id=args.target),
+                reuse_policy=lambda prior: prior.outcome.status == "success", fresh=args.fresh)
+            from docspec.application.core_execution import SuspendedOperation
+            if isinstance(result, SuspendedOperation):
+                result = {"status": "suspended", "execution_id": result.execution_id}
+            else:
+                result = {"selection": record_value(result.selection), "result": record_value(result.result)}
+        elif command == "document-import":
+            pipeline = workspace.documents(fetcher=LocalFileContentFetcher(args.input_root))
+            with owned_iterator(_json_rows(args.sources)) as rows:
+                result = record_value(pipeline.import_sources((SourceItem.from_dict(row) for row in rows), state_id=args.state))
+        elif command == "document-run":
+            pipeline = workspace.documents(fetcher=LocalFileContentFetcher(args.input_root))
+            result = record_value(pipeline.run(args.source_state, run_id=args.run_id, dataset=args.dataset,
+                extract=args.stop_after != "capture", segment=args.stop_after == "segmentation", fresh=args.fresh))
+        else:
+            raise CliError("unsupported Core action")
+        emit(result)
+        return 0
+
+
+def build_parser():
     parser = argparse.ArgumentParser(prog="docspec", description=__doc__)
-    commands = _subcommands(parser, dest="command")
-
+    commands = parser.add_subparsers(dest="command", required=True)
     add_source_catalog_command(commands)
-    add_inspection_command(commands)
 
-    profile = commands.add_parser("profile", help="Inspect storage and delivery profile descriptions")
-    profile_commands = _subcommands(profile, dest="profile_command")
-    profile_list = profile_commands.add_parser("list", help="List installed profiles or an explicit profile directory")
-    profile_list.add_argument("--directory", type=Path)
-    profile_list.set_defaults(func=_cmd_profile_list)
-    profile_verify = profile_commands.add_parser("verify", help="Verify one closed profile description")
-    profile_verify.add_argument("profile", type=Path)
-    profile_verify.set_defaults(func=_cmd_profile_verify)
+    def command(group, name, help_text, *, action=None):
+        child = group.add_parser(name, help=help_text)
+        child.add_argument("--workspace", type=Path, required=True)
+        child.set_defaults(func=_run, action=action or name)
+        return child
 
-    document_catalog = commands.add_parser("document-catalog", help="Open, audit, compare, and select retained results")
-    catalog_commands = _subcommands(document_catalog, dest="document_catalog_command")
-    _add_mutating_paths(
-        catalog_commands.add_parser("select", help="Select a retained result if current still matches the request"),
-        operation="document-catalog.select",
-        func=_cmd_document_catalog_select,
-    )
-    for name, help_text, handler in (
-        ("open", "Open pinned metadata without scanning retained data", _cmd_document_catalog_open),
-        ("audit", "Verify all retained records, bytes and execution evidence", _cmd_document_catalog_audit),
-    ):
-        command = catalog_commands.add_parser(name, help=help_text)
-        _add_local_catalog_arguments(command)
-        command.add_argument("--reference", type=Path, required=True)
-        command.set_defaults(func=handler)
-    catalog_compare = catalog_commands.add_parser("compare", help="Compare one logical layer across two releases")
-    _add_local_catalog_arguments(catalog_compare)
-    catalog_compare.add_argument("--older-reference", type=Path, required=True)
-    catalog_compare.add_argument("--newer-reference", type=Path, required=True)
-    catalog_compare.add_argument("--layer-kind", required=True)
-    catalog_compare.add_argument("--sample-limit", type=int, default=20)
-    catalog_compare.set_defaults(func=_cmd_document_catalog_compare)
+    states = commands.add_parser("state", help="Create, revise, and read keyed values").add_subparsers(required=True)
+    create = command(states, "create", "Import streamed JSON lines containing key and value")
+    create.add_argument("--rows", type=Path, required=True)
+    create.add_argument("--state", required=True)
+    revise = command(states, "revise", "Apply a Core revision")
+    revise.add_argument("--revision", type=Path, required=True)
+    rows = command(states, "rows", "Stream keyed occurrence records")
+    rows.add_argument("--state", required=True)
 
-    plan = commands.add_parser("plan", help="Create immutable processing plans")
-    plan_commands = _subcommands(plan, dest="plan_command")
-    plan_create = plan_commands.add_parser("create", help="Create a ProcessingPlan from a closed JSON request")
-    plan_create.add_argument("--request", type=Path, required=True)
-    plan_create.add_argument("--destination", type=Path, required=True)
-    plan_create.add_argument("--receipt", type=Path, required=True)
-    plan_create.set_defaults(func=_cmd_plan_create, operation="plan.create")
+    inspect = command(commands, "inspect", "Read history, availability, requests and exact selections")
+    inspect.add_argument("--kind", choices=tuple(core.RECORD_ID_FIELDS), required=True)
+    inspect.add_argument("--id", required=True)
+    inspect.add_argument("--limit", type=int, default=20)
+    compare = command(commands, "compare", "Count state changes with a bounded sample")
+    compare.add_argument("older")
+    compare.add_argument("newer")
+    compare.add_argument("--limit", type=int, default=20)
+    retain = command(commands, "retain", "Retain a bounded Core metadata unit")
+    retain.add_argument("--records", type=Path, required=True)
+    retain.add_argument("--root", nargs=2, action="append", metavar=("KIND", "ID"), required=True)
+    retain.add_argument("--unit", required=True)
+    select = command(commands, "select", "Change current only if its previous value still matches")
+    select.add_argument("--dataset", required=True)
+    select.add_argument("--target", nargs=2, metavar=("KIND", "ID"), required=True)
+    select.add_argument("--expected", nargs=2, metavar=("KIND", "ID"))
+    select.add_argument("--unit", required=True)
+    remove = command(commands, "remove", "Remove bytes under a retained explicit policy")
+    remove.add_argument("--policy", required=True)
+    remove.add_argument("--key", nargs=2, action="append", metavar=("KIND", "ID"), required=True)
+    remove.add_argument("--unit", required=True)
+    resume = command(commands, "resume-removal", "Resume an interrupted authorized removal")
+    resume.add_argument("--unit", required=True)
+    exported = command(commands, "export", "Export a selected state and explicit evidence roots")
+    exported.add_argument("--state", required=True)
+    exported.add_argument("--destination", type=Path, required=True)
+    exported.add_argument("--producer", type=Path, required=True)
+    exported.add_argument("--max-bytes", type=int, required=True)
+    exported.add_argument("--roots", type=Path, help="JSON lines of [kind, id] pairs for additional retained evidence")
+    execute = command(commands, "execute", "Resolve a Core request through the shared operation lifecycle")
+    for name in ("definition", "request"):
+        execute.add_argument("--" + name, type=Path, required=True)
+    for name in ("producer", "selection", "target"):
+        execute.add_argument("--" + name, required=True)
+    execute.add_argument("--fresh", action="store_true")
 
-    document_store = commands.add_parser("document-store", help="Create and verify bounded work jobs")
-    store_commands = _subcommands(document_store, dest="document_store_command")
-    store_create = store_commands.add_parser("create", help="Create one planned DocumentStore")
-    store_create.add_argument("--request", type=Path, required=True)
-    store_create.add_argument("--destination", type=Path, required=True)
-    store_create.add_argument("--receipt", type=Path, required=True)
-    store_create.set_defaults(func=_cmd_document_store_create, operation="document-store.create")
-    store_verify = store_commands.add_parser("verify", help="Verify one canonical DocumentStore revision")
-    store_verify.add_argument("store", type=Path)
-    store_verify.add_argument("--root", type=Path, help="Repository root for a saved store with entry members")
-    store_verify.add_argument("--max-revision-bytes", type=int, default=64 * 1024**2)
-    store_verify.add_argument("--max-inline-bytes", type=int, default=1024**2)
-    store_verify.set_defaults(func=_cmd_document_store_verify)
-
-    run = commands.add_parser("run", help="Start, resume, and inspect scheduler-neutral runs")
-    run_commands = _subcommands(run, dest="run_command")
-    _add_mutating_paths(
-        run_commands.add_parser("prepare", help="Save bounded jobs and seal an execution handoff"),
-        operation="run.prepare",
-        func=_cmd_local_run_prepare,
-    )
-    _add_mutating_paths(
-        run_commands.add_parser("start", help="Execute a new run through the portable local profile"),
-        operation="run.start",
-        func=_cmd_local_run,
-    )
-    _add_mutating_paths(
-        run_commands.add_parser("resume", help="Resume saved local jobs and finish their run"),
-        operation="run.resume",
-        func=_cmd_local_run,
-    )
-    _add_mutating_paths(
-        run_commands.add_parser("reconcile", help="Verify a saved terminal task-result stream"),
-        operation="run.reconcile",
-        func=_cmd_local_run_reconcile,
-    )
-    run_status = run_commands.add_parser("status", help="Verify and summarize a sealed RunReceipt")
-    run_status.add_argument("--receipt", type=Path, required=True)
-    run_status.add_argument("--control-root", type=Path, help="Resolve an ArtifactRef from this control repository")
-    run_status.set_defaults(func=_cmd_run_status)
-    run_active = run_commands.add_parser(
-        "active",
-        help="Report bounded, read-only progress for a run that has not finished",
-    )
-    run_active.add_argument(
-        "--request",
-        type=Path,
-        required=True,
-        help="The same closed local run request 'run prepare/start/resume' use",
-    )
-    run_active.add_argument(
-        "--stalled-after-seconds",
-        type=int,
-        default=900,
-        help="How long a running store may go unobserved before it is reported as stalled",
-    )
-    run_active.add_argument(
-        "--stalled-sample-limit",
-        type=int,
-        default=20,
-        help="Maximum stalled store ids to list; stalledStoreCount is always exact",
-    )
-    run_active.set_defaults(func=_cmd_run_active)
-    run_active.add_argument(
-        "--failure-sample-limit", type=int, default=20,
-        help="Maximum diagnostic signatures to count separately; class totals stay exact",
-    )
-
-    task = commands.add_parser("task", help="Execute portable serialized DocumentStore tasks")
-    task_commands = _subcommands(task, dest="task_command")
-    _add_mutating_paths(
-        task_commands.add_parser("execute", help="Execute one serialized task and emit one result"),
-        operation="task.execute",
-        func=_cmd_local_task_execute,
-    )
-
-    sink = commands.add_parser("sink", help="Verify result delivery evidence")
-    sink_commands = _subcommands(sink, dest="sink_command")
-    sink_verify = sink_commands.add_parser("verify", help="Verify and summarize a DeliveryReceipt")
-    sink_verify.add_argument("--receipt", type=Path, required=True)
-    sink_verify.add_argument("--control-root", type=Path, help="Resolve an ArtifactRef from this control repository")
-    sink_verify.set_defaults(func=_cmd_sink_verify)
-
-    release = commands.add_parser("document-release", help="Retain, commit, verify, compare, and compact releases")
-    release_commands = _subcommands(release, dest="document_release_command")
-    _add_mutating_paths(
-        release_commands.add_parser("commit", help="Commit a reconciled local run with compare-and-swap"),
-        operation="document-release.commit",
-        func=_cmd_document_release_save,
-    )
-    _add_mutating_paths(
-        release_commands.add_parser("retain", help="Keep a verified result without changing the current selection"),
-        operation="document-release.retain",
-        func=_cmd_document_release_save,
-    )
-    release_verify = release_commands.add_parser("verify", help="Verify one canonical release root")
-    release_verify.add_argument("release", type=Path)
-    release_verify.set_defaults(func=_cmd_document_release_verify)
-    release_diff = release_commands.add_parser("diff", help="Compare two complete release roots")
-    release_diff.add_argument("--older", type=Path, required=True)
-    release_diff.add_argument("--newer", type=Path, required=True)
-    release_diff.set_defaults(func=_cmd_document_release_diff)
-    _add_mutating_paths(
-        release_commands.add_parser("compact", help="Publish an equivalent compacted successor release"),
-        operation="document-release.compact",
-        func=_cmd_document_release_compact,
-    )
-
-    blob_store = commands.add_parser("blob-store", help="Verify immutable blobs and inventory safe collection")
-    blob_commands = _subcommands(blob_store, dest="blob_store_command")
-    blob_verify = blob_commands.add_parser("verify", help="Verify one immutable blob reference")
-    blob_verify.add_argument("--root", type=Path, required=True)
-    blob_verify.add_argument("--reference", type=Path, required=True)
-    blob_verify.add_argument("--max-blob-bytes", type=int, default=8 * 1024**3)
-    blob_verify.add_argument("--stream-chunk-bytes", type=int, default=1024**2)
-    blob_verify.set_defaults(func=_cmd_blob_store_verify)
-    blob_gc = blob_commands.add_parser("gc", help="Inventory unreferenced content-addressed objects")
-    blob_gc.add_argument("--run-request", type=Path, required=True)
-    blob_gc.add_argument("--retention-set", type=Path, required=True, help="JSON ArtifactRef")
-    blob_gc.add_argument("--minimum-age-seconds", type=int, required=True)
-    blob_gc.add_argument("--sample-limit", type=int, default=20)
-    blob_gc.add_argument("--max-index-bytes", type=int, default=64 * 1024**3)
-    blob_gc.add_argument("--index-cache-kib", type=int, default=8 * 1024)
-    blob_gc.add_argument("--dry-run", action="store_true", required=True)
-    blob_gc.set_defaults(func=_cmd_blob_store_gc)
-
+    documents = commands.add_parser("document", help="Capture, extract and segment through Core").add_subparsers(required=True)
+    imported = command(documents, "import", "Import source item JSON lines", action="document-import")
+    imported.add_argument("--sources", type=Path, required=True)
+    imported.add_argument("--state", required=True)
+    imported.add_argument("--input-root", type=Path, required=True)
+    run = command(documents, "run", "Process retained source items", action="document-run")
+    run.add_argument("--source-state", required=True)
+    run.add_argument("--run-id", required=True)
+    run.add_argument("--input-root", type=Path, required=True)
+    run.add_argument("--dataset")
+    run.add_argument("--stop-after", choices=("capture", "extraction", "segmentation"), default="segmentation")
+    run.add_argument("--fresh", action="store_true")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     try:
-        if hasattr(args, "sample_limit") and args.sample_limit < 0:
-            raise CliError("sample limit must be non-negative")
         return int(args.func(args))
-    except (DocSpecError, OSError, TypeError, ValueError) as error:
-        _write_failure_receipt(args, error)
-        _emit(
-            {
-                "format": "docspec-cli-error",
-                "formatVersion": "1.0",
-                "errorType": type(error).__name__,
-                "message": redact_text(str(error)),
-                "verdict": "fail",
-            },
-            error=True,
-        )
-        return 2
+    except (DocSpecError, OSError, TypeError, ValueError, ImportError, AttributeError) as error:
+        return emit_error(error)

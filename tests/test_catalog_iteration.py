@@ -1,7 +1,8 @@
 """Catalog previews and successive experiments preserve evidence and useful work."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from types import SimpleNamespace
+from itertools import count
 
 import pytest
 from rulespec_artifacts import Supersedes
@@ -10,18 +11,15 @@ from docspec.adapters.content_fetchers import LocalFileContentFetcher
 from docspec.application.catalog_preview import preview_catalog
 from docspec.application.comparison import json_changes, paired_rows
 from docspec.domain.identity import canonical_json_bytes, sha256_digest
-from docspec.domain.jobs import EntryExecutionMode, FailureClass
-from docspec.domain.plans import WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
 from docspec.domain.source_catalog import CatalogDisposition, CatalogSelectionDecision, SourceCatalogItem
 from docspec.errors import IntegrityError
 from docspec.processing.extraction import TextExtractor
 from docspec.processing.segmentation import ParagraphSegmenter
-from docspec.runtime import build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog
+from docspec.runtime import CoreWorkspace, build_local_catalog, open_local_catalog, preview_local_catalog
+from docspec.application.document_processors import content_statistics_processor
+from docspec.application.documents import DocumentProcessor
+from examples.dataset_example_support import document_results
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
-from tests.support.experiments import _FailingProcessor
-from tests.support.processors import _CountingExtractor, _CountingProcessor, _CountingSegmenter, _description
 from tests.support.source_catalog import producer
 
 _NAMESPACE = "urn:test:catalog-iteration"
@@ -68,71 +66,56 @@ class _ExcludeSuppliedPolicy(SuppliedRecordCatalogPolicy):
 
 @pytest.fixture
 def iteration(tmp_path, monkeypatch):
-    workspace = LocalWorkspace(tmp_path / "experiment")
-    workspace.roots["sourceContent"].mkdir(parents=True)
-    (workspace.roots["sourceContent"] / "input.txt").write_bytes(_CONTENT)
-    retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
-    fetcher = LocalFileContentFetcher(workspace.roots["sourceContent"])
-    fetches = []
-    fetch = fetcher.fetch
-
-    def counted(*args, **kwargs):
-        fetches.append(args[0].candidate_id)
-        return fetch(*args, **kwargs)
-
-    monkeypatch.setattr(fetcher, "fetch", counted)
-    extractor, segmenter = _CountingExtractor(TextExtractor()), _CountingSegmenter(ParagraphSegmenter())
-    limits = WorkLimits(10, 1024**2, 100, 100, 100, 16 * 1024**2, 60, max_attempts=1)
+    root = tmp_path / "experiment"
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    (inputs / "input.txt").write_bytes(_CONTENT)
+    fetcher = LocalFileContentFetcher(inputs)
+    fetches, extractions, segmentations = [], [], []
+    extractor, segmenter = TextExtractor(), ParagraphSegmenter()
+    for owner, method, calls in ((fetcher, "fetch", fetches), (extractor, "extract", extractions), (segmenter, "segment", segmentations)):
+        original = getattr(owner, method)
+        def counted(*args, _original=original, _calls=calls, **kwargs):
+            _calls.append(True)
+            return _original(*args, **kwargs)
+        monkeypatch.setattr(owner, method, counted)
 
     def source(records, *, scope="complete-snapshot", namespace=_NAMESPACE):
         return SuppliedRecordSource(records, source_system_id=namespace, source_system_version="1",
             source_state_scope=scope, max_records=100, max_bytes=1024**2)
 
     def build(records, *, policy=None, scope="complete-snapshot", supersedes=None):
-        return build_local_catalog((source(records, scope=scope),), workspace,
+        return build_local_catalog((source(records, scope=scope),), root,
             policy=SuppliedRecordCatalogPolicy(_NAMESPACE, "1") if policy is None else policy,
             catalog_id="urn:test:iterative-catalog", producer=producer(),
             max_scratch_bytes=8 * 1024**2, supersedes=supersedes)
 
-    def run(catalog, *, processors=(), fresh=False, **choices):
-        chosen_workspace = LocalWorkspace(workspace.root / "fresh", {
-            "sourceCatalog": workspace.roots["sourceCatalog"], "sourceContent": workspace.roots["sourceContent"],
-        }) if fresh else workspace
-        defaults = {
-            "limits": limits, "retry_policy": retry,
-            "accepted_failure_policy": AcceptedFailurePolicy(accepted_classes=(FailureClass.DETERMINISTIC_INPUT,)),
-            "source_catalog_producer": producer(), "document_release_producer": producer(),
-            "completed_at": "2026-09-11T00:00:00Z", "deadline_epoch_seconds": 4102444800,
-            "content_fetcher": fetcher, "extractor": extractor, "segmenter": segmenter,
-        }
-        with prepare_local_experiment(catalog.reference, chosen_workspace, processors=processors, **(defaults | choices)) as prepared:
-            entries = tuple(entry for task in prepared.task_source(prepared.handoff)
-                for entry in prepared._composition.stores.load(task.input_store).entries)
-            before = open_local_inspection(prepared.plan, chosen_workspace, document_release_producer=producer()).summary()
-            retained = prepared.retain(prepared.run())
-            view = open_local_inspection(prepared.plan, chosen_workspace,
-                document_release_producer=producer(), release_ref=retained)
-            return retained, view, entries, before
-
-    return SimpleNamespace(workspace=workspace, build=build, source=source, run=run, retry=retry,
-        limits=limits, fetches=fetches, extractor=extractor, segmenter=segmenter)
-
-
-def _payloads(view, kind):
-    return tuple(row["payload"] for row in view.records(kind))
+    with CoreWorkspace(root) as workspace:
+        pipeline = workspace.documents(fetcher=fetcher, extractor=extractor, segmenter=segmenter)
+        identities = count()
+        def run(catalog, *, processors=(), fresh=False, stop_after=None):
+            identity = str(next(identities))
+            admitted = open_local_catalog(catalog.reference, root, producer=producer())
+            pipeline.import_sources((SourceCatalogItem.from_dict(row) for row in admitted.iter_mappings()), state_id=identity + "-source")
+            pipeline.run(identity + "-source", run_id=identity, dataset="documents", processors=processors,
+                extract=stop_after != "capture", segment=stop_after not in {"capture", "extraction"}, fresh=fresh)
+            return SimpleNamespace(state_id=identity, results=dict(document_results(workspace, pipeline, identity)),
+                sources={key: value for key, _, value in pipeline.rows(identity + "-source")})
+        yield SimpleNamespace(workspace=root, core=workspace, pipeline=pipeline, build=build, source=source, run=run,
+            fetches=fetches, extractions=extractions, segmentations=segmentations)
 
 
 def test_successor_policy_preview_and_growth_reuse_work_but_refresh_source_evidence(iteration):
     first = iteration.build([_record(name) for name in ("kept", "later-excluded", "removed")],
         policy=_ExcludeSuppliedPolicy(_NAMESPACE, "1"))
-    processor = _CountingProcessor(_description("record", "1", iteration.retry))
-    base, older, _, _ = iteration.run(first, processors=(processor,))
+    processor = content_statistics_processor()
+    older = iteration.run(first, processors=(processor,))
     successor = iteration.build([_record(name) for name in ("kept", "later-excluded", "added")],
         policy=_ExcludeSuppliedPolicy(_NAMESPACE, "1", ("later-excluded",)),
         supersedes=Supersedes(first.reference.catalog_id, first.reference.digest, "Grow and change selection"))
-    snapshot = {path: path.stat().st_mtime_ns for path in iteration.workspace.root.rglob("*")}
+    snapshot = {path: path.stat().st_mtime_ns for path in iteration.workspace.rglob("*")}
     report = preview_local_catalog(successor.reference, iteration.workspace, producer=producer(), previous_ref=first.reference)
-    assert {path: path.stat().st_mtime_ns for path in iteration.workspace.root.rglob("*")} == snapshot
+    assert {path: path.stat().st_mtime_ns for path in iteration.workspace.rglob("*")} == snapshot
     assert len(iteration.fetches) == 3
     assert report["comparison"]["counts"] == {"added": 1, "removedFromCatalog": 1, "changed": 2, "unchanged": 0}
     assert report["catalog"]["catalogSelection"]["counts"]["selected"] == 2
@@ -144,90 +127,74 @@ def test_successor_policy_preview_and_growth_reuse_work_but_refresh_source_evide
     assert report["comparison"]["selectionPolicyChanges"]
     assert report["catalog"]["supersedes"]["artifactDigest"] == first.reference.digest
 
-    retained, newer, entries, before = iteration.run(successor, processors=(processor,), base_release=base)
-    kept_entry = next(entry for entry in entries if entry.source_item.item_id == kept["sourceItemId"])
-    assert kept_entry.execution_mode is EntryExecutionMode.FROM_SEGMENTS
-    assert kept_entry.processor_ids_to_run == ()
-    assert before["work"]["counts"]["scheduledItems"] == 4
-    assert (len(iteration.fetches), iteration.extractor.calls, iteration.segmenter.calls, len(processor.calls)) == (4, 4, 4, 8)
-    kept_source = next(row for row in _payloads(newer, "source-items") if row["itemId"] == kept["sourceItemId"])
-    assert kept_source["metadata"]["sourceCatalogRow"] == kept
-    for kind in ("files", "representations", "segments", f"derived:{processor.description.processor_id}"):
-        assert tuple(row for row in _payloads(newer, kind) if row["sourceItemId"] == kept["sourceItemId"]) == tuple(
-            row for row in _payloads(older, kind) if row["sourceItemId"] == kept["sourceItemId"])
-    # A clean run uses the same source files and implementation pins; retained
-    # live inputs/values agree. Only the incremental result has a tombstone for
-    # the item explicitly removed from its predecessor.
-    _, clean, _, _ = iteration.run(successor, processors=(processor,), fresh=True)
-    current_ids = {row["sourceItemId"] for row in report["sample"]}
-    for item in newer.compare(clean)["result"]["sample"]:
-        if item["sourceItemId"] in current_ids:
-            assert not item["inputChanged"] and not item["contentChanged"] and not item["configurationChanged"]
-    _, converged, entries, _ = iteration.run(successor, processors=(processor,), base_release=retained)
-    assert entries == ()
-    assert converged.compare(newer)["result"]["changeCount"] == 0
+    newer = iteration.run(successor, processors=(processor,))
+    assert (len(iteration.fetches), len(iteration.extractions), len(iteration.segmentations)) == (4, 4, 4)
+    kept_id = kept["sourceItemId"]
+    assert newer.sources[kept_id]["metadata"]["sourceCatalogRow"] == kept
+    assert newer.results[kept_id] == older.results[kept_id]
+    assert len(newer.results) == 3
+    assert sum(bool(results) for results in newer.results.values()) == 2
+    assert iteration.core.ledger.current("documents") == ("state", newer.state_id)
+    converged = iteration.run(successor, processors=(processor,))
+    assert converged.results == newer.results
+    assert len(iteration.fetches) == 4
+    # Explicitly fresh work preserves source meaning while producing new attempts.
+    clean = iteration.run(successor, processors=(processor,), fresh=True)
+    assert clean.sources == newer.sources
+    assert all(a.result_id != b.result_id for a, b in zip(clean.results[kept_id], newer.results[kept_id], strict=True))
 
 
-@pytest.mark.parametrize("stop_after, mode", [
-    ("capture", EntryExecutionMode.FROM_CAPTURES),
-    ("extraction", EntryExecutionMode.FROM_REPRESENTATIONS),
-    ("segmentation", EntryExecutionMode.FROM_SEGMENTS),
-])
-def test_metadata_refresh_uses_the_deepest_requested_prefix(iteration, stop_after, mode):
-    choices = {"stop_after": stop_after}
-    if stop_after == "capture":
-        choices["extractor"] = choices["segmenter"] = None
-    elif stop_after == "extraction":
-        choices["segmenter"] = None
+@pytest.mark.parametrize("stop_after", ["capture", "extraction", "segmentation"])
+def test_metadata_refresh_uses_the_deepest_requested_prefix(iteration, stop_after):
     first = iteration.build([_record("one")])
-    base, older, _, _ = iteration.run(first, **choices)
-    calls = (len(iteration.fetches), iteration.extractor.calls, iteration.segmenter.calls)
+    older = iteration.run(first, stop_after=stop_after)
+    calls = (len(iteration.fetches), len(iteration.extractions), len(iteration.segmentations))
     successor = iteration.build([_record("one", title="Updated catalog title")])
-    _, newer, entries, _ = iteration.run(successor, base_release=base, **choices)
-    assert entries[0].execution_mode is mode
-    assert (len(iteration.fetches), iteration.extractor.calls, iteration.segmenter.calls) == calls
-    assert _payloads(newer, "source-items")[0]["metadata"]["normalizedMetadata"]["title"] == "Updated catalog title"
-    assert _payloads(newer, "files") == _payloads(older, "files")
+    newer = iteration.run(successor, stop_after=stop_after)
+    assert (len(iteration.fetches), len(iteration.extractions), len(iteration.segmentations)) == calls
+    assert next(iter(newer.sources.values()))["metadata"]["normalizedMetadata"]["title"] == "Updated catalog title"
+    assert newer.results == older.results
 
 
-def test_policy_only_change_holds_permanent_failure_until_explicit_repair(iteration):
-    first = iteration.build([_record("one")], policy=_ExcludeSuppliedPolicy(_NAMESPACE, "1"))
-    failing = _FailingProcessor(_description("fail", "1", iteration.retry))
-    base, failed, _, _ = iteration.run(first, processors=(failing,))
-    successor = iteration.build([_record("one")], policy=_ExcludeSuppliedPolicy(_NAMESPACE, "1", ("another-record",)))
-    failing.fail = False
-    held_base, held, entries, _ = iteration.run(successor, processors=(failing,), base_release=base)
-    assert entries == () and failing.attempts == 1
-    assert _payloads(held, "source-items") == _payloads(failed, "source-items")
-    assert _payloads(held, "dispositions") == _payloads(failed, "dispositions")
-    _, repaired, entries, _ = iteration.run(successor, processors=(failing,), base_release=held_base,
-        selection={"retryFailures": "selected"})
-    assert entries[0].execution_mode is EntryExecutionMode.FROM_SEGMENTS
-    assert (len(iteration.fetches), iteration.extractor.calls, iteration.segmenter.calls) == (1, 1, 1)
-    assert _payloads(repaired, "source-items") != _payloads(held, "source-items")
-    assert _payloads(repaired, "dispositions")[0]["terminalFailure"] is None
-
-
-def test_metadata_refresh_keeps_non_stage_governing_changes_conservative(iteration):
+def test_failed_processor_repairs_without_repeating_upstream_work(iteration):
     first = iteration.build([_record("one")])
-    base, _, _, _ = iteration.run(first)
+    standard = content_statistics_processor()
+    calls, broken = [], [True]
+    def process(context, inputs):
+        calls.append(True)
+        if broken[0]:
+            raise RuntimeError("processor unavailable")
+        return standard.process(context, inputs)
+    processor = DocumentProcessor(standard.name, standard.definition, process)
+    with pytest.raises(RuntimeError, match="processor unavailable"):
+        iteration.run(first, processors=(processor,))
+    assert iteration.core.ledger.current("documents") is None
+    broken[0] = False
     successor = iteration.build([_record("one", title="Updated title")])
-    _, _, entries, _ = iteration.run(successor, base_release=base,
-        limits=replace(iteration.limits, max_processor_cost=iteration.limits.max_processor_cost + 1))
-    assert entries[0].execution_mode is EntryExecutionMode.FULL
-    assert (len(iteration.fetches), iteration.extractor.calls, iteration.segmenter.calls) == (2, 2, 2)
+    repaired = iteration.run(successor, processors=(processor,))
+    assert len(calls) == 2
+    assert (len(iteration.fetches), len(iteration.extractions), len(iteration.segmentations)) == (1, 1, 1)
+    assert next(iter(repaired.sources.values()))["metadata"]["normalizedMetadata"]["title"] == "Updated title"
+
+
+def test_capture_governing_limit_change_remains_material(iteration):
+    first = iteration.build([_record("one")])
+    older = iteration.run(first, stop_after="capture")
+    iteration.pipeline.max_file_bytes += 1
+    newer = iteration.run(first, stop_after="capture")
+    assert len(iteration.fetches) == 2
+    assert next(iter(older.results.values())) != next(iter(newer.results.values()))
 
 
 def test_observed_crawl_omission_is_visible_and_does_not_mean_append(iteration):
     first = iteration.build([_record("one"), _record("two")])
-    base, _, _, _ = iteration.run(first, stop_after="capture", extractor=None, segmenter=None)
+    iteration.run(first, stop_after="capture")
     successor = iteration.build([_record("two")], scope="observed-crawl")
     report = preview_local_catalog(successor.reference, iteration.workspace, producer=producer(), previous_ref=first.reference)
     assert report["comparison"]["counts"] == {"added": 0, "removedFromCatalog": 1, "changed": 0, "unchanged": 1}
     assert "not evidence of publisher deletion" in report["interpretation"]["removedFromCatalog"]
-    _, newer, _, _ = iteration.run(successor, base_release=base, stop_after="capture", extractor=None, segmenter=None)
-    live_files = _payloads(newer, "files")
-    assert len(live_files) == 1 and len(iteration.fetches) == 2
+    newer = iteration.run(successor, stop_after="capture")
+    assert len(newer.results) == 1 and len(iteration.fetches) == 2
 
 
 def test_disjoint_single_policy_inputs_grow_and_duplicate_qualified_ids_refuse(iteration):
@@ -265,7 +232,7 @@ def test_empty_catalog_preview_and_invalid_bounds(iteration):
     assert report["comparison"]["changeCount"] == 0
     for bounds in ({"sample_limit": True}, {"sample_limit": -1}, {"max_sample_bytes": -1}):
         with pytest.raises(ValueError, match="non-negative integer"):
-            preview_local_catalog(empty.reference, LocalWorkspace(iteration.workspace.root / "absent"), producer=producer(), **bounds)
+            preview_local_catalog(empty.reference, iteration.workspace / "absent", producer=producer(), **bounds)
 
 
 def test_preview_exhausts_and_closes_admitted_rows_with_zero_samples(iteration):

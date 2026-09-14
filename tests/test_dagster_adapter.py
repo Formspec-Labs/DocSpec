@@ -1,362 +1,195 @@
-from __future__ import annotations
+"""The native scheduler delegates meaning and retries to the one Core owner."""
 
 import importlib
 import json
 import os
+import subprocess
 import sys
-from collections import defaultdict
-from collections.abc import Iterable
-from pathlib import Path
-from types import SimpleNamespace
 
+import msgspec
 import pytest
 
-from docspec.adapters.dagster import build_dagster_definitions
-from docspec.domain.execution import (
-    EXECUTE_AND_DELIVER_OPERATION_ID,
-    ExecutionHandoff,
-    StoreTask,
-    StoreTaskResult,
-    summarize_store_tasks,
+from docspec.adapters.dagster import (
+    DAGSTER_JOB_NAME, DagsterAdapterError, DagsterRuntime,
+    _task_payloads, build_dagster_definitions, decode_operation, encode_operation,
 )
-from docspec.domain.identity import canonical_json_file_bytes, sha256_digest
-from docspec.domain.references import ArtifactRef, LayerRef, StoreRef
+from docspec.domain.core_admission import admit_record
+from docspec.domain.identity import sha256_digest
+from docspec.errors import IntegrityError, LimitExceededError
+from docspec.runtime.core import CoreWorkspace
+from tests.support.core_scheduling import operations, seed, resolver, result_values
+
 
 dagster = pytest.importorskip("dagster", reason="install the 'dagster' extra to test the optional adapter")
-dagster_process_fixture = importlib.import_module("tests.dagster_process_fixture")
 
 
-def _artifact(name: str) -> ArtifactRef:
-    payload = canonical_json_file_bytes({"name": name})
-    return ArtifactRef(
-        f"urn:docspec:test:{name}",
-        f"memory://{name}",
-        sha256_digest(payload),
-        "application/json",
-        len(payload),
-    )
+
+def job(runtime, **kwargs):
+    return build_dagster_definitions({"docspec_runtime": dagster.ResourceDefinition.hardcoded_resource(runtime)}, **kwargs).get_job_def(DAGSTER_JOB_NAME)
 
 
-def _tasks(count: int = 3) -> tuple[StoreTask, ...]:
-    return tuple(
-        StoreTask(
-            "urn:docspec:test:plan",
-            EXECUTE_AND_DELIVER_OPERATION_ID,
-            StoreRef(
-                f"store-{index}",
-                0,
-                f"memory://store-{index}",
-                sha256_digest(str(index).encode()),
-            ),
-        )
-        for index in range(count)
-    )
+def selections(result):
+    return tuple(admit_record(payload) for payload in result.output_for_node("execute_operation").values())
 
 
-def _handoff(tasks: tuple[StoreTask, ...]) -> ExecutionHandoff:
-    count, digest = summarize_store_tasks(tasks)
-    return ExecutionHandoff(
-        ArtifactRef(
-            "urn:docspec:test:plan",
-            "memory://plan",
-            sha256_digest(b"plan"),
-            "application/json",
-            4,
-        ),
-        _artifact("execution-profile"),
-        _artifact("worker-composition"),
-        LayerRef(
-            "urn:docspec:test:planned-store-ledger",
-            "planned-document-stores",
-            "docspec-planned-store-reference/1.0",
-            "urn:docspec:test:document-store-profile",
-            "memory://planned-store-ledger",
-            sha256_digest(b"planned-store-ledger"),
-            count,
-        ),
-        EXECUTE_AND_DELIVER_OPERATION_ID,
-        count,
-        digest,
-        _artifact("result-sink"),
-    )
+
+def test_native_job_executes_core_operations_and_records_original_identities(tmp_path):
+    with CoreWorkspace(tmp_path) as workspace:
+        seed(workspace)
+        runtime = DagsterRuntime(workspace.operations, lambda: operations(), resolver)
+        result = job(runtime).execute_in_process()
+        assert result.success and result_values(workspace, selections(result)) == [2, 4]
+        assert {item.selection_id for item in selections(result)} == {"job:selection:0", "job:selection:1"}
+        outputs = [event.step_output_data for event in result.all_events if event.event_type is dagster.DagsterEventType.STEP_OUTPUT and event.step_key.startswith("execute_operation[")]
+        assert len(outputs) == 2
+        assert all({"request_id", "selection_id", "result_id", "execution_id", "status"} <= output.metadata.keys() for output in outputs)
+    with CoreWorkspace(tmp_path) as workspace:
+        assert result_values(workspace, selections(result)) == [2, 4]
 
 
-def _success(handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-    return StoreTaskResult.succeeded(
-        handoff_id=handoff.handoff_id,
-        task=task,
-        output_store=StoreRef(
-            task.input_store.store_id,
-            task.input_store.revision + 1,
-            task.input_store.locator,
-            task.input_store.digest,
-        ),
-    )
+def test_native_retry_preserves_failure_and_starts_only_failed_work_again(tmp_path):
+    calls = {}
+    def flaky(definition):
+        def produce(context):
+            key = definition.configuration["input"]
+            calls[key] = calls.get(key, 0) + 1
+            if key == "input:0" and calls[key] == 1:
+                raise OSError("temporary producer failure")
+            return resolver(definition)(context)
+        return produce
+    with CoreWorkspace(tmp_path) as workspace:
+        seed(workspace)
+        result = job(DagsterRuntime(workspace.operations, lambda: operations(), flaky), retry_policy=dagster.RetryPolicy(max_retries=1, delay=0)).execute_in_process()
+        assert result.success and calls == {"input:0": 2, "input:1": 1}
+        assert sum(event.event_type is dagster.DagsterEventType.STEP_RESTARTED for event in result.all_events) == 1
+        with workspace.ledger._transaction() as connection:
+            assert dict(connection.execute("SELECT outcome,count(*) FROM records WHERE kind='result' GROUP BY outcome")) == {"failed": 1, "success": 2}
 
 
-def _resource(runtime):  # type: ignore[no-untyped-def]
-    return {"docspec_runtime": dagster.ResourceDefinition.hardcoded_resource(runtime)}
+def test_retry_after_lost_scheduler_response_keeps_the_original_core_result(tmp_path, monkeypatch):
+    calls, interrupted = [], []
+    def observed(definition):
+        def produce(context):
+            calls.append(context.execution.execution_id)
+            return resolver(definition)(context)
+        return produce
+    with CoreWorkspace(tmp_path) as workspace:
+        seed(workspace)
+        resolve = workspace.operations.resolve
+        def lost(*args, **kwargs):
+            selected = resolve(*args, **kwargs)
+            if kwargs["selection_id"] == "job:selection:0" and not interrupted:
+                interrupted.append(selected)
+                raise OSError("scheduler output was lost after Core commit")
+            return selected
+        monkeypatch.setattr(workspace.operations, "resolve", lost)
+        result = job(DagsterRuntime(workspace.operations, lambda: operations(), observed), retry_policy=dagster.RetryPolicy(max_retries=1, delay=0)).execute_in_process()
+        assert result.success and len(calls) == 2
+        assert interrupted[0].selection in selections(result)
+        with workspace.ledger._transaction() as connection:
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='execution'").fetchone() == (2,)
 
 
-def _result_payloads(result) -> tuple[bytes, ...]:  # type: ignore[no-untyped-def]
-    outputs = result.output_for_node("execute_store_task")
-    assert isinstance(outputs, dict)
-    return tuple(outputs[key] for key in sorted(outputs))
+def test_reexecution_of_same_selections_needs_no_producer_but_new_fresh_selection_executes(tmp_path):
+    with CoreWorkspace(tmp_path) as workspace:
+        seed(workspace)
+        first = job(DagsterRuntime(workspace.operations, lambda: operations(fresh=True), resolver)).execute_in_process()
+        def absent(_):
+            pytest.fail("producer must not be resolved when recovering the exact selected result")
+        second = job(DagsterRuntime(workspace.operations, lambda: operations(fresh=True), absent)).execute_in_process()
+        assert {item.selected_result_id for item in selections(second)} == {item.selected_result_id for item in selections(first)}
+        third = job(DagsterRuntime(workspace.operations, lambda: operations(prefix="another", fresh=True), resolver)).execute_in_process()
+        assert {item.selected_result_id for item in selections(third)}.isdisjoint(item.selected_result_id for item in selections(first))
 
 
-def test_reconstructable_job_crosses_dagsters_multiprocess_worker_boundary(tmp_path: Path) -> None:
-    tasks = _tasks(2)
-    handoff = _handoff(tasks)
-    handoff_path = tmp_path / "handoff.json"
-    task_ledger_path = tmp_path / "tasks.jsonl"
-    worker_evidence_root = tmp_path / "worker-evidence"
-    instance_root = tmp_path / "dagster-instance"
-    worker_evidence_root.mkdir()
-    instance_root.mkdir()
-    handoff_path.write_bytes(handoff.to_bytes())
-    task_ledger_path.write_bytes(b"".join(task.to_bytes() for task in tasks))
-
-    job = dagster.reconstructable(dagster_process_fixture.reconstructable_job)
-    run_config = {
-        "execution": {"config": {"max_concurrent": 2}},
-        "resources": {
-            "docspec_runtime": {
-                "config": {
-                    "handoff_path": str(handoff_path),
-                    "task_ledger_path": str(task_ledger_path),
-                    "worker_evidence_root": str(worker_evidence_root),
-                }
-            }
-        },
-    }
-    with dagster.DagsterInstance.local_temp(tempdir=str(instance_root)) as instance:
-        with dagster.execute_job(job, instance=instance, run_config=run_config) as result:
-            restored = tuple(StoreTaskResult.from_bytes(payload) for payload in _result_payloads(result))
-            run_id = result.run_id
-            assert result.success
-        stored_events = instance.all_logs(run_id)
-
-    evidence = tuple(json.loads(path.read_text()) for path in sorted(worker_evidence_root.glob("*.json")))
-    assert {item["taskId"] for item in evidence} == {task.task_id for task in tasks}
-    assert all(item["pid"] != os.getpid() for item in evidence)
-    assert {item.task.task_id for item in restored} == {task.task_id for task in tasks}
-    assert any(
-        event.dagster_event and event.dagster_event.event_type is dagster.DagsterEventType.STEP_WORKER_STARTED
-        for event in stored_events
-    )
+def test_failed_native_job_retains_completed_sibling_and_authoritative_failure(tmp_path):
+    def failing(definition):
+        if definition.configuration["input"] == "input:1":
+            def fail(context):
+                raise ValueError("permanent failure")
+            return fail
+        return resolver(definition)
+    with CoreWorkspace(tmp_path) as workspace:
+        seed(workspace)
+        result = job(DagsterRuntime(workspace.operations, lambda: operations(), failing)).execute_in_process(raise_on_error=False)
+        assert not result.success
+        sibling, failed = next(workspace.ledger.read_records([("selection", "job:selection:0"), ("selection", "job:selection:1")]))
+        assert sibling is not None and sibling.retained and failed is None
+        with workspace.ledger._transaction() as connection:
+            assert dict(connection.execute("SELECT outcome,count(*) FROM records WHERE kind='result' GROUP BY outcome")) == {"failed": 1, "success": 1}
 
 
-def test_real_dagster_job_executes_reference_only_tasks_and_records_events() -> None:
-    tasks = _tasks()
-    handoff = _handoff(tasks)
-    handled: list[str] = []
-
-    def task_source(current_handoff: ExecutionHandoff) -> Iterable[StoreTask]:
-        assert ExecutionHandoff.from_bytes(current_handoff.to_bytes()) == handoff
-        return iter(tasks)
-
-    def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-        handled.append(task.task_id)
-        return _success(current_handoff, StoreTask.from_bytes(task.to_bytes()))
-
-    runtime = SimpleNamespace(handoff=handoff, task_source=task_source, execute_task=handler)
-    job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
-
-    assert job.executor_def.name == "multiprocess"
-    with dagster.DagsterInstance.ephemeral() as instance:
-        result = job.execute_in_process(instance=instance)
-        stored_events = instance.all_logs(result.run_id)
-
-    restored = tuple(StoreTaskResult.from_bytes(payload) for payload in _result_payloads(result))
-    assert result.success
-    assert result.get_run_success_event() is not None
-    assert stored_events
-    assert set(handled) == {task.task_id for task in tasks}
-    assert {item.task.task_id for item in restored} == {task.task_id for task in tasks}
-    assert all(item.output_store is not None and item.output_store.revision == 1 for item in restored)
-
-
-def test_dagster_retry_policy_recovers_one_mapped_task_without_rewriting_siblings() -> None:
-    tasks = _tasks(2)
-    handoff = _handoff(tasks)
-    attempts: defaultdict[str, int] = defaultdict(int)
-
-    def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-        attempts[task.task_id] += 1
-        if task == tasks[0] and attempts[task.task_id] == 1:
-            raise RuntimeError("transient fixture failure")
-        return _success(current_handoff, task)
-
-    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=handler)
-    job = build_dagster_definitions(
-        _resource(runtime),
-        retry_policy=dagster.RetryPolicy(max_retries=1, delay=0),
-    ).get_job_def("docspec_store_tasks")
-
-    result = job.execute_in_process()
-
-    failed_key = tasks[0].task_id.rsplit(":", 1)[-1]
-    sibling_key = tasks[1].task_id.rsplit(":", 1)[-1]
-    retry_steps = {
-        event.step_key
-        for event in result.all_events
-        if event.event_type is dagster.DagsterEventType.STEP_RESTARTED
-    }
-    assert result.success
-    assert retry_steps == {f"execute_store_task[{failed_key}]"}
-    assert f"execute_store_task[{sibling_key}]" not in retry_steps
-    assert attempts == {tasks[0].task_id: 2, tasks[1].task_id: 1}
-
-
-def test_rerunning_the_job_reuses_idempotent_handler_results() -> None:
-    tasks = _tasks(2)
-    handoff = _handoff(tasks)
-    saved: dict[str, StoreTaskResult] = {}
-    writes = 0
-
-    def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-        nonlocal writes
-        result = saved.get(task.idempotency_key)
-        if result is None:
-            writes += 1
-            result = _success(current_handoff, task)
-            saved[task.idempotency_key] = result
-        return result
-
-    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=handler)
-    job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
-
-    first = job.execute_in_process()
-    second = job.execute_in_process()
-
-    assert first.success and second.success
-    assert writes == len(tasks)
-    assert _result_payloads(first) == _result_payloads(second)
-
-
-@pytest.mark.parametrize(
-    "task_source",
-    (
-        lambda tasks: iter(tasks[:-1]),
-        lambda tasks: iter(reversed(tasks)),
-        lambda tasks: iter((*tasks, tasks[-1])),
-        lambda tasks: iter((tasks[0], object())),
-    ),
-    ids=("incomplete", "wrong-order", "extra", "malformed"),
-)
-def test_malformed_or_incomplete_task_stream_fails_the_run(task_source) -> None:  # type: ignore[no-untyped-def]
-    tasks = _tasks(2)
-    handoff = _handoff(tasks)
-    handled: list[StoreTask] = []
-
-    def handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-        handled.append(task)
-        return _success(current_handoff, task)
-
-    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: task_source(tasks), execute_task=handler)
-    job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
-
-    result = job.execute_in_process(raise_on_error=False)
-
-    assert not result.success
-    assert result.get_run_failure_event() is not None
-    assert handled == []
-
-
-def test_missing_mapped_result_cannot_produce_a_successful_run() -> None:
-    tasks = _tasks(2)
-    handoff = _handoff(tasks)
-
-    def incomplete_handler(current_handoff: ExecutionHandoff, task: StoreTask) -> StoreTaskResult:
-        if task == tasks[0]:
-            return _success(current_handoff, task)
-        return None  # type: ignore[return-value]
-
-    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=incomplete_handler)
-    job = build_dagster_definitions(_resource(runtime)).get_job_def("docspec_store_tasks")
-
-    result = job.execute_in_process(raise_on_error=False)
-
-    assert not result.success
-    assert result.get_run_failure_event() is not None
-    assert len(result.get_step_success_events()) == 2  # emitter plus the one complete mapped task
-
-
-def test_executor_and_retry_policy_are_injected_at_the_composition_root() -> None:
-    tasks = _tasks(1)
-    handoff = _handoff(tasks)
-    runtime = SimpleNamespace(handoff=handoff, task_source=lambda _handoff: iter(tasks), execute_task=_success)
-    job = build_dagster_definitions(
-        _resource(runtime),
-        executor_def=dagster.in_process_executor,
-        retry_policy=dagster.RetryPolicy(max_retries=3),
-    ).get_job_def("docspec_store_tasks")
-
-    assert job.executor_def.name == "in_process"
-    execute_op = job.graph.node_named("execute_store_task")
-    assert execute_op.definition.retry_policy == dagster.RetryPolicy(max_retries=3)
-
-
-def test_importing_the_adapter_does_not_eagerly_load_dagster(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delitem(sys.modules, "docspec.adapters.dagster", raising=False)
-    monkeypatch.delitem(sys.modules, "dagster", raising=False)
-
-    imported = __import__("docspec.adapters.dagster", fromlist=["build_dagster_definitions"])
-
-    assert callable(imported.build_dagster_definitions)
-    assert "dagster" not in sys.modules
-
-
-def test_native_resource_dependencies_and_generator_cleanup_are_preserved() -> None:
-    tasks = _tasks(1)
-    handoff = _handoff(tasks)
-    events = []
-    marker = object()
-
-    @dagster.resource(required_resource_keys={"fetcher"})
-    def prepared_resource(context):
-        assert context.resources.fetcher is marker
-        events.append("opened")
-        try:
-            yield SimpleNamespace(handoff=handoff, task_source=lambda _: iter(tasks), execute_task=_success)
-        finally:
-            events.append("closed")
-
-    job = build_dagster_definitions({
-        "fetcher": dagster.ResourceDefinition.hardcoded_resource(marker),
-        "docspec_runtime": prepared_resource,
-    }).get_job_def("docspec_store_tasks")
-    result = job.execute_in_process()
-    assert result.success
-    assert events == ["opened", "closed"]
-    outputs = [event.step_output_data for event in result.all_events if event.event_type is dagster.DagsterEventType.STEP_OUTPUT]
-    assert len(outputs) == 2
-    for output in outputs:
-        assert output.metadata["handoff_id"].value == handoff.handoff_id
-        assert output.metadata["execution_profile_ref"].value == handoff.execution_profile.to_dict()
-        assert output.metadata["input_store_ref"].value == tasks[0].input_store.to_dict()
-
-
-@pytest.mark.parametrize("stop", ["close", "invalid-item"])
-def test_task_emission_closes_the_underlying_source_on_early_exit(stop) -> None:
-    from docspec.adapters.dagster import _task_payloads
-    from docspec.errors import IntegrityError
-
-    tasks = _tasks(2)
+def test_native_generator_resources_close_and_source_failures_close_streams(tmp_path):
     closed = []
-
-    def source(_):
+    @dagster.resource
+    def resource():
+        with CoreWorkspace(tmp_path) as workspace:
+            seed(workspace)
+            try:
+                yield DagsterRuntime(workspace.operations, lambda: operations(), resolver)
+            finally:
+                closed.append("resource")
+    result = build_dagster_definitions({"docspec_runtime": resource}).get_job_def(DAGSTER_JOB_NAME).execute_in_process()
+    assert result.success and closed == ["resource"]
+    def source():
         try:
-            yield tasks[0]
-            yield object()
+            yield next(operations())
+            raise ValueError("bad source")
         finally:
-            closed.append(True)
+            closed.append("source")
+    with CoreWorkspace(tmp_path) as workspace:
+        with pytest.raises(ValueError, match="bad source"):
+            list(_task_payloads(DagsterRuntime(workspace.operations, source, resolver)))
+    assert closed == ["resource", "source"]
 
-    payloads = _task_payloads(SimpleNamespace(handoff=_handoff(tasks), task_source=source))
-    next(payloads)
-    if stop == "close":
-        payloads.close()
-    else:
-        with pytest.raises(IntegrityError, match="non-StoreTask"):
-            next(payloads)
-    assert closed == [True]
+
+def test_operation_wire_validation_is_bounded_and_preserves_exact_definitions():
+    operation = next(operations())
+    payload = encode_operation(operation)
+    assert decode_operation(payload) == operation and len(payload) < 4096
+    assert next(_task_payloads(DagsterRuntime(None, lambda: [operation], resolver)))[0] == sha256_digest(operation.selection_id.encode()).split(":")[1]
+    with pytest.raises(IntegrityError):
+        decode_operation(payload.replace(b'"version":1', b'"version":1,"version":1'))
+    with pytest.raises(IntegrityError):
+        encode_operation(msgspec.structs.replace(operation, request=msgspec.structs.replace(operation.request, definition_id="different")))
+    with pytest.raises(LimitExceededError):
+        decode_operation(b" " * (8 * 1024**2 + 1))
+
+
+def test_native_executor_and_retry_settings_remain_owned_by_dagster(tmp_path):
+    with CoreWorkspace(tmp_path) as workspace:
+        selected = job(DagsterRuntime(workspace.operations, lambda: (), resolver), executor_def=dagster.in_process_executor,
+                       retry_policy=dagster.RetryPolicy(max_retries=3))
+        assert selected.executor_def is dagster.in_process_executor
+        assert selected.graph.node_named("execute_operation").definition.retry_policy == dagster.RetryPolicy(max_retries=3)
+    with pytest.raises(DagsterAdapterError, match="docspec_runtime"):
+        build_dagster_definitions({})
+
+
+def test_adapter_import_keeps_dagster_optional():
+    result = subprocess.run([sys.executable, "-c", "import sys; import docspec.adapters.dagster; assert 'dagster' not in sys.modules"], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_reconstructed_native_workers_use_core_and_record_process_identity(tmp_path):
+    root = tmp_path / "workspace"
+    with CoreWorkspace(root) as workspace:
+        seed(workspace)
+    task_file = tmp_path / "operations.jsonl"
+    task_file.write_bytes(b"".join(encode_operation(operation) + b"\n" for operation in operations()))
+    fixture = importlib.import_module("tests.dagster_process_fixture")
+    configuration = {"resources": {"docspec_runtime": {"config": {"workspace": str(root), "operations_path": str(task_file),
+        "evidence_root": str(tmp_path / "evidence")}}}, "execution": {"config": {"max_concurrent": 2}}}
+    instance_root = tmp_path / "dagster"
+    instance_root.mkdir()
+    with dagster.DagsterInstance.local_temp(str(instance_root)) as instance:
+        with dagster.execute_job(dagster.reconstructable(fixture.reconstructable_job), instance=instance, run_config=configuration) as result:
+            assert result.success
+            selected = selections(result)
+            events = instance.all_logs(result.run_id)
+    evidence = [json.loads(path.read_bytes()) for path in (tmp_path / "evidence").glob("*.json")]
+    assert len(evidence) == 2 and all(item["pid"] != os.getpid() for item in evidence)
+    assert {item["request_id"] for item in evidence} == {"job:request:0", "job:request:1"}
+    assert any(event.dagster_event and event.dagster_event.event_type is dagster.DagsterEventType.STEP_WORKER_STARTED for event in events)
+    with CoreWorkspace(root) as workspace:
+        assert result_values(workspace, selected) == [2, 4]

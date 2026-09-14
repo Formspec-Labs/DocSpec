@@ -7,10 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from docspec.domain.content import CapturedFile, Segment
-from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError
 from docspec.processing import (
-    ContentStatisticsProcessor,
     DefaultExtractorRegistry,
     DefaultSegmenterRegistry,
     HtmlExtractor,
@@ -18,9 +16,6 @@ from docspec.processing import (
     JsonExtractor,
     LazyPypdfExtractor,
     ParagraphSegmenter,
-    ProcessorCacheMode,
-    ProcessorItemLimits,
-    ProcessorResult,
     RecordSegmenter,
     RepresentationPayload,
     SegmentPayload,
@@ -31,7 +26,6 @@ from docspec.processing import (
     verify_segment_evidence,
 )
 from docspec.processing.extraction import ExtractionError
-from tests.helpers import processor_payload, segment_processor_request
 from tests.support.processing import (
     _captured,
 )
@@ -336,13 +330,6 @@ def test_content_records_recompute_identity_and_output_digests_when_read() -> No
     captured = _captured(source, "text/plain")
     extraction = TextExtractor().extract(captured, source)
     segment = ParagraphSegmenter().segment(extraction.payload)[0]
-    processor = ContentStatisticsProcessor()
-    derived = processor.process(
-        segment_processor_request(processor, segment),
-        processor_payload(segment),
-        (),
-    ).derived_records[0]
-
     captured_value = captured.to_dict()
     captured_value["candidateId"] = "alternate"
     with pytest.raises(ValueError, match="captured file identity differs"):
@@ -361,59 +348,3 @@ def test_content_records_recompute_identity_and_output_digests_when_read() -> No
     segment_value["ordinal"] = 12
     with pytest.raises(ValueError, match="segment identity differs"):
         type(segment.segment).from_dict(segment_value)
-
-    derived_value = derived.to_dict()
-    derived_value["value"]["byteCount"] += 1
-    with pytest.raises(ValueError, match="derived output digest differs"):
-        type(derived).from_dict(derived_value)
-
-
-def test_injected_statistics_processor_is_deterministic_and_evidence_linked() -> None:
-    source = "Alpha §\nBeta 🧪".encode()
-    extraction = TextExtractor().extract(_captured(source, "text/plain"), source)
-    segment = ParagraphSegmenter().segment(extraction.payload)[0]
-    processor = ContentStatisticsProcessor()
-
-    request = segment_processor_request(processor, segment)
-    first = processor.process(request, processor_payload(segment), ())
-    retry = processor.process(request, processor_payload(segment), ())
-
-    first_record = first.derived_records[0]
-    assert first_record == retry.derived_records[0]
-    assert isinstance(first, ProcessorResult)
-    assert first.provider_receipt == retry.provider_receipt
-    assert first_record.value["byteCount"] == len(source)
-    assert first_record.value["utf8CodepointCount"] == len(source.decode())
-    assert first_record.value["wordCount"] == 4
-    assert first_record.value["evidence"] == segment.segment.evidence.to_dict()
-    assert first_record.input_ids == (segment.segment.segment_id,)
-    assert processor.description.name == "content-statistics"
-    assert processor.description.input_kinds == ("segment",)
-    assert processor.description.accepted_inputs[0].schema_ids == ("docspec-segment/1",)
-    assert processor.description.output_media_types == ("application/vnd.docspec.content-statistics+json",)
-    assert processor.description.external_resources == ()
-    assert processor.description.cache_policy.mode is ProcessorCacheMode.EXACT_INPUTS
-    assert first.provider_receipt["processorDescriptionDigest"] == identity_digest(processor.description.to_dict())
-
-    limited = ContentStatisticsProcessor(
-        item_limits=ProcessorItemLimits(
-            max_input_records=1,
-            max_input_bytes=len(source) - 1,
-            max_output_records=1,
-            max_output_bytes=1024,
-            max_duration_seconds=30,
-        )
-    )
-    assert limited.description.processor_id != processor.description.processor_id
-    with pytest.raises(IntegrityError, match="input exceeds"):
-        limited.process(
-            segment_processor_request(limited, segment),
-            processor_payload(segment),
-            (),
-        )
-
-    class ProviderSdkResponse:
-        pass
-
-    with pytest.raises(ValueError, match="unsupported type"):
-        replace(first, provider_receipt={"rawResponse": ProviderSdkResponse()})

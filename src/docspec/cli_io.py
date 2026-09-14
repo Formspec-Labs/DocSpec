@@ -72,3 +72,9 @@ def emit(value: object, *, error: bool = False) -> None:
     stream = sys.stderr.buffer if error else sys.stdout.buffer
     stream.write(canonical_json_file_bytes(value))
     stream.flush()
+
+
+def emit_error(error: Exception) -> int:
+    emit({"format": "docspec-cli-error", "formatVersion": "1.0",
+          "errorType": type(error).__name__, "message": str(error), "verdict": "fail"}, error=True)
+    return 2

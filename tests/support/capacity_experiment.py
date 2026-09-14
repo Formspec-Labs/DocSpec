@@ -1,13 +1,14 @@
-"""Ordinary local workload recipe; native tools own measurement and interruption.
+"""Ordinary Core document workload; native tools own time and memory measurement.
 
-Copy this file beside ``examples/phrase_match_processor.py`` outside the checkout.
+Copy this file and the shared dataset/phrase examples outside the checkout.
 Run generate, build, verify, capture, process, changed, clean, inspect and compare
 as separate Python processes. Alternatively replace process with prefix followed
-by resume: prefix completes some native tasks, then exits without reconciliation.
-This is saved-task recovery, not cancellation during an active document stage.
+by resume: inject an interruption before the next document processor operation,
+then recover the retained completed choices in a fresh process. This is retained
+prefix recovery, not an operating-system crash or Core checkpoint-resume test.
 
-Generate requires --workload, --wheel, --completed-at and --deadline. Later
-operations use those saved reproduction inputs and existing native references.
+Generate requires --workload and --wheel. Later operations use those saved
+reproduction inputs and the retained Core state references.
 Set TMPDIR before starting Python if scratch must live in the measured directory.
 No timings, RSS claims, capacity verdicts, scheduler, or experiment ledger live here.
 The text16 and markup16 options are development smoke fixtures, not capacity candidates.
@@ -17,7 +18,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import replace
 import hashlib
 import html
@@ -26,34 +27,31 @@ import json
 from pathlib import Path
 import re
 from tempfile import gettempdir
+from unittest.mock import patch
 
 from rulespec_artifacts import Producer
 
 from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.adapters.content_fetchers import LocalFileContentFetcher
-from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
+from docspec.adapters.record_workspace import LocalSqliteRecordWorkspaceFactory
 from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest
-from docspec.domain.plans import ProcessingPlan, WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
-from docspec.domain.processors import ProcessorResourceIdentity, ProcessorResourceKind
-from docspec.domain.references import ArtifactRef, BlobRef, DocumentReleaseRef, SourceCatalogRef
+from docspec.application.document_processors import segment_rows
+from docspec.domain import core
+from docspec.domain.content import SourceItemState
+from docspec.domain.core_admission import record_value
+from docspec.domain.references import SourceCatalogRef
 from docspec.processing import ParagraphSegmenter, TextExtractor
 from docspec.processing.artifacts import IDENTITY_TRANSFORM
 from docspec.processing.visible_text_runtime import VISIBLE_TEXT_BLOCK_TRANSFORM, VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import (
-    build_local_catalog, local_execution_limits, open_local_catalog, open_local_inspection,
-    prepare_local_experiment, prepare_local_run,
-)
+from docspec.runtime import CoreWorkspace, build_local_catalog, open_local_catalog
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
-from examples.phrase_match_processor import PhraseMatchProcessor
+from examples.dataset_example_support import document_results, output_value, phrase_processor
 import examples.phrase_match_processor as phrase_module
 
 
 WORKLOADS = ("text16", "markup16", "text512", "text4096", "markup256")
 PHASES = ("capture", "process", "changed", "clean")
-RETRY = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
 MAX_FILE_BYTES = 4 * 1024**2
 
 
@@ -122,13 +120,11 @@ def _body(index, candidate, size, blocks, markup):
 
 
 def _generate(args):
-    assert args.workload and args.wheel and args.completed_at and args.deadline
+    assert args.workload and args.wheel
     args.root.mkdir(parents=True, exist_ok=False)
-    workspace = LocalWorkspace(args.root / "dataset")
-    source_root = workspace.roots["sourceContent"]
+    source_root = args.root / "sourceContent"
     source_root.mkdir(parents=True)
     saved = {"workload": args.workload, "wheel": str(args.wheel.resolve()),
-             "completedAt": args.completed_at, "deadlineEpochSeconds": args.deadline,
              "implementation": _implementation(args.wheel),
              "recipeSha256": sha256_digest(Path(__file__).read_bytes())}
     _save(args.root / "arguments.json", saved)
@@ -155,13 +151,10 @@ def _generate(args):
 
 
 def _environment(root, saved, phase="process"):
-    original = LocalWorkspace(root / "dataset")
-    workspace = original if phase != "clean" else LocalWorkspace(root / "clean", {
-        "sourceCatalog": original.roots["sourceCatalog"], "sourceContent": original.roots["sourceContent"],
-    })
+    workspace = root / ("clean" if phase == "clean" else "dataset")
     implementation = "urn:docspec:capacity:implementation:" + saved["implementation"]["wheelSha256"]
     source = Producer("docspec-capacity", implementation, "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
-    return workspace, source, replace(source, verifier_id="urn:docspec:verifier:document-release")
+    return workspace, source
 
 
 def _catalog(root):
@@ -169,7 +162,7 @@ def _catalog(root):
 
 
 def _build(root, saved):
-    workspace, source_producer, _ = _environment(root, saved)
+    workspace, source_producer = _environment(root, saved)
     namespace = f"urn:docspec:capacity:{saved['workload']}"
     with (root / "supplied-records.jsonl").open("rb") as rows:
         source = SuppliedRecordSource((json.loads(line) for line in rows), source_system_id=namespace,
@@ -202,63 +195,79 @@ class _Observed:
 
 def _processor(root, phase):
     revision = "v2" if phase in {"changed", "clean"} else "v1"
-    raw = (root / f"vocabulary-{revision}.json").read_bytes()
-    resource = ProcessorResourceIdentity("urn:docspec:capacity:vocabulary", ProcessorResourceKind.REFERENCE_DATA,
-        revision, sha256_digest(raw))
-    return PhraseMatchProcessor(resource, raw, retry_policy=RETRY)
+    return phrase_processor(revision, resource_id="urn:docspec:capacity:vocabulary",
+        resource_bytes=(root / f"vocabulary-{revision}.json").read_bytes())
 
 
-def _prepared(root, saved, phase, counts, *, recover=False):
-    workspace, source, release = _environment(root, saved, phase)
-    fetcher = _Observed(LocalFileContentFetcher(workspace.roots["sourceContent"]), "fetch", counts)
-    stages, processor = {}, None
-    if phase != "capture":
-        markup = saved["workload"].startswith("markup")
-        stages = {
-            "extractor": _Observed(VisibleTextExtractor() if markup else TextExtractor(), "extract", counts),
-            "segmenter": _Observed(VisibleTextBlockSegmenter() if markup else ParagraphSegmenter(), "segment", counts),
-        }
-        processor = _Observed(_processor(root, phase), "process", counts)
-    common = dict(source_catalog_producer=source, document_release_producer=release,
-        completed_at=saved["completedAt"], deadline_epoch_seconds=saved["deadlineEpochSeconds"],
-        retry_policy=RETRY, content_fetcher=fetcher, execution_limits=local_execution_limits(max_task_index_bytes=256 * 1024**2))
-    directory = root / phase
-    if recover:
-        plan = ProcessingPlan.from_dict(_read(directory / "plan.json"))
-        return prepare_local_run(plan, workspace, **common, **stages, accepted_failure_policy=AcceptedFailurePolicy(),
-            processors={} if phase == "capture" else {processor.description.processor_id: processor},
-            handoff_ref=ArtifactRef.from_dict(_read(directory / "handoff.json")))
-    base_phase = "capture" if phase == "process" else "process" if phase == "changed" else None
-    base = None if base_phase is None else DocumentReleaseRef.from_dict(_read(root / base_phase / "release.json"))
-    prepared = prepare_local_experiment(_catalog(root), workspace, **common, **stages,
-        limits=WorkLimits(16, 64 * 1024**2, 4096, 8192, 8192, 128 * 1024**2, 900, 1),
-        partition_count=16, selection=_read(root / "selection.json"), base_release=base,
-        stop_after="capture" if phase == "capture" else "processing",
-        processors=() if phase == "capture" else (processor,))
-    _save(directory / "plan.json", prepared.plan.to_dict())
-    _save(directory / "handoff.json", prepared.handoff_ref.to_dict())
-    return prepared
+def _sources(root, saved):
+    _, producer = _environment(root, saved)
+    excluded = set(_read(root / "selection.json")["excludeItemIds"])
+    catalog = open_local_catalog(_catalog(root), root / "dataset", producer=producer)
+    with closing(catalog.open_snapshot().items) as items:
+        for item in items:
+            source = item.to_processing_item()
+            yield replace(source, state=SourceItemState.EXCLUDED) if source.item_id in excluded else source
+
+
+@contextmanager
+def _pipeline(root, saved, path, counts):
+    markup = saved["workload"].startswith("markup")
+    original_match = phrase_module.PhraseMatcher.__call__
+    def count_match(matcher, payload):
+        counts["process"] += 1
+        return original_match(matcher, payload)
+    with CoreWorkspace(path) as workspace, patch.object(phrase_module.PhraseMatcher, "__call__", count_match):
+        pipeline = workspace.documents(
+            fetcher=_Observed(LocalFileContentFetcher(root / "sourceContent"), "fetch", counts),
+            extractor=_Observed(VisibleTextExtractor() if markup else TextExtractor(), "extract", counts),
+            segmenter=_Observed(VisibleTextBlockSegmenter() if markup else ParagraphSegmenter(), "segment", counts))
+        yield workspace, pipeline
+
+
+class _PrefixComplete(BaseException):
+    """An injected boundary before the next producer, not an OS interruption."""
 
 
 def _run(root, saved, phase, *, prefix=None, recover=False):
     assert not (root / phase / "run.json").exists(), "use a new workload root for another measured trial"
     counts = Counter()
-    with _prepared(root, saved, phase, counts, recover=recover) as prepared:
-        if prefix is not None:
-            assert 0 < prefix < prepared.handoff.expected_task_count
-            with closing(prepared.task_source(prepared.handoff)) as tasks:
-                for _ in range(prefix):
-                    prepared.execute_task(prepared.handoff, next(tasks))
-            _save(root / phase / "completed-prefix.json", {"completedTasks": prefix, "observedCalls": dict(counts)})
-            return {"completedTasks": prefix, "observedCalls": dict(counts)}
-        run = prepared.run()
-        release = prepared.retain(run)
-        _save(root / phase / "run.json", run.to_dict())
-        _save(root / phase / "release.json", release.to_dict())
-    if phase in {"process", "changed"}:
-        assert counts["fetch"] == 0
-    if phase == "changed":
-        assert counts["extract"] == counts["segment"] == 0
+    path, _ = _environment(root, saved, phase)
+    processing = phase != "capture"
+    completed = 0
+    interrupted_execution = None
+    processor = _processor(root, phase) if processing else None
+    if prefix is not None:
+        assert 0 < prefix < _inventory(saved["workload"])["files"]
+        original_process = processor.process
+        def prefix_process(context, inputs):
+            nonlocal completed, interrupted_execution
+            if completed == prefix:
+                interrupted_execution = context.execution.execution_id
+                raise _PrefixComplete("injected interruption after completed document processor operations")
+            result = original_process(context, inputs)
+            completed += 1
+            return result
+        processor = replace(processor, process=prefix_process)
+    with _pipeline(root, saved, path, counts) as (workspace, pipeline):
+        with closing(workspace.ledger.read_records([("state", "catalog")])) as records:
+            imported = next(records)[0]
+        if imported is None:
+            pipeline.import_sources(_sources(root, saved), state_id="catalog")
+        try:
+            state = pipeline.run("catalog", run_id=phase, dataset="documents", extract=processing, segment=processing,
+                processors=() if processor is None else (processor,))
+        except _PrefixComplete:
+            assert prefix is not None and completed == prefix
+            with closing(workspace.ledger.read_progress(interrupted_execution)) as updates:
+                progress = [json.loads(row) for batch in updates for row in batch]
+            assert progress[-1]["status"] == "interrupted"
+            result = {"completedProcessorOperations": completed, "interruptedExecutionId": interrupted_execution,
+                "observedCalls": dict(counts),
+                "interruption": "injected-before-next-producer", "recovery": "retained-prefix"}
+            _save(root / phase / "completed-prefix.json", result)
+            return result
+        assert prefix is None, "the injected prefix boundary was not reached"
+        _save(root / phase / "run.json", {"state": record_value(state), "observedCalls": dict(counts)})
     total = counts.copy()
     if recover:
         total.update(_read(root / phase / "completed-prefix.json")["observedCalls"])
@@ -269,187 +278,295 @@ def _run(root, saved, phase, *, prefix=None, recover=False):
         "segment": file_count if phase in {"process", "clean"} else 0,
         "process": 0 if phase == "capture" else segment_count}
     assert all(total[name] == value for name, value in expected.items()), (dict(total), expected)
-    return {"run": run.to_dict(), "release": release.to_dict(), "observedCalls": dict(counts)}
+    return {"state": record_value(state), "observedCalls": dict(counts), "totalCalls": dict(total)}
 
 
-def _view(root, saved, phase):
-    workspace, source, release = _environment(root, saved, phase)
-    return open_local_inspection(ProcessingPlan.from_dict(_read(root / phase / "plan.json")), workspace,
-        document_release_producer=release, source_catalog_producer=source,
-        release_ref=DocumentReleaseRef.from_dict(_read(root / phase / "release.json")))
+def _state_id(root, phase):
+    return _read(root / phase / "run.json")["state"]["state_id"]
 
 
-def _check(root, saved, phase, view):
-    """Check complete fixture inputs and outputs, excluding execution provenance."""
-    summary = view.summary(sample_limit=0)
+def _check(root, saved, phase, workspace, *, state_id=None, source_state_id="catalog", sources=None):
+    """Check every value and source span independently; exclude attempt identities."""
+    state_id = _state_id(root, phase) if state_id is None else state_id
     inventory = _inventory(saved["workload"])
-    layers = summary["result"]["layers"]
-    assert layers["files"] == inventory["files"] and layers["failures"] == 0
-    assert layers["source-items"] == inventory["documents"]
-    processing = phase != "capture"
-    if not processing:
-        assert layers["representations"] == layers["segments"] == 0
-    else:
-        assert layers["representations"] == inventory["files"] and layers["segments"] == inventory["segments"]
+    processing, markup = phase != "capture", saved["workload"].startswith("markup")
     processor = _processor(root, phase) if processing else None
-    derived_kind = f"derived:{processor.description.processor_id}" if processing else None
-    if processing:
-        assert layers[derived_kind] == inventory["segments"]
-    factory = LocalSqliteReconciliationWorkspaceFactory(Path(gettempdir()).resolve(),
+    factory = LocalSqliteRecordWorkspaceFactory(Path(gettempdir()).resolve(),
         max_spooled_bytes=256 * 1024**2, max_record_bytes=1024**2, read_batch_size=1)
-    digest = hashlib.sha256()
-    checked = Counter()
-    workspace, producer, _ = _environment(root, saved, phase)
-    assert view.plan.source_catalog == _catalog(root)
+    pipeline = workspace.documents(fetcher=LocalFileContentFetcher(root / "sourceContent"))
+    digest, checked = hashlib.sha256(), Counter()
     with factory.create() as scratch:
-        catalog = open_local_catalog(_catalog(root), workspace, producer=producer)
-        expected_count = 0
-        with closing(catalog.open_snapshot().items) as items:
-            for item in items:
-                if not item.document_id.startswith("excluded-"):
-                    expected = item.to_processing_item()
-                    scratch.add_record("expected-sources", identity=expected.item_id,
-                        source_item_id=expected.item_id, record=expected.to_dict())
-                    expected_count += 1
-        assert expected_count == inventory["documents"]
-        kinds = ("source-items", "dispositions", "files")
-        if processing:
-            kinds += ("representations", "segments", derived_kind)
-        for kind in kinds:
-            with closing(view.records(kind)) as rows:
-                for row in rows:
-                    payload = row["payload"]
-                    collection = "segments:" + payload["fileId"] if kind == "segments" else kind
-                    identity = row["recordId"]
-                    if kind == "representations":
-                        identity = payload["fileId"]
-                    elif kind == "dispositions":
-                        identity = row["sourceItemId"]
-                    elif kind.startswith("derived:"):
-                        identity = payload["value"]["segmentId"]
-                    scratch.add_record(collection, identity=identity, source_item_id=row["sourceItemId"], record=payload)
-        for source in scratch.stream_records("source-items"):
-            assert canonical_json_bytes(source) == canonical_json_bytes(scratch.lookup_record("expected-sources", source["itemId"]))
-            outcome = scratch.lookup_record("dispositions", source["itemId"])
-            assert outcome["disposition"] == "captured" and outcome["warnings"] == [] and outcome["terminalFailure"] is None
-            assert outcome["requestedStages"] == view.plan.stages.to_dict()
-            # Entry identity/change classify the trial; they are not output equality.
-            digest.update(canonical_json_file_bytes({"source": source, "outcome": {
-                key: outcome[key] for key in ("disposition", "warnings", "terminalFailure", "requestedStages")
-            }}))
-            checked["documents"] += 1
-        for captured in scratch.stream_records("files"):
-            source = scratch.lookup_record("source-items", captured["sourceItemId"])
-            index = int(source["metadata"]["documentId"].rsplit("-", 1)[1])
-            assert 0 <= index < inventory["documents"]
-            candidate = next(value for value in source["candidates"] if value["candidateId"] == captured["candidateId"])
-            raw = b"".join(view.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=MAX_FILE_BYTES))
-            shape = _candidates(saved["workload"], index)
-            _name, size, blocks = next(item for item in shape if item[0] == captured["candidateId"])
-            markup = saved["workload"].startswith("markup")
-            assert raw == _body(index, captured["candidateId"], size, blocks, markup)
-            assert len(raw) == candidate["expectedSize"]
-            digest.update(canonical_json_file_bytes({"file": {key: captured[key]
-                for key in ("sourceItemId", "sourceVersion", "fileId", "candidateId", "blob", "mediaType")}}))
-            checked["files"] += 1
-            if not processing:
-                continue
-            raw_blocks = list(re.finditer(rb"<p>(.*?)</p>", raw)) if markup else []
-            expected_blocks = ([html.unescape(match.group(1).decode()).encode() for match in raw_blocks]
-                               if markup else raw.split(b"\n\n"))
-            representation = scratch.lookup_record("representations", captured["fileId"])
-            assert representation["sourceItemId"] == captured["sourceItemId"]
-            assert representation["fileDigest"] == captured["blob"]["digest"]
-            represented = b"".join(view.read_blob(BlobRef.from_dict(representation["blob"]), max_bytes=MAX_FILE_BYTES))
-            assert represented == b"\n\n".join(expected_blocks)
-            mappings = representation["evidenceMappings"]
-            assert len(mappings) == (blocks if markup else 1)
-            offset = 0
-            for ordinal, mapping in enumerate(mappings):
-                length = len(expected_blocks[ordinal]) if markup else len(raw)
-                start, end = raw_blocks[ordinal].span(1) if markup else (0, len(raw))
-                assert (mapping["representationStart"], mapping["representationEnd"]) == (offset, offset + length)
-                assert mapping["transformation"] == (VISIBLE_TEXT_BLOCK_TRANSFORM if markup else IDENTITY_TRANSFORM)
-                assert mapping["evidence"] == {"coordinateSystem": "utf8-byte-range",
-                    "sourceDigest": captured["blob"]["digest"], "start": start, "end": end, "page": None, "region": None}
-                offset += length + 2
-            digest.update(canonical_json_file_bytes({"representation": representation}))
-            checked["representations"] += 1
-            seen = set()
-            for segment in scratch.stream_records("segments:" + captured["fileId"]):
-                ordinal = segment["ordinal"]
-                assert ordinal not in seen
-                seen.add(ordinal)
-                content = b"".join(view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=64 * 1024))
-                assert content == expected_blocks[ordinal]
-                evidence = segment["evidence"]
-                assert evidence["sourceDigest"] == captured["blob"]["digest"]
-                span = raw[evidence["start"]:evidence["end"]]
-                assert (html.unescape(span.decode()).encode() if markup else span) == content
-                derived = scratch.lookup_record(derived_kind, segment["segmentId"])
-                assert derived["sourceItemId"] == captured["sourceItemId"]
-                assert derived["processorId"] == processor.description.processor_id
-                assert derived["inputIds"] == [segment["segmentId"]]
-                value = derived["value"]
-                matches = []
-                for term in ("privacy", "security") if phase in {"changed", "clean"} else ("privacy",):
-                    start = content.lower().index(term.encode())
-                    matches.append({"termId": term, "label": term.title(), "phrase": term,
-                        "quote": content[start:start + len(term)].decode(), "segmentByteStart": start,
-                        "segmentByteEnd": start + len(term)})
-                expected = {"segmentId": segment["segmentId"], "segmentDigest": sha256_digest(content),
-                    "resource": processor.description.external_resources[0].to_dict(),
-                    "enclosingSourceEvidence": evidence, "matches": sorted(matches, key=lambda match: match["segmentByteStart"])}
-                assert canonical_json_bytes(value) == canonical_json_bytes(expected)
-                digest.update(canonical_json_file_bytes({"segment": segment, "value": value}))
-                checked["segments"] += 1
-            assert seen == set(range(blocks))
+        for source in _sources(root, saved) if sources is None else sources:
+            scratch.add_record("sources", identity=source.item_id, source_item_id=source.item_id, record=source.to_dict())
+        with closing(pipeline.rows(source_state_id)) as imported:
+            source_count = 0
+            for key, entity_id, value in imported:
+                scratch.add_record("source-entities", identity=key, source_item_id=key, record={"entityId": entity_id})
+                assert canonical_json_bytes(value) == canonical_json_bytes(scratch.lookup_record("sources", key))
+                source_count += 1
+            assert source_count == inventory["documents"] + inventory["documents"] // 16
+        with closing(pipeline.rows(state_id)) as summaries:
+            summary_count = 0
+            for key, _, summary in summaries:
+                assert summary["sourceItemId"] == key
+                assert summary["sourceEntityId"] == scratch.lookup_record("source-entities", key)["entityId"]
+                summary_count += 1
+            assert summary_count == source_count
+        with closing(document_results(workspace, pipeline, state_id)) as documents:
+            for key, results in documents:
+                source = scratch.lookup_record("sources", key)
+                assert source is not None
+                if source["state"] == "excluded":
+                    assert not results
+                    checked["excluded"] += 1
+                    continue
+                assert source["state"] == "active"
+                index = int(source["metadata"]["documentId"].rsplit("-", 1)[1])
+                assert 0 <= index < inventory["documents"]
+                stages = 4 if processing else 1
+                assert len(results) == len(source["candidates"]) * stages
+                assert all(result.outcome.status == "success" for result in results)
+                digest.update(canonical_json_file_bytes({"source": source}))
+                checked["documents"] += 1
+                for position, candidate in enumerate(source["candidates"]):
+                    capture = results[position * stages]
+                    captured = output_value(workspace, capture, "capture")
+                    assert captured["sourceItemId"] == key and captured["sourceVersion"] == source["version"]
+                    assert captured["candidateId"] == candidate["candidateId"]
+                    assert captured["mediaType"] == candidate["mediaType"]
+                    raw = output_value(workspace, capture, "content")
+                    shape = _candidates(saved["workload"], index)
+                    _, size, blocks = next(item for item in shape if item[0] == captured["candidateId"])
+                    assert raw == _body(index, captured["candidateId"], size, blocks, markup)
+                    assert len(raw) == candidate["expectedSize"]
+                    assert captured["blob"]["digest"] == candidate["expectedDigest"] == sha256_digest(raw)
+                    digest.update(canonical_json_file_bytes({"file": {key: captured[key]
+                        for key in ("sourceItemId", "sourceVersion", "fileId", "candidateId", "blob", "mediaType")}}))
+                    checked["files"] += 1
+                    if not processing:
+                        continue
+                    extraction, segmentation, processed = results[position * stages + 1:position * stages + 4]
+                    raw_blocks = list(re.finditer(rb"<p>(.*?)</p>", raw)) if markup else []
+                    expected_blocks = ([html.unescape(match.group(1).decode()).encode() for match in raw_blocks]
+                        if markup else raw.split(b"\n\n"))
+                    representation = output_value(workspace, extraction, "representation")["representation"]
+                    assert representation["sourceItemId"] == captured["sourceItemId"]
+                    assert representation["fileId"] == captured["fileId"]
+                    assert representation["fileDigest"] == captured["blob"]["digest"]
+                    assert output_value(workspace, extraction, "content") == b"\n\n".join(expected_blocks)
+                    mappings = representation["evidenceMappings"]
+                    assert len(mappings) == (blocks if markup else 1)
+                    offset = 0
+                    for ordinal, mapping in enumerate(mappings):
+                        length = len(expected_blocks[ordinal]) if markup else len(raw)
+                        start, end = raw_blocks[ordinal].span(1) if markup else (0, len(raw))
+                        assert (mapping["representationStart"], mapping["representationEnd"]) == (offset, offset + length)
+                        assert mapping["transformation"] == (VISIBLE_TEXT_BLOCK_TRANSFORM if markup else IDENTITY_TRANSFORM)
+                        assert mapping["evidence"] == {"coordinateSystem": "utf8-byte-range",
+                            "sourceDigest": captured["blob"]["digest"], "start": start, "end": end, "page": None, "region": None}
+                        offset += length + 2
+                    digest.update(canonical_json_file_bytes({"representation": representation}))
+                    checked["representations"] += 1
+                    output_state = next(item.entity_id for item in processed.outcome.outputs if item.label == "records")
+                    with closing(pipeline.rows(output_state)) as outputs:
+                        values = {key: value for key, _, value in outputs}
+                    segment_state = next(item.entity_id for item in segmentation.outcome.outputs if item.label == "segments")
+                    seen = set()
+                    with workspace.publisher.session() as session, closing(segment_rows(session, segment_state)) as segments:
+                        for segment_key, segment_record, reference in segments:
+                            segment = segment_record.to_dict()
+                            assert segment["sourceItemId"] == key and segment["fileId"] == captured["fileId"]
+                            assert segment["representationId"] == representation["representationId"]
+                            ordinal = segment["ordinal"]
+                            assert ordinal not in seen
+                            seen.add(ordinal)
+                            with closing(session.blobs.read(reference, max_bytes=64 * 1024)) as chunks:
+                                content = b"".join(chunks)
+                            assert content == expected_blocks[ordinal]
+                            evidence = segment["evidence"]
+                            assert evidence["sourceDigest"] == captured["blob"]["digest"]
+                            span = raw[evidence["start"]:evidence["end"]]
+                            assert (html.unescape(span.decode()).encode() if markup else span) == content
+                            receipt = values.pop(segment_key + ":receipt")
+                            assert receipt["segmentId"] == segment["segmentId"] and receipt["outputCount"] == 1
+                            value = values.pop(segment_key + ":output:0")
+                            matches = []
+                            for term in ("privacy", "security") if phase in {"changed", "clean"} else ("privacy",):
+                                start = content.lower().index(term.encode())
+                                matches.append({"termId": term, "label": term.title(), "phrase": term,
+                                    "quote": content[start:start + len(term)].decode(), "segmentByteStart": start,
+                                    "segmentByteEnd": start + len(term)})
+                            expected = {"segmentDigest": sha256_digest(content),
+                                "resource": processor.definition.resources[0].description,
+                                "enclosingSourceEvidence": evidence,
+                                "matches": sorted(matches, key=lambda match: match["segmentByteStart"])}
+                            assert canonical_json_bytes(value) == canonical_json_bytes(expected)
+                            digest.update(canonical_json_file_bytes({"segment": segment, "value": value}))
+                            checked["segments"] += 1
+                    assert seen == set(range(blocks)) and not values
     assert checked["documents"] == inventory["documents"] and checked["files"] == inventory["files"]
+    assert checked["excluded"] == inventory["documents"] // 16
     assert checked["segments"] == (inventory["segments"] if processing else 0)
     return {"inventory": dict(inventory), "checked": dict(checked), "logicalStreamSha256": "sha256:" + digest.hexdigest()}
 
 
+def _retitled_sources(root, saved):
+    for source in _sources(root, saved):
+        yield replace(source, metadata={**source.metadata, "title": source.metadata.get("title", "") + " (revised)"})
+
+
+def _same_stage_results(workspace, pipeline, older, newer, *, changed_processor=False):
+    with closing(document_results(workspace, pipeline, older)) as before, closing(
+            document_results(workspace, pipeline, newer)) as after:
+        documents = 0
+        for (old_key, old), (new_key, new) in zip(before, after, strict=True):
+            assert old_key == new_key and len(old) == len(new)
+            for ordinal, (prior, selected) in enumerate(zip(old, new, strict=True)):
+                assert (prior.result_id != selected.result_id) == (changed_processor and ordinal % 4 == 3)
+            documents += 1
+        return documents
+
+
+class _InjectedExtractionFailure(Exception):
+    """A temporary failure of one identified input, using the same extractor pin."""
+
+
+def _behavior(root, saved):
+    """Exercise document repair and reuse in separate storage over the frozen inputs."""
+    path = root / "behavior"
+    assert not path.exists(), "use a new behavior workspace for another trial"
+    inventory, observations = _inventory(saved["workload"]), {}
+    processor_a, processor_b = _processor(root, "process"), _processor(root, "changed")
+    failed_counts = Counter()
+    with _pipeline(root, saved, path, failed_counts) as (workspace, pipeline):
+        pipeline.import_sources(_sources(root, saved), state_id="catalog")
+        with closing(pipeline.rows("catalog")) as sources:
+            _, _, first = next(row for row in sources if row[2]["state"] == "active")
+        broken = first["itemId"], first["candidates"][0]["candidateId"]
+        extractor = pipeline.extractor.delegate
+        original_extract = type(extractor).extract
+        def fail_input(instance, captured, content):
+            if (captured.source_item_id, captured.candidate_id) == broken:
+                raise _InjectedExtractionFailure("injected temporary extraction failure for one retained input")
+            return original_extract(instance, captured, content)
+        try:
+            with patch.object(type(extractor), "extract", fail_input):
+                pipeline.run("catalog", run_id="failed", dataset="documents", processors=(processor_a,))
+        except _InjectedExtractionFailure:
+            assert workspace.ledger.current("documents") is None
+        else:
+            raise AssertionError("the failing input was not exercised")
+        # The failure is the first extraction in a bounded work group. Capture
+        # results already published by the shared owner must survive reopening.
+        retained_captures, failed_result_ids = set(), []
+        with closing(workspace.ledger.retained_records()) as records:
+            for batch in records:
+                for row in batch:
+                    if isinstance(row.value, core.Result):
+                        retained_captures.add(row.value.result_id)
+                    elif isinstance(row.value, core.Execution):
+                        with closing(workspace.ledger.read_progress(row.value.execution_id)) as updates:
+                            progress = [json.loads(value) for group in updates for value in group]
+                        if progress and progress[-1]["status"] == "failed":
+                            failed_result_ids.append(progress[-1]["description"]["result_id"])
+        assert failed_result_ids
+        assert 0 < len(retained_captures) <= 32
+        assert failed_counts["fetch"] == len(retained_captures)
+        assert failed_counts["extract"] == 1 and not failed_counts["segment"] and not failed_counts["process"]
+        observations["failure"] = {"sourceItemId": broken[0], "candidateId": broken[1],
+            "errorType": "_InjectedExtractionFailure", "failedResultIds": failed_result_ids,
+            "retainedCaptures": len(retained_captures),
+            "observedCalls": dict(failed_counts)}
+    repaired_counts = Counter()
+    with _pipeline(root, saved, path, repaired_counts) as (workspace, pipeline):
+        pipeline.run("catalog", run_id="repaired-a", dataset="documents", processors=(processor_a,))
+        outstanding = retained_captures.copy()
+        with closing(document_results(workspace, pipeline, "repaired-a")) as documents:
+            for _, results in documents:
+                outstanding.difference_update(result.result_id for result in results[::4])
+        assert not outstanding
+        with closing(workspace.ledger.read_records(("result", identifier) for identifier in failed_result_ids)) as failures:
+            assert all(row.value.outcome.status == "failed" and not row.retained for batch in failures for row in batch)
+        total = failed_counts + repaired_counts
+        assert total == Counter(fetch=inventory["files"], extract=inventory["files"] + 1,
+            segment=inventory["files"], process=inventory["segments"]), dict(total)
+        observations["repair"] = {"observedCalls": dict(repaired_counts), "totalCalls": dict(total),
+            "retainedCapturesReused": len(retained_captures),
+            "checked": _check(root, saved, "process", workspace, state_id="repaired-a")}
+    metadata_counts = Counter()
+    with _pipeline(root, saved, path, metadata_counts) as (workspace, pipeline):
+        pipeline.import_sources(_retitled_sources(root, saved), state_id="retitled-catalog")
+        pipeline.run("retitled-catalog", run_id="retitled-a", processors=(processor_a,))
+        assert not metadata_counts
+        count = _same_stage_results(workspace, pipeline, "repaired-a", "retitled-a")
+        assert count == inventory["documents"] + inventory["documents"] // 16
+        metadata_check = _check(root, saved, "process", workspace, state_id="retitled-a",
+            source_state_id="retitled-catalog", sources=_retitled_sources(root, saved))
+        observations["metadataRevision"] = {"observedCalls": dict(metadata_counts),
+            "allStageResultsUnchanged": True, "checked": metadata_check}
+    changed_counts = Counter()
+    with _pipeline(root, saved, path, changed_counts) as (workspace, pipeline):
+        pipeline.run("retitled-catalog", run_id="changed-b", processors=(processor_b,))
+        assert changed_counts == Counter(process=inventory["segments"])
+        _same_stage_results(workspace, pipeline, "retitled-a", "changed-b", changed_processor=True)
+        observations["resourceB"] = {"observedCalls": dict(changed_counts),
+            "checked": _check(root, saved, "changed", workspace, state_id="changed-b",
+                source_state_id="retitled-catalog", sources=_retitled_sources(root, saved))}
+    returned_counts = Counter()
+    with _pipeline(root, saved, path, returned_counts) as (workspace, pipeline):
+        pipeline.run("retitled-catalog", run_id="returned-a", processors=(processor_a,))
+        assert not returned_counts
+        _same_stage_results(workspace, pipeline, "retitled-a", "returned-a")
+        returned_check = _check(root, saved, "process", workspace, state_id="returned-a",
+            source_state_id="retitled-catalog", sources=_retitled_sources(root, saved))
+        assert returned_check == metadata_check
+        observations["returnedA"] = {"observedCalls": dict(returned_counts),
+            "originalAResultsSelected": True, "checked": returned_check}
+    _save(root / "behavior-report.json", observations)
+    return observations
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("generate", "build", "verify", *PHASES, "prefix", "resume", "inspect", "check", "compare"))
+    parser.add_argument("operation", choices=("generate", "build", "verify", *PHASES, "prefix", "resume", "inspect", "check", "compare", "behavior"))
     parser.add_argument("root", type=lambda value: Path(value).resolve())
     parser.add_argument("--workload", choices=WORKLOADS)
     parser.add_argument("--wheel", type=Path)
-    parser.add_argument("--completed-at")
-    parser.add_argument("--deadline", type=int)
     parser.add_argument("--phase", choices=PHASES, default="process")
     parser.add_argument("--prefix-tasks", type=int, default=16)
     args = parser.parse_args()
     if args.operation == "generate":
         result = _generate(args)
     else:
-        assert not any((args.workload, args.wheel, args.completed_at, args.deadline)), "generation arguments are already saved"
+        assert not any((args.workload, args.wheel)), "generation arguments are already saved"
         saved = _read(args.root / "arguments.json")
         assert _implementation(Path(saved["wheel"])) == saved["implementation"], "wheel or processor changed"
         if args.operation == "build":
             result = _build(args.root, saved)
         elif args.operation == "verify":
-            workspace, source, _ = _environment(args.root, saved)
-            summary = SourceCatalogArtifactReader(LocalSourceCatalogStore(workspace.roots["sourceCatalog"], create=False),
+            workspace, source = _environment(args.root, saved)
+            summary = SourceCatalogArtifactReader(LocalSourceCatalogStore(workspace / "sourceCatalog", create=False),
                 producer=source).verify_snapshot(_catalog(args.root))
             assert summary.item_count == sum(1 for _ in _population(saved["workload"]))
             result = {"catalog": _catalog(args.root).to_dict(), "sourceItems": summary.item_count}
+        elif args.operation == "behavior":
+            result = _behavior(args.root, saved)
         elif args.operation in PHASES or args.operation in {"prefix", "resume"}:
             phase = "process" if args.operation in {"prefix", "resume"} else args.operation
             result = _run(args.root, saved, phase, prefix=args.prefix_tasks if args.operation == "prefix" else None,
                 recover=args.operation == "resume")
-        elif args.operation == "inspect":
-            with _view(args.root, saved, args.phase) as view:
-                result = view.summary(sample_limit=0)
-        elif args.operation == "check":
-            with _view(args.root, saved, args.phase) as view:
-                result = _check(args.root, saved, args.phase, view)
+        elif args.operation in {"inspect", "check"}:
+            path, _ = _environment(args.root, saved, args.phase)
+            with CoreWorkspace(path) as workspace:
+                result = (workspace.inspect("state", _state_id(args.root, args.phase)) if args.operation == "inspect"
+                    else _check(args.root, saved, args.phase, workspace))
         else:
-            with _view(args.root, saved, "changed") as changed_view, _view(args.root, saved, "clean") as clean_view:
-                changed = _check(args.root, saved, "changed", changed_view)
-                clean = _check(args.root, saved, "clean", clean_view)
-                assert changed == clean, "full clean and reused value/evidence streams differ"
-                result = {"checked": changed, "comparison": changed_view.compare(clean_view, sample_limit=0)}
+            with CoreWorkspace(args.root / "dataset") as workspace:
+                changed = _check(args.root, saved, "changed", workspace)
+            with CoreWorkspace(args.root / "clean") as workspace:
+                clean = _check(args.root, saved, "clean", workspace)
+            assert changed == clean, "full clean and reused value/evidence streams differ"
+            result = {"checked": changed, "equal": True}
     print(canonical_json_file_bytes(result).decode(), end="")
 
 

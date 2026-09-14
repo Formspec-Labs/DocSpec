@@ -7,14 +7,9 @@ from threading import Thread
 import pytest
 
 from docspec.adapters.content_fetchers import AnonymousS3ContentFetcher, AnonymousS3ContentFetcherConfig, S3ContentFetcherError
-from docspec.domain.content import CandidateFile
-from docspec.domain.jobs import FailureClass
-from docspec.domain.plans import WorkLimits
-from docspec.domain.policies import AcceptedFailurePolicy, RetryPolicy
-from docspec.runtime import build_local_catalog, open_local_inspection, prepare_local_experiment
-from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
-from tests.support.source_catalog import producer
+from docspec.domain import core
+from docspec.domain.content import CandidateFile, SourceItem
+from docspec.runtime.core import CoreWorkspace
 
 
 @contextmanager
@@ -73,38 +68,22 @@ def test_native_sdk_limit_includes_initial_request_for_each_operation(monkeypatc
             assert calls.count("HEAD") == 1
 
 
+
 @pytest.mark.parametrize("document_attempts", [1, 2])
 def test_sdk_retries_remain_separate_from_attributed_document_attempts(monkeypatch, tmp_path, document_attempts):
-    workspace = LocalWorkspace(tmp_path / "dataset")
-    namespace = "urn:test:sdk-retries"
-    source = SuppliedRecordSource(({
-        "recordId": "document", "sourceIssuedVersion": "1", "title": "Document", "metadata": {},
-        "candidateRenditions": [SourceCatalogCandidate(
-            "body", "text/plain", "immutable-object", "s3://public-example/documents/input.txt",
-        ).to_dict()],
-    },), source_system_id=namespace, source_system_version="1", source_state_scope="complete-snapshot",
-        max_records=10, max_bytes=1024**2)
-    catalog = build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(namespace, "1"),
-        catalog_id=namespace, producer=producer(), max_scratch_bytes=8 * 1024**2)
     with _sdk_fetcher(monkeypatch, total_attempts=3, failing_operation="HEAD") as (fetcher, calls):
-        with prepare_local_experiment(catalog.reference, workspace,
-            limits=WorkLimits(10, 1024**2, 100, 100, 100, 16 * 1024**2, 60, max_attempts=document_attempts),
-            retry_policy=RetryPolicy(max_attempts=document_attempts, base_delay_milliseconds=0),
-            accepted_failure_policy=AcceptedFailurePolicy(accepted_classes=(FailureClass.TRANSIENT_EXTERNAL,)),
-            source_catalog_producer=producer(), document_release_producer=producer(),
-            completed_at="2026-09-11T00:00:00Z", deadline_epoch_seconds=4102444800,
-            content_fetcher=fetcher, stop_after="capture",
-        ) as prepared:
-            run = prepared.run()
-            result = prepared.retain(run)
-            view = open_local_inspection(prepared.plan, workspace, document_release_producer=producer(), release_ref=result)
-            assert calls == ["HEAD"] * (3 * document_attempts)
-            assert view.summary()["work"]["counts"]["scheduledItems"] == 1
-            assert view.summary()["work"]["counts"]["newCapturedFiles"] == 0
-            failures = tuple(view.records("failures"))
-            assert len(failures) == document_attempts
-            assert sorted(row["payload"]["attempt"] for row in failures) == list(range(1, document_attempts + 1))
-            assert {row["payload"]["failureClass"] for row in failures} == {"transient-external"}
-            assert [row["payload"]["disposition"] for row in view.records("dispositions")] == ["accepted-failure"]
-            assert prepared.run() == run
+        with CoreWorkspace(tmp_path / "dataset") as workspace:
+            pipeline = workspace.documents(fetcher=fetcher)
+            pipeline.import_sources([SourceItem("document", "1", (CandidateFile("body",
+                "s3://public-example/documents/input.txt", "text/plain"),))], state_id="source")
+            for attempt in range(document_attempts):
+                with pytest.raises(S3ContentFetcherError):
+                    pipeline.run("source", run_id=f"attempt-{attempt}", extract=False, segment=False)
+            with workspace.ledger._transaction() as connection:
+                keys = connection.execute("SELECT kind,record_id FROM records WHERE kind='result'").fetchall()
+            records = [record.value for batch in workspace.ledger.read_records(keys) for record in batch]
+            results = [record for record in records if isinstance(record, core.Result) and record.outcome.status == "failed"]
+            assert len(results) == document_attempts
+            assert all(result.outcome.status == "failed" for result in results)
+            assert len({result.execution_id for result in results}) == document_attempts
             assert calls == ["HEAD"] * (3 * document_attempts)

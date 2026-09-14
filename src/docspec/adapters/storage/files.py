@@ -4,20 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from docspec.adapters.atomic_directory import publish_directory_no_replace
+from docspec.adapters.atomic_directory import publish_directory_no_replace, sync_directory
+from docspec.adapters.streams import owned_iterator
 from docspec.domain.identity import (
     parse_canonical_json,
     require_relative_path,
     require_sha256,
-    sha256_digest,
     thaw_json,
 )
-from docspec.domain.references import ArtifactRef
+from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError, LimitExceededError
 
 _FILE_CHUNK_BYTES = 1024 * 1024
@@ -28,7 +29,14 @@ def _storage_root(path: Path, *, create: bool = True) -> Path:
     if path.is_symlink():
         raise IntegrityError(f"storage root must not be a symlink: {path}")
     if create:
+        missing = []
+        cursor = path.absolute()
+        while not cursor.exists():
+            missing.append(cursor)
+            cursor = cursor.parent
         path.mkdir(parents=True, exist_ok=True)
+        for directory in missing:
+            sync_directory(directory.parent)
     elif not path.is_dir():
         raise IntegrityError(f"storage root must be an existing directory: {path}")
     if path.is_symlink():
@@ -36,26 +44,56 @@ def _storage_root(path: Path, *, create: bool = True) -> Path:
     return path.resolve(strict=True)
 
 
-def _contained(root: Path, locator: str, *, create_parents: bool = False) -> Path:
-    relative = require_relative_path(locator, "locator")
-    parts = PurePosixPath(relative).parts
+def _contained_parent(root: Path, parts: tuple[str, ...], *, create_parents: bool = False) -> Path:
     cursor = root
-    for part in parts[:-1]:
+    for part in parts:
         cursor = cursor / part
         if cursor.is_symlink():
-            raise IntegrityError(f"storage locator traverses a symlink: {relative}")
+            raise IntegrityError(f"storage locator traverses a symlink: {cursor}")
         if create_parents:
             cursor.mkdir(exist_ok=True)
         if cursor.exists() and (not cursor.is_dir() or cursor.is_symlink()):
-            raise IntegrityError(f"storage locator parent is not a directory: {relative}")
-    candidate = root.joinpath(*parts)
+            raise IntegrityError(f"storage locator parent is not a directory: {cursor}")
     try:
-        candidate.parent.resolve(strict=False).relative_to(root)
+        cursor.resolve(strict=False).relative_to(root)
     except ValueError as error:
-        raise IntegrityError(f"storage locator escapes its root: {relative}") from error
+        raise IntegrityError(f"storage locator escapes its root: {cursor}") from error
+    return cursor
+
+
+def _contained(root: Path, locator: str, *, create_parents: bool = False) -> Path:
+    relative = require_relative_path(locator, "locator")
+    parts = PurePosixPath(relative).parts
+    parent = _contained_parent(root, parts[:-1], create_parents=create_parents)
+    candidate = parent / parts[-1]
     if candidate.is_symlink():
         raise IntegrityError(f"storage locator is a symlink: {relative}")
     return candidate
+
+
+def _available_paths(root: Path, members: Iterable[tuple[str, int]]) -> dict[str, str]:
+    """Check each leaf while sharing parent checks within one bulk admission."""
+    parents: dict[tuple[str, ...], Path] = {}
+    paths = {}
+    for locator, byte_size in members:
+        parts = PurePosixPath(require_relative_path(locator, "locator")).parts
+        parent_parts = parts[:-1]
+        parent = parents.get(parent_parts)
+        if parent is None:
+            parent = _contained_parent(root, parent_parts)
+            # CAS members normally share 256 digest directories. Additional
+            # directories remain fully checked without growing this local set.
+            if len(parents) < 256:
+                parents[parent_parts] = parent
+        path = parent / parts[-1]
+        try:
+            status = path.lstat()
+        except OSError as error:
+            raise IntegrityError(f"storage member is unavailable: {locator}") from error
+        if not stat.S_ISREG(status.st_mode) or status.st_size != byte_size:
+            raise IntegrityError(f"storage member is unavailable or differs from its size: {locator}")
+        paths[locator] = str(path)
+    return paths
 
 
 def _read_exact(root: Path, locator: str, *, max_bytes: int | None = None) -> bytes:
@@ -102,9 +140,71 @@ def _write_once(
         except FileExistsError:
             if path.is_symlink() or not path.is_file() or path.read_bytes() != payload:
                 raise IntegrityError(f"refusing to replace conflicting immutable member: {locator}") from None
+            _sync_file(path)
+        _sync_parents(root, path)
         return path
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _sync_parents(root: Path, path: Path) -> None:
+    """Persist a retained name and every containing directory through the root."""
+    path.relative_to(root)
+    parent = path.parent
+    while True:
+        sync_directory(parent)
+        if parent == root:
+            break
+        parent = parent.parent
+    sync_directory(root.parent)
+
+
+def delete_content(root: Path, reference: BlobRef) -> bool:
+    """Delete verified immutable bytes and make both first calls and retries durable."""
+    path = _contained(root, reference.locator)
+    present = path.exists()
+    if present:
+        if sha256_file(path) != (reference.digest, reference.byte_size):
+            raise IntegrityError("removal reference differs from retained bytes")
+        path.unlink()
+    if path.parent.is_dir():
+        _sync_parents(root, path)
+    return present
+
+
+def _link_content(root: Path, temporary: Path, locator: str, digest: str, byte_size: int) -> Path:
+    """Publish an already synced file or verify the immutable object that won a race."""
+    destination = _contained(root, locator, create_parents=True)
+    try:
+        os.link(temporary, destination)
+    except FileExistsError:
+        if destination.is_symlink() or not destination.is_file() or sha256_file(destination) != (digest, byte_size):
+            raise IntegrityError("content conflicts with an existing immutable object") from None
+        # A concurrent publisher may not have reached its own durability step.
+        _sync_file(destination)
+    _sync_parents(root, destination)
+    return destination
+
+
+def materialize_bytes(root: Path, relative_path: str, chunks) -> Path:
+    """Exclusively materialize a verifying stream; remove incomplete output."""
+    root = _storage_root(root)
+    destination = _contained(root, relative_path, create_parents=True)
+    try:
+        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError as error:
+        raise IntegrityError(f"refusing to replace materialized file: {relative_path}") from error
+    try:
+        with os.fdopen(descriptor, "wb") as output, owned_iterator(chunks) as source:
+            for chunk in source:
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+        _sync_parents(root, destination)
+    except BaseException:
+        destination.unlink(missing_ok=True)
+        raise
+    return destination
 
 
 def publish_directory_exclusive(root: Path, working: Path, locator: str) -> Path:
@@ -118,11 +218,6 @@ def publish_directory_exclusive(root: Path, working: Path, locator: str) -> Path
     return destination
 
 
-def _verify_artifact_bytes(reference: ArtifactRef, payload: bytes, *, media_type: str = "application/json") -> None:
-    if reference.media_type != media_type:
-        raise IntegrityError(f"artifact has unexpected media type: {reference.media_type}")
-    if len(payload) != reference.byte_size or sha256_digest(payload) != reference.digest:
-        raise IntegrityError("artifact bytes differ from their immutable reference")
 
 
 def sha256_file(path: Path, *, chunk_size: int = _FILE_CHUNK_BYTES) -> tuple[str, int]:

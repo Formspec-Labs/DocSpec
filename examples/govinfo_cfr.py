@@ -21,14 +21,12 @@ from spicy_docs.sources.cfr.edition import annual_cfr_edition_locator
 from spicy_docs.sources.cfr.models import AnnualCfrSelection
 
 from docspec.domain.identity import identity_digest, sha256_digest
-from docspec.domain.plans import WorkLimits
-from docspec.domain.policies import RetryPolicy
-from docspec.domain.references import BlobRef
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import build_local_catalog, open_local_catalog, prepare_local_experiment
+from docspec.runtime import CoreWorkspace, build_local_catalog, open_local_catalog
 from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
-from examples.dataset_example_support import capture_facts, finish_run, matches, phrase_processor, retain_refusal, write_json
+from docspec.domain.source_catalog import SourceCatalogItem
+from docspec.domain.core_admission import record_value
+from examples.dataset_example_support import capture_facts, run_documents, matches, output_value, phrase_processor, retain_refusal, write_json
 from examples.govinfo_cfr_fetcher import AnnualCfrContentFetcher, select_section
 from examples.provider_identity import provider_installation
 
@@ -108,44 +106,31 @@ def run_example(output: Path, *, selection: AnnualCfrSelection = FIXTURE_SELECTI
             })
             source_producer = Producer("docspec-example", implementation,
                                       "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
-            release_producer = replace(source_producer, verifier_id="urn:docspec:verifier:document-release")
-            workspace = LocalWorkspace(output)
+            workspace = views.enter_context(CoreWorkspace(output))
             catalog = build_local_catalog((source,), workspace, policy=SuppliedRecordCatalogPolicy(NAMESPACE, "1"),
                 catalog_id=NAMESPACE + ":catalog", producer=source_producer, max_scratch_bytes=64 * 1024**2)
             rows = list(open_local_catalog(catalog.reference, workspace, producer=source_producer).iter_mappings())
             write_json(output / "catalog-preview.json", {"reference": catalog.reference.to_dict(), "items": rows})
-            retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
-            first = phrase_processor("1", ("public access",), retry, output, resource_id=NAMESPACE + ":phrases")
-            second = phrase_processor("2", ("public access", "machine readable"), retry, output,
-                                      resource_id=NAMESPACE + ":phrases")
-            settings = {
-                "limits": WorkLimits(1, MAX_BYTES, 500, 500, 1000, 64 * 1024**2, 120, 1),
-                "source_catalog_producer": source_producer, "document_release_producer": release_producer,
-                "deadline_epoch_seconds": 4_000_000_000,
-                "content_fetcher": AnnualCfrContentFetcher(acquirer, edition, selection, evidence, clock),
-                "retry_policy": retry, "extractor": VisibleTextExtractor(xml_heading_levels=CFR_HEADINGS),
-                "segmenter": VisibleTextBlockSegmenter(),
-            }
-            with prepare_local_experiment(catalog.reference, workspace, processors=(first,),
-                                          completed_at=clock().isoformat().replace("+00:00", "Z"), **settings) as prepared:
-                base, initial = finish_run(prepared, workspace, source_producer, release_producer,
-                                           "processed", output, views)
+            first = phrase_processor("1", ("public access",), output, resource_id=NAMESPACE + ":phrases")
+            second = phrase_processor("2", ("public access", "machine readable"), output, resource_id=NAMESPACE + ":phrases")
+            pipeline = workspace.documents(fetcher=AnnualCfrContentFetcher(acquirer, edition, selection, evidence, clock),
+                extractor=VisibleTextExtractor(xml_heading_levels=CFR_HEADINGS), segmenter=VisibleTextBlockSegmenter())
+            source_state = pipeline.import_sources((SourceCatalogItem.from_dict(row) for row in rows), state_id="source-catalog")
+            _, initial_documents = run_documents(workspace, pipeline, source_state.state_id,
+                name="processed", processors=(first,), output=output)
 
-        # A separate processing run must succeed after closing source acquisition.
-        with prepare_local_experiment(catalog.reference, workspace, processors=(second,), base_release=base,
-                                      completed_at=clock().isoformat().replace("+00:00", "Z"), **settings) as prepared:
-            retained, later = finish_run(prepared, workspace, source_producer, release_producer,
-                                         "reprocessed", output, views)
-        preserved = all([row["payload"] for row in initial.records(kind)] ==
-                        [row["payload"] for row in later.records(kind)]
-                        for kind in ("files", "representations", "segments"))
-        captured = list(later.records("files"))[0]["payload"]
-        original = b"".join(later.read_blob(BlobRef.from_dict(captured["blob"]), max_bytes=MAX_BYTES))
-        representation = list(later.records("representations"))[0]["payload"]
-        visible = b"".join(later.read_blob(BlobRef.from_dict(representation["blob"]), max_bytes=MAX_BYTES))
-        counts = later.summary()["work"]["counts"]
-        new_work = {key: counts[key] for key in ("newCapturedFiles", "newRepresentations", "newSegments")}
-        if not preserved or any(new_work.values()):
+        # Reprocessing after the acquisition client closes reuses retained stages.
+        retained, later_documents = run_documents(workspace, pipeline, source_state.state_id,
+            name="reprocessed", processors=(second,), output=output)
+        initial, later = initial_documents[0][1], later_documents[0][1]
+        preserved = initial[:3] == later[:3]
+        captured = output_value(workspace, later[0], "capture")
+        original = output_value(workspace, later[0], "content")
+        visible = output_value(workspace, later[1], "content")
+        counts = {"newCapturedFiles": int(initial[0] != later[0]), "newRepresentations": int(initial[1] != later[1]),
+                  "newSegments": int(initial[2] != later[2])}
+        new_work = counts
+        if not preserved or any(counts.values()):
             raise AssertionError("processor-only iteration repeated or changed upstream work")
         summary = {
             "scope": "one explicitly selected annual section; " +
@@ -155,8 +140,8 @@ def run_example(output: Path, *, selection: AnnualCfrSelection = FIXTURE_SELECTI
             "metadataUrlCount": sum(len(record.urls) for record in edition.metadata.constituents),
             "edition": asdict(edition.edition), "capturedSha256": captured["blob"]["digest"],
             "capturedByteSize": len(original), "visibleText": visible.decode("utf-8"),
-            "matches": {"first": matches(initial, first), "later": matches(later, second)},
-            "retainedResult": retained.to_dict(), "originalLayersPreserved": preserved,
+            "matches": {"first": matches(workspace, pipeline, "processed"), "later": matches(workspace, pipeline, "reprocessed")},
+            "retainedResult": record_value(retained), "originalLayersPreserved": preserved,
             "reprocessingNewWork": new_work, "fixtureRequests": requests if not live else None,
             "interpretation": "document-wide literal phrase occurrences, including XML metadata; no legal interpretation",
         }

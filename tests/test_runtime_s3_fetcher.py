@@ -10,15 +10,11 @@ from docspec.adapters.content_fetchers import (
     AnonymousS3ContentFetcher, AnonymousS3ContentFetcherConfig, RoutingContentFetcher,
     S3ContentFetcherError, s3_locator, s3_transport_version,
 )
-from docspec.domain.content import CandidateFile
+from docspec.domain import core
+from docspec.domain.content import CandidateFile, SourceItem
+from docspec.runtime.core import CoreWorkspace
 from docspec.domain.identity import sha256_digest
-from docspec.domain.plans import WorkLimits
-from docspec.errors import IntegrityError, LimitExceededError, StateTransitionError
-from docspec.runtime import build_local_catalog, open_local_inspection, prepare_local_experiment
-from docspec.source_catalog import SourceCatalogCandidate, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
-from tests.helpers import document_release_producer
-from tests.support.source_catalog import producer
+from docspec.errors import IntegrityError, LimitExceededError
 
 
 BUCKET, KEY = "public-example", "documents/notes.txt"
@@ -175,70 +171,48 @@ def test_s3_changes_after_head_refuse_before_body_read_and_close(field, value):
     assert client.bodies[0].closed
 
 
-def _experiment(tmp_path, *, expected_digest=None):
-    workspace = LocalWorkspace(tmp_path / "dataset")
-    namespace = "urn:test:public-s3-records"
-    source = SuppliedRecordSource(({
-        "recordId": "notes", "sourceIssuedVersion": "revision1", "title": "Notes", "metadata": {},
-        "candidateRenditions": [SourceCatalogCandidate(
-            "body", "text/plain", "immutable-object", s3_locator(BUCKET, KEY),
-            expected_sha256=sha256_digest(CONTENT) if expected_digest is None else expected_digest,
-            expected_byte_size=len(CONTENT),
-        ).to_dict()],
-    },), source_system_id=namespace, source_system_version="1", source_state_scope="complete-snapshot",
-        max_records=1, max_bytes=4096)
-    catalog = build_local_catalog((source,), workspace,
-        policy=SuppliedRecordCatalogPolicy(namespace, "1"), catalog_id="urn:test:public-s3-catalog",
-        producer=producer(), max_scratch_bytes=8 * 1024**2)
-    client = _Client()
-    settings = {
-        "limits": WorkLimits(1, 4096, 1, 1, 1, 8192, 60, 1),
-        "source_catalog_producer": producer(), "document_release_producer": document_release_producer(),
-        "completed_at": "2026-09-11T12:00:00Z", "deadline_epoch_seconds": 4_000_000_000,
-        "content_fetcher": RoutingContentFetcher(s3=_fetcher(client)),
-    }
-    return catalog.reference, workspace, client, settings
+
+def _source(expected_digest=None):
+    return SourceItem("notes", "revision1", (CandidateFile("body", s3_locator(BUCKET, KEY), "text/plain",
+        expected_digest=sha256_digest(CONTENT) if expected_digest is None else expected_digest,
+        expected_size=len(CONTENT)),))
 
 
 def test_public_s3_catalog_capture_retains_observation_and_later_processing_does_not_fetch(tmp_path):
-    source, workspace, client, settings = _experiment(tmp_path)
-    with prepare_local_experiment(source, workspace, stop_after="capture", **settings) as capture:
-        run = capture.run()
-        base = capture.retain(run)
-        handoff = capture.handoff_ref
-        assert capture.run() == run
-        view = open_local_inspection(capture.plan, workspace,
-            document_release_producer=settings["document_release_producer"], release_ref=base)
-        captured = tuple(view.records("files"))[0]["payload"]
-        assert captured["transportVersion"] == VERSION
-        assert captured["downloaderId"] == settings["content_fetcher"].downloader_id
-        assert captured["blob"]["digest"] == sha256_digest(CONTENT)
-    with prepare_local_experiment(source, workspace, stop_after="capture", handoff_ref=handoff, **settings) as recovered:
-        assert recovered.run() == run
-    with prepare_local_experiment(source, workspace, stop_after="capture", base_release=base, **settings) as unchanged:
-        assert unchanged.handoff.expected_task_count == 0
-        unchanged.run()
-    with prepare_local_experiment(source, workspace, base_release=base, **settings) as processing:
-        result = processing.retain(processing.run())
-        view = open_local_inspection(processing.plan, workspace,
-            document_release_producer=settings["document_release_producer"], release_ref=result)
-        assert tuple(view.records("files"))[0]["payload"] == captured
-        assert len(tuple(view.records("representations"))) == len(tuple(view.records("segments"))) == 1
-        counts = view.summary()["work"]["counts"]
-        assert counts["newCapturedFiles"] == 0 and counts["reusedCapturedFiles"] == 1
+    client = _Client()
+    fetcher = RoutingContentFetcher(s3=_fetcher(client))
+    with CoreWorkspace(tmp_path / "dataset") as workspace:
+        pipeline = workspace.documents(fetcher=fetcher)
+        pipeline.import_sources([_source()], state_id="source")
+        pipeline.run("source", run_id="captured", extract=False, segment=False)
+        records = [record.value for batch in workspace.ledger.retained_records() for record in batch]
+        capture = next(record.value.value for record in records if isinstance(record, core.Entity)
+            and isinstance(record.value, core.InlineValue) and isinstance(record.value.value, dict)
+            and "transportVersion" in record.value.value)
+        assert capture["transportVersion"] == VERSION
+        assert capture["blob"]["digest"] == sha256_digest(CONTENT)
+        assert capture["downloaderId"] == fetcher.downloader_id
+    with CoreWorkspace(tmp_path / "dataset") as workspace:
+        pipeline = workspace.documents(fetcher=fetcher)
+        pipeline.run("source", run_id="processed")
+        summary = list(pipeline.rows("processed"))[0][2]
+        assert len(summary["selections"]) == 3
     assert [method for method, _ in client.requests] == ["HEAD", "GET"]
     assert all(body.closed for body in client.bodies)
 
 
 def test_public_s3_expected_content_digest_is_checked_independently_of_transport(tmp_path):
-    source, workspace, client, settings = _experiment(tmp_path, expected_digest=sha256_digest(b"other bytes"))
-    with prepare_local_experiment(source, workspace, stop_after="capture", **settings) as prepared:
-        run = prepared.run()
-        view = open_local_inspection(prepared.plan, workspace,
-            document_release_producer=settings["document_release_producer"], run_ref=run)
-        assert view.summary()["work"]["counts"]["capturedFiles"] == 0
-        assert view.summary()["work"]["counts"]["failures"] == 1
-        with pytest.raises(StateTransitionError, match="rejected stores"):
-            prepared.retain(run)
+    client = _Client()
+    with CoreWorkspace(tmp_path / "dataset") as workspace:
+        pipeline = workspace.documents(fetcher=RoutingContentFetcher(s3=_fetcher(client)))
+        pipeline.import_sources([_source(sha256_digest(b"other bytes"))], state_id="source")
+        with pytest.raises(IntegrityError, match="expected digest"):
+            pipeline.run("source", run_id="failed", extract=False, segment=False)
+        with workspace.ledger._transaction() as connection:
+            keys = connection.execute("SELECT kind,record_id FROM records WHERE kind='result'").fetchall()
+        records = [record.value for batch in workspace.ledger.read_records(keys) for record in batch]
+        results = [record for record in records if isinstance(record, core.Result) and record.outcome.status == "failed"]
+        assert len(results) == 1 and results[0].outcome.status == "failed"
+        assert workspace.ledger.current("documents") is None
     assert [method for method, _ in client.requests] == ["HEAD", "GET"]
     assert all(body.closed for body in client.bodies)

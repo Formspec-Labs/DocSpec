@@ -9,7 +9,7 @@ from spicy_docs.sources.courtlistener_listing import BULK_BASE_URL, BulkObject
 
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError
-from tests.helpers import source_catalog_reader, write_shared_source_catalog
+from tests.support.catalog_publication import source_catalog_reader, write_shared_source_catalog
 from tools.courtlistener_bulk_source import (
     BulkCapture,
     build_source_items,

@@ -21,7 +21,6 @@ from spicy_docs.sources.zyte import ZyteHttpResponse
 from docspec.domain.identity import sha256_digest
 from docspec.runtime import build_local_catalog, open_local_catalog
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter, SuppliedRecordCatalogPolicy, SuppliedRecordSource
-from docspec.workspace import LocalWorkspace
 from examples.provider_identity import provider_installation
 
 FIXTURES = Path(__file__).with_name("gao_fixtures")
@@ -36,7 +35,7 @@ def catalog_producer() -> Producer:
     return Producer("docspec-example", implementation, "urn:docspec:verifier:source-catalog", "1.0.0", implementation)
 
 
-def build_topic_catalog(source: SpicyDocsSourceNativeAdapter, workspace: LocalWorkspace):
+def build_topic_catalog(source: SpicyDocsSourceNativeAdapter, workspace: Path):
     """Map admitted provider records, retaining their source pin and field evidence."""
     description = source.describe()
     if (description.source_system_id, description.source_system_version) != (
@@ -122,7 +121,7 @@ def run_example(output: Path, *, case: str = "matching", label: str = TOPIC) -> 
             logical_id=source_result["logicalId"], artifact_digest=source_result["artifactDigest"],
             profile=GAO_PRODUCT_PAGE_PROFILE,
             accepted_verifier_implementation_ids=frozenset({provider_implementation}))
-        workspace = LocalWorkspace(output / "dataset")
+        workspace = Path(output / "dataset")
         result = build_topic_catalog(source, workspace)
         catalog = open_local_catalog(result.reference, workspace, producer=catalog_producer())
         report.update({"catalog": result.reference.to_dict(), "topicSelection": topic_selection(catalog, label)})

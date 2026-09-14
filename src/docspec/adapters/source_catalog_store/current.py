@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import errno
-import fcntl
 import hashlib
 import os
 import stat
@@ -11,6 +9,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
+from docspec.adapters.locks import lock_descriptor
 from docspec.adapters.source_catalog_store.pinned_fs import (
     _IDENTITY,
     _READ_FLAGS,
@@ -22,7 +21,7 @@ from docspec.adapters.source_catalog_store.pinned_fs import (
 )
 from docspec.domain.identity import canonical_json_file_bytes, parse_canonical_json, require_text, thaw_json
 from docspec.domain.references import SourceCatalogRef
-from docspec.errors import IntegrityError, StaleBaseError, StateTransitionError
+from docspec.errors import IntegrityError, StaleBaseError
 from docspec.ports.source_catalog import (
     ImmutableSourceCatalogReader,
     SourceCatalogCurrentPointer,
@@ -243,7 +242,6 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
             raise IntegrityError(
                 f"source-catalog pointer lock cannot be opened safely: {error}"
             ) from error
-        locked = False
         try:
             metadata = os.fstat(descriptor)
             if not stat.S_ISREG(metadata.st_mode):
@@ -251,31 +249,21 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
             if metadata.st_nlink != 1:
                 raise IntegrityError("source-catalog pointer lock must have one filesystem link")
             identity = (metadata.st_dev, metadata.st_ino)
-            try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except OSError as error:
-                if error.errno in {errno.EACCES, errno.EAGAIN}:
-                    raise StateTransitionError(
-                        "another source-catalog pointer advance is in progress"
-                    ) from error
-                raise
-            locked = True
-            self._require_lock_identity(parent, name, identity)
-            _require_child_identity(
-                root,
-                "current",
-                parent,
-                label="source-catalog current-pointer parent",
-            )
-            os.ftruncate(descriptor, 0)
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            os.write(descriptor, (candidate.digest + "\n").encode("ascii"))
-            os.fsync(descriptor)
-            _sync_directory_descriptor(parent)
-            yield name, identity
+            with lock_descriptor(descriptor, busy_message="another source-catalog pointer advance is in progress"):
+                self._require_lock_identity(parent, name, identity)
+                _require_child_identity(
+                    root,
+                    "current",
+                    parent,
+                    label="source-catalog current-pointer parent",
+                )
+                os.ftruncate(descriptor, 0)
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                os.write(descriptor, (candidate.digest + "\n").encode("ascii"))
+                os.fsync(descriptor)
+                _sync_directory_descriptor(parent)
+                yield name, identity
         finally:
-            if locked:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
 
     def _write_current(

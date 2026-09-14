@@ -1,244 +1,179 @@
-"""Admit a self-contained active result without opening its former workspace."""
+"""Read a pinned selected Core snapshot without its original workspace."""
 
-from __future__ import annotations
-
-from collections.abc import Iterator
 from contextlib import ExitStack, closing, contextmanager
-from copy import deepcopy
 from pathlib import Path
-from typing import Any, BinaryIO, Self
+import sqlite3
+from itertools import islice
 
-from rulespec_artifacts import (
-    ArtifactPin, ArtifactVerificationError, LocalMemberSource, MemberDescriptor, MemberSourceError, Producer,
-    VerifiedArtifact, admit_artifact, iter_member_descriptors,
-)
+from rulespec_artifacts import (ArtifactVerificationError, LocalMemberSource, MemberDescriptor,
+    MemberSourceError, admit_artifact, iter_member_descriptors)
 
-from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
-from docspec.adapters.storage.controls import parse_control_artifact
-from docspec.domain.delivery import core_delivery_schemas, verify_logical_release_layers
-from docspec.domain.identity import identity_digest, parse_canonical_json, thaw_json
-from docspec.domain.references import ArtifactRef, BlobRef
+from docspec.adapters.storage.core_states import CoreStateStorage
+from docspec.adapters.storage.core_selections import CoreSelectionStorage
+from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
+from docspec.adapters.storage.records import LocalParquetRecordStorage
+from docspec.application.core_publication import CorePublisher
+from docspec.domain.identity import decode_canonical_json_value, identity_digest
+from docspec.domain.core_admission import record_value
+from docspec.domain.references import BlobRef
+from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError
+from docspec.ports.core_ledger import MetadataBatch
+from .io import ROOT_BYTES, RECORD_BYTES, MANIFEST_BYTES, MANIFEST_KEY, INDEX_KEY, require_limit, scratch, verified_open, read_mapping
 
-from .admission import collection, observe_active_items
-from .io import (
-    ADMISSIONS, CONTROL_SCHEMA, INDEX_KEY, INDEX_SCHEMA, MANIFEST_BYTES, MANIFEST_KEY,
-    RECORD_BYTES, ROOT_BYTES, ROW_SCHEMA, read_mapping, require_limit, rows, scratch, verified_open,
-)
-from .references import evidence_references
+
+class _ExportBlobs:
+    def __init__(self, view):
+        self.view = view
+    def stat(self, reference):
+        self.view._reference(reference)
+        return reference
+    def ensure_ready(self, reference):
+        with self.view.open_blob(reference):
+            pass
+    def read(self, reference, *, max_bytes=None, chunk_size=256 * 1024):
+        if max_bytes is not None and reference.byte_size > max_bytes:
+            raise LimitExceededError("export blob exceeds max_bytes")
+        with self.view.open_blob(reference) as stream:
+            while data := stream.read(chunk_size or 256 * 1024):
+                yield data
 
 
 class AdmittedResultExport:
-    """A closeable read-only view whose scratch index contains no dataset state.
-
-    Use a context manager, or call ``close``. Byte access is restricted to exact
-    references found in this artifact. Reads recheck consumed members against
-    their admitted descriptors; original source/plan provenance is not fetched.
-    """
-
-    def __init__(self, source, workspace) -> None:
-        self._source, self._workspace = source, workspace
+    """Read-only selected state, exact content references and original Core records."""
+    def __init__(self, source, resources, index):
+        self._source, self._resources, self._index = source, resources, index
         self._closed = False
-        self._layers: dict[str, dict[str, Any]] = {}
-        self._summary: dict[str, Any] = {}
-        self._pin: ArtifactPin | None = None
-
-    def __enter__(self) -> Self:
+    def __enter__(self):
         self._require_open()
         return self
-
-    def __exit__(self, *_args) -> None:
+    def __exit__(self, *_):
         self.close()
-
-    def close(self) -> None:
-        if not self._closed:
-            self._workspace.__exit__(None, None, None)
-            self._closed = True
-
-    def _require_open(self) -> None:
+    def close(self):
+        self._closed = True
+        self._resources.close()
+    def _require_open(self):
         if self._closed:
             raise RuntimeError("result export view is closed")
-
-    @property
-    def pin(self) -> ArtifactPin:
+    def _member(self, key):
         self._require_open()
-        if self._pin is None:
-            raise RuntimeError("result export admission is not complete")
-        return self._pin
-
-    @property
-    def summary(self) -> dict[str, Any]:
+        value = self._index.lookup_record("members", key)
+        if value is None:
+            raise IntegrityError("export is missing a referenced member")
+        return MemberDescriptor.from_dict(value, path="export/member")
+    def _verify(self, key):
+        with verified_open(self._source, self._member(key)):
+            pass
+    def _reference(self, reference):
         self._require_open()
-        return deepcopy(self._summary)
-
-    @property
-    def layer_kinds(self) -> tuple[str, ...]:
-        self._require_open()
-        return tuple(self._layers)
-
-    def _member(self, key: str) -> MemberDescriptor:
-        self._require_open()
-        raw = self._workspace.lookup_record("members", key)
-        if raw is None:
-            raise IntegrityError(f"export is missing a referenced member: {key}")
-        return MemberDescriptor.from_dict(raw, path="export/member")
-
-    def _mark_used(self, key: str) -> None:
-        if self._workspace.lookup_record("used", key) is None:
-            self._workspace.add_record("used", identity=key, source_item_id=key, record={"key": key})
-
-    def _reference(self, reference: ArtifactRef | BlobRef, *, admit: bool = False) -> MemberDescriptor:
-        member = self._member(reference.locator)
-        role = "evidence" if isinstance(reference, ArtifactRef) else "blob"
-        if (member.sha256, member.byte_size, member.role) != (reference.digest, reference.byte_size, role):
+        value = self._index.lookup_record("references", identity_digest(reference.to_dict()))
+        if value != reference.to_dict():
+            raise IntegrityError("reference does not belong to this admitted export")
+        member = self._member("blobs/" + reference.locator)
+        if (member.byte_size, member.sha256) != (reference.byte_size, reference.digest):
             raise IntegrityError("export reference differs from its member descriptor")
-        if isinstance(reference, BlobRef) and reference.locator != LocalContentAddressedBlobStore._locator(reference.digest):
-            raise IntegrityError("export blob locator differs from its digest")
-        identity = identity_digest(reference.to_dict())
-        if self._workspace.lookup_record("references", identity) is None:
-            if not admit:
-                raise IntegrityError("reference does not belong to this admitted export")
-            self._workspace.add_record("references", identity=identity,
-                source_item_id=reference.locator, record=reference.to_dict())
-        if admit:
-            self._mark_used(reference.locator)
         return member
-
     @contextmanager
-    def open_blob(self, reference: BlobRef) -> Iterator[BinaryIO]:
-        """Open a verified, seekable blob; the member and total artifact bound apply."""
+    def open_blob(self, reference):
         with verified_open(self._source, self._reference(reference)) as stream:
             yield stream
-
-    def read_blob(self, reference: BlobRef, *, max_bytes: int) -> bytes:
-        """Read one blob only when its full size fits the caller's memory bound."""
+    def read_blob(self, reference, *, max_bytes):
         if type(max_bytes) is not int or max_bytes < 0:
-            raise ValueError("max_bytes must be a non-negative integer")
+            raise ValueError("max_bytes must be non-negative")
         if reference.byte_size > max_bytes:
             raise LimitExceededError("export blob exceeds max_bytes")
         with self.open_blob(reference) as stream:
             return stream.read(max_bytes + 1)
-
-    def read_evidence(self, reference: ArtifactRef) -> dict[str, Any]:
-        """Load one exact typed control artifact, bounded at 8 MiB."""
-        member = self._reference(reference)
-        if member.byte_size > RECORD_BYTES:
-            raise LimitExceededError("export control artifact exceeds its byte limit")
-        with verified_open(self._source, member) as stream:
-            return parse_control_artifact(reference, stream.read(RECORD_BYTES + 1))
-
-    def load(self, reference: ArtifactRef) -> dict[str, Any]:
-        """Supply the existing control-reader port to shared receipt verification."""
-        return self.read_evidence(reference)
-
-    def records(self, layer_kind: str) -> Iterator[dict[str, Any]]:
-        """Stream original delivery rows; closing the iterator releases its file."""
+    @property
+    def pin(self):
         self._require_open()
-        if layer_kind not in self._layers:
-            raise ValueError(f"result export has no layer {layer_kind!r}")
-        yield from rows(self._source, self._member(self._layers[layer_kind]["objectKey"]))
+        return self._pin
+    @property
+    def summary(self):
+        self._require_open()
+        return dict(self._summary)
+    def record(self, kind, identity):
+        self._verify("ledger.sqlite")
+        with owned_iterator(self._ledger.read_records([(kind, identity)])) as batches:
+            row = next(batches)[0]
+        return None if row is None else row.value
+    def roots(self):
+        self._require_open()
+        with verified_open(self._source, self._member("roots.jsonl")) as stream:
+            while payload := stream.readline(RECORD_BYTES + 1):
+                if len(payload) > RECORD_BYTES:
+                    raise LimitExceededError("export root key exceeds its byte limit")
+                yield tuple(decode_canonical_json_value(payload.removesuffix(b"\n"), label="export root key"))
+    def rows(self, state_id=None):
+        self._verify("ledger.sqlite")
+        state_id = self._state_id if state_id is None else state_id
+        with self._publisher.session() as session:
+            manifest = self._states.manifest(session, state_id)
+            for reference in self._states._references(manifest).values():
+                for physical in self._records.physical_references(reference):
+                    self._verify("records/" + physical.locator)
+            yield from self._states.rows(session, state_id)
 
-    def _admit_evidence(self, reference: ArtifactRef) -> None:
-        already = self._workspace.lookup_record("references", identity_digest(reference.to_dict())) is not None
-        self._reference(reference, admit=True)
-        if not already:
-            for dependency in evidence_references(self.read_evidence(reference)):
-                self._admit_evidence(dependency)
-
-    def _index_rows(self, kind):
-        with closing(self.records(kind)) as values:
-            for row in values:
-                if kind.startswith("derived:") and row["payload"].get("schemaId") != self._layers[kind]["schemaId"]:
-                    raise IntegrityError("export derived record differs from its layer schema")
-                target = "sources" if kind == "source-items" else collection(row["sourceItemId"], kind)
-                self._workspace.add_record(target, identity=row["recordId"], source_item_id=row["sourceItemId"], record=row)
-                yield row
-
-    def _admit(self, artifact: VerifiedArtifact, _source, *, producer: Producer) -> None:
-        root = artifact.root
-        expected_spec = {
-            "schemaId", "retainedArtifactDigest", "admissionId", "populationScope", "evidenceScope",
-        }
-        spec = root["spec"]
-        admission = next((value for value in ADMISSIONS
-            if spec.get("admissionId") == f"urn:docspec:export-admission:{value}:1"), None)
-        if (root["kind"] != "docspec-result-export" or root["producer"] != producer.as_dict()
-            or set(spec) != expected_spec or spec["schemaId"] != "urn:docspec:result-export:1.0"
-            or spec["populationScope"] != "retained-active-result"
-            or spec["evidenceScope"] != "active-output-and-stage-receipts" or admission is None
-            or len(artifact.inputs) != 1 or artifact.inputs[0].role != "retained-result"
-            or artifact.inputs[0].artifact_digest != spec["retainedArtifactDigest"]):
-            raise IntegrityError("result export kind, producer, source identity or admission is invalid")
-        if len(artifact.manifests) != 1 or (
-            artifact.manifests[0].scope_kind, artifact.manifests[0].scope_id, artifact.manifests[0].object_key
-        ) != ("global", "active-result", MANIFEST_KEY):
-            raise IntegrityError("result export has an invalid member manifest")
-        with closing(iter_member_descriptors(artifact, self._source)) as descriptors:
+    def _admit(self, artifact, source, *, producer):
+        root, spec = artifact.root, artifact.root["spec"]
+        if (root["kind"] != "docspec-core-export" or root["producer"] != producer.as_dict()
+                or set(spec) != {"stateId", "schemaId"} or spec["schemaId"] != "urn:docspec:core-export:1"):
+            raise IntegrityError("export kind, producer or schema is invalid")
+        if len(artifact.manifests) != 1 or (artifact.manifests[0].scope_kind, artifact.manifests[0].scope_id,
+                artifact.manifests[0].object_key) != ("global", "selected-core-state", MANIFEST_KEY):
+            raise IntegrityError("export has an invalid member manifest")
+        with owned_iterator(iter_member_descriptors(artifact, source)) as descriptors:
             for member in descriptors:
-                expected = {"index": ("application/json", INDEX_SCHEMA),
-                    "records": ("application/x-ndjson", ROW_SCHEMA),
-                    "evidence": ("application/json", CONTROL_SCHEMA), "blob": ("application/octet-stream", None)}
-                if (member.object_key is None or member.role not in expected
-                    or (member.media_type, member.schema_id) != expected[member.role]
-                    or (member.record_count is not None) != (member.role == "records")
-                    or (member.role == "index" and member.object_key != INDEX_KEY)):
-                    raise IntegrityError("result export member has an invalid role or schema")
-                self._workspace.add_record("members", identity=member.object_key,
-                    source_item_id=member.object_key, record=member.as_dict())
-        index = read_mapping(self._source, self._member(INDEX_KEY), max_bytes=ROOT_BYTES)
-        if (set(index) != {"format", "formatVersion", "layers"}
-            or index["format"] != "docspec-result-export-index" or index["formatVersion"] != "1.0"
-            or not isinstance(index["layers"], list)):
-            raise IntegrityError("result export index has an invalid closed shape")
-        self._mark_used(INDEX_KEY)
-        core = core_delivery_schemas()
-        for layer in index["layers"]:
-            if not isinstance(layer, dict) or set(layer) != {"kind", "schemaId", "objectKey", "recordCount"}:
-                raise IntegrityError("result export layer has an invalid closed shape")
-            kind = layer["kind"]
-            if (not isinstance(kind, str) or kind in self._layers
-                or (kind not in core and not kind.startswith("derived:"))
-                or not isinstance(layer["schemaId"], str)
-                or (kind in core and layer["schemaId"] != core[kind].schema_id)
-                or type(layer["recordCount"]) is not int or layer["recordCount"] < 0
-                or layer["objectKey"] != f"records/{identity_digest(kind).removeprefix('sha256:')}.jsonl"):
-                raise IntegrityError("result export layer identity or schema is invalid")
-            member = self._member(layer["objectKey"])
-            if member.role != "records" or member.record_count != layer["recordCount"]:
-                raise IntegrityError("result export layer differs from its member")
-            self._layers[kind] = layer
-            self._mark_used(member.object_key)
-        if not set(core) <= set(self._layers) or list(self._layers) != sorted(self._layers):
-            raise IntegrityError("result export requires all core layers in sorted order")
-        with ExitStack() as stack:
-            layers = {kind: stack.enter_context(closing(self._index_rows(kind))) for kind in self._layers}
-            verify_logical_release_layers(layers, verify_artifact=self._admit_evidence,
-                verify_blob=lambda reference: self._reference(reference, admit=True))
-        report = observe_active_items(self, self._workspace, admission)
-        with closing(self._workspace.stream_records("members")) as descriptors:
-            for raw in descriptors:
-                if self._workspace.lookup_record("used", raw["objectKey"]) is None:
-                    raise IntegrityError("result export contains an unreferenced payload member")
+                key = member.object_key
+                valid = ((key == INDEX_KEY and member.role == "index") or (key == "ledger.sqlite" and member.role == "metadata")
+                    or (key == "references.jsonl" and member.role == "references") or (key == "roots.jsonl" and member.role == "roots") or (key and key.startswith("records/") and member.role == "records")
+                    or (key and key.startswith("blobs/") and member.role == "blobs"))
+                if not valid:
+                    raise IntegrityError("export contains an unsupported member")
+                self._index.add_record("members", identity=key, source_item_id=key, record=member.as_dict())
+        index = read_mapping(source, self._member(INDEX_KEY), max_bytes=ROOT_BYTES)
+        if index != {"format": "docspec-core-export", "version": 1, "state_id": spec["stateId"]}:
+            raise IntegrityError("export index differs from its selected state")
+        with verified_open(source, self._member("references.jsonl")) as stream:
+            while payload := stream.readline(RECORD_BYTES + 1):
+                if len(payload) > RECORD_BYTES:
+                    raise LimitExceededError("export reference exceeds its byte limit")
+                value = decode_canonical_json_value(payload.removesuffix(b"\n"), label="export reference")
+                reference = BlobRef.from_dict(value)
+                self._index.add_record("references", identity=identity_digest(value), source_item_id=reference.locator, record=value)
+                self._reference(reference)
+        path = source.root if hasattr(source, "root") else self._path
+        self._records = self._resources.enter_context(closing(LocalParquetRecordStorage(path / "records", create=False)))
+        self._ledger = self._resources.enter_context(closing(LocalSqliteCoreLedger(path / "ledger.sqlite", read_only=True, record_storage=self._records)))
+        self._ledger.verify_snapshot()
+        self._states = CoreStateStorage(self._records)
+        self._publisher = CorePublisher(self._ledger, _ExportBlobs(self), states=self._states,
+            selections=CoreSelectionStorage(self._records, self._states))
+        self._state_id = spec["stateId"]
+        root_count, selected_state_seen = 0, False
+        with self._publisher.session() as session:
+            with self._ledger._transaction() as connection:
+                keys = connection.execute("SELECT kind,record_id FROM records WHERE kind='state_representation'")
+                for batch in self._ledger.read_records(keys):
+                    for row in batch:
+                        if row.available:
+                            self._states.check_representation(session, record_value(row.value), retained=False, publish_entities=False)
+            with owned_iterator(self.roots()) as selected:
+                while group := tuple(islice(selected, 16)):
+                    root_count += len(group)
+                    selected_state_seen |= ("state", self._state_id) in group
+                    session.validate(MetadataBatch("export-admission", retained=group))
+        if not selected_state_seen:
+            raise IntegrityError("export roots omit the selected state")
         self._pin = artifact.pin
-        self._summary = {**report, "retainedResult": artifact.inputs[0].as_dict(),
-            "layers": deepcopy(index["layers"]), "memberCount": artifact.member_count,
-            "embeddedPayloadBytes": artifact.total_member_byte_size,
-            "provenanceScope": "Source catalogs, prior results and provider resources remain external identity pins."}
+        self._summary = {"stateId": self._state_id, "memberCount": artifact.member_count,
+                         "embeddedPayloadBytes": artifact.total_member_byte_size, "rootCount": root_count,
+                         "scope": "selected-state-and-explicit-root-evidence"}
 
 
-def open_result_export(
-    path: Path, *, expected_pin: ArtifactPin, producer: Producer, max_output_bytes: int,
-) -> AdmittedResultExport:
-    """Open an exact exported result using only its directory and accepted pins.
-
-    ``max_output_bytes`` includes root, manifest and payload bytes. JSON rows
-    and controls are limited to 8 MiB; per-item metadata is limited to 64 MiB.
-    Disposable index input is bounded at four times the admitted artifact bound.
-    Use the returned view as a context manager to release its scratch index.
-    """
+def open_result_export(path, *, expected_pin, producer, max_output_bytes):
     require_limit(max_output_bytes)
-    workspace = scratch(4 * max_output_bytes)
-    workspace.__enter__()
+    resources = ExitStack()
     view = None
     try:
         source = LocalMemberSource(Path(path))
@@ -246,27 +181,24 @@ def open_result_export(
             payload = stream.read(ROOT_BYTES + 1)
         if len(payload) > ROOT_BYTES:
             raise LimitExceededError("export root exceeds its byte limit")
-        root = thaw_json(parse_canonical_json(payload, label="result export root", file_form=False))
-        sizes = [root["counts"]["totalMemberByteSize"],
-            *(value["byteSize"] for value in root["memberManifests"]),
-            *(value["totalMemberByteSize"] for value in root["memberManifests"])]
-        if any(type(value) is not int or value < 0 for value in sizes):
+        root = decode_canonical_json_value(payload, label="result export root")
+        sizes = [root["counts"]["totalMemberByteSize"], *(value["byteSize"] for value in root["memberManifests"]),
+                 *(value["totalMemberByteSize"] for value in root["memberManifests"])]
+        if any(type(size) is not int or size < 0 for size in sizes):
             raise IntegrityError("export root declares invalid byte counts")
-        manifest_bytes = sum(value["byteSize"] for value in root["memberManifests"])
-        declared_payload_bytes = max(root["counts"]["totalMemberByteSize"],
-            sum(value["totalMemberByteSize"] for value in root["memberManifests"]))
-        if len(payload) + manifest_bytes + declared_payload_bytes > max_output_bytes:
+        total = len(payload) + sum(value["byteSize"] for value in root["memberManifests"]) + max(
+            root["counts"]["totalMemberByteSize"], sum(value["totalMemberByteSize"] for value in root["memberManifests"]))
+        if total > max_output_bytes:
             raise LimitExceededError("result export exceeds max_output_bytes")
-        view = AdmittedResultExport(source, workspace)
+        index = resources.enter_context(scratch(4 * max_output_bytes))
+        view = AdmittedResultExport(source, resources, index)
+        view._path = Path(path)
         admit_artifact(source, expected_pin=expected_pin, root_byte_limit=ROOT_BYTES,
             manifest_byte_limit=min(MANIFEST_BYTES, max_output_bytes),
             semantic_verifier=lambda artifact, member_source: view._admit(artifact, member_source, producer=producer))
         return view
     except BaseException as error:
-        if view is None:
-            workspace.__exit__(None, None, None)
-        else:
-            view.close()
-        if isinstance(error, (ArtifactVerificationError, MemberSourceError, KeyError, TypeError, ValueError)):
+        resources.close()
+        if isinstance(error, (ArtifactVerificationError, MemberSourceError, KeyError, TypeError, ValueError, sqlite3.Error)):
             raise IntegrityError(f"result export is invalid: {error}") from error
         raise

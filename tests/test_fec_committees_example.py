@@ -1,5 +1,7 @@
 """A bounded FEC census keeps source facts without claiming document acquisition."""
 
+from pathlib import Path
+
 import copy
 import json
 import socket
@@ -15,7 +17,6 @@ from spicy_docs.source_native import SourceNativeReleaseReader
 from docspec.domain.references import SourceCatalogRef
 from docspec.errors import LimitExceededError
 from docspec.runtime import open_local_catalog
-from docspec.workspace import LocalWorkspace
 from examples import fec_committees as example
 
 
@@ -38,12 +39,12 @@ def _reader(inputs, *, blob_source=None, **overrides):
 
 def _catalog(output, summary):
     return open_local_catalog(SourceCatalogRef.from_dict(summary["catalog"]),
-                              LocalWorkspace(output / "dataset"), producer=example.catalog_producer())
+                              Path(output / "dataset"), producer=example.catalog_producer())
 
 
 def _build(reader, output, **overrides):
     limits = {"max_records": 2, "max_bytes": 1024**2, "max_scratch_bytes": 16 * 1024**2}
-    return example.build_committee_catalog(reader, LocalWorkspace(output), **(limits | overrides))
+    return example.build_committee_catalog(reader, Path(output), **(limits | overrides))
 
 
 def test_complete_source_facts_and_evidence_survive_one_ordered_join(tmp_path, monkeypatch):
@@ -65,8 +66,8 @@ def test_complete_source_facts_and_evidence_survive_one_ordered_join(tmp_path, m
         raise AssertionError("a bulk catalog must not rescan evidence for each record")
 
     monkeypatch.setattr(reader, "record_evidence", no_lookup)
-    workspace = LocalWorkspace(tmp_path / "dataset")
-    result = _build(reader, workspace.root)
+    workspace = Path(tmp_path / "dataset")
+    result = _build(reader, workspace)
     assert calls == ["iter_renditions", "iter_records", "iter_record_evidence"]
     catalog = open_local_catalog(result.reference, workspace, producer=example.catalog_producer())
     actual = {row["documentId"]: row for row in catalog.iter_mappings()}
@@ -87,7 +88,7 @@ def test_complete_source_facts_and_evidence_survive_one_ordered_join(tmp_path, m
     assert expected[0]["record"]["assets"][0]["url"] == "https://www.fec.gov/synthetic-example.pdf"
     with ZipFile(BytesIO(reader.read_evidence(evidence[0]["evidenceBlobRef"]))) as archive:
         assert archive.read("response.json") == (example.FIXTURES / "committees.json").read_bytes()
-    assert {path.name for path in workspace.root.iterdir()} == {"sourceCatalog"}
+    assert {path.name for path in workspace.iterdir()} == {"sourceCatalog"}
 
 
 def test_offline_and_existing_release_paths_keep_full_scope_once(tmp_path):

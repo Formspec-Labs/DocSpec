@@ -20,19 +20,6 @@ from docspec.processing.extraction import (
     TextExtractor,
     XmlExtractor,
 )
-from docspec.processing.processors import (
-    ContentStatisticsProcessor,
-    ProcessorResult,
-)
-from docspec.domain.processors import (
-    ProcessorCacheMode,
-    ProcessorCachePolicy,
-    ProcessorDescription,
-    ProcessorInput,
-    ProcessorItemLimits,
-    ProcessorResourceIdentity,
-    ProcessorResourceKind,
-)
 from docspec.processing.bounded_segmentation import (
     BOUNDED_SEGMENTER_ID,
     BOUNDED_TEXT_KINDS,
@@ -72,7 +59,6 @@ __all__ = [
     "BoundedSegmentSettings",
     "BoundedTextSegmentation",
     "build_segment",
-    "ContentStatisticsProcessor",
     "DefaultExtractorRegistry",
     "DefaultSegmenterRegistry",
     "EvidenceMapping",
@@ -88,14 +74,6 @@ __all__ = [
     "LazyPypdfExtractor",
     "PageSegmenter",
     "ParagraphSegmenter",
-    "ProcessorCacheMode",
-    "ProcessorCachePolicy",
-    "ProcessorDescription",
-    "ProcessorInput",
-    "ProcessorItemLimits",
-    "ProcessorResourceIdentity",
-    "ProcessorResourceKind",
-    "ProcessorResult",
     "RecordSegmenter",
     "RepresentationPayload",
     "SegmentationReceipt",

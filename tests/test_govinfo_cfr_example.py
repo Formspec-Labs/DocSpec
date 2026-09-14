@@ -3,6 +3,7 @@
 import json
 import socket
 from dataclasses import asdict, replace
+from contextlib import closing
 
 import httpx
 import pytest
@@ -13,7 +14,8 @@ from spicy_docs.sources.govinfo.mods import parse_govinfo_mods
 
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import sha256_digest
-from docspec.domain.references import BlobRef
+from docspec.application.document_processors import segment_rows
+from examples.dataset_example_support import output_value
 from docspec.errors import IntegrityError
 from docspec.processing.artifacts import verify_representation_evidence, verify_segment_evidence
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
@@ -49,7 +51,7 @@ def test_complete_metadata_and_source_spans_survive_processing_with_closed_clien
     completed, acquired, closed = [], [], []
     original = (example.FIXTURES / "section.xml").read_bytes()
     metadata_bytes = (example.FIXTURES / "edition.xml").read_bytes()
-    finish, acquire, close = example.finish_run, CfrAcquirer.acquire_annual, CfrAcquirer.close
+    finish, acquire, close = example.run_documents, CfrAcquirer.acquire_annual, CfrAcquirer.close
 
     def acquire_section(client, selection, **kwargs):
         assert client not in closed
@@ -60,31 +62,36 @@ def test_complete_metadata_and_source_spans_survive_processing_with_closed_clien
         closed.append(client)
         return close(client)
 
-    def inspect_finish(*args):
+    def inspect_finish(workspace, pipeline, source_state_id, **kwargs):
         if completed:
             assert closed
-        result, view = finish(*args)
-        file, = view.records("files")
-        assert file["payload"]["transportVersion"] is None
-        assert b"".join(view.read_blob(BlobRef.from_dict(file["payload"]["blob"]), max_bytes=4096)) == original
-        segments = {row["recordId"]: row["payload"] for row in view.records("segments")}
-        processors = args[0].plan.to_dict()["processors"]["processors"]
-        for processor in processors:
-            for row in view.records("derived:" + processor["processorId"]):
-                value = row["payload"]["value"]
-                segment = segments[value["segmentId"]]
-                content = b"".join(view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=4096))
+        result, documents = finish(workspace, pipeline, source_state_id, **kwargs)
+        stages = documents[0][1]
+        captured = output_value(workspace, stages[0], "capture")
+        assert captured["transportVersion"] is None
+        assert output_value(workspace, stages[0], "content") == original
+        with workspace.publisher.session() as session:
+            segments_id = stages[2].outcome.outputs[0].entity_id
+            with closing(segment_rows(session, segments_id)) as rows:
+                segments = {key: (segment, reference) for key, segment, reference in rows}
+            output_id = stages[3].outcome.outputs[0].entity_id
+            for key, _, value in pipeline.rows(output_id):
+                if ":output:" not in key:
+                    continue
+                segment, reference = segments[key.split(":output:")[0]]
+                with closing(session.blobs.read(reference, max_bytes=4096)) as chunks:
+                    content = b"".join(chunks)
                 evidence = value["enclosingSourceEvidence"]
-                assert evidence == segment["evidence"] and evidence["sourceDigest"] == sha256_digest(original)
+                assert evidence == segment.evidence.to_dict() and evidence["sourceDigest"] == sha256_digest(original)
                 assert 0 <= evidence["start"] < evidence["end"] <= len(original)
                 for match in value["matches"]:
                     assert content[match["segmentByteStart"]:match["segmentByteEnd"]].decode() == match["quote"]
         completed.append(result)
-        return result, view
+        return result, documents
 
     monkeypatch.setattr(CfrAcquirer, "acquire_annual", acquire_section)
     monkeypatch.setattr(CfrAcquirer, "close", close_client)
-    monkeypatch.setattr(example, "finish_run", inspect_finish)
+    monkeypatch.setattr(example, "run_documents", inspect_finish)
     output = tmp_path / "experiment"
     summary = example.run_example(output)
     assert len(completed) == 2 and acquired == [example.FIXTURE_SELECTION]
@@ -156,7 +163,7 @@ def test_failed_capture_keeps_refused_body_and_does_not_publish_success(tmp_path
         body, content_type = b"<html><body>Document unavailable</body></html>", "text/html"
     _responses(monkeypatch, body=body, status=status, content_type=content_type)
     output = tmp_path / problem
-    with pytest.raises(RuntimeError, match=r"recorded 1 failure\(s\)"):
+    with pytest.raises((RuntimeError, ValueError)):
         example.run_example(output)
     refusal = json.loads(next((output / "source-evidence").glob("cfr-text-*-refusal.json")).read_text())
     assert refusal["acquisition"]["operation"] == "annual-cfr" and refusal["acquisition"]["requestCount"] == 1

@@ -19,12 +19,16 @@ from docspec.application.catalog_preview import preview_catalog, validate_previe
 from docspec.domain.references import SourceCatalogRef
 from docspec.domain.source_outcomes import DEFAULT_ACCEPTED_RECORD_OUTCOMES
 from docspec.ports.source_catalog import SourceCatalogPolicy, SourceNativeRecordSource
-from docspec.workspace import LocalWorkspace
+from docspec.runtime.core import CoreWorkspace
+
+
+def _catalog_root(workspace):
+    return (workspace.path if isinstance(workspace, CoreWorkspace) else Path(workspace).resolve()) / "sourceCatalog"
 
 
 def build_local_catalog(
     sources: Sequence[SourceNativeRecordSource],
-    workspace: LocalWorkspace,
+    workspace: CoreWorkspace | Path,
     *,
     policy: SourceCatalogPolicy,
     catalog_id: str,
@@ -58,14 +62,14 @@ def build_local_catalog(
             raise ValueError("catalog resume workspace must be an absolute path")
     with SqliteCatalogPolicyWorkspace(path=resume_workspace, max_scratch_bytes=max_scratch_bytes) as scratch:
         return SourceCatalogBuilder(
-            store=LocalSourceCatalogStore(workspace.roots["sourceCatalog"]),
+            store=LocalSourceCatalogStore(_catalog_root(workspace)),
             policy=policy, request=request, workspace_factory=lambda: nullcontext(scratch),
         ).build(sources)
 
 
 def open_local_catalog(
     reference: SourceCatalogRef,
-    workspace: LocalWorkspace,
+    workspace: CoreWorkspace | Path,
     *,
     producer: Producer,
 ) -> AdmittedSourceCatalog:
@@ -78,13 +82,13 @@ def open_local_catalog(
     if not isinstance(producer, Producer):
         raise TypeError("catalog producer acceptance must be supplied explicitly")
     return SourceCatalogArtifactReader(
-        LocalSourceCatalogStore(workspace.roots["sourceCatalog"], create=False), producer=producer,
+        LocalSourceCatalogStore(_catalog_root(workspace), create=False), producer=producer,
     ).admit_snapshot(reference)
 
 
 def preview_local_catalog(
     reference: SourceCatalogRef,
-    workspace: LocalWorkspace,
+    workspace: CoreWorkspace | Path,
     *,
     producer: Producer,
     previous_ref: SourceCatalogRef | None = None,
@@ -101,7 +105,6 @@ def preview_local_catalog(
 
     Successive catalogs are full snapshots. Omission is reported explicitly;
     input scope such as observed-crawl does not request append semantics.
-    Use prepared-run inspection for run filters and actual planned work.
     """
 
     validate_preview_limits(sample_limit, max_sample_bytes)

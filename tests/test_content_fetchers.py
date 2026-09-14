@@ -669,8 +669,10 @@ def test_router_can_use_one_route_and_tracks_its_current_settings(tmp_path, rout
         RoutingContentFetcher()
 
 
+@pytest.mark.parametrize("binding", ["router", "bound"])
 @pytest.mark.parametrize("damage", ["implementation", "configuration", "task", "attempt", "version", "changed-during-fetch"])
-def test_router_refuses_wrong_child_evidence_and_closes_before_reading(damage):
+def test_fetch_binding_refuses_wrong_evidence_and_closes_before_reading(damage, binding):
+    from docspec.ports.content_fetcher import BoundContentFetcher
     class Delegate:
         downloader_id = "test.route"
         configuration_digest = identity_digest({"configuration": "original"})
@@ -701,8 +703,8 @@ def test_router_refuses_wrong_child_evidence_and_closes_before_reading(damage):
             return FetchStream(metadata, chunks(), close_callback=close)
 
     delegate = Delegate()
-    router = RoutingContentFetcher(https=delegate, max_object_bytes=10)
+    fetcher = RoutingContentFetcher(https=delegate, max_object_bytes=10) if binding == "router" else BoundContentFetcher(delegate)
     candidate = CandidateFile("remote", "https://example.test/document", "text/plain", transport_version="required")
     with pytest.raises(IntegrityError):
-        router.fetch(candidate, max_bytes=20, task_id="task", attempt_id="attempt")
+        fetcher.fetch(candidate, max_bytes=10, task_id="task", attempt_id="attempt")
     assert delegate.closed == 1

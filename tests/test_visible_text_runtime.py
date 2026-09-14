@@ -4,9 +4,7 @@ from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
-from docspec.application.execution_evidence import failure_record
 from docspec.domain.content import Representation
-from docspec.domain.jobs import FailureClass
 from docspec.errors import IntegrityError
 from docspec.processing.artifacts import (
     PDF_PAGE_TEXT_TRANSFORM,
@@ -15,7 +13,7 @@ from docspec.processing.artifacts import (
     verify_segment_evidence,
 )
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
-from docspec.runtime import stage_policy
+from docspec.runtime import CoreWorkspace
 from examples import representation_choices
 from tests.support.processing import _captured
 
@@ -60,17 +58,17 @@ def test_heading_settings_are_snapshotted_and_changes_have_distinct_pins():
     headings = {"TITLE": 1}
     extractor = VisibleTextExtractor(xml_heading_levels=headings)
     segmenter = VisibleTextBlockSegmenter()
-    original_policy = stage_policy(extractor=extractor, segmenter=segmenter)
+    original_policy = (extractor.configuration_digest, segmenter.policy_digest)
     source = b"<doc><TITLE>Heading</TITLE></doc>"
     captured = _captured(source, "application/xml")
     original = extractor.extract(captured, source)
     headings["TITLE"] = 2
     assert extractor.extract(captured, source) == original
-    assert stage_policy(extractor=extractor, segmenter=segmenter) == original_policy
+    assert (extractor.configuration_digest, segmenter.policy_digest) == original_policy
     changed = VisibleTextExtractor(xml_heading_levels=headings)
     assert changed.extract(captured, source).payload.content == b"## Heading"
     assert changed.selected_identity(captured) != extractor.selected_identity(captured)
-    assert stage_policy(extractor=changed, segmenter=segmenter) != original_policy
+    assert (changed.configuration_digest, segmenter.policy_digest) != original_policy
     with pytest.raises(FrozenInstanceError):
         extractor._xml_headings = (("TITLE", 3),)
 
@@ -112,15 +110,13 @@ def test_block_segmenter_and_resolver_refuse_foreign_or_changed_mappings():
     ("text/html", b"<p>\xff</p>"),
 ])
 def test_source_input_refusals_are_deterministic(media_type, source):
-    with pytest.raises(ValueError) as failure:
+    with pytest.raises(ValueError):
         VisibleTextExtractor().extract(_captured(source, media_type), source)
-    assert failure_record("processing", failure.value, 1).failure_class is FailureClass.DETERMINISTIC_INPUT
 
 
 def test_captured_byte_pin_failure_remains_artifact_integrity():
-    with pytest.raises(IntegrityError) as failure:
+    with pytest.raises(IntegrityError):
         VisibleTextExtractor().extract(_captured(b"<p>Pinned</p>", "text/html"), b"<p>Changed</p>")
-    assert failure_record("processing", failure.value, 1).failure_class is FailureClass.ARTIFACT_INTEGRITY
 
 
 def test_captured_media_type_must_agree_with_its_blob():
@@ -151,29 +147,19 @@ def test_public_experiment_retains_exact_capture_and_inspects_either_representat
 
 
 def test_visible_experiment_recovery_uses_saved_stage_pins_without_refetch(tmp_path, monkeypatch):
-    actual_prepare = representation_choices.prepare_local_experiment
-    prepared_call = {}
     fetches = []
     actual_fetch = representation_choices.LocalFileContentFetcher.fetch
-
-    def observe_prepare(*args, **kwargs):
-        prepared = actual_prepare(*args, **kwargs)
-        prepared_call.update(args=args, kwargs=kwargs, prepared=prepared)
-        return prepared
-
     def observe_fetch(self, candidate, **kwargs):
         fetches.append(candidate.candidate_id)
         return actual_fetch(self, candidate, **kwargs)
-
-    monkeypatch.setattr(representation_choices, "prepare_local_experiment", observe_prepare)
     monkeypatch.setattr(representation_choices.LocalFileContentFetcher, "fetch", observe_fetch)
     representation_choices.run_example(tmp_path / "visible")
-    initial = prepared_call["prepared"]
-    settings = {**prepared_call["kwargs"], "handoff_ref": initial.handoff_ref}
-    with actual_prepare(*prepared_call["args"], **settings) as recovered:
-        assert recovered.run() == initial.run()
-    assert len(fetches) == 1
-    settings["extractor"] = VisibleTextExtractor(html_heading_tags={"h1": 2})
-    with pytest.raises(IntegrityError, match="saved|different|differs"):
-        actual_prepare(*prepared_call["args"], **settings)
-    assert len(fetches) == 1
+    with CoreWorkspace(tmp_path / "visible") as workspace:
+        settings = {"fetcher": representation_choices.LocalFileContentFetcher(representation_choices.INPUT_ROOT),
+                    "extractor": VisibleTextExtractor(), "segmenter": VisibleTextBlockSegmenter()}
+        workspace.documents(**settings).run("catalog", run_id="processed")
+        assert len(fetches) == 1
+        settings["extractor"] = VisibleTextExtractor(html_heading_tags={"h1": 2})
+        with pytest.raises(IntegrityError, match="different|differs|another"):
+            workspace.documents(**settings).run("catalog", run_id="processed")
+        assert len(fetches) == 1

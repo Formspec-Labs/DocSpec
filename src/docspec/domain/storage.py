@@ -34,10 +34,17 @@ class PartitionPolicy:
             raise ValueError("partition bucket_count must be between 1 and 65536")
 
 
+def record_key(value: object, label: str) -> str:
+    """Physical routing accepts every string, including Core's empty member key."""
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    return value
+
+
 def partition_bucket(value: str, bucket_count: int) -> int:
     """Assign one logical identity to a stable SHA-256 bucket."""
 
-    require_text(value, "partition value")
+    record_key(value, "partition value")
     if bucket_count <= 0 or bucket_count > 65_536:
         raise ValueError("bucket_count must be between 1 and 65536")
     digest = hashlib.sha256(value.encode("utf-8")).digest()

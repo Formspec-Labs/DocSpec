@@ -24,7 +24,7 @@ from docspec.domain.references import SourceCatalogRef
 from docspec.domain.source_catalog import SOURCE_CATALOG_MAX_JOIN_IDS, SourceCatalogItem
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.source_catalog import CatalogPolicyInputs, CatalogPolicyWorkspace, SourceInputSelector
-from tests.helpers import CountItems, KillAfter
+from tests.support.catalog_interruptions import CountItems, KillAfter
 from tests.support.source_catalog import _FEDERAL_REGISTER_SOURCE, FakeSource, description, producer, record, renditions
 from tests.support.source_catalog_builds import (
     assert_no_published_catalog,

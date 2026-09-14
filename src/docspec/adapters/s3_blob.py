@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import os
-import tempfile
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Self
 
+from docspec.adapters.streams import staged_bytes
+from docspec.adapters.storage.files import materialize_bytes
 from docspec.adapters.s3_errors import provider_error_identity
 from docspec.domain.identity import require_relative_path, require_sha256, require_text
 from docspec.domain.references import BlobRef
@@ -195,41 +195,8 @@ class S3ContentAddressedBlobStore:
         max_bytes: int | None = None,
     ) -> BlobRef:
         require_text(media_type, "blob media_type")
-        if expected_digest is not None:
-            require_sha256(expected_digest, "expected blob digest")
-        if expected_size is not None and (
-            isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 0
-        ):
-            raise ValueError("expected_size must be a non-negative integer")
-        if max_bytes is not None and (isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0):
-            raise ValueError("max_bytes must be a non-negative integer")
-        limit = self.config.max_blob_bytes if max_bytes is None else min(self.config.max_blob_bytes, max_bytes)
-
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix="docspec-s3-blob-",
-            dir=self._staging_directory,
-        )
-        temporary = Path(temporary_name)
-        digest = hashlib.sha256()
-        byte_size = 0
-        try:
-            with os.fdopen(descriptor, "wb") as output:
-                for chunk in chunks:
-                    if not isinstance(chunk, bytes):
-                        raise TypeError("blob chunks must be bytes")
-                    byte_size += len(chunk)
-                    if byte_size > limit:
-                        raise LimitExceededError(f"blob exceeds the {limit}-byte write limit")
-                    output.write(chunk)
-                    digest.update(chunk)
-                output.flush()
-                os.fsync(output.fileno())
-
-            actual_digest = f"sha256:{digest.hexdigest()}"
-            if expected_digest is not None and actual_digest != expected_digest:
-                raise IntegrityError("downloaded bytes differ from the expected digest")
-            if expected_size is not None and byte_size != expected_size:
-                raise IntegrityError("downloaded bytes differ from the expected size")
+        with staged_bytes(chunks, directory=self._staging_directory, limit=self.config.max_blob_bytes, max_bytes=max_bytes,
+                          expected_digest=expected_digest, expected_size=expected_size) as (temporary, actual_digest, byte_size):
             reference = BlobRef(self._locator(actual_digest), actual_digest, byte_size, media_type)
 
             existing = self._head_optional(reference)
@@ -262,12 +229,36 @@ class S3ContentAddressedBlobStore:
 
             self._validate_head(reference, self._head_required(reference))
             return reference
-        finally:
-            temporary.unlink(missing_ok=True)
 
     def stat(self, reference: BlobRef) -> BlobRef:
         self._validate_head(reference, self._head_required(reference))
         return reference
+
+    def ensure_ready(self, reference: BlobRef) -> None:
+        self.verify(reference)
+
+    def delete(self, reference: BlobRef) -> bool:
+        """Remove the active address; archival S3 versions are not an erasure claim.
+
+        The policy owner holds exclusive protection across intent, deletion and
+        completion. If-Match additionally refuses an unexpected object change.
+        """
+        existing = self._head_optional(reference)
+        if existing is None:
+            return False
+        self._validate_head(reference, existing)
+        etag = existing.get("ETag")
+        if not isinstance(etag, str) or not etag:
+            raise S3BlobStoreError("S3 deletion requires the object's ETag")
+        self.verify(reference)
+        try:
+            self.client.delete_object(Bucket=self.bucket, Key=self._key(reference.locator), IfMatch=etag)
+        except Exception as error:
+            if not _is_provider_error(error, _MISSING_CODES):
+                raise S3BlobStoreError("S3 conditional blob deletion failed") from error
+        if self._head_optional(reference) is not None:
+            raise S3BlobStoreError("S3 deletion did not remove the active object")
+        return True
 
     def _open_body(self, reference: BlobRef, *, range_header: str | None = None) -> tuple[Mapping[str, Any], Any]:
         arguments = {"Bucket": self.bucket, "Key": self._key(reference.locator)}
@@ -374,45 +365,8 @@ class S3ContentAddressedBlobStore:
             raise IntegrityError("S3 range response ended before the requested interval")
         return bytes(result)
 
-    @staticmethod
-    def _materialization_destination(root: Path, relative_path: str) -> Path:
-        relative = PurePosixPath(require_relative_path(relative_path, "materialized path"))
-        root = Path(root)
-        if root.is_symlink():
-            raise IntegrityError("materialization root must not be a symlink")
-        root.mkdir(parents=True, exist_ok=True)
-        if root.is_symlink() or not root.is_dir():
-            raise IntegrityError("materialization root must be a regular directory")
-        resolved_root = root.resolve(strict=True)
-        parent = resolved_root
-        for part in relative.parts[:-1]:
-            parent /= part
-            if parent.is_symlink():
-                raise IntegrityError("materialized path traverses a symlink")
-            parent.mkdir(exist_ok=True)
-            if parent.is_symlink() or not parent.is_dir():
-                raise IntegrityError("materialized path parent must be a regular directory")
-        destination = resolved_root.joinpath(*relative.parts)
-        if destination.is_symlink():
-            raise IntegrityError("materialized path must not be a symlink")
-        return destination
-
     def materialize(self, reference: BlobRef, root: Path, relative_path: str) -> Path:
-        destination = self._materialization_destination(root, relative_path)
-        try:
-            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError as error:
-            raise IntegrityError(f"refusing to replace materialized file: {relative_path}") from error
-        try:
-            with os.fdopen(descriptor, "wb") as output:
-                for chunk in self.read(reference, chunk_size=self.config.transfer_chunk_bytes):
-                    output.write(chunk)
-                output.flush()
-                os.fsync(output.fileno())
-        except BaseException:
-            destination.unlink(missing_ok=True)
-            raise
-        return destination
+        return materialize_bytes(root, relative_path, self.read(reference))
 
     def verify(self, reference: BlobRef) -> None:
         for _ in self.read(reference, chunk_size=self.config.transfer_chunk_bytes):

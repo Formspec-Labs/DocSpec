@@ -8,42 +8,6 @@ from typing import Any, Self
 from docspec.domain.identity import require_sha256, require_text
 
 
-@dataclass(frozen=True, slots=True)
-class ArtifactRef:
-    artifact_id: str
-    locator: str
-    digest: str
-    media_type: str
-    byte_size: int
-
-    def __post_init__(self) -> None:
-        require_text(self.artifact_id, "artifact_id")
-        require_text(self.locator, "locator")
-        require_sha256(self.digest)
-        require_text(self.media_type, "media_type")
-        if self.byte_size < 0:
-            raise ValueError("byte_size must be non-negative")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "artifactId": self.artifact_id,
-            "locator": self.locator,
-            "digest": self.digest,
-            "mediaType": self.media_type,
-            "byteSize": self.byte_size,
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> Self:
-        if set(value) != {"artifactId", "locator", "digest", "mediaType", "byteSize"}:
-            raise ValueError("artifact reference has an invalid closed shape")
-        return cls(
-            artifact_id=value["artifactId"],
-            locator=value["locator"],
-            digest=value["digest"],
-            media_type=value["mediaType"],
-            byte_size=value["byteSize"],
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,28 +39,6 @@ class BlobRef:
         return cls(value["locator"], value["digest"], value["byteSize"], value["mediaType"])
 
 
-@dataclass(frozen=True, slots=True)
-class StoreRef:
-    store_id: str
-    revision: int
-    locator: str
-    digest: str
-
-    def __post_init__(self) -> None:
-        require_text(self.store_id, "store_id")
-        require_text(self.locator, "store locator")
-        require_sha256(self.digest, "store digest")
-        if self.revision < 0:
-            raise ValueError("store revision must be non-negative")
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"storeId": self.store_id, "revision": self.revision, "locator": self.locator, "digest": self.digest}
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> Self:
-        if set(value) != {"storeId", "revision", "locator", "digest"}:
-            raise ValueError("store reference has an invalid closed shape")
-        return cls(value["storeId"], value["revision"], value["locator"], value["digest"])
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,25 +91,6 @@ class LayerRef:
         )
 
 
-@dataclass(frozen=True, slots=True)
-class DocumentReleaseRef:
-    release_id: str
-    locator: str
-    digest: str
-
-    def __post_init__(self) -> None:
-        require_text(self.release_id, "release_id")
-        require_text(self.locator, "release locator")
-        require_sha256(self.digest, "release digest")
-
-    def to_dict(self) -> dict[str, str]:
-        return {"releaseId": self.release_id, "locator": self.locator, "digest": self.digest}
-
-    @classmethod
-    def from_dict(cls, value: dict[str, Any]) -> Self:
-        if set(value) != {"releaseId", "locator", "digest"}:
-            raise ValueError("release reference has an invalid closed shape")
-        return cls(value["releaseId"], value["locator"], value["digest"])
 
 
 @dataclass(frozen=True, slots=True)

@@ -41,7 +41,8 @@ from docspec.adapters.catalog_artifact.rules import (
     _text,
     _utf16_key,
 )
-from docspec.adapters.catalog_artifact.schemas import _POLICY_VALIDATOR, _RECEIPT_VALIDATOR, _SCHEMAS, _schema_error
+from docspec.adapters.catalog_artifact.schemas import _POLICY_VALIDATOR, _RECEIPT_VALIDATOR, _SCHEMAS
+from docspec.adapters.schema_validation import validate_payload
 from docspec.domain.source_catalog import (
     SOURCE_CATALOG_ITEM_SCHEMA_ID,
     SOURCE_CATALOG_POLICY_SCHEMA_ID,
@@ -108,8 +109,8 @@ class SourceCatalogArtifactVerifier:
             raise IntegrityError("source-catalog member descriptions are invalid")
         policy = parse_canonical_json(_read_catalog_member(source, policy_member), path=CATALOG_POLICY_KEY)
         receipt = parse_canonical_json(_read_catalog_member(source, receipt_member), path=CATALOG_RECEIPT_KEY)
-        _schema_error(_POLICY_VALIDATOR, policy, "catalog policy")
-        _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
+        validate_payload(_POLICY_VALIDATOR, policy, "catalog policy")
+        validate_payload(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
         policy = _mapping(policy, "catalog policy")
         receipt = _mapping(receipt, "catalog build receipt")
         producer = _mapping(root["producer"], "source-catalog producer")

@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import Any, TypeAlias
 
 from rulespec_artifacts import canonical_json_bytes as _artifact_canonical_json_bytes
+from rulespec_artifacts import parse_canonical_json as _artifact_parse_canonical_json
 
 from docspec.errors import IntegrityError
 
@@ -253,13 +254,39 @@ def _canonical_plain_checked(value: Any, label: str) -> Any:
 def canonical_json_bytes(value: Any) -> bytes:
     """Encode converted domain values with Rulespec's canonical JSON rules."""
 
-    return _artifact_canonical_json_bytes(_canonical_plain(value))
+    return canonical_value_bytes(_canonical_plain(value))
+
+
+def canonical_value_bytes(value: Any) -> bytes:
+    """Encode plain codec values without converting foreign Python objects."""
+    return _artifact_canonical_json_bytes(value)
+
+
+def snapshot_json_value(value: Any, *, label: str = "JSON") -> Any:
+    """Admit a Python value and detach aliases through the shared JSON codec."""
+    try:
+        payload = canonical_value_bytes(value)
+    except (TypeError, ValueError) as error:
+        raise IntegrityError(f"{label} is outside its JSON codec: {error}") from error
+    return decode_canonical_json_value(payload, label=label)
 
 
 def canonical_json_file_bytes(value: Any) -> bytes:
     """Encode a canonical JSON file with one trailing newline."""
 
     return canonical_json_bytes(value) + b"\n"
+
+
+def decode_canonical_json_value(data: bytes, *, label: str = "JSON") -> Any:
+    """Admit canonical bytes through the shared decoder, returning plain values.
+
+    Typed batch consumers should not freeze and thaw the same decoded record.
+    The shared gate rejects duplicate keys and unsupported scalar values.
+    """
+    try:
+        return _artifact_parse_canonical_json(data)
+    except ValueError as error:
+        raise IntegrityError(f"{label} is not canonical JSON: {error}") from error
 
 
 def _closed_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -313,28 +340,53 @@ def identity_digest(value: Any) -> str:
 
 
 class OrderedJsonSequenceDigester:
-    """Incrementally digest one canonical JSON array with a single framing implementation."""
+    """Digest a canonical array, optionally nested after fixed prefix values.
 
-    __slots__ = ("_digest", "_finished", "_first", "_result")
+    Existing callers use a plain array. Core uses [purpose, version, [...]];
+    both share the same item framing and may reuse admitted canonical bytes.
+    """
 
-    def __init__(self) -> None:
+    __slots__ = ("_digest", "_finished", "_first", "_result", "_ending", "byte_size")
+
+    def __init__(self, *, prefix: Sequence[Any] | None = None) -> None:
         self._digest = hashlib.sha256()
-        self._digest.update(b"[")
+        opening = b"[" if prefix is None else canonical_json_bytes(list(prefix))[:-1] + (b",[" if prefix else b"[")
+        self._ending = b"]" if prefix is None else b"]]"
+        self._digest.update(opening)
+        self.byte_size = len(opening)
         self._first = True
         self._finished = False
         self._result: str | None = None
 
     def accept(self, value: Any) -> None:
+        self.accept_admitted_payload(canonical_json_bytes(value))
+
+    def accept_admitted_payload(self, payload: bytes) -> None:
+        """Reuse already admitted canonical bytes without decoding or re-encoding."""
         if self._finished:
             raise RuntimeError("ordered JSON sequence digest is already complete")
+        if not isinstance(payload, bytes):
+            raise TypeError("canonical array payload must be bytes")
         if not self._first:
             self._digest.update(b",")
-        self._digest.update(canonical_json_bytes(value))
+            self.byte_size += 1
+        self._digest.update(payload)
+        self.byte_size += len(payload)
         self._first = False
+
+    def accept_admitted_batch(self, payloads: Sequence[bytes]) -> None:
+        """Frame one already bounded batch of admitted canonical payloads."""
+        if self._finished:
+            raise RuntimeError("ordered JSON sequence digest is already complete")
+        if not isinstance(payloads, Sequence) or any(not isinstance(payload, bytes) for payload in payloads):
+            raise TypeError("canonical array batch must be a sequence of bytes")
+        if payloads:
+            self.accept_admitted_payload(b",".join(payloads))
 
     def finish(self) -> str:
         if not self._finished:
-            self._digest.update(b"]")
+            self._digest.update(self._ending)
+            self.byte_size += len(self._ending)
             self._result = f"sha256:{self._digest.hexdigest()}"
             self._finished = True
         assert self._result is not None

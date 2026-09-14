@@ -135,7 +135,17 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     assert files, "the installed DocSpec package must contain production modules"
 
     violations: list[str] = []
-    shared_imports = {(SHARED_CANONICAL_GATEWAY, "rulespec_artifacts")}
+    shared_imports = {
+        (SHARED_CANONICAL_GATEWAY, "rulespec_artifacts"),
+        # Native interchange annotations are type-only; importing ports stays light.
+        ("src/docspec/ports/record_storage.py", "duckdb"),
+        ("src/docspec/ports/record_storage.py", "pyarrow"),
+        ("src/docspec/ports/record_storage.py", "pyarrow.compute"),
+        ("src/docspec/application/core_maintenance.py", "pyarrow"),
+        ("src/docspec/application/core_dependencies.py", "msgspec"),
+        ("src/docspec/domain/core.py", "msgspec"),
+        ("src/docspec/domain/core_admission.py", "msgspec"),
+    }
     observed_shared_imports: set[tuple[str, str]] = set()
     for path in files:
         relative_parts = path.relative_to(PRODUCTION_ROOT).parts
@@ -213,10 +223,7 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
         assert all(name.startswith(("docspec/", "docspec-")) for name in members)
         assert not any(Path(name).suffix in {".pyc", ".pyo"} for name in members)
 
-        profile_paths = sorted((PRODUCTION_ROOT / "storage_profiles").glob("*.json"))
-        assert len(profile_paths) == 10
-        for path in profile_paths:
-            assert archive.read(f"docspec/storage_profiles/{path.name}") == path.read_bytes()
+        assert not any(name.startswith("docspec/storage_profiles/") for name in members)
 
         for name, schema in source_catalog_schemas().items():
             member = f"docspec/schemas/source_catalog/1.0/{name}"
@@ -265,13 +272,11 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
             (
                 "import docspec; "
                 "import docspec.entrypoint; "
-                "from docspec.profile_registry import ProfileRegistry; "
-                "registry = ProfileRegistry.builtin(); "
-                "assert len(registry.list()) == 10; "
-                "assert len(registry.local_profiles().pins) == 6; "
                 "from pathlib import Path; "
-                "from docspec.workspace import LocalWorkspace; "
-                "assert LocalWorkspace(Path.cwd()).roots['blobStorage'] == Path.cwd() / 'blobStorage'; "
+                "from docspec.runtime import CoreWorkspace; "
+                "workspace = CoreWorkspace(Path.cwd() / 'core-import-probe'); "
+                "workspace.create('state', [('key', {'value': 1})]); "
+                "assert next(workspace.rows('state'))[0] == 'key'; workspace.close(); "
                 "from docspec.adapters import build_dagster_definitions; "
                 "assert callable(build_dagster_definitions); "
                 "from docspec.source_catalog import requested_universe_set_digest; "
@@ -279,7 +284,7 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
                 "assert requested_universe_set_digest(0, ()).startswith('sha256:'); "
                 "import importlib.util, sys; "
                     "import docspec.cli; "
-                    "import docspec.adapters.platform_artifact; "
+                    "import docspec.result_export; "
                 "assert importlib.util.find_spec('rulespec_conformance') is None; "
                 "assert importlib.util.find_spec('refspec') is None; "
                 "assert importlib.util.find_spec('rdflib') is None; "
@@ -311,20 +316,21 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
     assert source_catalog_help.returncode == 0, source_catalog_help.stderr
     assert "source-catalog" in source_catalog_help.stdout
 
-    profile_list = subprocess.run(
-        [environment / "bin" / "docspec", "profile", "list"],
+    state_help = subprocess.run(
+        [environment / "bin" / "docspec", "state", "--help"],
         cwd=tmp_path,
         capture_output=True,
         check=False,
         text=True,
     )
-    assert profile_list.returncode == 0, profile_list.stderr
+    assert state_help.returncode == 0, state_help.stderr
+    assert "create" in state_help.stdout and "revise" in state_help.stdout
 
     # Reuse the documented source fixture, but execute the typed API from the
     # installed wheel, outside the checkout and without a caller JSON request.
     examples = tmp_path / "examples"
     examples.mkdir()
-    for filename in ("offline_demo.py", "phrase_match_processor.py"):
+    for filename in ("offline_demo.py", "phrase_match_processor.py", "dataset_example_support.py", "core_values.py"):
         shutil.copy2(ROOT / "examples" / filename, examples / filename)
     shutil.copytree(ROOT / "examples/offline", examples / "offline")
     shutil.copy2(ROOT / "tests/support/installed_runtime_probe.py", tmp_path / "runtime_probe.py")
@@ -336,7 +342,7 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
         text=True,
     )
     assert runtime_result.returncode == 0, runtime_result.stderr
-    assert "retained capture, processed it without refetching, recovered" in runtime_result.stdout
+    assert "retained capture, processed without refetching, reused exact results and verified independent evidence" in runtime_result.stdout
     # Reuse the same behavioral test against the installed wheel: phase-by-phase
     # call observations belong in one test, not in the contributor example.
     install_test_runner = subprocess.run(
@@ -345,13 +351,13 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
     )
     assert install_test_runner.returncode == 0, install_test_runner.stderr
     shutil.copy2(ROOT / "tests/test_offline_example.py", tmp_path / "test_offline_example.py")
+    shutil.copy2(ROOT / "tests/test_core_values_example.py", tmp_path / "test_core_values_example.py")
     example_result = subprocess.run(
         [environment_python, "-I", "-c",
          "import pathlib, pytest, sys; "
          f"sys.path.insert(0, {str(tmp_path)!r}); "
          "import docspec; assert pathlib.Path(docspec.__file__).is_relative_to(sys.prefix); "
-         "sys.exit(pytest.main(['-q', 'test_offline_example.py']))"],
+         "sys.exit(pytest.main(['-q', 'test_offline_example.py', 'test_core_values_example.py']))"],
         cwd=tmp_path, capture_output=True, check=False, text=True,
     )
     assert example_result.returncode == 0, example_result.stdout + example_result.stderr
-    assert '"profileCount":10' in profile_list.stdout

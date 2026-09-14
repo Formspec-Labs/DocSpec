@@ -1,0 +1,43 @@
+{
+  "records": [
+    {"format_version": 1, "kind": "entity", "entity_id": "o1", "entity_type": "occurrence", "value": {"kind": "inline", "value": {"url": "https://example.invalid/a", "title": "Before"}}},
+    {"format_version": 1, "kind": "entity", "entity_id": "o2", "entity_type": "occurrence", "value": {"kind": "inline", "value": {"url": "https://example.invalid/a", "title": "After"}}},
+    {"format_version": 1, "kind": "entity", "entity_id": "o3", "entity_type": "occurrence", "value": {"kind": "inline", "value": 1}},
+    {"format_version": 1, "kind": "entity", "entity_id": "o4", "entity_type": "occurrence", "value": {"kind": "inline", "value": 1}},
+    {"format_version": 1, "kind": "entity", "entity_id": "a1", "entity_type": "artifact", "value": {"kind": "content", "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "byte_size": 0, "locator": "objects/empty", "media_type": "application/octet-stream"}},
+    {"format_version": 1, "kind": "entity", "entity_id": "a2", "entity_type": "artifact", "value": {"kind": "content", "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "byte_size": 0, "locator": "objects/empty", "media_type": "application/octet-stream"}},
+    {"format_version": 1, "kind": "state", "state_id": "s1"},
+    {"format_version": 1, "kind": "state", "state_id": "s2"},
+    {"format_version": 1, "kind": "state_representation", "representation_id": "p1", "state_id": "s1", "membership": [{"member_key": "a", "occurrence_id": "o1"}, {"member_key": "b", "occurrence_id": "o3"}, {"member_key": "c", "occurrence_id": "o4"}]},
+    {"format_version": 1, "kind": "state_representation", "representation_id": "p2", "state_id": "s2", "membership": [{"member_key": "a", "occurrence_id": "o2"}, {"member_key": "b", "occurrence_id": "o3"}, {"member_key": "c", "occurrence_id": "o4"}], "revision_id": "r1"},
+    {"format_version": 1, "kind": "revision", "revision_id": "r1", "base_state_id": "s1", "result_state_id": "s2", "edits": [{"kind": "put", "sequence": 0, "member_key": "a", "occurrence_id": "o2"}], "value_edits": [{"source_occurrence_id": "o1", "result_occurrence_id": "o2", "execution_id": "xp", "patch": [{"op": "replace", "path": "/title", "value": "After", "comment": "RFC 6902 ignores this member"}]}]},
+    {"format_version": 1, "kind": "operation_definition", "definition_id": "capture", "implementation_id": "fixture:capture", "implementation_version": "1", "operation_kind": "capture", "configuration": {"observe_again": false}, "resources": [{"label": "source", "description": {"location": "https://example.invalid/a", "version": "fixture-v1"}, "certainty": "established"}]},
+    {"format_version": 1, "kind": "operation_definition", "definition_id": "patch", "implementation_id": "fixture:json-patch", "implementation_version": "1", "operation_kind": "transformation", "configuration": {"patch": [{"op": "replace", "path": "/title", "value": "After"}]}},
+    {"format_version": 1, "kind": "operation_definition", "definition_id": "adopt", "implementation_id": "fixture:adopt", "implementation_version": "1", "operation_kind": "transformation", "configuration": {}},
+    {"format_version": 1, "kind": "selected_value", "selected_value_id": "url1", "definition": {"kind": "json_fields", "selectors": [{"label": "url", "pointer": "/url"}]}, "origin": {"parent_entity_id": "o1", "state_id": "s1", "member_key": "a"}, "value": {"kind": "inline", "value": [["url", "present", "https://example.invalid/a"]]}},
+    {"format_version": 1, "kind": "selected_value", "selected_value_id": "url2", "definition": {"kind": "json_fields", "selectors": [{"label": "url", "pointer": "/url"}]}, "origin": {"parent_entity_id": "o2", "state_id": "s2", "member_key": "a"}, "value": {"kind": "inline", "value": [["url", "present", "https://example.invalid/a"]]}},
+    {"format_version": 1, "kind": "request", "request_id": "q1", "definition_id": "capture", "inputs": [{"kind": "selected_value", "label": "url", "selected_value_id": "url1"}], "dependencies": [{"label": "url", "binding_label": "url", "selection": {"kind": "whole"}}]},
+    {"format_version": 1, "kind": "request", "request_id": "q2", "definition_id": "capture", "inputs": [{"kind": "selected_value", "label": "url", "selected_value_id": "url2"}], "dependencies": [{"label": "url", "binding_label": "url", "selection": {"kind": "whole"}}]},
+    {"format_version": 1, "kind": "request", "request_id": "qp", "definition_id": "patch", "inputs": [{"kind": "whole_value", "label": "input", "entity_id": "o1"}], "dependencies": [{"label": "input", "binding_label": "input", "selection": {"kind": "whole"}}]},
+    {"format_version": 1, "kind": "request", "request_id": "qa", "definition_id": "adopt", "inputs": [{"kind": "whole_value", "label": "input", "entity_id": "a1"}], "dependencies": [{"label": "input", "binding_label": "input", "selection": {"kind": "whole"}}]},
+    {"format_version": 1, "kind": "execution", "execution_id": "x1", "request_id": "q1", "capture_origin": {"parent_entity_id": "o1", "state_id": "s1", "member_key": "a"}},
+    {"format_version": 1, "kind": "execution", "execution_id": "x2", "request_id": "q1", "capture_origin": {"parent_entity_id": "o1", "state_id": "s1", "member_key": "a"}},
+    {"format_version": 1, "kind": "execution", "execution_id": "xp", "request_id": "qp"},
+    {"format_version": 1, "kind": "execution", "execution_id": "xa", "request_id": "qa"},
+    {"format_version": 1, "kind": "result", "result_id": "c1", "execution_id": "x1", "outcome": {"status": "success", "value": "outputs", "outputs": [{"label": "raw", "entity_id": "a1", "role": "raw", "production": "new"}]}, "generations": [{"event_id": "g1", "entity_id": "a1", "happened_at": "2026-09-13T00:00:01Z"}], "usages": [{"event_id": "u1", "entity_id": "o1", "happened_at": "2026-09-13T00:00:00Z"}]},
+    {"format_version": 1, "kind": "result", "result_id": "c2", "execution_id": "x2", "outcome": {"status": "success", "value": "outputs", "outputs": [{"label": "raw", "entity_id": "a2", "role": "raw", "production": "new"}]}, "generations": [{"event_id": "g2", "entity_id": "a2", "happened_at": "2026-09-13T00:00:03Z"}], "usages": [{"event_id": "u2", "entity_id": "o1", "happened_at": "2026-09-13T00:00:02Z"}]},
+    {"format_version": 1, "kind": "result", "result_id": "rp", "execution_id": "xp", "outcome": {"status": "success", "value": "outputs", "outputs": [{"label": "value", "entity_id": "o2", "role": "derived", "production": "new"}]}, "generations": [{"event_id": "gp", "entity_id": "o2", "happened_at": "2026-09-13T00:00:05Z"}], "usages": [{"event_id": "up", "entity_id": "o1", "happened_at": "2026-09-13T00:00:04Z"}], "derivations": [{"generated_entity_id": "o2", "used_entity_id": "o1", "generation_event_id": "gp", "usage_event_id": "up"}]},
+    {"format_version": 1, "kind": "result", "result_id": "ra", "execution_id": "xa", "outcome": {"status": "success", "value": "outputs", "outputs": [{"label": "value", "entity_id": "a1", "role": "derived", "production": "adopted"}]}, "usages": [{"event_id": "ua", "entity_id": "a1", "happened_at": "2026-09-13T00:00:06Z"}]},
+    {"format_version": 1, "kind": "selection", "selection_id": "select-c1", "target": {"parent_entity_id": "o2", "state_id": "s2", "member_key": "a"}, "request_id": "q2", "selected_result_id": "c1", "output_labels": ["raw"]},
+    {"format_version": 1, "kind": "retention_policy", "policy_id": "keep-current", "description": {"keep_current": true, "protect_in_flight": true}},
+    {"format_version": 1, "kind": "dependency_evidence", "evidence_id": "omission", "result_id": "c1", "status": "omission", "description": {"resource": "source", "missing": "version not established by the original fixture declaration"}},
+    {"format_version": 1, "kind": "dependency_evidence", "evidence_id": "supplement", "result_id": "c1", "status": "supplement", "description": {"resource": "source", "version": "fixture-v1", "evidence": "retained original observation receipt"}, "supersedes_evidence_id": "omission"}
+  ],
+  "expected": {
+    "state_members": {"s1": {"a": "o1", "b": "o3", "c": "o4"}, "s2": {"a": "o2", "b": "o3", "c": "o4"}},
+    "generating_execution": {"a1": "x1", "a2": "x2", "o2": "xp"},
+    "selected_result": "c1",
+    "selected_target_occurrence": "o2",
+    "retained_request_values": {"q1": ["url1"], "q2": ["url2"], "qp": ["o1"], "qa": ["a1"]}
+  }
+}

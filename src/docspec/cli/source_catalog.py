@@ -27,13 +27,13 @@ from docspec.domain.source_outcomes import (
     DEFAULT_ACCEPTED_RECORD_OUTCOMES, RECORD_OUTCOMES, accepted_record_outcomes,
 )
 from docspec.ports.source_catalog import SourceNativeDescription
-from docspec.domain.security import redact_text
 from docspec.errors import DocSpecError
 
 from docspec.cli.catalog_policy import add_policy_command
 from docspec.cli_io import (
     SourceCatalogCliError,
     emit as _emit,
+    emit_error,
     existing_root,
     read_object,
 )
@@ -379,17 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.func(args))
     except (DocSpecError, OSError, TypeError, ValueError) as error:
-        _emit(
-            {
-                "format": "docspec-cli-error",
-                "formatVersion": "1.0",
-                "errorType": type(error).__name__,
-                "message": redact_text(str(error)),
-                "verdict": "fail",
-            },
-            error=True,
-        )
-        return 2
+        return emit_error(error)
 
 
 __all__ = ["add_source_catalog_command", "build_parser", "main"]

@@ -15,7 +15,7 @@ from docspec.application.regulations_gov_catalog import (
 )
 from docspec.domain.source_catalog import CatalogDisposition, SourceCatalogItem
 from docspec.errors import IntegrityError
-from tests.helpers import CountItems, KillAfter
+from tests.support.catalog_interruptions import CountItems, KillAfter
 from tests.support.regulations_gov import (
     _COMMENT_SYSTEM,
     _DOCKET_SYSTEM,

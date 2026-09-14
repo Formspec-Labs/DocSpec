@@ -29,8 +29,6 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "domain": {"domain", "errors"},
     "ports": {"ports", "domain", "errors"},
     "processing": {"processing", "ports", "domain", "errors"},
-    "profile_registry": {"domain", "errors"},
-    "workspace": {"profile_registry"},
     "application": {"application", "ports", "domain", "processing", "errors"},
     "adapters": {
         "adapters",
@@ -47,7 +45,7 @@ _ALLOWED_INTERNAL_IMPORTS = {
     "result_export": {"adapters"},
     "runtime": {
         "runtime", "adapters", "application", "domain", "ports", "processing",
-        "profile_registry", "workspace", "errors",
+        "errors",
     },
     "entrypoint": {"cli"},
     "cli_io": {"domain", "errors"},
@@ -60,8 +58,6 @@ _ALLOWED_INTERNAL_IMPORTS = {
         "errors",
         "ports",
         "processing",
-        "profile_registry",
-        "workspace",
         "runtime",
         "__init__",
     },
@@ -154,15 +150,8 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
         and any(_area(imported) == "adapters" for imported in _internal_imports(path, module))
     }
     assert wiring == {
-        "docspec.cli.blobs", "docspec.cli.catalog", "docspec.cli.common",
-        "docspec.runtime.catalogs",
-        "docspec.runtime.composition", "docspec.runtime.execution", "docspec.runtime.inspection",
-        "docspec.runtime.maintenance",
-        "docspec.runtime.exports",
-        "docspec.runtime.preparation", "docspec.runtime.storage",
-        "docspec.runtime.task_membership",
-        "docspec.cli.plans",
-        "docspec.cli.source_catalog",
+        "docspec.cli.parser", "docspec.cli.source_catalog",
+        "docspec.runtime.catalogs", "docspec.runtime.core",
     }
     assert {
         module
@@ -174,13 +163,13 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
     } == _PUBLIC_FACADE_MODULES
     runtime_imports = {
         _area(imported)
-        for imported in _internal_imports(modules["docspec.runtime.composition"], "docspec.runtime.composition")
+        for imported in _internal_imports(modules["docspec.runtime.core"], "docspec.runtime.core")
     }
     assert {"adapters", "application"} <= runtime_imports
     assert not (PRODUCTION_ROOT / "cli" / "local.py").exists()
     assert not (PRODUCTION_ROOT / "cli" / "execution.py").exists()
-    command_imports = _internal_imports(modules["docspec.cli.runs"], "docspec.cli.runs")
-    assert "docspec.runtime" in command_imports
+    command_imports = _internal_imports(modules["docspec.cli.parser"], "docspec.cli.parser")
+    assert "docspec.runtime.core" in command_imports
     importers_of_cli = {
         module
         for module, path in modules.items()
@@ -190,22 +179,23 @@ def test_command_and_runtime_surfaces_are_explicit_composition_roots() -> None:
 
 
 def test_importing_the_complete_core_loads_only_the_shared_artifact_dependency() -> None:
-    """Core imports may load the shared encoder and its own dependencies.
+    """Core imports may load the shared encoder and the selected record codec.
 
     Establish that baseline through its public import, including any optional
     accelerator installed here. The remaining core must introduce no other
-    foreign package. The static package guard permits this import only in the
-    domain identity gateway.
+    foreign package. The static package guard permits these imports only in
+    the identity gateway and the Core record/admission modules.
     """
 
     core_modules = sorted(
         module for module in _production_modules() if _area(module) in _CORE_AREAS
     )
-    assert "docspec.application.execution" in core_modules
+    assert "docspec.application.core_execution" in core_modules
     assert "docspec.processing.extraction" in core_modules
     probe = (
         "import importlib, json, sys\n"
         "from rulespec_artifacts import canonical_json_bytes\n"
+        "import msgspec\n"
         "shared_baseline = {name.partition('.')[0] for name in sys.modules}\n"
         f"for name in {core_modules!r}:\n"
         "    importlib.import_module(name)\n"

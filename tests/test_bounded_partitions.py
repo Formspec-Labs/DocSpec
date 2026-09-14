@@ -8,139 +8,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from docspec.adapters.reconciliation import LocalSqliteReconciliationWorkspaceFactory
 from docspec.adapters.storage import LocalParquetRecordStorage
-from docspec.application.planner import RunPlanner, logical_partition
-from docspec.domain.content import CandidateFile, SourceItem
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, sha256_digest, stable_urn
-from docspec.domain.plans import ProcessingPlan, StagePolicy, WorkLimits
-from docspec.domain.policies import DataUsePolicy, RetentionPolicy
-from docspec.domain.processors import ProcessorSet
-from docspec.domain.references import LayerRef, SourceCatalogRef
+from docspec.domain.references import LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
 from docspec.errors import IntegrityError, LimitExceededError
-from tests.helpers import EMPTY_DIGEST, profile_set
-from tests.support.planner import EmptyDocumentCatalog, MemoryControls, MemorySourceCatalog, MemoryStores
-
-
-def _source_items_in_distinct_partitions(count: int, bucket_count: int) -> tuple[SourceItem, ...]:
-    items: list[SourceItem] = []
-    partitions: set[int] = set()
-    candidate_number = 0
-    while len(items) < count:
-        item_id = f"item-{candidate_number:08d}"
-        candidate_number += 1
-        partition = logical_partition(item_id, bucket_count)
-        if partition in partitions:
-            continue
-        partitions.add(partition)
-        items.append(
-            SourceItem(
-                item_id,
-                "v1",
-                (CandidateFile("primary", f"memory://{item_id}", "text/plain", expected_size=1),),
-                metadata={"expectedSegments": 1},
-            )
-        )
-    return tuple(items)
-
-
-def _planning_plan(
-    source_ref: SourceCatalogRef,
-    *,
-    bucket_count: int,
-    max_entries: int,
-) -> ProcessingPlan:
-    return ProcessingPlan.create(
-        source_catalog=source_ref,
-        base_release=None,
-        profiles=profile_set(),
-        limits=WorkLimits(max_entries, 100, 10, 10, 100, 100, 60),
-        stages=StagePolicy(extractor_id="text-v1", extractor_configuration_digest=EMPTY_DIGEST, segmenter_id="paragraph-v1", segmenter_policy_digest=EMPTY_DIGEST, processor_ids=()),
-        processors=ProcessorSet(()),
-        partition_count=bucket_count,
-        selection={},
-        retention_policy=RetentionPolicy.retain_all(),
-        data_use_policy=DataUsePolicy.local_content(),
-        retry_policy_digest=EMPTY_DIGEST,
-        accepted_failure_policy_digest=EMPTY_DIGEST,
-    )
-
-
-def test_planner_spools_many_touched_partitions_with_deterministic_store_order(tmp_path: Path) -> None:
-    bucket_count = 4096
-    items = _source_items_in_distinct_partitions(512, bucket_count)
-    source_ref = SourceCatalogRef("urn:docspec:test:catalog", "memory://catalog", EMPTY_DIGEST)
-    controls = MemoryControls()
-    stores = MemoryStores()
-    plan = _planning_plan(source_ref, bucket_count=bucket_count, max_entries=2)
-    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    workspace_root = tmp_path / "planning"
-    planner = RunPlanner(
-        source_catalog=MemorySourceCatalog(source_ref, items),
-        document_catalog=EmptyDocumentCatalog(),
-        stores=stores,
-        controls=controls,
-        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
-            workspace_root,
-            max_spooled_bytes=16 * 1024**2,
-            max_record_bytes=64 * 1024,
-            cache_kib=64,
-            read_batch_size=1,
-        ),
-    )
-
-    first = tuple(planner.plan_run(source_ref, None, plan_ref))
-    second = tuple(planner.plan_run(source_ref, None, plan_ref))
-
-    assert first == second
-    assert len(first) == len(items)
-    logical_names = [stores.load(reference).logical_partition for reference in first]
-    assert logical_names == sorted(logical_names)
-    assert list(workspace_root.glob("*.sqlite3")) == []
-
-
-def test_planner_preserves_full_then_remaining_store_emission_order(tmp_path: Path) -> None:
-    bucket_count = 8
-    items = tuple(
-        SourceItem(
-            f"item-{index:08d}",
-            "v1",
-            (CandidateFile("primary", f"memory://item-{index:08d}", "text/plain", expected_size=1),),
-            metadata={"expectedSegments": 1},
-        )
-        for index in range(40)
-    )
-    source_ref = SourceCatalogRef("urn:docspec:test:catalog", "memory://catalog", EMPTY_DIGEST)
-    controls = MemoryControls()
-    stores = MemoryStores()
-    plan = _planning_plan(source_ref, bucket_count=bucket_count, max_entries=1)
-    plan_ref = controls.put(kind="plans", artifact_id=plan.plan_id, value=plan.to_dict())
-    planner = RunPlanner(
-        source_catalog=MemorySourceCatalog(source_ref, items),
-        document_catalog=EmptyDocumentCatalog(),
-        stores=stores,
-        controls=controls,
-        workspace_factory=LocalSqliteReconciliationWorkspaceFactory(
-            tmp_path / "planning-order",
-            cache_kib=64,
-            read_batch_size=1,
-        ),
-    )
-
-    last_by_partition: dict[int, str] = {}
-    expected: list[str] = []
-    for item in items:
-        partition = logical_partition(item.item_id, bucket_count)
-        if partition in last_by_partition:
-            expected.append(last_by_partition[partition])
-        last_by_partition[partition] = item.item_id
-    expected.extend(last_by_partition[partition] for partition in sorted(last_by_partition))
-
-    references = tuple(planner.plan_run(source_ref, None, plan_ref))
-    actual = [stores.load(reference).entries[0].source_item.item_id for reference in references]
-
-    assert actual == expected
 
 
 def _records_in_distinct_partitions(count: int, bucket_count: int) -> list[dict[str, object]]:
@@ -194,7 +66,7 @@ def test_parquet_writer_streams_many_partitions_without_whole_python_member_read
     storage.verify_members(second)
     storage.verify(second)
     root = json.loads((storage.root / second.state_ref).read_text())
-    assert root["formatVersion"] == "2.0"
+    assert root["formatVersion"] == "3.0"
     assert len(root["members"]) == len(records)
     assert all(member["mediaType"] == "application/vnd.apache.parquet" for member in root["members"])
     assert all((storage.root / member["path"]).stat().st_size == member["byteSize"] for member in root["members"])
@@ -253,6 +125,8 @@ def _physical_layer(storage, schema, policy, partitions, *, physical_schema=None
             "partition": partition, "sequence": 0, "path": locator,
             "mediaType": "application/vnd.apache.parquet", "byteSize": path.stat().st_size,
             "digest": digest, "recordCount": len(rows), "schemaId": schema.schema_id,
+            "identityMin": min(row["record_identity"] for row in rows),
+            "identityMax": max(row["record_identity"] for row in rows),
         })
     return _pin_layer(storage, schema, policy, members)
 
@@ -262,11 +136,11 @@ def _pin_layer(storage, schema, policy, members):
         "layerKind": "fixture-records",
         "schema": {"schemaId": schema.schema_id, "fields": list(schema.fields),
                    "identityField": schema.identity_field, "partitionField": schema.partition_field},
-        "profileId": "urn:docspec:profile:record-storage:local-parquet:1",
+        "profileId": "urn:docspec:profile:record-storage:local-parquet:2",
         "partitionPolicy": {"policyId": policy.policy_id, "bucketCount": policy.bucket_count},
         "members": members, "recordCount": sum(member["recordCount"] for member in members),
     }
-    root = {"format": "docspec-record-layer", "formatVersion": "2.0",
+    root = {"format": "docspec-record-layer", "formatVersion": "3.0",
             "layerId": stable_urn("record-layer", content), **content}
     payload = canonical_json_file_bytes(root)
     digest = sha256_digest(payload)
@@ -397,9 +271,7 @@ def test_physical_admission_does_not_replace_logical_row_checks(tmp_path: Path, 
 
 
 def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path: Path) -> None:
-    profile = json.loads(
-        (Path(__file__).parents[1] / "src" / "docspec" / "storage_profiles" / "local-parquet-records-v1.json").read_text()
-    )
+    storage = LocalParquetRecordStorage(tmp_path / "default-limits")
     members = []
     for partition in range(65_536):
         digest = sha256_digest(f"partition-{partition}".encode())
@@ -411,6 +283,7 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
             "byteSize": 2,
             "digest": digest,
             "recordCount": 1,
+            "identityMin": "a", "identityMax": "a",
             "schemaId": "docspec-test-record/1.0",
         })
     content = {
@@ -421,14 +294,14 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
             "identityField": "recordId",
             "partitionField": "sourceItemId",
         },
-        "profileId": profile["profileId"],
+        "profileId": "urn:docspec:profile:record-storage:local-parquet:2",
         "partitionPolicy": {"policyId": "all-supported-partitions-v1", "bucketCount": 65_536},
         "members": members,
         "recordCount": 65_536,
     }
     root = {
         "format": "docspec-record-layer",
-        "formatVersion": "2.0",
+        "formatVersion": "3.0",
         "layerId": stable_urn("record-layer", content),
         **content,
     }
@@ -446,9 +319,12 @@ def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path:
     record_root.mkdir()
     (record_root / reference.state_ref).write_bytes(payload)
 
-    assert 16 * 1024**2 < len(payload) <= profile["limits"]["maxRootBytes"]
+    assert 16 * 1024**2 < len(payload) <= storage.max_root_bytes
     undersized = LocalParquetRecordStorage(record_root, max_root_bytes=len(payload) - 1)
     with pytest.raises(LimitExceededError, match="storage member exceeds"):
         undersized._load_root(reference)
     exact = LocalParquetRecordStorage(record_root, max_root_bytes=len(payload))
     assert exact._load_root(reference)["recordCount"] == 65_536
+    storage.close()
+    undersized.close()
+    exact.close()

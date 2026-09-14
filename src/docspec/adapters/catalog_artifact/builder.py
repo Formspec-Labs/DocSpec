@@ -60,10 +60,10 @@ from docspec.adapters.catalog_artifact.schemas import (
     _POLICY_VALIDATOR,
     _RECEIPT_VALIDATOR,
     _SCHEMAS,
-    _schema_error,
     _verify_item_schema,
 )
 from docspec.adapters.catalog_artifact.verification import SourceCatalogBuildGateVerifier
+from docspec.adapters.schema_validation import validate_payload
 from docspec.domain.identity import require_text
 from docspec.domain.source_outcomes import (
     DEFAULT_ACCEPTED_RECORD_OUTCOMES, accepted_record_outcomes, require_accepted_outcome,
@@ -303,7 +303,7 @@ class SourceCatalogBuilder:
             "policyVersion": self._policy.policy_version,
             "configuration": dict(self._policy.configuration),
         }
-        _schema_error(_POLICY_VALIDATOR, policy, "catalog policy")
+        validate_payload(_POLICY_VALIDATOR, policy, "catalog policy")
         policy_bytes = canonical_json_bytes(policy)
         policy_digest = sha256_digest(policy_bytes)
         catalog_schema_digest = schema_bundle_digest(_SCHEMAS)
@@ -571,7 +571,7 @@ class SourceCatalogBuilder:
             publication_bytes = measured_publication_bytes
         else:
             raise IntegrityError("catalog publication byte accounting did not stabilize")
-        _schema_error(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
+        validate_payload(_RECEIPT_VALIDATOR, receipt, "catalog build receipt")
         if len(receipt_bytes) > MAX_SMALL_MEMBER_BYTES:
             raise LimitExceededError("catalog build receipt exceeds its metadata byte limit")
         staging.write(CATALOG_POLICY_KEY, (policy_bytes,))

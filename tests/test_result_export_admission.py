@@ -1,217 +1,180 @@
-"""Self-consistent containers must still satisfy bounded DocSpec evidence."""
+"""Valid artifact hashes cannot excuse inconsistent imported Core records."""
 
+from contextlib import contextmanager, closing
 import json
-from contextlib import contextmanager
-from dataclasses import replace
+import sqlite3
 
 import pytest
-from rulespec_artifacts import (
-    ArtifactPin, LocalMemberSource, Producer, admit_artifact, build_artifact_root,
-    describe_member, iter_member_descriptors, stamp_root, write_member_manifest,
-)
+from rulespec_artifacts import (ArtifactPin, LocalMemberSource, Producer, MemberDescriptor, build_artifact_root,
+    describe_member, stamp_root, write_member_manifest)
 
-from docspec.adapters.result_export import admission
-from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
-from docspec.adapters.storage.controls import LocalJsonControlRepository
-from docspec.domain.content import CandidateFile, Segment, SourceItem
-from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, stable_urn
-from docspec.domain.references import ArtifactRef
+from docspec.adapters.result_export.writer import export_result
+from docspec.domain import core
+from docspec.domain.identity import canonical_value_bytes, sha256_digest
 from docspec.errors import IntegrityError, LimitExceededError
-from docspec.profile_registry import ProfileRegistry
-from docspec.runtime import export_local_result, prepare_local_experiment
-from docspec.workspace import LocalWorkspace
-from tests.helpers import SharedFixtureContentFetcher, write_shared_source_catalog
-from tests.support.profiles import _seeded_local_run_arguments
-from tests.support.experiments import _FailingProcessor, experiment as _experiment_fixture
-from tests.support.exports import export_run as _export_fixture, export_result, open_export
-from tests.support.processors import _CountingProcessor, _description
-
-experiment = _experiment_fixture
-export_run = _export_fixture
+from docspec.runtime.core import CoreWorkspace
+from tests.test_result_export import MAX_BYTES, PRODUCER, export, opened, retained as _retained_fixture
 
 
-def _replace_rows(path, index, kind, values):
-    key = next(layer["objectKey"] for layer in index["layers"] if layer["kind"] == kind)
-    (path / key).write_bytes(b"".join(canonical_json_file_bytes(value) for value in sorted(values, key=lambda row: row["recordId"])))
+retained = _retained_fixture
 
-
-def _reseal(path, artifact, descriptors):
-    """Use the independent shared container writer around deliberately bad semantics."""
+def reseal(path):
     source = LocalMemberSource(path)
+    root = json.loads((path / "artifact.json").read_bytes())
+    # Saved descriptors retain the role and filename; recompute every byte pin.
+    values = [MemberDescriptor.from_dict(value, path="member") for value in json.loads((path / "members.json").read_bytes())["members"]]
     members = tuple(describe_member(source, object_key=value.object_key, role=value.role,
-        media_type=value.media_type, record_count=value.record_count, schema_id=value.schema_id)
-        for value in sorted(descriptors, key=lambda value: value.object_key))
+        media_type=value.media_type, record_count=value.record_count, schema_id=value.schema_id) for value in values)
     with (path / "members.json").open("wb") as stream:
-        manifest = write_member_manifest(stream, scope_kind="global", scope_id="active-result",
-            object_key="members.json", members=members)
-    root = build_artifact_root(kind=artifact.root["kind"], spec=artifact.root["spec"],
-        producer=Producer.from_dict(artifact.root["producer"], path="producer"),
-        inputs=artifact.inputs, manifests=(manifest,))
-    (path / "artifact.json").write_bytes(canonical_json_bytes(root))
+        manifest = write_member_manifest(stream, scope_kind="global", scope_id="selected-core-state", object_key="members.json", members=members)
+    root = build_artifact_root(kind=root["kind"], spec=root["spec"],
+        producer=Producer.from_dict(root["producer"], path="producer"), manifests=(manifest,))
+    (path / "artifact.json").write_bytes(canonical_value_bytes(root))
     return ArtifactPin(root["logicalId"], root["artifactDigest"])
 
 
-def test_understated_root_cannot_bypass_payload_read_bound(export_run, tmp_path, monkeypatch):
-    finish, *_ = export_run
-    release, _, _, settings = finish()
+def test_understated_root_cannot_bypass_payload_read_bound(retained, tmp_path, monkeypatch):
+    workspace, _ = retained
     path = tmp_path / "export"
-    export_result(settings, release, path)
+    export(workspace, path)
     root = json.loads((path / "artifact.json").read_bytes())
     root["counts"]["totalMemberByteSize"] = 0
     root = stamp_root(root)
-    payload = canonical_json_bytes(root)
+    payload = canonical_value_bytes(root)
     (path / "artifact.json").write_bytes(payload)
     pin = ArtifactPin(root["logicalId"], root["artifactDigest"])
-    bound = len(payload) + sum(value["byteSize"] for value in root["memberManifests"]) + 1
-    opened = []
-    actual_open = LocalMemberSource.open
-
+    limit = len(payload) + sum(value["byteSize"] for value in root["memberManifests"]) + 1
+    calls = []
+    original = LocalMemberSource.open
     @contextmanager
     def observed(self, key):
-        opened.append(key)
-        with actual_open(self, key) as stream:
+        calls.append(key)
+        with original(self, key) as stream:
             yield stream
-
     monkeypatch.setattr(LocalMemberSource, "open", observed)
     with pytest.raises(LimitExceededError, match="max_output_bytes"):
-        open_export(path, pin, settings["export_producer"], max_output_bytes=bound)
-    assert opened == ["artifact.json"]
+        opened(path, pin, max_output_bytes=limit)
+    assert calls == ["artifact.json"]
 
 
-def test_self_consistent_wrong_segment_bytes_refuse_the_claimed_slice(export_run, tmp_path):
-    finish, *_ = export_run
-    release, local, _, settings = finish()
+@pytest.mark.parametrize("mutation", ["key", "byte-size", "representation-link", "root-omitted"])
+def test_resealed_inconsistent_core_identity_and_links_are_refused(retained, tmp_path, mutation):
+    workspace, _ = retained
     path = tmp_path / "export"
-    export_result(settings, release, path)
-    source = LocalMemberSource(path)
-    artifact = admit_artifact(source)
-    descriptors = list(iter_member_descriptors(artifact, source))
-    index = json.loads((path / "export.json").read_bytes())
-    segments = list(local.records("segments"))
-    original = Segment.from_dict(segments[0]["payload"])
-    wrong_bytes = b"X" * original.content.byte_size
-    wrong_blob = LocalContentAddressedBlobStore(path).put_if_absent(
-        (wrong_bytes,), media_type=original.content.media_type,
-    )
-    changed = Segment.create(
-        source_item_id=original.source_item_id, file_id=original.file_id,
-        representation_id=original.representation_id, representation_start=original.representation_start,
-        representation_end=original.representation_end, ordinal=original.ordinal, kind=original.kind,
-        content=wrong_blob, evidence=original.evidence, segmenter_id=original.segmenter_id,
-        policy_digest=original.policy_digest, derivation=original.derivation,
-    )
-    segments[0] = {**segments[0], "recordId": changed.segment_id, "payload": changed.to_dict()}
-    _replace_rows(path, index, "segments", segments)
-    receipts = list(local.records("receipts"))
-    controls = LocalJsonControlRepository(path, create=False)
-    for ordinal, row in enumerate(receipts):
-        reference = ArtifactRef.from_dict(row["payload"]["artifact"])
-        value = controls.load(reference)
-        if value["format"] == "docspec-segmentation-receipt":
-            value["segments"] = [changed.segment_id if identifier == original.segment_id else identifier
-                for identifier in value["segments"]]
-            replacement = controls.put(kind="segmentation-receipt",
-                artifact_id=stable_urn("segmentation-receipt", value), value=value)
-            receipts[ordinal] = {**row, "recordId": replacement.artifact_id,
-                "payload": {**row["payload"], "artifact": replacement.to_dict()}}
-            descriptors.append(describe_member(LocalMemberSource(path), object_key=replacement.locator,
-                role="evidence", media_type="application/json", schema_id="urn:docspec:control-artifact:1.0"))
-    _replace_rows(path, index, "receipts", receipts)
-    descriptors.append(describe_member(LocalMemberSource(path), object_key=wrong_blob.locator,
-        role="blob", media_type="application/octet-stream"))
-    changed_pin = _reseal(path, artifact, descriptors)
-    # Common membership, byte digests and all replaced IDs/receipt links agree.
-    assert admit_artifact(LocalMemberSource(path), expected_pin=changed_pin).pin == changed_pin
-    with pytest.raises(IntegrityError, match="exact representation slice"):
-        open_export(path, changed_pin, settings["export_producer"])
+    export(workspace, path)
+    if mutation == "root-omitted":
+        (path / "roots.jsonl").write_bytes(b"")
+    else:
+        with closing(sqlite3.connect(path / "ledger.sqlite")) as connection:
+            if mutation == "key":
+                value = json.loads(connection.execute("SELECT payload FROM records WHERE kind='state' AND record_id='selected'").fetchone()[0])
+                value["state_id"] = "different-state"
+                payload = canonical_value_bytes(value)
+                connection.execute("UPDATE records SET payload=?,row_digest=?,byte_size=? WHERE kind='state' AND record_id='selected'",
+                                   (payload, sha256_digest(payload), len(payload)))
+            elif mutation == "byte-size":
+                connection.execute("UPDATE records SET byte_size=1 WHERE kind='state'")
+            else:
+                connection.execute("DELETE FROM links WHERE relation='representation'")
+            connection.commit()
+    with pytest.raises(IntegrityError):
+        opened(path, reseal(path))
 
 
-def test_item_bound_includes_large_processor_results_before_loading_them(export_run, tmp_path, monkeypatch):
-    finish, retry, *_ = export_run
-
-    class VerboseProcessor(_CountingProcessor):
-        def process(self, *args):
-            return replace(super().process(*args), warnings=("provider explanation " * 4000,))
-
-    processor = VerboseProcessor(_description("verbose", "1", retry))
-    release, _, _, settings = finish(processors=(processor,))
+def test_export_retains_original_provenance_from_explicit_selection_roots(tmp_path):
     path = tmp_path / "export"
-    pin = export_result(settings, release, path)
-    # The actual named bound is reduced for this fixture. Small row/attempt
-    # metadata fits; the separately referenced result bodies do not.
-    monkeypatch.setattr(admission, "ITEM_BYTES", 64 * 1024)
-    with pytest.raises(LimitExceededError, match="item controls"):
-        open_export(path, pin, settings["export_producer"])
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        definition = core.OperationDefinition(format_version=1, definition_id="definition", implementation_id="example", implementation_version="1",
+                                              operation_kind="transformation", configuration={})
+        request = core.Request(format_version=1, request_id="request", definition_id="definition", inputs=(), dependencies=())
+        def produce(context):
+            output = context.session.states.create_keyed(context.session, state_id="selected", representation_id="original", unit_id="import",
+                rows=[("row", core.Entity(format_version=1, entity_id="row", entity_type="occurrence", value=core.InlineValue(value={"answer": 42})))])
+            context.generate_record(output, label="output")
+        # The target is independently retained input metadata for this example.
+        workspace.create("target", [("source", {"v": 1})])
+        first = workspace.operations.resolve(definition, request, produce, selection_id="first", target=core.Origin(parent_entity_id="target"), reuse_policy=lambda _: True)
+        second = workspace.operations.resolve(definition, request, lambda _: pytest.fail("reused operation must not run"), selection_id="second",
+                                              target=core.Origin(parent_entity_id="target"), reuse_policy=lambda _: True)
+        assert first.result == second.result
+        pin = export_result(workspace.publisher, workspace.records, "selected", path, producer=PRODUCER, max_output_bytes=MAX_BYTES,
+                            additional_roots=iter([("selection", "second")]))
+    with opened(path, pin) as view:
+        assert view.record("result", first.result.result_id) == first.result
+        assert view.record("selection", "second") == second.selection
+        assert view.record("selection", "first") is None
+        assert set(view.roots()) == {("state", "selected"), ("selection", "second")}
+        assert view.summary["rootCount"] == 2
+    with closing(sqlite3.connect(path / "ledger.sqlite")) as connection:
+        assert connection.execute("SELECT count(*) FROM provenance_events").fetchone()[0] > 0
+        connection.execute("UPDATE provenance_events SET instant=1")
+        connection.commit()
+    with pytest.raises(IntegrityError, match="provenance"):
+        opened(path, reseal(path))
 
 
-def test_mixed_failed_item_uses_its_original_processor_plan(export_run, tmp_path):
-    finish, retry, *_ = export_run
-    upstream = _CountingProcessor(_description("upstream", "1", retry))
-    failed = _FailingProcessor(_description("failed", "1", retry, dependencies=(upstream.description.processor_id,)))
-    independent = _CountingProcessor(_description("independent", "1", retry))
-    base, prior, _, _ = finish(processors=(upstream, failed, independent))
-    changed = _CountingProcessor(_description("independent", "2", retry))
-    release, current, entries, settings = finish(processors=(upstream, failed, changed), base_release=base)
-    assert entries == ()
-    assert current.plan.stages != prior.plan.stages
-    pin = export_result(settings, release, tmp_path / "mixed")
-    with open_export(tmp_path / "mixed", pin, settings["export_producer"]) as view:
-        assert tuple(view.records("dispositions")) == tuple(prior.records("dispositions"))
-        assert view.summary["counts"]["failedItems"] == 1
-        assert tuple(view.records(f"derived:{upstream.description.processor_id}")) == tuple(
-            prior.records(f"derived:{upstream.description.processor_id}"))
+def test_document_profile_roots_export_complete_stages_after_zero_work_reuse(tmp_path):
+    from docspec.adapters.content_fetchers import LocalFileContentFetcher
+    from docspec.application.document_processors import content_statistics_processor
+    from docspec.domain.content import CandidateFile, SourceItem
+    sources = tmp_path / "sources"
+    sources.mkdir()
+    (sources / "document.txt").write_text("First paragraph.\n\nSecond paragraph.")
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        pipeline = workspace.documents(fetcher=LocalFileContentFetcher(sources))
+        pipeline.import_sources([SourceItem("document", "1", (CandidateFile("text", "document.txt", "text/plain"),))], state_id="catalog")
+        pipeline.run("catalog", run_id="first", processors=(content_statistics_processor(),))
+        from docspec.application.document_run import run_request_id
+        with workspace.ledger._transaction() as connection:
+            before = {row[0] for row in connection.execute("SELECT record_id FROM records WHERE kind='execution'")}
+        pipeline.run("catalog", run_id="successor", processors=(content_statistics_processor(),))
+        with workspace.ledger._transaction() as connection:
+            after = {row[0] for row in connection.execute("SELECT record_id FROM records WHERE kind='execution'")}
+        controlling = {identity for batch in workspace.ledger.executions(run_request_id("successor")) for identity in batch}
+        assert after - before == controlling and len(controlling) == 1
+        roots = list(pipeline.retained_roots("successor"))
+        selections = [next(workspace.ledger.read_records([key]))[0].value for key in roots if key[0] == "selection"]
+        results = [next(workspace.ledger.read_records([("result", choice.selected_result_id)]))[0].value for choice in selections]
+        pin = workspace.export("successor", tmp_path / "export", producer=PRODUCER, max_output_bytes=MAX_BYTES,
+                               additional_roots=pipeline.retained_roots("successor"))
+    workspace.path.rename(tmp_path / "original-unavailable")
+    with opened(tmp_path / "export", pin) as view:
+        assert set(view.roots()) == set(roots)
+        for result in results:
+            assert view.record("result", result.result_id) == result
+            for output in result.outcome.outputs:
+                entity = view.record("entity", output.entity_id)
+                if entity is None:
+                    assert list(view.rows(output.entity_id))
+                elif isinstance(entity.value, core.ContentRef):
+                    from docspec.domain.references import BlobRef
+                    value = entity.value
+                    assert view.read_blob(BlobRef(value.locator, value.digest, value.byte_size, value.media_type), max_bytes=MAX_BYTES)
 
 
-def test_one_export_contains_processor_evidence_from_two_owning_plans(tmp_path):
-    arguments = _seeded_local_run_arguments(tmp_path, ProfileRegistry.builtin().local_profiles())
-    original = arguments["workspace"]
-    catalog_root = tmp_path / "two-items"
-    source = write_shared_source_catalog(catalog_root, tuple(SourceItem(name, "v1", (
-        CandidateFile("primary", "document.txt", "text/plain", transport_version="fixture:v1"),
-    ), metadata={"expectedSegments": 1}) for name in ("document-a", "document-b")))
-    workspace = LocalWorkspace(original.root, original.roots | {"sourceCatalog": catalog_root})
-    processor = _CountingProcessor(_description("mixed-plans", "1", arguments["retry_policy"]))
-    settings = {
-        "limits": arguments["plan"].limits, "retry_policy": arguments["retry_policy"],
-        "accepted_failure_policy": arguments["accepted_failure_policy"],
-        "source_catalog_producer": arguments["source_catalog_producer"],
-        "document_release_producer": arguments["document_release_producer"],
-        "completed_at": arguments["completed_at"], "deadline_epoch_seconds": arguments["deadline_epoch_seconds"],
-        "content_fetcher": SharedFixtureContentFetcher(workspace.roots["sourceContent"]),
-        "processors": (processor,),
-    }
-    base = None
-    plans = []
-    for identifier in ("document-a", "document-b"):
-        with prepare_local_experiment(source, workspace, **settings, base_release=base,
-            selection={"includeItemIds": [identifier]}) as prepared:
-            base = prepared.retain(prepared.run())
-            plan = prepared.plan
-            plans.append(plan.plan_id)
-    export_producer = replace(arguments["document_release_producer"], verifier_id="urn:docspec:verifier:result-export")
-    path = tmp_path / "mixed-plans"
-    pin = export_local_result(plan, workspace, base, path, admission="nonempty-text",
-        document_release_producer=arguments["document_release_producer"], export_producer=export_producer,
-        max_output_bytes=8 * 1024**2)
-    with open_export(path, pin, export_producer) as view:
-        owning_plans = set()
-        for row in view.records("receipts"):
-            value = view.read_evidence(ArtifactRef.from_dict(row["payload"]["artifact"]))
-            if value["format"] == "docspec-processor-invocation-receipt":
-                owning_plans.add(value["request"]["plan"]["artifactId"])
-        assert owning_plans == set(plans)
-        assert len(owning_plans) == 2
-        assert view.summary["counts"]["selectedItems"] == 2
-
-
-def test_same_plan_different_results_have_distinct_export_identities(export_run, tmp_path):
-    finish, retry, *_ = export_run
-    processor = _FailingProcessor(_description("outcome", "1", retry), error=TimeoutError)
-    failed, first, _, first_settings = finish(processors=(processor,))
-    processor.fail = False
-    successful, second, _, second_settings = finish(processors=(processor,), fresh=True)
-    assert first.plan.plan_id == second.plan.plan_id
-    assert failed.digest != successful.digest
-    first_pin = export_result(first_settings, failed, tmp_path / "failed")
-    second_pin = export_result(second_settings, successful, tmp_path / "successful")
-    assert first_pin.logical_id != second_pin.logical_id
+def test_selected_fields_export_preserves_parent_identity_without_parent_bytes(tmp_path, monkeypatch):
+    from docspec.ports.core_ledger import MetadataBatch
+    from docspec.domain.references import BlobRef
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        workspace.create("selected", [("summary", {"answer": 1})])
+        with workspace.publisher.session() as session:
+            value = session.retain_value({"public": 1, "private": "whole parent bytes are not selected"})
+            parent = core.Entity(format_version=1, entity_id="parent", entity_type="artifact", value=value)
+            session.publish(MetadataBatch("parent", records=(parent,), retained=(("entity", "parent"),)))
+            fields = workspace.selections.retain(session, selected_value_id="public-field", origin=core.Origin(parent_entity_id="parent"),
+                definition=core.JsonFields(selectors=(core.Field(label="public", pointer="/public"),)))
+        read = workspace.blobs.read
+        def refuse_parent(reference, **kwargs):
+            if reference.digest == value.digest:
+                pytest.fail("direct selected-field export must not read the original whole parent")
+            yield from read(reference, **kwargs)
+        monkeypatch.setattr(workspace.blobs, "read", refuse_parent)
+        pin = workspace.export("selected", tmp_path / "export", producer=PRODUCER, max_output_bytes=MAX_BYTES,
+                               additional_roots=[("selected_value", "public-field")])
+    with opened(tmp_path / "export", pin) as view:
+        assert view.record("selected_value", "public-field") == fields
+        assert view.record("selected_value", "public-field").origin.parent_entity_id == "parent"
+        assert view.record("entity", "parent") is None
+        assert not (tmp_path / "export" / "blobs" / value.locator).exists()
+        with pytest.raises(IntegrityError, match="does not belong"):
+            view.read_blob(BlobRef(value.locator, value.digest, value.byte_size, value.media_type), max_bytes=MAX_BYTES)

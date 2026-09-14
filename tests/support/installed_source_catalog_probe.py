@@ -27,17 +27,18 @@ from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.application.regulations_gov_catalog import RegulationsGovCatalogPolicy
 from docspec.domain.identity import canonical_json_file_bytes
-from docspec.domain.references import BlobRef, SourceCatalogRef
+from docspec.domain.references import SourceCatalogRef
 from docspec.ports.source_catalog import SourceInputSelector
 from docspec.runtime import (
-    build_local_catalog, open_local_catalog, open_local_inspection, prepare_local_experiment, preview_local_catalog,
+    build_local_catalog, open_local_catalog, preview_local_catalog,
 )
-from docspec.domain.plans import WorkLimits
-from docspec.domain.policies import RetryPolicy
-from docspec.processing import ContentStatisticsProcessor
+from docspec.application.document_processors import content_statistics_processor, segment_rows
+from docspec.domain.core_admission import record_value
+from docspec.domain.source_catalog import SourceCatalogItem
+from docspec.runtime.core import CoreWorkspace
+from contextlib import closing
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
-from docspec.workspace import LocalWorkspace
 from rulespec_artifacts import Producer
 from spicy_docs.federal_register_source_native import (
     FederalRegisterPage,
@@ -69,6 +70,9 @@ from spicy_docs.source_native_store import LocalSourceNativeBlobStore
 
 
 RUN_ROOT = Path(sys.argv[1]).resolve(strict=True)
+# Only copied example helpers join the isolated interpreter; docspec stays installed.
+sys.path.insert(0, str(RUN_ROOT))
+from examples.dataset_example_support import document_results, output_value  # noqa: E402
 PROOF_PATH = Path(sys.argv[2])
 SPICY_DOCS_IMPLEMENTATION = "git+https://example.test/spicy-docs@" + "a" * 40
 DOCSPEC_IMPLEMENTATION = "git+https://example.test/docspec@" + "1" * 40
@@ -541,7 +545,7 @@ public_source = SpicyDocsSourceNativeAdapter.from_local(
     profile=FEDERAL_REGISTER_PROFILE,
     accepted_verifier_implementation_ids=frozenset({SPICY_DOCS_IMPLEMENTATION}),
 )
-public_workspace = LocalWorkspace(RUN_ROOT / "public-catalog-workspace")
+public_workspace = (RUN_ROOT / "public-catalog-workspace")
 public_catalog = build_local_catalog(
     (public_source,), public_workspace,
     policy=FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
@@ -552,7 +556,7 @@ assert {row["documentId"] for row in public_rows} == set(DOCUMENT_IDS)
 assert {row["sourceItemId"] for row in public_rows} == {
     row["sourceRecordId"] for row in public_source.iter_records()
 }
-assert {path.name for path in public_workspace.root.iterdir()} == {"sourceCatalog"}
+assert {path.name for path in public_workspace.iterdir()} == {"sourceCatalog"}
 assert public_source.describe().collection_outcome["recordOutcome"] == "no-record-rejections"
 assert public_source.describe().collection_outcome["failedRecordCount"] == 0
 # This older fixture deliberately has empty agency lists: the provider accepts
@@ -579,7 +583,7 @@ body_source = SpicyDocsSourceNativeAdapter.from_local(
     profile=FEDERAL_REGISTER_PROFILE,
     accepted_verifier_implementation_ids=frozenset({SPICY_DOCS_IMPLEMENTATION}),
 )
-body_workspace = LocalWorkspace(RUN_ROOT / "body-workspace")
+body_workspace = (RUN_ROOT / "body-workspace")
 body_catalog = build_local_catalog((body_source,), body_workspace,
     policy=FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
     catalog_id="urn:docspec:installed-body-catalog", producer=catalog_producer(), max_scratch_bytes=16 * 1024**2)
@@ -598,47 +602,42 @@ def serve_body(request):
     return httpx.Response(200, stream=httpx.ByteStream(body), headers={"Content-Type": "application/xml; charset=utf-8"})
 
 
-retry = RetryPolicy(max_attempts=1, base_delay_milliseconds=0)
-statistics = ContentStatisticsProcessor(retry_policy=retry)
+statistics = content_statistics_processor()
 with httpx.Client(transport=httpx.MockTransport(serve_body)) as client:
-    body_settings = {
-        "limits": WorkLimits(1, 1024**2, 20, 20, 20, 16 * 1024**2, 60, 1),
-        "source_catalog_producer": catalog_producer(), "document_release_producer": catalog_producer(),
-        "completed_at": "2026-09-12T00:00:00Z", "deadline_epoch_seconds": 4102444800,
-        "retry_policy": retry,
-        "content_fetcher": HttpsContentFetcher(client, HttpsContentFetcherConfig(
-            allowed_hosts=("www.federalregister.gov",), user_agent="DocSpec installed fixture",
-        )),
-    }
-    with prepare_local_experiment(body_catalog.reference, body_workspace, stop_after="capture", **body_settings) as prepared:
-        captured_release = prepared.retain(prepared.run())
-    with prepare_local_experiment(body_catalog.reference, body_workspace, base_release=captured_release,
-        extractor=VisibleTextExtractor(), segmenter=VisibleTextBlockSegmenter(), processors=(statistics,),
-        **body_settings,
-    ) as prepared:
-        body_release = prepared.retain(prepared.run())
-        body_view = open_local_inspection(prepared.plan, body_workspace,
-            document_release_producer=catalog_producer(), source_catalog_producer=catalog_producer(), release_ref=body_release)
-        body_report = body_view.summary()
+    fetcher = HttpsContentFetcher(client, HttpsContentFetcherConfig(
+        allowed_hosts=("www.federalregister.gov",), user_agent="DocSpec installed fixture"))
+    with CoreWorkspace(body_workspace) as workspace:
+        pipeline = workspace.documents(fetcher=fetcher, extractor=VisibleTextExtractor(),
+            segmenter=VisibleTextBlockSegmenter())
+        pipeline.import_sources([SourceCatalogItem.from_dict(body_item)], state_id="catalog")
+        pipeline.run("catalog", run_id="captured", extract=False, segment=False)
+        captured_result = next(document_results(workspace, pipeline, "captured"))[1][0]
+    with CoreWorkspace(body_workspace) as workspace:
+        pipeline = workspace.documents(fetcher=fetcher, extractor=VisibleTextExtractor(),
+            segmenter=VisibleTextBlockSegmenter())
+        body_state = pipeline.run("catalog", run_id="processed", processors=(statistics,))
+        body_results = next(document_results(workspace, pipeline, "processed"))[1]
+        assert len(body_results) == 4 and all(result.outcome.status == "success" for result in body_results)
+        assert body_results[0] == captured_result
+        assert output_value(workspace, body_results[0], "content") == body
+        segments_state = body_results[2].outcome.outputs[0].entity_id
+        statistics_state = body_results[3].outcome.outputs[0].entity_id
+        statistics_rows = [value for _, _, value in pipeline.rows(statistics_state)]
+        with workspace.publisher.session() as session:
+            segments = {segment.segment_id: (segment, reference)
+                for _, segment, reference in segment_rows(session, segments_state)}
+            assert len(segments) == len(statistics_rows) == 3
+            for value in statistics_rows:
+                segment, reference = segments[value["segmentId"]]
+                with closing(session.blobs.read(reference, max_bytes=1024**2)) as chunks:
+                    segment_bytes = b"".join(chunks)
+                assert value["wordCount"] == len(segment_bytes.decode("utf-8").split())
+                assert value["evidence"] == segment.evidence.to_dict()
+                assert value["contentDigest"] == "sha256:" + hashlib.sha256(segment_bytes).hexdigest()
+        body_proof = {"requests": requests, "segments": len(segments), "derivedRecords": len(statistics_rows),
+            "state": record_value(body_state), "selectedResults": [result.result_id for result in body_results]}
 assert requests == [body_url]
-assert body_report["source"]["sourceNativeInputs"][0]["collectionOutcome"]["recordOutcome"] == "no-record-rejections"
-assert body_report["work"]["counts"]["newCapturedFiles"] == 0
-assert list(body_view.records("failures")) == []
-captured_file, = body_view.records("files")
-assert b"".join(body_view.read_blob(BlobRef.from_dict(captured_file["payload"]["blob"]), max_bytes=len(body))) == body
-segments = {row["recordId"]: row["payload"] for row in body_view.records("segments")}
-assert len(segments) == 3
-statistics_rows = list(body_view.records(f"derived:{statistics.description.processor_id}"))
-assert len(statistics_rows) == len(segments)
-for row in statistics_rows:
-    value = row["payload"]["value"]
-    segment = segments[value["segmentId"]]
-    segment_bytes = b"".join(body_view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=1024**2))
-    assert value["wordCount"] == len(segment_bytes.decode("utf-8").split())
-    assert value["evidence"] == segment["evidence"]
-    assert value["contentDigest"] == "sha256:" + hashlib.sha256(segment_bytes).hexdigest()
-body_proof = {"requests": requests, "segments": len(segments), "derivedRecords": len(statistics_rows),
-              "release": body_release.to_dict(), "inspection": body_report}
+assert body_catalog.summary.source_native_inputs[0]["collectionOutcome"]["recordOutcome"] == "no-record-rejections"
 
 # The actual installed provider owns classification and evidence admission.
 # DocSpec retains its public report and makes acceptance a separate choice.
@@ -685,7 +684,7 @@ for outcome_name, records in (
         pass
     else:
         raise AssertionError("unknown provider evidence was accepted")
-    chosen_workspace = LocalWorkspace(RUN_ROOT / f"catalog-{outcome_name}")
+    chosen_workspace = (RUN_ROOT / f"catalog-{outcome_name}")
     settings = {
         "policy": FederalRegisterCatalogPolicy(FEDERAL_REGISTER_PROFILE.source_system_id),
         "catalog_id": "urn:docspec:installed-collection-outcome", "producer": catalog_producer(),
@@ -698,7 +697,7 @@ for outcome_name, records in (
             assert outcome_name in str(error)
         else:
             raise AssertionError("record rejection was accepted without an explicit choice")
-        assert not chosen_workspace.root.exists()
+        assert not chosen_workspace.exists()
     if outcome_name == "total-rejection":
         try:
             build_local_catalog((adapter,), chosen_workspace, **settings,
@@ -707,20 +706,18 @@ for outcome_name, records in (
             assert "total-rejection" in str(error)
         else:
             raise AssertionError("partial acceptance authorized total rejection")
-        assert not chosen_workspace.root.exists()
+        assert not chosen_workspace.exists()
     result = build_local_catalog((adapter,), chosen_workspace, **settings,
         accepted_record_outcomes=frozenset({"empty", "no-record-rejections", outcome_name}))
     preview = preview_local_catalog(result.reference, chosen_workspace, producer=catalog_producer())
     assert preview["catalog"]["sourceNativeInputs"][0]["collectionOutcome"] == reported
     assert preview["catalog"]["catalogSelection"]["counts"]["failed"] == 0
-    with prepare_local_experiment(
-        result.reference, chosen_workspace, stop_after="capture", limits=WorkLimits(10, 1024**2, 100, 100, 100, 16 * 1024**2, 60),
-        source_catalog_producer=catalog_producer(), document_release_producer=catalog_producer(),
-        completed_at="2026-09-11T00:00:00Z", deadline_epoch_seconds=4102444800,
-    ) as prepared:
-        inspection = open_local_inspection(prepared.plan, chosen_workspace,
-            source_catalog_producer=catalog_producer(), document_release_producer=catalog_producer()).summary()
-    assert inspection["source"]["sourceNativeInputs"][0]["collectionOutcome"] == reported
+    with CoreWorkspace(chosen_workspace) as workspace:
+        pipeline = workspace.documents(fetcher=fetcher)
+        admitted = open_local_catalog(result.reference, chosen_workspace, producer=catalog_producer())
+        pipeline.import_sources((SourceCatalogItem.from_dict(row) for row in admitted.iter_mappings()), state_id="catalog")
+        assert len(list(pipeline.rows("catalog"))) == reported["publishedRecordCount"]
+        assert canonical_json_file_bytes(admitted.summary.source_native_inputs[0]["collectionOutcome"]) == canonical_json_file_bytes(reported)
     collection_proof[outcome_name] = reported
 
 unresolved_destination = RUN_ROOT / "source-unresolved"

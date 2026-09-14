@@ -24,7 +24,6 @@ from docspec.runtime import build_local_catalog, open_local_catalog, preview_loc
 from docspec.source_catalog import (
     SourceCatalogCandidate, SpicyDocsSourceNativeAdapter, SuppliedRecordCatalogPolicy, SuppliedRecordSource,
 )
-from docspec.workspace import LocalWorkspace
 from examples.provider_identity import provider_installation
 
 NAMESPACE = "urn:docspec:example:spicyregs-comments"
@@ -65,7 +64,7 @@ def fixture_partition(*, invalid_row: bool = False) -> bytes:
     return buffer.getvalue()
 
 
-def build_comment_catalog(source: SpicyDocsSourceNativeAdapter, workspace: LocalWorkspace):
+def build_comment_catalog(source: SpicyDocsSourceNativeAdapter, workspace: Path):
     """Keep admitted source facts and field evidence in the existing supplied-record format."""
     description = source.describe()
     profile = SPICY_REGS_PUBLIC_COMMENT_PROFILE
@@ -174,7 +173,7 @@ def run_example(output: Path, *, docket_id: str = DOCKET, invalid_row: bool = Fa
             accepted_verifier_implementation_ids=frozenset({provider_implementation}))
         with closing(source.iter_failures(limit=MAX_RECORDS)) as failures:
             report["sourceRecordRejections"] = list(failures)
-        workspace = LocalWorkspace(output / "dataset")
+        workspace = Path(output / "dataset")
         result = build_comment_catalog(source, workspace)
         catalog = open_local_catalog(result.reference, workspace, producer=catalog_producer())
         report.update({"catalog": result.reference.to_dict(),

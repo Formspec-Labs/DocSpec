@@ -64,6 +64,11 @@ class _FakeS3Client:
         self.race_on_next_put = False
         self.head_error: Exception | None = None
 
+    def delete_object(self, *, Bucket: str, Key: str, IfMatch: str):  # noqa: N803
+        assert IfMatch == '"opaque-provider-etag"'
+        self.objects.pop((Bucket, Key), None)
+        return {}
+
     def head_object(self, *, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803 - boto3 API shape
         if self.head_error is not None:
             raise self.head_error
@@ -153,6 +158,63 @@ def _s3_store(
         ),
     )
     return store, client
+
+
+@pytest.mark.parametrize("profile", ["local", "s3"])
+def test_blob_readiness_delete_retry_and_recreation(profile, tmp_path):
+    store = LocalContentAddressedBlobStore(tmp_path) if profile == "local" else _s3_store(tmp_path)[0]
+    reference = store.put_if_absent([b"retained"], media_type="text/plain")
+    store.ensure_ready(reference)
+    assert store.delete(reference)
+    assert not store.delete(reference)
+    with pytest.raises((IntegrityError, S3BlobStoreError)):
+        store.ensure_ready(reference)
+    assert store.put_if_absent([b"retained"], media_type="text/plain") == reference
+    store.ensure_ready(reference)
+
+
+@pytest.mark.parametrize("profile", ["local", "s3"])
+@pytest.mark.parametrize("failure_kind", ["producer", "limit", "type"])
+def test_blob_write_failure_closes_supplied_source_once(profile, failure_kind, tmp_path):
+    store = LocalContentAddressedBlobStore(tmp_path) if profile == "local" else _s3_store(tmp_path)[0]
+    closed = []
+    error = RuntimeError("producer interrupted")
+
+    def source():
+        try:
+            yield b"ok"
+            if failure_kind == "producer":
+                raise error
+            yield "bad" if failure_kind == "type" else b"too much"
+            pytest.fail("writer consumed beyond its failure")
+        finally:
+            closed.append(True)
+
+    with pytest.raises((RuntimeError, LimitExceededError, TypeError)) as caught:
+        store.put_if_absent(source(), media_type="text/plain", max_bytes=3)
+    if failure_kind == "producer":
+        assert caught.value is error
+    assert closed == [True]
+    assert not [path for path in tmp_path.rglob("*") if path.is_file()]
+
+
+def test_s3_delete_refuses_provider_conflicts_and_requires_confirmed_absence(tmp_path, monkeypatch):
+    store, client = _s3_store(tmp_path)
+    reference = store.put_if_absent([b"content"], media_type="text/plain")
+
+    def conflict(**kwargs):
+        raise _S3Error("PreconditionFailed", 412)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(client, "delete_object", conflict)
+        with pytest.raises(S3BlobStoreError, match="conditional"):
+            store.delete(reference)
+    store.ensure_ready(reference)
+    with monkeypatch.context() as patch:
+        patch.setattr(client, "delete_object", lambda **kwargs: {})
+        with pytest.raises(S3BlobStoreError, match="did not remove"):
+            store.delete(reference)
+    assert store.delete(reference)
 
 
 @pytest.mark.parametrize("profile", ["local", "amazon-s3", "r2-s3-compatible"])

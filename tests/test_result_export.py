@@ -1,187 +1,187 @@
-"""Normal retained results become bounded independently readable datasets."""
+"""Selected Core exports preserve exact values without a workspace or producer."""
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
+import sqlite3
 
 import pytest
-from rulespec_artifacts import ArtifactPin
+from rulespec_artifacts import ArtifactPin, Producer
 
+from docspec.adapters.result_export.writer import export_result
 from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
-from docspec.domain.content import CapturedFile, Representation, Segment
-from docspec.domain.references import ArtifactRef
-from docspec.errors import IntegrityError, LimitExceededError
-from docspec.result_export import ExportAdmissionError
-from tests.support.experiments import _FailingProcessor, experiment as _experiment_fixture
-from tests.support.processors import _CountingProcessor, _description
-from tests.support.exports import export_run as _export_fixture, export_result as _export, open_export as _open
+from docspec.domain import core
+from docspec.domain.references import BlobRef
+from docspec.errors import IntegrityError, LimitExceededError, StateTransitionError
+from docspec.result_export import open_result_export
+from docspec.runtime.core import CoreWorkspace
 
-experiment = _experiment_fixture
-export_run = _export_fixture
-
+MAX_BYTES = 8 * 1024**2
+PRODUCER = Producer("docspec", "git+https://example.test/docspec@" + "1" * 40,
+    "urn:docspec:verifier:core-export", "1", "git+https://example.test/docspec@" + "1" * 40)
 
 
-def test_export_opens_without_workspace_and_does_not_repeat_processing(export_run, tmp_path, monkeypatch):
-    finish, retry, fetches, extractor, segmenter = export_run
-    processor = _CountingProcessor(_description("export", "1", retry))
-    release, local, _, settings = finish(processors=(processor,))
-    expected = {layer.layer_kind: tuple(local.records(layer.layer_kind)) for layer in local._layers}
-    before = len(fetches), extractor.calls, segmenter.calls, len(processor.calls)
+@pytest.fixture
+def retained(tmp_path):
+    workspace = CoreWorkspace(tmp_path / "workspace")
+    try:
+        with workspace.publisher.session() as session:
+            content = session.retain_bytes([b"retained document\n"])
+            first = core.Entity(format_version=1, entity_id="document", entity_type="occurrence", value=content)
+            unused = core.Entity(format_version=1, entity_id="unused", entity_type="occurrence", value=core.InlineValue(value={"secret": "not part of selected membership"}))
+            workspace.states.create(session, state_id="selected", representation_id="original", unit_id="import",
+                entities=(first, unused), members=(core.Membership(member_key="document", occurrence_id="document"),))
+        workspace.create("unrelated", [("private", {"secret": "another dataset"})])
+        yield workspace, BlobRef(content.locator, content.digest, content.byte_size, content.media_type)
+    finally:
+        workspace.close()
+
+
+def export(workspace, destination, **kwargs):
+    return export_result(workspace.publisher, workspace.records, "selected", destination,
+                         producer=PRODUCER, max_output_bytes=MAX_BYTES, **kwargs)
+
+
+def opened(destination, pin, **kwargs):
+    return open_result_export(destination, expected_pin=pin, producer=PRODUCER,
+                              **({"max_output_bytes": MAX_BYTES} | kwargs))
+
+
+def test_export_opens_without_workspace_and_excludes_unrelated_rows(retained, tmp_path):
+    workspace, reference = retained
+    expected = list(workspace.rows("selected"))
     destination = tmp_path / "export"
-    pin = _export(settings, release, destination, admission="nonempty-text")
-    assert before == (len(fetches), extractor.calls, segmenter.calls, len(processor.calls))
-    assert _export(settings, release, destination, admission="nonempty-text") == pin
-
-    def no_workspace(*args, **kwargs):
-        raise AssertionError("an independent reader must not open a workspace")
-
-    monkeypatch.setattr("docspec.runtime.storage._local_storage", no_workspace)
-    # Move every source dataset root; the export uses only embedded relative paths.
-    for name, root in settings["workspace"].roots.items():
-        if root.is_dir() and name != "reconciliation":
-            root.rename(root.with_name(root.name + "-unavailable"))
-    with _open(destination, pin, settings["export_producer"]) as view:
-        assert view.pin == pin
-        assert {kind: tuple(view.records(kind)) for kind in view.layer_kinds} == expected
-        assert view.summary["counts"]["selectedItems"] == 1
-        assert view.summary["counts"]["itemsWithNonemptyText"] == 1
-        assert view.summary["semanticCompleteness"] == "not-established"
-        captured = CapturedFile.from_dict(expected["files"][0]["payload"])
-        representation = Representation.from_dict(expected["representations"][0]["payload"])
-        assert view.read_blob(captured.blob, max_bytes=1024) == view.read_blob(representation.blob, max_bytes=1024)
-        for row in expected["segments"]:
-            segment = Segment.from_dict(row["payload"])
-            content = view.read_blob(segment.content, max_bytes=1024)
-            assert content == view.read_blob(representation.blob, max_bytes=1024)[
-                segment.representation_start:segment.representation_end]
-        for row in expected["receipts"]:
-            reference = ArtifactRef.from_dict(row["payload"]["artifact"])
-            value = view.read_evidence(reference)
-            if value["format"] == "docspec-processor-invocation-receipt":
-                assert view.read_evidence(ArtifactRef.from_dict(value["request"]["plan"]))["planId"] == local.plan.plan_id
-                assert view.read_evidence(ArtifactRef.from_dict(value["result"]))["resultId"]
+    pin = export(workspace, destination)
+    assert export(workspace, destination) == pin
+    workspace.close()
+    workspace.path.rename(tmp_path / "unavailable-workspace")
+    with opened(destination, pin) as view:
+        assert list(view.rows()) == expected
+        assert view.read_blob(reference, max_bytes=1024) == b"retained document\n"
+        assert view.record("state", "unrelated") is None
+        assert view.record("entity", "unused") is None
+        assert view.pin == pin and view.summary["stateId"] == "selected"
+        with pytest.raises(StateTransitionError, match="read-only"):
+            view._ledger.commit(__import__("docspec.ports.core_ledger", fromlist=["MetadataBatch"]).MetadataBatch("forbidden"))
+        with sqlite3.connect(f"file:{destination}/ledger.sqlite?mode=ro", uri=True) as connection:
+            assert connection.execute("SELECT count(*) FROM heads").fetchone() == (0,)
     with pytest.raises(RuntimeError, match="closed"):
-        tuple(view.records("files"))
+        list(view.rows())
+    assert not list(destination.glob("ledger.sqlite-*"))
+    for path in (destination / "records").rglob("*.parquet"):
+        import pyarrow.parquet as parquet
+        payloads = parquet.read_table(path, columns=["record_json"]).column(0).to_pylist()
+        assert all(b"not part of selected membership" not in payload and b"another dataset" not in payload for payload in payloads)
 
 
-@pytest.mark.parametrize("mode", ["capture", "failure"])
-def test_explicit_admission_preserves_valid_gaps_or_refuses_with_reasons(export_run, tmp_path, mode):
-    finish, retry, *_ = export_run
-    if mode == "capture":
-        release, local, _, settings = finish(stop_after="capture", extractor=None, segmenter=None)
-    else:
-        failed = _FailingProcessor(_description("failing", "1", retry))
-        release, local, _, settings = finish(processors=(failed,))
-    pin = _export(settings, release, tmp_path / "evidence")
-    with _open(tmp_path / "evidence", pin, settings["export_producer"]) as view:
-        assert tuple(view.records("dispositions")) == tuple(local.records("dispositions"))
-        assert view.summary["counts"]["failedItems"] == int(mode == "failure")
-    with pytest.raises(ExportAdmissionError) as refusal:
-        _export(settings, release, tmp_path / "text", admission="nonempty-text")
-    assert refusal.value.report["reasonCounts"] == {
-        "no-nonempty-text" if mode == "capture" else "terminal-failure": 1,
-    }
-    assert len(refusal.value.report["sample"]) == 1
-    assert not (tmp_path / "text").exists()
-    assert not list(tmp_path.glob(".text.export-*"))
+def test_zero_work_successor_exports_complete_retained_population(retained, tmp_path):
+    workspace, _ = retained
+    # Selecting an existing state performs no producer work or new row writes.
+    workspace.maintenance.select_current("choose", "documents", ("state", "selected"), None)
+    before = list(workspace.rows("selected"))
+    pin = export(workspace, tmp_path / "successor")
+    with opened(tmp_path / "successor", pin) as view:
+        assert list(view.rows()) == before
 
 
-def test_zero_task_successor_exports_entire_retained_population(export_run, tmp_path):
-    finish, retry, *_ = export_run
-    processor = _CountingProcessor(_description("retained", "1", retry))
-    base, original, _, _ = finish(processors=(processor,))
-    release, successor, entries, settings = finish(processors=(processor,), base_release=base)
-    assert entries == ()
-    pin = _export(settings, release, tmp_path / "unchanged", admission="nonempty-text")
-    with _open(tmp_path / "unchanged", pin, settings["export_producer"]) as view:
-        assert view.summary["counts"]["selectedItems"] == 1
-        assert tuple(view.records("receipts")) == tuple(original.records("receipts"))
-        assert successor.plan.plan_id != original.plan.plan_id
-        assert tuple(view.records("source-items")) == tuple(original.records("source-items"))
-
-
-def test_reader_checks_pin_producer_total_bound_and_exact_reference(export_run, tmp_path):
-    finish, *_ = export_run
-    release, _, _, settings = finish()
+def test_reader_checks_pin_producer_total_bound_and_exact_reference(retained, tmp_path):
+    workspace, reference = retained
     destination = tmp_path / "export"
-    pin = _export(settings, release, destination)
+    pin = export(workspace, destination)
     with pytest.raises(IntegrityError):
-        _open(destination, ArtifactPin(pin.logical_id, "sha256:" + "0" * 64), settings["export_producer"])
+        opened(destination, ArtifactPin(pin.logical_id, "sha256:" + "0" * 64))
     with pytest.raises(IntegrityError, match="producer"):
-        _open(destination, pin, replace(settings["export_producer"], verifier_version="other"))
+        open_result_export(destination, expected_pin=pin, producer=replace(PRODUCER, verifier_version="other"), max_output_bytes=MAX_BYTES)
     with pytest.raises(LimitExceededError, match="max_output_bytes"):
-        _open(destination, pin, settings["export_producer"], max_output_bytes=10)
-    with _open(destination, pin, settings["export_producer"]) as view:
-        file = CapturedFile.from_dict(next(view.records("files"))["payload"])
+        opened(destination, pin, max_output_bytes=10)
+    with opened(destination, pin) as view:
         with pytest.raises(LimitExceededError, match="max_bytes"):
-            view.read_blob(file.blob, max_bytes=1)
+            view.read_blob(reference, max_bytes=1)
         with pytest.raises(IntegrityError, match="does not belong"):
-            view.read_blob(replace(file.blob, media_type="application/not-the-admitted-reference"), max_bytes=1024)
-        (destination / file.blob.locator).write_bytes(b"x" * file.blob.byte_size)
+            view.read_blob(replace(reference, media_type="application/other"), max_bytes=1024)
+        (destination / "blobs" / reference.locator).write_bytes(b"x" * reference.byte_size)
         with pytest.raises(IntegrityError, match="descriptor"):
-            view.read_blob(file.blob, max_bytes=1024)
+            view.read_blob(reference, max_bytes=1024)
 
 
-def test_abandoned_rows_release_the_member_file(export_run, tmp_path, monkeypatch):
-    finish, *_ = export_run
-    release, _, _, settings = finish()
+def test_abandoned_content_reader_closes_member(retained, tmp_path, monkeypatch):
+    workspace, reference = retained
     destination = tmp_path / "export"
-    pin = _export(settings, release, destination)
-    with _open(destination, pin, settings["export_producer"]) as view:
-        opened = []
+    pin = export(workspace, destination)
+    with opened(destination, pin) as view:
+        streams = []
         real_open = view._source.open
-
         @contextmanager
         def observed(key):
             with real_open(key) as stream:
-                opened.append(stream)
+                streams.append(stream)
                 yield stream
-
         monkeypatch.setattr(view._source, "open", observed)
-        values = view.records("segments")
-        next(values)
-        assert not opened[-1].closed
+        values = view._publisher.blobs.read(reference, chunk_size=1)
+        assert next(values) == b"r" and not streams[-1].closed
         values.close()
-        assert opened[-1].closed
+        assert streams[-1].closed
+        rows = view.rows()
+        next(rows)
+        rows.close()
 
 
-def test_interrupted_export_never_publishes_or_replaces_a_destination(export_run, tmp_path, monkeypatch):
-    finish, *_ = export_run
-    release, _, _, settings = finish()
-    original_read = LocalContentAddressedBlobStore.read
-
+def test_interrupted_export_never_publishes_or_replaces_destination(retained, tmp_path, monkeypatch):
+    workspace, _ = retained
+    original = LocalContentAddressedBlobStore.read
     def interrupted(self, reference, **kwargs):
-        with closing(original_read(self, reference, **kwargs)) as chunks:
+        with closing(original(self, reference, **kwargs)) as chunks:
             yield next(chunks)
             raise OSError("injected export interruption")
-
     monkeypatch.setattr(LocalContentAddressedBlobStore, "read", interrupted)
     destination = tmp_path / "incomplete"
     with pytest.raises(OSError, match="interruption"):
-        _export(settings, release, destination)
-    assert not destination.exists()
-    assert not list(tmp_path.glob(".incomplete.export-*"))
-    monkeypatch.setattr(LocalContentAddressedBlobStore, "read", original_read)
+        export(workspace, destination)
+    assert not destination.exists() and not list(tmp_path.glob(".incomplete.export-*"))
+    monkeypatch.setattr(LocalContentAddressedBlobStore, "read", original)
     destination.mkdir()
     marker = destination / "keep.txt"
     marker.write_text("existing different data")
     with pytest.raises(IntegrityError):
-        _export(settings, release, destination)
+        export(workspace, destination)
     assert marker.read_text() == "existing different data"
 
 
 @pytest.mark.parametrize("mutation", ["extra", "missing", "changed"])
-def test_shared_container_refuses_mutated_members(export_run, tmp_path, mutation):
-    finish, *_ = export_run
-    release, _, _, settings = finish()
+def test_shared_container_refuses_mutated_members(retained, tmp_path, mutation):
+    workspace, _ = retained
     destination = tmp_path / "export"
-    pin = _export(settings, release, destination)
+    pin = export(workspace, destination)
     if mutation == "extra":
         (destination / "unlisted.txt").write_text("extra")
+    elif mutation == "missing":
+        (destination / "ledger.sqlite").unlink()
     else:
-        member = next(destination.glob("control/**/*.json"))
-        if mutation == "missing":
-            member.unlink()
-        else:
-            member.write_bytes(member.read_bytes() + b" ")
+        path = destination / "references.jsonl"
+        path.write_bytes(path.read_bytes() + b" ")
     with pytest.raises(IntegrityError):
-        _open(destination, pin, settings["export_producer"])
+        opened(destination, pin)
+
+
+def test_explicit_physical_representation_root_preserves_its_exact_record(retained, tmp_path):
+    workspace, _ = retained
+    original = next(workspace.ledger.read_records([("state_representation", "original")]))[0].value
+    destination = tmp_path / "physical-export"
+    pin = export(workspace, destination, additional_roots=[("state_representation", "original")])
+    with opened(destination, pin) as view:
+        assert view.record("state_representation", "original") == original
+        assert ("state_representation", "original") in set(view.roots())
+
+
+def test_failed_root_validation_closes_additional_root_stream(retained, tmp_path):
+    workspace, _ = retained
+    closed = []
+    def roots():
+        try:
+            yield ("state", "missing")
+            raise IntegrityError("source stopped")
+        finally:
+            closed.append(True)
+    with pytest.raises(IntegrityError):
+        export(workspace, tmp_path / "bad-roots", additional_roots=roots())
+    assert closed == [True]
+    assert not (tmp_path / "bad-roots").exists()

@@ -20,7 +20,6 @@ from docspec.domain.identity import sha256_digest
 from docspec.domain.references import SourceCatalogRef
 from docspec.runtime import open_local_catalog
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
-from docspec.workspace import LocalWorkspace
 from examples import gao_topics as example
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +34,7 @@ def no_network(monkeypatch):
 
 
 def _open_catalog(result, output):
-    return open_local_catalog(SourceCatalogRef.from_dict(result["catalog"]), LocalWorkspace(output / "dataset"),
+    return open_local_catalog(SourceCatalogRef.from_dict(result["catalog"]), Path(output / "dataset"),
                               producer=example.catalog_producer())
 
 

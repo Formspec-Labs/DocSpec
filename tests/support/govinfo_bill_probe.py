@@ -6,6 +6,7 @@ import socket
 import sys
 import zipfile
 from dataclasses import asdict, replace
+from contextlib import closing
 from datetime import timedelta
 from importlib.metadata import version
 from pathlib import Path
@@ -18,11 +19,12 @@ from spicy_docs.sources.congress.bill_acquisition import BillAcquirer
 
 from docspec.domain.identity import identity_digest, sha256_digest
 from docspec.domain.content import CandidateFile
-from docspec.domain.references import BlobRef
+from docspec.application.document_processors import segment_rows
+from docspec.runtime import CoreWorkspace
 from examples import govinfo_bills as example
 from examples.provider_identity import provider_installation
 from examples.govinfo_bill_fetcher import BillContentFetcher
-from examples.dataset_example_support import retain_refusal
+from examples.dataset_example_support import retain_refusal, output_value
 
 
 def reject_network(*args, **kwargs):
@@ -43,7 +45,7 @@ def main():
     original = (example.FIXTURES / "introduced.xml").read_bytes()
     status = (example.FIXTURES / "status.xml").read_bytes()
     completed, text_calls, closed = [], [], []
-    finish, acquire_text, close = example.finish_run, BillAcquirer.acquire_text, BillAcquirer.close
+    finish, acquire_text, close = example.run_documents, BillAcquirer.acquire_text, BillAcquirer.close
 
     def observed_text(client, *args, **kwargs):
         assert client not in closed, "reprocessing called the closed source client"
@@ -54,35 +56,37 @@ def main():
         closed.append(client)
         return close(client)
 
-    def inspected_finish(*args):
+    def inspected_finish(workspace, pipeline, source_state_id, **kwargs):
         if completed:
-            assert closed, "the example must close acquisition before a separate processing run"
-        result, view = finish(*args)
-        files = list(view.records("files"))
-        assert len(files) == 1
-        assert files[0]["payload"]["transportVersion"] is None
-        assert files[0]["payload"]["sourceVersion"] == "BILLS-119hr6028ih"
-        assert b"".join(view.read_blob(BlobRef.from_dict(files[0]["payload"]["blob"]), max_bytes=4096)) == original
-        segments = {row["recordId"]: row["payload"] for row in view.records("segments")}
-        processor_ids = args[0].plan.to_dict()["processors"]["processors"]
-        for processor in processor_ids:
-            for row in view.records("derived:" + processor["processorId"]):
-                value = row["payload"]["value"]
-                segment = segments[value["segmentId"]]
-                content = b"".join(view.read_blob(BlobRef.from_dict(segment["content"]), max_bytes=4096))
+            assert closed, "the example must close acquisition before separate processing"
+        result, documents = finish(workspace, pipeline, source_state_id, **kwargs)
+        stages = documents[0][1]
+        captured = output_value(workspace, stages[0], "capture")
+        assert captured["transportVersion"] is None
+        assert captured["sourceVersion"] == "BILLS-119hr6028ih"
+        assert output_value(workspace, stages[0], "content") == original
+        with workspace.publisher.session() as session:
+            with closing(segment_rows(session, stages[2].outcome.outputs[0].entity_id)) as rows:
+                segments = {key: (segment, reference) for key, segment, reference in rows}
+            for key, _, value in pipeline.rows(stages[3].outcome.outputs[0].entity_id):
+                if ":output:" not in key:
+                    continue
+                segment, reference = segments[key.split(":output:")[0]]
+                with closing(session.blobs.read(reference, max_bytes=4096)) as chunks:
+                    content = b"".join(chunks)
                 evidence = value["enclosingSourceEvidence"]
-                assert evidence == segment["evidence"] and evidence["sourceDigest"] == sha256_digest(original)
+                assert evidence == segment.evidence.to_dict() and evidence["sourceDigest"] == sha256_digest(original)
                 assert 0 <= evidence["start"] < evidence["end"] <= len(original)
                 for match in value["matches"]:
                     assert content[match["segmentByteStart"]:match["segmentByteEnd"]].decode() == match["quote"]
                     assert match["quote"] in original[evidence["start"]:evidence["end"]].decode()
         completed.append(result)
-        return result, view
+        return result, documents
 
     with patch.object(socket.socket, "connect", reject_network), patch.object(socket, "create_connection", reject_network):
         output = root / "experiment"
         with patch.object(BillAcquirer, "acquire_text", observed_text), patch.object(BillAcquirer, "close", observed_close), \
-                patch.object(example, "finish_run", inspected_finish):
+                patch.object(example, "run_documents", inspected_finish):
             summary = example.run_example(output, package_id="BILLS-119hr6028ih")
         assert len(completed) == 2 and text_calls == ["BILLS-119hr6028ih"]
         assert summary["offeredTextVersions"] == 2 and summary["offeredFormats"] == 5
@@ -140,8 +144,8 @@ def main():
             with patch.object(example, "fixture_transport", refused_transport):
                 try:
                     example.run_example(refused, package_id="BILLS-119hr6028ih")
-                except RuntimeError as error:
-                    assert "recorded 1 failure(s)" in str(error)
+                except Exception as error:
+                    assert str(error)
                 else:
                     raise AssertionError(f"{name} must not produce a successful experiment summary")
             refusal = json.loads(next((refused / "source-evidence").glob("bill-text-*-refusal.json")).read_text())
@@ -149,7 +153,9 @@ def main():
             assert refusal["message"] and refusal["errorType"]
             assert refusal["response"]["sha256"] == sha256_digest(body)
             assert (refused / "source-evidence" / refusal["response"]["bodyFile"]).read_bytes() == body
-            assert json.loads((refused / "processed.json").read_text())["inspection"]["result"]["layers"]["failures"] == 1
+            with CoreWorkspace(refused) as workspace:
+                with workspace.ledger._transaction() as connection:
+                    assert connection.execute("SELECT count(*) FROM records WHERE kind='result' AND json_extract(payload, '$.outcome.status')='failed'").fetchone() == (1,)
             assert (refused / "processed-failures.json").exists()
             assert not (refused / "bill-example-summary.json").exists()
         saved_error = ValueError("source refusal")

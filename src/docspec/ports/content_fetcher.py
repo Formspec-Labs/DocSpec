@@ -120,4 +120,32 @@ def content_fetcher_identity(fetcher: ContentFetcher) -> dict[str, str]:
     }
 
 
-AcquisitionSource = ContentFetcher
+
+class BoundContentFetcher:
+    """Pin acquisition configuration and verify receipts before accepting bytes."""
+
+    def __init__(self, fetcher: ContentFetcher) -> None:
+        self._fetcher = fetcher
+        self._identity = content_fetcher_identity(fetcher)
+        self.downloader_id = self._identity["implementationId"]
+        self.configuration_digest = self._identity["configurationDigest"]
+
+    def verify_configuration(self) -> dict[str, str]:
+        try:
+            current = content_fetcher_identity(self._fetcher)
+        except ValueError as error:
+            raise IntegrityError("content fetcher identity changed after preparation") from error
+        if current != self._identity:
+            raise IntegrityError("content fetcher identity changed after preparation")
+        return dict(self._identity)
+
+    def fetch(self, candidate: CandidateFile, *, max_bytes: int, task_id: str, attempt_id: str) -> FetchStream:
+        self.verify_configuration()
+        stream = self._fetcher.fetch(candidate, max_bytes=max_bytes, task_id=task_id, attempt_id=attempt_id)
+        try:
+            self.verify_configuration()
+            stream.metadata.verify_request(candidate, identity=self._identity, task_id=task_id, attempt_id=attempt_id)
+        except BaseException:
+            stream.close()
+            raise
+        return stream

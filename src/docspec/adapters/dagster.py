@@ -1,29 +1,83 @@
-"""Thin optional Dagster mapping for DocSpec's scheduler-neutral task messages.
+"""Optional native Dagster scheduling over the ordinary Core lifecycle.
 
-Dagster owns execution, retries, run state, event storage, and worker processes.
-The injected resource reconstructs DocSpec's application services in each
-process; only bounded ``StoreTask`` and ``StoreTaskResult`` bytes cross Dagster
-step boundaries.
+Resources construct CoreOperations and producer implementations in each worker.
+Dagster owns scheduling, retries, cancellation, process isolation, and events;
+Core owns attempts, retained outputs, and exact selection recovery.
 """
 
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterator, Mapping
-from contextlib import closing
+from collections.abc import Callable, Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
-from docspec.domain.execution import ExecutionHandoff, StoreTask, StoreTaskResult
-from docspec.domain.identity import OrderedJsonSequenceDigester
-from docspec.errors import DocSpecError, IntegrityError
+import msgspec
 
-DAGSTER_JOB_NAME = "docspec_store_tasks"
+from docspec.application.core_execution import CoreOperations
+from docspec.application.core_reuse import Resolution
+from docspec.domain import core
+from docspec.domain.core_admission import admit_record, encode_record, record_value
+from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, sha256_digest
+from docspec.domain.streams import owned_iterator
+from docspec.errors import DocSpecError, IntegrityError, LimitExceededError, StateTransitionError
+from docspec.ports.record_storage import BATCH_BYTES
+
+DAGSTER_JOB_NAME = "docspec_operations"
 DAGSTER_RUNTIME_RESOURCE_KEY = "docspec_runtime"
 
 
 class DagsterAdapterError(DocSpecError):
-    """Dagster is unavailable or an injected runtime has an invalid shape."""
+    """Dagster is unavailable or its injected Core resource is invalid."""
+
+
+class ScheduledOperation(core.Fixed, kw_only=True):
+    """Bounded control data; producers and dataset values stay in their owners."""
+
+    format: Literal["docspec-dagster-operation"] = "docspec-dagster-operation"
+    version: Literal[1] = 1
+    definition: core.OperationDefinition
+    request: core.Request
+    selection_id: core.Identifier
+    target: core.Origin
+    fresh: bool = False
+    output_labels: tuple[core.Identifier, ...] | None = None
+    capture_origin: core.Origin | None = None
+
+
+def encode_operation(operation: ScheduledOperation) -> bytes:
+    value = record_value(operation, ScheduledOperation)
+    definition, request = admit_record(encode_record(value["definition"])), admit_record(encode_record(value["request"]))
+    if definition.definition_id != request.definition_id:
+        raise IntegrityError("scheduled request names a different operation definition")
+    payload = canonical_value_bytes(value)
+    if len(payload) > BATCH_BYTES:
+        raise LimitExceededError("scheduled Core operation exceeds the 8 MiB control limit")
+    return payload
+
+
+def decode_operation(payload: bytes) -> ScheduledOperation:
+    if not isinstance(payload, bytes):
+        raise IntegrityError("scheduled Core operation must be encoded bytes")
+    if len(payload) > BATCH_BYTES:
+        raise LimitExceededError("scheduled Core operation exceeds the 8 MiB control limit")
+    value = decode_canonical_json_value(payload, label="scheduled Core operation")
+    operation = msgspec.convert(record_value(value, ScheduledOperation), type=ScheduledOperation, strict=True)
+    encode_operation(operation)
+    return operation
+
+
+def _eligible(result):
+    return result.outcome.status == "success"
+
+
+@dataclass(frozen=True, slots=True)
+class DagsterRuntime:
+    operations: CoreOperations
+    task_source: Callable[[], Iterable[ScheduledOperation]]
+    producer_resolver: Callable[[core.OperationDefinition], Callable]
+    reuse_policy: Callable[[core.Result], bool] = _eligible
 
 
 def _load_dagster() -> ModuleType:
@@ -33,141 +87,70 @@ def _load_dagster() -> ModuleType:
         raise DagsterAdapterError("the optional 'dagster' package is required to build Dagster definitions") from error
 
 
-def _runtime(context: Any) -> Any:
+def _runtime(context: Any) -> DagsterRuntime:
     value = getattr(context.resources, DAGSTER_RUNTIME_RESOURCE_KEY)
-    if (
-        not isinstance(getattr(value, "handoff", None), ExecutionHandoff)
-        or not callable(getattr(value, "task_source", None))
-        or not callable(getattr(value, "execute_task", None))
-    ):
-        raise DagsterAdapterError("the docspec_runtime resource must provide a prepared DocSpec run")
+    if (not isinstance(value, DagsterRuntime) or not isinstance(value.operations, CoreOperations)
+            or not all(callable(item) for item in (value.task_source, value.producer_resolver, value.reuse_policy))):
+        raise DagsterAdapterError("docspec_runtime must supply CoreOperations, a task source, and producer and reuse callbacks")
     return value
 
 
-def _mapping_key(task: StoreTask) -> str:
-    """Use the stable digest part of DocSpec's task identity as Dagster's key."""
-
-    return task.task_id.rsplit(":", 1)[-1]
-
-
-def _task_payloads(runtime: Any) -> Iterator[tuple[str, bytes]]:
-    """Stream and verify the exact task population sealed by the handoff."""
-
-    handoff = runtime.handoff
-    count = 0
-    digest = OrderedJsonSequenceDigester()
-    source = iter(runtime.task_source(handoff))
-    try:
-        for value in source:
-            if not isinstance(value, StoreTask):
-                raise IntegrityError("Dagster task source yielded a non-StoreTask value")
-            if value.processing_plan_id != handoff.processing_plan.artifact_id:
-                raise IntegrityError("Dagster task names a different processing plan")
-            if value.operation_id != handoff.operation_id:
-                raise IntegrityError("Dagster task names a different execution operation")
-            if count >= handoff.expected_task_count:
-                raise IntegrityError("Dagster task stream exceeds the sealed task count")
-            digest.accept(value.to_dict())
-            count += 1
-            yield _mapping_key(value), value.to_bytes()
-    finally:
-        close = getattr(source, "close", None)
-        if close is not None:
-            close()
-
-    if count != handoff.expected_task_count:
-        raise IntegrityError("Dagster task stream count differs from the sealed handoff")
-    if digest.finish() != handoff.task_set_digest:
-        raise IntegrityError("Dagster task stream digest differs from the sealed handoff")
+def _task_payloads(runtime: DagsterRuntime) -> Iterator[tuple[str, bytes]]:
+    with owned_iterator(runtime.task_source()) as source:
+        for operation in source:
+            payload = encode_operation(operation)
+            yield sha256_digest(operation.selection_id.encode()).split(":", 1)[1], payload
 
 
-def _execute_task(runtime: Any, task_payload: bytes) -> StoreTaskResult:
-    """Call the scheduler-neutral handler and verify its one terminal message."""
+def _execute_operation(runtime: DagsterRuntime, operation: ScheduledOperation) -> Resolution:
+    def produce(context):
+        producer = runtime.producer_resolver(operation.definition)
+        if not callable(producer):
+            raise DagsterAdapterError("producer_resolver must return a Core producer callback")
+        return producer(context)
+    resolved = runtime.operations.resolve(operation.definition, operation.request, produce,
+        selection_id=operation.selection_id, target=operation.target, reuse_policy=runtime.reuse_policy,
+        output_labels=operation.output_labels, fresh=operation.fresh, capture_origin=operation.capture_origin)
+    if not isinstance(resolved, Resolution):
+        raise StateTransitionError("scheduled operation suspended; use the Core continuation API to verify and resume it")
+    return resolved
 
-    handoff = runtime.handoff
-    task = StoreTask.from_bytes(task_payload)
-    if task.processing_plan_id != handoff.processing_plan.artifact_id or task.operation_id != handoff.operation_id:
-        raise IntegrityError("Dagster mapped task is outside its execution handoff")
-    result = runtime.execute_task(handoff, task)
-    if not isinstance(result, StoreTaskResult):
-        raise TypeError("Dagster StoreTaskHandler must return StoreTaskResult")
-    if result.handoff_id != handoff.handoff_id or result.task != task:
-        raise IntegrityError("Dagster StoreTaskHandler returned a result for a different handoff or task")
-    return StoreTaskResult.from_bytes(result.to_bytes())
 
+def build_dagster_definitions(resource_defs: Mapping[str, Any], *, executor_def=None, retry_policy=None) -> Any:
+    """Map supplied Core operations using native Dagster resources and retries.
 
-def build_dagster_definitions(
-    resource_defs: Mapping[str, Any],
-    *,
-    executor_def: Any | None = None,
-    retry_policy: Any | None = None,
-) -> Any:
-    """Build the native dynamic job with dependency-injected resources.
-
-    ``resource_defs["docspec_runtime"]`` supplies the existing prepared run.
-    Use a native generator resource with ``with prepare_local_experiment(...)``
-    to close each process's temporary task index. Other native resources can
-    supply its fetcher, processors, workspace, or deployment configuration.
-
-    Dagster owns executor configuration, retries, cancellation, and event
-    storage. The default executor is its multiprocess executor. The job emits
-    bounded task/result messages; callers reconcile those through DocSpec's
-    existing API without a second scheduler or run ledger.
+    Supply a DagsterRuntime through ``resource_defs['docspec_runtime']``. A
+    generator resource should open and close its CoreWorkspace in each worker.
+    Retain inputs before scheduling. Stable selection IDs recover acknowledged
+    work on retry; another requested observation uses a new selection ID.
+    ``retry_policy`` and ``executor_def`` are ordinary native Dagster settings.
     """
-
     if DAGSTER_RUNTIME_RESOURCE_KEY not in resource_defs:
         raise DagsterAdapterError("resource_defs must include docspec_runtime")
     dagster = _load_dagster()
-    selected_executor = dagster.multiprocess_executor if executor_def is None else executor_def
 
-    @dagster.op(
-        name="emit_store_tasks",
-        required_resource_keys={DAGSTER_RUNTIME_RESOURCE_KEY},
-        out=dagster.DynamicOut(bytes),
-    )
-    def emit_store_tasks(context) -> Iterator[Any]:  # type: ignore[no-untyped-def]
-        runtime = _runtime(context)
-        with closing(_task_payloads(runtime)) as payloads:
+    @dagster.op(name="emit_operations", required_resource_keys={DAGSTER_RUNTIME_RESOURCE_KEY}, out=dagster.DynamicOut(bytes))
+    def emit_operations(context) -> Iterator[Any]:
+        with owned_iterator(_task_payloads(_runtime(context))) as payloads:
             for mapping_key, payload in payloads:
-                task = StoreTask.from_bytes(payload)
-                yield dagster.DynamicOutput(
-                    payload, mapping_key=mapping_key,
-                    metadata={
-                        "handoff_id": runtime.handoff.handoff_id,
-                        "execution_profile_ref": runtime.handoff.execution_profile.to_dict(),
-                        "task_id": task.task_id,
-                        "input_store_ref": task.input_store.to_dict(),
-                    },
-                )
+                operation = decode_operation(payload)
+                yield dagster.DynamicOutput(payload, mapping_key=mapping_key, metadata={
+                    "request_id": operation.request.request_id, "selection_id": operation.selection_id,
+                    "definition_id": operation.definition.definition_id, "fresh": operation.fresh,
+                })
 
-    @dagster.op(
-        name="execute_store_task",
-        required_resource_keys={DAGSTER_RUNTIME_RESOURCE_KEY},
-        out=dagster.Out(bytes),
-        retry_policy=retry_policy,
-    )
-    def execute_store_task(context, task_payload: bytes) -> bytes:  # type: ignore[no-untyped-def]
-        runtime = _runtime(context)
-        result = _execute_task(runtime, task_payload)
-        context.add_output_metadata(
-            {
-                "handoff_id": result.handoff_id,
-                "execution_profile_ref": runtime.handoff.execution_profile.to_dict(),
-                "task_id": result.task.task_id,
-                "input_store_ref": result.task.input_store.to_dict(),
-                "result_id": result.result_id,
-                "status": result.status.value,
-                **({} if result.output_store is None else {"output_store_ref": result.output_store.to_dict()}),
-            }
-        )
-        return result.to_bytes()
+    @dagster.op(name="execute_operation", required_resource_keys={DAGSTER_RUNTIME_RESOURCE_KEY}, out=dagster.Out(bytes), retry_policy=retry_policy)
+    def execute_operation(context, operation_payload: bytes) -> bytes:
+        operation = decode_operation(operation_payload)
+        resolved = _execute_operation(_runtime(context), operation)
+        context.add_output_metadata({"request_id": operation.request.request_id, "selection_id": resolved.selection.selection_id,
+            "result_id": resolved.result.result_id, "execution_id": resolved.result.execution_id,
+            "status": resolved.result.outcome.status})
+        return encode_record(resolved.selection)
 
-    @dagster.job(
-        name=DAGSTER_JOB_NAME,
-        resource_defs=dict(resource_defs),
-        executor_def=selected_executor,
-    )
-    def docspec_store_tasks() -> None:
-        emit_store_tasks().map(execute_store_task)
+    @dagster.job(name=DAGSTER_JOB_NAME, resource_defs=dict(resource_defs),
+                 executor_def=dagster.multiprocess_executor if executor_def is None else executor_def)
+    def docspec_operations():
+        emit_operations().map(execute_operation)
 
-    return dagster.Definitions(jobs=[docspec_store_tasks])
+    return dagster.Definitions(jobs=[docspec_operations])

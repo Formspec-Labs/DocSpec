@@ -125,7 +125,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
     assert install_pytest.returncode == 0, install_pytest.stderr
     examples_root = runtime_root / "examples"
     examples_root.mkdir()
-    for name in ("__init__.py", "gao_topics.py", "provider_identity.py"):
+    for name in ("__init__.py", "gao_topics.py", "provider_identity.py", "dataset_example_support.py", "phrase_match_processor.py"):
         shutil.copy2(ROOT / "examples" / name, examples_root / name)
     shutil.copytree(ROOT / "examples/gao_fixtures", examples_root / "gao_fixtures")
     tests_root = runtime_root / "tests"

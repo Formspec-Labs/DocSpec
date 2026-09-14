@@ -22,7 +22,9 @@ class BlobStore(Protocol):
         max_bytes: int | None = None,
     ) -> BlobRef: ...
 
-    def stat(self, reference: BlobRef) -> BlobRef: ...
+    def stat(self, reference: BlobRef) -> BlobRef:
+        """Check address/type/size availability; verify performs a fresh byte audit."""
+        ...
 
     def read(
         self,
@@ -45,3 +47,20 @@ class BlobStore(Protocol):
     def materialize(self, reference: BlobRef, root: Path, relative_path: str) -> Path: ...
 
     def verify(self, reference: BlobRef) -> None: ...
+
+    def ensure_ready(self, reference: BlobRef) -> None:
+        """Admit existing bytes and establish backend readiness before publication.
+
+        Successful put_if_absent already establishes readiness for its output.
+        The metadata owner holds content protection through publication.
+        """
+        ...
+
+    def delete(self, reference: BlobRef) -> bool:
+        """Remove a retained address under the policy owner's exclusive protection.
+
+        Return false if already absent. This backend primitive does not decide
+        permission or prove erasure of provider-managed archival versions.
+        The policy owner records intent before calling and completion afterwards.
+        """
+        ...
