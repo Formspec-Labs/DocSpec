@@ -8,8 +8,8 @@ the [decision index](docs/decisions/README.md) identifies the rules that govern 
 
 Use Python 3.12, `uv` and Docker for the local Iceberg catalog. The checked-in lock and vendored
 `rulespec-artifacts` wheel make development independent of sibling checkouts.
-Development also installs the pinned SpicyDocs reader so source integrations run
-in the default test suite. The built core wheel keeps SpicyDocs optional.
+DocSpec requires the pinned SpicyDocs core wheel. Source integration tests run
+in the default suite.
 From the repository root:
 
 ```sh
