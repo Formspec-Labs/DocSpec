@@ -99,6 +99,18 @@ class CoreWorkspace:
         with self.publisher.session() as session:
             yield CoreStateReader(session, self.states, state_id, expected_pin=expected_pin)
 
+    @contextmanager
+    def open_selected_outputs(self, state_id, *, definition_id, output_labels, expected_state_pin=None, expected_pin=None):
+        """Read retained operation outputs for exact members of an existing state.
+
+        No values or selections are published. Close child streams before the
+        reader; complete iteration is required before adopting any output set.
+        """
+        from docspec.runtime.selected_outputs import SelectedOutputReader
+        with self.publisher.session() as session:
+            yield SelectedOutputReader(session, self.states, state_id, definition_id=definition_id,
+                output_labels=output_labels, expected_state_pin=expected_state_pin, expected_pin=expected_pin)
+
     def close(self):
         self._resources.close()
 

@@ -699,10 +699,14 @@ class LocalSqliteCoreLedger:
             )
             return True
 
-    def retained_records(self) -> Iterator[tuple[StoredRecord, ...]]:
+    def retained_records(self, *, kind: str | None = None) -> Iterator[tuple[StoredRecord, ...]]:
         """Stream retained descriptions through the ordinary canonical row reader."""
+        if kind is not None:
+            require_text(kind, "record kind")
         with self._transaction() as connection:
-            cursor = connection.execute("SELECT kind,record_id FROM retention ORDER BY kind,record_id")
+            cursor = connection.execute("SELECT kind,record_id FROM retention "
+                + ("WHERE kind=? " if kind is not None else "") + "ORDER BY kind,record_id",
+                () if kind is None else (kind,))
             for keys in bounded_rows(cursor, size=_row_size):
                 yield from self.read_records(keys)
 

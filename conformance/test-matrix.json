@@ -522,5 +522,21 @@
     "tests/test_core_runtime_instrumentation.py::test_profiles_keep_query_identity_and_complete_file_union_without_receipt_sql",
     "tests/test_core_runtime_instrumentation.py::test_optional_allocations_report_net_live_blocks_not_gross_allocations",
     "tests/test_core_runtime_instrumentation.py::test_cli_receipt_records_cache_declaration_and_measurement_scope"
+  ],
+  "CORE-SELECTED-OUTPUT-READS": [
+    "tests/test_core_selected_outputs.py::test_exact_outputs_and_reopened_pins_without_new_retained_data",
+    "tests/test_core_selected_outputs.py::test_unrelated_change_reuses_result_but_origin_is_current_member",
+    "tests/test_core_selected_outputs.py::test_unselected_output_and_missing_choice_are_not_exposed",
+    "tests/test_core_selected_outputs.py::test_competing_choices_remain_visible_and_change_selection_pin",
+    "tests/test_core_selected_outputs.py::test_later_dependency_omission_refuses_previously_admitted_selection",
+    "tests/test_core_selected_outputs.py::test_wrong_origin_membership_refuses",
+    "tests/test_core_selected_outputs.py::test_opaque_output_is_not_misreported_as_json",
+    "tests/test_core_selected_outputs.py::test_missing_definition_and_wrong_source_pin_refuse",
+    "tests/test_core_selected_outputs.py::test_kind_filter_does_not_decode_other_retained_records",
+    "tests/test_core_selected_outputs.py::test_bounded_member_group_does_not_readmit_source_for_each_choice",
+    "tests/test_core_selected_outputs.py::test_damaged_retained_output_bytes_refuse",
+    "tests/test_core_selected_outputs.py::test_unavailable_foreign_choice_does_not_block_requested_definition",
+    "tests/test_core_selected_outputs.py::test_early_close_has_no_pin_and_releases_owned_streams",
+    "tests/test_core_selected_outputs.py::test_unavailable_selected_output_refuses"
   ]
 }
