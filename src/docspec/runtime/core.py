@@ -64,6 +64,11 @@ class CoreWorkspace:
         with self.publisher.session() as session:
             return self.operations.publish([prepare_revision(self.operations, revision, session=session)], session=session)[0]
 
+    def upsert(self, base_state_id, rows, *, batch_id, dataset=None):
+        """Publish new and replacement values as one safely retryable batch."""
+        from docspec.application.core_ingestion import upsert
+        return upsert(self.operations, base_state_id, rows, batch_id=batch_id, dataset=dataset)
+
     def inspect(self, kind, identity, *, progress_limit=20):
         with self.publisher.session() as session:
             return inspect_record(session, (kind, identity), progress_limit=progress_limit)

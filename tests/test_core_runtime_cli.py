@@ -44,6 +44,25 @@ def produce(context):
     context.generate(core.InlineValue(value=source["x"] + 1), label="value")
 
 
+def test_cli_upsert_and_exact_retry(tmp_path, capfdbinary):
+    location = tmp_path / "workspace"
+    with CoreWorkspace(location) as workspace:
+        workspace.create("base", [("old", 1)])
+    source = tmp_path / "new.jsonl"
+    source.write_bytes(b'{"key":"new","value":null}\n{"key":"old","value":2}\n')
+    args = ["state", "upsert", "--workspace", str(location), "--base", "base",
+            "--batch", "daily", "--rows", str(source)]
+    assert main(args) == 0
+    first = decode_canonical_json_value(capfdbinary.readouterr().out.rstrip(b'\n'))
+    assert main(args) == 0
+    assert decode_canonical_json_value(capfdbinary.readouterr().out.rstrip(b'\n')) == first
+    with CoreWorkspace(location) as workspace:
+        assert [(key, row.value.value) for key, row in workspace.rows(first["state_id"])] == [("new", None), ("old", 2)]
+    source.write_bytes(b'{"key":"new","value":1}\n')
+    assert main(args) == 2
+    assert b"batch ID" in capfdbinary.readouterr().err
+
+
 def test_cli_execution_inspection_and_reuse_share_python_meaning(tmp_path, capfdbinary):
     with CoreWorkspace(tmp_path / "workspace") as workspace:
         workspace.retain([core.Entity(format_version=1, entity_id="input", entity_type="occurrence", value=core.InlineValue(value={"x": 2}))],

@@ -482,6 +482,37 @@ class CoreOperations:
             pending = self.prepare(definition, request, producer, input_records=input_records, capture_origin=capture_origin, session=active)
             return pending if isinstance(pending, SuspendedOperation) else self.publish((pending,), session=active)[0]
 
+    def run_once(self, definition, request, producer, *, session=None):
+        """Retry an exact request, recovering completed publication before work.
+
+        This is for repeatable local producers. Work without a completed journal
+        may run again in a fresh attempt; external side effects need their own
+        idempotency. Failed attempts remain recorded.
+        """
+        definition, request = _snapshot(definition), _snapshot(request)
+        with self.ledger.request_guard(request.request_id), self._session(session) as active:
+            with owned_iterator(active.read_records([("request", request.request_id),
+                    ("operation_definition", definition.definition_id)])) as batches:
+                previous, stored_definition = next(batches)
+            for stored, supplied in ((previous, request), (stored_definition, definition)):
+                if stored is not None and encode_record(stored.value) != encode_record(supplied):
+                    raise IntegrityError("batch ID already names different input, base, or configuration")
+            with owned_iterator(self.ledger.executions(request.request_id)) as batches:
+                for batch in batches:
+                    for execution_id in batch:
+                        with owned_iterator(active.read_records([("result", execution_id + ":result")])) as rows:
+                            result = next(rows)[0]
+                        if result is not None and result.retained:
+                            if not result.available:
+                                raise IntegrityError("prior request result is unavailable")
+                            return self.recover(execution_id, session=active)
+                        with owned_iterator(self.ledger.read_progress(execution_id)) as progress:
+                            journaled = any("publication" in decode_canonical_json_value(payload)["description"]
+                                            for group in progress for payload in group)
+                        if journaled:
+                            return self.recover(execution_id, session=active)
+            return self.run(definition, request, producer, session=active)
+
     def resolve(self, definition, request, producer, *, selection_id, target, reuse_policy, output_labels=None,
                 fresh=False, input_records=(), capture_origin=None, session=None):
         """Resolve one request through the same bounded bulk path."""

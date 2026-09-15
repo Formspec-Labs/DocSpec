@@ -33,6 +33,14 @@ def _record(path):
     return admit_record(encode_record(value))
 
 
+def _keyed_rows(path):
+    with owned_iterator(_json_rows(path)) as source:
+        for row in source:
+            if not isinstance(row, dict) or set(row) != {"key", "value"}:
+                raise CliError("state input rows require exactly key and value")
+            yield row["key"], row["value"]
+
+
 def _producer(name):
     module, separator, attribute = name.partition(":")
     if not separator or not module or not attribute:
@@ -47,13 +55,9 @@ def _run(args):
     with CoreWorkspace(args.workspace) as workspace:
         command = args.action
         if command == "create":
-            def rows():
-                with owned_iterator(_json_rows(args.rows)) as source:
-                    for row in source:
-                        if not isinstance(row, dict) or set(row) != {"key", "value"}:
-                            raise CliError("state input rows require exactly key and value")
-                        yield row["key"], row["value"]
-            result = record_value(workspace.create(args.state, rows()))
+            result = record_value(workspace.create(args.state, _keyed_rows(args.rows)))
+        elif command == "upsert":
+            result = record_value(workspace.upsert(args.base, _keyed_rows(args.rows), batch_id=args.batch, dataset=args.dataset))
         elif command == "revise":
             result = record_value(workspace.revise(_record(args.revision)))
         elif command == "rows":
@@ -124,6 +128,11 @@ def build_parser():
     create.add_argument("--state", required=True)
     revise = command(states, "revise", "Apply a Core revision")
     revise.add_argument("--revision", type=Path, required=True)
+    upsert = command(states, "upsert", "Add or replace keyed JSON values with safe batch retries")
+    upsert.add_argument("--rows", type=Path, required=True)
+    upsert.add_argument("--base", required=True)
+    upsert.add_argument("--batch", required=True, help="Stable identity for this exact ordered input and base")
+    upsert.add_argument("--dataset", help="Advance this dataset only if its current state is the base")
     rows = command(states, "rows", "Stream keyed occurrence records")
     rows.add_argument("--state", required=True)
 

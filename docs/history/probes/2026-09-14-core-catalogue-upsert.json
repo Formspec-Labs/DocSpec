@@ -1,0 +1,54 @@
+{
+  "settings": {
+    "engine_threads": 1,
+    "repetitions": 1,
+    "time_bound_seconds": 180
+  },
+  "catalogues": {
+    "federal-register": {
+      "workspace": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-2173b92-20260914/federal-register/workspace",
+      "base_rows": 1007639,
+      "first_state": "urn:docspec:execution:6ddee55c-e38c-45d1-b585-d768cad28287:state",
+      "second_state": "urn:docspec:execution:7665dc5d-1739-4031-a94e-08b517498396:state",
+      "timings_seconds": {
+        "upsert_1024_new_16_replacements": 1.3878528750501573,
+        "compare": 0.39935024990700185,
+        "next_batch_one_new_one_replacement": 0.46563229197636247,
+        "retry_after_reopen": 0.0424770419485867
+      },
+      "checks": {
+        "add_replace_and_chained_batch": true,
+        "exact_values": true,
+        "base_files_unchanged_and_shared": true,
+        "population": true,
+        "reopen_and_exact_retry": true,
+        "changed_retry_refused": true,
+        "retry_does_not_rewind_current": true,
+        "one_execution_for_retried_batch": true
+      }
+    },
+    "regulations-gov": {
+      "workspace": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-2173b92-20260914/regulations-gov/workspace",
+      "base_rows": 2221713,
+      "first_state": "urn:docspec:execution:f46a492d-834d-42af-9d3d-49191246d270:state",
+      "second_state": "urn:docspec:execution:3515ebae-a56d-4683-afa5-fa315fa98473:state",
+      "timings_seconds": {
+        "upsert_1024_new_16_replacements": 1.0084803751669824,
+        "compare": 0.6933595831505954,
+        "next_batch_one_new_one_replacement": 0.6075702500529587,
+        "retry_after_reopen": 0.04195300000719726
+      },
+      "checks": {
+        "add_replace_and_chained_batch": true,
+        "exact_values": true,
+        "base_files_unchanged_and_shared": true,
+        "population": true,
+        "reopen_and_exact_retry": true,
+        "changed_retry_refused": true,
+        "retry_does_not_rewind_current": true,
+        "one_execution_for_retried_batch": true
+      }
+    }
+  },
+  "status": "passed"
+}

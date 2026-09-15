@@ -105,49 +105,53 @@ def prepare_revision(operations, revision, *, session=None):
         request = core.Request(format_version=1, request_id=_identity("request"), definition_id=definition.definition_id,
                                inputs=inputs, dependencies=tuple(core.Dependency(label=item.label, binding_label=item.label, selection=core.Whole()) for item in inputs))
 
-        def compose(context):
-            previous_execution = None
-            derivation_pairs, generated_ids, used_ids = set(), set(), set()
-            def check_group(group):
-                nonlocal previous_execution, derivation_pairs, generated_ids, used_ids
-                prefetched = True
-                try:
-                    context.prefetch_entities(identity for edit in group for identity in (edit.source_occurrence_id, edit.result_occurrence_id))
-                except LimitExceededError:
-                    if len(group) > 1:
-                        middle = len(group) // 2
-                        check_group(group[:middle])
-                        check_group(group[middle:])
-                        return
-                    prefetched = False
-                for edit in group:
-                    if edit.execution_id != previous_execution:
-                        result = operations._record(("result", edit.execution_id + ":result"))
-                        if result.outcome.status != "success":
-                            raise IntegrityError("value edit lacks its actual transformation provenance")
-                        derivation_pairs = {(edge.generated_entity_id, edge.used_entity_id) for edge in result.derivations}
-                        generated_ids = {event.entity_id for event in result.generations}
-                        used_ids = {event.entity_id for event in result.usages}
-                        previous_execution = edit.execution_id
-                    if ((edit.result_occurrence_id, edit.source_occurrence_id) not in derivation_pairs
-                            or edit.result_occurrence_id not in generated_ids or edit.source_occurrence_id not in used_ids):
-                        raise IntegrityError("value edit lacks its actual transformation provenance")
-                    if not prefetched:
-                        context.prefetch_entities((edit.source_occurrence_id,))
-                    expected = apply_patch(context.read_value(edit.source_occurrence_id), edit.patch)
-                    if not prefetched:
-                        context.prefetch_entities((edit.result_occurrence_id,))
-                    if canonical_value_bytes(expected) != canonical_value_bytes(context.read_value(edit.result_occurrence_id)):
-                        raise IntegrityError("value edit differs from its retained result value")
-            for offset in range(0, len(revision.value_edits), VALUE_EDIT_BATCH_ROWS):
-                check_group(revision.value_edits[offset:offset + VALUE_EDIT_BATCH_ROWS])
-            representation = active.states.revision_representation(active, revision, representation_id=_identity("representation"),
-                                                                   occurrences_state_id=inputs_id)
-            usages = [context.use(identity) for identity in (revision.base_state_id, inputs_id)]
-            context.generate_record(core.State(format_version=1, state_id=revision.result_state_id), label="state")
-            for used in usages:
-                context.derive(revision.result_state_id, used.entity_id,
-                               generation_event_id=context.generations[-1].event_id, usage_event_id=used.event_id)
-            context.records.extend((revision, representation))
+        return operations.prepare(definition, request,
+            lambda context: compose_revision(operations, context, revision, inputs_id), session=active)
 
-        return operations.prepare(definition, request, compose, session=active)
+
+def compose_revision(operations, context, revision, inputs_id):
+    """Resolve and record a revision inside an existing operation attempt."""
+    active = context.session
+    previous_execution = None
+    derivation_pairs, generated_ids, used_ids = set(), set(), set()
+    def check_group(group):
+        nonlocal previous_execution, derivation_pairs, generated_ids, used_ids
+        prefetched = True
+        try:
+            context.prefetch_entities(identity for edit in group for identity in (edit.source_occurrence_id, edit.result_occurrence_id))
+        except LimitExceededError:
+            if len(group) > 1:
+                middle = len(group) // 2
+                check_group(group[:middle])
+                check_group(group[middle:])
+                return
+            prefetched = False
+        for edit in group:
+            if edit.execution_id != previous_execution:
+                result = operations._record(("result", edit.execution_id + ":result"))
+                if result.outcome.status != "success":
+                    raise IntegrityError("value edit lacks its actual transformation provenance")
+                derivation_pairs = {(edge.generated_entity_id, edge.used_entity_id) for edge in result.derivations}
+                generated_ids = {event.entity_id for event in result.generations}
+                used_ids = {event.entity_id for event in result.usages}
+                previous_execution = edit.execution_id
+            if ((edit.result_occurrence_id, edit.source_occurrence_id) not in derivation_pairs
+                    or edit.result_occurrence_id not in generated_ids or edit.source_occurrence_id not in used_ids):
+                raise IntegrityError("value edit lacks its actual transformation provenance")
+            if not prefetched:
+                context.prefetch_entities((edit.source_occurrence_id,))
+            expected = apply_patch(context.read_value(edit.source_occurrence_id), edit.patch)
+            if not prefetched:
+                context.prefetch_entities((edit.result_occurrence_id,))
+            if canonical_value_bytes(expected) != canonical_value_bytes(context.read_value(edit.result_occurrence_id)):
+                raise IntegrityError("value edit differs from its retained result value")
+    for offset in range(0, len(revision.value_edits), VALUE_EDIT_BATCH_ROWS):
+        check_group(revision.value_edits[offset:offset + VALUE_EDIT_BATCH_ROWS])
+    representation = active.states.revision_representation(active, revision, representation_id=_identity("representation"),
+                                                           occurrences_state_id=inputs_id)
+    usages = [context.use(identity) for identity in (revision.base_state_id, inputs_id)]
+    context.generate_record(core.State(format_version=1, state_id=revision.result_state_id), label="state")
+    for used in usages:
+        context.derive(revision.result_state_id, used.entity_id,
+                       generation_event_id=context.generations[-1].event_id, usage_event_id=used.event_id)
+    context.records.extend((revision, representation))

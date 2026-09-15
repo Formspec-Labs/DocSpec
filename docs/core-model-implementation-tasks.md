@@ -777,6 +777,14 @@ representation examples add a 17-test gate proving unchanged upstream work,
 exact source/quote bytes, resource/configuration invalidation and reopening. Full source-caller and
 installed-package qualification remains with C19/C21/C24.
 
+**Incremental imports (2026-09-14):** `CoreWorkspace.upsert` and `docspec state
+upsert` add and replace keyed values through the shared revision resolver,
+publication journal and current-pointer checks. Stable batch IDs bind the exact
+ordered input, base and optional dataset; retries recover the retained result.
+The [usage guide](python-runs.md#append-new-records-and-replace-updated-records)
+and [regressions](../tests/test_core_ingestion.py) cover streaming input,
+interruption recovery and concurrent changes without a separate ingestion store.
+
 **Integrated verification:** [C24](#c24--complete-conformance-regression-and-installed-package-checks)
 owns the current regression and installed-package evidence. Capacity remains C25.
 
@@ -955,6 +963,12 @@ measurements, and the limits of the whole-import timings.
 The subsequent [full reimport check](history/probes/2026-09-14-core-catalogue-reimport-2173b92.md)
 verifies both complete catalogues after those fixes. That record owns the results,
 revision timings and overheating limits on import-time comparisons.
+
+The [incremental update check](history/probes/2026-09-14-core-catalogue-upsert.md)
+then added 1,024 synthetic records and replaced 16 records in each retained
+catalogue, exercised a following batch, and reopened exact retries. Both passed;
+initial batches took 1.39 s and 1.01 s, with no reimport. This record owns the
+fixture limits and distinguishes those timings from source acquisition costs.
 
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 

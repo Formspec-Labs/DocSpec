@@ -207,24 +207,37 @@ class LocalSqliteCoreLedger:
                 raise StateTransitionError("cannot upgrade publication protection to cleanup")
             yield
             return
-        path = _contained(self.path.parent, self.path.name + ".content.lock")
+        with self._file_guard(".content.lock", shared=not exclusive, label="content-protection",
+                busy_message="content is protected by another publication or cleanup; retry later"):
+            self._guard.exclusive = exclusive
+            try:
+                # Cleanup mutates physical availability inside its exclusive
+                # guard, so only shared publication scopes reuse admission.
+                with self.record_storage.admission_scope() if self.record_storage is not None and not exclusive else nullcontext():
+                    yield
+            finally:
+                del self._guard.exclusive
+
+    def request_guard(self, request_id: str):
+        """Serialize exact-request retries without blocking other publications."""
+        require_text(request_id, "request identity")
+        name = hashlib.sha256(request_id.encode("utf-8")).hexdigest()
+        return self._file_guard(".request-" + name + ".lock", label="request",
+                                busy_message="this request is running; retry with the same batch ID")
+
+    @contextmanager
+    def _file_guard(self, suffix, *, label, busy_message, shared=False):
+        path = _contained(self.path.parent, self.path.name + suffix)
         descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0), 0o600)
         try:
             opened = os.fstat(descriptor)
             if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
-                raise IntegrityError("content-protection lock must be a regular file with one link")
-            with lock_descriptor(descriptor, shared=not exclusive, busy_message="content is protected by another publication or cleanup; retry later"):
+                raise IntegrityError(f"{label} lock must be a regular file with one link")
+            with lock_descriptor(descriptor, shared=shared, busy_message=busy_message):
                 current = path.stat(follow_symlinks=False)
                 if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
-                    raise IntegrityError("content-protection lock changed during acquisition")
-                self._guard.exclusive = exclusive
-                try:
-                    # Cleanup mutates physical availability inside its exclusive
-                    # guard, so only shared publication scopes reuse admission.
-                    with self.record_storage.admission_scope() if self.record_storage is not None and not exclusive else nullcontext():
-                        yield
-                finally:
-                    del self._guard.exclusive
+                    raise IntegrityError(f"{label} lock changed during acquisition")
+                yield
         finally:
             os.close(descriptor)
 

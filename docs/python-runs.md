@@ -47,6 +47,64 @@ applying that revision. Each replacement retains its own usage, generation and
 derivation evidence; a failed patch refuses the batch. `prepare_value_edit` uses
 the same implementation for one replacement.
 
+## Append new records and replace updated records
+
+Use `upsert` for a batch of new or changed records. Keys should be stable source
+identifiers, such as `sourceItemId`. A supplied value replaces the complete value
+at that key; unmentioned keys remain in the new state. Old states remain readable.
+
+```python
+with CoreWorkspace(workspace_path) as workspace:
+    updated = workspace.upsert(
+        "catalogue",  # the already imported base state
+        [
+            ("new-regulation", {"sourceItemId": "new-regulation", "title": "New rule"}),
+            ("existing-regulation", {"sourceItemId": "existing-regulation", "title": "Revised rule"}),
+        ],
+        batch_id="publisher-release-2026-09-15",
+    )
+    print(updated.state_id)
+```
+
+The API returns a retained `State`. Each batch uses the existing Iceberg writer
+and revision resolver, sharing the base's files. Payloads stream through a
+temporary disk spool and bounded writer batches; compact edit instructions have
+an 8 MiB limit. Split larger edit sets into separately identified batches, using
+each returned state as the next base. Empty batches and duplicate keys are rejected.
+
+Repeat the same `batch_id`, base, rows in the same order, and optional dataset
+to recover the exact result. JSON formatting and object-key order do not matter.
+A changed value, row order, base or dataset under that ID is rejected. Interrupted
+publication resumes from its journal; earlier interrupted local work may run
+again. Failed attempts remain recorded. A new batch ID means a new observation,
+including when supplied values equal earlier values.
+
+To maintain a current catalogue, first select the imported base once:
+
+```python
+with CoreWorkspace(workspace_path) as workspace:
+    workspace.maintenance.select_current("initial-catalogue", "regulations", ("state", "catalogue"), None)
+    updated = workspace.upsert("catalogue", incoming_rows, batch_id="publisher-release-2026-09-16",
+                               dataset="regulations")
+```
+
+With `dataset=`, publication completes before the pointer advances. Its current
+state must match the supplied base. A concurrent change raises `StaleBaseError`
+and preserves any already published branch. Retrying a previously successful
+batch never moves the pointer back from a newer version. An unset dataset must
+be initialized using `select_current` before an upsert can advance it.
+
+The matching CLI consumes the same `{ "key": ..., "value": ... }` JSON lines as
+`state create` and prints the new state record:
+
+```sh
+docspec state upsert --workspace ./workspace --base catalogue \
+  --batch publisher-release-2026-09-15 --rows updates.jsonl
+```
+
+Add `--dataset regulations` for guarded promotion. Discovery and downloading of
+publisher updates remain with the source adapter; this API imports supplied data.
+
 ## Execute and reuse work
 
 Use `workspace.operations.run(definition, request, producer)` for a fresh
@@ -147,7 +205,7 @@ provenance remain even when authorized bytes have been removed.
 
 ## Use the same operations from commands
 
-`docspec state create`, `state revise`, `state rows`, `execute`, `retain`,
+`docspec state create`, `state upsert`, `state revise`, `state rows`, `execute`, `retain`,
 `inspect`, `compare`, `select`, `remove`, `resume-removal`, and `export` call the same
 runtime. `docspec document import` and `document run` expose the document stages;
 `docspec source-catalog` preserves independent source tooling. Each command's
