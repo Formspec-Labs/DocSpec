@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from spicy_docs.sources.courtlistener_listing import (
+from spicy_docs.sources.courtlistener.listing import (
     BULK_LIST_URL,
     BULK_PREFIX,
     BulkObject,

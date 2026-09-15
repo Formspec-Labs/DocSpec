@@ -40,11 +40,11 @@ from contextlib import closing
 from docspec.processing.visible_text_runtime import VisibleTextBlockSegmenter, VisibleTextExtractor
 from docspec.source_catalog import SpicyDocsSourceNativeAdapter
 from rulespec_artifacts import Producer
-from spicy_docs.federal_register_source_native import (
+from spicy_docs.source_native.federal_register import (
     FederalRegisterPage,
     federal_register_documents_url,
 )
-from spicy_docs.regulations_gov_source_native import (
+from spicy_docs.source_native.regulations_gov import (
     COMMENT_COLLECTION,
     DOCUMENT_COLLECTION,
     DOCKET_COLLECTION,
@@ -60,13 +60,13 @@ from spicy_docs.source_native import (
     SourceNativeReleaseBuild,
     SourceNativeReleasePublisher,
 )
-from spicy_docs.source_native_profiles import (
+from spicy_docs.source_native.profiles import (
     FEDERAL_REGISTER_PROFILE,
     REGULATIONS_GOV_COMMENT_PROFILE,
     REGULATIONS_GOV_DOCUMENT_PROFILE,
     REGULATIONS_GOV_DOCKET_PROFILE,
 )
-from spicy_docs.source_native_store import LocalSourceNativeBlobStore
+from spicy_docs.source_native.store import LocalSourceNativeBlobStore
 
 
 RUN_ROOT = Path(sys.argv[1]).resolve(strict=True)

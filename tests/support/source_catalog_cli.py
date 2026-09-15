@@ -70,7 +70,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     # exercise the fake reader whether or not a real one is installed.
     package_name = "spicy_docs"
     module_name = package_name + ".source_native"
-    profiles_module_name = package_name + ".source_native_profiles"
+    profiles_module_name = module_name + ".profiles"
     package = ModuleType(package_name)
     package.__path__ = []  # type: ignore[attr-defined]
     module = ModuleType(module_name)
@@ -82,7 +82,7 @@ def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
     profiles_module.REGULATIONS_GOV_DOCKET_PROFILE = object()  # type: ignore[attr-defined]
     profiles_module.REGULATIONS_GOV_COMMENT_PROFILE = object()  # type: ignore[attr-defined]
     package.source_native = module  # type: ignore[attr-defined]
-    package.source_native_profiles = profiles_module  # type: ignore[attr-defined]
+    module.profiles = profiles_module  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, package_name, package)
     monkeypatch.setitem(sys.modules, module_name, module)
     monkeypatch.setitem(sys.modules, profiles_module_name, profiles_module)

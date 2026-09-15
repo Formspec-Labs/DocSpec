@@ -34,9 +34,9 @@ def test_resolves_the_current_reader(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_resolves_the_profiles_module_and_one_named_profile(monkeypatch: pytest.MonkeyPatch) -> None:
-    profiles = types.ModuleType("spicy_docs.source_native_profiles")
+    profiles = types.ModuleType("spicy_docs.source_native.profiles")
     profiles.FEDERAL_REGISTER_PROFILE = object()
-    monkeypatch.setitem(sys.modules, "spicy_docs.source_native_profiles", profiles)
+    monkeypatch.setitem(sys.modules, "spicy_docs.source_native.profiles", profiles)
 
     assert adapter_module.spicy_docs_source_profile("federal-register") is profiles.FEDERAL_REGISTER_PROFILE
 
@@ -109,11 +109,11 @@ def test_missing_producer_is_a_structured_cli_failure_before_publication(
         "errorType": "SourceNativeReaderError",
         "message": (
             "the source-native adapter requires an installed spicy-docs package "
-            "providing source_native_profiles"
+            "providing source_native.profiles"
         ),
         "verdict": "fail",
     }
-    assert attempted == ["spicy_docs.source_native_profiles"]
+    assert attempted == ["spicy_docs.source_native.profiles"]
     assert not destination.exists()
 
 

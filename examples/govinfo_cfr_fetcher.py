@@ -10,8 +10,8 @@ from pathlib import Path
 from spicy_docs.sources.cfr.acquisition import CfrAcquirer, CfrEditionAcquisition
 from spicy_docs.sources.cfr.annual import annual_cfr_xml_locator
 from spicy_docs.sources.cfr.models import AnnualCfrSelection
+from spicy_docs.reading.xml_tree import XmlTreeElement
 from spicy_docs.sources.govinfo.mods import ModsRecord
-from spicy_docs.sources.xml_tree import XmlTreeElement
 
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import identity_digest

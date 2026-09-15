@@ -14,7 +14,7 @@ from pathlib import Path
 
 from rulespec_artifacts import Producer
 from spicy_docs.cli.source_native import main as source_main
-from spicy_docs.source_native_profiles import GAO_PRODUCT_PAGE_PROFILE
+from spicy_docs.source_native.profiles import GAO_PRODUCT_PAGE_PROFILE
 from spicy_docs.sources.gao.native import gao_product_url
 from spicy_docs.sources.zyte import ZyteHttpResponse
 

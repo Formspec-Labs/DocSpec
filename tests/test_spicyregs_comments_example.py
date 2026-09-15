@@ -9,7 +9,7 @@ from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
-from spicy_docs.source_native_profiles import SPICY_REGS_PUBLIC_COMMENT_PROFILE
+from spicy_docs.source_native.profiles import SPICY_REGS_PUBLIC_COMMENT_PROFILE
 from spicy_docs.sources.public_comments.native import PARTITION_ENTRY, comment_partition_locator
 
 from docspec.domain.identity import identity_digest, sha256_digest

@@ -13,7 +13,7 @@ from zipfile import ZipFile
 
 import pytest
 from rulespec_artifacts import LocalBlobSource
-from spicy_docs.source_native_profiles import GAO_PRODUCT_PAGE_PROFILE
+from spicy_docs.source_native.profiles import GAO_PRODUCT_PAGE_PROFILE
 from spicy_docs.sources.gao.native import parse_gao_product_page_response
 
 from docspec.domain.identity import sha256_digest

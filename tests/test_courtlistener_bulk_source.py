@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from spicy_docs.sources.courtlistener_listing import BULK_BASE_URL, BulkObject
+from spicy_docs.sources.courtlistener.listing import BULK_BASE_URL, BulkObject
 
 from docspec.domain.content import SourceItemState
 from docspec.errors import IntegrityError

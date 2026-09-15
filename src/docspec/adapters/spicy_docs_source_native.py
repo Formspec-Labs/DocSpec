@@ -52,7 +52,7 @@ def _require_current_reader(module: ModuleType) -> ModuleType:
 def spicy_docs_source_profile(name: str) -> object:
     """Resolve one explicit CLI choice without importing a producer package in DocSpec core."""
 
-    module = _resolve_producer_module("source_native_profiles")
+    module = _resolve_producer_module("source_native.profiles")
     if name == "federal-register":
         return module.FEDERAL_REGISTER_PROFILE
     if name == "regulations-gov-documents":

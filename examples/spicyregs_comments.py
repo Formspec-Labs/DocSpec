@@ -16,7 +16,7 @@ from pathlib import Path
 from rulespec_artifacts import Producer
 from spicy_docs.cli.source_native import main as source_main
 from spicy_docs.schemas.spicy_regs_public_tables import PUBLIC_COMMENT_FILE_COLUMNS
-from spicy_docs.source_native_profiles import SPICY_REGS_PUBLIC_COMMENT_PROFILE
+from spicy_docs.source_native.profiles import SPICY_REGS_PUBLIC_COMMENT_PROFILE
 from spicy_docs.sources.public_comments.native import PublicTableCapture, comment_partition_locator
 
 from docspec.domain.identity import identity_digest, sha256_digest
