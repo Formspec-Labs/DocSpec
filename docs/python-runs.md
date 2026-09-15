@@ -4,6 +4,41 @@
 ledger, immutable content, bulk state storage, and the common operation
 lifecycle. Closing and reopening the workspace preserves exact result selections.
 
+## Read existing data for another application
+
+Open with `create=False` so a missing workspace never initializes storage:
+
+```python
+with CoreWorkspace(workspace_path, create=False) as workspace:
+    with workspace.open_state("catalogue", expected_pin=accepted_pin) as reader:
+        print(reader.pin, reader.record_count)
+        for key, occurrence_id, value in reader.values():
+            consume(key, occurrence_id, value)
+```
+
+Omit `expected_pin` on an initial inspection. The returned SHA-256 binds the state,
+selected physical representation and exact layer references. Reopen with that pin
+to refuse a different selection. A physical checkpoint can change the pin while
+preserving the logical state. Opening freshly verifies retained files, row counts
+and membership; reads share that admission until the context closes.
+
+`lookup(key, occurrence_id=...)` selects one member and optionally checks its exact
+occurrence. `read_value` resolves inline JSON, retained JSON or opaque bytes using
+the existing codec readers and 8 MiB bound. A missing member raises `LookupError`;
+JSON null remains a value. `values()` streams decoded triples without per-row lookups.
+
+For native consumers, `relation()` exposes the existing membership/occurrence join
+and `batches()` streams its canonical occurrence records in bounded Arrow batches.
+`value_relation()` exposes `member_key`, `occurrence_id` and JSON `value` when every
+value is inline. It raises `StateValueRelationUnavailable` from `docspec.errors`
+for retained content, which callers can consume through `values()` instead.
+It does not hide corruption under that exception. Close streams and relations
+before leaving the reader. Open, use and close a reader on the same thread; its
+protection and admission scope are thread-local. Reads require an existing bulk representation and never
+publish data; no live Iceberg catalog is required. Native SQL generated from the
+relation preserves exact snapshots and deletes, and requires the protected input
+files to remain accessible for its execution.
+
 ## Create and revise keyed values
 
 ```python

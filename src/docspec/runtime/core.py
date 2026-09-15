@@ -1,6 +1,6 @@
 """One local Core assembly for document and general dataset operations."""
 
-from contextlib import ExitStack, closing
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 
 from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
@@ -22,15 +22,15 @@ from docspec.ports.record_storage import BATCH_ROWS
 
 
 class CoreWorkspace:
-    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, catalog=None):
+    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, catalog=None, create=True):
         self.path = Path(path).resolve()
         self._resources = ExitStack()
         try:
             self.records = self._resources.enter_context(closing(IcebergRecordStorage(
-                self.path / "records", engine_memory_bytes=engine_memory_bytes, catalog=catalog)))
+                self.path / "records", engine_memory_bytes=engine_memory_bytes, catalog=catalog, create=create)))
             self.ledger = self._resources.enter_context(closing(LocalSqliteCoreLedger(
-                self.path / "ledger.sqlite", record_storage=self.records)))
-            self.blobs = blobs if blobs is not None else LocalContentAddressedBlobStore(self.path / "blobs")
+                self.path / "ledger.sqlite", record_storage=self.records, create=create)))
+            self.blobs = blobs if blobs is not None else LocalContentAddressedBlobStore(self.path / "blobs", create=create)
             self.states = CoreStateStorage(self.records)
             self.selections = CoreSelectionStorage(self.records, self.states)
             self.publisher = CorePublisher(self.ledger, self.blobs, states=self.states, selections=self.selections)
@@ -87,6 +87,17 @@ class CoreWorkspace:
         """Stream admitted occurrences in deterministic key order."""
         with self.publisher.session() as session:
             yield from self.states.rows(session, state_id)
+
+    @contextmanager
+    def open_state(self, state_id, *, expected_pin=None):
+        """Freshly admit one existing bulk state; retain protection until closed.
+
+        Use ``create=False`` when opening an existing workspace. Reader calls
+        share this admission and never publish values or materialize a state.
+        """
+        from docspec.runtime.state_reader import CoreStateReader
+        with self.publisher.session() as session:
+            yield CoreStateReader(session, self.states, state_id, expected_pin=expected_pin)
 
     def close(self):
         self._resources.close()

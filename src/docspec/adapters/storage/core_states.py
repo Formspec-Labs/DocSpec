@@ -239,7 +239,7 @@ class CoreStateStorage:
             return not before.join(after, "old_key = new_key", how="outer").filter(
                 "old_key IS NULL OR new_key IS NULL OR old_value IS DISTINCT FROM new_value").limit(1).fetchone()
 
-    def representation(self, session, state_id):
+    def representation(self, session, state_id, *, materialize=True):
         """Find the available bulk representation within publication protection."""
         session._active()
         row = next(session.read_records([("state", state_id)]))[0]
@@ -252,6 +252,8 @@ class CoreStateStorage:
             if isinstance(value["membership"], dict) and value["membership"].get("kind") == "content":
                 self.check_representation(session, value, retained=True)
                 return representation.value
+        if not materialize:
+            raise IntegrityError("state has no existing bulk representation")
         for representation in representations:
             members = representation.value.membership
             if isinstance(members, tuple):
@@ -310,14 +312,14 @@ class CoreStateStorage:
         return result
 
     @contextmanager
-    def relation(self, session, state_id, *, scope=None, addresses=None, cursor=None):
+    def relation(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
         """Recover unordered keyed values within the caller's protection scope."""
         tables, partitions = {}, None
         if scope is not None:
             scope = tuple(scope)
             record_value(core.StateMembers(member_selector=core.Whole(), scope=scope), core.Selector)
             tables["wanted"] = pa.table({"wanted_key": pa.array(scope, type=pa.string())})
-        references = self.layers(session, state_id)
+        references = self.layers(session, state_id) if layers is None else layers
         if addresses is not None:
             if scope is not None or cursor is None:
                 raise ValueError("native addresses require their owning cursor and no named scope")

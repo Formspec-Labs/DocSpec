@@ -27,6 +27,10 @@ class StateTransitionError(DocSpecError):
     """A requested immutable state transition is not allowed."""
 
 
+class StateValueRelationUnavailable(DocSpecError):
+    """A state needs the decoded value stream because some values are external."""
+
+
 class ProfileError(DocSpecError):
     """A storage or processing profile is invalid or incompatible."""
 
