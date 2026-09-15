@@ -10,7 +10,8 @@ from pathlib import Path
 from spicy_docs.sources.cfr.acquisition import CfrAcquirer, CfrEditionAcquisition
 from spicy_docs.sources.cfr.annual import annual_cfr_xml_locator
 from spicy_docs.sources.cfr.models import AnnualCfrSelection
-from spicy_docs.sources.govinfo.mods import ModsElement, ModsRecord
+from spicy_docs.sources.govinfo.mods import ModsRecord
+from spicy_docs.sources.xml_tree import XmlTreeElement
 
 from docspec.domain.content import CandidateFile
 from docspec.domain.identity import identity_digest
@@ -20,7 +21,7 @@ from examples.dataset_example_support import capture_facts, retain_refusal, writ
 from examples.provider_identity import provider_installation
 
 
-def select_section(edition: CfrEditionAcquisition, selection: AnnualCfrSelection) -> tuple[ModsRecord, ModsElement]:
+def select_section(edition: CfrEditionAcquisition, selection: AnnualCfrSelection) -> tuple[ModsRecord, XmlTreeElement]:
     """Require one publisher-stated annual XML offer for the requested section."""
     if selection.section is None or edition.selection != replace(selection, section=None):
         raise ValueError("select a section from the captured annual edition")
