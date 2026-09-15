@@ -135,11 +135,13 @@ one-document work limit, and the public Python lifecycle and inspection APIs.
 
 ## PDF limits
 
-`LazyPypdfExtractor` reads embedded PDF text through `pypdf`. The `pdf` extra
-supplies that dependency; the normal text and markup routes do not require it.
-Configuration pins the installed `pypdf` version, page separator and whitespace
-choice before execution. A missing dependency or a loaded version that differs
-from the pin is refused.
+`LazyPypdfExtractor` reads embedded PDF text through SpicyDocs and its optional
+`pypdf` backend. Install `docspec[pdf]` to use it. DocSpec still owns page
+separators, whitespace choices, representations, and evidence coordinates.
+Configuration pins the backend version, SpicyDocs version, selected reader
+module digest, and formatting choices before execution. A missing dependency
+or changed reader is refused. Adapter version 2 gives new outputs a distinct
+configuration; previously stored outputs remain unchanged.
 
 ```python
 from docspec.processing import LazyPypdfExtractor, PageSegmenter
@@ -162,6 +164,8 @@ character positions or bounding boxes in the original PDF bytes. The default
 segmenter preserves that page boundary. Arbitrary sub-page slicing cannot use
 this evidence mapping, and the bounded text segmenter refuses it.
 
+The reader refuses inputs larger than 64 MiB before parsing. This byte limit
+does not bound decompression, extracted text size, or processing time.
 The extractor materializes PDF input and page text in the worker. Store limits
 bound admitted work and recorded observations; they do not provide a hard
 sandbox around the PDF parser's transient memory or CPU use. Use an execution

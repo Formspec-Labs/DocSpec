@@ -62,7 +62,7 @@ def test_pdf_configuration_and_availability_are_pinned_without_importing_provide
     def unexpected_import(name: str) -> object:
         pytest.fail(f"configuration must not import {name}")
 
-    monkeypatch.setattr("docspec.processing.extraction.import_module", unexpected_import)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.import_module", unexpected_import)
     monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: "6.1.0")
     default = LazyPypdfExtractor()
     changed_separator = LazyPypdfExtractor(page_separator="\n")
@@ -103,8 +103,9 @@ def test_changed_or_unidentified_pdf_provider_refuses_before_parsing(
         pytest.fail("a different provider must not parse source bytes")
 
     provider = SimpleNamespace(__version__=loaded_version, PdfReader=unexpected_parse)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.version", lambda _: "6.1.0")
     monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: "6.1.0")
-    monkeypatch.setattr("docspec.processing.extraction.import_module", lambda _: provider)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.import_module", lambda _: provider)
     extractor = LazyPypdfExtractor()
     with pytest.raises(ExtractionError, match="version differs"):
         extractor.extract(_captured(b"%PDF", "application/pdf"), b"%PDF")

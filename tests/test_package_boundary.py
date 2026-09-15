@@ -115,7 +115,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     extras = project["project"]["optional-dependencies"]
     assert extras["spicy-docs"] == ["spicy-docs==" + provider["version"]]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
-    assert extras["pdf"] == ["pypdf>=5,<7"]
+    assert extras["pdf"] == [f"spicy-docs[pdf-pypdf]=={provider["version"]}"]
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert any(requirement.startswith("tiktoken") for requirement in extras["tokens"])
@@ -137,6 +137,8 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     violations: list[str] = []
     shared_imports = {
         (SHARED_CANONICAL_GATEWAY, "rulespec_artifacts"),
+        # The existing optional PDF profile delegates only raw page reading.
+        ("src/docspec/processing/extraction.py", "spicy_docs.extraction.pypdf"),
         # Native interchange annotations are type-only; importing ports stays light.
         ("src/docspec/ports/record_storage.py", "duckdb"),
         ("src/docspec/ports/record_storage.py", "pyarrow"),
@@ -156,7 +158,12 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
             edge = (path.relative_to(ROOT).as_posix(), imported)
             if edge in shared_imports:
                 observed_shared_imports.add(edge)
-            if not is_adapter and not is_composition_surface and root_name in ADAPTER_ONLY_SIBLING_PACKAGES:
+            if (
+                not is_adapter
+                and not is_composition_surface
+                and root_name in ADAPTER_ONLY_SIBLING_PACKAGES
+                and edge not in shared_imports
+            ):
                 violations.append(f"{path.relative_to(ROOT)} imports {imported}")
             if (
                 not is_adapter

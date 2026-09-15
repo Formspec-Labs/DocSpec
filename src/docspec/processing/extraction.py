@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import struct
+from hashlib import sha256
 from collections.abc import Mapping
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from importlib import import_module
-from importlib.metadata import PackageNotFoundError, version as distribution_version
-from io import BytesIO
+from importlib.metadata import PackageNotFoundError, distribution, version as distribution_version
 from typing import Any
 from xml.etree import ElementTree
 
@@ -40,7 +39,7 @@ XML_EXTRACTOR_ID = "docspec.xml-source/v1"
 JSON_EXTRACTOR_ID = "docspec.json-source/v1"
 IMAGE_EXTRACTOR_ID = "docspec.image-passthrough/v1"
 DEFAULT_EXTRACTOR_REGISTRY_ID = "docspec.default-extractors/v1"
-PYPDF_EXTRACTOR_ID = "docspec.pypdf-adapter/v1"
+PYPDF_EXTRACTOR_ID = "docspec.pypdf-adapter/v2"
 EXTRACTION_RECEIPT_FORMAT = "docspec-extraction-receipt"
 EXTRACTION_RECEIPT_FORMAT_VERSION = "1.0"
 _SOURCE_NATIVE_CONFIGURATION_DIGEST = identity_digest({"mode": "source-native-passthrough"})
@@ -335,6 +334,16 @@ class ImageExtractor:
         )
 
 
+def _pypdf_reader_identity() -> tuple[str, str] | None:
+    """Identify the installed reader module without importing the PDF backend."""
+    try:
+        owner = distribution("spicy-docs")
+        module_bytes = owner.locate_file("spicy_docs/extraction/pypdf.py").read_bytes()
+    except (PackageNotFoundError, OSError):
+        return None
+    return owner.version, sha256(module_bytes).hexdigest()
+
+
 class LazyPypdfExtractor:
     """Extract one text representation per PDF page through the optional profile.
 
@@ -350,6 +359,7 @@ class LazyPypdfExtractor:
             raise ValueError("PDF page separator must be non-empty")
         self.page_separator = page_separator
         self.strip_page_whitespace = strip_page_whitespace
+        self._reader_identity = _pypdf_reader_identity()
         try:
             self._provider_version: str | None = distribution_version("pypdf")
         except PackageNotFoundError:
@@ -362,7 +372,10 @@ class LazyPypdfExtractor:
         return identity_digest({
             "provider": "pypdf",
             "providerVersion": self._provider_version,
-            "available": self._provider_version is not None,
+            "reader": "spicy-docs.extraction.pypdf",
+            "readerVersion": self._reader_identity[0] if self._reader_identity else None,
+            "readerModuleSha256": self._reader_identity[1] if self._reader_identity else None,
+            "available": self._provider_version is not None and self._reader_identity is not None,
             "pageSeparator": self.page_separator,
             "stripPageWhitespace": self.strip_page_whitespace,
         })
@@ -372,8 +385,10 @@ class LazyPypdfExtractor:
         return f"docspec.pypdf/{self._require_provider_version()}", self.configuration_digest
 
     def _require_provider_version(self) -> str:
-        if self._provider_version is None:
+        if self._provider_version is None or self._reader_identity is None:
             raise ExtractionError("the pypdf extraction profile requires the docspec[pdf] extra")
+        if _pypdf_reader_identity() != self._reader_identity:
+            raise ExtractionError("installed PDF reader differs from the configured reader version or module bytes")
         return self._provider_version
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
@@ -458,20 +473,18 @@ class LazyPypdfExtractor:
     def _read_pages(self, source_bytes: bytes) -> tuple[tuple[str, ...], str]:
         expected_version = self._require_provider_version()
         try:
-            provider = import_module("pypdf")
+            from spicy_docs.extraction.pypdf import PdfEncryptedError, PdfReadError, PypdfReader
         except (ImportError, ModuleNotFoundError) as error:
             raise ExtractionError("the pypdf extraction profile requires the docspec[pdf] extra") from error
-        provider_version = getattr(provider, "__version__", None)
-        if provider_version != expected_version:
-            raise ExtractionError("loaded pypdf version differs from the configured distribution version")
         try:
-            reader = provider.PdfReader(BytesIO(source_bytes), strict=False)
-            if bool(getattr(reader, "is_encrypted", False)):
-                raise ExtractionError("encrypted PDF requires an explicit decryption profile")
-            extracted = tuple((page.extract_text() or "") for page in reader.pages)
-        except ExtractionError:
-            raise
-        except Exception as error:  # optional provider failures are normalized at this boundary
+            with PypdfReader(expected_backend_version=expected_version).open(source_bytes, password=None) as document:
+                extracted = tuple(document.read_page(page) or "" for page in range(1, document.page_count + 1))
+                provider_version = document.backend_version
+        except PdfEncryptedError as error:
+            raise ExtractionError("encrypted PDF requires an explicit decryption profile") from error
+        except (PdfReadError, ValueError) as error:
+            if isinstance(error.__cause__, (ImportError, PackageNotFoundError)):
+                raise ExtractionError("the pypdf extraction profile requires the docspec[pdf] extra") from error
             raise ExtractionError(f"pypdf cannot extract the captured PDF: {error}") from error
         if self.strip_page_whitespace:
             extracted = tuple(page.strip() for page in extracted)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +11,7 @@ from docspec.processing import LazyPypdfExtractor
 # One exact source fixture per media-type family the default registry
 # dispatches. PDF extraction crosses the lazy optional-provider boundary, so
 # its provider is pinned to a deterministic fake exactly as the regular suite
-# does -- CI installs no pypdf, and the adapter under test is DocSpec's.
+# does; DocSpec still owns representation policy and evidence coordinates.
 _PNG_HEADER = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + (640).to_bytes(4, "big") + (480).to_bytes(4, "big")
 
 FIXTURES: dict[str, tuple[bytes, str]] = {
@@ -43,11 +42,15 @@ def install_fake_pypdf(monkeypatch: pytest.MonkeyPatch) -> None:
             assert strict is False
             self.pages = [FakePage(text) for text in FAKE_PDF_PAGES]
 
+        def close(self) -> None:
+            pass
+
     provider = SimpleNamespace(__version__="conformance-fixture", PdfReader=FakeReader)
     monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _name: provider.__version__)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.version", lambda _name: provider.__version__)
     monkeypatch.setattr(
-        "docspec.processing.extraction.import_module",
-        lambda name: provider if name == "pypdf" else importlib.import_module(name),
+        "spicy_docs.extraction.pypdf.import_module",
+        lambda _: provider,
     )
 
 

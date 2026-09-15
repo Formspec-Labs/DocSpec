@@ -133,6 +133,9 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
             assert strict is False
             self.pages = [FakePage("Page one §"), FakePage(""), FakePage("Page three 🧪")]
 
+        def close(self) -> None:
+            pass
+
     provider = SimpleNamespace(__version__="6.1.0-fixture", PdfReader=FakeReader)
     imports: list[str] = []
 
@@ -140,8 +143,9 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
         imports.append(name)
         return provider
 
-    monkeypatch.setattr("docspec.processing.extraction.import_module", import_provider)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.import_module", import_provider)
     monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: provider.__version__)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.version", lambda _: provider.__version__)
     extractor = LazyPypdfExtractor()
     assert imports == []
     source = b"%PDF-fixture-bytes"
@@ -207,7 +211,7 @@ def test_missing_optional_pdf_profile_has_one_actionable_failure(monkeypatch: py
     def missing(_: str) -> object:
         raise ModuleNotFoundError("pypdf")
 
-    monkeypatch.setattr("docspec.processing.extraction.import_module", missing)
+    monkeypatch.setattr("spicy_docs.extraction.pypdf.import_module", missing)
     monkeypatch.setattr("docspec.processing.extraction.distribution_version", lambda _: "6.1.0-fixture")
     extractor = LazyPypdfExtractor()
     source = b"%PDF-fixture-bytes"

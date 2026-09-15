@@ -88,6 +88,9 @@ adapters implementing the ports. Deterministic processing code depends on domain
 types. Only composition code connects concrete adapters to application services.
 `tests/conformance/test_import_directions.py` checks the complete allowed map.
 Keep optional SDK imports at the adapter that selects them.
+The existing PDF profile in `processing/extraction.py` lazily calls
+`spicy_docs.extraction.pypdf` for raw page reading. This specific shared import
+is allowed; DocSpec keeps representation, formatting, and evidence policy.
 
 Give each module one explainable responsibility. Put a shared rule with the
 component that owns it, and share it only when the callers mean the same thing.

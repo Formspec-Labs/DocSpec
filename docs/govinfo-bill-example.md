@@ -12,7 +12,7 @@ checkout. Publisher responses come from retained fixtures.
 
 ```sh
 uv run --frozen \
-  --find-links ./vendor --with './vendor/spicy_docs-0.14.0-py3-none-any.whl[acquisition]' \
+  --find-links ./vendor --with './vendor/spicy_docs-0.15.0-py3-none-any.whl[acquisition]' \
   python tools/with_iceberg.py python -m examples.govinfo_bills \
   --package-id BILLS-119hr6028ih --output "$PWD/my-bill-experiment"
 ```

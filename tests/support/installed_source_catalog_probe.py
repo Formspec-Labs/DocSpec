@@ -518,7 +518,10 @@ provider_requirements = [
     for requirement in (importlib.metadata.requires("docspec") or ())
     if requirement.lower().startswith("spicy-docs")
 ]
-assert provider_requirements == ["spicy-docs==__SPICY_DOCS_VERSION__;extra=='spicy-docs'"]
+assert set(provider_requirements) == {
+    "spicy-docs==__SPICY_DOCS_VERSION__;extra=='spicy-docs'",
+    "spicy-docs[pdf-pypdf]==__SPICY_DOCS_VERSION__;extra=='pdf'",
+}
 environment_root = Path(sys.prefix).resolve(strict=True)
 module_origins = {
     "docspec": str(Path(docspec.__file__).resolve(strict=True)),
