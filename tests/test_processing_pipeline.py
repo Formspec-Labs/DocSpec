@@ -70,7 +70,7 @@ def test_stdlib_extractors_preserve_exact_source_and_are_retry_stable(
 
 
 def test_closed_json_xml_and_captured_digests_fail_closed() -> None:
-    with pytest.raises(IntegrityError, match="duplicate object key"):
+    with pytest.raises(IntegrityError, match="JSON repeats field"):
         JsonExtractor().extract(_captured(b'{"a":1,"a":2}', "application/json"), b'{"a":1,"a":2}')
     with pytest.raises(ExtractionError, match="cannot be parsed"):
         XmlExtractor().extract(_captured(b"<root>", "application/xml"), b"<root>")

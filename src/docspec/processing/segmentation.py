@@ -20,11 +20,17 @@ from docspec.processing.artifacts import (
     utf8_byte_offsets,
 )
 from docspec.processing.bounded_segmentation import BOUNDED_TEXT_KINDS, BoundedSegmenter
-from docspec.processing.json_tools import record_char_ranges
+from docspec.processing.reader_identity import (
+    JSON_MODULES,
+    installed_reader_identity,
+    reader_configuration,
+    require_reader_identity,
+)
+from docspec.processing.source_profiles import JSON_SOURCE_PROFILE
 
 PARAGRAPH_SEGMENTER_ID = "docspec.paragraph/v1"
 PAGE_SEGMENTER_ID = "docspec.pdf-page/v1"
-RECORD_SEGMENTER_ID = "docspec.json-record/v1"
+RECORD_SEGMENTER_ID = "docspec.json-record/v2"
 WHOLE_IMAGE_SEGMENTER_ID = "docspec.whole-image/v1"
 DEFAULT_SEGMENTER_REGISTRY_ID = "docspec.default-segmenters/v1"
 SEGMENTATION_RECEIPT_FORMAT = "docspec-segmentation-receipt"
@@ -163,14 +169,24 @@ class RecordSegmenter:
     """Create exact source slices for top-level JSON array records."""
 
     segmenter_id = RECORD_SEGMENTER_ID
-    policy_digest = identity_digest(
-        {
-            "policy": "top-level-json-records",
-            "version": 1,
-            "arrayMembers": "one-record-each",
-            "otherRoots": "one-record",
-        }
-    )
+
+    def __init__(self) -> None:
+        self._reader_identity = installed_reader_identity(JSON_MODULES)
+        self._policy_digest = identity_digest(
+            {
+                "policy": "top-level-json-records",
+                "version": 2,
+                "arrayMembers": "one-record-each",
+                "otherRoots": "one-record",
+                "sourceProfile": dict(JSON_SOURCE_PROFILE),
+                **reader_configuration(self._reader_identity),
+            }
+        )
+
+    @property
+    def policy_digest(self) -> str:
+        require_reader_identity(self._reader_identity, JSON_MODULES)
+        return self._policy_digest
 
     def selected_identity(self, representation: Representation) -> tuple[str, str]:
         return self.segmenter_id, self.policy_digest
@@ -178,21 +194,28 @@ class RecordSegmenter:
     def segment(self, representation: RepresentationPayload) -> tuple[SegmentPayload, ...]:
         if representation.representation.kind != "json":
             raise IntegrityError("record segmentation requires a JSON representation")
-        text = decode_utf8(representation.content, label="JSON representation")
-        byte_offsets = utf8_byte_offsets(text)
+        _, policy_digest = self.selected_identity(representation.representation)
+        from spicy_docs.sources.json_input import read_json_records
+
+        try:
+            observed = read_json_records(
+                representation.content, source="representation", error_type=ValueError, **JSON_SOURCE_PROFILE
+            )
+        except ValueError as error:
+            raise IntegrityError(str(error)) from error
         return tuple(
             build_segment(
                 representation,
                 ordinal=ordinal,
                 kind="record",
-                start=byte_offsets[start],
-                end=byte_offsets[end],
+                start=span.byte_start,
+                end=span.byte_end,
                 segmenter_id=self.segmenter_id,
-                policy_digest=self.policy_digest,
+                policy_digest=policy_digest,
                 derivation=("source-native-json", "top-level-record"),
                 media_type="application/json",
             )
-            for ordinal, (start, end) in enumerate(record_char_ranges(text))
+            for ordinal, span in enumerate(observed.records)
         )
 
 
@@ -261,18 +284,24 @@ class DefaultSegmenterRegistry:
     @property
     def policy_digest(self) -> str:
         children = {
-            "paragraph": self._paragraph, "page": self._page,
-            "record": self._record, "image": self._image, "bounded": self._bounded,
+            "paragraph": self._paragraph,
+            "page": self._page,
+            "record": self._record,
+            "image": self._image,
+            "bounded": self._bounded,
         }
-        return identity_digest({
-            "dispatcher": self.segmenter_id,
-            "boundedTextKinds": sorted(BOUNDED_TEXT_KINDS) if self._bounded is not None else [],
-            "children": {
-                route: {"segmenterId": child.segmenter_id, "policyDigest": child.policy_digest}
-                if child is not None else None
-                for route, child in children.items()
-            },
-        })
+        return identity_digest(
+            {
+                "dispatcher": self.segmenter_id,
+                "boundedTextKinds": sorted(BOUNDED_TEXT_KINDS) if self._bounded is not None else [],
+                "children": {
+                    route: {"segmenterId": child.segmenter_id, "policyDigest": child.policy_digest}
+                    if child is not None
+                    else None
+                    for route, child in children.items()
+                },
+            }
+        )
 
     def selected_identity(self, representation: Representation) -> tuple[str, str]:
         return self._select(representation).selected_identity(representation)

@@ -139,6 +139,8 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
         # Source readers own syntax; DocSpec retains layout and evidence policy.
         ("src/docspec/processing/extraction.py", "spicy_docs.sources.markup"),
         ("src/docspec/processing/extraction.py", "spicy_docs.sources.image_header"),
+        ("src/docspec/processing/extraction.py", "spicy_docs.sources.json_input"),
+        ("src/docspec/processing/segmentation.py", "spicy_docs.sources.json_input"),
         ("src/docspec/processing/visible_text.py", "spicy_docs.sources.markup"),
         # The optional PDF profile delegates only raw page reading.
         ("src/docspec/processing/extraction.py", "spicy_docs.extraction.pypdf"),

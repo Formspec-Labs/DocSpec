@@ -27,20 +27,21 @@ from docspec.processing.artifacts import (
     verify_blob_bytes,
     verify_representation_evidence,
 )
-from docspec.processing.json_tools import strict_json_value
 from docspec.processing.reader_identity import (
     IMAGE_MODULES,
+    JSON_MODULES,
     MARKUP_MODULES,
     PDF_MODULES,
     installed_reader_identity,
     reader_configuration,
     require_reader_identity,
 )
+from docspec.processing.source_profiles import JSON_SOURCE_PROFILE
 
 TEXT_EXTRACTOR_ID = "docspec.text-source/v1"
 HTML_EXTRACTOR_ID = "docspec.html-source/v2"
 XML_EXTRACTOR_ID = "docspec.xml-source/v2"
-JSON_EXTRACTOR_ID = "docspec.json-source/v1"
+JSON_EXTRACTOR_ID = "docspec.json-source/v2"
 IMAGE_EXTRACTOR_ID = "docspec.image-passthrough/v2"
 DEFAULT_EXTRACTOR_REGISTRY_ID = "docspec.default-extractors/v1"
 PYPDF_EXTRACTOR_ID = "docspec.pypdf-adapter/v2"
@@ -303,14 +304,33 @@ class JsonExtractor:
     """Validate closed JSON and retain its exact UTF-8 source bytes."""
 
     extractor_id = JSON_EXTRACTOR_ID
-    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def __init__(self) -> None:
+        self._reader_identity = installed_reader_identity(JSON_MODULES)
+        self._configuration_digest = identity_digest(
+            {
+                "mode": "source-native-passthrough",
+                "sourceProfile": dict(JSON_SOURCE_PROFILE),
+                **reader_configuration(self._reader_identity),
+            }
+        )
+
+    @property
+    def configuration_digest(self) -> str:
+        require_reader_identity(self._reader_identity, JSON_MODULES)
+        return self._configuration_digest
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
         return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
-        text = decode_utf8(source_bytes, label="captured JSON")
-        value = strict_json_value(text, label="captured JSON")
+        self.selected_identity(captured)
+        from spicy_docs.sources.json_input import load_bounded_json
+
+        try:
+            value = load_bounded_json(source_bytes, source="captured", error_type=ValueError, **JSON_SOURCE_PROFILE)
+        except ValueError as error:
+            raise IntegrityError(str(error)) from error
         root_kind = "array" if isinstance(value, list) else "object" if isinstance(value, dict) else "scalar"
         metadata = {
             "rootKind": root_kind,
