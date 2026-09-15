@@ -1,6 +1,6 @@
 """Read source-native artifacts through the installed SpicyDocs reader.
 
-The package stays optional and is loaded only at this adapter boundary. This
+Source-native publication code loads only at this adapter boundary. This
 adapter selects the current SpicyDocs producer; the installed reader admits
 the caller's pinned release under its independently accepted verifier identity.
 """
@@ -22,7 +22,7 @@ ACCEPTED_PRODUCER_PRODUCT = "spicy-docs"
 
 
 class SourceNativeReaderError(RuntimeError, DocSpecError):
-    """The optional installed reader is missing or cannot admit the source."""
+    """The installed reader is missing or cannot admit the source."""
 
 
 def _resolve_producer_module(module_name: str) -> ModuleType:

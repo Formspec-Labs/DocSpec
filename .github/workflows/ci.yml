@@ -57,7 +57,7 @@ jobs:
           uv venv --python 3.12 "$RUNNER_TEMP/docspec-wheel"
           # The pinned Rulespec dependency is vendored and not on the public
           # package index. Supply that wheel explicitly in this empty venv.
-          uv pip install --python "$RUNNER_TEMP/docspec-wheel/bin/python" vendor/rulespec_artifacts-*.whl dist/docspec-*.whl
+          uv pip install --python "$RUNNER_TEMP/docspec-wheel/bin/python" vendor/rulespec_artifacts-*.whl vendor/spicy_docs-*.whl dist/docspec-*.whl
           "$RUNNER_TEMP/docspec-wheel/bin/python" -c "import docspec"
           "$RUNNER_TEMP/docspec-wheel/bin/docspec" --help
 

@@ -141,13 +141,13 @@ To reproduce CI's installed-wheel check in an empty environment:
 ```sh
 wheel_check=$(mktemp -d)
 uv venv --python 3.12 "$wheel_check/venv"
-uv pip install --python "$wheel_check/venv/bin/python" vendor/rulespec_artifacts-*.whl dist/docspec-*.whl
+uv pip install --python "$wheel_check/venv/bin/python" vendor/rulespec_artifacts-*.whl vendor/spicy_docs-*.whl dist/docspec-*.whl
 "$wheel_check/venv/bin/python" -c 'import docspec'
 "$wheel_check/venv/bin/docspec" --help
 ```
 
 Use a clean `dist/` containing the wheel being reviewed. Supply the vendored
-Rulespec wheel explicitly: this pinned dependency is not currently available
+Rulespec Artifacts and SpicyDocs wheels explicitly: these pinned dependencies are not available
 from the public package index, and `uv` source overrides do not travel inside
 the built DocSpec wheel. The focused
 `tests/test_source_catalog_installed_wheel.py` also exercises catalog behavior
@@ -155,27 +155,23 @@ from an installed package. For live service checks, inspect the specific test's
 configuration first and explicitly select it with `pytest -m integration`;
 the default test run supplies no live credentials.
 
-## Install the optional source reader
+## Install the source reader
 
-`docspec[spicy-docs]` selects the pinned public SpicyDocs reader. It adds no
-acquisition, analytics, Dagster or PDF extras. The provider remains independently
-usable and does not depend on DocSpec. Supplied-record experiments work with
-core DocSpec alone.
+DocSpec requires the pinned SpicyDocs core wheel for XML, HTML and image-header
+reading. Network acquisition, PDF decoding and other processing extras remain
+optional. SpicyDocs stays independently usable and does not depend on DocSpec.
 
-For a built `0.3.0` wheel and an existing empty verification environment:
+For a built wheel and an empty verification environment:
 
 ```sh
 uv pip install --python "$wheel_check/venv/bin/python" \
-  --find-links dist --find-links vendor 'docspec[spicy-docs]==0.3.0'
+  --find-links dist --find-links vendor 'docspec==0.5.0'
 ```
 
-Outside the checkout, supply the DocSpec, Rulespec and SpicyDocs wheels from
-that same checked build. The two dependency wheels have one authoritative home
-under `vendor/`; installed integration tests use those same files. In a checkout,
-add `--extra spicy-docs` to the extras selected for `uv sync` and `uv run`.
-Keep optional acquisition or processing dependencies tied to the operation that
-needs them. Package/version pins identify code; source artifact pins identify
-the data that a catalog reads.
+Outside the checkout, supply the DocSpec, Rulespec Artifacts and SpicyDocs wheels
+from the same checked build; `vendor/` holds the dependency wheels. `uv sync`
+selects the required reader automatically. Package pins identify code; source
+artifact pins identify the data a catalog reads.
 
 ## Submit a reviewable change
 

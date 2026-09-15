@@ -3,4 +3,4 @@
 from docspec.errors import DocSpecError
 
 __all__ = ["DocSpecError", "__version__"]
-__version__ = "0.4.2"
+__version__ = "0.5.0"

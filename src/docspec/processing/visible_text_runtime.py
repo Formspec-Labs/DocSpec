@@ -16,6 +16,12 @@ from docspec.processing.artifacts import (
     content_blob_ref,
 )
 from docspec.processing.extraction import ExtractionReceipt, ExtractionResult, _verify_captured_bytes
+from docspec.processing.reader_identity import (
+    MARKUP_MODULES,
+    ReaderIdentity,
+    installed_reader_identity,
+    require_reader_identity,
+)
 from docspec.processing.visible_text import (
     HTML_HEADING_TAGS,
     NO_VISIBLE_TEXT,
@@ -28,7 +34,7 @@ from docspec.processing.visible_text import (
     XmlVisibleTextExtractor,
 )
 
-VISIBLE_TEXT_BLOCK_TRANSFORM = "docspec-visible-text-block/v1"
+VISIBLE_TEXT_BLOCK_TRANSFORM = "docspec-visible-text-block/v2"
 _VISIBLE_TEXT_KIND = "visible-text"
 _Parser = HtmlVisibleTextExtractor | XmlVisibleTextExtractor
 
@@ -42,12 +48,14 @@ def _headings(values: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
 
 
 def _parser_identity(parser: _Parser) -> tuple[str, str]:
-    return parser.extractor_id.replace("/v1", "-blocks/v1"), identity_digest({
-        "parserId": parser.extractor_id,
-        "parserConfigurationDigest": parser.configuration_digest,
-        "mapping": VISIBLE_TEXT_BLOCK_TRANSFORM,
-        "inputEncoding": "utf-8",
-    })
+    return parser.extractor_id.replace("/v2", "-blocks/v2"), identity_digest(
+        {
+            "parserId": parser.extractor_id,
+            "parserConfigurationDigest": parser.configuration_digest,
+            "mapping": VISIBLE_TEXT_BLOCK_TRANSFORM,
+            "inputEncoding": "utf-8",
+        }
+    )
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -61,7 +69,8 @@ class VisibleTextExtractor:
 
     _html_headings: tuple[tuple[str, int], ...]
     _xml_headings: tuple[tuple[str, int], ...]
-    extractor_id = "docspec.visible-text/v1"
+    _reader_identity: ReaderIdentity | None
+    extractor_id = "docspec.visible-text/v2"
 
     def __init__(
         self,
@@ -69,21 +78,34 @@ class VisibleTextExtractor:
         html_heading_tags: Mapping[str, int] | None = None,
         xml_heading_levels: Mapping[str, int] | None = None,
     ) -> None:
-        object.__setattr__(self, "_html_headings", _headings(
-            HTML_HEADING_TAGS if html_heading_tags is None else html_heading_tags,
-        ))
-        object.__setattr__(self, "_xml_headings", _headings(
-            XML_HEADING_LEVELS if xml_heading_levels is None else xml_heading_levels,
-        ))
+        object.__setattr__(self, "_reader_identity", installed_reader_identity(MARKUP_MODULES))
+        object.__setattr__(
+            self,
+            "_html_headings",
+            _headings(
+                HTML_HEADING_TAGS if html_heading_tags is None else html_heading_tags,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "_xml_headings",
+            _headings(
+                XML_HEADING_LEVELS if xml_heading_levels is None else xml_heading_levels,
+            ),
+        )
 
     @property
     def configuration_digest(self) -> str:
-        return identity_digest({
-            "html": _parser_identity(HtmlVisibleTextExtractor(dict(self._html_headings))),
-            "xml": _parser_identity(XmlVisibleTextExtractor(dict(self._xml_headings))),
-        })
+        require_reader_identity(self._reader_identity, MARKUP_MODULES)
+        return identity_digest(
+            {
+                "html": _parser_identity(HtmlVisibleTextExtractor(dict(self._html_headings))),
+                "xml": _parser_identity(XmlVisibleTextExtractor(dict(self._xml_headings))),
+            }
+        )
 
     def _parser(self, captured: CapturedFile) -> _Parser:
+        require_reader_identity(self._reader_identity, MARKUP_MODULES)
         media_type = captured.media_type.split(";", 1)[0].strip().lower()
         if media_type == "text/html":
             return HtmlVisibleTextExtractor(dict(self._html_headings))
@@ -159,7 +181,7 @@ class VisibleTextExtractor:
             bounds = mapping.representation_start, mapping.representation_end
             if blocks.get(bounds) != mapping:
                 raise IntegrityError("visible-text evidence differs from the regenerated block")
-            return visible.content[bounds[0]:bounds[1]]
+            return visible.content[bounds[0] : bounds[1]]
 
         return resolve
 
@@ -168,29 +190,33 @@ def _block_mappings(captured: CapturedFile, visible: VisibleText) -> tuple[Evide
     mappings = []
     for block in visible.blocks:
         start, end = visible.rendition_range(block.representation_start, block.representation_end)
-        mappings.append(EvidenceMapping(
-            representation_start=block.representation_start,
-            representation_end=block.representation_end,
-            evidence=EvidenceCoordinate(
-                coordinate_system="utf8-byte-range",
-                source_digest=captured.blob.digest,
-                start=start,
-                end=end,
-            ),
-            transformation=VISIBLE_TEXT_BLOCK_TRANSFORM,
-        ))
+        mappings.append(
+            EvidenceMapping(
+                representation_start=block.representation_start,
+                representation_end=block.representation_end,
+                evidence=EvidenceCoordinate(
+                    coordinate_system="utf8-byte-range",
+                    source_digest=captured.blob.digest,
+                    start=start,
+                    end=end,
+                ),
+                transformation=VISIBLE_TEXT_BLOCK_TRANSFORM,
+            )
+        )
     return tuple(mappings)
 
 
 class VisibleTextBlockSegmenter:
     """Keep complete visible-text block boundaries and their enclosing source spans."""
 
-    segmenter_id = "docspec.visible-text-block/v1"
-    policy_digest = identity_digest({
-        "policy": "declared-visible-text-blocks",
-        "mapping": VISIBLE_TEXT_BLOCK_TRANSFORM,
-        "includeBlockSeparators": False,
-    })
+    segmenter_id = "docspec.visible-text-block/v2"
+    policy_digest = identity_digest(
+        {
+            "policy": "declared-visible-text-blocks",
+            "mapping": VISIBLE_TEXT_BLOCK_TRANSFORM,
+            "includeBlockSeparators": False,
+        }
+    )
 
     def selected_identity(self, representation: Representation) -> tuple[str, str]:
         if representation.kind != _VISIBLE_TEXT_KIND:
@@ -211,14 +237,16 @@ class VisibleTextBlockSegmenter:
                 or evidence.region is not None
             ):
                 raise IntegrityError("visible-text representation has a non-block evidence mapping")
-            segments.append(build_segment(
-                representation,
-                ordinal=ordinal,
-                kind="visible-text-block",
-                start=mapping.representation_start,
-                end=mapping.representation_end,
-                segmenter_id=self.segmenter_id,
-                policy_digest=self.policy_digest,
-                derivation=(VISIBLE_TEXT_BLOCK_TRANSFORM,),
-            ))
+            segments.append(
+                build_segment(
+                    representation,
+                    ordinal=ordinal,
+                    kind="visible-text-block",
+                    start=mapping.representation_start,
+                    end=mapping.representation_end,
+                    segmenter_id=self.segmenter_id,
+                    policy_digest=self.policy_digest,
+                    derivation=(VISIBLE_TEXT_BLOCK_TRANSFORM,),
+                )
+            )
         return tuple(segments)

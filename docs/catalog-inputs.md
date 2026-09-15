@@ -67,7 +67,7 @@ scope describes upstream coverage; it does not request incremental updates or
 preserve omitted items. Include all items you intend the successor to retain.
 
 Run [the supplied-record example](../examples/supplied_records.py) without a
-provider package or sibling checkout:
+additional provider configuration or a sibling checkout:
 
 ```sh
 uv run --frozen --extra dagster python -m examples.supplied_records --output /absolute/new-notes-catalog
@@ -75,14 +75,11 @@ uv run --frozen --extra dagster python -m examples.supplied_records --output /ab
 
 ## Use an installed provider reader
 
-Choose the `spicy-docs` package extra for this integration. In a checkout, add
-`--extra spicy-docs` to the extras you select for `uv sync` and `uv run`.
-The optional provider is pinned to
-SpicyDocs `0.7.0`; its base installation adds source reading without acquisition,
-analytics, PDF or Dagster dependencies. See the
-[wheel installation instructions](../CONTRIBUTING.md#install-the-optional-source-reader)
-for use outside the checkout. Ordinary supplied-record experiments need no
-provider package.
+DocSpec includes the pinned SpicyDocs core reader. Network acquisition and PDF
+processing remain optional. See the
+[wheel installation instructions](../CONTRIBUTING.md#install-the-source-reader)
+for use outside the checkout. Supplied-record experiments require no additional
+provider configuration.
 
 The [GAO topic example](gao-topics.md) maps admitted source fields and evidence
 into supplied records, then applies an exact-label filter without body capture
@@ -99,7 +96,7 @@ before any document is fetched. Its Parquet fixture uses the provider's optional
 table dependencies; the admitted source reader remains independently usable.
 
 The existing source port streams already admitted records and renditions. The
-optional SpicyDocs adapter uses the installed provider reader; importing DocSpec
+SpicyDocs adapter uses the installed provider reader; importing DocSpec
 does not import that package. Supply its exact artifact pin and independently
 accepted verifier implementation, then choose DocSpec's interpretation policy:
 

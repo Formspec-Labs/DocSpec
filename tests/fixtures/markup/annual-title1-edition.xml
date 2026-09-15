@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mods xmlns="http://www.loc.gov/mods/v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.3" xsi:schemaLocation="http://www.loc.gov/mods/v3 http://www.loc.gov/standards/mods/v3/mods-3-3.xsd" ID="P0b002ee1da1a300f">
+    <extension>
+         <collectionCode>CFR</collectionCode>
+         <category>Regulatory Information</category>
+         <waisDatabaseName>2025_cfr_1v1</waisDatabaseName>
+         <branch>executive</branch>
+         <dateIngested>2025-11-19</dateIngested>
+    </extension>
+    <originInfo>
+         <publisher>Office of the Federal Register, National Archives and Records Administration</publisher>
+         <dateIssued encoding="w3cdtf">2025-01-01</dateIssued>
+         <issuance>monographic</issuance>
+         <frequency authority="marcfrequency">annual</frequency>
+    </originInfo>
+    <extension>
+         <docClass>CFR</docClass>
+         <accessId>CFR-2025-title1-vol1</accessId>
+         <titleNumber>1</titleNumber>
+         <volumeNumber>1</volumeNumber>
+         <volumeCount>1</volumeCount>
+         <nodeRange />
+         <isCurrentEdition>true</isCurrentEdition>
+         <editionId>CFR-title1-vol1</editionId>
+         <isFallbackTitle>false</isFallbackTitle>
+         <partRange from="1" to="603" />
+         <isCoverOnly>true</isCoverOnly>
+         <originalDateIssued>2023-01-01</originalDateIssued>
+    </extension>
+    <titleInfo>
+         <title>General Provisions</title>
+         <partNumber>Title 1</partNumber>
+         <partNumber>Volume 1</partNumber>
+    </titleInfo>
+    </mods>

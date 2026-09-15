@@ -1,29 +1,71 @@
-"""Lay shared markup observations out as searchable text with source byte ranges.
+"""Visible-text extraction: markup in, one searchable Unicode representation out.
 
-SpicyDocs reads XML/HTML syntax and locates source text. DocSpec chooses blocks,
-headings and suppression: XML whitespace is normalized; HTML body text retains
-its existing spacing. Inserted separators and heading prefixes claim no source
-bytes. Only byte-identical runs support exact subrange interpolation.
+`docs/decisions/0001-document-release-2-0.md` requires a `document-body`'s
+`representation` to be `text/plain; charset=utf-8` -- "Markup is not search text:
+this is visible text extracted before segmentation"
+(`documents.schema.json`, `$defs/representation`). The five extractors in
+`processing/extraction.py` cannot supply that: every one of them is a
+**source-native passthrough** whose representation blob IS the captured file
+(`_passthrough_result`), which is the right answer for a store that keeps exact
+source bytes and the wrong one for a search corpus. This module is the missing
+half, and it does not replace them: an XML file still has a source-native
+representation, and now it also has a visible-text one.
+
+Two parsers, both standard library
+----------------------------------
+* XML through `xml.parsers.expat`, chosen over `ElementTree` for one reason:
+  expat reports `CurrentByteIndex`, so every run of character data carries the
+  exact byte range of the captured rendition it came from. Evidence that names
+  real bytes is the whole point of `rendition-utf8-byte`.
+* HTML through `html.parser.HTMLParser`, whose `getpos()` gives the same fact in
+  line/column form. Character references are folded by the parser
+  (`convert_charrefs=True`), so the emitted text is what a reader sees while the
+  recorded range still spans the `&amp;` that produced it.
+
+Neither parser is asked to understand a vocabulary. A **block** is any element
+that directly owns non-whitespace character data, found top-down: an element
+whose own text is only whitespace is a container and is descended into, and an
+element that owns text is emitted whole, inline children included. That rule
+needs no tag list and produced clean blocks on every document of the pinned
+corpus. The one vocabulary this module does declare is which tags are headings,
+and it is declared in the extractor's configuration so it rides inside the
+`extractorDigest` the release carries.
+
+Two layout modes, and why
+-------------------------
+`processing/bounded_segmentation.py` tiles a representation into regions at
+blank lines and treats a lone ATX line as a heading. So the layout this module
+writes is the segmenter's input contract:
+
+* **normalized** (XML): each block's whitespace collapses to single spaces and
+  the block becomes one line, headings prefixed `#` by level. Structure the
+  markup carried becomes structure the segmenter can see.
+* **verbatim** (HTML): character data is copied unchanged. The pinned corpus's
+  HTML is a `<pre>` block holding a Federal Register document whose paragraphs
+  are already separated by blank lines; normalizing it would erase every one of
+  them and leave one region for the token budget to chop blindly.
+
+Every byte written that did not come from the source -- a separator, a `#`
+prefix, a collapsed space -- belongs to no run, and `rendition_range` maps a
+representation interval back through the runs that do. A segment therefore
+cites the captured bytes it was extracted from and never a byte it invented.
 """
 
 from __future__ import annotations
 
 import re
+import xml.parsers.expat
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from typing import Any
 
 from docspec.domain.identity import identity_digest
 from docspec.errors import IntegrityError
-from docspec.processing.reader_identity import (
-    MARKUP_MODULES,
-    installed_reader_identity,
-    reader_configuration,
-    require_reader_identity,
-)
+from docspec.processing.artifacts import decode_utf8, utf8_byte_offsets
 
-XML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.xml-visible-text/v2"
-HTML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.html-visible-text/v2"
+XML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.xml-visible-text/v1"
+HTML_VISIBLE_TEXT_EXTRACTOR_ID = "docspec.html-visible-text/v1"
 
 REPRESENTATION_MEDIA_TYPE = "text/plain; charset=utf-8"
 BLOCK_SEPARATOR = "\n\n"
@@ -58,20 +100,8 @@ HTML_SUPPRESSED_TAGS = frozenset({"script", "style", "template", "noscript", "he
 # the rest of a document into one block.
 HTML_VOID_TAGS = frozenset(
     {
-        "area",
-        "base",
-        "br",
-        "col",
-        "embed",
-        "hr",
-        "img",
-        "input",
-        "link",
-        "meta",
-        "param",
-        "source",
-        "track",
-        "wbr",
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
     }
 )
 
@@ -90,13 +120,26 @@ class VisibleTextError(IntegrityError):
 
 @dataclass(frozen=True, slots=True)
 class TextRun:
-    """Output text and its captured span; exact only when their bytes match."""
+    """One run of source character data, and where it landed in the representation.
+
+    A run is **exact** when it occupies the same number of bytes in both, which
+    means the parser copied it through without collapsing whitespace and without
+    folding a character reference. Inside an exact run a representation offset
+    resolves to one captured byte; inside any other run it resolves only to the
+    run, and the honest answer is the whole run rather than an interpolation the
+    bytes do not support.
+    """
 
     representation_start: int
     representation_end: int
     rendition_start: int
     rendition_end: int
-    exact: bool
+
+    @property
+    def exact(self) -> bool:
+        return (self.representation_end - self.representation_start) == (
+            self.rendition_end - self.rendition_start
+        )
 
     def resolve(self, start: int, end: int) -> tuple[int, int]:
         """The captured range one interval of this run came from."""
@@ -163,8 +206,7 @@ class VisibleText:
 class _Writer:
     """Accumulates the representation while recording where each run landed."""
 
-    def __init__(self, source_bytes: bytes) -> None:
-        self._source_bytes = source_bytes
+    def __init__(self) -> None:
         self._parts: list[str] = []
         self.length = 0
         self.runs: list[TextRun] = []
@@ -178,15 +220,7 @@ class _Writer:
     def write_run(self, text: str, rendition_start: int, rendition_end: int) -> None:
         start, end = self.write(text)
         if end > start:
-            self.runs.append(
-                TextRun(
-                    start,
-                    end,
-                    rendition_start,
-                    rendition_end,
-                    text.encode("utf-8") == self._source_bytes[rendition_start:rendition_end],
-                )
-            )
+            self.runs.append(TextRun(start, end, rendition_start, max(rendition_end, rendition_start + 1)))
 
     def content(self) -> bytes:
         return "".join(self._parts).encode("utf-8")
@@ -288,9 +322,8 @@ def _lay_out(
     nodes: Iterable[tuple[_Node, int | None]],
     *,
     normalize: bool,
-    source_bytes: bytes,
 ) -> tuple[bytes, tuple[VisibleTextBlock, ...], tuple[TextRun, ...]]:
-    writer = _Writer(source_bytes)
+    writer = _Writer()
     blocks: list[VisibleTextBlock] = []
     for node, level in nodes:
         _write_block(writer, blocks, node.pieces(), level=level, normalize=normalize)
@@ -318,24 +351,22 @@ class XmlVisibleTextExtractor:
 
     def __init__(self, heading_levels: Mapping[str, int] = XML_HEADING_LEVELS) -> None:
         self.heading_levels = dict(heading_levels)
-        self._reader_identity = installed_reader_identity(MARKUP_MODULES)
         self.configuration = {
-            **reader_configuration(self._reader_identity),
             "headingLevels": dict(sorted(self.heading_levels.items())),
             "layout": "normalized",
             "parser": "expat",
-            "allowExternalDoctype": True,
             "unit": "visible-text",
         }
         self.configuration_digest = identity_digest(self.configuration)
 
     def extract(self, source_bytes: bytes) -> VisibleText:
-        require_reader_identity(self._reader_identity, MARKUP_MODULES)
         root = _parse_xml(source_bytes)
         blocks = _walk_blocks(root, self._level)
-        content, laid_out, runs = _lay_out(blocks, normalize=True, source_bytes=source_bytes)
+        content, laid_out, runs = _lay_out(blocks, normalize=True)
         if not content.strip():
-            raise VisibleTextError(NO_VISIBLE_TEXT, "the captured XML carries no visible text to search")
+            raise VisibleTextError(
+                NO_VISIBLE_TEXT, "the captured XML carries no visible text to search"
+            )
         return VisibleText(
             content=content,
             blocks=laid_out,
@@ -344,7 +375,9 @@ class XmlVisibleTextExtractor:
             extractor_id=self.extractor_id,
             configuration_digest=self.configuration_digest,
             metadata={
-                "rootTag": next((part.tag for part in root.parts if isinstance(part, _Node)), None),
+                "rootTag": next(
+                    (part.tag for part in root.parts if isinstance(part, _Node)), None
+                ),
                 "blockCount": len(laid_out),
                 "headingCount": sum(1 for block in laid_out if block.kind == "heading"),
             },
@@ -361,9 +394,7 @@ class HtmlVisibleTextExtractor:
 
     def __init__(self, heading_tags: Mapping[str, int] = HTML_HEADING_TAGS) -> None:
         self.heading_tags = dict(heading_tags)
-        self._reader_identity = installed_reader_identity(MARKUP_MODULES)
         self.configuration = {
-            **reader_configuration(self._reader_identity),
             "headingLevels": dict(sorted(self.heading_tags.items())),
             "layout": "verbatim",
             "parser": "html.parser",
@@ -373,12 +404,13 @@ class HtmlVisibleTextExtractor:
         self.configuration_digest = identity_digest(self.configuration)
 
     def extract(self, source_bytes: bytes) -> VisibleText:
-        require_reader_identity(self._reader_identity, MARKUP_MODULES)
         root, element_count = _parse_html(source_bytes)
         blocks = _walk_blocks(root, self._level)
-        content, laid_out, runs = _lay_out(blocks, normalize=False, source_bytes=source_bytes)
+        content, laid_out, runs = _lay_out(blocks, normalize=False)
         if not content.strip():
-            raise VisibleTextError(NO_VISIBLE_TEXT, "the captured HTML carries no visible text to search")
+            raise VisibleTextError(
+                NO_VISIBLE_TEXT, "the captured HTML carries no visible text to search"
+            )
         return VisibleText(
             content=content,
             blocks=laid_out,
@@ -398,66 +430,145 @@ class HtmlVisibleTextExtractor:
 
 
 def _parse_xml(source_bytes: bytes) -> _Node:
-    from spicy_docs.sources.markup import read_xml_events
+    """Build the element tree with exact captured-byte ranges for every text run."""
 
-    try:
-        observed = read_xml_events(source_bytes, allow_external_doctype=True)
-    except ValueError as error:
-        raise VisibleTextError(UNPARSEABLE, f"captured XML cannot be parsed: {error}") from error
     root = _Node("#document", "#document", [])
     stack = [root]
-    for event in observed.events:
-        if event.kind in {"start", "empty"}:
-            source = dict(event.attributes).get("SOURCE")
-            node = _Node(event.name, f"{event.name}:{source}" if source else event.name, [])
-            stack[-1].parts.append(node)
-            if event.kind == "start":
-                stack.append(node)
-        elif event.kind == "end":
+    pending: list[_Piece] = []
+    parser = xml.parsers.expat.ParserCreate()
+
+    def close_pending() -> None:
+        if pending:
+            piece = pending.pop()
+            stack[-1].parts.append(_Piece(piece.text, piece.start, parser.CurrentByteIndex))
+
+    def start_element(name: str, attributes: dict[str, str]) -> None:
+        close_pending()
+        source = attributes.get("SOURCE")
+        node = _Node(name, f"{name}:{source}" if source else name, [])
+        stack[-1].parts.append(node)
+        stack.append(node)
+
+    def end_element(_name: str) -> None:
+        close_pending()
+        if len(stack) > 1:
             stack.pop()
-        elif event.kind == "text":
-            stack[-1].parts.append(_Piece(event.text, event.byte_start, event.byte_end))
+
+    def characters(data: str) -> None:
+        if pending:
+            close_pending()
+        pending.append(_Piece(data, parser.CurrentByteIndex, parser.CurrentByteIndex))
+
+    def other(*_arguments: Any) -> None:
+        close_pending()
+
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.CharacterDataHandler = characters
+    parser.CommentHandler = other
+    parser.ProcessingInstructionHandler = other
+    try:
+        parser.Parse(source_bytes, True)
+    except xml.parsers.expat.ExpatError as error:
+        raise VisibleTextError(UNPARSEABLE, f"captured XML cannot be parsed: {error}") from error
+    if pending:
+        piece = pending.pop()
+        stack[-1].parts.append(_Piece(piece.text, piece.start, len(source_bytes)))
     return root
 
 
-def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
-    from spicy_docs.sources.markup import read_html_events
+class _HtmlTreeBuilder(HTMLParser):
+    """Collect visible character data with the captured byte range it came from."""
 
+    def __init__(self, offsets: Sequence[int] | None) -> None:
+        super().__init__(convert_charrefs=True)
+        self.root = _Node("#document", "#document", [])
+        self.element_count = 0
+        self._offsets = offsets
+        self._stack: list[_Node] = [self.root]
+        self._suppressed = 0
+        self._line_starts: list[int] = [0]
+        self._pending: _Piece | None = None
+
+    def prepare(self, text: str) -> None:
+        # Split on "\n" alone: `HTMLParser` counts lines that way, and
+        # `splitlines` would also break on a form feed or a line separator and
+        # desync every position after it.
+        for line in text.split("\n"):
+            self._line_starts.append(self._line_starts[-1] + len(line) + 1)
+
+    def _byte_position(self) -> int:
+        line, column = self.getpos()
+        index = self._line_starts[min(line - 1, len(self._line_starts) - 1)] + column
+        if self._offsets is None:
+            return index
+        return self._offsets[min(index, len(self._offsets) - 1)]
+
+    def _close_pending(self) -> None:
+        if self._pending is not None:
+            piece = self._pending
+            self._pending = None
+            self._stack[-1].parts.append(_Piece(piece.text, piece.start, self._byte_position()))
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        self._close_pending()
+        self.element_count += 1
+        normalized = tag.casefold()
+        if normalized in HTML_VOID_TAGS:
+            return
+        if normalized in HTML_SUPPRESSED_TAGS:
+            self._suppressed += 1
+            return
+        node = _Node(normalized, normalized, [])
+        if not self._suppressed:
+            self._stack[-1].parts.append(node)
+        self._stack.append(node)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        self._close_pending()
+        self.element_count += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        self._close_pending()
+        normalized = tag.casefold()
+        if normalized in HTML_VOID_TAGS:
+            return
+        if normalized in HTML_SUPPRESSED_TAGS:
+            self._suppressed = max(0, self._suppressed - 1)
+            return
+        for index in range(len(self._stack) - 1, 0, -1):
+            if self._stack[index].tag == normalized:
+                del self._stack[index:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        if self._suppressed:
+            self._close_pending()
+            return
+        self._close_pending()
+        self._pending = _Piece(data, self._byte_position(), self._byte_position())
+
+    def finish(self, source_size: int) -> None:
+        if self._pending is not None:
+            piece = self._pending
+            self._pending = None
+            self._stack[-1].parts.append(_Piece(piece.text, piece.start, source_size))
+
+
+def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
+    text = decode_utf8(source_bytes, label="captured HTML")
+    offsets = None if text.isascii() else utf8_byte_offsets(text)
+    builder = _HtmlTreeBuilder(offsets)
+    builder.prepare(text)
     try:
-        observed = read_html_events(source_bytes)
-    except ValueError as error:
+        builder.feed(text)
+        builder.close()
+    except (AssertionError, ValueError) as error:
         raise VisibleTextError(UNPARSEABLE, f"captured HTML cannot be parsed: {error}") from error
-    root = _Node("#document", "#document", [])
-    stack = [root]
-    positions: dict[str, list[int]] = {}
-    suppressed = 0
-    for event in observed.events:
-        if event.kind == "start":
-            if event.name in HTML_VOID_TAGS:
-                continue
-            if event.name in HTML_SUPPRESSED_TAGS:
-                suppressed += 1
-                continue
-            node = _Node(event.name, event.name, [])
-            if not suppressed:
-                stack[-1].parts.append(node)
-            positions.setdefault(event.name, []).append(len(stack))
-            stack.append(node)
-        elif event.kind == "end":
-            if event.name in HTML_VOID_TAGS:
-                continue
-            if event.name in HTML_SUPPRESSED_TAGS:
-                suppressed = max(0, suppressed - 1)
-                continue
-            matches = positions.get(event.name)
-            if matches:
-                index = matches[-1]
-                while len(stack) > index:
-                    removed = stack.pop()
-                    positions[removed.tag].pop()
-        elif event.kind == "text" and not suppressed:
-            stack[-1].parts.append(_Piece(event.text, event.byte_start, event.byte_end))
-    return root, observed.element_count
+    builder.finish(len(source_bytes))
+    return builder.root, builder.element_count
 
 
 def is_atx_heading(line: str) -> bool:

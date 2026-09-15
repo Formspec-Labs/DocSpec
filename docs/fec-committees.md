@@ -10,7 +10,7 @@ SpicyDocs owns reading the retained source; DocSpec owns the catalog.
 From this checkout, choose a new absolute output directory:
 
 ```sh
-uv run --frozen --no-dev --extra spicy-docs python -m examples.fec_committees \
+uv run --frozen --no-dev python -m examples.fec_committees \
   --output /tmp/my-fec-catalog
 ```
 
@@ -18,11 +18,11 @@ The [authored fixture](../examples/fec_fixtures/README.md) contains two syntheti
 committees. To exercise an explicitly empty observation:
 
 ```sh
-uv run --frozen --no-dev --extra spicy-docs python -m examples.fec_committees \
+uv run --frozen --no-dev python -m examples.fec_committees \
   --empty --output /tmp/my-empty-fec-catalog
 ```
 
-Both commands use DocSpec core and the optional SpicyDocs base package. The
+Both commands use DocSpec and its required SpicyDocs core reader. The
 example makes no network requests and needs no acquisition extra, SpicyRegs,
 or Dagster. Package installation may need network access before the first run.
 
@@ -34,7 +34,7 @@ accept. Use the verifier that produced that release, which may differ from the
 currently installed reader's revision.
 
 ```sh
-uv run --frozen --no-dev --extra spicy-docs python -m examples.fec_committees \
+uv run --frozen --no-dev python -m examples.fec_committees \
   --output /absolute/new-fec-catalog \
   --source-root /absolute/retained/fec-source \
   --blob-root /absolute/retained/fec-blobs \

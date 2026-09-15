@@ -68,7 +68,9 @@ evidence. Processors own domain interpretation. Rulespec supplies shared
 canonical-byte and artifact-verification rules. Search indexing and serving
 remain separate consumer responsibilities.
 
-The optional SpicyDocs reader uses pinned public wheels and source artifacts.
+The required SpicyDocs core reader uses pinned wheels and source artifacts.
+[Shared source readers](docs/shared-source-readers.md) explains parsing ownership
+and source mappings.
 [Catalog inputs](docs/catalog-inputs.md) describes that integration and supplied
 records. Provider-specific guides cover [GovInfo bills](docs/govinfo-bill-example.md),
 [annual CFR](docs/govinfo-cfr-example.md), [GAO topics](docs/gao-topics.md),

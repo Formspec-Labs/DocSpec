@@ -224,7 +224,7 @@ wheels = [
 
 [[package]]
 name = "docspec"
-version = "0.4.2"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
@@ -233,6 +233,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyiceberg" },
     { name = "rulespec-artifacts" },
+    { name = "spicy-docs" },
 ]
 
 [package.optional-dependencies]
@@ -247,9 +248,6 @@ pdf = [
 ]
 s3 = [
     { name = "boto3" },
-]
-spicy-docs = [
-    { name = "spicy-docs" },
 ]
 tokens = [
     { name = "tiktoken" },
@@ -275,11 +273,11 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=25,<26" },
     { name = "pyiceberg", specifier = "==0.12.0" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" },
-    { name = "spicy-docs", marker = "extra == 'spicy-docs'", path = "vendor/spicy_docs-0.15.0-py3-none-any.whl" },
-    { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.15.0-py3-none-any.whl" },
+    { name = "spicy-docs", path = "vendor/spicy_docs-0.16.0-py3-none-any.whl" },
+    { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.16.0-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
-provides-extras = ["spicy-docs", "http", "s3", "tokens", "pdf", "dagster"]
+provides-extras = ["http", "s3", "tokens", "pdf", "dagster"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -287,7 +285,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6,<7" },
     { name = "pytest" },
     { name = "ruff", specifier = ">=0.12,<0.13" },
-    { name = "spicy-docs", extras = ["public-table"], path = "vendor/spicy_docs-0.15.0-py3-none-any.whl" },
+    { name = "spicy-docs", extras = ["public-table"], path = "vendor/spicy_docs-0.16.0-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -1119,14 +1117,14 @@ wheels = [
 
 [[package]]
 name = "spicy-docs"
-version = "0.15.0"
-source = { path = "vendor/spicy_docs-0.15.0-py3-none-any.whl" }
+version = "0.16.0"
+source = { path = "vendor/spicy_docs-0.16.0-py3-none-any.whl" }
 dependencies = [
     { name = "jsonschema" },
     { name = "rulespec-artifacts" },
 ]
 wheels = [
-    { filename = "spicy_docs-0.15.0-py3-none-any.whl", hash = "sha256:deb8d5cfbdc426effcfecc008b43d9b819c3014f8a5d6b87539a72d651b2df0f" },
+    { filename = "spicy_docs-0.16.0-py3-none-any.whl", hash = "sha256:c77ded2fa95256c3c39d406125f192fb829c6a91f79f5e896ed72b9caf066d94" },
 ]
 
 [package.optional-dependencies]

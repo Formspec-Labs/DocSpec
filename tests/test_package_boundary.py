@@ -108,12 +108,11 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
         "http",
         "pdf",
         "s3",
-        "spicy-docs",
         "tokens",
     }
 
     extras = project["project"]["optional-dependencies"]
-    assert extras["spicy-docs"] == ["spicy-docs==" + provider["version"]]
+    assert "spicy-docs==" + provider["version"] in project["project"]["dependencies"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
     assert extras["pdf"] == [f"spicy-docs[pdf-pypdf]=={provider["version"]}"]
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
@@ -137,7 +136,11 @@ def test_production_imports_stay_inside_the_standalone_boundary() -> None:
     violations: list[str] = []
     shared_imports = {
         (SHARED_CANONICAL_GATEWAY, "rulespec_artifacts"),
-        # The existing optional PDF profile delegates only raw page reading.
+        # Source readers own syntax; DocSpec retains layout and evidence policy.
+        ("src/docspec/processing/extraction.py", "spicy_docs.sources.markup"),
+        ("src/docspec/processing/extraction.py", "spicy_docs.sources.image_header"),
+        ("src/docspec/processing/visible_text.py", "spicy_docs.sources.markup"),
+        # The optional PDF profile delegates only raw page reading.
         ("src/docspec/processing/extraction.py", "spicy_docs.extraction.pypdf"),
         # Native interchange annotations are type-only; importing ports stays light.
         ("src/docspec/ports/record_storage.py", "duckdb"),
@@ -263,6 +266,7 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
             "--python",
             str(environment_python),
             str(ROOT / "vendor" / "rulespec_artifacts-1.0.12-py3-none-any.whl"),
+            str(ROOT / "vendor" / json.loads((ROOT / "vendor/spicy_docs.json").read_text())["filename"]),
             str(wheel),
         ],
         cwd=ROOT,

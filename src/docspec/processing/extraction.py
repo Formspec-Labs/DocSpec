@@ -1,15 +1,11 @@
-"""Deterministic standard-library extractors and one lazy PDF profile."""
+"""Retain source files and map shared reader observations into representations."""
 
 from __future__ import annotations
 
-import struct
-from hashlib import sha256
 from collections.abc import Mapping
 from dataclasses import dataclass
-from html.parser import HTMLParser
-from importlib.metadata import PackageNotFoundError, distribution, version as distribution_version
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from typing import Any
-from xml.etree import ElementTree
 
 from docspec.domain.content import CapturedFile, EvidenceCoordinate, EvidenceMapping, Representation
 from docspec.domain.identity import (
@@ -32,12 +28,20 @@ from docspec.processing.artifacts import (
     verify_representation_evidence,
 )
 from docspec.processing.json_tools import strict_json_value
+from docspec.processing.reader_identity import (
+    IMAGE_MODULES,
+    MARKUP_MODULES,
+    PDF_MODULES,
+    installed_reader_identity,
+    reader_configuration,
+    require_reader_identity,
+)
 
 TEXT_EXTRACTOR_ID = "docspec.text-source/v1"
-HTML_EXTRACTOR_ID = "docspec.html-source/v1"
-XML_EXTRACTOR_ID = "docspec.xml-source/v1"
+HTML_EXTRACTOR_ID = "docspec.html-source/v2"
+XML_EXTRACTOR_ID = "docspec.xml-source/v2"
 JSON_EXTRACTOR_ID = "docspec.json-source/v1"
-IMAGE_EXTRACTOR_ID = "docspec.image-passthrough/v1"
+IMAGE_EXTRACTOR_ID = "docspec.image-passthrough/v2"
 DEFAULT_EXTRACTOR_REGISTRY_ID = "docspec.default-extractors/v1"
 PYPDF_EXTRACTOR_ID = "docspec.pypdf-adapter/v2"
 EXTRACTION_RECEIPT_FORMAT = "docspec-extraction-receipt"
@@ -196,63 +200,62 @@ class TextExtractor:
         )
 
 
-class _HtmlFacts(HTMLParser):
-    _SUPPRESSED = frozenset({"script", "style", "template", "noscript"})
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.element_count = 0
-        self.visible_parts: list[str] = []
-        self._suppressed_depth = 0
-        self._stack: list[tuple[str, bool]] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        del attrs
-        normalized = tag.casefold()
-        suppressed = normalized in self._SUPPRESSED
-        self.element_count += 1
-        self._stack.append((normalized, suppressed))
-        self._suppressed_depth += int(suppressed)
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        del tag, attrs
-        self.element_count += 1
-
-    def handle_endtag(self, tag: str) -> None:
-        normalized = tag.casefold()
-        for index in range(len(self._stack) - 1, -1, -1):
-            if self._stack[index][0] == normalized:
-                removed = self._stack[index:]
-                self._suppressed_depth -= sum(int(suppressed) for _, suppressed in removed)
-                del self._stack[index:]
-                break
-
-    def handle_data(self, data: str) -> None:
-        if self._suppressed_depth == 0:
-            self.visible_parts.append(data)
+def _html_visible_count(events) -> int:
+    suppressed_tags = frozenset({"script", "style", "template", "noscript"})
+    stack: list[tuple[str, bool]] = []
+    positions: dict[str, list[int]] = {}
+    suppressed_depth = 0
+    count = 0
+    for event in events:
+        if event.kind == "start":
+            suppressed = event.name in suppressed_tags
+            positions.setdefault(event.name, []).append(len(stack))
+            stack.append((event.name, suppressed))
+            suppressed_depth += int(suppressed)
+        elif event.kind == "end":
+            matches = positions.get(event.name)
+            if matches:
+                # Each entry is pushed/popped once; unmatched end tags stay O(1)
+                # even when malformed HTML leaves many void starts on the stack.
+                index = matches[-1]
+                while len(stack) > index:
+                    name, flag = stack.pop()
+                    positions[name].pop()
+                    suppressed_depth -= int(flag)
+        elif event.kind == "text" and suppressed_depth == 0:
+            count += len(event.text)
+    return count
 
 
 class HtmlExtractor:
-    """Validate HTML with the standard parser and retain source-native markup."""
+    """Read HTML observations through SpicyDocs and retain source-native markup."""
 
     extractor_id = HTML_EXTRACTOR_ID
-    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def __init__(self) -> None:
+        self._reader_identity = installed_reader_identity(MARKUP_MODULES)
+        self.configuration_digest = identity_digest(
+            {
+                "mode": "source-native-passthrough",
+                **reader_configuration(self._reader_identity),
+            }
+        )
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        require_reader_identity(self._reader_identity, MARKUP_MODULES)
         return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
-        text = decode_utf8(source_bytes, label="captured HTML")
-        parser = _HtmlFacts()
+        self.selected_identity(captured)
+        from spicy_docs.sources.markup import read_html_events
+
         try:
-            parser.feed(text)
-            parser.close()
-        except (AssertionError, ValueError) as error:
+            observed = read_html_events(source_bytes)
+        except ValueError as error:
             raise ExtractionError(f"captured HTML cannot be parsed: {error}") from error
-        visible = "".join(parser.visible_parts)
         metadata = {
-            "elementCount": parser.element_count,
-            "visibleUnicodeCodepointCount": len(visible),
+            "elementCount": observed.element_count,
+            "visibleUnicodeCodepointCount": _html_visible_count(observed.events),
         }
         return _passthrough_result(
             captured, source_bytes, self.extractor_id, self.configuration_digest, "html", metadata
@@ -260,23 +263,36 @@ class HtmlExtractor:
 
 
 class XmlExtractor:
-    """Validate XML with ElementTree and retain exact source-native XML."""
+    """Read XML observations through SpicyDocs and retain exact source-native XML."""
 
     extractor_id = XML_EXTRACTOR_ID
-    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def __init__(self) -> None:
+        self._reader_identity = installed_reader_identity(MARKUP_MODULES)
+        self.configuration_digest = identity_digest(
+            {
+                "mode": "source-native-passthrough",
+                "allowExternalDoctype": True,
+                **reader_configuration(self._reader_identity),
+            }
+        )
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        require_reader_identity(self._reader_identity, MARKUP_MODULES)
         return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
-        text = decode_utf8(source_bytes, label="captured XML")
+        self.selected_identity(captured)
+        from spicy_docs.sources.markup import read_xml_events
+
+        decode_utf8(source_bytes, label="captured XML")
         try:
-            root = ElementTree.fromstring(text)
-        except ElementTree.ParseError as error:
+            observed = read_xml_events(source_bytes, allow_external_doctype=True)
+        except ValueError as error:
             raise ExtractionError(f"captured XML cannot be parsed: {error}") from error
         metadata = {
-            "rootTag": root.tag,
-            "elementCount": sum(1 for _ in root.iter()),
+            "rootTag": observed.root_expanded_name,
+            "elementCount": observed.element_count,
         }
         return _passthrough_result(
             captured, source_bytes, self.extractor_id, self.configuration_digest, "xml", metadata
@@ -309,14 +325,27 @@ class ImageExtractor:
     """Retain an exact image and report header-derived metadata when available."""
 
     extractor_id = IMAGE_EXTRACTOR_ID
-    configuration_digest = _SOURCE_NATIVE_CONFIGURATION_DIGEST
+
+    def __init__(self) -> None:
+        self._reader_identity = installed_reader_identity(IMAGE_MODULES)
+        self.configuration_digest = identity_digest(
+            {
+                "mode": "source-native-passthrough",
+                **reader_configuration(self._reader_identity),
+            }
+        )
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
+        require_reader_identity(self._reader_identity, IMAGE_MODULES)
         return self.extractor_id, self.configuration_digest
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
+        self.selected_identity(captured)
         _verify_media_prefix(captured, "image/")
-        image_format, width, height = _image_dimensions(source_bytes)
+        from spicy_docs.sources.image_header import read_image_header
+
+        observed = read_image_header(source_bytes)
+        image_format, width, height = observed.format, observed.width, observed.height
         metadata: dict[str, Any] = {"imageFormat": image_format}
         region: dict[str, Any] = {"kind": "whole-image"}
         if width is not None and height is not None:
@@ -336,12 +365,8 @@ class ImageExtractor:
 
 def _pypdf_reader_identity() -> tuple[str, str] | None:
     """Identify the installed reader module without importing the PDF backend."""
-    try:
-        owner = distribution("spicy-docs")
-        module_bytes = owner.locate_file("spicy_docs/extraction/pypdf.py").read_bytes()
-    except (PackageNotFoundError, OSError):
-        return None
-    return owner.version, sha256(module_bytes).hexdigest()
+    identity = installed_reader_identity(PDF_MODULES)
+    return (identity[0], identity[1][0][1]) if identity is not None else None
 
 
 class LazyPypdfExtractor:
@@ -369,16 +394,18 @@ class LazyPypdfExtractor:
 
     @property
     def configuration_digest(self) -> str:
-        return identity_digest({
-            "provider": "pypdf",
-            "providerVersion": self._provider_version,
-            "reader": "spicy-docs.extraction.pypdf",
-            "readerVersion": self._reader_identity[0] if self._reader_identity else None,
-            "readerModuleSha256": self._reader_identity[1] if self._reader_identity else None,
-            "available": self._provider_version is not None and self._reader_identity is not None,
-            "pageSeparator": self.page_separator,
-            "stripPageWhitespace": self.strip_page_whitespace,
-        })
+        return identity_digest(
+            {
+                "provider": "pypdf",
+                "providerVersion": self._provider_version,
+                "reader": "spicy-docs.extraction.pypdf",
+                "readerVersion": self._reader_identity[0] if self._reader_identity else None,
+                "readerModuleSha256": self._reader_identity[1] if self._reader_identity else None,
+                "available": self._provider_version is not None and self._reader_identity is not None,
+                "pageSeparator": self.page_separator,
+                "stripPageWhitespace": self.strip_page_whitespace,
+            }
+        )
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
         _verify_media(captured_file, "application/pdf")
@@ -511,16 +538,22 @@ class DefaultExtractorRegistry:
     @property
     def configuration_digest(self) -> str:
         children = {
-            "text": self._text, "html": self._html, "xml": self._xml,
-            "json": self._json, "image": self._image, "pdf": self._pdf,
+            "text": self._text,
+            "html": self._html,
+            "xml": self._xml,
+            "json": self._json,
+            "image": self._image,
+            "pdf": self._pdf,
         }
-        return identity_digest({
-            "dispatcher": self.extractor_id,
-            "children": {
-                route: {"extractorId": child.extractor_id, "configurationDigest": child.configuration_digest}
-                for route, child in children.items()
-            },
-        })
+        return identity_digest(
+            {
+                "dispatcher": self.extractor_id,
+                "children": {
+                    route: {"extractorId": child.extractor_id, "configurationDigest": child.configuration_digest}
+                    for route, child in children.items()
+                },
+            }
+        )
 
     def selected_identity(self, captured_file: CapturedFile) -> tuple[str, str]:
         return self._select(captured_file).selected_identity(captured_file)
@@ -622,35 +655,3 @@ def _verify_media_prefix(captured: CapturedFile, expected_prefix: str) -> None:
 
 def _base_media_type(value: str) -> str:
     return value.partition(";")[0].strip().casefold()
-
-
-def _image_dimensions(content: bytes) -> tuple[str, int | None, int | None]:
-    if content.startswith(b"\x89PNG\r\n\x1a\n") and len(content) >= 24:
-        return "png", int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big")
-    if content[:6] in {b"GIF87a", b"GIF89a"} and len(content) >= 10:
-        return "gif", int.from_bytes(content[6:8], "little"), int.from_bytes(content[8:10], "little")
-    if content.startswith(b"\xff\xd8"):
-        dimensions = _jpeg_dimensions(content)
-        return ("jpeg", *dimensions) if dimensions is not None else ("jpeg", None, None)
-    return "unknown", None, None
-
-
-def _jpeg_dimensions(content: bytes) -> tuple[int, int] | None:
-    position = 2
-    start_of_frame = frozenset({0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF})
-    while position + 4 <= len(content):
-        if content[position] != 0xFF:
-            position += 1
-            continue
-        marker = content[position + 1]
-        position += 2
-        if marker in {0xD8, 0xD9} or 0xD0 <= marker <= 0xD7:
-            continue
-        length = struct.unpack(">H", content[position : position + 2])[0]
-        if length < 2 or position + length > len(content):
-            return None
-        if marker in start_of_frame and length >= 7:
-            height, width = struct.unpack(">HH", content[position + 3 : position + 7])
-            return width, height
-        position += length
-    return None

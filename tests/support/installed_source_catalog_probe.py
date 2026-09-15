@@ -519,7 +519,7 @@ provider_requirements = [
     if requirement.lower().startswith("spicy-docs")
 ]
 assert set(provider_requirements) == {
-    "spicy-docs==__SPICY_DOCS_VERSION__;extra=='spicy-docs'",
+    "spicy-docs==__SPICY_DOCS_VERSION__",
     "spicy-docs[pdf-pypdf]==__SPICY_DOCS_VERSION__;extra=='pdf'",
 }
 environment_root = Path(sys.prefix).resolve(strict=True)

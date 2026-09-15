@@ -24,7 +24,7 @@ SPICY_DOCS_REVISION = PROVIDER["sourceRevision"]
 
 # This exact current producer wheel publishes and verifies the bounded source
 # fixtures. Its version, source revision and digest are independent of the data
-# pins produced below. The optional provider extra and this test use one wheel;
+# pins produced below. The required core reader and this test use one wheel;
 # this test never rebuilds it. Update these pins when accepting a new release.
 _INSTALLED_PROBE = (ROOT / "tests/support/installed_source_catalog_probe.py").read_text(encoding="utf-8")
 
@@ -76,6 +76,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             "--python",
             str(environment_python),
             str(runtime_rulespec),
+            str(runtime_spicy_docs),
             str(runtime_docspec),
         ],
         cwd=tmp_path,
@@ -84,30 +85,6 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         text=True,
     )
     assert install_core.returncode == 0, install_core.stderr
-    core_only = subprocess.run(
-        [environment_python, "-I", "-c",
-         "import docspec.runtime, duckdb, pyarrow, importlib.util; "
-         "assert importlib.util.find_spec('spicy_docs') is None"],
-        cwd=tmp_path, capture_output=True, check=False, text=True,
-    )
-    assert core_only.returncode == 0, core_only.stderr
-    install_producer = subprocess.run(
-        [
-            uv,
-            "pip",
-            "install",
-            "--python",
-            str(environment_python),
-            str(runtime_rulespec),
-            str(runtime_spicy_docs),
-            f"{runtime_docspec}[spicy-docs]",
-        ],
-        cwd=tmp_path,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
-    assert install_producer.returncode == 0, install_producer.stderr
     reader_only = subprocess.run(
         [environment_python, "-I", "-c",
          "import docspec.source_catalog, spicy_docs.source_native, importlib.util; "
@@ -218,6 +195,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
             "--python",
             str(verify_python),
             str(runtime_rulespec),
+            str(runtime_spicy_docs),
             str(runtime_docspec),
         ],
         cwd=tmp_path,
@@ -232,14 +210,14 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         if key not in {"PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"}
     }
     isolated_environment["PYTHONNOUSERSITE"] = "1"
-    producer_absence = subprocess.run(
+    optional_absence = subprocess.run(
         [
             verify_python,
             "-I",
             "-c",
             (
                 "import importlib.util; "
-                "assert importlib.util.find_spec('spicy_docs') is None"
+                "assert all(importlib.util.find_spec(name) is None for name in ('pypdf', 'polars', 'dagster'))"
             ),
         ],
         cwd=tmp_path,
@@ -248,7 +226,7 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
         check=False,
         text=True,
     )
-    assert producer_absence.returncode == 0, producer_absence.stderr
+    assert optional_absence.returncode == 0, optional_absence.stderr
     verify_references = runtime_root / "verify-references"
     verify_references.mkdir()
     docspec_implementation = "git+https://example.test/docspec@" + "1" * 40
