@@ -952,6 +952,10 @@ removes full-value joins from state comparison and recursive copies from admitte
 record handoffs. It records exact catalogue comparisons, isolated snapshot-read
 measurements, and the limits of the whole-import timings.
 
+The subsequent [full reimport check](history/probes/2026-09-14-core-catalogue-reimport-2173b92.md)
+verifies both complete catalogues after those fixes. That record owns the results,
+revision timings and overheating limits on import-time comparisons.
+
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 
 ## Coverage against the spec and plan

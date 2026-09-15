@@ -22,6 +22,10 @@ perform canonical encoding, persisted-record admission and durable publication.
 These changes remove specific redundant work; they do not establish a general
 framework ranking or a full-catalogue import speedup.
 
+The subsequent [full reimport check](2026-09-14-core-catalogue-reimport-2173b92.md)
+verifies both complete catalogues after these fixes and records the new revision
+timings and overheating limits on import-time comparisons.
+
 The [harness](2026-09-14-core-import-compare.py) uses existing production APIs.
 The [receipt archive](2026-09-14-core-import-compare.json.gz) preserves all seven
 receipts under their original filenames, including the interrupted first harness
