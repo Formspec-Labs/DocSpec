@@ -32,6 +32,13 @@ def _row(index: int) -> dict[str, Any]:
     }
 
 
+def _assert_input_released(storage: IcebergRecordStorage) -> None:
+    """The Iceberg writer stages input in SQL, with no per-layer disk directory."""
+    with storage._cursor() as cursor:
+        names = {row[0] for row in cursor.execute("SHOW TABLES").fetchall()}
+        assert not names.intersection({"incoming", "incoming_stream"})
+
+
 @pytest.mark.parametrize("error_type", [ValueError, LimitExceededError])
 @pytest.mark.parametrize("fail_after", [0, 4097])
 def test_arrow_producer_failure_preserves_error_and_closes_input(
@@ -68,7 +75,7 @@ def test_arrow_producer_failure_preserves_error_and_closes_input(
         assert source.close_count == 1
         assert not list(storage.root.rglob("*.parquet"))
         assert not list(storage.root.rglob("*.json"))
-        assert not list((storage.root / ".staging").iterdir())
+        _assert_input_released(storage)
 
         healthy = storage.write_layer(
             [_row(0)], layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY,
@@ -102,7 +109,7 @@ def test_arrow_input_can_stream_from_the_same_storage_connection(tmp_path: Path)
         with closing(storage.stream(copied)) as actual:
             for row, index in zip(actual, range(count), strict=True):
                 assert row == _row(index)
-        assert not list((storage.root / ".staging").iterdir())
+        _assert_input_released(storage)
 
 
 @pytest.mark.parametrize("callers", [1, 2], ids=["single-caller", "concurrent-callers"])
@@ -146,4 +153,4 @@ def test_arrow_sqlite_input_stays_on_each_callers_thread(tmp_path: Path, callers
             with closing(storage.stream(reference)) as actual:
                 for row, index in zip(actual, range(count), strict=True):
                     assert row == _row(caller * count + index)
-        assert not list((storage.root / ".staging").iterdir())
+        _assert_input_released(storage)
