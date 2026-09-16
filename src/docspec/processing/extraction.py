@@ -248,7 +248,7 @@ class HtmlExtractor:
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         self.selected_identity(captured)
-        from spicy_docs.sources.markup import read_html_events
+        from spicy_docs.reading.markup import read_html_events
 
         try:
             observed = read_html_events(source_bytes)
@@ -284,7 +284,7 @@ class XmlExtractor:
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         self.selected_identity(captured)
-        from spicy_docs.sources.markup import read_xml_events
+        from spicy_docs.reading.markup import read_xml_events
 
         decode_utf8(source_bytes, label="captured XML")
         try:
@@ -325,7 +325,7 @@ class JsonExtractor:
 
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         self.selected_identity(captured)
-        from spicy_docs.sources.json_input import load_bounded_json
+        from spicy_docs.reading.json_input import load_bounded_json
 
         try:
             value = load_bounded_json(source_bytes, source="captured", error_type=ValueError, **JSON_SOURCE_PROFILE)
@@ -362,7 +362,7 @@ class ImageExtractor:
     def extract(self, captured: CapturedFile, source_bytes: bytes) -> ExtractionResult:
         self.selected_identity(captured)
         _verify_media_prefix(captured, "image/")
-        from spicy_docs.sources.image_header import read_image_header
+        from spicy_docs.reading.image_header import read_image_header
 
         observed = read_image_header(source_bytes)
         image_format, width, height = observed.format, observed.width, observed.height

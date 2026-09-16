@@ -249,9 +249,6 @@ pdf = [
 s3 = [
     { name = "boto3" },
 ]
-spicy-docs = [
-    { name = "spicy-docs" },
-]
 tokens = [
     { name = "tiktoken" },
 ]
@@ -277,11 +274,10 @@ requires-dist = [
     { name = "pyiceberg", specifier = "==0.12.0" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl" },
     { name = "spicy-docs", path = "vendor/spicy_docs-0.20.0-py3-none-any.whl" },
-    { name = "spicy-docs", marker = "extra == 'spicy-docs'", path = "vendor/spicy_docs-0.20.0-py3-none-any.whl" },
     { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.20.0-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
-provides-extras = ["spicy-docs", "http", "s3", "tokens", "pdf", "dagster"]
+provides-extras = ["http", "s3", "tokens", "pdf", "dagster"]
 
 [package.metadata.requires-dev]
 dev = [

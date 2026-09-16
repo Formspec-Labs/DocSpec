@@ -398,7 +398,7 @@ class HtmlVisibleTextExtractor:
 
 
 def _parse_xml(source_bytes: bytes) -> _Node:
-    from spicy_docs.sources.markup import read_xml_events
+    from spicy_docs.reading.markup import read_xml_events
 
     try:
         observed = read_xml_events(source_bytes, allow_external_doctype=True)
@@ -421,7 +421,7 @@ def _parse_xml(source_bytes: bytes) -> _Node:
 
 
 def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
-    from spicy_docs.sources.markup import read_html_events
+    from spicy_docs.reading.markup import read_html_events
 
     try:
         observed = read_html_events(source_bytes)

@@ -19,9 +19,6 @@ rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl
 spicy-docs = { path = "vendor/spicy_docs-0.20.0-py3-none-any.whl" }
 
 [project.optional-dependencies]
-spicy-docs = [
-    "spicy-docs==0.20.0",
-]
 http = [
     "httpx>=0.27,<1",
 ]

@@ -195,7 +195,7 @@ class RecordSegmenter:
         if representation.representation.kind != "json":
             raise IntegrityError("record segmentation requires a JSON representation")
         _, policy_digest = self.selected_identity(representation.representation)
-        from spicy_docs.sources.json_input import read_json_records
+        from spicy_docs.reading.json_input import read_json_records
 
         try:
             observed = read_json_records(

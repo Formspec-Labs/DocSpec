@@ -10,9 +10,9 @@ from importlib.metadata import PackageNotFoundError, distribution
 from docspec.errors import IntegrityError
 
 ReaderIdentity = tuple[str, tuple[tuple[str, str], ...]]
-MARKUP_MODULES = ("spicy_docs.sources.markup", "spicy_docs.sources.xml")
-IMAGE_MODULES = ("spicy_docs.sources.image_header",)
-JSON_MODULES = ("spicy_docs.sources.json_input",)
+MARKUP_MODULES = ("spicy_docs.reading.markup", "spicy_docs.reading.xml")
+IMAGE_MODULES = ("spicy_docs.reading.image_header",)
+JSON_MODULES = ("spicy_docs.reading.json_input",)
 PDF_MODULES = ("spicy_docs.extraction.pypdf",)
 
 
