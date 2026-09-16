@@ -148,6 +148,18 @@ def test_inert_external_doctype_keeps_existing_bill_example_parity_without_loadi
     _assert_runs(source, result)
 
 
+def test_reader_identity_pins_the_reading_addresses_of_the_installed_wheel():
+    identity = reader_identity.installed_reader_identity(reader_identity.MARKUP_MODULES)
+
+    assert identity is not None
+    assert [name for name, _ in identity[1]] == [
+        "spicy_docs.reading.markup",
+        "spicy_docs.reading.xml",
+    ]
+    for _name, digest in identity[1]:
+        assert len(digest) == 64
+
+
 @pytest.mark.parametrize('bound', ['max_bytes', 'max_events', 'max_depth'])
 def test_owner_limits_are_recordable_source_refusals(monkeypatch, bound):
     from spicy_docs.reading import markup
