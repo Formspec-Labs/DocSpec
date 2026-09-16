@@ -87,7 +87,7 @@ def test_named_short_first_jpeg_frame_cannot_borrow_a_later_frame(length):
 
 @pytest.mark.parametrize('change', ['version', 'module-bytes', 'missing'])
 def test_image_reader_drift_refuses_before_observation(monkeypatch, change):
-    from spicy_docs.sources import image_header
+    from spicy_docs.reading import image_header
 
     reader = ImageExtractor()
     identity = reader_identity.installed_reader_identity(reader_identity.IMAGE_MODULES)

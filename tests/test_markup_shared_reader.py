@@ -150,7 +150,7 @@ def test_inert_external_doctype_keeps_existing_bill_example_parity_without_loadi
 
 @pytest.mark.parametrize('bound', ['max_bytes', 'max_events', 'max_depth'])
 def test_owner_limits_are_recordable_source_refusals(monkeypatch, bound):
-    from spicy_docs.sources import markup
+    from spicy_docs.reading import markup
 
     source = b'<RULE><P>A</P></RULE>'
     original = markup.read_xml_events
@@ -227,7 +227,7 @@ def test_named_invalid_utf8_html_refusal_classification_preserves_runtime_input_
 @pytest.mark.parametrize('change', ['version', 'module-bytes', 'missing'])
 @pytest.mark.parametrize('operation', ['selected', 'extract', 'resolver', 'configuration'])
 def test_runtime_identity_drift_refuses_before_parsing(monkeypatch, change, operation):
-    from spicy_docs.sources import markup
+    from spicy_docs.reading import markup
 
     source = b'<RULE><P>A</P></RULE>'
     captured = _captured(source, 'application/xml')
@@ -281,7 +281,7 @@ def test_empty_html_preserves_zero_observations_and_visible_refusal():
 
 def test_visible_html_unmatched_end_cost_is_linear_after_suppression(monkeypatch):
     from dataclasses import replace
-    from spicy_docs.sources import markup
+    from spicy_docs.reading import markup
     from docspec.processing.visible_text import _parse_html
 
     comparisons = 0

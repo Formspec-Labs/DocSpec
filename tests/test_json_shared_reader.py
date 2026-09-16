@@ -158,7 +158,7 @@ def test_invalid_utf8_retains_integrity_error_class_with_owner_diagnostic():
     ],
 )
 def test_source_bounds_apply_to_unknown_fields_and_both_stages(monkeypatch, bound, limit, source):
-    from spicy_docs.sources import json_input
+    from spicy_docs.reading import json_input
 
     for name in ("read_json_records", "load_bounded_json"):
         original = getattr(json_input, name)
@@ -180,7 +180,7 @@ def test_source_bounds_apply_to_unknown_fields_and_both_stages(monkeypatch, boun
 @pytest.mark.parametrize("operation", ["selected", "run", "configuration"])
 @pytest.mark.parametrize("stage", ["extractor", "segmenter"])
 def test_reader_drift_refuses_before_parsing(monkeypatch, change, operation, stage):
-    from spicy_docs.sources import json_input
+    from spicy_docs.reading import json_input
 
     source = b"[1]"
     captured = _captured(source, "application/json")
