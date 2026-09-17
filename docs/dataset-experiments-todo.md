@@ -1730,6 +1730,12 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   [SC04](../../spicysearch/PLAN.md#sc04); Engine admission is tracked in
   [EC02](../../spicyengine/PLAN.md#ec02). Depends on D09, D48, and the supplied
   recipe; no second search transformation implementation belongs here.
+  **Dependency changed 2026-09-11:** SpicySearch replaced its SC01–SC05 tasks
+  with the direct Parquet dataset lane (spicysearch
+  `docs/history/2026-09-11-parquet-dataset.md`); the `#sc04` anchor no longer
+  resolves. Engine's side (EC00–EC03) shipped reading DocSpec's retained state
+  directly. This recipe-based composition has no supplier; keeping, rescoping,
+  or deferring it is an open owner decision.
 
 <a id="d50"></a>
 
@@ -1745,6 +1751,10 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   record a narrower decision and defer D49–D50; retain useful D09/D31 API reuse.
   Depends on D49. Require linked SC05/EC03 evidence before claiming the broader
   consolidation saved work; local ownership creates no deletion quota here.
+  **Dependency changed 2026-09-11:** SC05 was removed with the rest of the SC
+  lane (see D49's note); Engine EC03 is complete. The repeated-work proof now
+  needs either a supplied recipe (none exists today) or an explicit deferral
+  decision.
 
 ## 10. Prove the named source-to-dataset examples
 
@@ -2003,7 +2013,7 @@ was completed by moving or splitting a task.
 | [SpicyDocs checklist](../../spicy-docs/docs/simplification-todo.md) | Source outcomes/coverage S01/S09–S10 → D08/D43; publisher rules S14/S19/S25 → D12/D42/D44; public provider wheel S26 → D43/D45; local caller/runner retirement S21/S31 → D22/D45. |
 | [SpicyRegs plan](../../spicy-regs/PLAN.md#sr01) | SR01 reviews local overlap; SR02 supplies public-comment input facts/APIs for D52; SR03 implements only selected SpicyRegs handoffs. Package moves remain optional. |
 | [Rulespec backlog](../../rulespec/TODO.md#rs01) | RS01 owns shared encoding → D28/S30; RS02 owns needed artifact capabilities → D27; RS03 assesses shared physical writes → D31/S22. |
-| [SpicySearch plan](../../spicysearch/PLAN.md#sc01) | SC01 adopts DocSpec readers; SC02 shares schema-gate mechanics; SC03 owns search definitions; SC04 supplies the recipe; SC05 proves preparation parity and removes Search copies. |
+| [SpicySearch plan](../../spicysearch/PLAN.md) | Its SC01–SC05 lane was superseded 2026-09-11 by the direct Parquet dataset lane (`docs/history/2026-09-11-parquet-dataset.md`); D49/D50's references to it are stale. |
 | [SpicyEngine plan](../../spicyengine/PLAN.md#ec01) | EC01 adopts shared definitions; EC02 qualifies recipe output admission; EC03 proves index-only rebuilding and removes only replaced Engine preparation. |
 
 D47 is retained only as a link to SC03/EC01. D51–D52 own the DocSpec examples
