@@ -13,10 +13,10 @@ Across DocSpec and its source provider, the goal is to maintain each shared
 capability once and reuse it through installed packages, reducing duplicate
 implementation, testing, configuration, and documentation effort.
 
-**Status: 47 completed items, four open items, and five routing references.**
+**Status: 50 completed items, one open item (D40), and five routing references.**
 D31/D37/D48/D54 route overlapping replacement work to the [Core tasks](core-model-implementation-tasks.md);
 D47 routes to the search repositories. The [C01 map](core-model-implementation-map.md#checklist-ownership)
-names one owner for each change. D22/D40/D49/D50 remain separate open items.
+names one owner for each change. D40 is the one open item; D22, D49 and D50 closed on 2026-09-18 (see their entries).
 D51–D52 retain the named dataset examples moved here from SpicyDocs.
 D55 records the completed annual CFR example and SpicyDocs 0.6.0 adoption.
 D56 records the completed FEC metadata example and combined source wheel adoption.
@@ -372,7 +372,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   prove bounded reads and early closure (107 catalog tests passed). Independent
   review approved the implementation; [the guide](catalog-evidence.md) states
   admission-time membership and temporary-disk limits. SpicySearch adoption and
-  its installed-wheel qualification remain in [SC01](../../spicysearch/PLAN.md#sc01);
+  its installed-wheel qualification remain in [SC01, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md);
   these local checks do not establish a capacity or end-to-end speed claim.
   Commit `45883d7`.
 
@@ -752,7 +752,7 @@ to defer a conditional item is a documented deferral, not completed implementati
 
 <a id="d22"></a>
 
-- [ ] **D22 · P2 · Qualify DocSpec as the selected experiment campaign executor.**
+- [x] **D22 · P2 · Qualify DocSpec as the selected experiment campaign executor.**
   Adapt DocSpec's task model only as needed to prove one supplied acquisition
   task through its existing executor. **Done when:** the local integration
   preserves source ordering, subprocess cancellation, locks, bounded resources,
@@ -769,6 +769,12 @@ to defer a conditional item is a documented deferral, not completed implementati
   are supplied. Existing native Dagster document execution is supporting
   evidence, not acquisition-campaign acceptance. No new executor is justified
   by the current callers.
+
+  **Closed 2026-09-18, together with SpicyDocs S21.** Each item waited on the
+  other for a named workflow that never appeared, so neither could start.
+  Closed rather than deferred; reopen only when a named acquisition campaign
+  supplies the ordering, lock, cancellation and resume requirements. No
+  executor change is planned.
 
 <a id="d23"></a>
 
@@ -896,7 +902,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   structural machinery is removed, and any retained difference has a concrete
   reason. Needed shared-library changes are owned by
   [Rulespec RS02](../../rulespec/TODO.md#rs02); consumer changes are owned by
-  [SpicySearch SC01](../../spicysearch/PLAN.md#sc01). Depends on D26's design and
+  [SpicySearch SC01, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md). Depends on D26's design and
   D28; see [artifact adapter](../src/docspec/adapters/platform_artifact.py).
 
   **Completed September 12:** result exports use Rulespec's public root,
@@ -948,7 +954,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   **Done when:** installed DocSpec APIs admit and read a fresh exported dataset,
   refuse tampering, and resolve evidence to retained inputs. Publish the consumer
   example and exact wheel interface needed by
-  [SpicySearch SC01](../../spicysearch/PLAN.md#sc01), where Search's adoption and
+  [SpicySearch SC01, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md), where Search's adoption and
   private-import removal are tracked. No legacy import shim is required.
   Depends on D26–D28.
 
@@ -1011,7 +1017,7 @@ to defer a conditional item is a documented deferral, not completed implementati
   Destination work lives in [SpicyDocs S14](../../spicy-docs/docs/simplification-todo.md#s14)
   and [S22](../../spicy-docs/docs/simplification-todo.md#s22),
   [Rulespec RS02–RS03](../../rulespec/TODO.md#rs02), and
-  [SpicySearch SC02](../../spicysearch/PLAN.md#sc02). D47 links the separate
+  [SpicySearch SC02, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md). D47 links the separate
   search-definition work. Avoid creating a package solely for a future move.
 
   **Shared-writer deferral, September 12:** the attempted runtime delegation
@@ -1681,7 +1687,7 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 - **D47 · Moved to destination repositories.** The authoritative tasks for
   search-dataset definitions and identifier normalization are
-  [SpicySearch SC03](../../spicysearch/PLAN.md#sc03) and
+  [SpicySearch SC03, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md) and
   [SpicyEngine EC01](../../spicyengine/PLAN.md#ec01). This ID is a dependency
   reference, not a DocSpec implementation checkbox or completed work.
 
@@ -1720,14 +1726,14 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
 
 <a id="d49"></a>
 
-- [ ] **D49 · P1 · Qualify native Dagster composition with an installed search recipe.**
+- [x] **D49 · P1 · Qualify native Dagster composition with an installed search recipe.**
   Use the supplied recipe to check D48's generic input/output references, full
   requested catalog population (including records not selected for body capture),
   global dependencies, and result reuse. **Done when:** the native job uses
   DocSpec's public readers and retains inputs for a later attempt, with search
   policy owned by its recipe. Record execution identity separately from the recipe's semantic
   producer identity. Search implements the recipe in
-  [SC04](../../spicysearch/PLAN.md#sc04); Engine admission is tracked in
+  [SC04, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md); Engine admission is tracked in
   [EC02](../../spicyengine/PLAN.md#ec02). Depends on D09, D48, and the supplied
   recipe; no second search transformation implementation belongs here.
   **Dependency changed 2026-09-11:** SpicySearch replaced its SC01–SC05 tasks
@@ -1736,17 +1742,22 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   resolves. Engine's side (EC00–EC03) shipped reading DocSpec's retained state
   directly. This recipe-based composition has no supplier; keeping, rescoping,
   or deferring it is an open owner decision.
+  **Closed 2026-09-18 as superseded.** Decision 0013 as amended 2026-09-16
+  makes DocSpec's retained state the durable handoff and Search's dataset
+  Search's own artifact, never an engine prerequisite, so no recipe supplier
+  will appear. The consumer outcome this item existed for is delivered by
+  Engine EC00–EC03.
 
 <a id="d50"></a>
 
-- [ ] **D50 · P1 · Prove DocSpec's shared execution removes repeated work.**
+- [x] **D50 · P1 · Prove DocSpec's shared execution removes repeated work.**
   Compare local execution/reuse accounting against the supplied recipe runner
   with pinned inputs and independent expected cases. Exercise global dependency
   changes, interruption, installed wheels, and retained-input reuse; record
   scans, recipe calls, memory/scratch, and output work. **Done when:** local
   evidence supports the chosen execution path and any superseded local code
   is removed. Search owns transformation parity and build-path retirement
-  in [SC05](../../spicysearch/PLAN.md#sc05); Engine owns index-only rebuilding in
+  in [SC05, lane retired 2026-09-11](../../spicysearch/docs/history/2026-09-11-parquet-dataset.md); Engine owns index-only rebuilding in
   [EC03](../../spicyengine/PLAN.md#ec03). If integration merely adds another ledger,
   record a narrower decision and defer D49–D50; retain useful D09/D31 API reuse.
   Depends on D49. Require linked SC05/EC03 evidence before claiming the broader
@@ -1755,6 +1766,11 @@ and one search definition API; use DocSpec for shared attempt and dataset work.
   lane (see D49's note); Engine EC03 is complete. The repeated-work proof now
   needs either a supplied recipe (none exists today) or an explicit deferral
   decision.
+  **Closed 2026-09-18 as superseded.** The repeated-work proof was delivered
+  on the Engine side: EC02 verified that unchanged inputs reuse retained
+  enrichment and that an identifier change recomputes only its record
+  ([evidence](../../spicyengine/docs/history/2026-09-15-retained-enrichment.md)).
+  DocSpec keeps no recipe runner, so nothing remains to compare.
 
 ## 10. Prove the named source-to-dataset examples
 
