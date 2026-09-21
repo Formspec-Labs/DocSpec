@@ -1,0 +1,99 @@
+{
+  "status": "passed",
+  "scope": "Installed-wheel reopen of the two exact published snapshots; no full logical audit, ingestion or index build",
+  "version": "0.7.1",
+  "reader_module": "/Users/mikewolfd/Work/spicy-stack-reopen-20260921/evidence/installed/lib/python3.12/site-packages/docspec/runtime/state_reader.py",
+  "load_start": [
+    9.08447265625,
+    11.427734375,
+    10.13525390625
+  ],
+  "checks": [
+    {
+      "source": "federal-register",
+      "pin": "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61",
+      "records": 1007639,
+      "verified_layers": [
+        {
+          "layer": "core-entities",
+          "digest": "sha256:133d05e688c42fba2eb9654d2abcb5a85e96033ca0858bb2fc2b6fe6087b7bb3"
+        },
+        {
+          "layer": "core-membership",
+          "digest": "sha256:3a5ebb2e47c53087c2e0628b16328c1d0f254c22c5c39e45d77ac1177accbfae"
+        }
+      ],
+      "full_logical_audits": 0,
+      "originals": [
+        {
+          "member_key": "00-02448@2000-02-04",
+          "disposition": "selected"
+        },
+        {
+          "member_key": "01-13951@2001-06-06",
+          "disposition": "failed"
+        }
+      ],
+      "observed_open_seconds": 0.41948791599133983,
+      "observation_limit": "Concurrent local run, not an isolated performance benchmark"
+    },
+    {
+      "source": "regulations-gov",
+      "pin": "sha256:2200b5e68601decb8ac664d824d025c4e2031663c10bae900dcfcd20cbd74643",
+      "records": 2221713,
+      "verified_layers": [
+        {
+          "layer": "core-entities",
+          "digest": "sha256:02509f6a273757473c8371a1553597c9afc41bf59557f189c7d531d12a9966e7"
+        },
+        {
+          "layer": "core-membership",
+          "digest": "sha256:f55f4d35ab06afd7ffe8af47a89c2fb7883382065517a1e252a8485e7bd7a112"
+        }
+      ],
+      "full_logical_audits": 0,
+      "originals": [
+        {
+          "member_key": "ACF-2005-0003-0001",
+          "disposition": "selected"
+        },
+        {
+          "member_key": "AMS-FV-08-0076-0026",
+          "disposition": "unavailable"
+        },
+        {
+          "member_key": "APHIS-2005-0073-0036",
+          "disposition": "deleted"
+        },
+        {
+          "member_key": "NOAA-2005-0048",
+          "disposition": "failed"
+        },
+        {
+          "member_key": "TRAIN-2024-0058-0001",
+          "disposition": "excluded"
+        }
+      ],
+      "observed_open_seconds": 1.1412677919724956,
+      "observation_limit": "Concurrent local run, not an isolated performance benchmark"
+    }
+  ],
+  "load_end": [
+    8.83740234375,
+    11.33740234375,
+    10.11083984375
+  ],
+  "script_sha256": "b33d8a32588c5e6cdf64f95db4cb8037a339f268d50e084b0f43d86efe6e9f0d",
+  "wheel_sha256": "c939cebdf61a5d1242caf4a1e9f97dd19a9defa0243a3bb313d77dfcad16d8ac",
+  "source_commit": "cae9bca7047c0b74236318f724e5f34f833de893",
+  "package_files_match": 133,
+  "versions": {
+    "docspec": "0.7.1",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1",
+    "pyiceberg": "0.12.0",
+    "msgspec": "0.21.1",
+    "rulespec-artifacts": "1.0.12",
+    "spicy-docs": "0.20.0"
+  }
+}
