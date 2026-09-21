@@ -1,0 +1,48 @@
+{
+  "scope": "Published local Core state reopen; reuse publisher validation across process restarts while freshly checking pinned snapshot bytes",
+  "status": "passed",
+  "base_commit": "5d1a4e7ed46fde1b7960882ce3a2880a84fa2393",
+  "red_first": {
+    "test": "test_fresh_process_reuses_published_semantics_and_checks_pinned_bytes",
+    "status": "failed_as_expected",
+    "error": "reopened published state repeated a full semantic audit",
+    "site": "CoreStateReader.__init__ calling records.admit"
+  },
+  "checks": [
+    {
+      "command": "uv run python tools/with_iceberg.py pytest -q tests/test_core_state_reader.py tests/test_core_selected_outputs.py tests/test_core_states.py tests/test_core_publisher.py tests/test_record_admission_scope.py tests/test_result_export_admission.py",
+      "status": "passed",
+      "tests": 75
+    },
+    {
+      "command": "uv run ruff check src/docspec/runtime/core.py src/docspec/runtime/state_reader.py tests/test_core_state_reader.py",
+      "status": "passed"
+    },
+    {
+      "command": "uv lock --check",
+      "status": "passed"
+    }
+  ],
+  "source_sha256": {
+    "src/docspec/runtime/core.py": "741bf55160a456f80278c420528178ba7d6eb5b7b4697bb251c589344af12980",
+    "src/docspec/runtime/state_reader.py": "6a3117d4cdab6c733bf0538568abaa8b7a82986a2435de14b358abcc0ae2e6c4",
+    "tests/test_core_state_reader.py": "b84d0bf29395a9fd00be8fd14b81044c1f7f1e3c1c228aa55a23df3722d556f4"
+  },
+  "invariants": [
+    "Fresh-process open refuses all full logical audit entry points in the regression and still reads exact updated/removed membership",
+    "Both source state and representation must have successful retention and availability",
+    "Both pinned layers verify physical bytes once per reader",
+    "Explicit full record audit continues to walk every row",
+    "Existing new-publication and external-export refusal checks pass"
+  ],
+  "limits": [
+    "Trusts DocSpec local publisher and ledger; does not authenticate an arbitrarily rewritten workspace",
+    "File hashing still reads retained bytes; this is not constant-time opening",
+    "No full-data throughput claim"
+  ],
+  "independent_review": {
+    "verdict": "approve",
+    "scope": "Static publication and exact changed-path review",
+    "findings": "No blockers; retained guards scoped to public reader, complete pinned recovery-file hashes preserved, full audits and external admission untouched"
+  }
+}

@@ -19,8 +19,12 @@ with CoreWorkspace(workspace_path, create=False) as workspace:
 Omit `expected_pin` on an initial inspection. The returned SHA-256 binds the state,
 selected physical representation and exact layer references. Reopen with that pin
 to refuse a different selection. A physical checkpoint can change the pin while
-preserving the logical state. Opening freshly verifies retained files, row counts
-and membership; reads share that admission until the context closes.
+preserving the logical state. Opening requires a successfully retained state and
+representation in the local publication ledger. It freshly verifies the exact
+snapshot files against their pinned checksums and reuses publication's logical
+row, count and membership checks, including after a process restart. Reads share
+that verification until the context closes. Explicit full audits and admission
+of new external data still check logical rows.
 
 `lookup(key, occurrence_id=...)` selects one member and optionally checks its exact
 occurrence. `read_value` resolves inline JSON, retained JSON or opaque bytes using

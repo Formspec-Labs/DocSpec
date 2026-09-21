@@ -90,10 +90,11 @@ class CoreWorkspace:
 
     @contextmanager
     def open_state(self, state_id, *, expected_pin=None):
-        """Freshly admit one existing bulk state; retain protection until closed.
+        """Verify bytes of one published bulk state; protect it until closed.
 
-        Use ``create=False`` when opening an existing workspace. Reader calls
-        share this admission and never publish values or materialize a state.
+        Reuse publication's logical validation while freshly checking the pinned
+        files. Use ``create=False`` for an existing workspace. Reader calls share
+        this verification and never publish values or materialize a state.
         """
         from docspec.runtime.state_reader import CoreStateReader
         with self.publisher.session() as session:

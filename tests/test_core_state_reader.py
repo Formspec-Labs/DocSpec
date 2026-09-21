@@ -1,6 +1,10 @@
 """Exact existing-state reads preserve revisions and reuse one admission."""
 
 from contextlib import closing, contextmanager
+from dataclasses import replace
+import json
+import subprocess
+import sys
 
 import pytest
 
@@ -79,6 +83,78 @@ def test_lookup_selects_one_membership_and_occurrence_without_readmission(tmp_pa
         monkeypatch.setattr(workspace.records, "admit", unexpected)
         assert reader.lookup("keep").entity_id == expected
         assert selected == [("core-membership", ["keep"]), ("core-entities", [expected])]
+
+
+def test_fresh_process_reuses_published_semantics_and_checks_pinned_bytes(tmp_path):
+    _fixture(tmp_path)
+    with CoreWorkspace(tmp_path, create=False) as workspace, workspace.open_state("selected") as reader:
+        pin = reader.pin
+    program = '''
+import json
+import sys
+from docspec.adapters.storage.core_states import CoreStateStorage
+from docspec.adapters.storage.records import IcebergRecordStorage
+from docspec.runtime import CoreWorkspace
+
+def repeated(*args, **kwargs):
+    raise AssertionError("reopened published state repeated a full semantic audit")
+
+IcebergRecordStorage.admit = repeated
+IcebergRecordStorage._rows = repeated
+CoreStateStorage._match_members = repeated
+checked = []
+verify = IcebergRecordStorage.verify_members
+def verify_bytes(self, reference):
+    verify(self, reference)
+    checked.append(reference.layer_kind)
+IcebergRecordStorage.verify_members = verify_bytes
+
+with CoreWorkspace(sys.argv[1], create=False) as workspace:
+    with workspace.open_state("selected", expected_pin=sys.argv[2]) as reader:
+        assert reader.record_count == 2
+        assert reader.read_value("update") == {"title": "Updated"}
+        assert reader.lookup("remove") is None
+        with reader.value_relation() as relation:
+            assert relation.order("member_key").project("member_key").fetchall() == [("keep",), ("update",)]
+        assert sorted(checked) == ["core-entities", "core-membership"]
+        print(json.dumps({"pin": reader.pin, "checked": checked}))
+'''
+    result = subprocess.run([sys.executable, "-I", "-c", program, str(tmp_path), pin],
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["pin"] == pin
+
+
+@pytest.mark.parametrize("kind", ["state", "state_representation"])
+def test_reader_requires_successful_retention_not_only_available_metadata(tmp_path, monkeypatch, kind):
+    _fixture(tmp_path)
+    with CoreWorkspace(tmp_path, create=False) as workspace:
+        read = workspace.ledger.read_records
+        def unretained(keys, **kwargs):
+            for batch in read(keys, **kwargs):
+                yield tuple(replace(row, retained=False) if row is not None and row.key[0] == kind else row
+                            for row in batch)
+        monkeypatch.setattr(workspace.ledger, "read_records", unretained)
+        with pytest.raises(IntegrityError, match="requires retained available"):
+            with workspace.open_state("selected"):
+                raise AssertionError("unretained state was delivered")
+
+
+def test_explicit_layer_audit_still_checks_logical_rows(tmp_path, monkeypatch):
+    _fixture(tmp_path)
+    with CoreWorkspace(tmp_path, create=False) as workspace, workspace.publisher.session() as session:
+        layers = workspace.states.layers(session, "selected")
+        observed = []
+        original = workspace.records._rows
+        def checked(layer, **kwargs):
+            for row in original(layer, **kwargs):
+                observed.append(layer.reference.layer_kind)
+                yield row
+        monkeypatch.setattr(workspace.records, "_rows", checked)
+        for layer in layers.values():
+            workspace.records.verify(layer.reference)
+        assert sorted(observed) == sorted(kind for layer in layers.values()
+                                          for kind in [layer.reference.layer_kind] * layer.reference.record_count)
 
 
 def test_mismatched_pin_refuses_before_payload_delivery(tmp_path, monkeypatch):

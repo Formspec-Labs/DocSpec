@@ -18,6 +18,10 @@ class CoreStateReader:
         require_text(state_id, "state identity")
         self._session, self._states, self._state_id = session, states, state_id
         representation = states.representation(session, state_id, materialize=False)
+        keys = (("state", state_id), ("state_representation", representation.representation_id))
+        for batch in session.read_records(keys):
+            if any(row is None or not row.retained or not row.available for row in batch):
+                raise IntegrityError("state reader requires retained available state and representation")
         layers = states._layers(session.ready_states[representation.membership.digest])
         self._representation_id = representation.representation_id
         self._pin = sha256_digest(canonical_value_bytes({
@@ -26,8 +30,12 @@ class CoreStateReader:
         }))
         if expected_pin is not None and expected_pin != self._pin:
             raise IntegrityError("state differs from the expected read pin")
-        self._layers = {name: states.records.admit(layer.reference) for name, layer in layers.items()}
-        states._match_members(self._layers)
+        # Publication checked the logical rows and complete membership before
+        # retaining this representation. Bind that verdict to its unchanged bytes
+        # on every reopen; a full logical audit remains records.verify/admit.
+        for layer in layers.values():
+            states.records.verify_members(layer.reference)
+        self._layers = {name: states.records.admitted(layer.reference) for name, layer in layers.items()}
 
     @property
     def pin(self):

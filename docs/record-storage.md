@@ -113,6 +113,15 @@ replacing both a file and its checksum does not change the retained root. `verif
 reader calls it once per complete layer reference when that layer is first
 consumed. Failed admission is retryable. Metadata-only opening remains cheap.
 
+`CoreWorkspace.open_state` opens only an already-retained state and representation
+from the local publication ledger. Publication established its logical rows,
+counts and complete membership before committing retention. Each reopen, including
+in a new process, uses `verify_members` to bind that validation to the unchanged
+snapshot bytes. It does not repeat the full row scan or membership audit. There
+is no separate validation cache. Untrusted external exports still pass their
+complete import admission; low-level ledger writes are not a substitute for the
+publisher's validation.
+
 Queries opened from references check the root and the logical rows they consume.
 Native joins and streamed batches reuse the descriptor and checked file paths
 from an existing layer admission within its owning operation. The record store
@@ -126,7 +135,7 @@ call. Exclusive cleanup and unprotected
 read-only exports do not reuse this cache, and explicit audits remain fresh.
 Readers do not hash whole files for every document lookup. A reader observes immutable
 files; it does not lock or copy them. External mutation after admission can
-affect later queries. A new reader re-admits the files, and `verify(reference)`
+affect later queries. A new reader verifies the files, and `verify(reference)`
 always performs a fresh physical and complete logical audit. Retention,
 selection and export retain their complete checks.
 
