@@ -972,6 +972,44 @@ fixture limits and distinguishes those timings from source acquisition costs.
 
 **Start from:** [docs/capacity-workloads.md](capacity-workloads.md), [docs/qualification.md](qualification.md), [docs/architecture.md](architecture.md), [docs/record-storage.md](record-storage.md), [docs/python-runs.md](python-runs.md), [README.md](../README.md).
 
+## G. Follow-on capabilities
+
+The Core program above is complete. Tasks here are later decisions.
+
+### C26 · Derive a keyed state in one operation
+
+**Depends on:** C25. **Status:** planned (2026-09-22).
+
+**Why:** SpicySearch's prepared metadata ran one operation per member through
+`resolve_many`. On a 100-record sample that added about 26 KB of ledger per record
+and took 25 ms per record, against 0.15 ms to compute each value. The Core model
+does not require per-member operations ([§1](core-model.md#1-scope-and-conformance),
+[§8](core-model.md#8-logical-and-physical-representation)), and `upsert` already
+publishes a whole batch as one operation over states. The catalogs, published as
+bulk states, cost about 0.7 KB of ledger per record.
+
+**Change:** add `CoreWorkspace.derive(rows, *, batch_id, definition, inputs,
+base_state_id=None, removals=(), dataset=None)` by generalizing `upsert`:
+
+- One caller-supplied `OperationDefinition` (implementation ID, version and
+  configuration such as lookup digests) and one request. Source states and the
+  base derived state bind as `StateInput`s; supplied lookup values are retained
+  once and bind as `WholeInput`s; each has a `Whole()` dependency.
+- Without a base, stream rows into a new keyed state as `create` does. With a
+  base, publish a `Revision` of `Put`/`Remove` edits that shares the base's files,
+  within the existing 8 MiB edit bound; callers split larger changes.
+- The same `batch_id` retries to the same state; changed rows or inputs under it
+  refuse. `dataset=` advances a current pointer with the existing stale-base check.
+- `upsert` calls `derive` and keeps its definition, request and occurrence
+  identities, so earlier batch retries return the same states.
+
+**Done when:** tests cover an initial derive, incremental puts and removals,
+exact retry, refusal of changed input under one batch ID, a stale dataset base,
+provenance readback from a derived state to its exact input pins, and unchanged
+`upsert` identities. The gate passes, [python-runs](python-runs.md) documents
+the API, and the release is 0.9.0. SpicySearch and Engine consume it through
+their [prepared metadata](../../spicyengine/PLAN.md#pm01) task.
+
 ## Coverage against the spec and plan
 
 | Required outcome | Owning tasks |
