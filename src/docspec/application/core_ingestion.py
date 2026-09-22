@@ -85,35 +85,23 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
     labels = {item.label for item in inputs}
     if len(labels) != len(inputs) or labels & {"base", "rows"}:
         raise IntegrityError("derive input labels must be distinct and avoid base and rows")
-    removals = tuple(removals)
-    if any(not isinstance(key, str) for key in removals) or len(set(removals)) != len(removals):
-        raise IntegrityError("derive removals must be distinct member keys")
     identity = stable_urn(identity_kind, batch_id)
     # Freeze a one-shot batch before binding its retry identity. Only bounded
     # edit metadata stays in memory; payloads spool to disk and stream to Iceberg.
+    # Removals are consumed after the rows, so a caller may discover them while
+    # streaming its prepared values.
     with owned_iterator(rows) as source, TemporaryFile() as spool:
-        digest, keys, edits, put_edits, edit_bytes = sha256(), set(), [], [], 2
-        digest.update(canonical_value_bytes(["removals", sorted(removals)]) + b"\n")
-        for key in removals:
-            edit = core.Remove(sequence=len(edits), member_key=key)
-            edits.append(edit)
-            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Remove))) + 1
+        digest, keys, puts, edit_bytes = sha256(), set(), [], 2
         for key, value in source:
             if not isinstance(key, str):
                 raise IntegrityError("derive member keys must be strings")
             if key in keys:
                 raise IntegrityError("derive batch contains a duplicate member key")
-            if key in removals:
-                raise IntegrityError("derive removal repeats a put member key")
             entity = core.Entity(format_version=1, entity_id=stable_urn(identity_kind + "-occurrence", [batch_id, key]),
                                  entity_type="occurrence", value=core.InlineValue(value=value))
             payload = encode_record(entity)
             if len(payload) > BATCH_BYTES:
                 raise LimitExceededError("derive occurrence exceeds the 8 MiB record limit")
-            edit = core.Put(sequence=len(edits), member_key=key, occurrence_id=entity.entity_id)
-            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Put))) + 1
-            if edit_bytes > BATCH_BYTES:
-                raise LimitExceededError("derive edit metadata exceeds 8 MiB; split the input into separate batches")
             try:
                 framed = canonical_value_bytes([key, value]) + b"\n"
             except (TypeError, ValueError) as error:
@@ -121,6 +109,23 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
             digest.update(framed)
             spool.write(framed)
             keys.add(key)
+            puts.append((key, entity.entity_id))
+        removals = tuple(removals)
+        if any(not isinstance(key, str) for key in removals) or len(set(removals)) != len(removals):
+            raise IntegrityError("derive removals must be distinct member keys")
+        if keys & set(removals):
+            raise IntegrityError("derive removal repeats a put member key")
+        digest.update(canonical_value_bytes(["removals", sorted(removals)]) + b"\n")
+        edits, put_edits = [], []
+        for key in removals:
+            edit = core.Remove(sequence=len(edits), member_key=key)
+            edits.append(edit)
+            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Remove))) + 1
+        for key, occurrence_id in puts:
+            edit = core.Put(sequence=len(edits), member_key=key, occurrence_id=occurrence_id)
+            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Put))) + 1
+            if edit_bytes > BATCH_BYTES:
+                raise LimitExceededError("derive edit metadata exceeds 8 MiB; split the input into separate batches")
             edits.append(edit)
             put_edits.append(edit)
         if not edits:

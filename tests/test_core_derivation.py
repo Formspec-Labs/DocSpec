@@ -227,7 +227,7 @@ def test_invalid_rows_and_removals_refuse_and_close_the_stream(tmp_path, rows, r
         assert not list(workspace.ledger.executions(stable_urn("core-derive", "bad") + ":request"))
 
 
-def test_duplicate_removal_keys_refuse_before_the_stream_opens(tmp_path):
+def test_duplicate_removal_keys_refuse(tmp_path):
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("old", 1)])
         with pytest.raises(IntegrityError, match="distinct member keys"):
