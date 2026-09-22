@@ -26,7 +26,11 @@ container after the command. See [record storage](docs/record-storage.md). Optio
 skips; the full regression command appears below under “Check the same things as CI.” `uv sync --frozen --extra dagster` enables the real Dagster adapter test.
 Select the same extra on subsequent `uv run` commands to keep it installed.
 Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
-the adapter you are exercising. Core imports must work without them.
+the adapter you are exercising. Core imports must work without them. A checkout
+moved after `uv sync` keeps console-script shebangs pointing at the old path, and
+`uv sync` does not repair them; when a bare command reports a missing
+interpreter, recreate the environment with `rm -rf .venv && uv sync --frozen` and
+apply the extras again.
 
 Run the [offline walkthrough](docs/offline-walkthrough.md) to build and grow a
 catalog, capture documents, repair a failure, and compare later processing
