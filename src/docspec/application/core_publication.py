@@ -50,6 +50,7 @@ class Publication:
         self.member_selections = {}
         self.membership_equivalence = set()
         self._generated_row_observer = None
+        self._record_window = None
 
     @contextmanager
     def observe_generated_rows(self, observer):
@@ -70,9 +71,47 @@ class Publication:
         if not self.active:
             raise StateTransitionError("publication session is closed")
 
-    def read_records(self, keys, *, include_values=True):
+    @contextmanager
+    def record_window(self, keys=()):
+        """Reuse bounded immutable payloads; availability and versions stay live.
+
+        The window belongs to one operation batch, never the full session. Every
+        read still consults the ledger metadata. Only admitted record bytes are
+        reused, and detached values keep producer callbacks outside the cache.
+        """
         self._active()
-        yield from self.ledger.read_records(keys, include_values=include_values)
+        previous = self._record_window
+        self._record_window = _RecordWindow()
+        try:
+            with owned_iterator(self.read_records(keys)) as batches:
+                for _ in batches:
+                    pass
+            yield
+        finally:
+            self._record_window = previous
+
+    def read_records(self, keys, *, include_values=True, include_unavailable_values=False):
+        self._active()
+        if include_unavailable_values:
+            yield from self.ledger.read_records(keys, include_values=include_values, include_unavailable_values=True)
+            return
+        if self._record_window is None or not include_values:
+            yield from self.ledger.read_records(keys, include_values=include_values)
+            return
+        window = self._record_window
+        with owned_iterator(self.ledger.read_records(keys, include_values=False)) as batches:
+            for statuses in batches:
+                missing = tuple(row.key for row in statuses if row is not None and not window.contains(row))
+                fetched = {}
+                if missing:
+                    with owned_iterator(self.ledger.read_records(dict.fromkeys(missing))) as values:
+                        for batch in values:
+                            for row in batch:
+                                if row is not None:
+                                    fetched[row.key] = row
+                                    window.remember(row)
+                yield tuple(None if row is None else fetched[row.key] if row.key in fetched else
+                            replace(row, value=window.value(row)) for row in statuses)
 
     def read_links(self, keys):
         self._active()
@@ -161,6 +200,28 @@ class Publication:
         return self.retention_scope(batch)[0]
 
 
+class _RecordWindow:
+    """A bounded cache of checked bytes, without mutable retention metadata."""
+    def __init__(self):
+        self.payloads = {}
+        self.byte_size = 0
+
+    def contains(self, row):
+        return row.available and (row.key, row.row_digest) in self.payloads
+
+    def remember(self, row):
+        if row.value is None or not row.available or self.contains(row) or len(self.payloads) >= BATCH_ROWS:
+            return
+        snapshot = AdmittedRecord(row.value)
+        if self.byte_size + len(snapshot.payload) <= BATCH_BYTES:
+            self.payloads[row.key, row.row_digest] = snapshot
+            self.byte_size += len(snapshot.payload)
+
+    def value(self, row):
+        # These bytes already passed ordinary Core admission; each read is detached.
+        return self.payloads[row.key, row.row_digest].record
+
+
 class _PublicationCheck:
     """Compute one batch's exact retention closure before the ledger commits it."""
     def __init__(self, session: Publication, batch: MetadataBatch):
@@ -207,7 +268,7 @@ class _PublicationCheck:
             for pending, include_values in groups:
                 if not pending:
                     continue
-                for rows in self.ledger.read_records(sorted(pending), include_values=include_values):
+                for rows in self.session.read_records(sorted(pending), include_values=include_values):
                     for row in rows:
                         if row is not None:
                             self.stored[row.key] = row

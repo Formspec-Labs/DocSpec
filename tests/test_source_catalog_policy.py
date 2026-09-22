@@ -383,10 +383,24 @@ def test_publisher_xml_is_selected_when_offered_with_html_as_an_absent_xml_alter
 
 def test_federal_register_policy_requires_current_schema_and_rejects_earlier_policy():
     policy = FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE)
-    assert policy.universe_inputs[0].schema_version == "1.1" and policy.policy_version == "1.1.0"
+    assert policy.universe_inputs[0].schema_version == "1.1" and policy.policy_version == "1.2.0"
     prior = policy.to_member() | {"policyVersion": "1.0.0"}
     with pytest.raises(ValueError, match="installed policy version"):
         FederalRegisterCatalogPolicy.from_member(prior)
+
+
+def test_raw_agency_headings_are_evidence_not_identifiers():
+    native = record("96-1584")["record"]
+    heading = {"raw_name": "Food Additives Permitted for Direct Addition to Food for Human"}
+    numbered = {"id": 145, "name": "Environmental Protection Agency"}
+    native["agencies"] = [heading, numbered]
+    normalized, fields, _ = FederalRegisterCatalogPolicy._normalization(native)
+    assert normalized["agencies"] == [
+        {"agencyId": "federal-register:145", "agencyName": "Environmental Protection Agency"}
+    ]
+    agencies = next(field for field in fields if field.normalized_field == "agencies")
+    assert heading in agencies.unparseable_values
+    assert native["agencies"] == [heading, numbered]
 
 
 def test_empty_topics_are_not_recovered_without_evidence_and_do_not_affect_a_neighbor(

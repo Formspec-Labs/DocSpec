@@ -5,7 +5,7 @@ declaration; it does not infer the dependencies of arbitrary Python code.
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from types import MappingProxyType
 
 import msgspec
@@ -17,7 +17,7 @@ from docspec.domain.identity import canonical_value_bytes, sha256_digest, snapsh
 from docspec.domain.streams import bounded_items, owned_iterator
 from docspec.errors import IntegrityError
 from docspec.ports.core_ledger import MetadataBatch, MetadataLink, RecordKey
-from docspec.ports.record_storage import BATCH_ROWS
+from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 
 def _typed(value, record_type):
@@ -38,6 +38,7 @@ def binding_key(binding):
 class DependencyAssessment:
     """Evaluated dependency evidence and adequacy for one request, with its guard and support records."""
     effective_definition: core.OperationDefinition
+    original_definition: core.OperationDefinition
     effective_request: core.Request
     dependencies: Mapping[str, tuple[core.Selector, core.ComparisonEvidence]]
     digest: str | None
@@ -198,7 +199,7 @@ class CoreDependencies:
         """Return the canonical bytes that pin one dependency together with its input binding."""
         return canonical_value_bytes([record_value(dependency, core.Dependency), record_value(binding, core.InputBinding)])
 
-    def _comparisons(self, reader, result_id, definition, evidence_ids, version, wanted):
+    def _comparisons(self, reader, result_id, definition, original_definition, evidence_ids, version, wanted):
         """Previously evaluated immutable inputs remain evidence after byte loss.
 
         The caller has already folded current omissions. This only supplies
@@ -211,6 +212,7 @@ class CoreDependencies:
         if any(not link.label.isdecimal() for link in links):
             raise IntegrityError("dependency comparison link requires an evidence version")
         comparisons = {}
+        original_pin = None
         for link in sorted(links, key=lambda link: (int(link.label), link.target), reverse=True):
             artifact = reader.one(link.target, historical=True, guard=False)
             if not isinstance(artifact, core.Entity) or artifact.entity_type != "artifact" or not isinstance(artifact.value, core.InlineValue):
@@ -218,14 +220,29 @@ class CoreDependencies:
             key = "entity", artifact.entity_id
             if not reader.rows[key].available:
                 continue
-            snapshot = _typed(artifact.value.value, core.DependencyComparison)
-            payload = canonical_value_bytes(record_value(snapshot, core.DependencyComparison))
+            if not isinstance(artifact.value.value, Mapping):
+                raise IntegrityError("dependency comparison requires a structured value")
+            snapshot_type = (core.ReferencedDependencyComparison if artifact.value.value.get("version") == 2
+                             else core.DependencyComparison)
+            snapshot = _typed(artifact.value.value, snapshot_type)
+            payload = canonical_value_bytes(record_value(snapshot, snapshot_type))
             if (artifact.entity_id != "comparison:" + sha256_digest(payload) or snapshot.result_id != result_id
                     or str(snapshot.evidence_version) != link.label):
                 raise IntegrityError("dependency comparison differs from its pinned identity or original result")
             if snapshot.evidence_version > version or not set(snapshot.evidence_ids) <= set(evidence_ids):
                 continue
-            if msgspec.structs.replace(snapshot.definition, resources=()) != msgspec.structs.replace(definition, resources=()):
+            if isinstance(snapshot, core.ReferencedDependencyComparison):
+                if original_pin is None:
+                    original_pin = sha256_digest(canonical_value_bytes(record_value(original_definition)))
+                if snapshot.definition_id != original_definition.definition_id or snapshot.definition_digest != original_pin:
+                    raise IntegrityError("dependency comparison definition differs from its retained identity")
+                snapshot_definition = original_definition
+                if snapshot.resources is not None:
+                    snapshot_definition = _typed(msgspec.structs.replace(original_definition,
+                        resources=snapshot.resources), core.OperationDefinition)
+            else:
+                snapshot_definition = snapshot.definition
+            if msgspec.structs.replace(snapshot_definition, resources=()) != msgspec.structs.replace(definition, resources=()):
                 raise IntegrityError("dependency comparison identifies a different operation")
             if len(set(snapshot.evidence_ids)) != len(snapshot.evidence_ids):
                 raise IntegrityError("dependency comparison repeats evidence identities")
@@ -243,7 +260,7 @@ class CoreDependencies:
                 value = entry.selector, entry.evidence
                 if meaning in wanted:
                     comparisons.setdefault(meaning, (*value, key))
-            if sha256_digest(correspondence_bytes(snapshot.definition, fingerprint)) != snapshot.digest:
+            if sha256_digest(correspondence_bytes(snapshot_definition, fingerprint)) != snapshot.digest:
                 raise IntegrityError("dependency comparison fingerprint differs from its evaluated values")
             if wanted <= comparisons.keys():
                 break
@@ -259,9 +276,13 @@ class CoreDependencies:
                                                  selector=assessment.dependencies[dependency.label][0],
                                                  evidence=assessment.dependencies[dependency.label][1])
                         for dependency in assessment.effective_request.dependencies)
-        snapshot = core.DependencyComparison(result_id=result_id, evidence_version=assessment.evidence_version,
-            definition=assessment.effective_definition, dependencies=entries, evidence_ids=assessment.evidence_ids, digest=assessment.digest)
-        payload = record_value(snapshot, core.DependencyComparison)
+        original = assessment.original_definition
+        resources = assessment.effective_definition.resources
+        snapshot = core.ReferencedDependencyComparison(result_id=result_id, evidence_version=assessment.evidence_version,
+            definition_id=original.definition_id, definition_digest=sha256_digest(canonical_value_bytes(record_value(original))),
+            resources=None if resources == original.resources else resources,
+            dependencies=entries, evidence_ids=assessment.evidence_ids, digest=assessment.digest)
+        payload = record_value(snapshot, core.ReferencedDependencyComparison)
         identity = "comparison:" + sha256_digest(canonical_value_bytes(payload))
         artifact = core.Entity(format_version=1, entity_id=identity, entity_type="artifact", value=core.InlineValue(value=payload))
         key = "entity", identity
@@ -271,6 +292,7 @@ class CoreDependencies:
     def _assess(self, reader, request, definition, *, result_id=None, additions=()):
         """Assess one request and definition against its folded evidence into adequacy and comparisons."""
         request, definition = _typed(request, core.Request), _typed(definition, core.OperationDefinition)
+        original_definition = definition
         if request.definition_id != definition.definition_id:
             raise IntegrityError("request refers to another operation definition")
         if result_id is not None:
@@ -303,7 +325,7 @@ class CoreDependencies:
         comparison, unavailable = {}, []
         if adequate:
             wanted = {self._meaning(dependency, bindings[dependency.binding_label]) for dependency in request.dependencies}
-            retained = self._comparisons(reader, result_id, definition, evidence_ids, version, wanted) if result_id is not None else {}
+            retained = self._comparisons(reader, result_id, definition, original_definition, evidence_ids, version, wanted) if result_id is not None else {}
             needed = tuple(dependency for dependency in request.dependencies
                            if self._meaning(dependency, bindings[dependency.binding_label]) not in retained)
             reader.load(binding_key(bindings[dependency.binding_label]) for dependency in needed)
@@ -325,7 +347,7 @@ class CoreDependencies:
                 comparison[dependency.label] = reader.session.selections.binding_evidence(
                     reader.session, binding, dependency.selection, guard=lambda keys: reader.load(keys, available=True))
         digest = sha256_digest(correspondence_bytes(definition, comparison)) if adequate and not unavailable else None
-        return DependencyAssessment(definition, request, MappingProxyType(comparison), digest, adequate, unresolved, uncertain,
+        return DependencyAssessment(definition, original_definition, request, MappingProxyType(comparison), digest, adequate, unresolved, uncertain,
                                     tuple(sorted(set(unavailable))), reader.versions(), links, evidence_ids, version + len(admitting),
                                     tuple(sorted(reader.support)))
 
@@ -343,14 +365,54 @@ class CoreDependencies:
 
     def index_result(self, session, result_id):
         """Index the result's exact comparison snapshot and dependency links in one transaction."""
-        assessment = self.assess_result(session, result_id)
-        version = dict(assessment.expected_versions)[("result", result_id)]
-        records, retained, links = self._snapshot(assessment, result_id)
-        session.ledger.commit(MetadataBatch(f"dependencies:{result_id}:{version}:{assessment.digest}",
-            records=records, retained=retained,
-            candidates=((assessment.digest, result_id),) if assessment.digest is not None else (),
-            links=(*assessment.links, *links), expected_versions=assessment.expected_versions))
-        return assessment
+        return self.index_results(session, (result_id,))[0]
+
+    def index_results(self, session, result_ids):
+        """Batch comparison values and guarded metadata so they share storage writes."""
+        assessments, pending, size, count = [], [], 0, 0
+
+        def flush():
+            nonlocal size, count
+            if pending:
+                ready = tuple(pending)
+                pending.clear()
+                size, count = 0, 0
+                unit = ready[0].unit_id if len(ready) == 1 else "dependencies:" + sha256_digest(
+                    canonical_value_bytes([batch.unit_id for batch in ready]))
+                session.ledger.commit(MetadataBatch(unit, **{
+                    name: tuple(item for batch in ready for item in getattr(batch, name))
+                    for name in ("records", "retained", "candidates", "links", "expected_versions")}))
+
+        try:
+            for result_id in bounded_items(result_ids, limit=BATCH_ROWS):
+                assessment = self.assess_result(session, result_id)
+                version = dict(assessment.expected_versions)[("result", result_id)]
+                records, retained, links = self._snapshot(assessment, result_id)
+                batch = MetadataBatch(f"dependencies:{result_id}:{version}:{assessment.digest}:v2",
+                    records=records, retained=retained,
+                    candidates=((assessment.digest, result_id),) if assessment.digest is not None else (),
+                    links=(*assessment.links, *links), expected_versions=assessment.expected_versions)
+                # Leave room for the ledger's own identity/digest receipt. It
+                # remains the authority for the exact transaction bounds.
+                encoded = {"records": [record_value(record) for record in records],
+                           "links": [asdict(link) for link in batch.links],
+                           "retained": retained, "candidates": batch.candidates,
+                           "versions": batch.expected_versions}
+                byte_size = len(canonical_value_bytes(encoded))
+                rows = sum(len(getattr(batch, field)) for field in
+                           ("records", "retained", "candidates", "links", "expected_versions"))
+                if pending and (size + byte_size > BATCH_BYTES // 2 or count + rows > BATCH_ROWS):
+                    flush()
+                pending.append(batch)
+                size += byte_size
+                count += rows
+                assessments.append(assessment)
+            flush()
+        except BaseException:
+            # Previously assessed results remain reusable if a later one fails.
+            flush()
+            raise
+        return tuple(assessments)
 
     def record_evidence(self, session, evidence):
         """Record immutable dependency evidence and return its result's updated assessment.

@@ -21,8 +21,11 @@ def recovery_document(value, kind, execution_id):
     Refuses an unknown kind, a wrong closed shape or version, and an execution identity that does not match.
     """
 
-    if (kind not in _FIELDS or not isinstance(value, dict) or set(value) != _FIELDS[kind]
-            or value["format"] != "docspec-operation-" + kind or type(value["version"]) is not int or value["version"] != 1):
+    compact = kind == "publication" and isinstance(value, dict) and value.get("version") == 2
+    fields = (_FIELDS["publication"] - {"records"}) | {"record_keys"} if compact else _FIELDS.get(kind)
+    if (fields is None or not isinstance(value, dict) or set(value) != fields
+            or value["format"] != "docspec-operation-" + kind or type(value["version"]) is not int
+            or value["version"] != (2 if compact else 1)):
         raise IntegrityError("invalid operation " + kind + " document")
     key_fields = ["roots"]
     if kind == "checkpoint":
@@ -34,10 +37,13 @@ def recovery_document(value, kind, execution_id):
         require_text(value["unit_id"], "publication unit identity")
         if not isinstance(value["executions"], list) or execution_id not in value["executions"]:
             raise IntegrityError("publication journal does not identify its execution")
-        if not isinstance(value["records"], list):
-            raise IntegrityError("publication journal requires Core records")
-        for record in value["records"]:
-            record_value(record)
+        if compact:
+            key_fields.append("record_keys")
+        else:
+            if not isinstance(value["records"], list):
+                raise IntegrityError("publication journal requires Core records")
+            for record in value["records"]:
+                record_value(record)
     for field in key_fields:
         keys = value[field]
         if not isinstance(keys, list) or any(not isinstance(key, list) or len(key) != 2

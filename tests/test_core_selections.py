@@ -117,6 +117,7 @@ def test_single_fields_use_the_same_native_rules_and_whole_values_keep_their_cod
             import_root(states, session, [("k", "e", {"a/b": [None, True, 1, "1"], "~": {"01": 8}})])
             definition = fields("/a~1b/0", "/a~1b/1", "/a~1b/2", "/a~1b/3", "/a~1b/01", "/~0/01")
             direct = select(selections, session, "single", definition, parent="e")
+            assert isinstance(direct.value, core.ContentRef)
             recovered = select(selections, session, "single-recovered", definition, parent="e", recover=True)
             assert selections.value(session, direct) == [["f0", "present", None], ["f1", "present", True], ["f2", "present", 1],
                                                          ["f3", "present", "1"], ["f4", "absent"], ["f5", "present", 8]]
@@ -124,7 +125,19 @@ def test_single_fields_use_the_same_native_rules_and_whole_values_keep_their_cod
             assert type(selections.value(session, direct)[2][2]) is int
             assert selections.evidence(session, direct) == selections.evidence(session, recovered)
             whole = select(selections, session, "whole", core.Whole(), parent="e")
+            assert isinstance(whole.value, core.ContentRef)
             assert selections.value(session, whole) == {"a/b": [None, True, 1, "1"], "~": {"01": 8}}
+
+
+def test_existing_inline_selection_retries_without_rewriting_its_identity(tmp_path):
+    with ExitStack() as stack:
+        _, _, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            import_root(states, session, [("k", "e", {"value": "original"})])
+            previous = core.SelectedValue(format_version=1, selected_value_id="previous", definition=core.Whole(),
+                origin=core.Origin(parent_entity_id="e"), value=core.InlineValue(value={"value": "original"}))
+            session.publish(MetadataBatch("previous:retain", records=(previous,), retained=(("selected_value", "previous"),)))
+            assert select(selections, session, "previous", core.Whole(), parent="e") == previous
 
 
 def test_retained_json_and_opaque_members_keep_types_and_recoverable_bytes(tmp_path):

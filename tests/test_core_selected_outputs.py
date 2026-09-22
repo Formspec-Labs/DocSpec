@@ -126,6 +126,74 @@ def test_competing_choices_remain_visible_and_change_selection_pin(tmp_path):
                 list(reader.rows())
 
 
+def test_explicit_choices_adopt_one_competing_result_without_scanning_all(tmp_path, monkeypatch):
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("source", [("notice", {"id": "ABC"})])
+        first = resolve(workspace)
+        second = resolve(workspace, identity="second", fresh=True)
+        monkeypatch.setattr(workspace.ledger, "retained_records", lambda **kwargs: pytest.fail("scanned all selections"))
+        choices = (second.selection.selection_id,)
+        with read(workspace, selection_ids=choices) as reader:
+            rows = list(reader.rows())
+            pin = reader.pin
+            assert [row.result_id for row in rows] == [second.result.result_id]
+        with read(workspace, selection_ids=choices, expected_pin=pin) as reader:
+            assert list(reader.rows()) == rows and reader.pin == pin
+        with read(workspace, selection_ids=(first.selection.selection_id,), expected_pin=pin) as reader:
+            with pytest.raises(StaleBaseError, match="selection-set pin"):
+                list(reader.rows())
+
+
+def test_explicit_choice_bounds_order_and_request_group_bytes(tmp_path, monkeypatch):
+    import docspec.runtime.selected_outputs as selected_outputs
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("source", [("notice", {"id": "ABC"})])
+        choices = [resolve(workspace, identity=str(i), fresh=True) for i in range(3)]
+        ids = tuple(item.selection.selection_id for item in choices)
+        with read(workspace, selection_ids=ids) as reader:
+            rows = list(reader.rows())
+            pin = reader.pin
+        with read(workspace, selection_ids=tuple(reversed(ids)), expected_pin=pin) as reader:
+            assert list(reader.rows()) == rows and reader.pin == pin
+        for invalid in ((), (ids[0], ids[0]), ("",), tuple(str(i) for i in range(selected_outputs.BATCH_ROWS + 1))):
+            with pytest.raises(ValueError, match="selection IDs"), read(workspace, selection_ids=invalid):
+                pytest.fail("invalid selection scope admitted")
+        monkeypatch.setattr(selected_outputs, "BATCH_BYTES", 1)
+        with pytest.raises(ValueError, match="byte limit"), read(workspace, selection_ids=ids):
+            pytest.fail("oversized scope admitted")
+        descriptions = [row.value for batch in workspace.ledger.read_records(
+            [key for choice in choices for key in (("selection", choice.selection.selection_id), ("request", choice.selection.request_id))])
+            for row in batch]
+        sizes = [len(canonical_value_bytes(record_value(value))) for value in descriptions]
+        monkeypatch.setattr(selected_outputs, "BATCH_BYTES", max(sum(sizes[i:i + 2]) for i in range(0, len(sizes), 2)))
+        with read(workspace, selection_ids=ids) as reader:
+            groups = list(reader._selections())
+            assert [len(group) for group in groups] == [1, 1, 1]
+            assert list(reader.rows()) == rows
+        with read(workspace, selection_ids=("not-retained",)) as reader:
+            with pytest.raises(IntegrityError, match="unavailable"):
+                list(reader.rows())
+
+
+@pytest.mark.parametrize("foreign", ["state", "definition", "label", "unavailable"])
+def test_explicit_choice_must_match_requested_scope_and_be_available(tmp_path, foreign):
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("source", [("notice", {"id": "ABC"})])
+        resolve(workspace)
+        workspace.create("other", [("notice", {"id": "ABC"})])
+        other = resolve(workspace, "other" if foreign == "state" else "source", identity="other",
+                        definition=replace(DEFINITION, definition_id="other-definition") if foreign == "definition" else DEFINITION,
+                        selected_labels=("hidden",) if foreign == "label" else ("keys",))
+        if foreign == "unavailable":
+            policy = core.RetentionPolicy(format_version=1, policy_id="remove-explicit", description={})
+            workspace.ledger.commit(MetadataBatch("policy-explicit", records=(policy,),
+                retained=(("retention_policy", policy.policy_id),)))
+            workspace.ledger.begin_removal("remove-explicit", policy.policy_id, [("selection", other.selection.selection_id)])
+        with read(workspace, selection_ids=(other.selection.selection_id,)) as reader:
+            with pytest.raises(IntegrityError):
+                list(reader.rows())
+
+
 def test_later_dependency_omission_refuses_previously_admitted_selection(tmp_path):
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("source", [("notice", {"id": "ABC"})])

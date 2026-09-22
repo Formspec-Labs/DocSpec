@@ -75,7 +75,11 @@ _SELECTION_FAILURES = (
 
 
 def _agencies(value: object) -> tuple[list[dict[str, str]], tuple[Any, ...]]:
-    """Deduplicate agency id/name pairs, keeping malformed entries as unparseable evidence."""
+    """Use publisher IDs, never an unrecognized printed heading as an agency ID.
+
+    ``raw_name`` is still a usable label when the publisher supplies an identity.
+    Raw-only entries stay in native facts and normalization diagnostics.
+    """
     result: dict[tuple[str, str], dict[str, str]] = {}
     values, rejected = _array_with_unparseable(value)
     unparseable = list(rejected)
@@ -84,7 +88,10 @@ def _agencies(value: object) -> tuple[list[dict[str, str]], tuple[Any, ...]]:
             unparseable.append(raw)
             continue
         name = raw.get("name") or raw.get("raw_name")
-        identity = raw.get("slug") or name
+        identity = raw.get("slug")
+        numeric_id = raw.get("id")
+        if not identity and isinstance(numeric_id, int) and not isinstance(numeric_id, bool) and numeric_id > 0:
+            identity = f"federal-register:{numeric_id}"
         if isinstance(identity, str) and identity and isinstance(name, str) and name:
             result[(identity, name)] = {"agencyId": identity, "agencyName": name}
         else:
@@ -118,7 +125,7 @@ class FederalRegisterCatalogPolicy:
     _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:federal-register:1"
-    policy_version = "1.1.0"
+    policy_version = "1.2.0"
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:

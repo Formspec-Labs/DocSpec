@@ -315,7 +315,7 @@
     "tests/test_core_execution.py::test_control_row_exhaustion_records_failure_and_only_the_accepted_prefix",
     "tests/test_core_execution.py::test_control_byte_exhaustion_preserves_actual_events_and_can_finish_a_smaller_output",
     "tests/test_core_execution.py::test_huge_or_invalid_diagnostic_does_not_prevent_failure_accounting",
-    "tests/test_core_execution.py::test_combined_journal_limit_records_incomplete_attempts_before_publication",
+    "tests/test_core_execution.py::test_combined_staging_limit_records_incomplete_attempts_before_publication",
     "tests/test_core_execution.py::test_journal_storage_failure_records_interruption_and_preserves_the_error",
     "tests/test_core_execution.py::test_oversized_added_metadata_cannot_hide_the_actual_failed_prefix",
     "tests/test_core_execution.py::test_continuation_accounts_for_events_retained_by_every_suspension",

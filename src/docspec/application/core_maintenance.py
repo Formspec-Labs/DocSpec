@@ -4,8 +4,9 @@ from contextlib import closing
 import sqlite3
 import tempfile
 
+from docspec.application.core_execution import publication_records
 from docspec.domain import core
-from docspec.domain.core_admission import admit_record, record_value
+from docspec.domain.core_admission import record_value
 from docspec.domain.core_recovery import recovery_document
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
 from docspec.domain.references import BlobRef
@@ -171,11 +172,18 @@ class CoreMaintenance:
                         continue
                     seen.add((kind, reference.digest))
                     document = recovery_document(session.read_json(content, label="operation " + kind), kind, progress["execution_id"])
-                    staged = tuple(admit_record(canonical_value_bytes(record)) for record in document.get("records", ()))
+                    staged = publication_records(session, document) if kind == "publication" else ()
                     required = session.validate(MetadataBatch("recovery-inventory", records=staged,
                                                           retained=tuple(tuple(key) for key in document["roots"])))
                     if excluded.intersection(required):
                         raise IntegrityError("recoverable operation requires records in the removal scope")
+                    # Prepared records have no retention row until publication.
+                    # Their entity values may already live in a shared physical
+                    # layer, which remains necessary for exact recovery.
+                    with owned_iterator(self.ledger.source_layers(include=required, include_unretained=True)) as layers:
+                        for batch in layers:
+                            for layer in batch:
+                                self.inventory_layer(index, layer, protected=True, scanned=scanned)
                     for record in staged:
                         self.inventory_record(index, record, protected=True, scanned=scanned, entity_targets=entity_targets)
 

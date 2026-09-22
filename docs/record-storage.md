@@ -6,6 +6,20 @@ PyIceberg parses retained metadata and manages temporary catalog registrations.
 SQLite remains the authoritative ledger for provenance, publication, progress and
 retention. Opaque document bytes remain in the content-addressed blob store.
 
+`CoreWorkspace` stores all entity values in the record store: source documents,
+generated outputs, lookup inputs, and dependency comparisons. SQLite keeps their
+IDs, digests, sizes and layer locations, together with the bounded operation
+descriptions, relationships and retry state needed for publication. Status-only
+reads do not load value payloads. Publication and comparison writes share bounded
+batches; retry reuses their existing physical locations.
+
+New literal selected values use the existing content store. Existing inline
+records remain readable, and an exact legacy selection retry preserves its
+immutable description. Existing workspaces are not rewritten on open. Rewriting
+an entity in a new publication unit moves its unchanged bytes into the record
+store. Dataset exports repack selected available entities into Parquet and retain
+only their locations in the exported ledger.
+
 A record root contains one pinned Iceberg metadata reference, schema and row count;
 it does not copy the complete file inventory. The format is
 `docspec-iceberg-records`, version 1. Core state manifests remain version 2 and
@@ -59,6 +73,8 @@ manifests and metadata. It protects files shared by other retained states before
 removing any bytes. Every retained historical state has its own pin. Do not run
 catalog purge or independent snapshot expiration against DocSpec's files. Failed
 writes can leave unreferenced files; there is no automatic orphan-file sweep.
+Recoverable publication journals protect the physical layers of staged outputs,
+including restored bytes whose successful retention has not yet committed.
 
 ## What is stored and queried?
 

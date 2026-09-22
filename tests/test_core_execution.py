@@ -13,7 +13,7 @@ from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
 from docspec.application.core_execution import CoreOperations
 from docspec.application.core_publication import CorePublisher
 from docspec.domain import core
-from docspec.domain.core_admission import record_parts
+from docspec.domain.core_admission import record_parts, record_value
 from docspec.domain.identity import decode_canonical_json_value
 from docspec.errors import IntegrityError, LimitExceededError, StateTransitionError
 
@@ -247,6 +247,66 @@ def test_recover_published_result_uses_the_ledger_without_rereading_content(tmp_
         assert operations.recover(result.execution_id) == result
 
 
+def test_publication_journal_keeps_keys_without_copying_generated_values(tmp_path):
+    with ExitStack() as stack:
+        ledger, operations = setup(stack, tmp_path)
+        payload = "large prepared metadata " * 10000
+        result = operations.run(definition(), request(),
+                                lambda context: (context.generate(core.InlineValue(value=payload), label="metadata"), None)[1])
+        content = next(row["description"]["publication"] for row in progress(ledger, result.execution_id)
+                       if "publication" in row["description"])
+        with operations.publisher.session() as session:
+            journal = session.read_json(content)
+        assert journal["version"] == 2 and "records" not in journal
+        assert content["byte_size"] < len(payload) // 100
+        assert ["result", result.result_id] in journal["record_keys"]
+        output = next(ledger.read_records([("entity", result.outcome.outputs[0].entity_id)]))[0]
+        assert output.available and output.value.value.value == payload
+
+
+def test_legacy_publication_journal_recovers_without_a_new_producer(tmp_path):
+    with ExitStack() as stack:
+        ledger, operations = setup(stack, tmp_path)
+        pending = operations.prepare(definition(), request(),
+                                     lambda context: (context.generate(core.InlineValue(value={"answer": 7}), label="answer"), None)[1])
+        journal = {"format": "docspec-operation-publication", "version": 1, "unit_id": "legacy-publication",
+                   "executions": [pending.execution.execution_id],
+                   "records": [record_value(record) for record in (*pending.records, pending.result)],
+                   "roots": [["result", pending.result.result_id]]}
+        with operations.publisher.session() as session:
+            content = session.retain_value(journal)
+        ledger.record_progress("legacy-prepared", pending.execution.execution_id, "progress",
+                               {"publication": record_value(content, core.ContentRef)})
+    with ExitStack() as stack:
+        _, operations = setup(stack, tmp_path)
+        assert operations.recover(pending.execution.execution_id) == pending.result
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_recovery_refuses_missing_or_oversized_staged_records(tmp_path, monkeypatch, missing):
+    import docspec.application.core_execution as execution
+    with ExitStack() as stack:
+        ledger, operations = setup(stack, tmp_path)
+        pending = operations.prepare(definition(), request(), lambda context: None)
+        with monkeypatch.context() as patch:
+            def interrupted(*args, **kwargs):
+                raise OSError("publish interrupted")
+            patch.setattr(operations, "_publish_journal", interrupted)
+            with pytest.raises(OSError, match="publish interrupted"):
+                operations.publish((pending,))
+        if missing:
+            read = ledger.read_records
+            def missing_record(keys, **kwargs):
+                for batch in read(keys, **kwargs):
+                    yield tuple(None for _ in batch)
+            monkeypatch.setattr(ledger, "read_records", missing_record)
+        else:
+            monkeypatch.setattr(execution, "BATCH_BYTES", 1)
+        expected = IntegrityError if missing else LimitExceededError
+        with pytest.raises(expected, match="missing a staged record" if missing else "recovery records exceed"):
+            operations.recover(pending.execution.execution_id)
+
+
 def test_large_opaque_values_use_the_streaming_path(tmp_path):
     with ExitStack() as stack:
         _, operations = setup(stack, tmp_path)
@@ -322,20 +382,20 @@ def test_huge_or_invalid_diagnostic_does_not_prevent_failure_accounting(tmp_path
         assert progress(ledger, seen[0])[-1]["status"] == "failed"
 
 
-def test_combined_journal_limit_records_incomplete_attempts_before_publication(tmp_path):
-    """A combined journal over the limit records both attempts incomplete, though each can still publish alone."""
+def test_combined_staging_limit_records_incomplete_attempts_before_publication(tmp_path):
+    """Oversized staging records both attempts incomplete; each can still publish alone."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         def producer(context):
             context.generate(core.InlineValue(value="x" * (5 * 1024**2)), label="large")
         prepared = [operations.prepare(definition(), request(f"request-{index}"), producer) for index in range(2)]
-        with pytest.raises(LimitExceededError, match="JSON value exceeds"):
+        with pytest.raises(LimitExceededError, match="metadata publication unit exceeds"):
             operations.publish(prepared)
         for item in prepared:
             assert progress(ledger, item.execution.execution_id)[-1]["status"] == "incomplete"
             assert next(ledger.read_records([("result", item.result.result_id)]))[0] is None
         # The completed producers remain publishable individually; they do not
-        # need another attempt merely because their combined journal was large.
+        # need another attempt merely because their combined batch was large.
         assert all(operations.publish((item,))[0] == item.result for item in prepared)
 
 

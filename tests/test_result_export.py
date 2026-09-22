@@ -90,6 +90,32 @@ def test_zero_work_successor_exports_complete_retained_population(retained, tmp_
         assert list(view.rows()) == before
 
 
+def test_export_repacks_artifacts_without_inline_values_or_unselected_rows(retained, tmp_path):
+    workspace, _ = retained
+    artifact = core.Entity(format_version=1, entity_id="prepared", entity_type="artifact",
+                           value=core.InlineValue(value={"label": "selected metadata", "items": [1, 2]}))
+    private = core.Entity(format_version=1, entity_id="private-artifact", entity_type="artifact",
+                          value=core.InlineValue(value={"secret": "unselected artifact bytes"}))
+    workspace.retain((artifact, private), unit_id="artifacts",
+                     roots=(("entity", "prepared"), ("entity", "private-artifact")))
+    destination = tmp_path / "artifact-export"
+    pin = export(workspace, destination, additional_roots=[("entity", "prepared")])
+    workspace.close()
+    workspace.path.rename(tmp_path / "unavailable-workspace")
+    with opened(destination, pin) as view:
+        assert view.record("entity", "prepared") == artifact
+        assert view.record("entity", "private-artifact") is None
+        assert list(view.rows())[0][0] == "document"
+    with sqlite3.connect(f"file:{destination}/ledger.sqlite?mode=ro", uri=True) as connection:
+        assert connection.execute("SELECT count(*) FROM records WHERE kind='entity' AND payload IS NOT NULL").fetchone() == (0,)
+        assert connection.execute("SELECT source_layer FROM records WHERE record_id='prepared'").fetchone()[0]
+    import pyarrow.parquet as parquet
+    payloads = [payload for path in (destination / "records").rglob("*.parquet")
+                for payload in parquet.read_table(path, columns=["record_json"]).column(0).to_pylist()]
+    assert any(b"selected metadata" in payload for payload in payloads)
+    assert all(b"unselected artifact bytes" not in payload for payload in payloads)
+
+
 def test_reader_checks_pin_producer_total_bound_and_exact_reference(retained, tmp_path):
     workspace, reference = retained
     destination = tmp_path / "export"

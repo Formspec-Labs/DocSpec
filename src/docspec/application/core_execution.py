@@ -5,7 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from uuid import uuid4
 
-from docspec.application.core_dependencies import CoreDependencies
+from docspec.application.core_dependencies import CoreDependencies, binding_key
 from docspec.application.core_publication import CorePublisher
 from docspec.application.core_reuse import CoreReuse, Resolution, ReuseRequest, selection_for
 from docspec.domain import core
@@ -31,6 +31,26 @@ def _snapshot_size(record):
 
 def _snapshot(record):
     return _snapshot_size(record)[0]
+
+
+def publication_records(session, journal):
+    """Read exact staged records; older journals contain their own record values."""
+    if journal["version"] == 1:
+        return tuple(_snapshot(record) for record in journal["records"])
+    keys = bounded_items((tuple(key) for key in journal["record_keys"]), limit=BATCH_ROWS)
+    records, size = [], 0
+    with owned_iterator(session.read_records(keys, include_unavailable_values=True)) as batches:
+        for batch in batches:
+            for row in batch:
+                if row is None or row.value is None:
+                    raise IntegrityError("publication journal is missing a staged record")
+                size += len(encode_record(row.value))
+                if size > BATCH_BYTES:
+                    raise LimitExceededError("publication recovery records exceed the 8 MiB limit")
+                records.append(row.value)
+    if len(records) != len(keys):
+        raise IntegrityError("publication journal is missing a staged record")
+    return tuple(records)
 
 
 # Leave space for the final Result, journal framing and a bounded diagnostic.
@@ -186,7 +206,7 @@ class OperationContext:
         self._prefetched_bytes = 0
         local = {record.entity_id for record in self.records if isinstance(record, core.Entity)}
         wanted = (identity for identity in identities if identity not in local)
-        with owned_iterator(self.session.ledger.read_records(("entity", identity) for identity in wanted)) as batches:
+        with owned_iterator(self.session.read_records(("entity", identity) for identity in wanted)) as batches:
             for batch in batches:
                 for row in batch:
                     if row is None or not row.available:
@@ -204,7 +224,7 @@ class OperationContext:
         if entity is None:
             entity = self._prefetched_entities.get(entity_id)
         if entity is None:
-            row = next(self.session.ledger.read_records([("entity", entity_id)]))[0]
+            row = next(self.session.read_records([("entity", entity_id)]))[0]
             if row is None or not row.available:
                 raise IntegrityError("operation input entity is unavailable")
             entity = row.value
@@ -406,7 +426,7 @@ class CoreOperations:
             return pending if isinstance(pending, SuspendedOperation) else self.publish((pending,), session=active)[0]
 
     def publish(self, prepared, *, session=None):
-        """Journal exact completed outputs, then use the common publisher once."""
+        """Store completed outputs once; journal their keys before publication."""
         requested = bounded_items(prepared, limit=BATCH_ROWS)
         if not requested:
             return ()
@@ -438,29 +458,33 @@ class CoreOperations:
         roots = [["result", item.result.result_id] for item in prepared]
         roots.extend(["selection", value["selection_id"]] for value in records if value["kind"] == "selection")
         unit_id = "operations:" + sha256_digest(canonical_value_bytes(sorted(executions)))
-        journal = {"format": "docspec-operation-publication", "version": 1, "unit_id": unit_id,
-                   "executions": list(executions), "records": records, "roots": roots}
+        journal = {"format": "docspec-operation-publication", "version": 2, "unit_id": unit_id,
+                   "executions": list(executions), "record_keys": [list(key) for key in unique], "roots": roots}
         with self._session(session) as active:
             try:
+                # Staging records does not claim successful retention. The same
+                # immutable records are checked and retained by the publisher.
+                self.ledger.commit(MetadataBatch("prepared:" + unit_id, records=tuple(records)))
                 content = active.retain_value(journal)
                 for identity in executions:
                     self.ledger.record_progress(unit_id + ":prepared:" + identity, identity, "progress", {"publication": record_value(content, core.ContentRef)})
             except BaseException as error:
                 self._publication_interrupted(journal, error)
                 raise
-            self._publish_journal(active, journal)
+            self._publish_journal(active, journal, records=records)
         return tuple(item.result for item in requested)
 
-    def _publish_journal(self, session, journal):
+    def _publish_journal(self, session, journal, *, records=None):
         """Publish one completed journal, then index dependency evidence for its selected results."""
-        batch = MetadataBatch(journal["unit_id"], records=tuple(journal["records"]), retained=tuple(tuple(key) for key in journal["roots"]))
         try:
+            records = publication_records(session, journal) if records is None else records
+            batch = MetadataBatch(journal["unit_id"], records=tuple(records), retained=tuple(tuple(key) for key in journal["roots"]))
             session.publish(batch)
             dependencies = CoreDependencies()
-            selected_results = {record["selected_result_id"] for record in journal["records"] if record["kind"] == "selection"}
-            for record in journal["records"]:
-                if record["kind"] == "result" and record["result_id"] in selected_results:
-                    dependencies.index_result(session, record["result_id"])
+            values = [record_value(record) for record in records]
+            selected_results = {record["selected_result_id"] for record in values if record["kind"] == "selection"}
+            dependencies.index_results(session, (record["result_id"] for record in values
+                if record["kind"] == "result" and record["result_id"] in selected_results))
         except BaseException as error:
             self._publication_interrupted(journal, error)
             raise
@@ -489,11 +513,12 @@ class CoreOperations:
         with self._session(session) as active:
             journal = self._read_json(active, content, "operation publication")
             journal = recovery_document(journal, "publication", execution_id)
-            results = [record for record in journal["records"] if record["kind"] == "result" and record["execution_id"] == execution_id]
+            records = publication_records(active, journal)
+            results = [record for record in records if isinstance(record, core.Result) and record.execution_id == execution_id]
             if len(results) != 1:
                 raise IntegrityError("publication journal must identify one result for the requested attempt")
-            self._publish_journal(active, journal)
-            return _snapshot(results[0])
+            self._publish_journal(active, journal, records=records)
+            return results[0]
 
     def run(self, definition, request, producer, *, input_records=(), capture_origin=None, session=None):
         """Prepare and publish one operation inside a single session."""
@@ -555,53 +580,57 @@ class CoreOperations:
                     request, request_size = _snapshot_size(call.request)
                     reuse = ReuseRequest(definition, request, call.selection_id, call.target, call.reuse_policy, call.output_labels)
                     yield call, reuse, definition_size + request_size
-        with self._session(session) as active, owned_iterator(bounded_rows(described(), size=lambda item: item[2], max_rows=32)) as groups:
+        # Amortize Parquet writes across a bounded group; the byte budget and
+        # generated-record limits still split unusually large operations.
+        with self._session(session) as active, owned_iterator(bounded_rows(described(), size=lambda item: item[2], max_rows=128)) as groups:
             for group in groups:
-                reuse = CoreReuse()
-                if len({call.selection_id for call, _, _ in group}) != len(group):
-                    raise IntegrityError("bulk resolution requires distinct selection identities within a batch")
-                for call, wanted, _ in group:
-                    if call.input_records:
-                        active.publish(MetadataBatch("inputs:" + call.selection_id,
-                            records=(wanted.definition, wanted.request, *bounded_items(call.input_records, limit=BATCH_ROWS - 2)),
-                            retained=(("request", wanted.request.request_id),)))
-                eligible = tuple(wanted for call, wanted, _ in group if not call.fresh)
-                found = iter(reuse.choose_many(active, eligible)) if eligible else iter(())
-                choices = [reuse.existing(active, wanted) if call.fresh else next(found) for call, wanted, _ in group]
-                pending, pending_bytes, pending_records = [], 0, 0
-                def flush():
-                    nonlocal pending_bytes, pending_records
-                    if pending:
-                        ready = tuple(pending)
-                        pending.clear()
-                        pending_bytes, pending_records = 0, 0
-                        self.publish(ready, session=active)
-                try:
-                    for ordinal, (call, wanted, _) in enumerate(group):
-                        if choices[ordinal] is not None:
-                            continue
-                        intent = snapshot_json_value({"selection_id": call.selection_id,
-                            "target": record_value(call.target, core.Origin),
-                            "output_labels": None if call.output_labels is None else list(call.output_labels)})
-                        prepared = self.prepare(wanted.definition, wanted.request, call.producer,
-                            capture_origin=call.capture_origin, session=active, selection=intent)
-                        if isinstance(prepared, SuspendedOperation):
-                            choices[ordinal] = prepared
-                            continue
-                        count = len(prepared.records) + 1
-                        size = sum(len(encode_record(record)) for record in (*prepared.records, prepared.result))
-                        if pending and (pending_records + count > BATCH_ROWS // 2 or pending_bytes + size > BATCH_BYTES - 2 * _CONTROL_RESERVE):
-                            flush()
-                        pending.append(prepared)
-                        pending_bytes += size
-                        pending_records += count
-                        choices[ordinal] = Resolution(next(record for record in prepared.records if isinstance(record, core.Selection)), prepared.result)
-                    flush()
-                except BaseException:
-                    # No completed producer is lost merely because a sibling failed.
-                    flush()
-                    raise
-                yield from choices
+                keys = (binding_key(binding) for _, wanted, _ in group for binding in wanted.request.inputs)
+                with active.record_window(keys):
+                    reuse = CoreReuse()
+                    if len({call.selection_id for call, _, _ in group}) != len(group):
+                        raise IntegrityError("bulk resolution requires distinct selection identities within a batch")
+                    for call, wanted, _ in group:
+                        if call.input_records:
+                            active.publish(MetadataBatch("inputs:" + call.selection_id,
+                                records=(wanted.definition, wanted.request, *bounded_items(call.input_records, limit=BATCH_ROWS - 2)),
+                                retained=(("request", wanted.request.request_id),)))
+                    eligible = tuple(wanted for call, wanted, _ in group if not call.fresh)
+                    found = iter(reuse.choose_many(active, eligible)) if eligible else iter(())
+                    choices = [reuse.existing(active, wanted) if call.fresh else next(found) for call, wanted, _ in group]
+                    pending, pending_bytes, pending_records = [], 0, 0
+                    def flush():
+                        nonlocal pending_bytes, pending_records
+                        if pending:
+                            ready = tuple(pending)
+                            pending.clear()
+                            pending_bytes, pending_records = 0, 0
+                            self.publish(ready, session=active)
+                    try:
+                        for ordinal, (call, wanted, _) in enumerate(group):
+                            if choices[ordinal] is not None:
+                                continue
+                            intent = snapshot_json_value({"selection_id": call.selection_id,
+                                "target": record_value(call.target, core.Origin),
+                                "output_labels": None if call.output_labels is None else list(call.output_labels)})
+                            prepared = self.prepare(wanted.definition, wanted.request, call.producer,
+                                capture_origin=call.capture_origin, session=active, selection=intent)
+                            if isinstance(prepared, SuspendedOperation):
+                                choices[ordinal] = prepared
+                                continue
+                            count = len(prepared.records) + 1
+                            size = sum(len(encode_record(record)) for record in (*prepared.records, prepared.result))
+                            if pending and (pending_records + count > BATCH_ROWS // 2 or pending_bytes + size > BATCH_BYTES - 2 * _CONTROL_RESERVE):
+                                flush()
+                            pending.append(prepared)
+                            pending_bytes += size
+                            pending_records += count
+                            choices[ordinal] = Resolution(next(record for record in prepared.records if isinstance(record, core.Selection)), prepared.result)
+                        flush()
+                    except BaseException:
+                        # No completed producer is lost merely because a sibling failed.
+                        flush()
+                        raise
+                    yield from choices
 
     def run_many(self, calls, *, map_operations=map):
         """Stream direct calls through the configured bounded worker owner."""

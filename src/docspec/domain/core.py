@@ -319,6 +319,25 @@ class DependencyComparison(Fixed, kw_only=True):
     digest: Digest
 
 
+class ReferencedDependencyComparison(Fixed, tag="DependencyComparison", kw_only=True):
+    """Comparison evidence that refers to its already-retained definition.
+
+    Corrected resources retain the historical effective values only when they
+    differ from the original definition. None means use the original resources.
+    """
+
+    format: Literal["docspec-dependency-comparison"] = "docspec-dependency-comparison"
+    version: Literal[2] = 2
+    result_id: Identifier
+    evidence_version: Count
+    definition_id: Identifier
+    definition_digest: Digest
+    resources: tuple[Resource, ...] | None = None
+    dependencies: tuple[EvaluatedDependency, ...]
+    evidence_ids: tuple[Identifier, ...]
+    digest: Digest
+
+
 class DependencyEvidence(Record, tag="dependency_evidence", kw_only=True):
     """Append evidence; preserve the originally recorded dependency description."""
 

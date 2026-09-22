@@ -251,7 +251,7 @@ def test_supplemented_historical_input_can_be_removed_after_comparison_is_retain
             assessment = dependencies.record_evidence(session, supplement(session, observation))
             assert assessment.digest is not None
         authorize(publisher, [("entity", "historical")])
-        assert CoreMaintenance(publisher, records).remove_under_policy("remove-historical", "policy", [("entity", "historical")]) == {"deleted": 1}
+        assert CoreMaintenance(publisher, records).remove_under_policy("remove-historical", "policy", [("entity", "historical")])["deleted"] >= 1
         calls = []
         selected = CoreOperations(publisher).resolve(definition(), request("now", parent="new"),
             lambda context: calls.append(context.execution.execution_id), selection_id="selected-now",

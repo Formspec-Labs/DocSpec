@@ -90,6 +90,29 @@ def test_lookup_selects_one_membership_and_occurrence_without_readmission(tmp_pa
         assert selected == [("core-membership", ["keep"]), ("core-entities", [expected])]
 
 
+def test_scoped_values_use_one_bounded_address_group_and_preserve_pin(tmp_path, monkeypatch):
+    _fixture(tmp_path)
+    with CoreWorkspace(tmp_path, create=False) as workspace, workspace.open_state("selected") as reader:
+        pin = reader.pin
+        full = {row[0]: row for row in reader.values()}
+        scopes = []
+        original = workspace.states.relation
+        @contextmanager
+        def observe(*args, **kwargs):
+            scopes.append(kwargs.get("scope"))
+            with original(*args, **kwargs) as relation:
+                yield relation
+        monkeypatch.setattr(workspace.states, "relation", observe)
+        monkeypatch.setattr(workspace.records, "admit", lambda *args, **kwargs: pytest.fail("source readmitted"))
+        assert list(reader.values(member_keys=["update"])) == [full["update"]]
+        assert scopes == [("update",)] and reader.pin == pin
+        assert list(reader.values(member_keys=[])) == []
+        with pytest.raises(LookupError, match="does not exist"):
+            list(reader.values(member_keys=["missing"]))
+        with pytest.raises(ValueError, match="distinct"):
+            list(reader.values(member_keys=["keep", "keep"]))
+
+
 def test_fresh_process_reuses_published_semantics_and_checks_pinned_bytes(tmp_path):
     _fixture(tmp_path)
     with CoreWorkspace(tmp_path, create=False) as workspace, workspace.open_state("selected") as reader:

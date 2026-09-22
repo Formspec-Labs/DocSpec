@@ -37,9 +37,21 @@ refuses the read. Stage disposable index input before adopting it. A second
 matching selection stays visible; the consuming product decides whether equal
 results can be combined and must handle competing choices explicitly.
 
+For a bounded update, pass `selection_ids=(choice.selection.selection_id, ...)`
+from the resolutions that the producer returned. This reads those exact retained
+choices directly, even when an older result for the same member remains available.
+The subset gets its own pin; ID order does not change it. Missing, unavailable or
+foreign choices refuse. The default still exposes all competing choices and
+keeps its existing pin format. Count and byte bounds apply to the explicit IDs
+and to each group of selection/request descriptions.
+
 `reader.source` is the already-admitted original `CoreStateReader`. Use its
 `value_relation`, `values`, or `read_value` inside this same context to join or
 retrieve original values without admitting the source state a second time.
+`reader.source.values(member_keys=(...))` reads a bounded affected-member group
+through the native address lookup. An empty group yields nothing; a missing
+requested member raises `LookupError`. The source pin continues to identify the
+whole immutable state.
 
 Missing retained evidence raises `IntegrityError`; stale source/dependency or
 selection-set evidence raises `StaleBaseError`. Opaque bytes raise

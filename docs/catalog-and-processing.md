@@ -79,11 +79,15 @@ the resulting member contains its sealed identity and settings. Use the
 Catalog build and verification commands live in
 [`cli/source_catalog.py`](../src/docspec/cli/source_catalog.py).
 
-Federal Register policy `1.1.0` accepts source schema `1.1` and selects the first
+Federal Register policy `1.2.0` accepts source schema `1.1` and selects the first
 usable family: publisher-stated XML, body HTML, landing-page HTML, then PDF.
 All offered families and source fields remain evidence; `html_url` remains the
 normalized landing-page reference. HTML/PDF are alternatives when XML is absent,
 not automatic retries after an XML download fails. No XML URL is constructed.
+Agency normalization uses an explicit publisher slug or numeric ID. A printed
+`raw_name` without either stays in the original facts and unparseable-field
+evidence; it no longer becomes an agency identifier. This changes future
+catalog policy output, not already retained catalogs.
 Regulations.gov policy `1.3.0` still uses raw schema `1.0` for its own records and
 requires schema `1.1` for its optional Federal Register lookup. Previous policy
 members are refused; rebuild them under the installed policy before new runs.

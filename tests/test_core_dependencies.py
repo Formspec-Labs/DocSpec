@@ -8,9 +8,10 @@ import pytest
 from docspec.application.core_dependencies import CoreDependencies, corresponds
 from docspec.domain import core
 from docspec.domain.core_admission import record_value
+from docspec.domain.identity import canonical_value_bytes, sha256_digest
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError, StaleBaseError, StateTransitionError
-from docspec.ports.core_ledger import MetadataBatch
+from docspec.ports.core_ledger import MetadataBatch, MetadataLink
 from tests.test_core_selections import fields, setup
 
 
@@ -34,10 +35,10 @@ def retain(session, identity, value):
     session.publish(MetadataBatch("retain:" + identity, records=(entity,), retained=(("entity", identity),)))
 
 
-def original(session, *, result_id="result", uncertain=False, requested=None):
+def original(session, *, result_id="result", uncertain=False, requested=None, operation=None):
     """Publish one operation/request/execution/result set and return the operation and request."""
     requested = request() if requested is None else requested
-    operation = definition(uncertain=uncertain)
+    operation = definition(uncertain=uncertain) if operation is None else operation
     execution = core.Execution(format_version=1, execution_id=result_id + ":execution", request_id=requested.request_id)
     result = core.Result(format_version=1, result_id=result_id, execution_id=execution.execution_id,
                          outcome=core.Outcome(status="success", value="empty"))
@@ -64,6 +65,26 @@ def supplement(session, observation, *, identity="supplement", supersedes="omiss
 def candidates(ledger, digest):
     """List result ids the ledger indexes under one correspondence digest, preserving order."""
     return [item.result_id for batch in ledger.find_candidates([("lookup", digest)]) for item in batch]
+
+
+def test_comparison_values_share_one_bounded_commit(tmp_path, monkeypatch):
+    with ExitStack() as stack:
+        _, ledger, _, _, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            retain(session, "old", {"url": "source"})
+            for identity in ("first", "second", "third"):
+                original(session, result_id=identity, requested=request(identity))
+            commit, sizes = ledger.commit, []
+            def counted(batch):
+                if batch.unit_id.startswith("dependencies:"):
+                    sizes.append(len(batch.records))
+                return commit(batch)
+            monkeypatch.setattr(ledger, "commit", counted)
+            results = CoreDependencies().index_results(session, ("first", "second", "third"))
+            assert sizes == [3]
+            assert candidates(ledger, results[0].digest) == ["first", "second", "third"]
+            repeated = CoreDependencies().index_results(session, ("first", "second", "third"))
+            assert [item.digest for item in repeated] == [item.digest for item in results]
 
 
 def test_metadata_only_change_and_material_change_use_the_same_selection_owner(tmp_path):
@@ -264,6 +285,76 @@ def comparison_artifacts(ledger):
     return [row.value for batch in ledger.read_records(keys) for row in batch]
 
 
+def _store_comparison(session, payload, *, unit_id):
+    identity = "comparison:" + sha256_digest(canonical_value_bytes(payload))
+    artifact = core.Entity(format_version=1, entity_id=identity, entity_type="artifact", value=core.InlineValue(value=payload))
+    session.ledger.commit(MetadataBatch(unit_id, records=(artifact,), retained=(("entity", identity),),
+        links=(MetadataLink(("result", payload["result_id"]), "comparison", str(payload["evidence_version"]), ("entity", identity)),)))
+    return artifact
+
+
+def test_comparison_references_one_large_definition_without_copying_configuration(tmp_path):
+    with ExitStack() as stack:
+        _, ledger, _, _, publisher = setup(stack, tmp_path)
+        service = CoreDependencies()
+        operation = msgspec.structs.replace(definition(), configuration={"retained-once": "x" * 32768})
+        with publisher.session() as session:
+            retain(session, "old", {"url": "u"})
+            original(session, operation=operation)
+            assessment = service.index_result(session, "result")
+            payload = comparison_artifacts(ledger)[0].value.value
+            assert payload["version"] == 2 and "definition" not in payload
+            assert payload["definition_id"] == operation.definition_id and payload["resources"] is None
+            assert payload["definition_digest"] == sha256_digest(canonical_value_bytes(record_value(operation)))
+            assert payload["digest"] == assessment.digest
+            assert len(canonical_value_bytes(payload)) < 2048
+            assert next(ledger.read_records([("operation_definition", operation.definition_id)]))[0].value == operation
+
+
+def test_v1_comparison_remains_readable_after_input_removal_and_v2_reindex(tmp_path, monkeypatch):
+    with ExitStack() as stack:
+        _, ledger, _, selections, publisher = setup(stack, tmp_path)
+        service = CoreDependencies()
+        with publisher.session() as session:
+            retain(session, "old", {"url": "u"})
+            original(session)
+            before = service.assess_result(session, "result")
+            records, _, _ = service._snapshot(before, "result")
+            old = dict(records[0].value.value)
+            old.update(version=1, definition=record_value(before.effective_definition))
+            for field in ("definition_id", "definition_digest", "resources"):
+                del old[field]
+            legacy = _store_comparison(session, old, unit_id=f"dependencies:result:0:{before.digest}")
+        remove_input(ledger, publisher)
+        monkeypatch.setattr(selections, "binding_evidence", lambda *args: pytest.fail("removed input must not be evaluated"))
+        with publisher.session() as session:
+            assert corresponds(before, service.assess_result(session, "result"))
+            assert service.index_result(session, "result").digest == before.digest
+            snapshots = comparison_artifacts(ledger)
+            assert {item.value.value["version"] for item in snapshots} == {1, 2}
+            assert next(item for item in snapshots if item.entity_id == legacy.entity_id) == legacy
+            assert service.index_result(session, "result").digest == before.digest
+            assert len(comparison_artifacts(ledger)) == 2
+
+
+@pytest.mark.parametrize("field,value", [("definition_id", "another-definition"),
+    ("definition_digest", "sha256:" + "0" * 64),
+    ("resources", [record_value(core.Resource(label="source", description={"changed": True}, certainty="established"), core.Resource)])])
+def test_comparison_checks_retained_definition_pin_and_effective_resource_fingerprint(tmp_path, field, value):
+    with ExitStack() as stack:
+        _, _, _, _, publisher = setup(stack, tmp_path)
+        service = CoreDependencies()
+        with publisher.session() as session:
+            retain(session, "old", {"url": "u"})
+            original(session)
+            assessment = service.assess_result(session, "result")
+            records, _, _ = service._snapshot(assessment, "result")
+            payload = dict(records[0].value.value) | {field: value}
+            _store_comparison(session, payload, unit_id="different-comparison")
+            with pytest.raises(IntegrityError, match="definition differs|fingerprint differs"):
+                service.assess_result(session, "result")
+
+
 def test_evaluated_comparison_survives_input_byte_removal_and_reopen(tmp_path, monkeypatch):
     """The indexed comparison snapshot answers after the input's bytes are removed and the store reopened."""
     with ExitStack() as stack:
@@ -315,6 +406,7 @@ def test_new_omission_blocks_old_snapshot_and_resource_correction_reuses_unchang
             snapshots = comparison_artifacts(ledger)
             current = next(artifact for artifact in snapshots if artifact.value.value["evidence_version"] == 2)
             assert current.value.value["evidence_ids"] == ["omission", "supplement"]
+            assert current.value.value["resources"] == [record_value(resource, core.Resource)]
             assert ("entity", current.entity_id) in corrected.support_keys
             assert ("entity", "receipt") in corrected.support_keys
             assert ("dependency_evidence", "omission") in corrected.support_keys

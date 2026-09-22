@@ -7,6 +7,7 @@ import pyarrow as pa
 
 from docspec.ports.record_storage import bounded_batches, bounded_rows
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
+from docspec.adapters.storage.core_entities import ENTITY_SCHEMA, ENTITY_POLICY
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
 from docspec.domain.core_admission import AdmittedRecord, admit_record, encode_record, record_value
@@ -18,11 +19,9 @@ from docspec.ports.core_ledger import MetadataBatch, MetadataLink
 from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 
-_ENTITIES = RecordSchema("core-entities:1", ("kind", *core.Entity.__struct_fields__), "entity_id", "entity_id")
 _MEMBERS = RecordSchema("core-membership:1", ("kind", *core.Membership.__struct_fields__), "member_key", "member_key")
-_SCHEMAS = {"entities": _ENTITIES, "membership": _MEMBERS}
+_SCHEMAS = {"entities": ENTITY_SCHEMA, "membership": _MEMBERS}
 _POLICY = PartitionPolicy("core-keys:1", 1)
-_ENTITY_POLICY = PartitionPolicy("core-values:1", 1)
 _READY_STATE_LIMIT = 4
 
 
@@ -98,7 +97,7 @@ class CoreStateStorage:
         with owned_iterator(entities) as entity_source, owned_iterator(members) as member_source:
             entity_layer = self.records.retain_batches(
                 encoded_batches(_entity_rows(entity_source, session.generated_row), ENCODED_RECORD_SCHEMA, byte_column=2), layer_kind="core-entities",
-                schema=_ENTITIES, partition_policy=_ENTITY_POLICY, ordered=False,
+                schema=ENTITY_SCHEMA, partition_policy=ENTITY_POLICY, ordered=False,
             )
             def member_rows():
                 for member in member_source:
@@ -302,8 +301,8 @@ class CoreStateStorage:
             used = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS used_id").aggregate("used_id, min(member_key) AS first_key")
             entities = relations["entities"].join(used, "record_identity = used_id").order("first_key, record_identity").project("record_identity, partition_value, record_json")
             with closing(entities.to_arrow_reader(256)) as reader:
-                values = self.records.retain_batches(reader, layer_kind="core-entities", schema=_ENTITIES,
-                                                     partition_policy=_ENTITY_POLICY, ordered=False)
+                values = self.records.retain_batches(reader, layer_kind="core-entities", schema=ENTITY_SCHEMA,
+                                                     partition_policy=ENTITY_POLICY, ordered=False)
         self._match_members({"entities": values, "membership": members})
         content = self._state_content(session, values, members)
         # compact() already compared exact canonical rows. Transfer that scoped

@@ -353,7 +353,13 @@ def test_pending_publication_protects_adopted_inputs_and_generated_content(tmp_p
         generated_ref = RemovalContent("blobs", BlobRef(generated.locator, generated.digest, generated.byte_size, generated.media_type))
         journal = next(row["description"]["publication"] for row in progress(ledger, pending.execution.execution_id) if "publication" in row["description"])
         journal_ref = RemovalContent("blobs", BlobRef(journal["locator"], journal["digest"], journal["byte_size"], journal["media_type"]))
-        for ordinal, content in enumerate([generated_ref, journal_ref]):
+        staged_key = next(("entity", record.entity_id) for record in pending.records if isinstance(record, core.Entity))
+        staged = records_for(ledger, [staged_key])[0]
+        assert staged.value is not None and not staged.retained
+        layers = [layer for batch in ledger.source_layers(include=[staged_key], include_unretained=True) for layer in batch]
+        assert len(layers) == 1
+        layer_ref = RemovalContent("records", next(ref for ref in records.physical_references(layers[0]) if ref.locator.endswith(".parquet")))
+        for ordinal, content in enumerate([generated_ref, journal_ref, layer_ref]):
             with pytest.raises(IntegrityError, match="required by a retained commitment"):
                 maintenance.remove_under_policy("orphan-" + str(ordinal), "policy", orphan_content=[content])
         assert operations.recover(pending.execution.execution_id) == pending.result
@@ -382,7 +388,10 @@ def test_suspended_output_retention_requires_authorizing_the_attempt_too(tmp_pat
             maintenance.remove_under_policy("output", "policy", [output_key])
         reference = suspended.checkpoint
         content = RemovalContent("blobs", BlobRef(reference.locator, reference.digest, reference.byte_size, reference.media_type))
-        assert maintenance.remove_under_policy("abandon", "policy", keys, orphan_content=[content]) == {"deleted": 1}
+        files = [ref for batch in ledger.source_layers(include=[output_key]) for layer in batch for ref in records.physical_references(layer)]
+        assert files
+        assert maintenance.remove_under_policy("abandon", "policy", keys, orphan_content=[content])["deleted"] > 1
+        assert all(not (records.root / ref.locator).exists() for ref in files)
         assert records_for(ledger, [output_key])[0].available is False
         assert decode_canonical_json_value(next(ledger.read_progress(suspended.execution_id))[-1], label="progress")["status"] == "incomplete"
 

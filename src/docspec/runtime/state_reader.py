@@ -59,7 +59,7 @@ class CoreStateReader:
         return self._layers["membership"].reference.record_count
 
     @contextmanager
-    def relation(self):
+    def relation(self, *, member_keys=None):
         """Yield the admitted membership/occurrence join in the owning process.
 
         Columns are member_key, occurrence_id and canonical occurrence_record
@@ -67,13 +67,21 @@ class CoreStateReader:
         generated SQL is meaningful only while its input protection is held.
         """
         self._session._active()
-        with self._states.relation(self._session, self._state_id, layers=self._layers) as relation:
+        if member_keys is not None:
+            if (not isinstance(member_keys, (tuple, list)) or len(member_keys) > BATCH_ROWS
+                    or any(not isinstance(key, str) or not key for key in member_keys)
+                    or len(set(member_keys)) != len(member_keys)):
+                raise ValueError("member keys require a bounded sequence of distinct nonempty names")
+            if sum(map(len, member_keys)) > BATCH_BYTES or len(canonical_value_bytes(member_keys)) > BATCH_BYTES:
+                raise ValueError("member keys exceed the batch byte limit")
+            member_keys = tuple(member_keys)
+        with self._states.relation(self._session, self._state_id, scope=member_keys, layers=self._layers) as relation:
             yield relation
 
-    def batches(self):
+    def batches(self, *, member_keys=None):
         """Stream the same columns in deterministic order within shared bounds."""
-        with self.relation() as relation, closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
-            yield from bounded_batches(batches, byte_column="occurrence_record")
+        with self.relation(member_keys=member_keys) as relation, closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
+            yield from bounded_batches(batches, byte_column="occurrence_record", allow_null=member_keys is not None)
 
     @contextmanager
     def value_relation(self):
@@ -90,18 +98,27 @@ class CoreStateReader:
             yield relation.project("member_key, occurrence_id, "
                                    "json_extract(decode(occurrence_record), '/value/value') AS value")
 
-    def rows(self):
+    def rows(self, *, member_keys=None):
         """Stream detached (member key, Entity) pairs in deterministic order."""
-        with closing(self.batches()) as batches:
+        with closing(self.batches(member_keys=member_keys)) as batches:
             for batch in batches:
-                for key, payload in zip(batch.column("member_key").to_pylist(),
+                for key, identity, payload in zip(batch.column("member_key").to_pylist(),
+                                        batch.column("occurrence_id").to_pylist(),
                                         batch.column("occurrence_record").to_pylist(), strict=True):
                     self._session._active()
+                    if payload is None:
+                        if identity is not None:
+                            raise IntegrityError("state member occurrence payload is unavailable")
+                        raise LookupError("state member does not exist: " + key)
                     yield key, admit_record(payload)
 
-    def values(self):
-        """Stream (member key, occurrence identity, decoded value) in one pass."""
-        with closing(self.rows()) as rows:
+    def values(self, *, member_keys=None):
+        """Stream values, optionally selecting one bounded group of exact members.
+
+        An empty scope yields no rows. Missing requested members raise LookupError.
+        The source pin still describes the complete immutable state.
+        """
+        with closing(self.rows(member_keys=member_keys)) as rows:
             for key, entity in rows:
                 yield key, entity.entity_id, self._read_value(entity)
 

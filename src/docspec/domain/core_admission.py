@@ -255,11 +255,15 @@ class AdmittedRecord:
         return self._payload
 
     @property
-    def value(self) -> dict[str, Any]:
+    def record(self) -> core.CoreRecord:
         # Entry admission already established canonical bytes and semantics.
         # Native decoding detaches each reader and supplies record defaults,
         # without retaining or recursively copying another full Python tree.
-        return _plain(msgspec.json.decode(self._payload, type=core.CoreRecord))
+        return msgspec.json.decode(self._payload, type=core.CoreRecord)
+
+    @property
+    def value(self) -> dict[str, Any]:
+        return _plain(self.record)
 
 
 def record_parts(value: core.CoreRecord | dict[str, Any] | AdmittedRecord) -> tuple[dict[str, Any], bytes]:

@@ -121,8 +121,8 @@ def test_concurrent_head_change_keeps_published_branch_and_retry_does_not_overwr
         workspace.create("other", [("other", 3)])
         workspace.maintenance.select_current("initial", "data", ("state", "base"), None)
         publish = workspace.operations._publish_journal
-        def advance(session, journal):
-            publish(session, journal)
+        def advance(session, journal, **kwargs):
+            publish(session, journal, **kwargs)
             workspace.maintenance.select_current("other", "data", ("state", "other"), ("state", "base"))
         with monkeypatch.context() as patch:
             patch.setattr(workspace.operations, "_publish_journal", advance)

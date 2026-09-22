@@ -49,21 +49,57 @@ class CoreReuse:
 
     def existing(self, session, call):
         """Recover the particular prior choice; never rerun today's policy."""
-        row = self._record(session, ("selection", call.selection_id))
-        if row is None:
-            return None
-        selection = row.value
-        if (selection.request_id != call.request.request_id or selection.target != call.target
-                or (call.output_labels is not None and selection.output_labels != call.output_labels)):
-            raise IntegrityError("selection identity already describes another request or target")
-        for key, expected in ((("request", call.request.request_id), call.request),
-                              (("operation_definition", call.definition.definition_id), call.definition)):
-            stored = self._record(session, key)
-            if stored is None or encode_record(stored.value) != encode_record(expected):
-                raise IntegrityError("selection retry differs from its original request or definition")
-        session.validate(MetadataBatch("read:" + call.selection_id, retained=(("selection", call.selection_id),)))
-        result = self._record(session, ("result", selection.selected_result_id)).value
-        return Resolution(selection, result)
+        return self.existing_many(session, (call,))[0]
+
+    def existing_many(self, session, calls):
+        """Read exact prior choices in batches, retaining per-choice closure bounds."""
+        calls = bounded_items(calls, limit=BATCH_ROWS)
+        metadata_bytes = 0
+        def records(keys):
+            nonlocal metadata_bytes
+            found = {}
+            keys = tuple(dict.fromkeys(keys))
+            if not keys:
+                return found
+            with owned_iterator(session.read_records(keys)) as batches:
+                for batch in batches:
+                    for row in batch:
+                        if row is None:
+                            continue
+                        metadata_bytes += len(encode_record(row.value)) if row.value is not None else 0
+                        if metadata_bytes > BATCH_BYTES:
+                            raise LimitExceededError("exact reuse group exceeds its metadata byte limit")
+                        found[row.key] = row
+            return found
+        selections = records(("selection", call.selection_id) for call in calls)
+        present = tuple(call for call in calls if ("selection", call.selection_id) in selections)
+        descriptions = records(key for call in present for key in (
+            ("request", call.request.request_id), ("operation_definition", call.definition.definition_id)))
+        for call in present:
+            selection = selections[("selection", call.selection_id)].value
+            if (selection.request_id != call.request.request_id or selection.target != call.target
+                    or (call.output_labels is not None and selection.output_labels != call.output_labels)):
+                raise IntegrityError("selection identity already describes another request or target")
+            for key, expected in ((("request", call.request.request_id), call.request),
+                                  (("operation_definition", call.definition.definition_id), call.definition)):
+                stored = descriptions.get(key)
+                if stored is None or encode_record(stored.value) != encode_record(expected):
+                    raise IntegrityError("selection retry differs from its original request or definition")
+            # Recheck availability through the publisher's live ledger reads.
+            # Separate closures preserve the existing per-operation byte bound.
+            session.validate(MetadataBatch("read:" + call.selection_id, retained=(("selection", call.selection_id),)))
+        results = records(("result", row.value.selected_result_id) for row in selections.values())
+        choices = []
+        for call in calls:
+            stored = selections.get(("selection", call.selection_id))
+            if stored is None:
+                choices.append(None)
+                continue
+            result = results.get(("result", stored.value.selected_result_id))
+            if result is None or not result.retained or not result.available or result.value is None:
+                raise IntegrityError("exact selection result is unavailable")
+            choices.append(Resolution(stored.value, result.value))
+        return tuple(choices)
 
     @staticmethod
     def selection(call, result):
@@ -88,7 +124,8 @@ class CoreReuse:
                 raise LimitExceededError("reuse request group exceeds its metadata byte limit")
             call = ReuseRequest(admit_record(definition), admit_record(request), call.selection_id, call.target, call.policy, call.output_labels)
             prepared.append(call)
-            choices[ordinal] = self.existing(session, call)
+        choices = list(self.existing_many(session, prepared))
+        for ordinal, call in enumerate(prepared):
             if choices[ordinal] is None:
                 assessment = self.dependencies.assess(session, call.request, call.definition)
                 if assessment.adequate and assessment.digest is not None:

@@ -411,6 +411,11 @@ tables or equivalent set-based joins for large lookups instead of one query per
 request. Measure conversion, binding, query execution, and commit together.
 
 Centralize and batch metadata publication around SQLite's single-writer boundary.
+Entity payloads belong in the existing Parquet record store, including generated
+metadata, retained lookups and comparison artifacts. SQLite stores their pins and
+the operational metadata needed for atomic publication and reuse. Batch comparison
+artifacts together with the publication window to avoid a physical file per
+document; do not relocate every small control record into its own Iceberg write.
 Keep write transactions short; prepare content and bulk checks before acquiring
 the publication transaction, then enforce any concurrency-sensitive conditions
 inside it. Avoid per-record commits and per-source query round trips. See
@@ -575,6 +580,16 @@ references separate unless material. Frame values structurally; never concatenat
 unframed field text. Retain known-answer bytes and digests for each format version.
 Changes to accepted values, equivalence, or encoding require an explicit version;
 preserve the interpretation of still-retained formats.
+
+Retained dependency-comparison artifacts use version 2: each names the original
+retained operation definition and its canonical digest instead of copying the
+definition into every result. Only resources changed by historical supplements
+are stored as an override. Reading a comparison verifies that reference,
+reconstructs its historical effective definition, and checks the unchanged
+correspondence fingerprint. Version 1 artifacts remain readable without a
+rewrite. Ordinary exact-selection retries keep using their retained choices;
+explicitly reindexing an older result may add one version 2 comparison beside its
+original artifact, under a separate idempotent publication identity.
 
 Keep three identities distinct:
 

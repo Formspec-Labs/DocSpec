@@ -11,7 +11,7 @@ from docspec.domain.identity import OrderedJsonSequenceDigester, canonical_value
 from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, StaleBaseError, StateTransitionError, StateValueRelationUnavailable
 from docspec.ports.core_ledger import MetadataBatch
-from docspec.ports.record_storage import BATCH_ROWS
+from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 from docspec.runtime.state_reader import CoreStateReader
 
 
@@ -42,12 +42,22 @@ class SelectedOutputReader:
     retained source value; input and result content use their existing bounds.
     """
 
-    def __init__(self, session, states, state_id, *, definition_id, output_labels, expected_state_pin=None, expected_pin=None):
+    def __init__(self, session, states, state_id, *, definition_id, output_labels, expected_state_pin=None, expected_pin=None,
+                 selection_ids=None):
         require_text(definition_id, "operation definition identity")
         if (not isinstance(output_labels, tuple) or not output_labels or len(output_labels) > BATCH_ROWS
                 or any(not isinstance(label, str) or not label for label in output_labels)
                 or len(set(output_labels)) != len(output_labels)):
             raise ValueError("output labels require a bounded nonempty tuple of distinct names")
+        if selection_ids is not None and (
+                not isinstance(selection_ids, tuple) or not 0 < len(selection_ids) <= BATCH_ROWS
+                or any(not isinstance(key, str) or not key for key in selection_ids)
+                or len(set(selection_ids)) != len(selection_ids)):
+            raise ValueError("selection IDs require a bounded nonempty tuple of distinct names")
+        if selection_ids is not None and (sum(map(len, selection_ids)) > BATCH_BYTES
+                or len(canonical_value_bytes(selection_ids)) > BATCH_BYTES):
+            raise ValueError("selection IDs exceed the batch byte limit")
+        self.selection_ids = None if selection_ids is None else tuple(sorted(selection_ids))
         self._session, self._states = session, states
         self.source = CoreStateReader(session, states, state_id, expected_pin=expected_state_pin)
         self.state_id, self.state_pin = state_id, self.source.pin
@@ -75,25 +85,40 @@ class SelectedOutputReader:
         return row
 
     def _selections(self):
-        with owned_iterator(self._session.ledger.retained_records(kind="selection")) as batches:
+        rows = (self._session.ledger.retained_records(kind="selection") if self.selection_ids is None else
+                self._session.read_records(("selection", key) for key in self.selection_ids))
+        with owned_iterator(rows) as batches:
             for batch in batches:
                 self._session._active()
-                selected = []
+                selected, size = [], 0
                 for row in batch:
-                    if row is None or row.value is None:
+                    if row is None or row.value is None or not row.retained:
                         raise IntegrityError("retained selection description is unavailable")
                     selection = row.value
                     if selection.target.state_id != self.state_id:
+                        if self.selection_ids is not None:
+                            raise IntegrityError("explicit selected output belongs to another source state")
                         continue
                     request_row = self._stored(("request", selection.request_id), require_available=False)
                     request = request_row.value
                     if request.definition_id != self.definition_id:
+                        if self.selection_ids is not None:
+                            raise IntegrityError("explicit selected output belongs to another definition")
                         continue
                     labels = tuple(label for label in self.output_labels if label in selection.output_labels)
+                    if not labels and self.selection_ids is not None:
+                        raise IntegrityError("explicit selected output has none of the requested labels")
                     if labels:
                         if not row.available or not request_row.available:
                             raise IntegrityError("selected output selection or request is unavailable")
+                        row_size = len(canonical_value_bytes(record_value(selection))) + len(canonical_value_bytes(record_value(request)))
+                        if row_size > BATCH_BYTES:
+                            raise IntegrityError("selected output description exceeds the batch byte limit")
+                        if selected and size + row_size > BATCH_BYTES:
+                            yield selected
+                            selected, size = [], 0
                         selected.append((selection, request, labels, row.row_digest))
+                        size += row_size
                 if selected:
                     yield selected
 
@@ -114,8 +139,10 @@ class SelectedOutputReader:
 
         self._session._active()
         self._pin = None
-        digester = OrderedJsonSequenceDigester(prefix=("docspec-selected-outputs", 1, self.state_pin,
-                                                       self.definition_pin, list(self.output_labels)))
+        prefix = ("docspec-selected-outputs", 1, self.state_pin, self.definition_pin, list(self.output_labels))
+        if self.selection_ids is not None:
+            prefix += (list(self.selection_ids),)
+        digester = OrderedJsonSequenceDigester(prefix=prefix)
         dependencies = CoreDependencies()
         with closing(self._selections()) as groups:
             for group in groups:

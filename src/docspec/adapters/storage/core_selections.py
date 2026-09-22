@@ -486,6 +486,13 @@ class CoreSelectionStorage:
         selected = core.SelectedValue(format_version=1, selected_value_id=selected_value_id, definition=definition, origin=origin,
                                       value=value, member_origins=() if from_parent or not isinstance(definition, core.StateMembers) else value)
         key = "selected_value", selected_value_id
+        if isinstance(value, core.InlineValue):
+            with owned_iterator(session.read_records([key])) as batches:
+                existing = next(batches)[0]
+            # Exact retries preserve an older immutable inline description.
+            # New selections retain their literal bytes outside the ledger.
+            if existing is None or existing.value != selected:
+                selected = msgspec.structs.replace(selected, value=session.retain_value(value.value))
         computed = isinstance(definition, core.StateMembers) and not from_parent and origin == core.Origin(parent_entity_id=origin.parent_entity_id)
         if computed:
             payload = canonical_value_bytes(record_value(selected))

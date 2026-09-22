@@ -169,6 +169,9 @@ For verified continuation and publication recovery, use the same
 `CoreOperations.resume` and `recover` owner. Checkpoints and interrupted
 publication journals remain protected while the recorded operation is
 recoverable. A failed attempt remains visible even when a later attempt succeeds.
+Completed records are stored once in the ledger; new publication journals name
+their keys instead of copying output values. Publication still checks and retains
+those records atomically. Existing journals remain recoverable.
 
 ## Capture first and process later
 

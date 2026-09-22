@@ -19,6 +19,7 @@ import tempfile
 from typing import Any
 
 from docspec.adapters.locks import lock_descriptor
+from docspec.adapters.storage.core_entities import retain_entity_payloads
 from docspec.adapters.storage.files import _contained, _storage_root, _sync_parents
 from docspec.adapters.storage.provenance import PROVENANCE_SCHEMA, admit_provenance
 from docspec.ports.record_storage import bounded_rows
@@ -144,7 +145,11 @@ def _bind(connection, statement, rows):
 
 
 class LocalSqliteCoreLedger:
-    """SQLite implementation of the Core metadata ledger."""
+    """SQLite coordination metadata with entity bytes in the injected record store.
+
+    CoreWorkspace always supplies that store. Standalone metadata compositions
+    may omit it and retain the existing inline-record behavior.
+    """
 
     def __init__(self, path: Path, *, busy_timeout_ms: int = 5000, create: bool = True, record_storage: RecordStorage | None = None, read_only: bool = False) -> None:
         if type(busy_timeout_ms) is not int or busy_timeout_ms <= 0:
@@ -316,12 +321,13 @@ class LocalSqliteCoreLedger:
                             or check.execute("SELECT * FROM original." + table + " EXCEPT SELECT * FROM " + table).fetchone()):
                         raise IntegrityError("exported provenance index differs from its admitted result statements")
 
-    def export_snapshot(self, destination: Path, keys: Iterable[RecordKey], *, full: Iterable[RecordKey]) -> None:
+    def export_snapshot(self, destination: Path, keys: Iterable[RecordKey], *, full: Iterable[RecordKey], preserve_external: bool = False) -> None:
         """Copy a selected metadata scope, preserving original receipt versions.
 
         The exporter installs equivalent compact state representations afterward.
-        Explicit bulk entities become bounded inline rows; state populations are
-        copied through the existing bulk state writer instead of a member graph.
+        By default bulk entities become bounded inline rows. Exporters setting
+        preserve_external must copy or repack their exact external rows before
+        opening the snapshot. State populations use the existing state writer.
         """
         destination = Path(destination)
         if destination.exists():
@@ -345,7 +351,7 @@ class LocalSqliteCoreLedger:
             target.execute("DELETE FROM retention WHERE NOT EXISTS(SELECT 1 FROM selected s WHERE s.kind=retention.kind AND s.record_id=retention.record_id)")
             target.execute("DELETE FROM records WHERE NOT " + selected)
             target.execute("UPDATE retention SET available=0 WHERE kind IN ('entity','state','selected_value','state_representation','revision') AND NOT EXISTS(SELECT 1 FROM full_values f WHERE f.kind=retention.kind AND f.record_id=retention.record_id)")
-            for batch in self.read_records(target.execute("SELECT kind,record_id FROM selected WHERE kind='entity' ORDER BY record_id")):
+            for batch in (() if preserve_external else self.read_records(target.execute("SELECT kind,record_id FROM selected WHERE kind='entity' ORDER BY record_id"))):
                 for row in batch:
                     if row is not None and row.value is not None:
                         target.execute("UPDATE records SET payload=?,source_layer=NULL WHERE kind=? AND record_id=?",
@@ -390,6 +396,58 @@ class LocalSqliteCoreLedger:
                         ((ordinal + index, *row) for index, row in enumerate(chunk)),
                     )
                     ordinal += len(chunk)
+
+    def _external_entities(self, records, unit_id, receipt):
+        """Retain new entity bytes before SQL publication; reuse immutable pins."""
+        if self.read_only:
+            raise StateTransitionError("exported metadata is read-only")
+        entities = {key: row for key, row in records.items() if key[0] == "entity"}
+        if not entities:
+            return {}
+        references, pending, reusable = {}, dict(entities), []
+        with self._transaction() as connection:
+            committed = connection.execute("SELECT operation,digest FROM units WHERE unit_id=?", (unit_id,)).fetchone()
+            if committed is not None:
+                if committed != ("commit", sha256_digest(receipt)):
+                    raise IntegrityError("metadata update identity conflicts with its retained operation")
+                return {}
+            self._requests(connection, entities, names=("kind", "record_id"), normalize=_key)
+            previous = connection.execute(
+                "SELECT r.kind,r.record_id,r.row_digest,r.source_layer,t.available,l.reference FROM records r "
+                "JOIN wanted w USING(kind,record_id) LEFT JOIN retention t USING(kind,record_id) "
+                "LEFT JOIN record_layers l ON l.layer_id=r.source_layer")
+            for kind, identity, digest, layer_id, available, reference in previous:
+                key = kind, identity
+                row = entities[key]
+                if row[4] != digest:
+                    raise IntegrityError("metadata record conflicts with its immutable identity")
+                if layer_id is not None:
+                    reusable.append((key, row, layer_id, available, reference))
+        checked = {}
+        for key, row, layer_id, available, reference in reusable:
+            if reference not in checked:
+                try:
+                    self.record_storage.admitted(LayerRef.from_dict(decode_canonical_json_value(reference, label="record layer reference")))
+                    checked[reference] = None
+                except IntegrityError as error:
+                    checked[reference] = error
+            if checked[reference] is not None:
+                if available == 1:
+                    raise checked[reference]
+                continue
+            # A restaged value can still have its earlier unavailable retention
+            # row. Reuse its checked physical bytes without retaining it early.
+            records[key] = (*row[:2], None, row[3], row[4], layer_id, row[6])
+            references[layer_id] = reference
+            del pending[key]
+        if pending:
+            # commit() admitted these bytes; their keys already carry the entity IDs.
+            admitted = retain_entity_payloads(self.record_storage, ((key[1], row[2]) for key, row in pending.items()))
+            reference = admitted.reference
+            references[reference.layer_id] = _encode(reference.to_dict())
+            for key, row in pending.items():
+                records[key] = (*row[:2], None, row[3], row[4], reference.layer_id, row[6])
+        return references
 
     def commit(self, batch: MetadataBatch) -> bool:
         """Commit one bounded publication unit, returning False when its update identity was already committed."""
@@ -443,83 +501,85 @@ class LocalSqliteCoreLedger:
         })
         if size + len(receipt) + sum(map(_row_size, versions)) > BATCH_BYTES:
             raise LimitExceededError("metadata publication unit exceeds the 8 MiB limit")
-        with self.content_guard(), self._transaction(write=True) as connection:
-            if not self._unit(connection, batch.unit_id, "commit", receipt):
-                return False
-            connection.execute("CREATE TEMP TABLE incoming AS SELECT * FROM records WHERE 0")
-            if batch.record_layer is not None:
-                reference = _encode(batch.record_layer.to_dict())
-                existing = connection.execute("SELECT reference FROM record_layers WHERE layer_id=?", (batch.record_layer.layer_id,)).fetchone()
-                if existing is not None and existing[0] != reference:
-                    raise IntegrityError("record layer identity conflicts with its retained reference")
-                connection.execute("INSERT INTO record_layers VALUES (?,?) ON CONFLICT DO NOTHING", (batch.record_layer.layer_id, reference))
-            _bind(connection, "INSERT INTO incoming VALUES (?,?,?,?,?,?,?)", records.values())
-            if connection.execute(
-                "SELECT 1 FROM incoming i JOIN records r USING(kind,record_id) WHERE i.row_digest!=r.row_digest LIMIT 1"
-            ).fetchone():
-                raise IntegrityError("metadata record conflicts with its immutable identity")
-            connection.execute("CREATE TEMP TABLE expected (kind TEXT,record_id TEXT,version INTEGER)")
-            _bind(connection, "INSERT INTO expected VALUES (?,?,?)", versions)
-            if connection.execute(
-                "SELECT 1 FROM expected e LEFT JOIN retention r USING(kind,record_id) "
-                "WHERE r.available IS NOT 1 OR r.evidence_version!=e.version LIMIT 1"
-            ).fetchone():
-                raise StaleBaseError("metadata availability or dependency evidence changed")
-            existing_keys = set(connection.execute("SELECT r.kind,r.record_id FROM records r JOIN incoming i USING(kind,record_id)"))
-            connection.execute("CREATE TEMP TABLE new_evidence (result_id TEXT NOT NULL,evidence_id TEXT PRIMARY KEY)")
-            _bind(connection, "INSERT INTO new_evidence VALUES (?,?)", (
-                (result_id, evidence_id) for evidence_id, result_id in evidence.items() if ("dependency_evidence", evidence_id) not in existing_keys
-            ))
-            connection.execute("CREATE INDEX new_evidence_result ON new_evidence(result_id)")
-            connection.execute("INSERT INTO records SELECT * FROM incoming WHERE true ON CONFLICT DO NOTHING")
-            if batch.record_layer is not None:
-                # The immutable digest was checked above. A newly admitted
-                # physical copy may replace its earlier storage location without
-                # changing the entity or retaining a second SQLite payload.
+        with self.content_guard():
+            layers = ({batch.record_layer.layer_id: _encode(batch.record_layer.to_dict())} if batch.record_layer is not None else
+                      self._external_entities(records, batch.unit_id, receipt) if self.record_storage is not None else {})
+            with self._transaction(write=True) as connection:
+                if not self._unit(connection, batch.unit_id, "commit", receipt):
+                    return False
+                connection.execute("CREATE TEMP TABLE incoming AS SELECT * FROM records WHERE 0")
+                for layer_id, reference in layers.items():
+                    existing = connection.execute("SELECT reference FROM record_layers WHERE layer_id=?", (layer_id,)).fetchone()
+                    if existing is not None and existing[0] != reference:
+                        raise IntegrityError("record layer identity conflicts with its retained reference")
+                    connection.execute("INSERT INTO record_layers VALUES (?,?) ON CONFLICT DO NOTHING", (layer_id, reference))
+                _bind(connection, "INSERT INTO incoming VALUES (?,?,?,?,?,?,?)", records.values())
+                if connection.execute(
+                    "SELECT 1 FROM incoming i JOIN records r USING(kind,record_id) WHERE i.row_digest!=r.row_digest LIMIT 1"
+                ).fetchone():
+                    raise IntegrityError("metadata record conflicts with its immutable identity")
+                connection.execute("CREATE TEMP TABLE expected (kind TEXT,record_id TEXT,version INTEGER)")
+                _bind(connection, "INSERT INTO expected VALUES (?,?,?)", versions)
+                if connection.execute(
+                    "SELECT 1 FROM expected e LEFT JOIN retention r USING(kind,record_id) "
+                    "WHERE r.available IS NOT 1 OR r.evidence_version!=e.version LIMIT 1"
+                ).fetchone():
+                    raise StaleBaseError("metadata availability or dependency evidence changed")
+                existing_keys = set(connection.execute("SELECT r.kind,r.record_id FROM records r JOIN incoming i USING(kind,record_id)"))
+                connection.execute("CREATE TEMP TABLE new_evidence (result_id TEXT NOT NULL,evidence_id TEXT PRIMARY KEY)")
+                _bind(connection, "INSERT INTO new_evidence VALUES (?,?)", (
+                    (result_id, evidence_id) for evidence_id, result_id in evidence.items() if ("dependency_evidence", evidence_id) not in existing_keys
+                ))
+                connection.execute("CREATE INDEX new_evidence_result ON new_evidence(result_id)")
+                connection.execute("INSERT INTO records SELECT * FROM incoming WHERE true ON CONFLICT DO NOTHING")
+                if layers:
+                    # The immutable digest was checked above. A newly admitted
+                    # physical copy may replace its earlier storage location without
+                    # changing the entity or retaining a second SQLite payload.
+                    connection.execute(
+                        "UPDATE records SET payload=NULL,source_layer=(SELECT i.source_layer FROM incoming i WHERE i.kind=records.kind AND i.record_id=records.record_id) "
+                        "WHERE (kind,record_id) IN (SELECT kind,record_id FROM incoming WHERE source_layer IS NOT NULL)",
+                    )
+                else:
+                    # Restore reclaimed bulk rows from newly admitted inline bytes;
+                    # the original digest above still owns immutable identity.
+                    connection.execute(
+                        "UPDATE records SET payload=(SELECT i.payload FROM incoming i WHERE i.kind=records.kind AND i.record_id=records.record_id),source_layer=NULL "
+                        "WHERE source_layer IS NOT NULL AND (kind,record_id) IN (SELECT kind,record_id FROM incoming) "
+                        "AND EXISTS(SELECT 1 FROM retention t WHERE t.kind=records.kind AND t.record_id=records.record_id AND t.available=0)"
+                    )
+                admit_provenance(connection, (value for identity, value in results.items() if ("result", identity) not in existing_keys))
+                connection.execute("CREATE TEMP TABLE retaining (kind TEXT,record_id TEXT,PRIMARY KEY(kind,record_id))")
+                _bind(connection, "INSERT INTO retaining VALUES (?,?)", retained)
                 connection.execute(
-                    "UPDATE records SET payload=NULL,source_layer=? WHERE (kind,record_id) IN (SELECT kind,record_id FROM incoming)",
-                    (batch.record_layer.layer_id,),
+                    "INSERT INTO retention(kind,record_id,unit_id,available) SELECT kind,record_id,?,1 FROM retaining WHERE true "
+                    "ON CONFLICT(kind,record_id) DO UPDATE SET available=1,evidence_version=evidence_version+1 WHERE available=0",
+                    (batch.unit_id,),
                 )
-            else:
-                # Restore reclaimed bulk rows from newly admitted inline bytes;
-                # the original digest above still owns immutable identity.
+                if connection.execute(
+                    "SELECT 1 FROM retaining t JOIN records r USING(kind,record_id) WHERE r.kind='result' AND r.outcome!='success' LIMIT 1"
+                ).fetchone():
+                    raise IntegrityError("unsuccessful result cannot claim successful retention")
+                # Equivalence is checked by the publisher before this transaction.
+                # Only the preferred physical link moves; old records and content
+                # remain retained until the policy owner authorizes their removal.
+                _bind(connection, "DELETE FROM links WHERE owner_kind='state' AND owner_id=? AND relation='representation'",
+                                       ((identity,) for identity in preferred))
+                _bind(connection, "INSERT INTO links VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING", links)
+                if connection.execute(
+                    "SELECT 1 FROM new_evidence e LEFT JOIN retention r ON r.kind='result' AND r.record_id=e.result_id "
+                    "WHERE r.record_id IS NULL LIMIT 1"
+                ).fetchone():
+                    raise IntegrityError("dependency evidence requires a retained result")
                 connection.execute(
-                    "UPDATE records SET payload=(SELECT i.payload FROM incoming i WHERE i.kind=records.kind AND i.record_id=records.record_id),source_layer=NULL "
-                    "WHERE source_layer IS NOT NULL AND (kind,record_id) IN (SELECT kind,record_id FROM incoming) "
-                    "AND EXISTS(SELECT 1 FROM retention t WHERE t.kind=records.kind AND t.record_id=records.record_id AND t.available=0)"
+                    "UPDATE retention SET evidence_version=evidence_version+(SELECT count(*) FROM new_evidence WHERE result_id=retention.record_id) "
+                    "WHERE kind='result' AND record_id IN (SELECT result_id FROM new_evidence)"
                 )
-            admit_provenance(connection, (value for identity, value in results.items() if ("result", identity) not in existing_keys))
-            connection.execute("CREATE TEMP TABLE retaining (kind TEXT,record_id TEXT,PRIMARY KEY(kind,record_id))")
-            _bind(connection, "INSERT INTO retaining VALUES (?,?)", retained)
-            connection.execute(
-                "INSERT INTO retention(kind,record_id,unit_id,available) SELECT kind,record_id,?,1 FROM retaining WHERE true "
-                "ON CONFLICT(kind,record_id) DO UPDATE SET available=1,evidence_version=evidence_version+1 WHERE available=0",
-                (batch.unit_id,),
-            )
-            if connection.execute(
-                "SELECT 1 FROM retaining t JOIN records r USING(kind,record_id) WHERE r.kind='result' AND r.outcome!='success' LIMIT 1"
-            ).fetchone():
-                raise IntegrityError("unsuccessful result cannot claim successful retention")
-            # Equivalence is checked by the publisher before this transaction.
-            # Only the preferred physical link moves; old records and content
-            # remain retained until the policy owner authorizes their removal.
-            _bind(connection, "DELETE FROM links WHERE owner_kind='state' AND owner_id=? AND relation='representation'",
-                                   ((identity,) for identity in preferred))
-            _bind(connection, "INSERT INTO links VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING", links)
-            if connection.execute(
-                "SELECT 1 FROM new_evidence e LEFT JOIN retention r ON r.kind='result' AND r.record_id=e.result_id "
-                "WHERE r.record_id IS NULL LIMIT 1"
-            ).fetchone():
-                raise IntegrityError("dependency evidence requires a retained result")
-            connection.execute(
-                "UPDATE retention SET evidence_version=evidence_version+(SELECT count(*) FROM new_evidence WHERE result_id=retention.record_id) "
-                "WHERE kind='result' AND record_id IN (SELECT result_id FROM new_evidence)"
-            )
-            connection.execute(
-                "INSERT INTO links SELECT 'result',result_id,'evidence',evidence_id,'dependency_evidence',evidence_id FROM new_evidence"
-            )
-            _bind(connection, "INSERT INTO candidates(digest,result_id) VALUES (?,?) ON CONFLICT DO NOTHING", candidates)
-            return True
+                connection.execute(
+                    "INSERT INTO links SELECT 'result',result_id,'evidence',evidence_id,'dependency_evidence',evidence_id FROM new_evidence"
+                )
+                _bind(connection, "INSERT INTO candidates(digest,result_id) VALUES (?,?) ON CONFLICT DO NOTHING", candidates)
+                return True
 
     def is_committed(self, unit_id: str) -> bool:
         """Report whether an update identity is already committed."""
@@ -528,20 +588,25 @@ class LocalSqliteCoreLedger:
         with self._transaction() as connection:
             return connection.execute("SELECT 1 FROM units WHERE unit_id=?", (unit_id,)).fetchone() is not None
 
-    def read_records(self, keys: Iterable[RecordKey], *, include_values: bool = True) -> Iterator[tuple[StoredRecord | None, ...]]:
-        """Read records by key with availability, version and resolved values."""
+    def read_records(self, keys: Iterable[RecordKey], *, include_values: bool = True,
+                     include_unavailable_values: bool = False) -> Iterator[tuple[StoredRecord | None, ...]]:
+        """Read keys, statuses and exact values; recovery may read restaged bytes.
+
+        The recovery flag verifies physical values without changing retention or
+        availability. Ordinary reads omit reclaimed external values.
+        """
 
         with self._transaction() as connection:
             self._requests(connection, keys, names=("kind", "record_id"), normalize=_key)
             cursor = connection.execute(
-                "SELECT w.kind,w.record_id,r.payload,t.unit_id,t.available,t.evidence_version,r.row_digest,l.reference,r.byte_size,r.outcome "
+                f"SELECT w.kind,w.record_id,{'r.payload' if include_values else 'NULL'},t.unit_id,t.available,t.evidence_version,r.row_digest,l.reference,r.byte_size,r.outcome "
                 "FROM wanted w LEFT JOIN records r USING(kind,record_id) "
                 "LEFT JOIN retention t USING(kind,record_id) LEFT JOIN record_layers l ON l.layer_id=r.source_layer ORDER BY w.ordinal"
             )
             for rows in bounded_rows(cursor, size=lambda row: max(row[8] or 0, _row_size(row))):
                 external, payloads, payload_bytes = {}, {}, 0
                 for row in rows:
-                    if include_values and row[7] is not None and row[4] != 0:
+                    if include_values and row[7] is not None and (row[4] != 0 or include_unavailable_values):
                         external.setdefault(row[7], set()).add(row[1])
                 for encoded_reference, identities in external.items():
                     if self.record_storage is None:
@@ -552,7 +617,7 @@ class LocalSqliteCoreLedger:
                             payload_bytes += len(payload)
                             if payload_bytes > BATCH_BYTES:
                                 raise LimitExceededError("retained metadata understates its external row byte sizes")
-                            payloads[identity] = payload
+                            payloads[encoded_reference, identity] = payload
                 def resolved():
                     for row in rows:
                         if row[6] is None:
@@ -561,10 +626,10 @@ class LocalSqliteCoreLedger:
                         if not include_values:
                             yield StoredRecord((row[0], row[1]), None, row[3] is not None, bool(row[4]), row[5] or 0, row[6])
                             continue
-                        if row[7] is not None and row[4] == 0:
+                        if row[7] is not None and row[4] == 0 and not include_unavailable_values:
                             yield StoredRecord((row[0], row[1]), None, True, False, row[5] or 0, row[6])
                             continue
-                        payload = row[2] if row[7] is None else payloads.get(row[1])
+                        payload = row[2] if row[7] is None else payloads.get((row[7], row[1]))
                         if payload is None or len(payload) != row[8] or sha256_digest(payload) != row[6]:
                             raise IntegrityError("retained entity row is missing or differs from its identity")
                         value = admit_record(payload)
@@ -732,12 +797,20 @@ class LocalSqliteCoreLedger:
             for keys in bounded_rows(cursor, size=_row_size):
                 yield from self.read_records(keys)
 
-    def source_layers(self, *, exclude: Iterable[RecordKey] = (), include: Iterable[RecordKey] | None = None) -> Iterator[tuple[LayerRef, ...]]:
-        """Available canonical rows pin their physical source layers."""
+    def source_layers(self, *, exclude: Iterable[RecordKey] = (), include: Iterable[RecordKey] | None = None,
+                      include_unretained: bool = False) -> Iterator[tuple[LayerRef, ...]]:
+        """Available rows pin layers; recovery can include its exact staged keys.
+
+        Explicit recovery keys also cover restaged values whose older retention
+        row is still unavailable. Their journal owner verifies the actual bytes.
+        """
+        if include_unretained and include is None:
+            raise ValueError("unretained source layers require explicit included record keys")
         with self._transaction() as connection:
             self._requests(connection, exclude if include is None else include, names=("kind", "record_id"), normalize=_key)
             condition = "NOT EXISTS" if include is None else "EXISTS"
-            cursor = connection.execute("SELECT DISTINCT l.reference FROM records r JOIN retention t USING(kind,record_id) JOIN record_layers l ON l.layer_id=r.source_layer WHERE t.available=1 AND " + condition + "(SELECT 1 FROM wanted w WHERE w.kind=r.kind AND w.record_id=r.record_id)")
+            availability = "1" if include_unretained else "t.available=1"
+            cursor = connection.execute("SELECT DISTINCT l.reference FROM records r LEFT JOIN retention t USING(kind,record_id) JOIN record_layers l ON l.layer_id=r.source_layer WHERE " + availability + " AND " + condition + "(SELECT 1 FROM wanted w WHERE w.kind=r.kind AND w.record_id=r.record_id)")
             for rows in bounded_rows(cursor, size=_row_size):
                 yield tuple(LayerRef.from_dict(decode_canonical_json_value(row[0], label="record layer reference")) for row in rows)
 

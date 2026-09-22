@@ -7,13 +7,16 @@ import json
 import sqlite3
 from threading import Barrier
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
 from docspec.adapters.streams import BATCH_BYTES, BATCH_ROWS
-from docspec.domain.core import DependencyEvidence, Execution, Outcome, Result, RetentionPolicy, State
+from docspec.domain.core import DependencyEvidence, Entity, Execution, InlineValue, Outcome, Result, RetentionPolicy, State
+from docspec.domain.core_admission import encode_record
 from docspec.domain.identity import sha256_digest
+from docspec.domain.references import LayerRef
 from docspec.errors import IntegrityError, LimitExceededError, StaleBaseError, StateTransitionError
 from docspec.ports.core_ledger import MetadataBatch, MetadataLink
 
@@ -37,6 +40,219 @@ def result(identity, *, success=True):
 def records(ledger, *keys):
     """Read the given keys and flatten the batches into one entry per key."""
     return [row for batch in ledger.read_records(keys) for row in batch]
+
+
+class EntityStore:
+    """A supplied store that exposes write/read boundaries without native I/O."""
+    def __init__(self):
+        self.layers, self.writes, self.lookups = {}, 0, 0
+        self.before_write = lambda: None
+
+    @contextmanager
+    def admission_scope(self):
+        yield
+
+    def retain_batches(self, batches, **options):
+        import pyarrow as pa
+        self.before_write()
+        table = pa.Table.from_batches(list(batches))
+        self.writes += 1
+        identity = str(self.writes)
+        reference = LayerRef(identity, options['layer_kind'], options['schema'].schema_id,
+                             'test', identity, sha256_digest(identity.encode()), table.num_rows)
+        self.layers[reference] = table
+        return self.admitted(reference)
+
+    def admitted(self, reference):
+        if reference not in self.layers:
+            raise IntegrityError("missing record layer")
+        return SimpleNamespace(reference=reference)
+
+    def lookup_batches(self, reference, identities):
+        import pyarrow as pa
+        self.lookups += 1
+        table = self.layers[reference]
+        wanted = set(identities)
+        yield from table.filter(pa.array([key in wanted for key in table.column('record_identity').to_pylist()])).to_batches()
+
+
+def entity(identity, value):
+    return Entity(format_version=1, entity_id=identity, entity_type='artifact', value=InlineValue(value=value))
+
+
+def test_injected_record_store_keeps_entity_bytes_out_of_sqlite_and_reuses_pins(tmp_path):
+    store = EntityStore()
+    path = tmp_path / 'ledger.sqlite'
+    value = entity('same', {'source': 'literal metadata', 'unicode': 'é'})
+    batch = MetadataBatch('first', records=(value, result('same')), retained=(('entity', 'same'),))
+    with closing(LocalSqliteCoreLedger(path, record_storage=store)) as ledger:
+        def no_sql_write_lock():
+            with closing(sqlite3.connect(path, timeout=0)) as connection:
+                connection.execute('BEGIN IMMEDIATE')
+                assert connection.execute('SELECT count(*) FROM records').fetchone() == (0,)
+                connection.rollback()
+        store.before_write = no_sql_write_lock
+        assert ledger.commit(batch)
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT payload IS NULL,source_layer IS NOT NULL FROM records WHERE kind='entity'").fetchall() == [(1, 1)]
+            assert connection.execute("SELECT payload IS NOT NULL,source_layer IS NULL FROM records WHERE kind='result'").fetchall() == [(1, 1)]
+        read = records(ledger, ('entity', 'same'), ('result', 'same'), ('entity', 'same'))
+        assert [encode_record(row.value) for row in read] == [encode_record(value), encode_record(result('same')), encode_record(value)]
+        assert store.writes == 1
+        assert not ledger.commit(batch)
+        assert ledger.commit(replace(batch, unit_id='equal-new-unit'))
+        assert store.writes == 1
+        looked_up = store.lookups
+        statuses = next(ledger.read_records([('entity', 'same'), ('result', 'same')], include_values=False))
+        assert all(row.value is None for row in statuses) and store.lookups == looked_up
+        with pytest.raises(IntegrityError, match='immutable identity'):
+            ledger.commit(MetadataBatch('conflict', records=(entity('same', 'changed'),)))
+        assert store.writes == 1
+
+
+def test_external_entity_write_failure_never_publishes_sql_rows(tmp_path):
+    store = EntityStore()
+    def fail():
+        raise OSError('record write failed')
+    store.before_write = fail
+    with closing(LocalSqliteCoreLedger(tmp_path / 'ledger.sqlite', record_storage=store)) as ledger:
+        with pytest.raises(OSError, match='record write failed'):
+            ledger.commit(MetadataBatch('failed', records=(entity('e', 'data'),)))
+        assert not ledger.is_committed('failed') and records(ledger, ('entity', 'e')) == [None]
+
+
+def test_new_unit_restores_an_unretained_entity_after_staged_layer_cleanup(tmp_path):
+    store = EntityStore()
+    value = entity('e', 'interrupted before a recovery journal')
+    with closing(LocalSqliteCoreLedger(tmp_path / 'ledger.sqlite', record_storage=store)) as ledger:
+        ledger.commit(MetadataBatch('abandoned-stage', records=(value,)))
+        store.layers.clear()
+        ledger.commit(MetadataBatch('new-attempt-stage', records=(value,)))
+        staged = records(ledger, ('entity', 'e'))[0]
+        assert not staged.retained and not staged.available and encode_record(staged.value) == encode_record(value)
+        ledger.commit(MetadataBatch('publish', records=(value,), retained=(staged.key,)))
+        assert records(ledger, staged.key)[0].available and store.writes == 2
+
+
+def test_existing_inline_entity_moves_outside_sqlite_and_removed_bytes_restore(tmp_path):
+    path = tmp_path / 'ledger.sqlite'
+    value = entity('e', {'lookup': ['retained', 'values']})
+    with closing(LocalSqliteCoreLedger(path)) as ledger:
+        ledger.commit(MetadataBatch('legacy', records=(value,), retained=(('entity', 'e'),)))
+    store = EntityStore()
+    with closing(LocalSqliteCoreLedger(path, record_storage=store)) as ledger:
+        ledger.commit(MetadataBatch('externalize', records=(value,), retained=(('entity', 'e'),)))
+        first = next(iter(store.layers))
+        ledger.commit(MetadataBatch('policy', records=(RetentionPolicy(format_version=1, policy_id='p', description={}),)))
+        ledger.begin_removal('remove', 'p', [('entity', 'e')])
+        del store.layers[first]
+        assert records(ledger, ('entity', 'e'))[0].value is None
+        assert list(ledger.source_layers()) == []
+        ledger.commit(MetadataBatch('restore', records=(value,), retained=(('entity', 'e'),)))
+        restored = records(ledger, ('entity', 'e'))[0]
+        assert restored.available and restored.evidence_version == 2 and encode_record(restored.value) == encode_record(value)
+        assert store.writes == 2
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT payload IS NULL,source_layer!=? FROM records WHERE kind='entity'", (first.layer_id,)).fetchone() == (1, 1)
+
+
+def test_staged_external_entities_are_explicitly_recoverable_and_snapshot_stays_thin(tmp_path):
+    store = EntityStore()
+    with closing(LocalSqliteCoreLedger(tmp_path / 'ledger.sqlite', record_storage=store)) as ledger:
+        value = entity('e', 'staged output')
+        ledger.commit(MetadataBatch('stage', records=(value,)))
+        assert not records(ledger, ('entity', 'e'))[0].retained
+        assert list(ledger.source_layers()) == []
+        assert len(list(ledger.source_layers(include=[('entity', 'e')], include_unretained=True))[0]) == 1
+        with pytest.raises(ValueError, match='explicit'):
+            list(ledger.source_layers(include_unretained=True))
+        ledger.commit(MetadataBatch('publish', records=(value,), retained=(('entity', 'e'),)))
+        assert store.writes == 1
+        target = tmp_path / 'export.sqlite'
+        ledger.export_snapshot(target, [('entity', 'e')], full=[('entity', 'e')], preserve_external=True)
+        with closing(LocalSqliteCoreLedger(target, read_only=True, record_storage=store)) as snapshot:
+            assert encode_record(records(snapshot, ('entity', 'e'))[0].value) == encode_record(value)
+            with snapshot._transaction() as connection:
+                assert connection.execute('SELECT payload IS NULL FROM records').fetchall() == [(1,)]
+
+
+def test_explicit_entity_layer_does_not_write_a_second_copy(tmp_path):
+    from docspec.adapters.storage.core_entities import retain_entities
+    store = EntityStore()
+    value = entity('e', 'already retained')
+    layer = retain_entities(store, [value])
+    with closing(LocalSqliteCoreLedger(tmp_path / 'ledger.sqlite', record_storage=store)) as ledger:
+        ledger.commit(MetadataBatch('explicit', records=(value,), retained=(('entity', 'e'),), record_layer=layer.reference))
+        assert store.writes == 1 and encode_record(records(ledger, ('entity', 'e'))[0].value) == encode_record(value)
+
+
+def test_native_entity_storage_survives_reopen_without_retry_files(tmp_path):
+    from docspec.adapters.storage.records import IcebergRecordStorage
+    path, record_path = tmp_path / 'ledger.sqlite', tmp_path / 'records'
+    values = (entity('output', {'text': 'literal output'}), entity('comparison', {'digest': DIGEST}))
+    batch = MetadataBatch('native', records=(*values, result('control')), retained=tuple(('entity', value.entity_id) for value in values))
+    with closing(IcebergRecordStorage(record_path)) as store, closing(LocalSqliteCoreLedger(path, record_storage=store)) as ledger:
+        assert ledger.commit(batch)
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT count(DISTINCT source_layer),sum(payload IS NOT NULL) FROM records WHERE kind='entity'").fetchone() == (1, 0)
+    before = {p.relative_to(record_path): p.stat().st_size for p in record_path.rglob('*') if p.is_file()}
+    with closing(IcebergRecordStorage(record_path, create=False)) as store, closing(LocalSqliteCoreLedger(path, record_storage=store, create=False)) as ledger:
+        assert [encode_record(row.value) for row in records(ledger, *(('entity', value.entity_id) for value in values))] == [encode_record(value) for value in values]
+        assert not ledger.commit(batch)
+        assert ledger.commit(replace(batch, unit_id='native-equal-new-unit'))
+    assert {p.relative_to(record_path): p.stat().st_size for p in record_path.rglob('*') if p.is_file()} == before
+
+
+def test_native_removed_entity_restaging_recovers_after_publication_crash(tmp_path, monkeypatch):
+    from docspec.domain import core
+    from docspec.runtime import CoreWorkspace
+    value = entity('restored', {'original': 'exact retained bytes'})
+    policy = RetentionPolicy(format_version=1, policy_id='remove',
+                             description={'remove': [['entity', value.entity_id]], 'collect_unreferenced': True})
+    definition = core.OperationDefinition(format_version=1, definition_id='definition', implementation_id='fixture',
+        implementation_version='1', operation_kind='transformation', configuration={})
+    request = core.Request(format_version=1, request_id='request', definition_id='definition', inputs=(), dependencies=())
+    called = []
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.retain([value, policy], unit_id='original', roots=[('entity', value.entity_id), ('retention_policy', policy.policy_id)])
+        original_layer = next(workspace.ledger.source_layers())[0]
+        workspace.maintenance.remove_under_policy('removal', policy.policy_id, [('entity', value.entity_id)])
+        with pytest.raises(IntegrityError):
+            workspace.records.available(original_layer)
+        def producer(context):
+            called.append(True)
+            context.generate_record(value, label='restored')
+        prepared = workspace.operations.prepare(definition, request, producer)
+        commit = workspace.ledger.commit
+        def crash(batch):
+            if batch.unit_id.startswith('operations:'):
+                raise OSError('crash after staging')
+            return commit(batch)
+        with monkeypatch.context() as patch:
+            patch.setattr(workspace.ledger, 'commit', crash)
+            with pytest.raises(OSError, match='crash after staging'):
+                workspace.operations.publish([prepared])
+        ordinary = records(workspace.ledger, ('entity', value.entity_id))[0]
+        assert ordinary.retained and not ordinary.available and ordinary.value is None
+        with workspace.publisher.session() as session, session.record_window():
+            restored = next(session.read_records([ordinary.key], include_unavailable_values=True))[0]
+            assert not restored.available and restored.evidence_version == ordinary.evidence_version
+            assert encode_record(restored.value) == encode_record(value)
+            assert next(session.read_records([ordinary.key]))[0].value is None
+        staged_layer = next(workspace.ledger.source_layers(include=[ordinary.key], include_unretained=True))[0]
+        assert staged_layer != original_layer
+        with pytest.raises(IntegrityError, match='required by a retained commitment'):
+            from docspec.ports.core_ledger import RemovalContent
+            orphan = RemovalContent('records', next(workspace.records.physical_references(staged_layer)))
+            workspace.maintenance.remove_under_policy('blocked-orphan', policy.policy_id, orphan_content=[orphan])
+    with CoreWorkspace(tmp_path, create=False) as workspace:
+        before = {p.relative_to(tmp_path / 'records') for p in (tmp_path / 'records').rglob('*') if p.is_file()}
+        assert workspace.operations.recover(prepared.execution.execution_id) == prepared.result
+        restored = records(workspace.ledger, ('entity', value.entity_id))[0]
+        assert restored.available and encode_record(restored.value) == encode_record(value)
+        assert next(workspace.ledger.source_layers(include=[restored.key]))[0] == staged_layer
+        assert {p.relative_to(tmp_path / 'records') for p in (tmp_path / 'records').rglob('*') if p.is_file()} == before
+        assert called == [True]
 
 
 def retained_states(ledger, count=2):

@@ -15,15 +15,18 @@ from rulespec_artifacts import (ArtifactPin, LocalMemberSource, MemberDescriptor
 from docspec.adapters.storage.blobs import LocalContentAddressedBlobStore
 from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.adapters.storage.core_selections import CoreSelectionStorage
+from docspec.adapters.storage.core_entities import retain_entities
 from docspec.adapters.storage.files import _contained
 from docspec.adapters.storage.ledger import LocalSqliteCoreLedger
 from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_maintenance import CoreMaintenance
 from docspec.application.core_publication import CorePublisher
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, identity_digest
+from docspec.domain.core_admission import AdmittedRecord
 from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.core_ledger import MetadataBatch
+from docspec.ports.record_storage import BATCH_BYTES, bounded_rows
 from .io import ROOT_BYTES, MANIFEST_BYTES, MANIFEST_KEY, INDEX_KEY, require_limit, scratch, verified_open
 
 
@@ -67,6 +70,32 @@ class _CopyBlobs:
     def read(self, reference, **kwargs):
         self.copy(reference)
         yield from self.destination.read(reference, **kwargs)
+
+
+def _repack_entities(source, target, records, keys):
+    """Keep the selected available entity values in one streamed physical layer."""
+    def values():
+        with owned_iterator(keys) as selected, owned_iterator(source.read_records(key for key in selected if key[0] == "entity")) as batches:
+            for batch in batches:
+                for row in batch:
+                    if row is not None and row.available and row.value is not None:
+                        yield row.value
+    with owned_iterator(values()) as entities:
+        first = next(entities, None)
+        if first is None:
+            return
+        admitted = retain_entities(records, chain([first], entities))
+    def stored():
+        with owned_iterator(admitted.batches()) as batches:
+            for batch in batches:
+                for payload in batch.column("record_json").to_pylist():
+                    record = AdmittedRecord(payload)
+                    size = min(BATCH_BYTES, len(payload) + 2 * len(canonical_value_bytes(record.value["entity_id"])) + 160)
+                    yield record, size
+    with owned_iterator(bounded_rows(stored(), size=lambda item: item[1])) as batches:
+        for ordinal, batch in enumerate(batches):
+            target.commit(MetadataBatch(f"export-entities:{admitted.reference.layer_id}:{ordinal}",
+                records=tuple(item[0] for item in batch), record_layer=admitted.reference))
 
 
 def export_result(publisher, records, state_id, destination, *, producer: Producer, max_output_bytes: int, additional_roots=()) -> ArtifactPin:
@@ -133,7 +162,7 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                 return pin
             if destination.exists():
                 return existing_export()
-            publisher.ledger.export_snapshot(working / "ledger.sqlite", metadata_keys(), full=keys("full"))
+            publisher.ledger.export_snapshot(working / "ledger.sqlite", metadata_keys(), full=keys("full"), preserve_external=True)
             target_records = stack.enter_context(closing(IcebergRecordStorage(working / "records", catalog=records.catalog)))
             ledger = stack.enter_context(closing(LocalSqliteCoreLedger(working / "ledger.sqlite", record_storage=target_records)))
             total = 0
@@ -169,6 +198,9 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                     if row is not None and row.available and index.lookup_record("full", identity_digest(list(row.key))) is not None:
                         source_maintenance.inventory_record(CopyContent(), row.value, protected=True, scanned=scanned, entity_targets=set())
             source_maintenance.inventory_recovery(CopyContent(), execution_ids=(identity for kind, identity in keys() if kind == "execution"))
+            # Preserve exact entity values without copying unrelated rows from
+            # their source layer or reintroducing payloads into SQLite.
+            _repack_entities(publisher.ledger, ledger, target_records, keys("full"))
             with target.session() as session:
                 for kind, identity in keys("full"):
                     if kind == "state":
@@ -186,6 +218,8 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                     raise IntegrityError("export metadata checkpoint is busy")
                 if connection.execute("PRAGMA journal_mode=DELETE").fetchone()[0] != "delete":
                     raise IntegrityError("export metadata remains in write-ahead-log mode")
+                connection.execute("DELETE FROM record_layers WHERE layer_id NOT IN (SELECT source_layer FROM records WHERE source_layer IS NOT NULL)")
+                connection.commit()
                 connection.execute("VACUUM")
             (working / "ledger.sqlite.content.lock").unlink(missing_ok=True)
             (working / "ledger.sqlite-wal").unlink(missing_ok=True)
