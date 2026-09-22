@@ -12,7 +12,6 @@ from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.record_storage import BATCH_BYTES as BATCH_BYTES, BATCH_ROWS as BATCH_ROWS
 
 
-
 @contextmanager
 def staged_bytes(chunks, *, directory: Path | None, limit: int, max_bytes=None, expected_digest=None, expected_size=None):
     """Hash and sync exact input bytes once; remove staging on every exit path.
@@ -25,7 +24,7 @@ def staged_bytes(chunks, *, directory: Path | None, limit: int, max_bytes=None, 
     if expected_size is not None and (type(expected_size) is not int or expected_size < 0):
         raise ValueError("expected_size must be a non-negative integer")
     if type(limit) is not int or limit < 0:
-        raise ValueError("max_bytes must be a non-negative integer")
+        raise ValueError("limit must be a non-negative integer")
     if max_bytes is not None:
         if type(max_bytes) is not int or max_bytes < 0:
             raise ValueError("max_bytes must be a non-negative integer")

@@ -80,8 +80,6 @@ class LocalSqliteRecordWorkspace:
             raise RuntimeError("record workspace is not open")
         return self._connection
 
-
-
     def add_record(
         self,
         collection: str,
@@ -98,7 +96,7 @@ class LocalSqliteRecordWorkspace:
         payload = canonical_json_bytes(record)
         if len(payload) > self._max_record_bytes:
             raise LimitExceededError(
-                f"record record exceeds the {self._max_record_bytes}-byte limit"
+                f"record exceeds the {self._max_record_bytes}-byte limit"
             )
         connection = self._open_connection()
         existing = connection.execute(
@@ -112,7 +110,7 @@ class LocalSqliteRecordWorkspace:
             )
         if self._spooled_bytes + len(payload) > self._max_spooled_bytes:
             raise LimitExceededError(
-                f"record records exceed the {self._max_spooled_bytes}-byte spool limit"
+                f"records exceed the {self._max_spooled_bytes}-byte spool limit"
             )
         try:
             connection.execute(
@@ -122,8 +120,6 @@ class LocalSqliteRecordWorkspace:
         except sqlite3.Error as error:
             raise IntegrityError(f"record workspace could not spool a record: {error}") from error
         self._spooled_bytes += len(payload)
-
-
 
     def stream_records(self, collection: str) -> Iterator[dict[str, Any]]:
         """Stream one collection's records in identity order."""
@@ -143,7 +139,7 @@ class LocalSqliteRecordWorkspace:
                     )
                 )
                 if not isinstance(value, dict):
-                    raise IntegrityError("record record must be a JSON object")
+                    raise IntegrityError("record must be a JSON object")
                 yield value
 
     def lookup_record(self, collection: str, identity: str) -> dict[str, Any] | None:
@@ -165,7 +161,7 @@ class LocalSqliteRecordWorkspace:
             )
         )
         if not isinstance(value, dict):
-            raise IntegrityError("record record must be a JSON object")
+            raise IntegrityError("record must be a JSON object")
         return value
 
 
