@@ -978,7 +978,7 @@ The Core program above is complete. Tasks here are later decisions.
 
 ### C26 · Derive a keyed state in one operation
 
-**Depends on:** C25. **Status:** planned (2026-09-22).
+**Depends on:** C25. **Status:** implemented (2026-09-22).
 
 **Why:** SpicySearch's prepared metadata ran one operation per member through
 `resolve_many`. On a 100-record sample that added about 26 KB of ledger per record
@@ -1003,12 +1003,33 @@ base_state_id=None, removals=(), dataset=None)` by generalizing `upsert`:
 - `upsert` calls `derive` and keeps its definition, request and occurrence
   identities, so earlier batch retries return the same states.
 
+**Delivered implementation:** `docspec.application.core_ingestion.derive` freezes
+the ordered rows and removals into a digest-scoped rows state and one request that
+binds the base, caller inputs and rows. `upsert` now freezes its framing digest,
+names its unchanged definition, and delegates to `derive` under its own identity
+scope, preserving its stable definition, request and occurrence identities. The
+shared revision path composes `Put`/`Remove` edits through `compose_revision`; a
+base-less derive streams the rows into a fresh result state. Producer failure
+records the attempt without retaining a rows state.
+
 **Done when:** tests cover an initial derive, incremental puts and removals,
 exact retry, refusal of changed input under one batch ID, a stale dataset base,
 provenance readback from a derived state to its exact input pins, and unchanged
 `upsert` identities. The gate passes, [python-runs](python-runs.md) documents
 the API, and the release is 0.9.0. SpicySearch and Engine consume it through
 their [prepared metadata](../../spicyengine/PLAN.md#pm01) task.
+
+**Verified:** the focused
+[derivation suite](../../tests/test_core_derivation.py) and the retained
+[ingestion suite](../../tests/test_core_ingestion.py) pass together with the
+broader Core suites under the project gate. The derivation suite covers an
+initial derive and its provenance readback to the rows state and every lookup
+pin, incremental puts and removals sharing base files, removals-only revisions,
+dataset promotion and its stale-base refusal, retry recovery after interruption,
+refusal of changed rows, base, inputs, removals and order under one batch ID,
+and unchanged upsert definition, request and occurrence identities. Release
+0.9.0 and consumer cutover remain with the Engine
+[PM01](../../spicyengine/PLAN.md#pm01) gate.
 
 ## Coverage against the spec and plan
 

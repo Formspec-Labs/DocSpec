@@ -144,6 +144,47 @@ docspec state upsert --workspace ./workspace --base catalogue \
 Add `--dataset regulations` for guarded promotion. Discovery and downloading of
 publisher updates remain with the source adapter; this API imports supplied data.
 
+## Derive one keyed state in one operation
+
+Use `derive` when the rows are computed from retained inputs and should publish
+as one keyed state per batch. The caller supplies its own `OperationDefinition`
+and input bindings; source states and the base bind as `StateInput`s, and
+retained lookup values bind as `WholeInput`s. Retain each lookup value once
+beforehand (for example as a state member) so every derive batch reuses the
+same input:
+
+```python
+with CoreWorkspace(workspace_path) as workspace:
+    workspace.create("lookups", [("dockets", {"EPA-HQ-2026-0001": "Clean Air"})])
+    lookup_entity = dict(workspace.rows("lookups"))["dockets"]
+    definition = core.OperationDefinition(
+        format_version=1,
+        definition_id=stable_urn("core-derive-definition", ["docspec.metadata", "lookups:2026-09"]),
+        implementation_id="docspec.metadata", implementation_version="1",
+        operation_kind="transformation", configuration={"lookup": "lookups:2026-09"},
+    )
+    prepared = workspace.derive(
+        ((key, value) for key, value in prepared_rows),
+        batch_id="metadata-2026-09-22",
+        definition=definition,
+        inputs=(core.WholeInput(label="dockets", entity_id=lookup_entity.entity_id),),
+    )
+```
+
+Without a base the rows stream into one fresh keyed state. With `base_state_id=`
+the rows and `removals=()` become one `Revision` of `Put`/`Remove` edits that
+shares the base's files, within the same 8 MiB edit bound as `upsert`; callers
+split larger changes into separately identified batches and use each returned
+state as the next base. Each input and the rows state record their usage, and
+the derived state records derivation edges to every input pin.
+
+Repeat the same `batch_id`, definition, inputs, base, removals, dataset and rows
+in the same order to recover the exact result. A changed value, row order,
+removal, base or input under that ID is rejected. `dataset=` advances a current
+pointer with the same stale-base check as `upsert` and requires a base.
+`upsert` runs through `derive` and keeps its definition, request and occurrence
+identities.
+
 ## Execute and reuse work
 
 Use `workspace.operations.run(definition, request, producer)` for a fresh

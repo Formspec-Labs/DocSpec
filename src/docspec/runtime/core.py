@@ -75,6 +75,12 @@ class CoreWorkspace:
         from docspec.application.core_ingestion import upsert
         return upsert(self.operations, base_state_id, rows, batch_id=batch_id, dataset=dataset)
 
+    def derive(self, rows, *, batch_id, definition, inputs, base_state_id=None, removals=(), dataset=None):
+        """Publish one keyed state derived from source states and retained lookups."""
+        from docspec.application.core_ingestion import derive
+        return derive(self.operations, rows, batch_id=batch_id, definition=definition, inputs=inputs,
+                      base_state_id=base_state_id, removals=removals, dataset=dataset)
+
     def inspect(self, kind, identity, *, progress_limit=20):
         with self.publisher.session() as session:
             return inspect_record(session, (kind, identity), progress_limit=progress_limit)
