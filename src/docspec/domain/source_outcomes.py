@@ -54,4 +54,11 @@ def require_accepted_outcome(value: Mapping[str, Any] | None, accepted: frozense
         raise ValueError(f"source collection record outcome {value['recordOutcome']!r} is not accepted")
 
 
-__all__ = ["DEFAULT_ACCEPTED_RECORD_OUTCOMES", "RECORD_OUTCOMES"]
+__all__ = [
+    "DEFAULT_ACCEPTED_RECORD_OUTCOMES",
+    "MAX_SOURCE_DESCRIPTION_BYTES",
+    "RECORD_OUTCOMES",
+    "accepted_record_outcomes",
+    "collection_outcome",
+    "require_accepted_outcome",
+]
