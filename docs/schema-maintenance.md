@@ -19,7 +19,9 @@ schemas. Their admission gateway decodes canonical JSON with the shared Rulespec
 decoder, converts strictly to the declared types, and applies record-local
 semantic checks. Cross-record validity remains with the ledger admission owner.
 Payload schema checks follow JSON value-domain admission; a schema cannot widen
-the supported numeric or Unicode domain.
+the supported numeric or Unicode domain. A struct docstring surfaces as a
+`description` annotation in the generated schema, so treat a docstring edit on
+those declarations as schema-visible.
 
 ## Find the authoritative definition
 
