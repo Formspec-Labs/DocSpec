@@ -423,6 +423,32 @@ class CoreStateStorage:
             return {"older": older, "newer": newer, "counts": {name: counts.get(name, 0) for name in ("added", "removed", "changed")},
                     "sample": [dict(zip(("member_key", "older_occurrence", "newer_occurrence", "change", "value_changed"), row, strict=True)) for row in samples]}
 
+    @contextmanager
+    def changes(self, session, older, newer, *, older_layers, newer_layers):
+        """Yield newer's keyed rows at every key whose address differs from older.
+
+        Certified revision history narrows both memberships to edited keys;
+        otherwise one native outer join compares the compact memberships, as
+        ``compare`` does. Only differing addresses reach the payload join. A
+        removed key has a null occurrence.
+        """
+        with self.records._cursor() as cursor:
+            certified = self.changed_keys(session, newer, older, cursor)
+            memberships = {"old": older_layers["membership"], "new": newer_layers["membership"]}
+            with self.records.relations(memberships, cursor=cursor) as relations:
+                old = relations["old"].project("record_identity AS old_key, record_json AS old_member")
+                new = relations["new"].project("record_identity AS new_key, record_json AS new_member")
+                if certified is not None:
+                    old = old.join(certified, "old_key = changed_key", how="semi")
+                    new = new.join(certified, "new_key = changed_key", how="semi")
+                old.join(new, "old_key = new_key", how="outer").filter("old_member IS DISTINCT FROM new_member").project(
+                    "coalesce(old_key, new_key) AS wanted_key").create_view("state_change_input")
+                cursor.execute("CREATE TEMP TABLE state_changes AS SELECT * FROM state_change_input")
+                cursor.execute("DROP VIEW state_change_input")
+            with self.relation(session, newer, addresses=cursor.table("state_changes"), cursor=cursor,
+                               layers=newer_layers) as relation:
+                yield relation
+
     def resolve_membership(self, session, revision, *, full=False):
         """Validate every edit before reducing keys; write only the changed rows.
 

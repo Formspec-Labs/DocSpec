@@ -122,6 +122,35 @@ class CoreStateReader:
             for key, entity in rows:
                 yield key, entity.entity_id, self._read_value(entity)
 
+    def changes(self, older):
+        """Stream (member key, occurrence ID, value) where this state differs from ``older``.
+
+        Rows arrive in key order. An added or rewritten member carries its new
+        occurrence and value; a removed member yields ``(key, None, None)``.
+        Both readers must stay open. Cost follows the changed members when this
+        state descends from ``older`` through recorded revisions, and one
+        native pass over both memberships otherwise.
+        """
+        if not isinstance(older, CoreStateReader):
+            raise TypeError("changes require another open state reader")
+        self._session._active()
+        older._session._active()
+        with self._states.changes(self._session, older.state_id, self._state_id, older_layers=older._layers,
+                                  newer_layers=self._layers) as relation, \
+                closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
+            for batch in bounded_batches(batches, byte_column="occurrence_record", allow_null=True):
+                for key, identity, payload in zip(batch.column("member_key").to_pylist(),
+                                                  batch.column("occurrence_id").to_pylist(),
+                                                  batch.column("occurrence_record").to_pylist(), strict=True):
+                    self._session._active()
+                    if identity is None:
+                        yield key, None, None
+                    elif payload is None:
+                        raise IntegrityError("state member occurrence payload is unavailable")
+                    else:
+                        entity = admit_record(payload)
+                        yield key, entity.entity_id, self._read_value(entity)
+
     def lookup(self, member_key, *, occurrence_id=None):
         """Read one current member; an expected occurrence must match exactly."""
         self._session._active()

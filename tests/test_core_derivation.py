@@ -4,9 +4,12 @@ from hashlib import sha256
 
 import pytest
 
+from docspec.adapters.storage.core_states import CoreStateStorage
 from docspec.domain import core
+from docspec.domain.core_admission import record_value
 from docspec.domain.identity import canonical_value_bytes, stable_urn
-from docspec.errors import IntegrityError, StaleBaseError
+from docspec.errors import IntegrityError, LimitExceededError, StaleBaseError
+from docspec.ports.record_storage import BATCH_BYTES
 from docspec.runtime import CoreWorkspace
 from tests.support.iceberg_records import files
 
@@ -41,7 +44,7 @@ def result_for(workspace, request_id):
 
 
 def test_initial_derive_streams_one_state_without_a_base(tmp_path):
-    """Without a base, rows stream into one fresh keyed state; retry returns the same state."""
+    """Without a base, rows publish one fresh keyed state; retry returns the same state."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("source", [("a", 1)])
         binding, entity = lookup_binding(workspace, "source", "a")
@@ -54,6 +57,121 @@ def test_initial_derive_streams_one_state_without_a_base(tmp_path):
         assert result.outcome.outputs[0].entity_id == state.state_id
     with CoreWorkspace(tmp_path) as workspace:
         assert workspace.derive(rows, batch_id="initial", definition=definition(), inputs=(binding,)) == state
+
+
+def rows_state_id(workspace, batch_id):
+    """Return the digest-scoped rows state a derive request bound."""
+    request = next(workspace.ledger.read_records([("request", stable_urn("core-derive", batch_id) + ":request")]))[0].value
+    return next(item.state_id for item in request.inputs if item.label == "rows")
+
+
+def test_initial_derive_writes_rows_once_and_presents_them_as_the_result(tmp_path):
+    """Without a base the result reuses the rows state's files; no payload is written twice."""
+    with CoreWorkspace(tmp_path) as workspace:
+        state = workspace.derive([("one", {"title": "first"}), ("two", None)], batch_id="initial",
+                                 definition=definition(), inputs=())
+        rows_id = rows_state_id(workspace, "initial")
+        with workspace.publisher.session() as session:
+            result_layers = workspace.states.layers(session, state.state_id)
+            rows_layers = workspace.states.layers(session, rows_id)
+            for name in ("entities", "membership"):
+                assert files(workspace.records, result_layers[name]) == files(workspace.records, rows_layers[name])
+        assert values(workspace, state.state_id) == values(workspace, rows_id) == {"one": {"title": "first"}, "two": None}
+
+
+def long_rows(count, *, width=300):
+    """Rows whose Put edits exceed DocSpec's 8 MiB edit bound, with the count consumed so far."""
+    consumed = []
+
+    def rows():
+        for index in range(count):
+            consumed.append(index)
+            yield f"{index:08d}".ljust(width, "k"), index
+    return rows(), consumed
+
+
+def put_bytes(key, batch_id, sequence=0):
+    """Framed bytes of one Put edit, as derive counts them against its bound."""
+    put = core.Put(sequence=sequence, member_key=key, occurrence_id=stable_urn("core-derive-occurrence", [batch_id, key]))
+    return len(canonical_value_bytes(record_value(put, core.Put))) + 1
+
+
+def test_derive_without_a_base_has_no_edit_bound(tmp_path):
+    """A fresh derived state above the 8 MiB edit metadata bound publishes; the bound belongs to revisions."""
+    count = 18_500
+    assert count * put_bytes("0".ljust(300, "k"), "large") > BATCH_BYTES
+    rows, _ = long_rows(count)
+    with CoreWorkspace(tmp_path) as workspace:
+        state = workspace.derive(rows, batch_id="large", definition=definition(), inputs=())
+        with workspace.open_state(state.state_id) as reader:
+            assert reader.record_count == count
+
+
+def test_revision_edit_bound_refuses_while_rows_stream(tmp_path):
+    """With a base the edit bound refuses as soon as it is crossed, before the rest of the rows are prepared."""
+    count = 30_000
+    rows, consumed = long_rows(count)
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("base", [("old", 1)])
+        with pytest.raises(LimitExceededError, match="edit metadata exceeds 8 MiB"):
+            workspace.derive(rows, batch_id="large", definition=definition(), inputs=(), base_state_id="base")
+        assert len(consumed) < count
+        edits = [put_bytes(f"{index:08d}".ljust(300, "k"), "large", index) for index in consumed]
+        assert 2 + sum(edits[:-1]) <= BATCH_BYTES < 2 + sum(edits)
+        assert not list(workspace.ledger.executions(stable_urn("core-derive", "large") + ":request"))
+
+
+def test_changes_stream_rewritten_added_and_removed_members(tmp_path):
+    """A revision chain yields exactly its differing members in key order; a removal carries no occurrence."""
+    with CoreWorkspace(tmp_path) as workspace:
+        first = workspace.derive([("a", 1), ("b", 2), ("c", 3)], batch_id="first", definition=definition(), inputs=())
+        second = workspace.derive([("a", 10), ("d", None)], batch_id="second", definition=definition(), inputs=(),
+                                  base_state_id=first.state_id, removals=("b",))
+        with workspace.open_state(first.state_id) as older, workspace.open_state(second.state_id) as newer:
+            ids = {key: entity.entity_id for key, entity in newer.rows()}
+            assert list(newer.changes(older)) == [("a", ids["a"], 10), ("b", None, None), ("d", ids["d"], None)]
+            assert [(key, value) for key, _, value in older.changes(newer)] == [("a", 1), ("b", 2), ("d", None)]
+            assert list(newer.changes(newer)) == []
+
+
+def test_changes_use_certified_history_and_agree_with_a_full_comparison(tmp_path, monkeypatch):
+    """Certified revision keys narrow the diff; unrelated states fall back to one native comparison."""
+    certified, original = [], CoreStateStorage.changed_keys
+
+    def spy(self, *args, **kwargs):
+        keys = original(self, *args, **kwargs)
+        certified.append(keys is not None)
+        return keys
+    monkeypatch.setattr(CoreStateStorage, "changed_keys", spy)
+    with CoreWorkspace(tmp_path) as workspace:
+        first = workspace.derive([("a", 1), ("b", 2)], batch_id="first", definition=definition(), inputs=())
+        second = workspace.derive([("a", 10)], batch_id="second", definition=definition(), inputs=(),
+                                  base_state_id=first.state_id, removals=("b",))
+        workspace.create("copy", list(values(workspace, second.state_id).items()))
+        with workspace.open_state(first.state_id) as older, workspace.open_state(second.state_id) as newer, \
+                workspace.open_state("copy") as copy:
+            chained = [(key, value) for key, _, value in newer.changes(older)]
+            assert certified == [True]
+            compared = [(key, value) for key, _, value in copy.changes(older)]
+            assert certified == [True, False]
+        assert chained == compared == [("a", 10), ("b", None)]
+
+
+def test_generating_request_names_the_derivation_of_each_state(tmp_path):
+    """Derived states return their executed request; an imported state has none."""
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("source", [("a", 1)])
+        binding = core.StateInput(label="source", state_id="source")
+        first = workspace.derive([("a", 2)], batch_id="first", definition=definition(), inputs=(binding,))
+        second = workspace.derive([("a", 3)], batch_id="second", definition=definition(configuration={"v": 2}),
+                                  inputs=(binding,), base_state_id=first.state_id)
+        assert workspace.generating_request("source") is None
+        request = workspace.generating_request(first.state_id)
+        assert request.request_id == stable_urn("core-derive", "first") + ":request"
+        assert {item.label: getattr(item, "state_id", None) for item in request.inputs}["source"] == "source"
+        request = workspace.generating_request(second.state_id)
+        assert request.definition_id == definition(configuration={"v": 2}).definition_id
+        assert {item.label for item in request.inputs} == {"base", "source", "rows"}
 
 
 def test_initial_derive_records_provenance_to_exact_input_pins(tmp_path):
@@ -264,7 +382,7 @@ def test_retry_recovers_after_interruption(tmp_path, monkeypatch):
 
 
 def test_upsert_preserves_its_definition_request_and_occurrence_identities(tmp_path):
-    """upsert delegates to derive but keeps its stable definition, request and occurrence identity scheme."""
+    """upsert delegates to derive but keeps its stable definition, request ID and occurrence identity scheme."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("old", 1)])
         rows = [("new", {"title": "value"})]

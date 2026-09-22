@@ -1000,17 +1000,27 @@ base_state_id=None, removals=(), dataset=None)` by generalizing `upsert`:
   within the existing 8 MiB edit bound; callers split larger changes.
 - The same `batch_id` retries to the same state; changed rows or inputs under it
   refuse. `dataset=` advances a current pointer with the existing stale-base check.
-- `upsert` calls `derive` and keeps its definition, request and occurrence
-  identities, so earlier batch retries return the same states.
+- `upsert` calls `derive` and keeps its definition, request ID and occurrence
+  identities. Its request binds a digest-scoped `rows` state instead of the
+  earlier `puts` state, so a batch recorded before 0.9.0 refuses on retry; no
+  stack caller retries one, and workspace migration is out of scope.
+- Consumers read lineage and deltas from DocSpec instead of asserting them:
+  `CoreWorkspace.generating_request(state_id)` returns the executed request of
+  the operation that generated a state, and `CoreStateReader.changes(older)`
+  streams the members that differ from another state.
 
 **Delivered implementation:** `docspec.application.core_ingestion.derive` freezes
 the ordered rows and removals into a digest-scoped rows state and one request that
 binds the base, caller inputs and rows. `upsert` now freezes its framing digest,
 names its unchanged definition, and delegates to `derive` under its own identity
-scope, preserving its stable definition, request and occurrence identities. The
-shared revision path composes `Put`/`Remove` edits through `compose_revision`; a
-base-less derive streams the rows into a fresh result state. Producer failure
-records the attempt without retaining a rows state.
+scope, preserving its definition, request ID and occurrence identities. The
+shared revision path composes `Put`/`Remove` edits through `compose_revision`,
+checking the 8 MiB edit bound as rows arrive. A derive without a base has no
+edit bound: it writes the rows once and presents the rows state's files as the
+result, so no payload is written or receipted twice. `generating_request` finds
+the generating result through the ledger's output links; `changes` reuses
+certified revision keys and the native address join that selections use.
+Producer failure records the attempt without retaining a rows state.
 
 **Done when:** tests cover an initial derive, incremental puts and removals,
 exact retry, refusal of changed input under one batch ID, a stale dataset base,
@@ -1027,7 +1037,12 @@ initial derive and its provenance readback to the rows state and every lookup
 pin, incremental puts and removals sharing base files, removals-only revisions,
 dataset promotion and its stale-base refusal, retry recovery after interruption,
 refusal of changed rows, base, inputs, removals and order under one batch ID,
-and unchanged upsert definition, request and occurrence identities. Release
+and unchanged upsert definition, request ID and occurrence identities. It also
+covers a derive without a base above the 8 MiB edit bound (18,500 rows with
+300-character keys), a revision refusing at that bound before its stream ends,
+a result sharing its rows state's files, `changes` over a certified revision
+chain agreeing with a full comparison, and `generating_request` for derived and
+imported states. Release
 0.9.0 and consumer cutover remain with the Engine
 [PM01](../../spicyengine/PLAN.md#pm01) gate.
 

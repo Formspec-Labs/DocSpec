@@ -171,19 +171,41 @@ with CoreWorkspace(workspace_path) as workspace:
     )
 ```
 
-Without a base the rows stream into one fresh keyed state. With `base_state_id=`
-the rows and `removals=()` become one `Revision` of `Put`/`Remove` edits that
-shares the base's files, within the same 8 MiB edit bound as `upsert`; callers
-split larger changes into separately identified batches and use each returned
-state as the next base. Each input and the rows state record their usage, and
-the derived state records derivation edges to every input pin.
+Without a base the rows are written once into a digest-scoped rows state, and
+the derived state presents those same files; there is no edit bound, so a whole
+source derives in one call. With `base_state_id=` the rows and `removals=()`
+become one `Revision` of `Put`/`Remove` edits that shares the base's files,
+within the same 8 MiB edit bound as `upsert` (about 43,000 puts with typical
+keys). That bound is checked as rows arrive, so an oversized change refuses
+before the rest is prepared; split it into separately identified batches and
+use each returned state as the next base. Each input and the rows state record
+their usage, and the derived state records derivation edges to every input pin.
 
 Repeat the same `batch_id`, definition, inputs, base, removals, dataset and rows
 in the same order to recover the exact result. A changed value, row order,
 removal, base or input under that ID is rejected. `dataset=` advances a current
 pointer with the same stale-base check as `upsert` and requires a base.
-`upsert` runs through `derive` and keeps its definition, request and occurrence
-identities.
+`upsert` runs through `derive` and keeps its definition, request ID and
+occurrence identities. Its request now binds a digest-scoped `rows` state
+instead of the earlier `puts` state, so a batch recorded before 0.9.0 refuses
+on retry rather than returning its earlier state.
+
+Read what produced a state, and what changed between two states, rather than
+tracking either by hand:
+
+```python
+request = workspace.generating_request(prepared.state_id)  # None for an imported state
+source_id = next(item.state_id for item in request.inputs if item.label == "source")
+with workspace.open_state(previous_id) as older, workspace.open_state(current_id) as newer:
+    for key, occurrence_id, value in newer.changes(older):
+        ...  # occurrence_id is None when the member was removed
+```
+
+`generating_request` returns the executed request (definition and every bound
+input) of the successful operation that generated the state. `changes` yields
+members in key order. When the newer state descends from the older one through
+recorded revisions, only the edited keys are compared; otherwise one native pass
+compares both memberships. Only differing members' values are read.
 
 ## Execute and reuse work
 

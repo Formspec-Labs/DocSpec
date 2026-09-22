@@ -62,8 +62,9 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
     """Publish one keyed state derived from source states and retained lookups.
 
     With a base, the rows and removals become one Revision of Put/Remove edits
-    that shares the base's files. Without one, the rows stream into a fresh
-    keyed state. A batch ID pins the ordered rows, removals, base, optional
+    that shares the base's files, within 8 MiB of edit metadata. Without one,
+    the rows are written once into a fresh keyed state with no edit bound.
+    A batch ID pins the ordered rows, removals, base, optional
     dataset and caller inputs; retrying it returns the same published state,
     while changed rows or inputs refuse. Dataset promotion expects its current
     state to be the base. Lookup values are retained once by the caller and
@@ -86,18 +87,32 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
     if len(labels) != len(inputs) or labels & {"base", "rows"}:
         raise IntegrityError("derive input labels must be distinct and avoid base and rows")
     identity = stable_urn(identity_kind, batch_id)
-    # Freeze a one-shot batch before binding its retry identity. Only bounded
-    # edit metadata stays in memory; payloads spool to disk and stream to Iceberg.
-    # Removals are consumed after the rows, so a caller may discover them while
-    # streaming its prepared values.
+
+    def occurrence(key):
+        return stable_urn(identity_kind + "-occurrence", [batch_id, key])
+
+    # Freeze a one-shot batch before binding its retry identity. Payloads spool
+    # to disk and stream to Iceberg. Only a base's Put/Remove edits stay in
+    # memory; their 8 MiB bound is checked as rows arrive, so an oversized
+    # change fails before the rest is prepared. A state without a base keeps
+    # only its member keys and has no edit bound. Removals are consumed after
+    # the rows, so a caller may discover them while streaming prepared values.
     with owned_iterator(rows) as source, TemporaryFile() as spool:
-        digest, keys, puts, edit_bytes = sha256(), set(), [], 2
+        digest, keys, edits, edit_bytes = sha256(), set(), [], 2
+
+        def edit(value, record_type):
+            nonlocal edit_bytes
+            edit_bytes += len(canonical_value_bytes(record_value(value, record_type))) + 1
+            if edit_bytes > BATCH_BYTES:
+                raise LimitExceededError("derive edit metadata exceeds 8 MiB; split the changes into separate batches")
+            edits.append(value)
+
         for key, value in source:
             if not isinstance(key, str):
                 raise IntegrityError("derive member keys must be strings")
             if key in keys:
                 raise IntegrityError("derive batch contains a duplicate member key")
-            entity = core.Entity(format_version=1, entity_id=stable_urn(identity_kind + "-occurrence", [batch_id, key]),
+            entity = core.Entity(format_version=1, entity_id=occurrence(key),
                                  entity_type="occurrence", value=core.InlineValue(value=value))
             payload = encode_record(entity)
             if len(payload) > BATCH_BYTES:
@@ -109,26 +124,17 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
             digest.update(framed)
             spool.write(framed)
             keys.add(key)
-            puts.append((key, entity.entity_id))
+            if base_state_id is not None:
+                edit(core.Put(sequence=len(edits), member_key=key, occurrence_id=entity.entity_id), core.Put)
         removals = tuple(removals)
         if any(not isinstance(key, str) for key in removals) or len(set(removals)) != len(removals):
             raise IntegrityError("derive removals must be distinct member keys")
         if keys & set(removals):
             raise IntegrityError("derive removal repeats a put member key")
         digest.update(canonical_value_bytes(["removals", sorted(removals)]) + b"\n")
-        edits, put_edits = [], []
         for key in removals:
-            edit = core.Remove(sequence=len(edits), member_key=key)
-            edits.append(edit)
-            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Remove))) + 1
-        for key, occurrence_id in puts:
-            edit = core.Put(sequence=len(edits), member_key=key, occurrence_id=occurrence_id)
-            edit_bytes += len(canonical_value_bytes(record_value(edit, core.Put))) + 1
-            if edit_bytes > BATCH_BYTES:
-                raise LimitExceededError("derive edit metadata exceeds 8 MiB; split the input into separate batches")
-            edits.append(edit)
-            put_edits.append(edit)
-        if not edits:
+            edit(core.Remove(sequence=len(edits), member_key=key), core.Remove)
+        if not keys and not removals:
             raise IntegrityError("derive batch must contain at least one row or removal")
         rows_state_id = stable_urn(identity_kind + "-rows", [batch_id, digest.hexdigest()])
         request_inputs = (core.StateInput(label="base", state_id=base_state_id), *inputs,
@@ -140,9 +146,9 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
 
         def entities():
             spool.seek(0)
-            for edit, payload in zip(put_edits, spool, strict=True):
-                key, value = decode_canonical_json_value(payload.rstrip(b"\n"))
-                yield key, core.Entity(format_version=1, entity_id=edit.occurrence_id,
+            for line in spool:
+                key, value = decode_canonical_json_value(line.rstrip(b"\n"))
+                yield key, core.Entity(format_version=1, entity_id=occurrence(key),
                     entity_type="occurrence", value=core.InlineValue(value=value))
 
         def produce(context):
@@ -167,8 +173,8 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
             if base_state_id is not None:
                 revision = core.Revision(format_version=1, revision_id=context.execution.execution_id + ":revision",
                     base_state_id=base_state_id, result_state_id=context.execution.execution_id + ":state",
-                    edits=session.retain_value([record_value(edit, core.Put if isinstance(edit, core.Put) else core.Remove)
-                                                for edit in edits]))
+                    edits=session.retain_value([record_value(item, core.Put if isinstance(item, core.Put) else core.Remove)
+                                                for item in edits]))
                 compose_revision(operations, context, revision, rows_state_id)
                 for used in caller_usages:
                     context.derive(revision.result_state_id, used.entity_id,
@@ -176,9 +182,14 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
             else:
                 result_state_id = context.execution.execution_id + ":state"
                 usages = [context.use(rows_state_id), *caller_usages]
-                session.states.create_keyed(session, state_id=result_state_id, representation_id=result_state_id + ":physical",
-                                            unit_id=result_state_id + ":import", rows=entities())
+                # The result has exactly the rows' membership. Present the rows
+                # state's retained files under the result rather than writing
+                # and receipting every payload a second time.
+                rows_representation = session.states.representation(session, rows_state_id)
                 context.generate_record(core.State(format_version=1, state_id=result_state_id), label="state")
+                context.records.append(core.StateRepresentation(format_version=1,
+                    representation_id=result_state_id + ":physical", state_id=result_state_id,
+                    membership=rows_representation.membership))
                 for used in usages:
                     context.derive(result_state_id, used.entity_id,
                         generation_event_id=context.generations[-1].event_id, usage_event_id=used.event_id)

@@ -699,6 +699,18 @@ class LocalSqliteCoreLedger:
             for rows in bounded_rows(cursor, size=_row_size):
                 yield tuple(row[0] for row in rows)
 
+    def producers(self, key: RecordKey) -> tuple[str, ...]:
+        """Find successful results retaining one record as an output; two mean ambiguity, so stop there."""
+        kind, record_id = _key(key)
+        with self._transaction() as connection:
+            rows = connection.execute(
+                "SELECT l.owner_id FROM links l JOIN records r ON r.kind='result' AND r.record_id=l.owner_id "
+                "WHERE l.target_kind=? AND l.target_id=? AND l.relation='requires' AND l.owner_kind='result' "
+                "AND l.label GLOB 'output:*' AND r.outcome='success' ORDER BY l.owner_id LIMIT 2",
+                (kind, record_id),
+            ).fetchall()
+        return tuple(row[0] for row in rows)
+
     def executions(self, request_id: str) -> Iterator[tuple[str, ...]]:
         """Find actual attempts for an exact request without scanning payloads."""
         require_text(request_id, "request identity")

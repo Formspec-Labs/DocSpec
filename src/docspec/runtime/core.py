@@ -15,8 +15,9 @@ from docspec.application.core_inspection import inspect_record
 from docspec.application.core_maintenance import CoreMaintenance
 from docspec.application.core_publication import CorePublisher
 from docspec.domain import core
-from docspec.domain.identity import canonical_value_bytes, sha256_digest
+from docspec.domain.identity import canonical_value_bytes, require_text, sha256_digest
 from docspec.domain.streams import bounded_items, owned_iterator
+from docspec.errors import IntegrityError
 from docspec.ports.core_ledger import MetadataBatch
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -80,6 +81,30 @@ class CoreWorkspace:
         from docspec.application.core_ingestion import derive
         return derive(self.operations, rows, batch_id=batch_id, definition=definition, inputs=inputs,
                       base_state_id=base_state_id, removals=removals, dataset=dataset)
+
+    def generating_request(self, state_id):
+        """Return the request whose successful execution generated a state, or None for an imported state.
+
+        The executed request names the definition and every bound input, so a
+        consumer can check a derived state's lineage instead of trusting a
+        caller's claim about it.
+        """
+        require_text(state_id, "state identity")
+        results = self.ledger.producers(("state", state_id))
+        if not results:
+            return None
+        if len(results) > 1:
+            raise IntegrityError("state names more than one generating result")
+
+        def available(key):
+            with owned_iterator(self.ledger.read_records([key])) as batches:
+                row = next(batches)[0]
+            if row is None or not row.available:
+                raise IntegrityError("generating request metadata is unavailable")
+            return row.value
+
+        execution = available(("execution", available(("result", results[0])).execution_id))
+        return available(("request", execution.request_id))
 
     def inspect(self, kind, identity, *, progress_limit=20):
         with self.publisher.session() as session:
