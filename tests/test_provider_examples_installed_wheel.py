@@ -54,7 +54,7 @@ def test_provider_example_uses_installed_packages_and_replays_offline(
     wheels.mkdir()
     docspec = Path(shutil.copy2(docspec_wheel, wheels))
     spicy_docs = Path(shutil.copy2(provider, wheels))
-    rulespec = Path(shutil.copy2(ROOT / "vendor/rulespec_artifacts-1.0.12-py3-none-any.whl", wheels))
+    rulespec = Path(shutil.copy2(ROOT / "vendor/rulespec_artifacts-1.1.0-py3-none-any.whl", wheels))
     venv = tmp_path / "environment"
     run([uv, "venv", "--python", sys.executable, venv])
     python = venv / "bin/python"
