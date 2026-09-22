@@ -1,3 +1,10 @@
+"""Bounded Iceberg record partitions: streaming writes, exact pins and semantic refusals.
+
+The Parquet writer may never read a whole member into Python, a hot partition must still
+shard into immutable members, and genuine file/root byte pins may not bypass logical row
+admission.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +21,7 @@ from docspec.errors import IntegrityError, LimitExceededError
 
 
 def _records_in_distinct_partitions(count: int, bucket_count: int) -> list[dict[str, object]]:
+    """Build one record per distinct bucket so a stress fixture never collides."""
     records: list[dict[str, object]] = []
     partitions: set[int] = set()
     candidate_number = 0
@@ -32,6 +40,7 @@ def test_parquet_writer_streams_many_partitions_without_whole_python_member_read
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """512 partitions stream out with no whole-member Python read and distinct snapshot identities."""
     policy = PartitionPolicy("stress-sha256-v1", 4096)
     schema = RecordSchema(
         "docspec-test-record/1.0",
@@ -70,6 +79,7 @@ def test_parquet_writer_streams_many_partitions_without_whole_python_member_read
 
 
 def test_parquet_writer_shards_a_hot_partition_and_reuses_immutable_members(tmp_path: Path) -> None:
+    """A one-bucket policy shards rows into immutable members and still round-trips every row."""
     policy = PartitionPolicy("single-partition-v1", 1)
     schema = RecordSchema(
         "docspec-test-record/1.0",
@@ -138,6 +148,7 @@ def _physical_layer(storage, schema, policy, partitions, *, physical_schema=None
 
 
 def test_parquet_scan_rejects_cross_member_duplicates_and_cleans_scratch(tmp_path: Path) -> None:
+    """Duplicate record identity across members is refused by `verify` even when each member's pins hold."""
     policy = PartitionPolicy("duplicate-stress-v1", 8)
     schema = RecordSchema(
         "docspec-test-record/1.0",
@@ -179,6 +190,7 @@ def test_parquet_scan_rejects_cross_member_duplicates_and_cleans_scratch(tmp_pat
 
 @pytest.mark.parametrize("corruption", ["identity", "partition", "noncanonical", "physical-schema", "open-row"])
 def test_parquet_refuses_repinned_false_routing_or_payload_schema(tmp_path: Path, corruption: str) -> None:
+    """Genuine physical pins do not admit a false routing column, noncanonical bytes or an open row."""
     storage = IcebergRecordStorage(tmp_path / "records")
     schema = RecordSchema("docspec-test-record/1.0", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
     policy = PartitionPolicy("single", 1)
@@ -209,6 +221,7 @@ def test_parquet_refuses_repinned_false_routing_or_payload_schema(tmp_path: Path
 
 
 def test_parquet_physical_member_cap_includes_encoding_overhead(tmp_path: Path) -> None:
+    """A record below the byte cap still refuses when Parquet framing pushes the member over."""
     storage = IcebergRecordStorage(tmp_path / "records", max_member_bytes=128, max_record_bytes=128)
     schema = RecordSchema("docspec-test-record/1.0", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
     record = {"recordId": "a", "sourceItemId": "source", "value": 1}
@@ -221,6 +234,7 @@ def test_parquet_physical_member_cap_includes_encoding_overhead(tmp_path: Path) 
 
 @pytest.mark.parametrize("violation", ["wrong-bucket", "oversized-row"])
 def test_physical_admission_does_not_replace_logical_row_checks(tmp_path: Path, violation: str) -> None:
+    """Physical verification passes but logical admission still refuses a wrong bucket or oversized row."""
     storage = IcebergRecordStorage(tmp_path / "records", max_record_bytes=1024)
     schema = RecordSchema("test/1", ("recordId", "sourceItemId", "value"), "recordId", "sourceItemId")
     policy = PartitionPolicy("source-buckets", 8)
@@ -240,6 +254,7 @@ def test_physical_admission_does_not_replace_logical_row_checks(tmp_path: Path, 
 
 
 def test_record_root_profile_covers_every_supported_occupied_partition(tmp_path: Path) -> None:
+    """A 65,536-bucket root stays under 2048 bytes, and a root cap one byte smaller refuses `available`."""
     with __import__('contextlib').closing(IcebergRecordStorage(tmp_path)) as storage:
         schema = RecordSchema('all/1', ('id',), 'id', 'id')
         reference = storage.write_layer([{'id': 'one'}], layer_kind='bounds', schema=schema,

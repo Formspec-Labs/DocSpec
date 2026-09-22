@@ -1,3 +1,8 @@
+"""Local content-addressed blob store contract: publication and deletion survive a directory-flush failure as
+retryable complete bytes, reads stream, deduplicate and take half-open ranges, and every limit, tampering,
+symlink or noncanonical-locator case fails closed.
+"""
+
 from __future__ import annotations
 
 

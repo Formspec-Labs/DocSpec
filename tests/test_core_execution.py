@@ -19,24 +19,29 @@ from docspec.errors import IntegrityError, LimitExceededError, StateTransitionEr
 
 
 def setup(stack, path):
+    """Open a SQLite ledger (closed with the stack) and build CoreOperations over a local blob store."""
     ledger = stack.enter_context(closing(LocalSqliteCoreLedger(path / "ledger.sqlite")))
     return ledger, CoreOperations(CorePublisher(ledger, LocalContentAddressedBlobStore(path / "blobs")))
 
 
 def definition(capture=False):
+    """Build a transformation definition, or a capture definition when `capture` is true."""
     return core.OperationDefinition(format_version=1, definition_id="definition", implementation_id="test-operation", implementation_version="1",
                                     operation_kind="capture" if capture else "transformation", configuration={})
 
 
 def request(identity="request", inputs=()):
+    """Build a request for `definition` with the given identity and whole inputs."""
     return core.Request(format_version=1, request_id=identity, definition_id="definition", inputs=inputs, dependencies=())
 
 
 def progress(ledger, identity):
+    """Decode every recorded progress row for one execution, in ledger order."""
     return [decode_canonical_json_value(payload, label="progress") for batch in ledger.read_progress(identity) for payload in batch]
 
 
 def test_identical_requests_get_fresh_attempts_and_explicit_empty_null_success(tmp_path):
+    """Identical requests still get fresh execution and result ids, and `empty` and `null` outcomes stay distinct."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         first = operations.run(definition(), request(), lambda context: None)
@@ -49,6 +54,7 @@ def test_identical_requests_get_fresh_attempts_and_explicit_empty_null_success(t
 
 
 def test_capture_and_adoption_preserve_one_original_generation(tmp_path):
+    """Adoption reuses the original capture generation rather than recording a second one."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         origin = core.Origin(parent_entity_id="source-occurrence", state_id="source-state", member_key="source-key")
@@ -67,6 +73,7 @@ def test_capture_and_adoption_preserve_one_original_generation(tmp_path):
 
 
 def test_fused_operations_exchange_values_before_publishing_together(tmp_path):
+    """Prepared operations exchange entities before either result is published, then publish together."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         with operations.publisher.session() as session:
@@ -90,6 +97,7 @@ def test_fused_operations_exchange_values_before_publishing_together(tmp_path):
 
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_completed_producer_recovers_after_lost_publication_response(tmp_path, monkeypatch, after_commit):
+    """A lost publication response is reconciled by unit id, so recover returns the same result without rerunning."""
     calls, attempted = [], []
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
@@ -119,6 +127,7 @@ def test_completed_producer_recovers_after_lost_publication_response(tmp_path, m
 
 @pytest.mark.parametrize("exception,status", [(RuntimeError("producer failed"), "failed"), (KeyboardInterrupt(), "interrupted")])
 def test_failures_are_authoritative_without_successful_retention(tmp_path, exception, status):
+    """The producer's exception is re-raised unchanged, and the failed/interrupted result is recorded but not retained."""
     seen = []
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
@@ -138,6 +147,7 @@ def test_failures_are_authoritative_without_successful_retention(tmp_path, excep
 
 
 def test_direct_batch_calls_share_the_bounded_worker_and_close_the_source(tmp_path):
+    """run_many runs four calls through one shared bounded worker pool and closes the call source once."""
     closed, reached = [], []
     gate = Barrier(2)
     def producer(context):
@@ -158,6 +168,7 @@ def test_direct_batch_calls_share_the_bounded_worker_and_close_the_source(tmp_pa
 
 @pytest.mark.parametrize("native", [False, True])
 def test_cancelled_batch_closes_without_consuming_the_remaining_calls(tmp_path, native):
+    """Closing run_many early consumes only the first call and still closes the source exactly once."""
     consumed, closed = [], []
     def calls():
         try:
@@ -255,6 +266,7 @@ def test_large_opaque_values_use_the_streaming_path(tmp_path):
 
 
 def test_control_row_exhaustion_records_failure_and_only_the_accepted_prefix(tmp_path, monkeypatch):
+    """Control row exhaustion records a failed result whose generations and outputs are exactly the accepted prefix."""
     monkeypatch.setattr("docspec.application.core_execution.BATCH_ROWS", 12)
     seen = []
     with ExitStack() as stack:
@@ -275,6 +287,7 @@ def test_control_row_exhaustion_records_failure_and_only_the_accepted_prefix(tmp
 
 
 def test_control_byte_exhaustion_preserves_actual_events_and_can_finish_a_smaller_output(tmp_path):
+    """After a byte-exhausted generate refuses, the operation can still succeed with its accepted output."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         def producer(context):
@@ -290,6 +303,7 @@ def test_control_byte_exhaustion_preserves_actual_events_and_can_finish_a_smalle
 
 @pytest.mark.parametrize("huge_name", [False, True])
 def test_huge_or_invalid_diagnostic_does_not_prevent_failure_accounting(tmp_path, huge_name):
+    """A 9 MiB lone-surrogate error message is truncated in the failed record but does not stop failure accounting."""
     error_type = type("E" * (9 * 1024**2), (RuntimeError,), {}) if huge_name else RuntimeError
     error = error_type("\ud800" + "x" * (9 * 1024**2))
     seen = []
@@ -309,6 +323,7 @@ def test_huge_or_invalid_diagnostic_does_not_prevent_failure_accounting(tmp_path
 
 
 def test_combined_journal_limit_records_incomplete_attempts_before_publication(tmp_path):
+    """A combined journal over the limit records both attempts incomplete, though each can still publish alone."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         def producer(context):
@@ -361,6 +376,7 @@ def test_oversized_added_metadata_cannot_hide_the_actual_failed_prefix(tmp_path)
 
 
 def test_continuation_accounts_for_events_retained_by_every_suspension(tmp_path, monkeypatch):
+    """Usage events retained by each suspension count toward the control budget, so a suspension chain ends failed."""
     monkeypatch.setattr("docspec.application.core_execution.BATCH_BYTES", 1000)
     monkeypatch.setattr("docspec.application.core_execution._CONTROL_RESERVE", 128)
     with ExitStack() as stack:

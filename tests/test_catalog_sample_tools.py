@@ -27,6 +27,7 @@ from tools.catalog_sample_support import (
 
 
 def _catalog(tmp_path: Path) -> tuple[Path, Path]:
+    """Write a tiny catalog whose two source-item members carry regulations.gov and Federal Register rows."""
     root, blobs = tmp_path / "catalog", tmp_path / "blobs"
     (root / "manifests").mkdir(parents=True)
     blobs.mkdir()
@@ -71,6 +72,7 @@ def _catalog(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def _receipt(path: Path) -> dict:
+    """Load a receipt only after its `.sha256` sidecar matches the file bytes."""
     payload = path.read_bytes()
     assert path.with_name(path.name + ".sha256").read_text().split()[0] == hashlib.sha256(payload).hexdigest()
     return json.loads(payload)

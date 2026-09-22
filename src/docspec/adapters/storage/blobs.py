@@ -52,6 +52,8 @@ class LocalContentAddressedBlobStore:
         expected_size: int | None = None,
         max_bytes: int | None = None,
     ) -> BlobRef:
+        """Stage, hash and link exact bytes under their digest, returning their immutable reference."""
+
         require_text(media_type, "blob media_type")
         with staged_bytes(chunks, directory=self._staging, limit=self.max_blob_bytes, max_bytes=max_bytes,
                           expected_digest=expected_digest, expected_size=expected_size) as (temporary, actual_digest, byte_size):
@@ -60,10 +62,14 @@ class LocalContentAddressedBlobStore:
             return BlobRef(locator, actual_digest, byte_size, media_type)
 
     def stat(self, reference: BlobRef) -> BlobRef:
+        """Verify the locator and size and return the same reference."""
+
         self._path(reference)
         return reference
 
     def ensure_ready(self, reference: BlobRef) -> None:
+        """Verify the retained file and persist it through its parent directories."""
+
         self.verify(reference)
         path = _contained(self.root, reference.locator)
         _sync_file(path)
@@ -82,6 +88,8 @@ class LocalContentAddressedBlobStore:
         chunk_size: int | None = None,
         max_bytes: int | None = None,
     ) -> Iterator[bytes]:
+        """Stream and hash the retained bytes, refusing a size or digest mismatch."""
+
         effective_chunk_size = self.stream_chunk_bytes if chunk_size is None else chunk_size
         if effective_chunk_size <= 0:
             raise ValueError("chunk_size must be positive")
@@ -103,6 +111,8 @@ class LocalContentAddressedBlobStore:
             raise IntegrityError("blob bytes differ from their immutable reference")
 
     def read_range(self, reference: BlobRef, *, start: int, end: int) -> bytes:
+        """Read one contained half-open byte interval after verifying the whole object."""
+
         if start < 0 or end < start or end > reference.byte_size:
             raise ValueError("blob range must be a contained half-open interval")
         self.verify(reference)
@@ -124,6 +134,8 @@ class LocalContentAddressedBlobStore:
         return path
 
     def verify(self, reference: BlobRef) -> None:
+        """Re-hash the retained file and refuse any difference from its reference."""
+
         path = self._path(reference)
         digest, byte_size = sha256_file(path, chunk_size=self.stream_chunk_bytes)
         if byte_size != reference.byte_size or digest != reference.digest:

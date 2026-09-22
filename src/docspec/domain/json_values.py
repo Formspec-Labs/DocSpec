@@ -1,8 +1,8 @@
 """Typed JSON Pointer lookup and ordered edits over immutable JSON inputs.
 
-Addresses share admission's syntax rule. Unresolved selection returns ABSENT;
-an unresolved patch precondition refuses the entire edit. Only changed values
-enter this evaluator; membership joins remain in the batch engine.
+Addresses share admission's syntax rule: unresolved selection returns ABSENT,
+while an unresolved patch precondition refuses the entire edit. Only changed
+values enter this evaluator; membership joins remain in the batch engine.
 """
 
 from copy import deepcopy

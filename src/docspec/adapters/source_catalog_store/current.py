@@ -52,6 +52,8 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
 
     @staticmethod
     def _series_key(catalog_id: str) -> str:
+        """Return the hashed pointer filename stem for one catalog series."""
+
         selected = require_text(catalog_id, "source catalog series catalog_id")
         return hashlib.sha256(selected.encode("utf-8")).hexdigest()
 
@@ -90,6 +92,10 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         parent: _PinnedDirectory,
         catalog_id: str,
     ) -> tuple[SourceCatalogRef, SourceCatalogRef | None] | None:
+        """Read and validate one series pointer, refusing a changed, malformed,
+        or foreign-series file; returns None when absent.
+        """
+
         name = f"{self._series_key(catalog_id)}.json"
         try:
             descriptor = os.open(name, _READ_FLAGS, dir_fd=parent.descriptor)
@@ -144,6 +150,8 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         catalog_id: str,
         reference: SourceCatalogRef,
     ) -> SourceCatalogSnapshotSummary:
+        """Verify the referenced snapshot and require it to name the requested series."""
+
         summary = self._reader.verify_snapshot(reference)
         if (
             summary.logical_id != reference.catalog_id
@@ -159,6 +167,11 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         parent: _PinnedDirectory,
         catalog_id: str,
     ) -> tuple[SourceCatalogRef, SourceCatalogRef | None] | None:
+        """Return the admitted pointer pair, refusing an initial root with
+        supersedes or a successor that does not supersede its predecessor with
+        a nonempty reason.
+        """
+
         pointer = self._read_pointer(parent, catalog_id)
         if pointer is None:
             return None
@@ -182,6 +195,8 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         return reference, previous
 
     def current(self, catalog_id: str) -> SourceCatalogRef | None:
+        """Return the admitted current root for one series, or None when no pointer exists."""
+
         require_text(catalog_id, "source catalog series catalog_id")
         root = self._open_root()
         try:
@@ -233,6 +248,8 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         catalog_id: str,
         candidate: SourceCatalogRef,
     ) -> Iterator[tuple[str, _IDENTITY]]:
+        """Take the series lock and record the candidate digest, refusing a changed lock or pointer parent."""
+
         name = f".{self._series_key(catalog_id)}.lock"
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
@@ -274,6 +291,10 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         candidate: SourceCatalogRef,
         previous: SourceCatalogRef | None,
     ) -> None:
+        """Atomically replace the series pointer through a randomly named
+        temporary file, refusing a symlinked or non-regular destination.
+        """
+
         destination = f"{self._series_key(catalog_id)}.json"
         try:
             existing = os.stat(
@@ -335,6 +356,14 @@ class LocalSourceCatalogCurrentPointer(SourceCatalogCurrentPointer):
         *,
         expected_current: SourceCatalogRef | None,
     ) -> SourceCatalogRef:
+        """Compare-and-swap the series pointer to an admitted candidate,
+        raising StaleBaseError when the current root differs from expected_current.
+
+        Advancing to the root that is already current is a no-op, and an
+        initial candidate must not declare supersedes while a successor must
+        supersede the current root with a nonempty reason.
+        """
+
         require_text(catalog_id, "source catalog series catalog_id")
         summary = self._admit(catalog_id, candidate)
         root = self._open_root()

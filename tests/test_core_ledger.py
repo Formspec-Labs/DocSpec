@@ -22,10 +22,12 @@ DIGEST = sha256_digest(b"correspondence")
 
 
 def state(identity):
+    """Build a format-version-1 state record with the given id."""
     return State(format_version=1, state_id=identity)
 
 
 def result(identity, *, success=True):
+    """Build a successful empty or failed result record about the shared `execution`."""
     return Result(
         format_version=1, result_id=identity, execution_id="execution",
         outcome=Outcome(status="success", value="empty") if success else Outcome(status="failed", error="producer failed"),
@@ -33,10 +35,12 @@ def result(identity, *, success=True):
 
 
 def records(ledger, *keys):
+    """Read the given keys and flatten the batches into one entry per key."""
     return [row for batch in ledger.read_records(keys) for row in batch]
 
 
 def retained_states(ledger, count=2):
+    """Commit `count` states named `s0`, `s1`, ... retained in a single unit."""
     return ledger.commit(MetadataBatch(
         "states", records=tuple(state(f"s{index}") for index in range(count)),
         retained=tuple(("state", f"s{index}") for index in range(count)),
@@ -44,6 +48,7 @@ def retained_states(ledger, count=2):
 
 
 def test_initialize_reopen_settings_closed_owner_and_namespaced_identity(tmp_path):
+    """PRAGMAs are as configured, a closed ledger refuses, and equal ids in different namespaces do not collide."""
     path = tmp_path / "new" / "ledger.sqlite"
     ledger = LocalSqliteCoreLedger(path)
     retained_states(ledger)
@@ -77,6 +82,7 @@ def test_read_only_snapshot_verification_handles_uri_path_characters(tmp_path):
 
 @pytest.mark.parametrize("foreign", [False, True])
 def test_unknown_database_or_schema_version_is_refused_without_reinitializing(tmp_path, foreign):
+    """A foreign table or a newer `user_version` refuses without modifying the file."""
     path = tmp_path / "ledger.sqlite"
     if foreign:
         with closing(sqlite3.connect(path)) as connection:
@@ -94,6 +100,7 @@ def test_unknown_database_or_schema_version_is_refused_without_reinitializing(tm
 
 
 def test_immutable_record_conflicts_and_failed_unit_rollback(tmp_path):
+    """Identical re-commits are no-ops, changed identities refuse, and a failed unit rolls back its receipt."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         original = MetadataBatch("first", records=(result("r"),), retained=(("result", "r"),))
         assert ledger.commit(original)
@@ -113,6 +120,7 @@ def test_immutable_record_conflicts_and_failed_unit_rollback(tmp_path):
 
 
 def test_retry_after_uncertain_commit_resolves_the_original_unit(tmp_path):
+    """A retry after a lost commit response resolves to the already-committed unit instead of duplicating it."""
     class Uncertain(LocalSqliteCoreLedger):
         fail = True
 
@@ -159,6 +167,7 @@ def test_failure_progress_and_dependency_evidence_survive_without_rewriting_outc
 
 
 def test_candidate_join_keeps_all_results_duplicate_requests_and_filters_removal(tmp_path):
+    """One digest queried twice returns both results twice, and removal hides availability without dropping retention."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         policy = RetentionPolicy(format_version=1, policy_id="policy", description={"allow": "test"})
         ledger.commit(MetadataBatch("results", records=(result("a"), result("b"), policy),
@@ -217,6 +226,7 @@ def test_affected_result_output_is_bounded_and_cancel_releases_the_snapshot(tmp_
 
 
 def test_current_selection_is_guarded_and_has_stable_retry_identity(tmp_path):
+    """Selection compare-and-swaps the expected base and a retried unit id stays idempotent."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         retained_states(ledger)
         assert ledger.select_current("first", "dataset", ("state", "s0"), None)
@@ -231,6 +241,7 @@ def test_current_selection_is_guarded_and_has_stable_retry_identity(tmp_path):
 
 
 def test_concurrent_writers_and_current_cas_have_one_winner(tmp_path):
+    """Two racing compare-and-swap selections produce exactly one current winner."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         barrier = Barrier(2)
 
@@ -251,6 +262,7 @@ def test_concurrent_writers_and_current_cas_have_one_winner(tmp_path):
 
 
 def test_busy_wait_is_bounded_and_caller_can_retry(tmp_path):
+    """A locked database gives up within the busy timeout, and the caller can retry successfully."""
     path = tmp_path / "ledger.sqlite"
     with closing(LocalSqliteCoreLedger(path, busy_timeout_ms=20)) as ledger:
         batch = MetadataBatch("busy", records=(state("s"),))
@@ -265,6 +277,7 @@ def test_busy_wait_is_bounded_and_caller_can_retry(tmp_path):
 
 
 def test_large_reads_are_set_based_bounded_and_hold_one_snapshot(tmp_path):
+    """A large key read issues one set-based statement under one snapshot and streams bounded batches."""
     class Traced(LocalSqliteCoreLedger):
         statements = None
 
@@ -303,6 +316,7 @@ def test_metadata_read_bytes_are_bounded_independently_of_row_count(tmp_path):
 
 
 def test_removal_intent_can_be_recovered_after_reopen(tmp_path):
+    """Pending removal intents survive reopen, keep rows retained but unavailable, and finish cleanly."""
     path = tmp_path / "ledger.sqlite"
     with closing(LocalSqliteCoreLedger(path)) as ledger:
         retained_states(ledger)
@@ -318,6 +332,7 @@ def test_removal_intent_can_be_recovered_after_reopen(tmp_path):
 
 
 def test_limits_and_producer_failures_leave_no_partial_units(tmp_path):
+    """Too many rows or too many bytes close the producer and leave no partial unit or receipt behind."""
     closed = []
 
     def source():

@@ -11,10 +11,12 @@ from tests.support.iceberg_records import files
 
 
 def values(workspace, state_id):
+    """Map member keys to their decoded values for one state."""
     return {key: entity.value.value for key, entity in workspace.rows(state_id)}
 
 
 def test_upsert_adds_replaces_and_reopens_without_rewriting_base(tmp_path):
+    """An upsert leaves the base state untouched, adds and replaces rows, and retrying the same batch id is idempotent."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("unchanged", 1), ("update", {"title": "old"})])
         workspace.maintenance.select_current("initial", "regulations", ("state", "base"), None)
@@ -41,6 +43,7 @@ def test_upsert_adds_replaces_and_reopens_without_rewriting_base(tmp_path):
 
 @pytest.mark.parametrize("change", ["value", "base", "dataset", "order"])
 def test_batch_identity_refuses_different_input(tmp_path, change):
+    """Reusing a batch id with different values, base, dataset or row order refuses."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("old", 1)])
         rows = [("a", 1), ("b", "1")]
@@ -60,6 +63,7 @@ def test_batch_identity_refuses_different_input(tmp_path, change):
 
 @pytest.mark.parametrize("rows", [[], [("a", 1), ("a", 2)], [(1, "bad-key")], [("bad", 1.5)]])
 def test_invalid_input_closes_stream_and_does_not_start_attempt(tmp_path, rows):
+    """Empty, duplicate-key, non-string-key or non-JSON rows close the source and start no attempt."""
     closed = []
     def source():
         try:
@@ -83,6 +87,7 @@ def test_upsert_streams_more_than_one_metadata_batch(tmp_path):
 
 @pytest.mark.parametrize("boundary", ["producer", "before_journal", "publication", "promotion"])
 def test_retry_recovers_after_interruption(tmp_path, monkeypatch, boundary):
+    """Retrying the same batch resumes from whatever durable prefix the interrupted boundary left."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("old", 1)])
         workspace.maintenance.select_current("initial", "data", ("state", "base"), None)
@@ -110,6 +115,7 @@ def test_retry_recovers_after_interruption(tmp_path, monkeypatch, boundary):
 
 
 def test_concurrent_head_change_keeps_published_branch_and_retry_does_not_overwrite(tmp_path, monkeypatch):
+    """A concurrent head advance makes the upsert stale, and the published branch is recovered without overwriting the head."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [("old", 1)])
         workspace.create("other", [("other", 3)])
@@ -131,6 +137,7 @@ def test_concurrent_head_change_keeps_published_branch_and_retry_does_not_overwr
 
 
 def test_same_batch_cannot_execute_concurrently(tmp_path):
+    """A second attempt at the same batch id while its request guard is held refuses as running."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("base", [])
         request_id = stable_urn("core-upsert", "batch") + ":request"

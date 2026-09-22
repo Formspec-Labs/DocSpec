@@ -15,6 +15,8 @@ MAX_SOURCE_DESCRIPTION_BYTES = 1024 * 1024
 
 
 def accepted_record_outcomes(values: Iterable[str]) -> frozenset[str]:
+    """Return the accepted outcome set, refusing a bare string and unsupported names."""
+
     if isinstance(values, (str, bytes)):
         raise TypeError("accepted record outcomes must be a collection of outcome names")
     selected = frozenset(values)
@@ -46,6 +48,7 @@ def collection_outcome(value: object, *, source_state_scope: str) -> Mapping[str
 
 
 def require_accepted_outcome(value: Mapping[str, Any] | None, accepted: frozenset[str]) -> None:
+    """Refuse a reported record outcome outside the accepted set, treating None as unreported."""
     # No provider observation is claimed for caller-supplied/unreported input.
     if value is not None and value["recordOutcome"] not in accepted:
         raise ValueError(f"source collection record outcome {value['recordOutcome']!r} is not accepted")

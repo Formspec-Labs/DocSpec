@@ -36,6 +36,8 @@ class FramedSectionHasher:
         self._observed = 0
 
     def add_payload(self, payload: bytes) -> None:
+        """Append one framed payload, refusing more than the declared record count."""
+
         self._observed += 1
         if self._observed > self._count:
             raise IntegrityError(
@@ -45,9 +47,13 @@ class FramedSectionHasher:
         self._digest.update(payload)
 
     def add(self, record: Mapping[str, object]) -> None:
+        """Append one record framed as its canonical JSON bytes."""
+
         self.add_payload(canonical_json_bytes(record))
 
     def digest(self) -> str:
+        """Return the framed section digest, refusing a yield that differs from the declared count."""
+
         if self._observed != self._count:
             raise IntegrityError(
                 f"cannot compute {self._domain}: section {self._name!r} declared "

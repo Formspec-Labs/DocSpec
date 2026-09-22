@@ -1,4 +1,9 @@
-"""CLI admission uses the pinned catalog's existing bytes and semantic checks."""
+"""Source-catalog CLI verify contract: verification uses the pinned catalog's existing bytes and semantic
+checks, passing after the store is moved and never repairing it.
+
+Refuses a different catalog pin, an unaccepted producer and changed member bytes, writing a fail JSON to stderr
+and leaving the destination untouched.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +22,7 @@ from tests.support.source_catalog_cli import (
 
 @pytest.fixture
 def published_catalog(tmp_path, monkeypatch, capfd):
+    """Build a catalog through the CLI and return its destination, pinned-reference path and catalog dict."""
     install_fake_source_native(monkeypatch)
     destination = tmp_path / "catalog-store"
     assert main(source_catalog_build_arguments(tmp_path, destination=destination)) == 0

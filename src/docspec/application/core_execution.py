@@ -52,6 +52,7 @@ def _diagnostic(error):
 
 @dataclass(frozen=True)
 class ResolveCall:
+    """One reuse-or-run request: definition, request, producer, selection identity and reuse policy."""
     definition: core.OperationDefinition
     request: core.Request
     producer: object
@@ -66,6 +67,7 @@ class ResolveCall:
 
 @dataclass(frozen=True, slots=True)
 class PreparedOperation:
+    """A completed producer's records and result, held in memory until publication."""
     execution: core.Execution
     result: core.Result
     records: tuple[core.CoreRecord, ...]
@@ -74,11 +76,13 @@ class PreparedOperation:
 
 @dataclass(frozen=True, slots=True)
 class SuspendedOperation:
+    """An explicitly suspended attempt's execution identity and retained checkpoint."""
     execution_id: str
     checkpoint: core.ContentRef
 
 
 class _Suspend(BaseException):
+    """Internal signal that a producer stopped at an explicit recoverable boundary."""
     def __init__(self, state):
         self.state = state
 
@@ -107,6 +111,7 @@ class OperationContext:
             raise StateTransitionError("operation callback is complete")
 
     def generate(self, value, *, label, role="derived", entity_type="artifact", entity_id=None, happened_at=None):
+        """Generate one new entity output and record its generation event and binding."""
         entity = core.Entity(format_version=1, entity_id=entity_id or _identity("entity"), entity_type=entity_type, value=value)
         return self.generate_record(entity, label=label, role=role, happened_at=happened_at)
 
@@ -131,6 +136,7 @@ class OperationContext:
         return record
 
     def adopt(self, entity_id, *, label, role="derived"):
+        """Bind an already-retained entity as an adopted output without generating it."""
         self._active()
         binding = self._binding(entity_id, label, role, "adopted")
         _, size = _snapshot_size(core.Result(format_version=1, result_id="event-check", execution_id=self.execution.execution_id,
@@ -139,6 +145,7 @@ class OperationContext:
         self.outputs.append(binding)
 
     def _binding(self, entity_id, label, role, production):
+        """Build one output binding, refusing a label already used in this attempt."""
         value = core.ResultBinding(label=label, entity_id=entity_id, role=role, production=production)
         record_value(value, core.ResultBinding)
         if any(binding.label == label for binding in self.outputs):
@@ -146,6 +153,7 @@ class OperationContext:
         return value
 
     def use(self, entity_id, *, happened_at=None):
+        """Record one actual usage event for a retained entity."""
         self._active()
         event = core.EntityEvent(event_id=_identity("usage"), entity_id=entity_id, happened_at=happened_at)
         _, size = _snapshot_size(core.Result(format_version=1, result_id="event-check", execution_id=self.execution.execution_id,
@@ -155,6 +163,7 @@ class OperationContext:
         return event
 
     def derive(self, generated_entity_id, used_entity_id, *, generation_event_id=None, usage_event_id=None):
+        """Record one derivation edge from a generated entity to a used entity."""
         self._active()
         edge = core.Derivation(generated_entity_id=generated_entity_id, used_entity_id=used_entity_id,
                                generation_event_id=generation_event_id, usage_event_id=usage_event_id)
@@ -189,6 +198,7 @@ class OperationContext:
                     self._prefetched_bytes += size
 
     def _entity(self, entity_id):
+        """Return an input entity from local records, the prefetch window or the ledger, refusing unavailability."""
         self._active()
         entity = next((record for record in self.records if isinstance(record, core.Entity) and record.entity_id == entity_id), None)
         if entity is None:
@@ -218,6 +228,7 @@ class OperationContext:
                 self.use(entity_id)
 
     def read_value(self, entity_id):
+        """Read an entity's value, recording actual use and decoding retained JSON when required."""
         entity = self._entity(entity_id)
         value = entity.value
         if isinstance(value, core.InlineValue):
@@ -235,17 +246,20 @@ class OperationContext:
         raise _Suspend(state)
 
     def result(self, outcome, *, result_id):
+        """Snapshot the attempt's result record from its accumulated events."""
         return _snapshot(core.Result(format_version=1, result_id=result_id, execution_id=self.execution.execution_id,
                                      outcome=outcome, generations=tuple(self.generations), usages=tuple(self.usages),
                                      derivations=tuple(self.derivations)))
 
 
 class CoreOperations:
+    """Prepare, run, resume and publish direct Core operations through one publisher."""
     def __init__(self, publisher: CorePublisher):
         self.publisher, self.ledger = publisher, publisher.ledger
 
     @contextmanager
     def _session(self, session):
+        """Enter the owning publisher session, refusing a session from another metadata owner."""
         with (self.publisher.session() if session is None else nullcontext(session)) as active:
             active._active()
             if active.ledger is not self.ledger:
@@ -280,6 +294,7 @@ class CoreOperations:
             return self._perform(context, producer, upstream)
 
     def _perform(self, context, producer, upstream=()):
+        """Run one producer, returning a PreparedOperation or SuspendedOperation, or record its failure."""
         execution = context.execution
         try:
             try:
@@ -320,6 +335,7 @@ class CoreOperations:
             context.active = False
 
     def _save_checkpoint(self, context, upstream, state):
+        """Retain completed prerequisites and an explicit JSON continuation checkpoint."""
         # An explicit checkpoint retains its completed prerequisites. Ordinary
         # fused preparation still imposes no intermediate publication barrier.
         self.publish(upstream, session=context.session)
@@ -436,6 +452,7 @@ class CoreOperations:
         return tuple(item.result for item in requested)
 
     def _publish_journal(self, session, journal):
+        """Publish one completed journal, then index dependency evidence for its selected results."""
         batch = MetadataBatch(journal["unit_id"], records=tuple(journal["records"]), retained=tuple(tuple(key) for key in journal["roots"]))
         try:
             session.publish(batch)
@@ -449,6 +466,7 @@ class CoreOperations:
             raise
 
     def _publication_interrupted(self, journal, error):
+        """Record an incomplete progress entry for every execution of an interrupted publication."""
         try:
             for identity in journal["executions"]:
                 self.ledger.record_progress(_identity("publication-interruption"), identity, "incomplete",
@@ -478,6 +496,7 @@ class CoreOperations:
             return _snapshot(results[0])
 
     def run(self, definition, request, producer, *, input_records=(), capture_origin=None, session=None):
+        """Prepare and publish one operation inside a single session."""
         with self._session(session) as active:
             pending = self.prepare(definition, request, producer, input_records=input_records, capture_origin=capture_origin, session=active)
             return pending if isinstance(pending, SuspendedOperation) else self.publish((pending,), session=active)[0]

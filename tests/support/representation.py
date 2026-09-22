@@ -27,6 +27,7 @@ FAKE_PDF_PAGES = ("Page one §", "", "Page three \U0001f9ea")
 
 
 def install_fake_pypdf(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install a deterministic pypdf stand-in so PDF extraction never loads the real provider."""
     class FakePage:
         def __init__(self, text: str) -> None:
             self._text = text
@@ -55,6 +56,7 @@ def install_fake_pypdf(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def resolver_for(media_type: str, source: bytes):
+    """Return the PDF fixture's evidence resolver, or ``None`` for other media types."""
     if media_type != "application/pdf":
         return None
     return LazyPypdfExtractor().evidence_resolver(source)

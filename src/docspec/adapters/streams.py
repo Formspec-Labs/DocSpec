@@ -15,7 +15,11 @@ from docspec.ports.record_storage import BATCH_BYTES as BATCH_BYTES, BATCH_ROWS 
 
 @contextmanager
 def staged_bytes(chunks, *, directory: Path | None, limit: int, max_bytes=None, expected_digest=None, expected_size=None):
-    """Hash and sync exact input bytes once; remove staging on every exit path."""
+    """Hash and sync exact input bytes once; remove staging on every exit path.
+
+    Yields the staged path, its sha256 digest and byte count, refusing a limit
+    overrun or bytes that differ from the expected digest or size.
+    """
     if expected_digest is not None:
         require_sha256(expected_digest, "expected blob digest")
     if expected_size is not None and (type(expected_size) is not int or expected_size < 0):

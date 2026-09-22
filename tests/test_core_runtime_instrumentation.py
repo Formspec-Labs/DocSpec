@@ -1,4 +1,9 @@
-"""Known-count checks for qualification observers, separate from capacity trials."""
+"""Known-count checks that qualification observers report exact reads, bytes and storage deltas.
+
+These pin the instruments themselves: selection parent-file visits, canonical codec byte counts under nested
+observers, blob consumed bytes and range verification, storage-sample classification, query-profile identity,
+net-live allocation reporting, and the CLI receipt's declared cache and measurement scope.
+"""
 from tests.support.iceberg_records import files
 
 

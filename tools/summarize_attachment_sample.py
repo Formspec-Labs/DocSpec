@@ -1,18 +1,11 @@
 """Reduce the attachment sample's NDJSON to the four things it was drawn to measure.
 
-Kept as a tool rather than a scratch script because the numbers below are cited:
-anyone can re-derive them from the receipt and the sealed selection, and a
-disagreement is then about the data rather than about what somebody once ran.
-
 Every stratum rate carries a Wilson interval, and the corpus estimate is the
-design-weighted `sum(w.indicator)/sum(w)` -- the raw sample fraction is 66.2%
-against a weighted 81.0%, because the allocation deliberately over-samples the
-withheld cells, and quoting the raw figure as a corpus rate is the error the
-weights exist to prevent.
-
-This reproduces the September 2026 sample report, including its historical
-interpretation. Supply that run's receipt and sealed selection; this is not a
-general report template for unrelated samples.
+design-weighted ``sum(w*indicator)/sum(w)``: the raw sample fraction (66.2%)
+over-samples the withheld cells by design and is not the corpus rate (81.0%
+weighted). Supply the September 2026 receipt and its sealed selection; this
+reproduces that report rather than serving as a general template. Writes
+Markdown to ``--output``.
 """
 
 from __future__ import annotations

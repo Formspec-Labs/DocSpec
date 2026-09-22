@@ -1,4 +1,4 @@
-"""Replaceable, source-grounded segmentation."""
+"""Replaceable, source-grounded segmentation of one representation."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ SegmentPayload_co = TypeVar("SegmentPayload_co", covariant=True)
 
 
 class Segmenter(Protocol[RepresentationPayload_contra, SegmentPayload_co]):
+    """Pin a segmenter's identity and split one representation into source-grounded segments."""
+
     @property
     def segmenter_id(self) -> str: ...
 

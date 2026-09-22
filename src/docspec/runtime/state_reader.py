@@ -12,7 +12,11 @@ from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS, bounded_batche
 
 
 class CoreStateReader:
-    """Use through ``CoreWorkspace.open_state`` and close child streams first."""
+    """Use through ``CoreWorkspace.open_state`` and close child streams first.
+
+    Construction verifies the pinned member files and refuses a pin mismatch
+    with IntegrityError.
+    """
 
     def __init__(self, session, states, state_id, *, expected_pin=None):
         require_text(state_id, "state identity")

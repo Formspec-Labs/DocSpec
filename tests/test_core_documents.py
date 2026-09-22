@@ -9,16 +9,19 @@ from docspec.runtime.core import CoreWorkspace
 
 
 def source(title="old"):
+    """Build one source item with a single text candidate and the given metadata title."""
     return SourceItem("document", "1", (CandidateFile("text", "file.txt", "text/plain"),), metadata={"title": title})
 
 
 def selected(workspace, pipeline, state_id):
+    """Return the selected result records for a state, resolving its selections through the ledger."""
     summary = list(pipeline.rows(state_id))[0][2]
     selections = [row.value for batch in workspace.ledger.read_records(("selection", key) for key in summary["selections"]) for row in batch]
     return [row.value for batch in workspace.ledger.read_records(("result", selection.selected_result_id) for selection in selections) for row in batch]
 
 
 def test_capture_later_processing_metadata_reuse_reopen_and_alternatives(tmp_path):
+    """Capture, processing and metadata-only reuse survive reopen; explicit fresh work yields new result ids."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     (inputs / "file.txt").write_text("Hello world.\n\nSecond paragraph.")
@@ -44,6 +47,7 @@ def test_capture_later_processing_metadata_reuse_reopen_and_alternatives(tmp_pat
 
 
 def test_failed_extraction_repairs_without_recapture(tmp_path):
+    """A repaired run after a temporary extraction failure refetches nothing and reuses the captured source."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     (inputs / "file.txt").write_text("Hello world")
@@ -66,6 +70,7 @@ def test_failed_extraction_repairs_without_recapture(tmp_path):
 
 
 def test_processor_graph_uses_selected_prerequisites_and_common_reuse(tmp_path):
+    """Declared processor order is obeyed and a second run reuses the first run's results and state."""
     from docspec.application.documents import DocumentProcessor
     from docspec.domain import core
     inputs = tmp_path / "inputs"
@@ -95,6 +100,7 @@ def test_processor_graph_uses_selected_prerequisites_and_common_reuse(tmp_path):
 
 
 def test_bulk_segments_and_statistics_preserve_positions_and_evidence(tmp_path):
+    """2050 paragraphs yield 4100 segment rows with ordinal metadata keys, per-segment word counts and evidence."""
     from docspec.application.document_processors import content_statistics_processor
     from docspec.processing.segmentation import ParagraphSegmenter
     inputs = tmp_path / "inputs"
@@ -126,6 +132,7 @@ def test_bulk_segments_and_statistics_preserve_positions_and_evidence(tmp_path):
 
 
 def test_documents_batch_lookup_publication_and_survive_sibling_failure(tmp_path, monkeypatch):
+    """One broken sibling fails the run with no current state; repair refetches only it and lookups stay batched."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     (inputs / "file.txt").write_text("Reusable source")
@@ -180,6 +187,7 @@ def test_documents_batch_lookup_publication_and_survive_sibling_failure(tmp_path
 
 
 def test_document_roots_include_inactive_sources_and_candidate_order(tmp_path):
+    """Retained roots list the state first, then active source selections, and inactive sources last."""
     from docspec.domain.content import SourceItemState
     inputs = tmp_path / "inputs"
     inputs.mkdir()
@@ -207,6 +215,7 @@ def test_document_roots_include_inactive_sources_and_candidate_order(tmp_path):
 
 
 def test_invocation_limits_charge_new_work_only_and_leave_failures_authoritative(tmp_path):
+    """Per-run limits charge only new work and the two prior failures stay recorded as failed results."""
     from docspec.application.documents import DocumentProcessor
     from docspec.domain import core
     from docspec.errors import LimitExceededError

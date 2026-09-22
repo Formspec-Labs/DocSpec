@@ -81,6 +81,7 @@ def topic_selection(catalog, label: str) -> dict:
 
 
 def run_example(output: Path, *, case: str = "matching", label: str = TOPIC) -> dict:
+    """Publish one fixture case; a missing topic must be refused by the source, never turned into an empty catalog."""
     if case not in CASES:
         raise ValueError(f"case must be one of {CASES}")
     if not output.is_absolute() or output.exists():

@@ -20,6 +20,7 @@ _ACCEPTED_SOURCE_VERIFIERS = (
 
 
 def install_fake_source_native(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Shadow the spicy_docs producer package with a fake reader that serves one record."""
     class FakeReader:
         def __init__(
             self,
@@ -94,6 +95,12 @@ def source_catalog_build_arguments(
     destination: Path,
     blob_store: Path | None = None,
 ) -> list[str]:
+    """Return the CLI arguments for an installed source-catalog build.
+
+    ``blob_store`` adds a shared store; the policy is written beside the
+    destination and the source-native digests are fixed.
+    """
+
     source_root = tmp_path / "source-native"
     source_root.mkdir(exist_ok=True)
     source_blob_store = tmp_path / "source-native-blobs"
@@ -133,6 +140,7 @@ def source_catalog_build_arguments(
 
 
 def source_catalog_verify_arguments(destination: Path, reference_path: Path) -> list[str]:
+    """Return the CLI arguments for verifying a built catalog reference."""
     implementation_id = "git+https://example.test/docspec@" + "1" * 40
     return [
         "source-catalog", "verify", "--root", str(destination), "--reference", str(reference_path),

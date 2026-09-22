@@ -202,6 +202,8 @@ class TextExtractor:
 
 
 def _html_visible_count(events) -> int:
+    """Count text codepoints outside script, style, template and noscript regions."""
+
     suppressed_tags = frozenset({"script", "style", "template", "noscript"})
     stack: list[tuple[str, bool]] = []
     positions: dict[str, list[int]] = {}
@@ -518,6 +520,8 @@ class LazyPypdfExtractor:
         return resolve
 
     def _read_pages(self, source_bytes: bytes) -> tuple[tuple[str, ...], str]:
+        """Read page texts and the backend version, refusing a missing provider, encrypted file, or parse failure."""
+
         expected_version = self._require_provider_version()
         try:
             from spicy_docs.extraction.pypdf import PdfEncryptedError, PdfReadError, PypdfReader
@@ -611,6 +615,8 @@ def _passthrough_result(
     coordinate_system: str = "utf8-byte-range",
     region: Mapping[str, Any] | None = None,
 ) -> ExtractionResult:
+    """Build a result whose representation retains the captured bytes unchanged under one identity mapping."""
+
     _verify_captured_bytes(captured, source_bytes)
     evidence = EvidenceCoordinate(
         coordinate_system=coordinate_system,

@@ -1,4 +1,9 @@
-"""The native scheduler delegates meaning and retries to the one Core owner."""
+"""Dagster drives Core operations without re-implementing meaning: retries, failures and workers land on Core.
+
+Covers native job execution and identity recording, retry-only-failed semantics after failures or lost
+scheduler responses, producer-free reexecution, bounded wire validation, and that importing the adapter
+never imports dagster.
+"""
 
 import importlib
 import json
@@ -25,10 +30,12 @@ dagster = pytest.importorskip("dagster", reason="install the 'dagster' extra to 
 
 
 def job(runtime, **kwargs):
+    """Build the definitions with ``runtime`` as the ``docspec_runtime`` resource and return the named job."""
     return build_dagster_definitions({"docspec_runtime": dagster.ResourceDefinition.hardcoded_resource(runtime)}, **kwargs).get_job_def(DAGSTER_JOB_NAME)
 
 
 def selections(result):
+    """Admit the ``execute_operation`` node outputs back into selected-value records."""
     return tuple(admit_record(payload) for payload in result.output_for_node("execute_operation").values())
 
 

@@ -24,6 +24,12 @@ from tests.support.core_workload import CORE_MEMBER_COUNT, core_value
 
 
 def expected_rows(mode: str, count: int):
+    """Yield independently computed canonical rows for one comparison mode.
+
+    ``whole`` asserts that the fixture's prefix ordering really does establish
+    full canonical order, so a hidden collision cannot invalidate its shortcut.
+    """
+
     if mode == "whole":
         # Every value's first property is body, whose first block dominates
         # canonical byte order. Equal fixture pairs then sort by their keys.
@@ -51,6 +57,8 @@ def expected_rows(mode: str, count: int):
 
 
 def expected_digest(mode: str, count: int) -> str:
+    """Return the framed selected-members digest over ``expected_rows``."""
+
     digest = hashlib.sha256(b'["docspec-selected-members",1,[')
     for index, row in enumerate(expected_rows(mode, count)):
         if index:
@@ -61,6 +69,12 @@ def expected_digest(mode: str, count: int) -> str:
 
 
 def main():
+    """Compare one mode's independent digest with its measured receipt.
+
+    Writes ``<mode>-expected.json`` exclusively, so an existing answer file is
+    refused, and exits nonzero when the digests differ.
+    """
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("fields", "whole", "named"))
     parser.add_argument("directory", type=Path)

@@ -1,4 +1,9 @@
-"""Catalog-only construction uses existing artifacts and honest supplied evidence."""
+"""Catalog-only construction builds the same artifacts as explicit assembly from caller-supplied records.
+
+Evidence stays honest and isolated from later caller mutation; invalid snapshots, unsupported integers,
+foreign namespaces, mismatched producer or reference, and bad scratch or producer options refuse before
+creating storage.
+"""
 
 from dataclasses import replace
 
@@ -19,6 +24,7 @@ from tests.support.source_catalog import producer
 
 
 def _record(identity="one", *, candidates=True):
+    """Build a supplied record dict with the given identity, optionally carrying a candidate rendition."""
     return {
         "recordId": identity, "sourceIssuedVersion": "caller-revision-1", "title": "Café records",
         "metadata": {"raw": ["uninterpreted"], "topics": [{"label": "Not inferred as publisher evidence"}]},
@@ -29,11 +35,13 @@ def _record(identity="one", *, candidates=True):
 
 
 def _source(records, *, namespace="urn:example:caller", scope="complete-snapshot", max_records=10, max_bytes=1024**2):
+    """Wrap records in a ``SuppliedRecordSource`` with the given namespace, scope and limits."""
     return SuppliedRecordSource(records, source_system_id=namespace, source_system_version="1",
         source_state_scope=scope, max_records=max_records, max_bytes=max_bytes)
 
 
 def _build(source, workspace, **overrides):
+    """Build a local catalog from ``source`` with the default policy, catalog id, producer and scratch limit."""
     settings = {
         "policy": SuppliedRecordCatalogPolicy(source.describe().source_system_id, source.describe().source_system_version),
         "catalog_id": "urn:example:catalog", "producer": producer(), "max_scratch_bytes": 8 * 1024**2,
@@ -204,6 +212,7 @@ def test_catalog_recovery_uses_existing_durable_builder_state(tmp_path):
     policy = SuppliedRecordCatalogPolicy("urn:example:caller", "1")
 
     class StopOnce:
+        """Policy that stages source rows and then fails once, to exercise durable resume state."""
         policy_id, policy_version = policy.policy_id, policy.policy_version
         configuration, universe_inputs = policy.configuration, policy.universe_inputs
 

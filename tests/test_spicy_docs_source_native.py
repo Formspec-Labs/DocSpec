@@ -1,4 +1,11 @@
-"""Admission through the current optional source-native reader."""
+"""Source-native adapter admission: the current optional spicy-docs reader is resolved and must declare the
+'spicy-docs' producer product, and a missing or broken reader refuses as a structured CLI failure before any
+catalog publication.
+
+Covers resolving the profiles module and one named profile, refusing a reader with another producer product,
+not trying a predecessor module on failure, preserving a transitive import error, requiring the public
+collection-outcome API, and explicit CLI acceptance of partial-rejection inputs being recorded.
+"""
 
 from __future__ import annotations
 
@@ -17,6 +24,7 @@ _READER_MODULE_NAME = "spicy_docs.source_native"
 
 
 def _reader(*, product: str | None) -> types.ModuleType:
+    """Build a fake reader module with an optional CURRENT_PRODUCER_PRODUCT."""
     module = types.ModuleType(_READER_MODULE_NAME)
     if product is not None:
         module.CURRENT_PRODUCER_PRODUCT = product

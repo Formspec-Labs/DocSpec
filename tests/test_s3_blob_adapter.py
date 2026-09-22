@@ -1,3 +1,12 @@
+"""S3 content-addressed blob store contract, exercised through a fake S3 client against amazon-s3 and
+R2-style prefixes: writes are conditional and bounded, declared identity is checked before upload, and reads
+stream within max_bytes.
+
+Also pins conditional delete requiring confirmed absence, stat/verify rejecting tampered metadata or bytes,
+half-open range reads, contained materialization that never replaces or follows symlinks, provider errors
+normalized to S3BlobStoreError, fail-closed configuration and reference validation, and a lazy boto3 factory.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -56,6 +65,8 @@ class _StoredObject:
 
 
 class _FakeS3Client:
+    """In-memory S3 double modelling conditional puts, ranged gets and an opaque provider etag."""
+
     def __init__(self) -> None:
         self.objects: dict[tuple[str, str], _StoredObject] = {}
         self.put_requests: list[dict[str, Any]] = []
@@ -146,6 +157,7 @@ def _s3_store(
     prefix: str = "",
     max_blob_bytes: int = 32,
 ) -> tuple[S3ContentAddressedBlobStore, _FakeS3Client]:
+    """Build an S3-backed store over a fake client with a 32-byte write limit and 3-byte transfer chunks."""
     client = _FakeS3Client()
     store = S3ContentAddressedBlobStore(
         client,

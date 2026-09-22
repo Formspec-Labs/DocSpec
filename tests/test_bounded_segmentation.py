@@ -96,6 +96,7 @@ class ExpensiveCharacterCounter:
 
 
 def _captured(content: bytes, media_type: str) -> CapturedFile:
+    """Build a captured-file fixture pinned to the content's digest, size and media type."""
     blob = BlobRef(
         locator=f"fixture://{sha256_digest(content).removeprefix('sha256:')}",
         digest=sha256_digest(content),
@@ -119,6 +120,7 @@ def _captured(content: bytes, media_type: str) -> CapturedFile:
 
 
 def _representation(text: str, media_type: str = "text/plain") -> RepresentationPayload:
+    """Extract the default text representation for a fixture string."""
     source = text.encode("utf-8")
     return DefaultExtractorRegistry().extract(_captured(source, media_type), source).payload
 
@@ -130,6 +132,7 @@ def _bounded(
     media_type: str = "text/plain",
     **overrides: int,
 ) -> tuple[RepresentationPayload, BoundedSegmentation]:
+    """Segment `text` with the given counter and settings overrides, returning payload and bounded result."""
     payload = _representation(text, media_type)
     settings = BoundedSegmentSettings.for_counter(counter, **overrides)
     return payload, BoundedSegmenter(counter, settings=settings).segment_bounded(payload)
@@ -482,6 +485,7 @@ def _text_representation_with_mappings(text: str, mappings: tuple[EvidenceMappin
 
 
 def _segmenter() -> BoundedSegmenter:
+    """Bounded segmenter over the word counter with the shared `SMALL` settings."""
     counter = WordCounter()
     return BoundedSegmenter(counter, settings=BoundedSegmentSettings.for_counter(counter, **SMALL))
 
@@ -573,6 +577,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _token_counters() -> object:
+    """Import and return the optional `docspec.adapters.token_counters` module."""
     return importlib.import_module("docspec.adapters.token_counters")
 
 

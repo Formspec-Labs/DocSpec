@@ -55,6 +55,7 @@ def _description(
     *,
     state_scope: str = "complete-snapshot",
 ) -> SourceNativeDescription:
+    """Return the source-native description for one fixture identity."""
     artifact_digest = {
         "documents": _SHA_A,
         "dockets": _SHA_B,
@@ -95,6 +96,7 @@ def _source_record(
     schema: str,
     record: Mapping[str, Any],
 ) -> dict[str, Any]:
+    """Wrap one raw record in the source-native envelope the builder reads."""
     return {
         "fieldDiagnostics": [],
         "record": dict(record),
@@ -110,6 +112,7 @@ def _document(
     identity: str = "EPA-2026-0001-0001",
     **updates: object,
 ) -> dict[str, Any]:
+    """Return one regulations-gov document source record; ``updates`` merge into its attributes."""
     attributes: dict[str, Any] = {
         "additionalRins": ["2060-AV12", "not-a-rin"],
         "agencyId": "EPA",
@@ -146,6 +149,7 @@ def _docket(
     include_link: bool = False,
     **updates: object,
 ) -> dict[str, Any]:
+    """Return one regulations-gov docket source record; ``include_link`` adds its self link."""
     attributes: dict[str, Any] = {
         "agencyId": "EPA",
         "dkAbstract": "Exact docket abstract",
@@ -182,6 +186,7 @@ def _comment(
     include_body: bool = True,
     **updates: object,
 ) -> dict[str, Any]:
+    """Return one regulations-gov comment source record with its attachment in ``included``."""
     attributes: dict[str, Any] = {
         "agencyId": "EPA",
         "commentOn": "source-object",
@@ -233,6 +238,7 @@ def _comment(
 
 
 def _federal_register(identity: str = "2026-10001") -> dict[str, Any]:
+    """Return one Federal Register source record keyed by its bare document number."""
     return _source_record(
         identity,
         scope="federal-register-documents",
@@ -285,6 +291,7 @@ def _rendition(
     expected_sha256: str | None = None,
     expected_byte_size: int | None = None,
 ) -> dict[str, Any]:
+    """Return one rendition row for a source record."""
     return {
         "sourceRecordId": identity,
         "renditionId": rendition_id,
@@ -297,6 +304,7 @@ def _rendition(
 
 
 def _policy(*, include_comments: bool = False) -> RegulationsGovCatalogPolicy:
+    """Return the fixture policy; ``include_comments`` adds the comment input selector."""
     return RegulationsGovCatalogPolicy(
         SourceInputSelector(
             _DOCUMENT_SYSTEM,
@@ -346,6 +354,12 @@ def _build_items(
     federal_register_records: tuple[Mapping[str, Any], ...] = (_federal_register(),),
     federal_register_renditions: tuple[Mapping[str, Any], ...] | None = None,
 ) -> tuple[SourceCatalogItem, ...]:
+    """Build the fixture catalog and read back one item per source record.
+
+    Defaults supply one docket and one Federal Register filing; the comment
+    source is assembled only when the policy selects it.
+    """
+
     if federal_register_renditions is None:
         federal_register_renditions = (
             _rendition(
@@ -400,6 +414,7 @@ def _build_result(
     workspace_factory: Any = SqliteCatalogPolicyWorkspace,
     resume_batch_items: int | None = None,
 ) -> Any:
+    """Run the production catalog builder over the supplied sources."""
     options = {} if resume_batch_items is None else {"resume_batch_items": resume_batch_items}
     return SourceCatalogBuilder(
         store=LocalSourceCatalogStore(root),
@@ -411,6 +426,7 @@ def _build_result(
 
 
 def _items(root: Path, reference: Any) -> tuple[SourceCatalogItem, ...]:
+    """Read the built catalog's items back through the artifact reader."""
     snapshot = SourceCatalogArtifactReader(
         LocalSourceCatalogStore(root), producer=_producer()
     ).open_snapshot(reference)
@@ -427,6 +443,7 @@ def _build(
     federal_register_records: tuple[Mapping[str, Any], ...] = (_federal_register(),),
     federal_register_renditions: tuple[Mapping[str, Any], ...] | None = None,
 ) -> SourceCatalogItem:
+    """Build the fixtures and return the single catalog item for ``document``."""
     items = _build_items(
         root,
         (document,),
@@ -441,6 +458,7 @@ def _build(
 
 
 def _interpretation(item: SourceCatalogItem, kind: str) -> Mapping[str, Any]:
+    """Return the result of one interpretation kind; a missing kind raises ``StopIteration``."""
     return next(
         value["result"]
         for value in item.interpretations

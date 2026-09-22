@@ -1,3 +1,8 @@
+"""SQLite record-workspace contract: one collection streams in sorted identity order, repeated or conflicting
+logical identities refuse with IntegrityError, and the spooled-byte limit refuses with LimitExceededError while
+the workspace root is removed on close.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

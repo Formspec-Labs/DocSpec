@@ -1,4 +1,4 @@
-"""Serial and spawned-worker derivation over bounded catalog partitions."""
+"""Serial and spawned-worker derivation of catalog digests and diagnostics over bounded partitions."""
 
 from __future__ import annotations
 
@@ -47,6 +47,8 @@ _PARALLEL_PROBE_TIMEOUT_SECONDS = 60.0
 
 
 def _derive_worker_count(item_count: int, workers: int | None) -> int:
+    """Return the explicit override, else one worker below the parallel row threshold and up to eight above it."""
+
     if workers is not None:
         return max(1, workers)
     if item_count < _PARALLEL_ROW_THRESHOLD:
@@ -122,17 +124,15 @@ def _derive_pool_context() -> Any:
 def _derive_partition_worker(
     args: tuple[str, Any, int, bool, str],
 ) -> tuple[str, str, int, _DispositionTally, dict[str, dict[str, int]], int, int, int]:
-    """Process one partition's rows in a subprocess and spill ordered payloads.
+    """Process one partition's rows in a subprocess and spill ordered digest payloads.
 
-    Returns (partition_id, spill_path, row_count, tally,
-    join_counts, normalized_count, joined_count, interpretation_count). The
-    spill holds one pickled payload tuple per row, in partition order; global
-    ordering across partitions is enforced by the parent's merge.
-
-    ``args[1]`` is a duplicated descriptor for the partition blob, already
-    opened through the parent's pinned blob source, so the rows arrive as a
-    stream this worker reads at its own pace rather than as a bytes copy of the
-    whole partition. See :func:`_derive_catalog_parallel` for why.
+    Returns (partition_id, spill_path, row_count, tally, join_counts,
+    normalized_count, joined_count, interpretation_count); the spill holds one
+    pickled payload tuple per row in partition order, and the parent's merge
+    enforces global ordering. ``args[1]`` is a duplicated descriptor for the
+    partition blob, opened through the parent's pinned blob source, so rows
+    stream at the worker's own pace instead of crossing as a bytes copy. See
+    :func:`_derive_catalog_parallel` for why.
     """
 
     partition_id, blob, record_count, validate, spill_dir = args
@@ -201,14 +201,10 @@ def _derive_catalog(
 ) -> _DerivedCatalog:
     """Derive the catalog's digests and diagnostics in two streamed passes.
 
-    Pass one validates every row exactly once and feeds each fixed-count framed
-    digest incrementally; the staged row bytes are proven canonical by the
-    parse, and item round-tripping is byte-exact (pinned by test), so the state
-    digest frames the raw row bytes instead of re-serializing. The three
-    diagnostics whose framed sections declare data-dependent counts are counted
-    in pass one and hashed in pass two, which re-reads rows without repeating
-    the schema validation pass one already performed. The per-row ordering the
-    old per-digest generators re-checked is enforced once, globally, by
+    Pass one validates every row exactly once, feeds each fixed-count framed
+    digest incrementally from the raw canonical bytes, and counts the
+    variable-size diagnostics; pass two re-reads rows without revalidating to
+    hash those diagnostics. Global row ordering is enforced once by
     ``_iter_located_catalog_rows``.
     """
 
@@ -272,34 +268,18 @@ def _derive_catalog_parallel(
 ) -> _DerivedCatalog:
     """Derive the same digests with per-partition workers and one ordered merge.
 
-    Workers own every expensive per-row step -- parse, schema check, item
-    construction, projection canonicalization -- and spill ordered digest-ready
-    payloads built by the same helpers the serial engine uses. The parent sums
-    the counters, initializes every framed hasher with known counts, and feeds
-    them from one heap-merge of the ordered spills, so the byte stream each
-    digest consumes is identical to the serial derivation's. When several
-    partitions carry defects, which partition's refusal surfaces first may
-    differ from the serial order; the refusals themselves are identical.
-
-    Each task carries a *descriptor* for its partition blob, not the blob. The
-    parent once read each partition whole and pickled those bytes to a worker,
-    which windowed the number of partitions in flight but not their size:
-    ``CATALOG_PARTITION_BUCKET_COUNT`` is a fixed 64, so a partition is always
-    1/64th of the catalog and peak memory was a fixed *fraction* of the corpus
-    rather than a bound on it -- 16 in the parent's queue plus one per worker.
-    Measured, that put a 1.17 GB catalog's derivation at 1,956 MB across the
-    process tree and a real 7.61 GB catalog's build at 2.78 GB, growing without
-    limit. Streaming makes both ends O(one buffered read) instead.
-
-    The descriptor is duplicated from an open the parent performed through its
-    pinned blob source, so a worker inherits exactly the file the parent
-    resolved and verified; handing over a path instead would reintroduce the
-    re-resolution that :mod:`docspec.adapters.source_catalog_store` pins
-    against. A sibling with the same problem, SpicySearch's snapshot build,
-    bounds its worker arguments by shipping fixed-size row chunks instead;
-    that also works, but DocSpec checks record count, strict ordering and
-    bucket membership per partition in ``_iter_partition_stream``, and keeping
-    the partition whole keeps those checks exactly as they were.
+    Workers produce digest-ready payloads with the same helpers the serial
+    engine uses; the parent sums the counters, initializes every framed hasher
+    with known counts, and feeds them from one heap-merge of the ordered
+    spills, so each digest consumes the same byte stream as the serial
+    derivation. When several partitions carry defects, which refusal surfaces
+    first may differ from the serial order; the refusals themselves are
+    identical. Each task carries a duplicated descriptor for its partition
+    blob, opened through the parent's pinned blob source, rather than the
+    blob's bytes: whole-blob arguments made peak memory a fixed fraction of
+    the corpus (2.78 GB for a 7.61 GB catalog), while streaming makes both ends
+    O(one buffered read) and keeps the pinned resolution that
+    :mod:`docspec.adapters.source_catalog_store` pins against.
     """
 
     import tempfile

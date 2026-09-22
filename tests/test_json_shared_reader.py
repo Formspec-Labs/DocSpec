@@ -1,4 +1,8 @@
-"""Source-byte parity against the frozen pre-port reader, with named changes."""
+"""JSON extraction and segmentation must match the frozen pre-port reader byte for byte.
+
+Named changes replace old behavior: overflow now refuses infinity and reader drift refuses before parsing.
+Ambiguous, incomplete or over-bound sources refuse in both stages.
+"""
 
 import json
 import math
@@ -20,6 +24,7 @@ from tests.support.processing import _captured
 
 
 def _assert_parity(source):
+    """Assert extractor and segmenter outputs match the frozen reader's values, record bounds and evidence."""
     text = source.decode("utf-8")
     expected = old.strict_json_value(text)
     captured = _captured(source, "application/json")

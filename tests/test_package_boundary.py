@@ -1,3 +1,9 @@
+"""The installed package boundary keeps repository code and production imports inside DocSpec.
+
+The wheel ships its schemas and entry points, core import plus CLI help need no optional dependency, and
+named exceptions (the shared canonical JSON gateway, reader modules, type-only pyarrow/duckdb/msgspec
+imports) are asserted as exactly observed rather than merely allowed.
+"""
 from __future__ import annotations
 
 import ast
@@ -48,6 +54,7 @@ def _production_files() -> list[Path]:
 
 
 def _absolute_imports(path: Path) -> set[str]:
+    """Return the absolute import names in ``path``, including level-0 ``ImportFrom`` modules."""
     imports: set[str] = set()
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in ast.walk(tree):

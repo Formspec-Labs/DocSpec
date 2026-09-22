@@ -1,20 +1,12 @@
 """Strict JSON parsing and exact record-coordinate helpers.
 
 This is not a second copy of ``docspec.domain.identity``'s parsers, and the two
-are not interchangeable. Identity reads DocSpec's *own* sealed artifacts: it
-takes bytes, returns frozen values, and enforces the identity rules -- canonical
-form, and no floating-point number anywhere, finite or not.
-
-This module reads *source documents* DocSpec did not write. It takes ``str``
-because the character offsets are the product: ``record_char_ranges`` returns
-the exact half-open span of every top-level record, which is how a segment's
-evidence addresses the bytes it came from. A parser that returns only a value
-cannot answer that. It returns mutable plain values, and it accepts finite
-floats, because third-party JSON contains them and refusing one would refuse
-the document instead of describing it.
-
-What both readings share is what is closed: duplicate object keys and the
-non-finite ``NaN``/``Infinity``/``-Infinity`` constants are refused here too.
+are not interchangeable. Identity reads sealed artifacts: bytes in, frozen
+values out, no float anywhere. This module reads *source documents* DocSpec did
+not write: ``str`` in, mutable plain values out, finite floats accepted, and
+``record_char_ranges`` returns the exact half-open span of every top-level
+record -- the product a value-only parser cannot supply. Both refuse duplicate
+object keys and the non-finite ``NaN``/``Infinity``/``-Infinity`` constants.
 """
 
 from __future__ import annotations

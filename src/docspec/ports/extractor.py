@@ -1,4 +1,4 @@
-"""Replaceable representation extraction."""
+"""Replaceable extraction of one captured file into a representation."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ ExtractionResult_co = TypeVar("ExtractionResult_co", covariant=True)
 
 
 class Extractor(Protocol[ExtractionResult_co]):
+    """Extract one captured file into a representation under a pinned configuration."""
+
     @property
     def extractor_id(self) -> str: ...
 

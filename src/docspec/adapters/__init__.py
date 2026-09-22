@@ -33,6 +33,8 @@ __all__ = sorted(_EXPORTS)
 
 
 def __getattr__(name: str) -> Any:
+    """Resolve one declared export on first use and cache it, refusing undeclared names."""
+
     module_name = _EXPORTS.get(name)
     if module_name is None:
         raise AttributeError(name)

@@ -1,4 +1,10 @@
-"""Supplied schemas retain their draft, resource snapshot and error meaning."""
+"""Payload schema compilation and validation contract: references are explicit and frozen at compile time,
+resolve against the pinned base URI (absolute or relative), and unsupported drafts or malformed schemas refuse
+with IntegrityError.
+
+Format keywords only assert when validate_formats is set, and a validation failure raises SchemaValidationError
+carrying escaped JSON-pointer instance and schema paths plus a message naming the expected type.
+"""
 
 import pytest
 

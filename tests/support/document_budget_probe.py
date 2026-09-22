@@ -1,4 +1,8 @@
-"""Fresh-process fixture for document budget continuation and abrupt termination."""
+"""Fresh-process fixture for document budget continuation and abrupt termination.
+
+Run as ``python -m tests.support.document_budget_probe root kind mode run_id limit``;
+it prints one JSON line, either ``{"state": run_id}`` or ``{"error": ..., "message": ...}``.
+"""
 
 import json
 import os

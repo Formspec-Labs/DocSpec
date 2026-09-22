@@ -1,4 +1,8 @@
-"""Credential rejection and diagnostic redaction remain shared behavior."""
+"""Processor receipts must reject secret-like content while diagnostics redact it.
+
+``require_secret_free`` raises IntegrityError; common provider credential patterns are covered as defense
+in depth. ``redact`` and ``redact_text`` replace matching values and text with REDACTED_SECRET.
+"""
 import pytest
 from docspec.domain.security import REDACTED_SECRET, redact, redact_text, require_secret_free
 from docspec.errors import IntegrityError

@@ -1,4 +1,8 @@
-"""Actual work survives fresh-process continuation; unknown hard-kill work refuses."""
+"""Document-run budgets survive failure and fresh-process continuation without being reset.
+
+A hard kill refuses unknown consumption rather than granting a new budget; the suite covers source-byte and
+generated-row accounting, capture reuse, limit pinning, and the single-producer claim on a concurrent run.
+"""
 
 import json
 from pathlib import Path
@@ -14,6 +18,7 @@ from docspec.runtime import CoreWorkspace
 
 @pytest.fixture
 def inputs(tmp_path):
+    """Create two five-byte input files under ``tmp_path/inputs``."""
     (tmp_path / "inputs").mkdir()
     for name in ("a", "b"):
         (tmp_path / "inputs" / (name + ".txt")).write_bytes(b"12345")
@@ -21,6 +26,7 @@ def inputs(tmp_path):
 
 
 def run(root, kind, mode, limit, run_id="run"):
+    """Run the budget probe in a subprocess; ``kill`` mode must exit 23 and other modes return the probe's JSON."""
     result = subprocess.run([sys.executable, "-m", "tests.support.document_budget_probe", str(root), kind, mode, run_id, str(limit)],
         cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, timeout=45)
     if mode == "kill":
@@ -31,6 +37,8 @@ def run(root, kind, mode, limit, run_id="run"):
 
 
 def accounting(root, run_id="run"):
+    """Return the run's execution id and its retained work counts, or the last checkpoint state while the
+    result is unretained."""
     with CoreWorkspace(root / "workspace") as workspace:
         execution, = [identity for batch in workspace.ledger.executions(run_request_id(run_id)) for identity in batch]
         result = next(workspace.ledger.read_records([("result", execution + ":result")]))[0]

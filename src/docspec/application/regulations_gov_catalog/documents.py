@@ -1,4 +1,4 @@
-"""Document normalization, exact joins, selection and provenance."""
+"""Regulations.gov document normalization, exact joins, rendition selection and provenance."""
 
 from __future__ import annotations
 
@@ -78,6 +78,7 @@ def _item_from_row(
     sample: RegulationsGovSamplePolicy | None,
     source_url_template: str,
 ) -> SourceCatalogItem:
+    """Interpret one Regulations.gov document row into a complete catalog item."""
     native, attributes = _record_data(record, expected_type="documents")
     source_item_id = str(record["sourceRecordId"])
     data = native["data"]
@@ -464,6 +465,7 @@ def _document_selection(
 def _rendition_preference(
     regulations_renditions: tuple[Mapping[str, Any], ...], federal_register_renditions: tuple[Mapping[str, Any], ...]
 ) -> tuple[tuple[SourceCatalogCandidate, ...], tuple[CatalogRenditionFamily, ...], str | None]:
+    """Choose the Regulations.gov file family, then at most one Federal Register rendition."""
     regulations_candidates: list[SourceCatalogCandidate] = []
     claimed: set[str] = set()
     for value in regulations_renditions:

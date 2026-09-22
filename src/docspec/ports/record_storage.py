@@ -181,6 +181,8 @@ def bounded_batches(
 
 
 def bounded_rows(values, *, size, max_row_bytes=BATCH_BYTES, max_rows=BATCH_ROWS):
+    """Yield tuples of values bounded by row count and bytes, refusing an oversized row."""
+
     pending, total = [], 0
     with owned_iterator(values) as source:
         for value in source:

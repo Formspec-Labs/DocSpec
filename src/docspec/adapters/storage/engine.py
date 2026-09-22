@@ -13,6 +13,8 @@ def connect(
     scratch: str | Path, *, memory_bytes: int = ENGINE_MEMORY_BYTES,
     scratch_bytes: int = 80 * 1024**3, threads: int = ENGINE_THREADS,
 ) -> duckdb.DuckDBPyConnection:
+    """Open a DuckDB connection bounded by memory, scratch bytes and thread count."""
+
     if min(memory_bytes, scratch_bytes, threads) <= 0:
         raise ValueError("native engine limits must be positive")
     return duckdb.connect(config={

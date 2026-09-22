@@ -1,17 +1,17 @@
 """Ordinary Core document workload; native tools own time and memory measurement.
 
-Copy this file and the shared dataset/phrase examples outside the checkout.
-Run generate, build, verify, capture, process, changed, clean, inspect and compare
-as separate Python processes. Alternatively replace process with prefix followed
-by resume: inject an interruption before the next document processor operation,
-then recover the retained completed choices in a fresh process. This is retained
-prefix recovery, not an operating-system crash or Core checkpoint-resume test.
-
-Generate requires --workload and --wheel. Later operations use those saved
-reproduction inputs and the retained Core state references.
-Set TMPDIR before starting Python if scratch must live in the measured directory.
-No timings, RSS claims, capacity verdicts, scheduler, or experiment ledger live here.
-The text16 and markup16 options are development smoke fixtures, not capacity candidates.
+Copy this file and the shared dataset/phrase examples outside the checkout, then
+run generate, build, verify, capture, process, changed, clean, inspect and
+compare as separate Python processes. Alternatively replace process with prefix
+followed by resume: inject an interruption before the next document processor
+operation, then recover the retained completed choices in a fresh process --
+retained prefix recovery, not an operating-system crash or Core
+checkpoint-resume test. Generate requires --workload and --wheel; later
+operations reuse the saved reproduction inputs and retained Core state
+references. Set TMPDIR before starting Python if scratch must live in the
+measured directory. No timings, RSS claims, capacity verdicts, scheduler, or
+experiment ledger live here, and text16 and markup16 are development smoke
+fixtures, not capacity candidates.
 """
 
 from __future__ import annotations
@@ -77,12 +77,14 @@ def _implementation(wheel):
 
 
 def _population(workload):
+    """Yield ``(index, excluded, candidates)``; the trailing ``count // 16`` records are run exclusions."""
     count = int(workload[6:] if workload.startswith("markup") else workload[4:])
     for index in range(count + count // 16):
         yield index, index >= count, _candidates(workload, index)
 
 
 def _candidates(workload, index):
+    """Return ``(candidate_id, byte_size, blocks)`` rows; ``index % 16`` picks the size class."""
     shape = index % 16
     if workload.startswith("markup"):
         size, blocks = (32 * 1024, 4) if shape < 12 else (512 * 1024, 16) if shape < 15 else (MAX_FILE_BYTES, 128)
@@ -93,6 +95,7 @@ def _candidates(workload, index):
 
 
 def _inventory(workload):
+    """Count documents, files, bytes and segments, skipping the run exclusions."""
     result = Counter()
     for _index, excluded, candidates in _population(workload):
         if not excluded:
@@ -104,6 +107,7 @@ def _inventory(workload):
 
 
 def _body(index, candidate, size, blocks, markup):
+    """Return one synthetic body of exactly ``size`` bytes in ``blocks`` parts, wrapped in ``<p>`` when markup."""
     opening, closing_tag, separator = (b"<html><body>", b"</body></html>", b"") if markup else (b"", b"", b"\n\n")
     available = size - len(opening) - len(closing_tag) - len(separator) * (blocks - 1) - (7 * blocks if markup else 0)
     parts = []
@@ -200,6 +204,7 @@ def _processor(root, phase):
 
 
 def _sources(root, saved):
+    """Yield the catalog's processing items, marking the recorded run exclusions excluded."""
     _, producer = _environment(root, saved)
     excluded = set(_read(root / "selection.json")["excludeItemIds"])
     catalog = open_local_catalog(_catalog(root), root / "dataset", producer=producer)
@@ -229,6 +234,7 @@ class _PrefixComplete(BaseException):
 
 
 def _run(root, saved, phase, *, prefix=None, recover=False):
+    """Run or resume one measured phase; an already completed phase root is refused."""
     assert not (root / phase / "run.json").exists(), "use a new workload root for another measured trial"
     counts = Counter()
     path, _ = _environment(root, saved, phase)
@@ -416,6 +422,7 @@ def _retitled_sources(root, saved):
 
 
 def _same_stage_results(workspace, pipeline, older, newer, *, changed_processor=False):
+    """Compare two states' per-document results, requiring only processor-pinned results to differ."""
     with closing(document_results(workspace, pipeline, older)) as before, closing(
             document_results(workspace, pipeline, newer)) as after:
         documents = 0

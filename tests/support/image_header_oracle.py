@@ -3,6 +3,7 @@
 import struct
 
 def _image_dimensions(content: bytes) -> tuple[str, int | None, int | None]:
+    """Return ``(kind, width, height)``; short, unknown or unparsable bytes report no dimensions."""
     if content.startswith(b"\x89PNG\r\n\x1a\n") and len(content) >= 24:
         return "png", int.from_bytes(content[16:20], "big"), int.from_bytes(content[20:24], "big")
     if content[:6] in {b"GIF87a", b"GIF89a"} and len(content) >= 10:
@@ -14,6 +15,7 @@ def _image_dimensions(content: bytes) -> tuple[str, int | None, int | None]:
 
 
 def _jpeg_dimensions(content: bytes) -> tuple[int, int] | None:
+    """Scan JPEG markers for a start-of-frame; ``None`` when no well-formed frame is found."""
     position = 2
     start_of_frame = frozenset({0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF})
     while position + 4 <= len(content):

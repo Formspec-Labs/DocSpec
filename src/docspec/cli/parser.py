@@ -20,6 +20,8 @@ from docspec.runtime.core import CoreWorkspace
 
 
 def _json_rows(path):
+    """Stream non-blank JSON lines, refusing any row above the 8 MiB input limit."""
+
     with Path(path).open("rb") as source:
         while payload := source.readline(BATCH_BYTES + 1):
             if len(payload) > BATCH_BYTES:
@@ -29,11 +31,15 @@ def _json_rows(path):
 
 
 def _record(path):
+    """Admit one Core record from a closed JSON file under the 8 MiB input limit."""
+
     value = thaw_json(parse_closed_json(read_bytes(path, label="Core record", max_bytes=BATCH_BYTES)))
     return admit_record(encode_record(value))
 
 
 def _keyed_rows(path):
+    """Yield key/value pairs from JSON lines that carry exactly key and value."""
+
     with owned_iterator(_json_rows(path)) as source:
         for row in source:
             if not isinstance(row, dict) or set(row) != {"key", "value"}:
@@ -42,6 +48,8 @@ def _keyed_rows(path):
 
 
 def _producer(name):
+    """Resolve an importable module:function producer and require it to be callable."""
+
     module, separator, attribute = name.partition(":")
     if not separator or not module or not attribute:
         raise CliError("producer must be an importable module:function")
@@ -188,6 +196,8 @@ def build_parser():
 
 
 def main(argv=None):
+    """Run one command, converting expected operator failures into emitted JSON errors."""
+
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))

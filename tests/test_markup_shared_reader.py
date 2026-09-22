@@ -1,4 +1,9 @@
-"""Frozen layout parity and explicit source-map corrections through the owner wheel."""
+"""Markup visible-text extraction must keep frozen layout parity while named corrections fix the old source map.
+
+CDATA delimiters are excluded, equal-length whitespace interpolation is refused, and bare namespaces,
+doctypes and invalid UTF-8 now refuse. Reader identity drift refuses before parsing, and native extractors
+keep byte passthrough with recorded owner limits.
+"""
 
 from dataclasses import asdict
 from hashlib import sha256
@@ -23,6 +28,8 @@ FIXTURES = Path(__file__).parent / 'fixtures/markup'
 
 
 def _assert_runs(source, result):
+    """Assert every run's byte range is in bounds, ``exact`` matches the sliced bytes, and exact runs
+    map back through ``rendition_range``."""
     for run in result.runs:
         assert 0 <= run.rendition_start < run.rendition_end <= len(source)
         output = result.content[run.representation_start:run.representation_end]
@@ -192,6 +199,7 @@ def test_native_html_unmatched_end_cost_does_not_grow_with_open_void_tags():
     comparisons = 0
 
     class CountedName(str):
+        """``str`` subclass that counts equality comparisons, so the test can bound an unmatched-end scan."""
         __hash__ = str.__hash__
 
         def __eq__(self, other):
@@ -299,6 +307,8 @@ def test_visible_html_unmatched_end_cost_is_linear_after_suppression(monkeypatch
     comparisons = 0
 
     class CountedName(str):
+        """``str`` subclass that counts equality comparisons, so the test can bound the unmatched-end
+        scan after suppression."""
         __hash__ = str.__hash__
 
         def __eq__(self, other):

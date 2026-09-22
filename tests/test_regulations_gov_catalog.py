@@ -1,4 +1,8 @@
-"""Exact source joins, field provenance, date policy, and ambiguous Federal Register filings."""
+"""Regulations.gov catalog extraction: exact-key joins preserve all three source facts with their normalized
+values, Federal Register filings join a document on the bare frDocNum while an ambiguous reused number abstains,
+unmatched dockets and missing dates yield explicit dispositions rather than aborting the build, and a direct
+policy iteration refuses a bad source before reading its identity.
+"""
 
 from __future__ import annotations
 
@@ -102,13 +106,9 @@ def test_exact_joins_preserve_all_three_source_facts_and_normalized_value(
 def test_document_with_unmatched_docket_stays_selected_with_no_docket_fact(
     tmp_path: Path,
 ) -> None:
-    """Gate B.2 evidence: a document whose docketId has no docket row (a real
-    Mirrulations shape for whole agencies, e.g. SEC ships zero docket JSONs)
-    must not be excluded from the catalog. It stays SELECTED, its
-    document-docket join records outcome "no-match", it carries no docket
-    source-native fact and no docket-sourced RIN, and the miss is visible as
-    an "unmatched" build-receipt joinCoverage count rather than a per-item
-    disposition.
+    """Gate B.2 evidence: a document whose docketId has no docket row (a real Mirrulations shape for whole
+    agencies, e.g. SEC ships zero docket JSONs) stays SELECTED rather than excluded, with outcome "no-match", no
+    docket source-native fact, no docket-sourced RIN and an "unmatched" build-receipt joinCoverage count.
     """
 
     document_id = "EPA-2026-0001-0001"
@@ -210,10 +210,9 @@ def test_withdrawn_missing_and_unavailable_rows_have_distinct_dispositions(
 def test_document_with_no_modify_or_posted_date_gets_an_explicit_disposition(
     tmp_path: Path,
 ) -> None:
-    """A document with neither modifyDate nor postedDate used to hard-abort
-    the whole build (IntegrityError); it must instead disposition explicitly
-    and let the build continue, the way the superseded passthrough minter
-    excluded such rows gracefully.
+    """A document with neither modifyDate nor postedDate must disposition FAILED (source.normalized-field-missing)
+    and let the build continue instead of hard-aborting it with IntegrityError, the graceful exclusion the
+    superseded passthrough minter already had.
     """
 
     item = _build(
@@ -228,9 +227,8 @@ def test_document_with_no_modify_or_posted_date_gets_an_explicit_disposition(
 
 
 def test_docket_with_no_modify_date_gets_an_explicit_disposition(tmp_path: Path) -> None:
-    """The same proof on the docket row: a missing modifyDate leaves required
-    `lastUpdatedDate` absent, so the row is never SELECTED and the version
-    placeholder is never served -- it must not abort the whole build.
+    """The same proof on the docket row: a missing modifyDate leaves required lastUpdatedDate absent, so the row
+    is never SELECTED and the version placeholder is never served, without aborting the whole build.
     """
 
     items = _build_items(
@@ -269,12 +267,9 @@ def test_dates_are_strict_and_policy_member_round_trips(tmp_path: Path) -> None:
 def test_a_composite_source_record_id_still_joins_on_the_bare_number(
     tmp_path: Path,
 ) -> None:
-    """The regression this whole change exists for.
-
-    DocSpec 0003 made the Federal Register sourceRecordId composite so a reused
-    number stops discarding the older filing. The index was keyed on that field
-    and the document side looks up by a bare frDocNum, so every one of 499,238
-    lookups missed and the build still reported pass.
+    """Regression for the composite sourceRecordId: after DocSpec 0003 made the Federal Register sourceRecordId
+    composite so a reused number stops discarding the older filing, an index keyed on that field missed all
+    499,238 bare-frDocNum lookups while the build still reported pass; joining on the bare number matches.
     """
     item = _build(
         tmp_path,
@@ -292,14 +287,9 @@ def test_a_composite_source_record_id_still_joins_on_the_bare_number(
 
 
 def test_a_reused_federal_register_number_matches_neither_filing(tmp_path: Path) -> None:
-    """Abstention, not an arbitrary winner.
-
-    Under composite identity 474 numbers carry more than one filing. Keeping the
-    latest publication_date would reproduce the pre-fix coverage exactly, which
-    is why it is tempting and why it is wrong -- it re-asserts the collapse 0003
-    removed, and would attach 00-111's BLM plat notice to a document that may
-    have meant the IRS rule filed under the same number four days earlier.
-    Measured population for this refusal: 30 documents of 430,323 matches.
+    """Abstention, not an arbitrary winner: a reused number carrying more than one filing yields "no-match" with
+    no matched source record, because keeping the latest publication_date would re-assert the collapse DocSpec
+    0003 removed and could attach a notice to the wrong filing (measured refusal population: 30 of 430,323).
     """
     item = _build(
         tmp_path,

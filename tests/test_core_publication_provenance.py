@@ -19,21 +19,25 @@ EXECUTION = Execution(format_version=1, execution_id="activity", request_id="req
 
 
 def outcome(identity, *, generations=(), usages=(), edges=()):
+    """Build a successful result about the shared `EXECUTION` with the given provenance events."""
     return Result(format_version=1, result_id=identity, execution_id="activity",
                   outcome=Outcome(status="success", value="empty"),
                   generations=tuple(generations), usages=tuple(usages), derivations=tuple(edges))
 
 
 def event(identity, entity, seconds=None):
+    """Build an entity event, with `happened_at` left unset when no whole second is given."""
     return EntityEvent(event_id=identity, entity_id=entity,
                        happened_at=None if seconds is None else f"2026-01-01T00:00:{seconds:02d}Z")
 
 
 def commit(ledger, result):
+    """Commit one result about the shared `EXECUTION` and retain it."""
     return ledger.commit(MetadataBatch(result.result_id, records=(EXECUTION, result), retained=(("result", result.result_id),)))
 
 
 def test_provenance_survives_reopen_and_conflicting_generation_rolls_back(tmp_path):
+    """A conflicting generation for one entity refuses and rolls back, while the identical event is accepted."""
     path = tmp_path / "ledger.sqlite"
     original = outcome("first", generations=(event("g", "entity", 2),))
     with closing(LocalSqliteCoreLedger(path)) as ledger:
@@ -47,6 +51,7 @@ def test_provenance_survives_reopen_and_conflicting_generation_rolls_back(tmp_pa
 
 @pytest.mark.parametrize("generation_first", [False, True])
 def test_usage_before_generation_refuses_in_either_admission_order(tmp_path, generation_first):
+    """A usage earlier than its generation refuses whichever record is admitted first."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         generation = outcome("generation", generations=(event("g", "e", 5),))
         usage = outcome("usage", usages=(event("u", "e", 3),))
@@ -65,6 +70,7 @@ def test_partial_stream_entities_allow_usage_before_the_completed_artifact(tmp_p
 
 
 def test_qualified_derivation_respects_actual_usage_time(tmp_path):
+    """A qualified derivation must name a usage event that precedes its generation event."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         invalid = outcome("qualified", generations=(event("g", "out", 3),), usages=(event("u", "in", 4),), edges=(
             Derivation(generated_entity_id="out", used_entity_id="in", generation_event_id="g", usage_event_id="u"),
@@ -74,6 +80,7 @@ def test_qualified_derivation_respects_actual_usage_time(tmp_path):
 
 
 def test_cycle_and_transitive_time_constraints_include_retained_edges(tmp_path):
+    """Transitive order and cycle checks include already-retained edges, and a refused edge rolls back."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         commit(ledger, outcome("old", generations=(event("ga", "a", 5), event("gc", "c", 3)), edges=(
             Derivation(generated_entity_id="c", used_entity_id="b"),
@@ -87,6 +94,7 @@ def test_cycle_and_transitive_time_constraints_include_retained_edges(tmp_path):
 
 
 def test_later_generation_claim_checks_transitive_retained_order(tmp_path):
+    """A later generation claim must not precede any retained transitive ancestor of its entity."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         commit(ledger, outcome("edges", generations=(event("ga", "a", 5),), edges=(
             Derivation(generated_entity_id="b", used_entity_id="a"),
@@ -97,6 +105,7 @@ def test_later_generation_claim_checks_transitive_retained_order(tmp_path):
 
 
 def test_instants_compare_offsets_without_rounding_away_stated_order():
+    """Offsets compare by instant and a seventh fractional digit refuses as unsupported precision."""
     assert event_instant("2026-01-01T01:00:00+01:00") == event_instant("2026-01-01T00:00:00Z")
     assert event_instant("2026-01-01T00:00:00.000001Z") == event_instant("2026-01-01T00:00:00Z") + 1
     with pytest.raises(IntegrityError, match="precision"):
@@ -109,6 +118,7 @@ def test_instants_compare_offsets_without_rounding_away_stated_order():
     times=st.lists(st.one_of(st.none(), st.integers(0, 9)), min_size=6, max_size=6),
 )
 def test_graph_admission_agrees_with_independent_small_oracle(edges, times):
+    """Ledger admission accepts exactly the random edge/time sets the independent oracle accepts."""
     generations = [dict(entity=str(index), activity="activity", event_id=f"g{index}", position=position) for index, position in enumerate(times)]
     pairs = [(str(child), str(parent)) for child, parent in edges]
     try:

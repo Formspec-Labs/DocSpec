@@ -71,6 +71,7 @@ def extracted_rows(relation, *, fields=None, sort_fields=(), read_rows=256, metr
 
 
 def encoded_members(relation, *, fields=None, material_keys=False, material_entities=False, read_rows=256, metrics=None):
+    """Encode admitted rows into comparison member bytes through the shared encoder."""
     metrics = {} if metrics is None else metrics
     with closing(extracted_rows(relation, fields=fields, read_rows=read_rows, metrics=metrics)) as rows:
         for key, entity, value, _ in rows:

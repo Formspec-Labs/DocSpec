@@ -1,3 +1,12 @@
+"""Source-catalog succession pointer contract: a per-series current pointer advances only against its exact
+expected root, records supersedes evidence in the successor's physical identity alone, and neither advancing
+nor readback mutates catalog roots.
+
+Covers refusal of stale, missing-supersedes, cross-series, missing and tampered candidates; a crash before
+replacement preserving the current pointer; descriptor-pinned pointer parents, hardlinked locks and broken
+symlinks refusing without outside mutation; and advisory locking recovering with the persistent lock file.
+"""
+
 from __future__ import annotations
 
 import fcntl
@@ -48,6 +57,7 @@ def _build(
     catalog_id: str = CATALOG_ID,
     supersedes: Supersedes | None = None,
 ):
+    """Build a catalog for a source under an optional catalog id and supersedes evidence."""
     store = LocalSourceCatalogStore(root)
     result = SourceCatalogBuilder(
         store=store,
@@ -89,6 +99,7 @@ def _pointer(root: Path, store: LocalSourceCatalogStore) -> LocalSourceCatalogCu
 
 
 def _successor(root: Path, previous: SourceCatalogRef, *, catalog_id: str = CATALOG_ID):
+    """Build a changed successor that supersedes the given reference."""
     return _build(
         root,
         _changed_source(),
@@ -102,6 +113,7 @@ def _successor(root: Path, previous: SourceCatalogRef, *, catalog_id: str = CATA
 
 
 def _artifact_files(root: Path, reference: SourceCatalogRef) -> dict[str, bytes]:
+    """Map each published artifact file to its bytes by path relative to the artifact root."""
     artifact_root = root / reference.digest.removeprefix("sha256:")
     return {
         path.relative_to(artifact_root).as_posix(): path.read_bytes()

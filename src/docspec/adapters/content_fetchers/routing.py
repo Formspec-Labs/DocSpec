@@ -28,6 +28,10 @@ class RoutingContentFetcher:
     downloader_id: ClassVar[str] = "docspec.content-fetcher.routing.v1"
 
     def __post_init__(self) -> None:
+        """Refuse an empty route selection or a non-positive byte allowance,
+        and validate every configured identity immediately.
+        """
+
         if self.local is None and self.s3 is None and self.https is None:
             raise ValueError("routing requires at least one configured fetcher")
         if self.max_object_bytes is not None and (
@@ -39,6 +43,8 @@ class RoutingContentFetcher:
 
     @property
     def configuration_digest(self) -> str:
+        """Digest the configured routes and byte allowance, reading each delegate's current identity."""
+
         routes = []
         for locator, delegate in (("relative-path", self.local), ("s3", self.s3), ("https", self.https)):
             if delegate is not None:
@@ -55,6 +61,10 @@ class RoutingContentFetcher:
     def fetch(
         self, candidate: CandidateFile, *, max_bytes: int, task_id: str, attempt_id: str,
     ) -> FetchStream:
+        """Dispatch by locator scheme, refusing an unconfigured scheme, and
+        re-verify the delegate's identity and configuration after acquisition.
+        """
+
         delegate = {"": self.local, "s3": self.s3, "https": self.https}.get(urlsplit(candidate.locator).scheme)
         if delegate is None:
             raise IntegrityError("candidate locator scheme is not configured")

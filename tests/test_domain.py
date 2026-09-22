@@ -1,3 +1,4 @@
+"""Pin canonical JSON admission: duplicate keys and noncanonical bytes are refused by parse_canonical_json."""
 import pytest
 from docspec.domain.identity import canonical_json_file_bytes, parse_canonical_json
 from docspec.errors import IntegrityError

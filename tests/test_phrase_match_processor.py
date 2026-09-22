@@ -1,4 +1,9 @@
-"""The optional example processor pins its vocabulary and preserves literal evidence."""
+"""The optional example phrase processor pins its vocabulary resource and limits.
+
+Each literal match keeps its original bytes and enclosing source evidence; malformed vocabularies refuse,
+a whitespace-changed pin refuses, and input, output and duration bounds raise LimitExceededError without
+truncation.
+"""
 
 from dataclasses import FrozenInstanceError
 
@@ -15,11 +20,13 @@ from tests.support.processing import _captured
 
 
 def _resource(*phrases, revision="1", terms=None):
+    """Build a vocabulary resource and its canonical bytes from phrase terms."""
     raw = canonical_json_bytes({"terms": terms or [{"id": "term", "label": "Term", "phrases": list(phrases)}]})
     return core.Resource(label="vocabulary", certainty="established", description={"resourceId": "urn:test:vocabulary", "revision": revision, "digest": sha256_digest(raw)}), raw
 
 
 def _result(processor, text):
+    """Extract, segment and run the processor on ``text``, returning its single output value and the segment."""
     content = text.encode("utf-8")
     extracted = TextExtractor().extract(_captured(content, "text/plain"), content)
     segment = ParagraphSegmenter().segment(extracted.payload)[0]

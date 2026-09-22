@@ -24,12 +24,16 @@ MANIFEST_KEY = "members.json"
 
 
 def require_limit(value: int) -> int:
+    """Require a positive integer output limit."""
+
     if type(value) is not int or value <= 0:
         raise ValueError("max_output_bytes must be a positive integer")
     return value
 
 
 def scratch(max_bytes: int):
+    """Create the temporary SQLite index workspace used while reading or writing one export."""
+
     return LocalSqliteRecordWorkspaceFactory(
         Path(gettempdir()).resolve(), max_spooled_bytes=max_bytes,
         max_record_bytes=RECORD_BYTES, read_batch_size=1,
@@ -64,6 +68,8 @@ def verified_open(source: LocalMemberSource, descriptor: MemberDescriptor) -> It
 
 
 def read_mapping(source: LocalMemberSource, descriptor: MemberDescriptor, *, max_bytes: int) -> dict[str, Any]:
+    """Read one verified member as a canonical JSON object, refusing oversize metadata or a non-object value."""
+
     if descriptor.byte_size > max_bytes:
         raise LimitExceededError("export metadata exceeds its byte limit")
     with verified_open(source, descriptor) as stream:

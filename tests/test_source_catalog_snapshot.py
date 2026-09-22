@@ -1,4 +1,12 @@
-"""Normative catalog contents, immutable identity, and verified blob reuse."""
+"""Catalog snapshot contract: a build streams one complete normative snapshot, identity is deterministic (a
+changed row moves the catalog id and digest) while a physical rebuild preserves the logical id, and unchanged
+partition blobs are verified then reused without rewriting payload bytes.
+
+Covers the receipt's byte measurements and digest fields, successor partition reuse, tampered blob refusal
+before reuse and before any snapshot row, root publication failure leaving no artifact and recovering by blob
+reuse, concurrent builders publishing only valid immutable outcomes, closed boundary shapes, and receipt
+reason-count ordering, distinctness and reconciliation.
+"""
 
 from __future__ import annotations
 

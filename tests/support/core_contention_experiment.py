@@ -45,6 +45,8 @@ def _rss():
 
 
 def _quantile(values, fraction):
+    """Return the ``fraction`` quantile of ``values``, or ``None`` when empty."""
+
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, max(0, ceil(len(ordered) * fraction) - 1))] if ordered else None
 
@@ -60,6 +62,8 @@ def _entry(target, role, reports, arguments):
 
 
 def _collect(processes, reports, *, timeout):
+    """Return one receipt per worker, refusing a declared timeout or an incomplete or failed receipt."""
+
     results = []
     deadline = time.monotonic() + timeout
     try:
@@ -100,6 +104,8 @@ def _selected_rows(workspace, state, width):
 
 
 def _check_named(rows, state, expected, expected_ids=None):
+    """Check one named-reader row stream against the expected fields and occurrence identities."""
+
     generation = -1 if state == "root" else int(state.rsplit(":", 1)[1])
     count = 0
     for key, identity, encoded in rows:
@@ -125,6 +131,8 @@ def _expected(width):
 
 
 def _writer(path, batches, width, barrier, readers_started, stopped, acknowledged, acknowledgements):
+    """Publish ``batches`` title revisions, refusing each stale current update."""
+
     metrics, receipts = {}, []
     ids = {f"{i:07d}": f"urn:docspec:fixture:occurrence:{i}" for i in range(width)}
     base = "root"
@@ -160,6 +168,8 @@ def _writer(path, batches, width, barrier, readers_started, stopped, acknowledge
 
 
 def _reader(path, width, barrier, started, stopped, acknowledged):
+    """Poll the current state and named reads until stopped, reporting latency and backlog."""
+
     expected = _expected(width)
     metadata_times, named_times, behind, versions = [], [], [], set()
     metrics = {}
@@ -189,6 +199,12 @@ def _reader(path, width, barrier, started, stopped, acknowledged):
 
 
 def contention(directory, *, batches=100, changed_members=1024, timeout=600):
+    """Run one writer against four readers over the frozen fixture, then reconcile every acknowledged batch.
+
+    A reused acknowledgement log or batch dimensions that do not fit the fixture
+    are refused, and every run must meet the declared elapsed, RSS and latency targets.
+    """
+
     directory = Path(directory)
     fixture_members = count_fixture(directory)
     if min(batches, changed_members) <= 0 or changed_members > fixture_members:
@@ -318,6 +334,12 @@ def _race_cleanup(path, shared, orphan, staged, attempted, published, deleting, 
 
 
 def cleanup_race(directory, *, timeout=120):
+    """Race a publication against policy cleanup in two processes, exercising the physical guards.
+
+    The workspace must not already exist; the cleanup worker must refuse
+    in-flight and retained content, then recover an interrupted removal.
+    """
+
     path = Path(directory) / "cleanup-race-workspace"
     assert not path.exists(), "use a fresh cleanup race workspace"
     with CoreWorkspace(path) as workspace, workspace.publisher.session() as session:

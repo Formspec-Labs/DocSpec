@@ -58,6 +58,7 @@ class DocumentProcessor:
     dependencies: tuple[str, ...] = ()
 
     def __post_init__(self):
+        """Admit the definition and refuse a non-transformation or non-callable processor."""
         require_text(self.name, "processor name")
         definition = admit_record(encode_record(self.definition))
         if not isinstance(definition, core.OperationDefinition) or definition.operation_kind != "transformation":
@@ -69,6 +70,7 @@ class DocumentProcessor:
 
 
 class DocumentPipeline:
+    """Run document capture, extraction, segmentation and processor stages through Core resolution."""
     def __init__(self, publisher, *, fetcher, extractor=None, segmenter=None, max_file_bytes=64 * 1024**2):
         self.publisher, self.operations = publisher, CoreOperations(publisher)
         self.fetcher = BoundContentFetcher(fetcher)
@@ -79,6 +81,7 @@ class DocumentPipeline:
         self.max_file_bytes = max_file_bytes
 
     def _value(self, session, entity_id):
+        """Read and decode one entity value, refusing an unavailable input."""
         with owned_iterator(session.read_records([("entity", entity_id)])) as rows:
             row = next(rows)[0]
         if row is None or not row.available:
@@ -86,6 +89,7 @@ class DocumentPipeline:
         return row.value.value.value if isinstance(row.value.value, core.InlineValue) else session.read_json(row.value.value)
 
     def _stage(self, session, *, definition, identity, inputs, producer, target, fresh=False, dependencies=None):
+        """Build the ResolveCall for one stage, deriving whole-input dependencies by default."""
         bindings = tuple(core.StateInput(label=label, state_id=value.state_id) if isinstance(value, core.State)
             else core.WholeInput(label=label, entity_id=value) for label, value in inputs.items())
         request = core.Request(format_version=1, request_id=identity + ":request", definition_id=definition.definition_id,
@@ -95,6 +99,7 @@ class DocumentPipeline:
             reuse_policy=_successful, fresh=fresh, capture_origin=target if definition.operation_kind == "capture" else None)
 
     def _capture_call(self, session, source_id, candidate_index, *, identity, fresh=False, observe_source_bytes=None):
+        """Build the capture call for one candidate, checking any expected digest and size."""
         source = SourceItem.from_dict(self._value(session, source_id))
         candidate = source.candidates[candidate_index]
         fetch_identity = self.fetcher.verify_configuration()
@@ -134,6 +139,7 @@ class DocumentPipeline:
             producer=acquire, target=core.Origin(parent_entity_id=source_id), fresh=fresh, dependencies=dependencies)
 
     def _extract_call(self, session, capture, *, identity, fresh=False):
+        """Build the extraction call selected by the captured file's extractor identity."""
         inputs = _outputs(capture)
         captured = CapturedFile.from_dict(self._value(session, inputs["capture"]))
         extractor_id, configuration = self.extractor.selected_identity(captured)
@@ -152,6 +158,7 @@ class DocumentPipeline:
             target=core.Origin(parent_entity_id=inputs["content"]), fresh=fresh)
 
     def _segment_call(self, session, extraction, *, identity, fresh=False):
+        """Build the segmentation call that produces the keyed segments state."""
         inputs = _outputs(extraction)
         representation = Representation.from_dict(self._value(session, inputs["representation"])["representation"])
         segmenter_id, policy = self.segmenter.selected_identity(representation)
@@ -178,6 +185,7 @@ class DocumentPipeline:
             target=core.Origin(parent_entity_id=inputs["representation"]), fresh=fresh)
 
     def _processor_call(self, session, segmentation, processor, parents, *, identity, fresh=False):
+        """Build one processor call over the segments state and its declared parent outputs."""
         segments_id = _outputs(segmentation)["segments"]
         inputs = {"segments": core.State(format_version=1, state_id=segments_id)}
         for parent in processor.dependencies:
@@ -191,6 +199,7 @@ class DocumentPipeline:
             inputs=inputs, producer=produce, target=core.Origin(parent_entity_id=segments_id), fresh=fresh)
 
     def rows(self, state_id):
+        """Yield decoded rows of a retained state under a publication session."""
         with self.publisher.session() as session:
             with closing(self.publisher.states.rows(session, state_id)) as rows:
                 for key, entity in rows:
@@ -222,6 +231,7 @@ class DocumentPipeline:
                     yield "selection", selection_id
 
     def import_sources(self, items, *, state_id):
+        """Import source items as one keyed occurrence state."""
         def entities():
             with owned_iterator(items) as source_items:
                 for item in source_items:
@@ -272,6 +282,7 @@ class DocumentPipeline:
 
     def _assemble(self, source_state_id, *, run_id, extract, segment, fresh, by_name, order,
                   counts, max_source_bytes, max_generated_rows):
+        """Assemble the run's summary state within the cumulative actual-work budgets."""
         def check():
             if max_source_bytes is not None and counts["source_bytes"] > max_source_bytes:
                 raise LimitExceededError("document run exceeds its new source byte limit")

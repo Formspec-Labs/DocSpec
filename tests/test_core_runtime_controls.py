@@ -1,4 +1,8 @@
-"""Independent clean storage and checkpoint-plus-suffix production probe paths."""
+"""Independent control probes for the capacity recipe open a clean copy and resume a checkpointed history.
+
+Both controls are produced through tests.support.core_runtime_experiment stages and audited against the
+original member identities.
+"""
 
 import json
 from pathlib import Path

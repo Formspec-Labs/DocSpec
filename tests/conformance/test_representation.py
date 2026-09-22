@@ -1,3 +1,9 @@
+"""Conformance: every supported media type yields a deterministic identified representation.
+
+Each fixture must produce identical representation and receipt records across
+repeats, with evidence mappings present, and unregistered media types must fail
+closed.
+"""
 
 from __future__ import annotations
 

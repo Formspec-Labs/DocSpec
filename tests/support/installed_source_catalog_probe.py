@@ -1,3 +1,13 @@
+"""Installed-wheel source-catalog qualification, run as a script, not a test module.
+
+Invoked with ``run_root proof_path`` inside an isolated interpreter: it verifies
+the installed wheel's versions and members, publishes provider releases for the
+Federal Register and Regulations.gov profiles, exercises the installed
+``docspec source-catalog build``/``verify`` commands and the public runtime, and
+writes one JSON proof. Executable assertions run at import, so importing this
+module outside that harness is not supported.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -102,6 +112,8 @@ with zipfile.ZipFile(provider_wheel) as archive:
 
 @dataclass(frozen=True, slots=True)
 class SourceFixture:
+    """One published provider release: its artifact, profile name and blob store."""
+
     release: Any
     profile_name: str
     blob_store: Path
@@ -109,6 +121,8 @@ class SourceFixture:
 
 @dataclass(frozen=True, slots=True)
 class SourceObject:
+    """One raw provider object with the key, ETag and version the reader reports."""
+
     key: str
     etag: str
     version_id: str | None
@@ -116,6 +130,8 @@ class SourceObject:
 
 
 class ObjectReader:
+    """Deterministic object reader the provider page iterators consume, fixed to a 16 MiB budget."""
+
     def __init__(self, objects: tuple[SourceObject, ...]) -> None:
         self.objects = objects
 
@@ -125,6 +141,7 @@ class ObjectReader:
 
 
 def document(number: str, *, changed: bool) -> dict[str, object]:
+    """Return one Federal Register API document; ``changed`` replaces its title."""
     return {
         "agencies": [],
         "body_html_url": None,
@@ -141,6 +158,7 @@ def document(number: str, *, changed: bool) -> dict[str, object]:
 
 
 def response(*documents: dict[str, object]) -> bytes:
+    """Encode one Federal Register results page over ``documents``."""
     return json.dumps(
         {
             "count": len(documents),
@@ -155,6 +173,7 @@ def response(*documents: dict[str, object]) -> bytes:
 
 
 def pages(payload: bytes) -> tuple[FederalRegisterPage, ...]:
+    """Return the same response as two stable consecutive traversal pages."""
     request = federal_register_documents_url(QUERY_SCOPE)
     return tuple(
         FederalRegisterPage(
@@ -171,10 +190,12 @@ def pages(payload: bytes) -> tuple[FederalRegisterPage, ...]:
 
 
 def completed_at() -> datetime:
+    """Return the fixed clock reading every fixture release publishes with."""
     return datetime(2026, 8, 25, 0, 0, 1, tzinfo=UTC)
 
 
 def producer() -> Producer:
+    """Return the fixed spicy-docs provider producer pin."""
     return Producer(
         "spicy-docs",
         SPICY_DOCS_IMPLEMENTATION,
@@ -185,6 +206,7 @@ def producer() -> Producer:
 
 
 def catalog_producer() -> Producer:
+    """Return the fixed docspec source-catalog verifier pin."""
     return source_catalog_producer(
         implementation_id=DOCSPEC_IMPLEMENTATION,
         verifier_id="urn:docspec:verifier:source-catalog",
@@ -196,6 +218,7 @@ def catalog_producer() -> Producer:
 def publish_federal_source(
     destination: Path, *, changed_id: str | None, records: tuple[dict[str, object], ...] | None = None,
 ) -> SourceFixture:
+    """Publish a Federal Register release into ``destination`` and return its fixture."""
     payload = response(
         *(tuple(document(value, changed=value == changed_id) for value in DOCUMENT_IDS) if records is None else records)
     )
@@ -217,6 +240,7 @@ def publish_federal_source(
 
 
 def regulations_document() -> dict[str, object]:
+    """Return one raw Regulations.gov document object with a PDF file format."""
     return {
         "data": {
             "id": REGULATIONS_DOCUMENT_ID,
@@ -256,6 +280,7 @@ def regulations_document() -> dict[str, object]:
 
 
 def regulations_docket() -> dict[str, object]:
+    """Return one raw Regulations.gov docket object."""
     return {
         "data": {
             "id": REGULATIONS_DOCKET_ID,
@@ -279,6 +304,7 @@ def regulations_docket() -> dict[str, object]:
 
 
 def regulations_comment() -> dict[str, object]:
+    """Return one raw Regulations.gov comment object with a text file format."""
     return {
         "data": {
             "id": REGULATIONS_COMMENT_ID,
@@ -317,6 +343,7 @@ def regulations_comment() -> dict[str, object]:
 
 
 def source_object(collection: str, value: dict[str, object]) -> SourceObject:
+    """Wrap one raw Mirrulations object under its expected key, ETag and version."""
     identity = str(value["data"]["id"])
     if collection == DOCUMENT_COLLECTION:
         key = (
@@ -348,6 +375,7 @@ def publish_regulations_source(
     query_scope: dict[str, object],
     page_iterator: Any,
 ) -> SourceFixture:
+    """Publish one Regulations.gov collection release from a single raw object."""
     blob_store = RUN_ROOT / "source-native-blobs"
     source = source_object(collection, value)
 
@@ -372,6 +400,7 @@ def publish_regulations_source(
 
 
 def clean_environment() -> dict[str, str]:
+    """Return the environment without inherited Python home, path or virtualenv settings."""
     environment = {
         key: value
         for key, value in os.environ.items()
@@ -382,6 +411,7 @@ def clean_environment() -> dict[str, str]:
 
 
 def run(command: list[str]) -> dict[str, object]:
+    """Run one installed CLI command as a subprocess and return its JSON stdout, failing on error."""
     result = subprocess.run(
         command,
         cwd=RUN_ROOT,
@@ -403,6 +433,7 @@ def build_catalog_arguments(
     destination: Path,
     blob_store: Path,
 ) -> list[str]:
+    """Return the installed ``source-catalog build`` arguments for these releases."""
     policy_path = destination.parent / f"{destination.name}-policy.json"
     policy_path.write_bytes(
         canonical_json_file_bytes(
@@ -452,10 +483,12 @@ def build_catalog(
     destination: Path,
     blob_store: Path,
 ) -> dict[str, object]:
+    """Run the installed ``source-catalog build`` command and return its report."""
     return run(build_catalog_arguments(sources, policy, destination, blob_store))
 
 
 def regulations_policy() -> RegulationsGovCatalogPolicy:
+    """Return the installed Regulations.gov policy over the four provider profiles."""
     return RegulationsGovCatalogPolicy(
         SourceInputSelector(
             REGULATIONS_GOV_DOCUMENT_PROFILE.source_system_id,
@@ -490,6 +523,7 @@ def regulations_policy() -> RegulationsGovCatalogPolicy:
 
 
 def admit_catalog(build_report: dict[str, object], destination: Path, name: str) -> dict[str, object]:
+    """Verify one build report's catalog through the installed ``verify`` command."""
     reference_path = RUN_ROOT / f"{name}-reference.json"
     reference_path.write_bytes(canonical_json_file_bytes(build_report["catalog"]))
     return run(
@@ -600,6 +634,7 @@ requests = []
 
 
 def serve_body(request):
+    """Serve the single controlled full-text XML body over the mock transport."""
     assert request.method == "GET" and str(request.url) == body_url
     requests.append(str(request.url))
     return httpx.Response(200, stream=httpx.ByteStream(body), headers={"Content-Type": "application/xml; charset=utf-8"})

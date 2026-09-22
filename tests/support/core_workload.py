@@ -15,6 +15,7 @@ _METADATA = (
 
 
 def core_value(ordinal: int) -> dict[str, Any]:
+    """Return the frozen value for one ordinal, refusing a non-int or out-of-range one."""
     if type(ordinal) is not int or not 0 <= ordinal < CORE_MEMBER_COUNT:
         raise ValueError("ordinal outside core-bulk-v1")
     # First 1,024 pairs have equal complete values but distinct member/entity IDs.
@@ -30,6 +31,7 @@ def core_value(ordinal: int) -> dict[str, Any]:
 
 
 def core_members(count: int = CORE_MEMBER_COUNT) -> Iterator[tuple[str, str, dict[str, Any]]]:
+    """Yield ``(member_key, occurrence_id, value)`` rows, refusing a non-int or out-of-range count."""
     if type(count) is not int or not 0 <= count <= CORE_MEMBER_COUNT:
         raise ValueError("member count outside core-bulk-v1")
     for ordinal in range(count):

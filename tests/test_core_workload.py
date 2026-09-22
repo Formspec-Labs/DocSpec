@@ -1,4 +1,8 @@
-"""Qualify fixture reproducibility, not production capacity."""
+"""Qualify the core workload fixture's reproducibility, not production capacity.
+
+Pins distinct occurrence identities with pairwise-equal values, generator independence between calls, exact
+boundary stopping, and ValueError refusal of invalid member counts.
+"""
 
 from itertools import islice
 

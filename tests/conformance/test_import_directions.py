@@ -1,3 +1,10 @@
+"""Conformance: production modules import only their declared inner layers.
+
+Pins the specification's dependency direction -- commands and runtime compose,
+adapters and application services depend inward, and the core never imports
+adapters or the command surface back.
+"""
+
 from __future__ import annotations
 
 import ast
@@ -71,6 +78,7 @@ _PUBLIC_FACADE_MODULES = {"docspec.source_catalog", "docspec.result_export"}
 
 
 def _module_name(path: Path) -> str:
+    """Return the dotted docspec module name for one production file."""
     parts = list(path.relative_to(PRODUCTION_ROOT.parent).with_suffix("").parts)
     if parts[-1] == "__init__":
         parts = parts[:-1]
@@ -78,6 +86,7 @@ def _module_name(path: Path) -> str:
 
 
 def _area(module: str) -> str:
+    """Return the single import area one module belongs to (``__init__`` for the package root)."""
     parts = module.split(".")
     return "__init__" if len(parts) == 1 else parts[1]
 
@@ -106,6 +115,7 @@ def _internal_imports(path: Path, module: str) -> set[str]:
 
 
 def _production_modules() -> dict[str, Path]:
+    """Return every production module keyed by dotted name, asserting the package is nonempty."""
     modules = {_module_name(path): path for path in sorted(PRODUCTION_ROOT.rglob("*.py"))}
     assert modules, "the installed DocSpec package must contain production modules"
     return modules

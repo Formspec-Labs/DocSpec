@@ -1,4 +1,9 @@
-"""Source catalog publication and local transport fixtures."""
+"""Source catalog publication and local transport fixtures.
+
+``write_shared_source_catalog`` publishes exact current-format catalog items
+under a fixed ``https://t.test/`` origin, and ``SharedFixtureContentFetcher``
+serves that origin from an injected local reader.
+"""
 from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, replace
@@ -30,6 +35,8 @@ _FIXTURE_SELECTOR = SourceInputSelector(
 
 
 def source_catalog_producer() -> Producer:
+    """Return the fixed docspec source-catalog producer and verifier pin."""
+
     implementation = "git+https://example.test/docspec@" + "1" * 40
     return Producer(
         "docspec",
@@ -43,6 +50,11 @@ def source_catalog_producer() -> Producer:
 
 @dataclass(frozen=True, slots=True)
 class _FixtureCatalogPolicy:
+    """Minimal catalog policy whose universe is the one fixture selector.
+
+    ``iter_items`` refuses a source-native payload whose keys are not exactly ``{"catalogItem"}``.
+    """
+
     policy_id = "p"
     policy_version = "1"
 
@@ -87,6 +99,8 @@ class _FixtureCatalogPolicy:
 
 @dataclass(slots=True)
 class _FixtureSource:
+    """Source-native fixture over prepared records, with no renditions."""
+
     metadata: SourceNativeDescription
     records: tuple[Mapping[str, object], ...]
 
@@ -286,6 +300,8 @@ def write_shared_source_catalog(
 
 
 def source_catalog_reader(root: Path) -> SourceCatalogArtifactReader:
+    """Open the shared fixture catalog read-only through the artifact reader."""
+
     return SourceCatalogArtifactReader(
         LocalSourceCatalogStore(root, create=False),
         producer=source_catalog_producer(),
@@ -293,7 +309,11 @@ def source_catalog_reader(root: Path) -> SourceCatalogArtifactReader:
 
 
 class SharedFixtureContentFetcher:
-    """Resolve the shared test HTTPS namespace through an injected local reader."""
+    """Resolve the shared test HTTPS namespace through an injected local reader.
+
+    A locator outside ``https://t.test/`` is refused, and every returned stream
+    is relabelled with this fetcher's downloader identity and configuration digest.
+    """
 
     downloader_id = "docspec.test.shared-fixture-content-fetcher.v1"
 

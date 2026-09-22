@@ -1,4 +1,9 @@
-"""The production writer retains independent snapshots and writes only changes."""
+"""The production Iceberg writer retains independent snapshots and writes only changed partitions.
+
+An interrupted publication leaves no head behind; retained reads need no catalog, writes require
+DOCSPEC_ICEBERG_URI, a rewritten file plus matching checksum still fails verification, and a partition
+replacement must not duplicate an identity held elsewhere.
+"""
 
 from contextlib import closing
 from pathlib import Path
@@ -19,11 +24,13 @@ POLICY = PartitionPolicy("keys", 1)
 
 
 def changes(rows):
+    """Encode ``(key, value)`` rows as deletion-or-value change batches for ``apply_changes``."""
     return encoded_batches(((key, key, None if value is None else canonical_json_bytes({"id": key, "value": value}))
                             for key, value in rows), ENCODED_RECORD_SCHEMA, byte_column=0)
 
 
 def data_files(layer):
+    """Map each data-file path in ``layer`` to its scan task."""
     return {task.file.file_path: task.file for task in layer.table.scan().plan_files()}
 
 

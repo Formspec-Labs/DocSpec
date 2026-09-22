@@ -1,4 +1,8 @@
-"""Selected outputs preserve exact origins, reuse and current dependency evidence."""
+"""Selected outputs preserve exact origins, result reuse and current dependency evidence.
+
+Stale pins or unavailable choices refuse, as do competing selections read under an old selection-set pin,
+later dependency omissions, wrong-origin membership, opaque or damaged retained bytes, and missing definitions.
+"""
 
 from contextlib import closing
 
@@ -21,6 +25,8 @@ DEFINITION = core.OperationDefinition(format_version=1, definition_id="normalize
 
 def resolve(workspace, state="source", *, identity="first", target_key="notice", output="inline", fresh=False,
             definition=DEFINITION, selected_labels=("keys",)):
+    """Resolve a keys output for the source member and return the resolution; ``output`` selects
+    inline, content or opaque retention."""
     with workspace.open_state(state) as source:
         entity = source.lookup("notice")
     request = core.Request(format_version=1, request_id=identity, definition_id=definition.definition_id,
@@ -40,6 +46,7 @@ def resolve(workspace, state="source", *, identity="first", target_key="notice",
 
 
 def read(workspace, state="source", **kwargs):
+    """Open the ``normalize`` selected outputs for the ``keys`` label."""
     return workspace.open_selected_outputs(state, definition_id="normalize", output_labels=("keys",), **kwargs)
 
 

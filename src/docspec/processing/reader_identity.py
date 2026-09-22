@@ -17,6 +17,8 @@ PDF_MODULES = ("spicy_docs.extraction.pypdf",)
 
 
 def installed_reader_identity(modules: tuple[str, ...]) -> ReaderIdentity | None:
+    """Return the installed distribution version and module digests, or None when unavailable."""
+
     try:
         owner = distribution("spicy-docs")
         hashes = tuple(
@@ -29,6 +31,8 @@ def installed_reader_identity(modules: tuple[str, ...]) -> ReaderIdentity | None
 
 
 def reader_configuration(identity: ReaderIdentity | None) -> dict:
+    """Shape a reader identity as the configuration fields extractors include in digests."""
+
     return {
         "readerVersion": identity[0] if identity else None,
         "readerModules": dict(identity[1]) if identity else None,
@@ -36,6 +40,8 @@ def reader_configuration(identity: ReaderIdentity | None) -> dict:
 
 
 def require_reader_identity(identity: ReaderIdentity | None, modules: tuple[str, ...]) -> None:
+    """Refuse an unavailable configured reader or installed module bytes that changed since configuration."""
+
     if identity is None:
         raise IntegrityError("the configured SpicyDocs reader files are unavailable")
     if installed_reader_identity(modules) != identity:

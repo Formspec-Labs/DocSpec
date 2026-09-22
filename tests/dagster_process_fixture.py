@@ -13,6 +13,7 @@ from docspec.runtime.core import CoreWorkspace
 
 @dagster.resource(config_schema={"workspace": str, "operations_path": str, "evidence_root": str, "fail_input": dagster.Field(str, default_value="")})
 def runtime_resource(context):
+    """Native Dagster resource that replays recorded operations, writes per-execution evidence and doubles input values."""
     config = context.resource_config
     evidence = Path(config["evidence_root"])
     evidence.mkdir(parents=True, exist_ok=True)
@@ -36,4 +37,5 @@ def runtime_resource(context):
 
 
 def reconstructable_job():
+    """Return the reconstructable job definition used by the multiprocess Dagster tests."""
     return build_dagster_definitions({"docspec_runtime": runtime_resource}).get_job_def(DAGSTER_JOB_NAME)

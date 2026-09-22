@@ -47,6 +47,8 @@ class SuppliedRecordSource:
         max_records: int,
         max_bytes: int,
     ) -> None:
+        """Snapshot and sort the supplied records, refusing duplicate recordIds and limit overruns."""
+
         require_text(source_system_id, "supplied source system")
         require_text(source_system_version, "supplied source system version")
         if source_state_scope not in {"complete-snapshot", "observed-crawl"}:
@@ -94,9 +96,13 @@ class SuppliedRecordSource:
         object.__setattr__(self, "_records", tuple(snapshots))
 
     def describe(self) -> SourceNativeDescription:
+        """Return the snapshot's source-native description."""
+
         return self._description
 
     def iter_records(self) -> Iterator[Mapping[str, Any]]:
+        """Yield each supplied record in the source-native row shape."""
+
         for identifier, payload in self._records:
             yield {
                 "sourceRecordId": identifier, "scopeId": SUPPLIED_RECORD_SCOPE,
@@ -105,5 +111,7 @@ class SuppliedRecordSource:
             }
 
     def iter_renditions(self) -> Iterator[Mapping[str, Any]]:
+        """Yield the supplied records' renditions."""
+
         for identifier, payload in self._records:
             yield from supplied_renditions(identifier, json.loads(payload))

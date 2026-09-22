@@ -17,6 +17,7 @@ from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 
 class CorePublisher:
+    """Own the content guard and create one disposable Publication session per consumer."""
     def __init__(self, ledger: CoreLedger, blobs: BlobStore, *, states=None, selections=None) -> None:
         self.ledger, self.blobs = ledger, blobs
         self.states = states
@@ -36,6 +37,7 @@ class CorePublisher:
 
 
 class Publication:
+    """One guarded session that retains, validates and commits Core records and bytes."""
     pending_keys = frozenset()
 
     def __init__(self, ledger: CoreLedger, blobs: BlobStore, *, states=None, selections=None) -> None:
@@ -77,6 +79,7 @@ class Publication:
         yield from self.ledger.read_links(keys)
 
     def retain_bytes(self, chunks, *, media_type: str = "application/octet-stream") -> core.ContentRef:
+        """Retain opaque bytes and mark them ready for this session."""
         self._active()
         reference = self.blobs.put_if_absent(chunks, media_type=media_type)
         self.ready.setdefault(reference, set()).add("bytes-v1")
@@ -84,6 +87,7 @@ class Publication:
                                locator=reference.locator, media_type=reference.media_type)
 
     def retain_value(self, value, *, media_type="application/json") -> core.ContentRef:
+        """Retain one canonical JSON value, refusing a payload above the 8 MiB limit."""
         self._active()
         payload = canonical_value_bytes(value)
         if len(payload) > BATCH_BYTES:
@@ -95,6 +99,7 @@ class Publication:
                                media_type=reference.media_type, codec="json-v1")
 
     def read_json(self, content, *, label="retained JSON value"):
+        """Decode a retained JSON content reference, refusing any other codec."""
         self._active()
         value = record_value(content, core.ContentRef)
         if value["codec"] != "json-v1":
@@ -157,6 +162,7 @@ class Publication:
 
 
 class _PublicationCheck:
+    """Compute one batch's exact retention closure before the ledger commits it."""
     def __init__(self, session: Publication, batch: MetadataBatch):
         self.session, self.ledger, self.batch = session, session.ledger, batch
         self.values, self.stored, self.representations = {}, {}, {}
@@ -188,6 +194,7 @@ class _PublicationCheck:
             self.representations.setdefault(value["state_id"], {})[key] = value
 
     def _load(self, keys):
+        """Load required existing records and follow state representation links."""
         wanted = set()
         for kind, identity in keys:
             wanted.update((("entity", identity), ("state", identity)) if kind in {"data", "entity", "state"} else ((kind, identity),))
@@ -226,6 +233,7 @@ class _PublicationCheck:
                 self._load(targets)
 
     def _key(self, key):
+        """Resolve a data output key to its unique entity or state, refusing the ambiguity."""
         if key[0] == "data":
             found = [candidate for candidate in (("entity", key[1]), ("state", key[1])) if candidate in self.values]
             if len(found) != 1:
@@ -236,6 +244,7 @@ class _PublicationCheck:
         return key
 
     def _state(self, identity):
+        """Choose a complete available state representation and check membership agreement."""
         choices = list(self.representations.get(identity, {}).items())
         if not choices:
             raise IntegrityError("complete state retention requires its membership representation")
@@ -272,6 +281,7 @@ class _PublicationCheck:
         return [("representation", eligible[0], True)]
 
     def _requirements(self, key, full):
+        """Return the retention edges one record kind requires, full or descriptive."""
         value = self.values[key]
         kind = key[0]
         requirements = []
@@ -331,6 +341,7 @@ class _PublicationCheck:
         return requirements
 
     def _validate(self):
+        """Check cross-record invariants of the computed closure before commit."""
         if {identity for kind, identity in self.values if kind == "entity"} & {identity for kind, identity in self.values if kind == "state"}:
             raise IntegrityError("data identity is ambiguous between an entity and a state")
         for key in self.required:
@@ -350,6 +361,7 @@ class _PublicationCheck:
                     raise IntegrityError("state representation names another revision result")
 
     def _validate_selections(self):
+        """Check that each newly retained selection's dependency evidence still corresponds."""
         if not any(key[0] == "selection" and (key not in self.stored or not self.stored[key].retained) for key in self.required):
             return
         dependencies = CoreDependencies()
@@ -386,6 +398,7 @@ class _PublicationCheck:
         self.full.update(supports)
 
     def _content(self, key):
+        """Check retained bytes and JSON validity for one content-bearing record."""
         record = self.values[key]
         if (key[0] == "selected_value" and self.session.selections is None
                 and (record["definition"]["kind"] == "state_members" or record["value"]["kind"] == "from_parent")):
@@ -408,6 +421,7 @@ class _PublicationCheck:
         self.session.check_content(value, retained=retained, validate_json=validator)
 
     def publish(self, *, validate_only=False):
+        """Walk the retention closure, validate content and commit it (or check only)."""
         pending = [(key, True) for key in self.roots]
         while pending:
             self._load(key for key, _ in pending)

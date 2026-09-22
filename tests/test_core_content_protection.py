@@ -15,6 +15,7 @@ from docspec.ports.core_ledger import MetadataBatch
 
 
 def test_shared_publications_coexist_and_cleanup_is_exclusive(tmp_path):
+    """Shared content guards coexist; exclusive cleanup refuses a live publication and a shared guard cannot upgrade."""
     path = tmp_path / "ledger.sqlite"
     with closing(LocalSqliteCoreLedger(path)) as ledger, closing(LocalSqliteCoreLedger(path)) as other:
         barrier = Barrier(2)
@@ -42,6 +43,7 @@ def test_shared_publications_coexist_and_cleanup_is_exclusive(tmp_path):
 
 
 def test_kernel_releases_protection_when_publisher_process_dies(tmp_path):
+    """A process killed while holding the guard releases it, so exclusive cleanup can proceed."""
     path = tmp_path / "ledger.sqlite"
     with closing(LocalSqliteCoreLedger(path)) as ledger:
         code = """

@@ -172,6 +172,8 @@ class SqliteCatalogPolicyWorkspace:
         key: tuple[str, ...],
         value: Mapping[str, Any],
     ) -> None:
+        """Store one canonical JSON value, refusing a key that already exists."""
+
         self.put_payload(namespace, key, canonical_json_bytes(value))
 
     def put_payload(self, namespace: str, key: tuple[str, ...], payload: bytes) -> None:
@@ -217,6 +219,7 @@ class SqliteCatalogPolicyWorkspace:
             )
 
     def get(self, namespace: str, key: tuple[str, ...]) -> Mapping[str, Any] | None:
+        """Return one stored value, or None when the key is absent."""
         selected_namespace = require_text(namespace, "catalog workspace namespace")
         row = self._connection.execute(
             "SELECT payload FROM entries WHERE namespace = ? AND ordered_key = ?",
@@ -229,6 +232,7 @@ class SqliteCatalogPolicyWorkspace:
     def iter_ordered(
         self, namespace: str, *, after: tuple[str, ...] | None = None
     ) -> Iterator[Mapping[str, Any]]:
+        """Stream stored values in key order, optionally resuming after one key."""
         selected_namespace = require_text(namespace, "catalog workspace namespace")
         if after is None:
             cursor = self._connection.execute(

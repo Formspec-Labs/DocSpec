@@ -1,60 +1,23 @@
 """Fetch the sealed attachment sample and write one receipt line per item.
 
-Companion to ``select_attachment_sample.py``. It answers the four questions the
-sealed selection names, and nothing else: what fraction of unavailable
-documents yield content, at what byte cost, under what live rate limit, and
-whether any ``restrictReasonType`` stratum is empty of attachments.
+Answers the four questions the sealed selection names: what fraction of
+unavailable documents yield content, at what byte cost, under what live rate
+limit, and whether any ``restrictReasonType`` stratum is empty of attachments.
+It refuses a selection whose digest moved, checking the digest before the key is
+read or a socket is opened, and runs at concurrency 1 because rate-limit
+behaviour is a measurement target: the default 3.7 s delay is the published
+1,000 requests/hour budget, and every rate-limit header and 429 ``Retry-After``
+is recorded. Each ``fileFormats[].size`` is a publisher claim that the direct
+arm confirms against the bytes it actually downloaded.
 
-**It refuses a selection whose digest has moved.** The sample's authority comes
-from being fixed before the fetch, so a run against an edited selection is not
-the measurement that was authorized. The digest is checked first, before the key
-is read or a socket is opened.
-
-**Concurrency is one, deliberately.** Rate-limit behaviour is a measurement
-target, not an obstacle to route around, so the run is strictly sequential and
-records every rate-limit header and every 429 with its ``Retry-After``. The
-default delay is 3.7 s, which is the published 1,000 requests/hour budget with a
-little slack; 2,000 items is therefore roughly two hours. Raising concurrency
-would make the rate-limit reading meaningless.
-
-**Bytes are declared by the API and confirmed by the direct arm.** Every
-``fileFormats[].size`` is a publisher claim; the direct arm fetches the file and
-records the byte count and sha256 it actually got, so the cost estimate rests on
-a measurement rather than on a number the publisher never validates. On the ten
-documents checked so far the two agreed exactly.
-
-**The key is read at run time and never leaves this process.** It is sent as the
-``X-Api-Key`` header, never as a query parameter, because the URL is written to
-every receipt line and a key in a URL would be published with it. Exception text
-is scrubbed before it is recorded.
-
-**Two arms, and only one of them is metered.** The API arm answers discovery at
-concurrency 1 and produces the throughput number for a registered key. The
-direct arm probes ``downloads.regulations.gov/{documentId}/attachment_{n}.{ext}``
-which serves the same files anonymously and is not metered by api.data.gov, so
-it costs nothing from the shared hourly quota and rides inside the API arm's
-pacing gap. Each row records whether the two agree.
-
-**The direct arm needs a browser User-Agent and that is not cosmetic.** With
-Python's default agent, or curl's, every URL returns 403 with a 919-byte HTML
-page -- including files the API declared one second earlier. Verified live on
-2026-09-05. Without the header the whole arm reads as "the unmetered route does
-not work", which is a clean and completely wrong answer.
-
-**The host's two 403s mean opposite things.** A rejected client gets 403 with
-``text/html`` and length 919; a genuinely absent file gets 403 with
-``application/xml`` and no length -- confirmed against a nonsense document id.
-Reading them alike turns client rejection into evidence of absence, so they are
-classified apart, a known-good control URL is interleaved, and a run whose
-control goes unhealthy stops rather than recording zeros that look like data.
-
-**The response shape here is verified, not assumed.** Ten documents, two from
-each stratum, were fetched live on 2026-09-05 to check it before 2,000 rows were
-read through this parser. That run corrected two things a reading of the docs
-would not have caught: one attachment is commonly published in several formats,
-so counting ``fileFormats`` entries overstates attachments and double-counts
-bytes; and an attachment can appear in both the linkage and ``included`` while
-carrying no file at all.
+Two arms: the metered API arm and the unmetered ``downloads.regulations.gov``
+direct arm, which needs a browser User-Agent -- Python's default agent gets a 403
+HTML page even for files the API just declared. The host's two 403s mean opposite
+things: ``text/html`` with length 919 is a rejected client, ``application/xml``
+an absent file; they are classified apart and a known-good control URL stops the
+run when unhealthy. The key is read at run time, sent as the ``X-Api-Key`` header
+and scrubbed from error text; run with ``--selection``, ``--receipt`` and
+``--expect-digest`` (or its ``.sha256`` sidecar).
 """
 
 from __future__ import annotations
@@ -177,14 +140,11 @@ def _rate_limit(headers: dict[str, str]) -> dict[str, str]:
 def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
     """Reduce one document response to the fields the four questions need.
 
-    The shape signals are not decoration. If this parser guesses ``included``
-    wrong -- a different key, sizes carried somewhere else -- every row comes
-    back ``attachmentCount: 0``, which is indistinguishable from a genuine
-    empty and is the reading that would cancel the campaign. So the raw shape
-    travels with the count: ``includedTypes`` non-empty beside
-    ``attachmentCount: 0`` means the parser missed, not that the document is
-    bare, and ``linkedAttachmentCount`` reads the relationship linkage as a
-    second, independent signal of how many attachments should have been found.
+    If this parser guesses ``included`` wrong, every row comes back
+    ``attachmentCount: 0``, which is indistinguishable from a genuine empty; so
+    the raw shape travels with the count: ``includedTypes`` non-empty beside
+    ``attachmentCount: 0`` means the parser missed, and ``linkedAttachmentCount``
+    is a second signal of how many attachments should have been found.
     """
     data = payload.get("data") or {}
     attributes = data.get("attributes") or {}
@@ -250,11 +210,10 @@ def _summarize(payload: dict[str, Any]) -> dict[str, Any]:
 def _head(url: str, timeout: float) -> dict[str, Any]:
     """One HEAD, classified into hit / absent / unreadable.
 
-    The host answers 403 in two different situations and they mean opposite
-    things. A rejected client gets 403 with a 919-byte ``text/html`` page; a
-    genuinely absent key gets 403 with ``application/xml`` and no length. Reading
-    both as "no file" was the failure this classification exists to prevent, and
-    only the second is evidence about the document.
+    The host answers 403 in two opposite situations: a rejected client gets a
+    919-byte ``text/html`` page, while a genuinely absent key gets
+    ``application/xml`` with no length -- only the second is evidence about the
+    document.
     """
     request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": BROWSER_UA})
     started = time.monotonic()
@@ -296,14 +255,11 @@ def probe_direct(
     """Probe what the API declared, then a bounded grid for what it did not.
 
     The declared set comes from this row's own ``fileFormats``, read one second
-    earlier, so an unusual extension is fetched rather than guessed at. The grid
-    then runs anyway, and anything it finds beyond the declared set is a counted
-    disagreement instead of a silent discovery.
-
-    The two directions are kept apart on purpose. *Declared but not served* and
-    *served but not declared* are different defects with different consequences,
-    and only their combination licenses sizing the campaign's byte cost from
-    declared metadata instead of downloading 712,350 files.
+    earlier, so an unusual extension is fetched rather than guessed at; anything
+    the grid finds beyond it is a counted disagreement, not a silent discovery.
+    *Declared but not served* and *served but not declared* are kept apart, and
+    only their agreement licenses sizing the campaign's byte cost from declared
+    metadata instead of downloading 712,350 files.
     """
     with ThreadPoolExecutor(max_workers=workers) as pool:
         declared = list(pool.map(lambda u: _head(u, timeout), declared_urls))
@@ -477,13 +433,11 @@ def _append_receipt(receipt: Path):
 def reprobe_only(args: argparse.Namespace) -> int:
     """Finish the negative re-probe for a receipt whose main pass is complete.
 
-    The protocol re-probes every negative once, because a transient failure and a
-    genuine absence look identical in one observation. A run that dies partway
-    through that pass leaves the main data whole and the protocol half-kept, and
-    resuming the main loop will not finish it -- every document is already
-    recorded, so no negatives are collected to retry. This closes that gap
-    without re-fetching anything that succeeded. Direct route only: no metered
-    request, no quota, no lock.
+    Every negative is re-probed once because a transient failure and a genuine
+    absence look identical in one observation; resuming the main loop cannot
+    finish that pass, since every document is already recorded and no negatives
+    are collected to retry. This closes the gap without re-fetching anything that
+    succeeded. Direct route only: no metered request, no quota, no lock.
     """
     rows, _ = _read_receipt(args.receipt)
     main = [r for r in rows if not r.get("runHeader") and not r.get("reprobe")]

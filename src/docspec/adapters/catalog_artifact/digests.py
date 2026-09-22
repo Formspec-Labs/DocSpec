@@ -24,6 +24,8 @@ from docspec.ports.source_catalog import (
 
 
 def _framed_digest(domain: str, name: str, count: int, records: Iterable[object]) -> str:
+    """Compute one framed section digest, refusing framing type errors as IntegrityError."""
+
     try:
         return framed_section_digest(domain, (FramedSection(name, count, records),))
     except (TypeError, ValueError) as error:
@@ -34,7 +36,9 @@ def requested_universe_set_digest(
     count: int,
     sorted_source_item_ids: Iterable[str],
 ) -> str:
-    """Digest one bounded, UTF-16-ordered requested-universe identity stream."""
+    """Digest one bounded, UTF-16-ordered requested-universe identity stream,
+    refusing an unsorted or duplicate input.
+    """
 
     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
         raise ValueError("requested-universe count must be a non-negative integer")
@@ -55,7 +59,7 @@ def selected_source_set_digest(
     count: int,
     sorted_members: Iterable[tuple[str, str]],
 ) -> str:
-    """Digest one bounded, UTF-16-ordered selected source/document stream."""
+    """Digest one bounded, UTF-16-ordered selected source/document stream, refusing an unsorted or duplicate input."""
 
     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
         raise ValueError("selected-source count must be a non-negative integer")
@@ -75,6 +79,8 @@ def selected_source_set_digest(
 
 
 def _source_system_set_digest(descriptions: Sequence[SourceNativeDescription]) -> str:
+    """Digest the sorted source-system rows, refusing a duplicate logical source system."""
+
     rows = tuple(
         sorted(
             (
@@ -102,6 +108,8 @@ def _source_system_set_digest(descriptions: Sequence[SourceNativeDescription]) -
 
 
 def _source_schema_set_digest(descriptions: Sequence[SourceNativeDescription]) -> str:
+    """Digest the sorted source-native schema identities of the catalog's inputs."""
+
     rows = tuple(
         sorted(
             (
@@ -201,6 +209,8 @@ def _item_interpretations(item_dict: Mapping[str, Any], kind: str) -> tuple[Mapp
 
 
 def _normalized_field_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+    """Yield one diagnostic record per normalized field value, refusing unordered or duplicate keys."""
+
     fields: list[Mapping[str, Any]] = []
     for interpretation in _item_interpretations(row, "normalization"):
         fields.extend(interpretation["result"]["fields"])
@@ -227,6 +237,8 @@ def _normalized_field_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[st
 
 
 def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
+    """Enumerate a non-empty list value, or yield a scalar as value index zero."""
+
     if isinstance(value, list) and value:
         yield from enumerate(value)
         return
@@ -234,6 +246,8 @@ def _indexed_values(value: object) -> Iterator[tuple[int, object]]:
 
 
 def _joined_field_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+    """Yield one diagnostic record per exact-join result, refusing unordered or duplicate join ids."""
+
     joins: list[Mapping[str, Any]] = []
     for interpretation in _item_interpretations(row, "exact-join"):
         joins.extend(interpretation["result"]["joins"])
@@ -259,6 +273,8 @@ def _joined_field_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[str, A
 
 
 def _interpretation_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+    """Yield one record per interpretation, grouped by kind and numbered in kind order."""
+
     by_kind: dict[str, list[Mapping[str, Any]]] = {}
     for interpretation in row["interpretations"]:
         by_kind.setdefault(interpretation["interpretationKind"], []).append(interpretation)
@@ -279,6 +295,8 @@ def _interpretation_records_for(row: Mapping[str, Any]) -> Iterator[Mapping[str,
 
 
 def _rendition_choice_record(row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Build the rendition-choice record, refusing a row without exactly one rendition-preference interpretation."""
+
     choices = _item_interpretations(row, "rendition-preference")
     if len(choices) != 1:
         raise IntegrityError("source-catalog row requires one rendition-preference interpretation")

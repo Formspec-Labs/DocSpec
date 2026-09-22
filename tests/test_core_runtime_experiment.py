@@ -1,4 +1,9 @@
-"""Smoke the production capacity recipe against independent fixture answers."""
+"""Smoke the production capacity recipe end to end against independent fixture answers.
+
+Pins stage outputs across generate/build/open/fields/named/whole/ordered-fields, then
+recover/membership/edits/history/audit/clean/compare/checkpoint, the 64 MiB parent-payload scan bound, and
+that a duplicated row fails the full oracle.
+"""
 
 import pytest
 
@@ -92,6 +97,8 @@ def test_full_oracle_rejects_duplicate_for_missing_member(tmp_path, monkeypatch)
         original_rows = workspace.rows
 
         def duplicate(state):
+            """Yield ``state`` rows with the first row repeated and one dropped, so the oracle sees a duplicate
+            for a missing member."""
             with closing(original_rows(state)) as rows:
                 first = next(rows)
                 yield first

@@ -1,9 +1,9 @@
 """Version 1 Core records, shared by API admission and retained batch rows.
 
-Entities, states and operation definitions have PROV entity identities;
-executions have activity identities. Roles belong to output bindings. Physical
-representations, content digests, member keys and request IDs are separate.
-These are data declarations, not a second application lifecycle.
+Entities, states and operation definitions have PROV entity identities while
+executions have activity identities; roles belong to output bindings, and
+physical representations, content digests, member keys and request IDs stay
+separate. These are data declarations, not a second application lifecycle.
 """
 
 from __future__ import annotations
@@ -27,11 +27,15 @@ class Record(Fixed, kw_only=True):
 
 
 class InlineValue(Fixed, tag="inline"):
+    """A value carried directly inside the record under the ``json-v1`` codec."""
+
     value: Any
     codec: Literal["json-v1"] = "json-v1"
 
 
 class ContentRef(Fixed, tag="content"):
+    """A value stored as content bytes, addressed by digest, size, and locator."""
+
     digest: Digest
     byte_size: Count
     locator: Identifier
@@ -103,6 +107,8 @@ class Revision(Record, tag="revision", kw_only=True):
 
 
 class Whole(Fixed, tag="whole"):
+    """Select the entity's whole value under value or identity comparison."""
+
     version: Literal[1] = 1
     comparison: Literal["value", "identity"] = "value"
 
@@ -113,12 +119,16 @@ class Field(Fixed):
 
 
 class JsonFields(Fixed, tag="json_fields"):
+    """Select labeled fields addressed by JSON Pointer from the entity value."""
+
     selectors: tuple[Field, ...]
     version: Literal[1] = 1
     comparison: Literal["value", "identity"] = "value"
 
 
 class StateMembers(Fixed, tag="state_members"):
+    """Select state membership, optionally scoped, sorted, and with material keys."""
+
     member_selector: Whole | JsonFields
     version: Literal[1] = 1
     scope: tuple[str, ...] | None = None

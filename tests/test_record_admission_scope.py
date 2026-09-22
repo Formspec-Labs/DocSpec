@@ -1,4 +1,10 @@
-"""Physical admission reuse follows the existing content protection lifetime."""
+"""Physical admission reuse follows the existing content protection lifetime: cached handles are bounded,
+nested and thread-local, and an explicit fresh audit or a changed guard invalidates them.
+
+Covers the 8-layer admission cache in IcebergRecordStorage, explicit audits detecting corruption and invalidating
+a cached handle, LocalSqliteCoreLedger content guards (nested, exclusive and read-only), bounded parent reuse
+while every bulk-file leaf is checked, and refusal of invalid or freshly changed paths.
+"""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing

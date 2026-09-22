@@ -36,6 +36,8 @@ class _CopyBlobs:
         if self.index.lookup_record("references", key) is None:
             self.index.add_record("references", identity=key, source_item_id=reference.locator, record=reference.to_dict())
     def copy(self, reference):
+        """Copy one referenced blob once, charging its bytes and recording the reference."""
+
         self._remember(reference)
         key = "blobs/" + reference.locator
         if self.index.lookup_record("copied", key) is None:
@@ -48,6 +50,8 @@ class _CopyBlobs:
             self.index.add_record("copied", identity=key, source_item_id=key, record={"key": key})
         return reference
     def put_if_absent(self, chunks, **kwargs):
+        """Store new content in the destination and record its reference once."""
+
         reference = self.destination.put_if_absent(chunks, **kwargs)
         self._remember(reference)
         key = "blobs/" + reference.locator
@@ -66,7 +70,11 @@ class _CopyBlobs:
 
 
 def export_result(publisher, records, state_id, destination, *, producer: Producer, max_output_bytes: int, additional_roots=()) -> ArtifactPin:
-    """Export the complete selected state, regardless of which work was reused."""
+    """Export the complete selected state, regardless of which work was reused.
+
+    The destination must not be a symlink; an existing complete export covering
+    the same retained scope is returned unchanged.
+    """
     from .reader import open_result_export
     require_limit(max_output_bytes)
     Producer.from_dict(producer.as_dict(), path="export/producer")
@@ -111,6 +119,8 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
                 request.update(canonical_value_bytes(['root', key]) + b'\n')
             request_digest = 'sha256:' + request.hexdigest()
             def existing_export():
+                """Return the destination's pin when it is complete and covers the same retained scope, else refuse."""
+
                 try:
                     with (destination / 'artifact.json').open('rb') as stream:
                         root = decode_canonical_json_value(stream.read(ROOT_BYTES + 1), label='existing export')

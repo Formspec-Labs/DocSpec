@@ -38,12 +38,16 @@ from docspec.ports.source_catalog import (
 
 
 def _require_interpretation_order(row: Mapping[str, Any]) -> None:
+    """Refuse a row whose interpretation kinds differ from the closed ordered set."""
+
     kinds = tuple(value["interpretationKind"] for value in row["interpretations"])
     if kinds != _INTERPRETATION_KINDS:
         raise IntegrityError("source-catalog interpretations differ from the closed ordered kind set")
 
 
 def _read_small(source: MemberSource, key: str) -> bytes:
+    """Read one small member, refusing anything beyond the metadata byte limit."""
+
     with source.open(key) as stream:
         payload = stream.read(MAX_SMALL_MEMBER_BYTES + 1)
     if len(payload) > MAX_SMALL_MEMBER_BYTES:
@@ -59,6 +63,8 @@ def _iter_partition_rows(
     with_raw: bool = False,
     as_dict: bool = False,
 ) -> Iterator[Any]:
+    """Iterate one partition's rows through the blob source, refusing a descriptor without blobRef or recordCount."""
+
     member = partition.member
     if member.blob_ref is None or member.record_count is None:
         raise IntegrityError("source-item partition descriptor requires blobRef and recordCount")
@@ -82,6 +88,13 @@ def _iter_partition_stream(
     with_raw: bool,
     as_dict: bool = False,
 ) -> Iterator[Any]:
+    """Parse and check one partition's NDJSON stream, enforcing row byte
+    limits, placement, order, and the declared record count.
+
+    With ``validate=False`` rows are only parsed, for bytes a validated pass
+    already proved canonical and schema-conformant.
+    """
+
     previous: bytes | None = None
     count = 0
     while raw := stream.readline(MAX_CATALOG_ROW_BYTES + 2):
@@ -153,6 +166,8 @@ def _iter_catalog_rows(
     with_raw: bool = False,
     as_dict: bool = False,
 ) -> Iterator[Any]:
+    """Yield merged rows without their supplying blob digests, optionally paired with raw bytes."""
+
     rows = _iter_located_catalog_rows(
         blob_source,
         partitions,

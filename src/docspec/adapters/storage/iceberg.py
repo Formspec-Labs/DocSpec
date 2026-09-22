@@ -22,25 +22,35 @@ from docspec.errors import IntegrityError
 
 
 def literal(value):
+    """Render a value as a single-quoted SQL literal."""
+
     return "'" + str(value).replace("'", "''") + "'"
 
 
 def identifier(value):
+    """Render a name as a double-quoted SQL identifier."""
+
     return '"' + value.replace('"', '""') + '"'
 
 
 @dataclass(frozen=True)
 class IcebergCatalog:
+    """Settings for a REST Iceberg catalog that supplies disposable write handles."""
+
     uri: str
     token: str | None = None
     namespace: str = 'docspec'
 
     @classmethod
     def environment(cls):
+        """Build settings from DOCSPEC_ICEBERG_URI and DOCSPEC_ICEBERG_TOKEN, or None when the URI is unset."""
+
         uri = os.environ.get('DOCSPEC_ICEBERG_URI')
         return None if not uri else cls(uri, os.environ.get('DOCSPEC_ICEBERG_TOKEN'))
 
     def client(self):
+        """Load the REST catalog and ensure its namespace exists."""
+
         options = {'token': self.token} if self.token else {}
         cat = load_catalog('docspec', type='rest', uri=self.uri, **options)
         try:
@@ -50,6 +60,8 @@ class IcebergCatalog:
         return cat
 
     def attach(self, connection):
+        """Attach the catalog to a DuckDB connection for writing."""
+
         auth = f'TOKEN {literal(self.token)}' if self.token else "AUTHORIZATION_TYPE 'none'"
         connection.execute(f"ATTACH '' AS iceberg (TYPE iceberg, ENDPOINT {literal(self.uri)}, {auth})")
 
@@ -62,15 +74,21 @@ class SnapshotIO(PyArrowFileIO):
         self.root, self.location = root, location.rstrip('/') + '/'
 
     def path(self, location):
+        """Map an original absolute table path into the retained local directory, refusing an escaping path."""
+
         if not location.startswith(self.location):
             raise IntegrityError('Iceberg file escapes its retained table directory')
         return _contained(self.root, location[len(self.location):])
 
     def new_input(self, location):
+        """Open the mapped local path for reading."""
+
         return super().new_input(str(self.path(location)))
 
 
 def snapshot(root, reference):
+    """Open a metadata file verified against its retained reference as a static table."""
+
     metadata = BlobRef.from_dict(reference)
     path = _contained(root, metadata.locator)
     if not path.is_file():
@@ -83,6 +101,8 @@ def snapshot(root, reference):
 
 
 def checksum_reference(root, path):
+    """Return the checksum receipt reference for one file under root."""
+
     receipt = path.relative_to(root).as_posix() + '.sha256'
     digest, size = sha256_file(_contained(root, receipt))
     return BlobRef(receipt, digest, size, 'application/json')

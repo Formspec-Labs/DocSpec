@@ -28,6 +28,8 @@ PROVENANCE_SCHEMA = (
 
 
 def admit_provenance(connection, results) -> None:
+    """Index one unit's PROV events and derivations, refusing conflicts, cycles and out-of-order generations."""
+
     events, edges, qualified = {}, set(), set()
     for result in results:
         for field, kind in (("generations", "generation"), ("usages", "usage")):

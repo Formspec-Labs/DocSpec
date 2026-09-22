@@ -1,3 +1,9 @@
+"""Conformance: persisted representations and segments round-trip to exact source bytes.
+
+Extraction and segmentation results are rebuilt from their persisted records so
+only the durable mappings carry the round trip; drifted source bytes or
+coordinates must fail closed.
+"""
 
 from __future__ import annotations
 

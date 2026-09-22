@@ -1,4 +1,11 @@
-"""Comment observations, dispositions, rendition integrity, and adapter and CLI profile selection."""
+"""Regulations.gov comment and docket catalog contract: comments and dockets are first-class ordered universe
+members with their own source-native facts, a null comment modifyDate falls back to an explicit postedDate
+policy, and non-selected rows get explicit dispositions.
+
+Also pins content-addressed rendition digest/size requirements, refusal to recollapse repeated comment
+observations, an unusable comment version value refusing with IntegrityError, the installed adapter exposing the
+comment profile and propagating an upstream tie refusal, and CLI acceptance of the comment profile choice.
+"""
 
 from __future__ import annotations
 

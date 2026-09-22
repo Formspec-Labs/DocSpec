@@ -17,6 +17,8 @@ from docspec.runtime.state_reader import CoreStateReader
 
 @dataclass(frozen=True, slots=True)
 class SelectedOutput:
+    """One selected operation output with its origin, result, entity and pin identities."""
+
     origin: core.Origin
     selection_id: str
     result_id: str
@@ -108,6 +110,8 @@ class SelectedOutputReader:
                 raise StaleBaseError("selected output origin differs from the source member occurrence")
 
     def rows(self):
+        """Yield each selected output, then set the selection-set pin for a complete traversal."""
+
         self._session._active()
         self._pin = None
         digester = OrderedJsonSequenceDigester(prefix=("docspec-selected-outputs", 1, self.state_pin,

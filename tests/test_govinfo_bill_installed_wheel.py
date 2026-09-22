@@ -1,4 +1,8 @@
-"""Qualify the bill example with installed packages outside either checkout."""
+"""Qualify the GovInfo bill example in a fresh interpreter built from installed wheels.
+
+The docspec wheel must not bundle the provider, network is forbidden, and the proof pins match counts,
+captured bytes, and that a refused text keeps its body.
+"""
 
 import hashlib
 import json

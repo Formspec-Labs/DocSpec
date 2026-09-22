@@ -90,6 +90,8 @@ class LocalSqliteRecordWorkspace:
         source_item_id: str,
         record: Mapping[str, Any],
     ) -> None:
+        """Spool one canonical record under its collection identity; repeats, conflicts and byte limits are refused."""
+
         collection = require_text(collection, "collection")
         identity = require_text(identity, "identity")
         source_item_id = require_text(source_item_id, "source_item_id")
@@ -124,6 +126,8 @@ class LocalSqliteRecordWorkspace:
 
 
     def stream_records(self, collection: str) -> Iterator[dict[str, Any]]:
+        """Stream one collection's records in identity order."""
+
         collection = require_text(collection, "collection")
         cursor = self._open_connection().execute(
             "SELECT payload FROM records WHERE collection = ? ORDER BY identity",
@@ -143,6 +147,8 @@ class LocalSqliteRecordWorkspace:
                 yield value
 
     def lookup_record(self, collection: str, identity: str) -> dict[str, Any] | None:
+        """Return one record by identity, or None when it is absent."""
+
         collection = require_text(collection, "collection")
         identity = require_text(identity, "identity")
         row = self._open_connection().execute(

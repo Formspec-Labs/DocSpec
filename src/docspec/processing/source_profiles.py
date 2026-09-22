@@ -1,4 +1,8 @@
-"""Shared source-reading choices included in processing identities."""
+"""Shared source-reading choices included in processing identities.
+
+``JSON_SOURCE_PROFILE`` bounds JSON bytes, nodes, depth and numbers for the JSON
+extractor and record segmenter, and rides inside their configuration digests.
+"""
 
 from types import MappingProxyType
 

@@ -13,6 +13,7 @@ json_values = st.recursive(
 
 @st.composite
 def keyed_roots(draw):
+    """Build member rows with distinct keys, occurrence identities and JSON values."""
     values = draw(st.lists(json_values, max_size=12))
     return [(f"key-{i}", f"occurrence-{i}", value) for i, value in enumerate(values)]
 

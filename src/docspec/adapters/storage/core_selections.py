@@ -77,6 +77,8 @@ def _content_bytes(session, content):
 
 
 class CoreSelectionStorage:
+    """Retain and recover typed selected values, including state-member deltas and their evidence."""
+
     def __init__(self, records, states):
         self.records, self.states = records, states
 
@@ -466,6 +468,8 @@ class CoreSelectionStorage:
             return core.InlineValue(value=next(rows)[2])
 
     def retain(self, session, *, selected_value_id, definition, origin, from_parent=False, unit_id=None):
+        """Publish one selected value, computing and retaining member deltas for state selections."""
+
         session._active()
         if session.selections is not self:
             raise IntegrityError("publication must use the configured selected-value owner")
@@ -534,6 +538,8 @@ class CoreSelectionStorage:
                         yield msgspec.convert(msgspec.json.decode(payload), type=core.ContentRef, strict=True)
 
     def evidence(self, session, selected):
+        """Return the comparison evidence that certifies a retained selected value."""
+
         session._active()
         if isinstance(selected.definition, core.StateMembers):
             if not isinstance(selected.value, core.FromParent):
@@ -586,6 +592,8 @@ class CoreSelectionStorage:
         return selector, evidence
 
     def value(self, session, selected):
+        """Return the decoded inline or JSON value, or raw bytes for opaque content."""
+
         value = self._value_reference(session, selected)
         if isinstance(value, core.InlineValue):
             return decode_canonical_json_value(canonical_value_bytes(value.value))

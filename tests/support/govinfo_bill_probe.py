@@ -1,4 +1,9 @@
-"""Copied beside the examples and executed by the installed-wheel qualification."""
+"""Copied beside the examples and executed by the installed-wheel qualification.
+
+Verifies the wheel's installed members match the archive, runs the govinfo bill
+example with network restricted to the configured storage catalog, and re-derives
+its capture, evidence, budget and refusal receipts.
+"""
 
 import hashlib
 import json

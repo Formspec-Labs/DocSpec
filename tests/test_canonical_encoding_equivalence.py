@@ -34,6 +34,7 @@ def test_doc_spec_emits_the_shared_corpus_bytes(case):
 
 
 def _rejected_value(description):
+    """Build the Python value a shared-corpus `encodeRejected` case describes, raising on unknown kinds."""
     kind = description["kind"]
     if kind == "integer":
         return int(description["literal"])

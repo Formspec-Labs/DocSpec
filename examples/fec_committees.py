@@ -144,6 +144,7 @@ def run_example(output: Path, *, source_root: Path | None = None, blob_root: Pat
                 source_implementation_id: str | None = None, empty: bool = False,
                 max_records: int = 50_000, max_bytes: int = 256 * 1024**2,
                 max_scratch_bytes: int = 2 * 1024**3) -> dict:
+    """Build from an authored fixture or a complete existing pin, and write ``fec-example-summary.json``."""
     if not output.is_absolute() or output.exists():
         raise ValueError("output must be an absolute path that does not exist")
     inputs = {"source_root": source_root, "blob_root": blob_root, "logical_id": logical_id,

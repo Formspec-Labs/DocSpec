@@ -1,17 +1,11 @@
 """Count the exact string shapes three readers named, over the whole catalog.
 
-The readers set the boundaries; this only counts. Each predicate below is a
-literal string test stated in full, so a disagreement about a number is a
-disagreement about a predicate rather than about a judgement, and re-running it
-re-derives the same figure.
-
-The docket predicates are reported twice — once over distinct dockets and once
-weighted by the documents that inherit them — because a docket description is
-inherited by every document in its docket, so the two answer different
-questions. "How many dockets say `Subject:` plus their own title" sizes the
-publisher's habit; "how many documents are searched on such a string" sizes the
-effect on retrieval, and it is the second that decides whether a display rule is
-worth writing.
+The readers set the boundaries; this only counts. Each predicate is a literal
+string test stated in full, so a disagreement about a number is a disagreement
+about a predicate, and re-running re-derives the same figure. Docket predicates
+are reported twice — over distinct dockets and weighted by the documents that
+inherit them — because a docket description is inherited by every document in
+its docket. Writes a JSON receipt and a ``.sha256`` sidecar to ``--out``.
 """
 
 from __future__ import annotations

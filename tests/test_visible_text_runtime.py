@@ -1,4 +1,11 @@
-"""Visible-text choices preserve source evidence through the public lifecycle."""
+"""Visible-text runtime contract: HTML/XML extraction and block segmentation round-trip visible blocks to
+enclosing source spans, heading settings are snapshotted into distinct extractor pins, and evidence verifies
+through the public lifecycle.
+
+Covers deterministic source-input refusals, captured byte-pin and media-type integrity failures, the segmenter
+and resolver refusing foreign, changed or non-block mappings, and the public experiment retaining the exact
+capture while recovery reuses saved stage pins without refetching.
+"""
 
 from dataclasses import FrozenInstanceError, replace
 

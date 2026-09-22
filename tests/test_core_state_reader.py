@@ -1,4 +1,8 @@
-"""Exact existing-state reads preserve revisions and reuse one admission."""
+"""Reopening an existing state reads exact membership, occurrence and value rows while checking pinned bytes.
+
+Mismatched pins or damaged payloads refuse before delivery, published-state reuse must not repeat a full
+semantic admission, and a reader needs retained metadata rather than merely available rows.
+"""
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
@@ -14,6 +18,7 @@ from docspec.runtime import CoreWorkspace
 
 
 def _fixture(path):
+    """Create the initial/updated/selected state fixture these tests reopen."""
     with CoreWorkspace(path) as workspace:
         workspace.create("initial", [("keep", {"title": "Kept"}), ("update", {"title": "Old"}),
                                      ("remove", {"title": "Removed"})])

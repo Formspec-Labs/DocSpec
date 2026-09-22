@@ -31,6 +31,8 @@ from docspec.ports.source_catalog import SourceCatalogBlobSource, SourceCatalogB
 
 
 class _LayeredBlobSource:
+    """Read blobs from the staged CAS first and the published store second."""
+
     def __init__(self, staged_root: _PinnedDirectory, store_root: _PinnedDirectory) -> None:
         self._staged_root = staged_root
         self._store_root = store_root
@@ -102,6 +104,8 @@ class LocalSourceCatalogStaging:
         directory: _PinnedDirectory,
         prefix: tuple[str, ...],
     ) -> Iterator[str]:
+        """Yield every contained artifact key, refusing symlinks and special files."""
+
         for name in sorted(os.listdir(directory.descriptor)):
             key = "/".join((*prefix, name))
             _object_parts(key)
@@ -138,6 +142,8 @@ class LocalSourceCatalogStaging:
             yield stream
 
     def write(self, object_key: str, chunks: Iterable[bytes]) -> None:
+        """Write one new artifact member exclusively, refusing a duplicate key or non-byte chunk."""
+
         parent, name = _member_parent(self._artifact, object_key, create=True)
         flags = (
             os.O_WRONLY
@@ -174,6 +180,8 @@ class LocalSourceCatalogStaging:
         byte_size: int,
         label: str,
     ) -> bool:
+        """Return whether a CAS name is present and matches its declared content reference."""
+
         sha_root = _pin_directory(
             "sha256",
             label=label,
@@ -391,6 +399,8 @@ class LocalSourceCatalogStaging:
         blob_ref: str,
         byte_size: int,
     ) -> None:
+        """Link one verified staged blob into a published CAS root, verifying any entry already present."""
+
         published_sha_root = _pin_directory(
             "sha256",
             label="source-catalog published SHA-256 root",
@@ -448,8 +458,8 @@ class LocalSourceCatalogStaging:
         """Persist verified CAS bytes before the artifact root becomes visible.
 
         A blob without a referring artifact root is reusable store state, not a
-        published catalog. Retaining it after a failed root publication also
-        avoids deleting bytes that a concurrent artifact may already reference.
+        published catalog, and retaining it after a failed root publication
+        avoids deleting bytes a concurrent artifact may already reference.
         """
 
         staged_sha_root = _pin_directory(
@@ -536,6 +546,11 @@ class LocalSourceCatalogStaging:
                 os.close(staged_sha_root.descriptor)
 
     def commit(self, reference: SourceCatalogRef) -> SourceCatalogRef:
+        """Publish the staged blobs and artifact directory, refusing an
+        already-committed transaction, a locator that differs from the artifact
+        digest, a missing root, or an existing destination.
+        """
+
         if self._committed:
             raise IntegrityError("source-catalog staging transaction is already committed")
         digest_name = reference.digest.removeprefix("sha256:")
@@ -565,6 +580,8 @@ class LocalSourceCatalogStaging:
         return reference
 
     def close(self) -> None:
+        """Close descriptors and clean the staging session, surfacing any staging-root identity failure."""
+
         if self._closed:
             return
         self._closed = True

@@ -47,6 +47,8 @@ class ScheduledOperation(core.Fixed, kw_only=True):
 
 
 def encode_operation(operation: ScheduledOperation) -> bytes:
+    """Encode a scheduled operation as canonical bytes, refusing a mismatched definition or an oversized payload."""
+
     value = record_value(operation, ScheduledOperation)
     definition, request = admit_record(encode_record(value["definition"])), admit_record(encode_record(value["request"]))
     if definition.definition_id != request.definition_id:
@@ -58,6 +60,8 @@ def encode_operation(operation: ScheduledOperation) -> bytes:
 
 
 def decode_operation(payload: bytes) -> ScheduledOperation:
+    """Decode and re-encode-check a scheduled operation, refusing non-bytes or an oversized payload."""
+
     if not isinstance(payload, bytes):
         raise IntegrityError("scheduled Core operation must be encoded bytes")
     if len(payload) > BATCH_BYTES:
@@ -74,6 +78,8 @@ def _eligible(result):
 
 @dataclass(frozen=True, slots=True)
 class DagsterRuntime:
+    """Per-worker Core operations plus the task source, producer resolver and reuse policy Dagster injects."""
+
     operations: CoreOperations
     task_source: Callable[[], Iterable[ScheduledOperation]]
     producer_resolver: Callable[[core.OperationDefinition], Callable]

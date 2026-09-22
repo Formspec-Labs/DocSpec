@@ -1,20 +1,14 @@
 """The docket-side half of the docAbstract display check, joined by documentId.
 
-The distinguishability question is whether a reader can tell a document's own
-description from the docket description it inherits, on one page. That needs
-both texts side by side, so this carries, for the same 30 documents the first
-receipt drew: title, agency, and the docket's ``data/attributes/dkAbstract``.
+For the same 30 documents the first receipt drew, carries title, agency and the
+docket's ``data/attributes/dkAbstract``, so a reader can judge whether a
+document's own description is distinguishable from the one it inherits.
 
-**A second receipt, not a new version of the first.** The first is sealed at
-`sha256:4bcde14a…` and has been cited by that digest. Rewriting it to add
-columns would invalidate a citation someone already made, so the two join on
-``documentId`` — the same salt and the same rank, carried through — and the
-first stays exactly as it was read.
-
-**Docket text is stored exactly as found, like the document text.** A reader
-deciding whether two descriptions are distinguishable has to see what is
-actually there, including whether the docket's own value is itself a citation, a
-title restatement, or empty.
+A second receipt, not a new version of the first: the first is sealed by digest
+and has been cited, so the two join on ``documentId`` with the same salt and rank
+and the first stays exactly as it was read. Docket text is stored exactly as
+found, never cleaned. Run with ``--catalog-root``, ``--blob-store``,
+``--first-receipt`` and ``--out``.
 """
 
 from __future__ import annotations

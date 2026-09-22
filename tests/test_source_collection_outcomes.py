@@ -1,4 +1,12 @@
-"""Collection acceptance preserves reported evidence without inventing work."""
+"""Collection-outcome acceptance contract: a rejected provider outcome refuses before source iteration or
+workspace creation, acceptance is explicit per build, and the reported collection evidence is deeply
+snapshotted, read once and preserved into the catalog without inventing work.
+
+Covers partial acceptance not authorizing total rejection, reopened catalogs distinguishing unreported, empty,
+rejected and successful inputs, resume refusing changed acceptance or a changed reported description, oversized
+evidence and receipt overflow refusing rather than truncating, and an accepted partial successor remaining a
+full dataset universe with the omission visible.
+"""
 
 from dataclasses import replace
 
@@ -16,6 +24,7 @@ from tests.support.source_catalog import FakeSource, _FEDERAL_REGISTER_SOURCE, d
 
 
 def _source(outcome="no-record-rejections", *, count=1):
+    """A fake source reporting the named collection outcome over ``count`` records."""
     reported = None if outcome is None else {
         "recordOutcome": outcome, "sourceStateScope": "complete-snapshot",
         "requestedScope": {"query": {"page": 1}}, "warnings": ["Provider-reported fixture"],
@@ -27,6 +36,7 @@ def _source(outcome="no-record-rejections", *, count=1):
 
 
 def _build(source, workspace, **options):
+    """Build a local catalog under the fixed test policy, id, producer and scratch bound, with options overridable."""
     settings = {
         "policy": FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE),
         "catalog_id": "urn:test:collection-outcomes", "producer": producer(), "max_scratch_bytes": 8 * 1024**2,
@@ -151,6 +161,7 @@ def test_accepted_partial_successor_is_still_a_full_dataset_universe(tmp_path):
     namespace = "urn:test:reported-input"
 
     def catalog(ids, outcome):
+        """Build a supplied-record catalog whose source reports the given collection outcome."""
         supplied = SuppliedRecordSource(tuple({
             "recordId": identity, "sourceIssuedVersion": "1", "title": identity, "metadata": {},
             "candidateRenditions": [SourceCatalogCandidate("body", "text/plain", "immutable-object", "input.txt").to_dict()],

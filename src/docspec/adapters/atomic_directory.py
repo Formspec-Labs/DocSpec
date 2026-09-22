@@ -44,7 +44,7 @@ def write_file_no_replace(destination: Path, payload: bytes) -> None:
 
 
 def publish_directory_no_replace(source: Path, destination: Path) -> None:
-    """Publish through the shared product-neutral immutable primitive."""
+    """Publish through the shared product-neutral primitive, mapping refusals and failures to IntegrityError."""
 
     try:
         publish_artifact_directory_no_replace(source, destination)
@@ -59,6 +59,8 @@ def publish_directory_no_replace(source: Path, destination: Path) -> None:
 
 
 def sync_directory(path: Path) -> None:
+    """Fsync a directory entry so published names survive a crash; a no-op on Windows."""
+
     if os.name == "nt":
         return
     descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))

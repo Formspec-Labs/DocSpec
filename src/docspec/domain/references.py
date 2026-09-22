@@ -12,6 +12,8 @@ from docspec.domain.identity import require_sha256, require_text
 
 @dataclass(frozen=True, slots=True)
 class BlobRef:
+    """Content-addressed reference to stored bytes, with locator, digest, size, and media type."""
+
     locator: str
     digest: str
     byte_size: int
@@ -43,6 +45,8 @@ class BlobRef:
 
 @dataclass(frozen=True, slots=True)
 class LayerRef:
+    """Reference to one stored layer by kind, schema, profile, state, and digest."""
+
     layer_id: str
     layer_kind: str
     schema_id: str
@@ -95,6 +99,8 @@ class LayerRef:
 
 @dataclass(frozen=True, slots=True)
 class SourceCatalogRef:
+    """Reference to one immutable source catalog by id, locator, and digest."""
+
     catalog_id: str
     locator: str
     digest: str

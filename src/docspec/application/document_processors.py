@@ -31,6 +31,7 @@ def segment_relation(session, state_id):
 
 
 def segment_rows(session, state_id):
+    """Yield ``(key, segment, reference)`` rows, refusing missing or mismatched segment content."""
     with segment_relation(session, state_id) as relation:
         with closing(relation.to_arrow_reader(batch_size=256)) as batches:
             for batch in bounded_batches(batches, byte_column="metadata_record"):

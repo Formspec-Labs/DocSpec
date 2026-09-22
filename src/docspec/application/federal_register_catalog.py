@@ -75,6 +75,7 @@ _SELECTION_FAILURES = (
 
 
 def _agencies(value: object) -> tuple[list[dict[str, str]], tuple[Any, ...]]:
+    """Deduplicate agency id/name pairs, keeping malformed entries as unparseable evidence."""
     result: dict[tuple[str, str], dict[str, str]] = {}
     values, rejected = _array_with_unparseable(value)
     unparseable = list(rejected)
@@ -98,6 +99,7 @@ def _agencies(value: object) -> tuple[list[dict[str, str]], tuple[Any, ...]]:
 
 
 def _topics(value: object) -> tuple[dict[str, str], ...]:
+    """Recover Federal Register topics under the federalregister.gov scheme."""
     return observed_topics(
         value,
         scheme="federalregister.gov",
@@ -120,6 +122,7 @@ class FederalRegisterCatalogPolicy:
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        """Declare the one Federal Register universe input this policy reads."""
         return (
             SourceInputSelector(
                 self.expected_source_system_id,
@@ -171,12 +174,10 @@ class FederalRegisterCatalogPolicy:
     def policy_digest(self) -> str:
         """Return this policy's digest, canonicalizing the member at most once.
 
-        Same reason as
+        The same defect and fix as
         :attr:`~docspec.application.regulations_gov_catalog.RegulationsGovCatalogPolicy.policy_digest`:
-        every interpretation of every row stamps this, so the uncached property
-        recanonicalized the whole policy member per item. This member is far
-        smaller (1,191 bytes against 17,880), so the saving is proportionally
-        smaller, but it is the same defect and the same fix.
+        every interpretation of every row stamps this digest, so the uncached
+        property recanonicalized the whole member per item.
         """
 
         cached = self._policy_digest
@@ -188,6 +189,7 @@ class FederalRegisterCatalogPolicy:
 
     @classmethod
     def from_member(cls, value: object) -> FederalRegisterCatalogPolicy:
+        """Rebuild the installed policy from a member, refusing any difference."""
         member = closed_mapping(
             value,
             {"format", "formatVersion", "policyId", "policyVersion", "configuration"},
@@ -227,6 +229,7 @@ class FederalRegisterCatalogPolicy:
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> Iterator[SourceCatalogItem]:
+        """Yield one interpreted item per Federal Register universe row."""
         del workspace
         for row in inputs.iter_universe_rows():
             yield self._item_from_row(row.description, row.record, row.renditions)
@@ -237,6 +240,7 @@ class FederalRegisterCatalogPolicy:
         record: Mapping[str, Any],
         renditions: tuple[Mapping[str, Any], ...],
     ) -> SourceCatalogItem:
+        """Interpret one Federal Register record into a complete source catalog item."""
         if source.source_system_id != self.expected_source_system_id:
             raise IntegrityError("Federal Register policy received a different source system")
         native = record.get("record")
@@ -410,6 +414,7 @@ class FederalRegisterCatalogPolicy:
     def _selection(
         normalized: Mapping[str, Any], candidates: tuple[SourceCatalogCandidate, ...],
     ) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
+        """Apply the required-metadata then candidate-rendition decisions in order."""
         missing = [name for name in _REQUIRED_NORMALIZED_FIELDS if not normalized[name]]
         metadata_id, metadata_disposition, metadata_reason = _SELECTION_FAILURES[0]
         if missing:
@@ -440,6 +445,7 @@ class FederalRegisterCatalogPolicy:
         tuple[CatalogRenditionFamily, ...],
         str | None,
     ]:
+        """Select the first offered family in the fixed rendition order."""
         by_family: dict[str, list[SourceCatalogCandidate]] = {
             family: [] for family in _RENDITION_ORDER
         }

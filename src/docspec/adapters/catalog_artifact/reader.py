@@ -160,15 +160,12 @@ class SourceCatalogArtifactReader(ImmutableSourceCatalogReader):
     def verify_snapshot(self, reference: SourceCatalogRef) -> SourceCatalogSnapshotSummary:
         """Fully verify one snapshot, remembering the verdict for this reader.
 
-        The consumer runs the same gate the producer ran: artifact admission
-        hashes every member against the manifest, and the build-gate verifier
-        re-derives every digest and diagnostic from the rows and refuses any
-        mismatch with the sealed spec and receipt. (The item iteration this
-        method used to run instead re-validated row shapes but never compared
-        a single digest -- this is stronger and cheaper.) The verdict is
-        memoized per (catalogId, digest) for the life of this reader: the
-        store is content-addressed and immutable, so a repeated verify of the
-        same digest would re-prove the same bytes.
+        Runs the same gate the producer ran: artifact admission hashes every
+        member against the manifest, and the build-gate verifier re-derives
+        every digest and diagnostic from the rows and refuses any mismatch with
+        the sealed spec and receipt. The verdict is memoized per
+        (catalogId, digest) for the life of this reader, because the store is
+        content-addressed and immutable.
         """
 
         key = (reference.catalog_id, reference.digest)

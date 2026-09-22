@@ -17,6 +17,7 @@ _UTC_INSTANT = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
 
 def utf16_key(value: str) -> bytes:
+    """Return the UTF-16 big-endian sort key for catalog policy text; a lone surrogate raises IntegrityError."""
     try:
         return value.encode("utf-16-be")
     except UnicodeEncodeError as error:
@@ -24,6 +25,7 @@ def utf16_key(value: str) -> bytes:
 
 
 def array_with_unparseable(value: object) -> tuple[list[Any], tuple[Any, ...]]:
+    """Split an optional array: a list passes through, None is empty, any other value is rejected."""
     if value is None:
         return [], ()
     if isinstance(value, list):
@@ -32,6 +34,7 @@ def array_with_unparseable(value: object) -> tuple[list[Any], tuple[Any, ...]]:
 
 
 def strings(value: object) -> tuple[list[str], tuple[Any, ...]]:
+    """Return deduplicated nonempty strings sorted by UTF-16 key plus every rejected value."""
     values, rejected = array_with_unparseable(value)
     accepted: set[str] = set()
     unparseable = list(rejected)
@@ -44,6 +47,7 @@ def strings(value: object) -> tuple[list[str], tuple[Any, ...]]:
 
 
 def text_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
+    """Return nonblank text, ``(None, ())`` for None and ``(None, (value,))`` for any other rejection."""
     if value is None:
         return None, ()
     if isinstance(value, str) and value.strip():
@@ -52,6 +56,7 @@ def text_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
 
 
 def iso_date(value: object) -> str | None:
+    """Return the first ten characters when they form an ISO calendar date, else None."""
     if not isinstance(value, str) or len(value) < 10:
         return None
     selected = value[:10]
@@ -63,6 +68,7 @@ def iso_date(value: object) -> str | None:
 
 
 def date_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
+    """Return an ISO date, or ``(None, ())`` for None and ``(None, (value,))`` for an invalid value."""
     if value is None:
         return None, ()
     normalized = iso_date(value)
@@ -70,7 +76,7 @@ def date_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
 
 
 def utc_instant_date_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
-    """Read a canonical second-precision UTC instant as its calendar date."""
+    """Read a canonical second-precision UTC instant as its calendar date, refusing any other form."""
 
     if value is None:
         return None, ()
@@ -86,6 +92,7 @@ def utc_instant_date_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
 
 
 def normalized_rins(value: object) -> tuple[list[str], tuple[Any, ...]]:
+    """Return unique NFKC-normalized uppercase RINs plus every raw value the syntax rejected."""
     accepted: set[str] = set()
     values, rejected = strings(value)
     unparseable = list(rejected)
@@ -99,6 +106,7 @@ def normalized_rins(value: object) -> tuple[list[str], tuple[Any, ...]]:
 
 
 def http_url(value: object) -> str | None:
+    """Return the value when it is an HTTP(S) URL with a netloc, else None."""
     if not isinstance(value, str) or not value:
         return None
     parsed = urlsplit(value)
@@ -106,6 +114,7 @@ def http_url(value: object) -> str | None:
 
 
 def http_url_value(value: object) -> tuple[str | None, tuple[Any, ...]]:
+    """Return an HTTP(S) URL, or ``(None, ())`` for None and ``(None, (value,))`` for a rejection."""
     if value is None:
         return None, ()
     normalized = http_url(value)
@@ -121,6 +130,12 @@ def normalization_field(
     unparseable_values: tuple[Any, ...] = (),
     present: bool | None = None,
 ) -> CatalogNormalizationField:
+    """Build one normalization outcome from a value and its rejected counterparts.
+
+    The outcome is ``unparseable`` when anything was rejected, else ``normalized``
+    when present, else ``absent``; presence defaults to the value's truthiness,
+    and duplicate rejections are collapsed.
+    """
     is_present = bool(value) if present is None else present
     outcome = "unparseable" if unparseable_values else "normalized" if is_present else "absent"
     distinct_unparseable: list[Any] = []
@@ -149,6 +164,12 @@ def observed_topics(
     identity_fields: tuple[str, ...],
     label_fields: tuple[str, ...],
 ) -> tuple[dict[str, str], ...]:
+    """Return sorted, deduplicated observed topics, refusing any reserved concept namespace.
+
+    Raises IntegrityError when the scheme or an identity starts with ``urn:ref:``
+    or ``urn:refspec:``; a string becomes its own identity and label, while a
+    mapping takes the first nonempty identity and label fields.
+    """
     if scheme.startswith(_RESERVED_TOPIC_NAMESPACES):
         raise IntegrityError(f"observed topic scheme {scheme!r} claims a reserved concept namespace")
     result: dict[tuple[str, str], dict[str, str]] = {}

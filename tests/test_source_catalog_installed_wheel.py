@@ -1,3 +1,11 @@
+"""Installed-wheel proof for the source catalog: throwaway venvs install the built docspec wheel plus the pinned
+vendor wheels, run the GAO and spicyregs-comments examples and the installed_source_catalog_probe, and verify
+every published catalog with the installed CLI while proving the workspace path never leaks into proof bytes.
+
+Also checks the built wheel vendors no wheel or spicy_docs package, reader-only imports avoid the optional
+extras (boto3, httpx, polars, dagster, pypdf), and git tracks the vendored rulespec wheel.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -289,19 +297,9 @@ def test_installed_wheels_cover_source_kinds_reuse_and_independent_admission(
 
 
 def test_the_vendored_wheel_is_tracked_by_git() -> None:
-    """A bumped wheel that git ignores is invisible until someone clones.
-
-    ``vendor/.gitignore`` ignores everything and re-admits exactly one wheel by
-    name, so bumping the vendored version silently requires moving that
-    allowlist line too. Miss it and ``git add`` stages the deletion of the old
-    wheel and nothing else: the working tree still has the file, every local
-    check passes, and only a fresh checkout -- a worktree, a clone, CI -- gets
-    an empty vendor directory that cannot install. That failure has happened
-    three times on this dependency, so it is checked here rather than
-    remembered.
-
-    The pin tests above read the wheel from the working tree, which is exactly
-    what cannot see this; this one asks git what it would hand a new checkout.
+    """A bumped vendored wheel that git ignores is invisible until a fresh clone: vendor/.gitignore re-admits
+    exactly one wheel by name, so this asks git's index what it would hand a new checkout instead of reading the
+    working tree -- a failure this dependency has had three times.
     """
 
     tracked = subprocess.run(

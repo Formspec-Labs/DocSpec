@@ -13,6 +13,7 @@ def run_request_id(run_id):
 
 
 def _checkpoint(value):
+    """Check that a continuation state is the exact non-negative counter object this run writes."""
     if not isinstance(value, dict) or set(value) != {"source_bytes", "generated_rows", "expected_current"}:
         return False
     if any(type(value[name]) is not int or value[name] < 0 for name in ("source_bytes", "generated_rows")):

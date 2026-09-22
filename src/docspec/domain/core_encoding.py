@@ -1,6 +1,6 @@
 """Versioned Core comparison bytes, using the shared codec and array framer.
 
-Logical origins stay in the retained records. Only identities explicitly made
+Logical origins stay in the retained records; only identities explicitly made
 material enter comparison. A digest is evidence to check, never permission to
 reuse an unavailable result or waive dependency adequacy.
 """
@@ -18,7 +18,11 @@ ABSENT = object()
 
 
 def selected_fields(fields: Iterable[tuple[str, Any]]) -> list:
-    """Labels preserve definition order; ABSENT differs from present null."""
+    """Label selected fields in definition order, distinguishing ABSENT from a present null.
+
+    Refuses a non-text, empty, or duplicate label.
+    """
+
     result, labels = [], set()
     for label, value in fields:
         if not isinstance(label, str) or not label or label in labels:
@@ -59,6 +63,8 @@ def member_stream_evidence(rows: Iterable[bytes], *, ordered: bool = False) -> c
 
 
 def json_evidence(value: Any, *, entity_id: str | None = None) -> core.ComparisonEvidence:
+    """Create value comparison evidence over the canonical JSON bytes of one value."""
+
     data = canonical_value_bytes(value)
     return core.ComparisonEvidence(codec="json-v1", digest=sha256_digest(data), byte_size=len(data), entity_id=entity_id)
 
@@ -71,6 +77,8 @@ def content_evidence(content: core.ContentRef, *, entity_id: str | None = None) 
 
 
 def selector_value(selector: core.Selector) -> dict[str, Any]:
+    """Encode a selector mapping with any state-member scope sorted canonically."""
+
     value = record_value(selector, core.Selector)
     if value["kind"] == "state_members" and value["scope"] is not None:
         value["scope"].sort(key=canonical_value_bytes)

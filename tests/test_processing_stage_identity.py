@@ -1,4 +1,11 @@
-"""Configured stage pins remain distinct from selected output identities."""
+"""Stage identity: configured extraction and segmentation pins stay distinct from the selected child identity that
+reaches payloads and receipts.
+
+Pins per-route registry identities, a configured passthrough subclass emitting its declared identity, PDF
+configuration and provider availability pinned without importing pypdf (a changed or unidentified provider refuses
+before parsing), bounded-segmenter policy digests that refuse a mutated live tokenizer, and a closed-shape
+segmentation receipt retaining the selected policy for empty output.
+"""
 
 from __future__ import annotations
 

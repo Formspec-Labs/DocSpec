@@ -163,6 +163,8 @@ class IcebergRecordStorage:
         return {"policyId": policy.policy_id, "bucketCount": policy.bucket_count}
 
     def identity_field(self, reference: LayerRef) -> str:
+        """Return the verified layer's logical identity field name."""
+
         return self.schema(reference).identity_field
 
     def compact(self, base: AdmittedRecordLayer) -> AdmittedRecordLayer:
@@ -186,9 +188,13 @@ class IcebergRecordStorage:
         return compacted
 
     def schema(self, reference: LayerRef) -> RecordSchema:
+        """Return the verified layer's logical schema."""
+
         return self._verified_root(reference)[1]
 
     def partition_policy(self, reference: LayerRef) -> PartitionPolicy:
+        """Return the verified layer's partition policy."""
+
         return self._verified_root(reference)[2]
 
     def write_layer(
@@ -283,6 +289,8 @@ class IcebergRecordStorage:
         return root, schema, policy
 
     def available(self, reference):
+        """Verify the layer root and recovery files and return its admitted handle."""
+
         self._forget_admitted(reference)
         root, schema, policy = self._verified_root(reference)
         table = snapshot(self.root, root['metadata'])
@@ -293,6 +301,8 @@ class IcebergRecordStorage:
         return self._remember_admitted(AdmittedRecordLayer(self, reference, root, schema, policy, table))
 
     def verify_members(self, reference):
+        """Re-hash every recovery file and compare with this snapshot's file set."""
+
         self._forget_admitted(reference)
         actual = set()
         for ref in self.physical_references(reference):
@@ -305,11 +315,15 @@ class IcebergRecordStorage:
             raise IntegrityError('Iceberg checksums differ from the snapshot recovery files')
 
     def verify(self, reference):
+        """Verify member files and the declared record count."""
+
         self.verify_members(reference)
         if sum(1 for _ in self.stream(reference)) != reference.record_count:
             raise IntegrityError('record count differs from its description')
 
     def admit(self, reference):
+        """Fully verify a layer and return it admitted."""
+
         self.verify(reference)
         return self.available(reference)
 
@@ -337,6 +351,8 @@ class IcebergRecordStorage:
 
     @contextmanager
     def relations(self, references, *, partitions=None, tables=None, identities=None, identity_ranges=None, cursor=None):
+        """Open named native relations over admitted layers and caller-supplied tables."""
+
         with (self._cursor() if cursor is None else nullcontext(cursor)) as cursor, ExitStack() as stack:
             result = {}
             for name, reference in references.items():
@@ -377,18 +393,26 @@ class IcebergRecordStorage:
                         yield record
 
     def stream(self, reference, *, partitions=None):
+        """Stream a layer's logical records in identity order."""
+
         yield from self._rows(self.admitted(reference), partitions=partitions)
 
     def scan_partition_value(self, reference, partition_value):
+        """Stream the records of one partition value."""
+
         record_key(partition_value, 'partition_value')
         yield from self._rows(self.admitted(reference), partition_value=partition_value)
 
     def lookup(self, reference, record_id, *, partition_value=None):
+        """Return one record by identity, or None when it is absent."""
+
         record_key(record_id, 'record_id')
         rows = list(self._rows(self.admitted(reference), record_id=record_id, partition_value=partition_value))
         return rows[0] if rows else None
 
     def lookup_batches(self, reference, record_ids):
+        """Stream bounded batches of records for the requested identities."""
+
         layer = self.admitted(reference)
         with owned_iterator(bounded_rows(record_ids, size=lambda key: len(record_key(key, 'record_id').encode()))) as chunks:
             for keys in chunks:
@@ -396,11 +420,15 @@ class IcebergRecordStorage:
                     yield from bounded_batches(reader, byte_column=tuple(_physical_schema(layer.schema).names) if layer.schema.columns else 'record_json', max_value_bytes=self.max_record_bytes)
 
     def physical_references(self, reference):
+        """Stream the layer's recovery files followed by its root reference."""
+
         root = self._verified_root(reference)[0]
         yield from recovery_references(self.root, BlobRef.from_dict(root['integrity']))
         yield BlobRef(reference.state_ref, reference.digest, _contained(self.root, reference.state_ref).stat().st_size, 'application/json')
 
     def delete(self, reference):
+        """Delete the layer's owned files, refusing paths outside its storage directories."""
+
         if not reference.locator.startswith(('iceberg/', 'record-layers/sha256/')):
             raise IntegrityError('record deletion is outside the owned storage directories')
         return delete_content(self.root, reference)
@@ -586,6 +614,8 @@ class IcebergRecordStorage:
                                  layer_kind=base.reference.layer_kind, record_count=base.reference.record_count + inserted - removed)
 
     def union_disjoint(self, base, changes, *, exclude_existing=False):
+        """Union compatible admitted layers, refusing overlapping identities unless they are excluded."""
+
         if base._storage is not self or changes._storage is not self or base.schema != changes.schema or base.partition_policy != changes.partition_policy or base.reference.layer_kind != changes.reference.layer_kind:
             raise IntegrityError('record union requires compatible admitted layers')
         if not changes.reference.record_count:
@@ -602,6 +632,8 @@ class IcebergRecordStorage:
 
 @dataclass(frozen=True, slots=True)
 class AdmittedRecordLayer:
+    """An admitted immutable layer carrying its reference, schema, policy and static table."""
+
     _storage: IcebergRecordStorage
     reference: LayerRef
     _root: Mapping[str, Any]
@@ -611,9 +643,13 @@ class AdmittedRecordLayer:
 
     @contextmanager
     def relation(self, *, partitions=None):
+        """Open this layer's native relation, optionally restricted to partitions."""
+
         with self._storage._relation(self, partitions=partitions) as relation:
             yield relation
 
     def batches(self, *, partitions=None):
+        """Stream byte-bounded record batches in identity order."""
+
         with self.relation(partitions=partitions) as relation, closing(relation.order('record_identity').to_arrow_reader(256)) as reader:
             yield from bounded_batches(reader, byte_column=tuple(_physical_schema(self.schema).names) if self.schema.columns else 'record_json', max_value_bytes=self._storage.max_record_bytes)

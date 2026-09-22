@@ -45,6 +45,7 @@ _FEDERAL_REGISTER_KEY_PATH: Final = ("record", "document_number")
 
 
 def _lookup_key(record: Mapping[str, Any], key_path: Sequence[str]) -> str | None:
+    """Walk a named key path to a nonempty string, returning None when it is absent."""
     value: Any = record
     for step in key_path:
         if not isinstance(value, Mapping):
@@ -73,17 +74,12 @@ def _index_rows(
 ) -> LookupIndexStats:
     """Index lookup rows by a named field, refusing keys that name several rows.
 
-    A bare number resolving to more than one record cannot be attributed from a
-    bare number alone, so the index holds neither. Keeping one -- the latest
-    ``publication_date``, say -- would reproduce the pre-fix coverage exactly,
-    which is the reason it is tempting and the reason it is wrong: it re-asserts
-    the collapse DocSpec 0003 removed, and would attach ``00-111``'s BLM plat
-    notice to a document that may have meant the IRS rule filed under the same
-    number four days earlier. Silence about which of two documents is meant is
-    the honest answer; the receipt carries the count so the silence is visible.
-
-    Two ordered passes over the input, which ``CatalogPolicyInputs.finish``
-    permits explicitly. Memory is the key set, not the corpus.
+    A bare number resolving to more than one record cannot be attributed from
+    the number alone, so the index holds neither; keeping one (the latest, say)
+    would silently re-assert the collapse DocSpec 0003 removed. It makes two
+    ordered passes over the input, which ``CatalogPolicyInputs.finish`` permits
+    explicitly; memory is the key set, not the corpus, and the refused counts
+    go to stderr so the abstention is visible.
     """
     if selector is None:
         return LookupIndexStats(0, 0, 0, 0)
@@ -170,13 +166,10 @@ def _indexed_row(
 def _carried_discards(row: Any) -> dict[str, Any]:
     """Stage filings the loader collapsed into this row, and nothing when there are none.
 
-    Written for both staging paths rather than the universe one alone, for
-    structural symmetry rather than against a live hazard. The Federal Register
-    index is the only lookup input today, and a Federal Register native record
-    is flat -- no ``data`` key -- so ``_record_data(expected_type="documents")``
-    refuses it, the resolver returns None and the loader's refusal stands. The
-    lookup path therefore never carries a discarded filing today; staging it
-    keeps the property true when a second lookup input appears.
+    Written for both staging paths rather than the universe one alone: the
+    lookup path never carries a discarded filing today (the only lookup input,
+    Federal Register, has a flat record that ``_record_data`` refuses), but
+    staging it keeps that property true when a second lookup input appears.
     """
 
     if not row.discarded_filings:
@@ -196,6 +189,7 @@ def _stored_discards(value: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
 def _stored_row(
     value: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]]:
+    """Return ``(record, renditions)`` from a stored index row, refusing any other shape."""
     # Subtracting the one optional key keeps the shape closed against every
     # other: a row may carry filings the loader collapsed into it, and nothing
     # else. `_carried_discards` writes it and `_stored_discards` reads it, and
@@ -215,14 +209,11 @@ def _stored_row(
 def _stage_universe(inputs: CatalogPolicyInputs, workspace: CatalogPolicyWorkspace, *, index_documents: bool) -> None:
     """Stage only the indexes this policy reads; inputs own the universe scan.
 
-    Sampling reads the document index in order; comment conversion reads it
-    by key. Both use the same stored bytes, and neither needs that index
-    when sampling and comment input are absent. Earlier duplicate staging
-    cost 49.6 us and 4.7 MB per thousand rows per copy, accounting for 48.7%
-    of full-payload workspace bytes.
-
-    The docket index stays unconditional because document conversion joins
-    to it. With no docket input, the index is simply empty.
+    Sampling and comment conversion share the document index's stored bytes,
+    and neither needs it when both are absent; earlier duplicate staging cost
+    4.7 MB per thousand rows. The docket index stays unconditional because
+    document conversion joins to it, and an undeclared universe scope is
+    refused.
     """
 
     for row in inputs.iter_universe_rows():

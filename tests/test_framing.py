@@ -1,4 +1,7 @@
-"""Incremental catalog framing uses the same record domain as Rulespec."""
+"""Incremental catalog framing must produce Rulespec's framed-section bytes, including UTF-16 key order.
+
+Unsupported record values are refused on add, and digesting after zero accepted rows raises IntegrityError.
+"""
 
 from __future__ import annotations
 

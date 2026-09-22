@@ -1,3 +1,10 @@
+"""Conformance: local Iceberg record storage implements the shared layer contract.
+
+One logical layer is written, streamed, looked up, updated by partition and
+tampered with, so every registered record profile exposes the same port surface
+with the same ordering, immutability and fail-closed guarantees.
+"""
+
 from __future__ import annotations
 
 from tests.support.iceberg_records import files
@@ -29,6 +36,7 @@ BASE_RECORDS = (
 
 
 def _bucket(value: str) -> int:
+    """Return the partition bucket the fixture policy assigns to one source-item identity."""
     return int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big") % POLICY.bucket_count
 
 

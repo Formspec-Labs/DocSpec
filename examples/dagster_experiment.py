@@ -98,6 +98,7 @@ def output_values(workspace, selections):
 
 
 def run_example(output: Path) -> dict:
+    """Run the Dagster job, re-derive the same selections directly, and write ``dagster-example.json``."""
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     config = prepare(output)

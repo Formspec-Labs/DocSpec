@@ -1,4 +1,9 @@
-"""General roots retain native values while SQLite owns their logical identities."""
+"""State roots retain native Iceberg values while SQLite holds their logical membership.
+
+An import either publishes whole or leaves nothing behind; the suite pins sampling in compare, bounded
+ready-state descriptors with eviction readmission, keyed and bulk import streaming, immutable occurrence
+identities, and membership agreement between inline and bulk representations.
+"""
 
 from contextlib import ExitStack, closing, contextmanager
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +23,7 @@ from docspec.ports.record_storage import BATCH_BYTES
 
 
 def open_core(stack, path):
+    """Open records, ledger, states and publisher on ``path``, registering the closables on ``stack``."""
     records = stack.enter_context(closing(IcebergRecordStorage(path / "records")))
     ledger = stack.enter_context(closing(LocalSqliteCoreLedger(path / "ledger.sqlite", record_storage=records)))
     states = CoreStateStorage(records)
@@ -26,6 +32,7 @@ def open_core(stack, path):
 
 
 def occurrence(identity, value):
+    """Build an inline occurrence entity with the given identity and value."""
     return core.Entity(format_version=1, entity_id=identity, entity_type="occurrence", value=core.InlineValue(value=value))
 
 

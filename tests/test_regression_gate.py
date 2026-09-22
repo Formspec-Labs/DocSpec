@@ -1,4 +1,10 @@
-"""Exercise the regression gate through native pytest collection and execution."""
+"""Exercise the --require-regression-map gate through native pytest collection and execution: every selector in
+``conformance/test-matrix.json`` must be collected whole and complete every execution phase.
+
+Builds isolated pytester projects and asserts refusals for missing or import-skipped selectors, deselected
+parameter cases, positional case selection that hides sibling cases, skip/xfail/setup/teardown/early exits,
+empty or duplicate map declarations; focused pytest runs without the flag stay unaffected.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,7 @@ _SELECTOR = "tests/test_probe.py::test_probe"
 
 
 def _project(pytester: pytest.Pytester, source: str, *, selectors: list[str] | None = None) -> None:
+    """Write a throwaway project holding the repo conftest, a probe test module and a required-selector map."""
     pytester.makeconftest(Path(__file__).with_name("conftest.py").read_text(encoding="utf-8"))
     pytester.makeini("[pytest]\ntestpaths = tests\n")
     tests = pytester.path / "tests"

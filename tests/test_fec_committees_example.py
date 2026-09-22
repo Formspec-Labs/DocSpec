@@ -1,4 +1,8 @@
-"""A bounded FEC census keeps source facts without claiming document acquisition."""
+"""The FEC committees example keeps every source fact and evidence byte and refuses a laundered success.
+
+Rejections, changed pins and partial inputs do not become a successful catalog; an autouse fixture refuses
+network connections, so the retained offline path is what gets tested.
+"""
 
 from pathlib import Path
 
@@ -22,6 +26,7 @@ from examples import fec_committees as example
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    """Refuse any socket connection so the retained offline example cannot fall back to the network."""
     def refuse(*args, **kwargs):
         raise AssertionError("the retained FEC example attempted a network connection")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -29,6 +34,8 @@ def no_network(monkeypatch):
 
 
 def _reader(inputs, *, blob_source=None, **overrides):
+    """Build a ``SourceNativeReleaseReader`` over the retained fixture inputs with the example profile
+    and expected pin."""
     arguments = {
         "blob_source": blob_source or LocalBlobSource(inputs["blob_root"]), "profile": example.PROFILE,
         "expected_pin": ArtifactPin(inputs["logical_id"], inputs["artifact_digest"]),
@@ -38,11 +45,13 @@ def _reader(inputs, *, blob_source=None, **overrides):
 
 
 def _catalog(output, summary):
+    """Open the local catalog the example summary points at."""
     return open_local_catalog(SourceCatalogRef.from_dict(summary["catalog"]),
                               Path(output / "dataset"), producer=example.catalog_producer())
 
 
 def _build(reader, output, **overrides):
+    """Build the example catalog with default limits, overridable per test."""
     limits = {"max_records": 2, "max_bytes": 1024**2, "max_scratch_bytes": 16 * 1024**2}
     return example.build_committee_catalog(reader, Path(output), **(limits | overrides))
 
@@ -167,6 +176,7 @@ def test_public_reader_refuses_missing_or_changed_retained_evidence(tmp_path, pr
     original = LocalBlobSource(inputs["blob_root"])
 
     class DamagedEvidence:
+        """Blob source that fails or corrupts the selected evidence digest and delegates every other digest."""
         @contextmanager
         def open(self, digest):
             if digest == evidence_ref:

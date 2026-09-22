@@ -1,4 +1,8 @@
-"""The public Core walkthrough preserves repair, reuse, quotes and no-network behavior."""
+"""The public offline Core walkthrough repairs and compares without repeating upstream work.
+
+It keeps exact selections and clean outputs and refuses to overwrite its output on a rerun; network is
+restricted to the retained storage, and per-phase call counts pin that each stage reruns only what changed.
+"""
 
 import json
 import runpy
@@ -20,6 +24,7 @@ def test_reference_experiment_repairs_and_compares_without_repeating_upstream_wo
     monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
     fetches, extractions, segmentations, invocations = [], [], [], []
     def observe(cls, method, calls):
+        """Monkeypatch ``cls.method`` to append its first argument to ``calls`` before delegating."""
         original = getattr(cls, method)
         def counted(self, *args, **kwargs):
             calls.append(args[0])
@@ -32,6 +37,7 @@ def test_reference_experiment_repairs_and_compares_without_repeating_upstream_wo
     actual_run = DocumentPipeline.run
     phases = []
     def run(self, *args, **kwargs):
+        """Wrap the pipeline run to record how many fetch, extract, segment and match calls each phase makes."""
         before = tuple(len(calls) for calls in (fetches, extractions, segmentations, invocations))
         try:
             return actual_run(self, *args, **kwargs)

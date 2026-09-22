@@ -16,6 +16,7 @@ from tests.test_core_documents import source, selected
 
 
 def setup(tmp_path, callback, *, policy=None, limits=ProcessorLimits()):
+    """Build a workspace, document pipeline and provider processor over one local text input."""
     inputs = tmp_path / "inputs"
     inputs.mkdir()
     (inputs / "file.txt").write_text("Hello world")
@@ -32,6 +33,7 @@ def setup(tmp_path, callback, *, policy=None, limits=ProcessorLimits()):
 
 
 def test_allowed_fields_external_evidence_and_output_schema_are_retained(tmp_path):
+    """Only the allowed field reaches the provider; its external evidence is retained and reuse does not recall it."""
     evidence = ProviderInteractionEvidence("fixture", ProviderEvidence.digest_only(sha256_digest(b"request")),
                                           ProviderEvidence.digest_only(sha256_digest(b"response")))
     calls = []
@@ -55,6 +57,7 @@ def test_allowed_fields_external_evidence_and_output_schema_are_retained(tmp_pat
 
 @pytest.mark.parametrize("failure", ["schema", "media", "resources", "external", "count", "bytes", "input"])
 def test_invalid_provider_output_fails_the_common_attempt(tmp_path, failure):
+    """Every output-schema, media, resource, external-call, count, byte or input violation fails the attempt."""
     response = ProcessorResponse(({"answer": 1},), "application/json")
     limits = ProcessorLimits()
     if failure == "schema":
@@ -77,6 +80,7 @@ def test_invalid_provider_output_fails_the_common_attempt(tmp_path, failure):
 
 
 def test_order_sensitive_provider_retains_the_shared_consumed_order_after_reopen(tmp_path):
+    """Segment consumption order is retained across reopen as binary ascending member keys, with gaps and duplicates forbidden."""
     from docspec.processing.segmentation import ParagraphSegmenter
 
     calls = []

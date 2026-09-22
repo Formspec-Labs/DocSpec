@@ -1,4 +1,7 @@
-"""Closed recovery documents shared by continuation, publication and retention."""
+"""Closed recovery documents shared by continuation, publication and retention.
+
+``recovery_document`` enforces each kind's exact field set, version, and execution identity before use.
+"""
 
 from docspec.domain import core
 from docspec.domain.core_admission import record_value
@@ -13,7 +16,11 @@ _FIELDS = {
 
 
 def recovery_document(value, kind, execution_id):
-    """Validate the document that the execution owner actually knows how to resume."""
+    """Validate the recovery document an execution owner can actually resume.
+
+    Refuses an unknown kind, a wrong closed shape or version, and an execution identity that does not match.
+    """
+
     if (kind not in _FIELDS or not isinstance(value, dict) or set(value) != _FIELDS[kind]
             or value["format"] != "docspec-operation-" + kind or type(value["version"]) is not int or value["version"] != 1):
         raise IntegrityError("invalid operation " + kind + " document")

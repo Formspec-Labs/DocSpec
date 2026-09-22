@@ -39,6 +39,7 @@ SUPPLIED_RECORD_SCHEMA_DIGEST = identity_digest({
 
 
 def supplied_item_id(source_system_id: str, record_id: str) -> str:
+    """Return the stable source item identity for one supplied record."""
     return stable_urn("supplied-source-item", {"sourceSystemId": source_system_id, "recordId": record_id})
 
 
@@ -62,6 +63,7 @@ def supplied_record(value: object) -> Mapping[str, Any]:
 
 
 def supplied_renditions(source_item_id: str, record: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
+    """Render a record's candidates as universe rendition rows in rendition-id order."""
     return tuple({
         "sourceRecordId": source_item_id, "renditionId": candidate["renditionId"],
         "sourceField": "candidateRenditions", "locator": candidate["locator"],
@@ -80,11 +82,13 @@ class SuppliedRecordCatalogPolicy:
     policy_version = "1.0.0"
 
     def __post_init__(self) -> None:
+        """Require a nonempty source system identity and version."""
         require_text(self.source_system_id, "supplied source system")
         require_text(self.source_system_version, "supplied source system version")
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        """Declare the one supplied-records universe input for this source system."""
         return (SourceInputSelector(self.source_system_id, self.source_system_version,
             SUPPLIED_RECORD_SCOPE, SUPPLIED_RECORD_SCHEMA_NAME, SUPPLIED_RECORD_SCHEMA_VERSION),)
 
@@ -99,6 +103,10 @@ class SuppliedRecordCatalogPolicy:
         }
 
     def iter_items(self, inputs: CatalogPolicyInputs, workspace: CatalogPolicyWorkspace) -> Iterator[SourceCatalogItem]:
+        """Interpret each supplied record, selecting only its supplied candidates.
+
+        Raises IntegrityError when a row differs from its declared source identity, schema or renditions.
+        """
         del workspace
         policy_digest = identity_digest({"format": "docspec-catalog-policy", "formatVersion": "1.0",
             "policyId": self.policy_id, "policyVersion": self.policy_version, "configuration": dict(self.configuration)})

@@ -1,4 +1,9 @@
-"""Shared reading preserves DocSpec text, evidence, and refusal policy."""
+"""PDF reading matches the frozen page oracle for text and evidence while DocSpec keeps its refusal policy.
+
+Encryption needs an explicit profile, unreadable input and cap overruns refuse before backend construction,
+and a failed page aborts with its number and cause. A changed reader identity changes configuration without
+changing content and refuses to verify an older extraction.
+"""
 
 from hashlib import sha256
 from io import BytesIO
@@ -18,6 +23,7 @@ SOURCE = Path(__file__).parent / "fixtures/pdf/FAA-2016-6907-0001-content.pdf"
 
 
 def _rewrite(source: bytes, *, password: str | None = None, broken_page: int | None = None) -> bytes:
+    """Rewrite ``source`` with pypdf, optionally encrypting it or replacing one page's resources with a number."""
     from pypdf.generic import NameObject, NumberObject
 
     with pypdf.PdfReader(BytesIO(source)) as reader, pypdf.PdfWriter() as writer:

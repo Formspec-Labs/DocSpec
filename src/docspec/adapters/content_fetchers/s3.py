@@ -38,6 +38,8 @@ class AnonymousS3ContentFetcherConfig:
     anonymous: bool = True
 
     def __post_init__(self) -> None:
+        """Normalize the prefix and refuse credentialed requests, malformed names, or non-positive bounds."""
+
         object.__setattr__(self, "bucket", require_text(self.bucket, "S3 source bucket"))
         normalized_prefix = require_relative_path(self.prefix.strip("/"), "S3 source prefix")
         object.__setattr__(self, "prefix", normalized_prefix)
@@ -76,6 +78,8 @@ class AnonymousS3ContentFetcherConfig:
 
 
 def _timestamp(value: object, label: str) -> str:
+    """Render a timezone-aware datetime as UTC Z, or require nonempty text."""
+
     if isinstance(value, datetime):
         if value.tzinfo is None or value.utcoffset() is None:
             raise IntegrityError(f"{label} must be timezone-aware")
@@ -91,6 +95,8 @@ def _s3_version_content(
     etag: object,
     last_modified: object,
 ) -> dict[str, Any]:
+    """Build the sealed S3 version record, refusing a bad key, size, ETag, or timestamp."""
+
     bucket_text = require_text(bucket, "S3 object bucket")
     key_text = require_relative_path(key, "S3 object key")
     if isinstance(size, bool) or not isinstance(size, int) or size < 0:
@@ -133,6 +139,8 @@ def s3_locator(bucket: str, key: str) -> str:
 
 
 def public_s3_url(*, bucket: str, key: str, region_name: str) -> str:
+    """Return the public HTTPS URL for one S3 bucket and key."""
+
     bucket = require_text(bucket, "S3 object bucket")
     key = require_relative_path(key, "S3 object key")
     region_name = require_text(region_name, "S3 source region")
@@ -191,6 +199,10 @@ class AnonymousS3ContentFetcher:
         return cls(client, config)
 
     def _candidate_location(self, candidate: CandidateFile) -> tuple[str, str]:
+        """Decode a candidate locator, refusing a non-canonical S3 spelling or
+        a key outside the configured bucket and prefix.
+        """
+
         try:
             parsed = urlsplit(candidate.locator)
             parsed_port = parsed.port
@@ -236,6 +248,10 @@ class AnonymousS3ContentFetcher:
             raise IntegrityError(f"S3 observation metadata is invalid: {error}") from error
 
     def _candidate_record(self, candidate: CandidateFile) -> dict[str, Any]:
+        """Return the candidate's sealed S3 observation, observing an unpinned
+        candidate but never repairing malformed caller metadata.
+        """
+
         bucket, key = self._candidate_location(candidate)
         metadata = candidate.metadata
         if candidate.transport_version is None and "s3" not in metadata:
@@ -279,6 +295,11 @@ class AnonymousS3ContentFetcher:
         task_id: str,
         attempt_id: str,
     ) -> FetchStream:
+        """Conditionally stream one sealed S3 object, refusing a missing or
+        changed object, a size or timestamp mismatch, and reporting transport
+        failures as S3ContentFetcherError.
+        """
+
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
             raise ValueError("max_bytes must be a positive integer")
         require_text(task_id, "task_id")

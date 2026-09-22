@@ -39,6 +39,8 @@ def file_digest(path):
 
 
 def source_pins():
+    """Hash the recipe, lock, project config, production sources and support modules this trial pins."""
+
     paths = [Path(__file__), Path("uv.lock"), Path("pyproject.toml"),
              *sorted(Path("src/docspec").rglob("*.py")),
              *(Path("tests/support") / (name + ".py") for name in
@@ -47,6 +49,12 @@ def source_pins():
 
 
 def derive(directory, source, digest, count):
+    """Duplicate the pinned source fixture into two copies.
+
+    Refuses a count outside the frozen fixture, source bytes or a row count that
+    differ from the supplied pin, and an already derived destination.
+    """
+
     if not 0 < count <= CORE_MEMBER_COUNT:
         raise ValueError("source count must be within the frozen fixture")
     if file_digest(source) != digest or pq.ParquetFile(source).metadata.num_rows != count:
@@ -72,6 +80,8 @@ def derive(directory, source, digest, count):
 
 
 def selected(workspace):
+    """Retain the whole-state two-copy selection and return its evidence."""
+
     with workspace.publisher.session() as session:
         value = retained_selection(workspace, session, "selected:two-copy", "root",
             core.StateMembers(member_selector=core.Whole(), material_keys=True))
@@ -102,6 +112,8 @@ def verify(workspace, count):
 
 
 def run_stage(directory, stage, *, source=None, digest=SOURCE_SHA256, count=CORE_MEMBER_COUNT):
+    """Run one qualification stage, refusing a directory whose source pins or derived fixture changed."""
+
     if stage == "derive":
         return derive(directory, source, digest, count)
     manifest = json.loads((directory / "fixture.json").read_text())

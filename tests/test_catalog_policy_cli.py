@@ -22,6 +22,7 @@ from docspec.ports.source_catalog import SourceInputSelector
 def test_write_policy_creates_the_application_member(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], policy_name: str, agency_file: bool,
 ) -> None:
+    """The command writes the exact canonical member the policy class serializes and echoes it as JSON."""
     if policy_name == "federal-register":
         expected = FederalRegisterCatalogPolicy("urn:test:federal-register")
         fields = {"expected_source_system_id": "urn:test:federal-register"}
@@ -56,6 +57,7 @@ def test_write_policy_creates_the_application_member(
 def test_write_policy_refuses_existing_files_and_symlinks(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], symlink: bool,
 ) -> None:
+    """An existing output file or symlink refuses with exit 2 and leaves the retained bytes untouched."""
     source = tmp_path / "fields.json"
     source.write_text('{"expected_source_system_id":"urn:test:federal-register"}')
     retained = tmp_path / "retained.json"
@@ -84,6 +86,7 @@ def test_write_policy_refuses_existing_files_and_symlinks(
 def test_write_policy_refuses_invalid_fields_before_creating_output(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], policy_name: str, fields: dict,
 ) -> None:
+    """Invalid policy fields refuse with exit 2 and leave no output file behind."""
     source = tmp_path / "fields.json"
     source.write_text(json.dumps(fields))
     output = tmp_path / "policy.json"
@@ -101,6 +104,7 @@ def test_write_policy_refuses_invalid_fields_before_creating_output(
 def test_write_policy_refuses_invalid_url_templates_as_structured_errors(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], template: object,
 ) -> None:
+    """Each invalid template refuses with the structured CLI error and creates no output."""
     selector = SourceInputSelector(
         "urn:test:regulations-gov", "v4", "regulations-gov-documents",
         "regulations-gov-document-raw", "1.0",

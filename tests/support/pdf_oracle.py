@@ -12,6 +12,8 @@ from docspec.processing.extraction import ExtractionError
 
 
 class FrozenPypdfExtractor:
+    """Frozen copy of the pre-shared-reader pypdf profile, used only as a parity oracle."""
+
     def __init__(self, *, strip_page_whitespace: bool = False) -> None:
         self.strip_page_whitespace = strip_page_whitespace
 
@@ -19,6 +21,12 @@ class FrozenPypdfExtractor:
         return version("pypdf")
 
     def _read_pages(self, source_bytes: bytes) -> tuple[tuple[str, ...], str]:
+        """Return page texts and the provider version.
+
+        Refuses a missing or version-mismatched pypdf, an encrypted PDF, and any
+        provider failure, all as ``ExtractionError``.
+        """
+
         expected_version = self._require_provider_version()
         try:
             provider = import_module("pypdf")

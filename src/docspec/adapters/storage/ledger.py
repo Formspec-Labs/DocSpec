@@ -144,6 +144,8 @@ def _bind(connection, statement, rows):
 
 
 class LocalSqliteCoreLedger:
+    """SQLite implementation of the Core metadata ledger."""
+
     def __init__(self, path: Path, *, busy_timeout_ms: int = 5000, create: bool = True, record_storage: RecordStorage | None = None, read_only: bool = False) -> None:
         if type(busy_timeout_ms) is not int or busy_timeout_ms <= 0:
             raise ValueError("metadata busy timeout must be a positive integer")
@@ -390,6 +392,8 @@ class LocalSqliteCoreLedger:
                     ordinal += len(chunk)
 
     def commit(self, batch: MetadataBatch) -> bool:
+        """Commit one bounded publication unit, returning False when its update identity was already committed."""
+
         records, evidence, results = {}, {}, {}
         size = 0
         for record in _collect(batch.records):
@@ -518,11 +522,15 @@ class LocalSqliteCoreLedger:
             return True
 
     def is_committed(self, unit_id: str) -> bool:
+        """Report whether an update identity is already committed."""
+
         require_text(unit_id, "metadata update identity")
         with self._transaction() as connection:
             return connection.execute("SELECT 1 FROM units WHERE unit_id=?", (unit_id,)).fetchone() is not None
 
     def read_records(self, keys: Iterable[RecordKey], *, include_values: bool = True) -> Iterator[tuple[StoredRecord | None, ...]]:
+        """Read records by key with availability, version and resolved values."""
+
         with self._transaction() as connection:
             self._requests(connection, keys, names=("kind", "record_id"), normalize=_key)
             cursor = connection.execute(
@@ -570,6 +578,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(resolved())
 
     def find_candidates(self, requests: Iterable[tuple[str, str]]) -> Iterator[tuple[CandidateMatch, ...]]:
+        """Find retained successful results matching candidate request/digest pairs."""
+
         with self._transaction() as connection:
             self._requests(connection, requests, names=("request_id", "digest"), normalize=lambda row: (
                 require_text(row[0], "candidate request"), require_sha256(row[1]),
@@ -584,6 +594,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(CandidateMatch(*row) for row in rows)
 
     def read_links(self, keys: Iterable[RecordKey]) -> Iterator[tuple[MetadataLink, ...]]:
+        """Read outgoing metadata links for each key in request order."""
+
         with self._transaction() as connection:
             self._requests(connection, keys, names=("kind", "record_id"), normalize=_key)
             cursor = connection.execute(
@@ -595,6 +607,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(MetadataLink((row[0], row[1]), row[2], row[3], (row[4], row[5])) for row in rows)
 
     def read_dependencies(self, result_ids: Iterable[str]) -> Iterator[tuple[MetadataLink, ...]]:
+        """Stream each result's outgoing links."""
+
         yield from self.read_links(("result", result_id) for result_id in result_ids)
 
     def affected_results(self, changed: Iterable[RecordKey]) -> Iterator[tuple[str, ...]]:
@@ -632,6 +646,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(row[0] for row in rows)
 
     def record_progress(self, update_id: str, execution_id: str, status: str, description: dict[str, Any], *, expected_update_id: str | None = None) -> bool:
+        """Record one non-success progress step, refusing a stale expected update or a success status."""
+
         require_text(execution_id, "execution identity")
         if not isinstance(status, str) or status not in {"started", "progress", "failed", "interrupted", "incomplete"}:
             raise IntegrityError("progress cannot assert successful retention")
@@ -649,6 +665,8 @@ class LocalSqliteCoreLedger:
             return True
 
     def read_progress(self, execution_id: str) -> Iterator[tuple[bytes, ...]]:
+        """Stream one execution's progress payloads in sequence order."""
+
         require_text(execution_id, "execution identity")
         with self._transaction() as connection:
             cursor = connection.execute("SELECT payload FROM progress WHERE execution_id=? ORDER BY sequence", (execution_id,))
@@ -656,6 +674,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(row[0] for row in rows)
 
     def current(self, dataset: str) -> RecordKey | None:
+        """Return a dataset's current head key, or None when it has none."""
+
         require_text(dataset, "dataset")
         with self._transaction() as connection:
             return connection.execute("SELECT kind,record_id FROM heads WHERE dataset=?", (dataset,)).fetchone()
@@ -679,6 +699,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(rows)
 
     def select_current(self, update_id: str, dataset: str, target: RecordKey, expected_current: RecordKey | None) -> bool:
+        """Move a dataset head under content protection, refusing a stale expected target."""
+
         require_text(dataset, "dataset")
         target = _key(target)
         expected_current = None if expected_current is None else _key(expected_current)
@@ -720,6 +742,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(LayerRef.from_dict(decode_canonical_json_value(row[0], label="record layer reference")) for row in rows)
 
     def removal_blockers(self, keys: Iterable[RecordKey]) -> Iterator[tuple[RecordKey, ...]]:
+        """Stream retained keys that still block removal of the wanted keys."""
+
         with self._transaction() as connection:
             self._requests(connection, keys, names=("kind", "record_id"), normalize=_key)
             cursor = connection.execute(
@@ -734,6 +758,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(rows)
 
     def begin_removal(self, update_id: str, policy_id: str, keys: Iterable[RecordKey], *, content: Iterable[RemovalContent] = ()) -> bool:
+        """Record one removal intent and mark its retained targets unavailable; identical retries return False."""
+
         require_text(policy_id, "retention policy")
         targets = sorted(set(_key(key) for key in _collect(keys)))
         with self.content_guard(exclusive=True), self._transaction(write=True) as connection:
@@ -766,6 +792,8 @@ class LocalSqliteCoreLedger:
             return True
 
     def removal_outcomes(self, update_id: str, *, pending_only: bool = False) -> Iterator[tuple[RemovalOutcome, ...]]:
+        """Stream a removal's physical outcomes, optionally only unfinished ones."""
+
         with self._transaction() as connection:
             cursor = connection.execute(
                 "SELECT store,reference,status,error FROM removal_content WHERE update_id=? "
@@ -774,6 +802,8 @@ class LocalSqliteCoreLedger:
                 yield tuple(RemovalOutcome(RemovalContent(row[0], BlobRef.from_dict(decode_canonical_json_value(row[1], label="removal reference"))), row[2], row[3]) for row in rows)
 
     def removal(self, update_id: str) -> tuple[str, tuple[RecordKey, ...], bool] | None:
+        """Return a removal's policy, target keys and completion flag, or None."""
+
         with self._transaction() as connection:
             row = connection.execute("SELECT policy_id,complete FROM removals WHERE update_id=?", (update_id,)).fetchone()
             if row is None:
@@ -782,6 +812,8 @@ class LocalSqliteCoreLedger:
             return row[0], keys, bool(row[1])
 
     def record_removal_outcome(self, update_id: str, outcome: RemovalOutcome) -> None:
+        """Record one physical outcome against a retained removal intent."""
+
         if outcome.status not in {"deleted", "absent", "retained", "failed"}:
             raise IntegrityError("invalid removal outcome")
         if outcome.error is not None:
@@ -792,6 +824,8 @@ class LocalSqliteCoreLedger:
                 raise IntegrityError("removal outcome has no matching retained intent")
 
     def finish_removal(self, update_id: str) -> None:
+        """Mark a removal complete, refusing while any physical target is unfinished."""
+
         with self.content_guard(exclusive=True), self._transaction(write=True) as connection:
             if connection.execute("SELECT 1 FROM removal_content WHERE update_id=? AND status IN ('pending','failed') LIMIT 1", (update_id,)).fetchone():
                 raise IntegrityError("removal still has unfinished physical targets")
@@ -799,6 +833,8 @@ class LocalSqliteCoreLedger:
                 raise IntegrityError("removal has no retained policy intent")
 
     def pending_removals(self) -> Iterator[tuple[tuple[str, str, RecordKey | None], ...]]:
+        """Stream incomplete removals with their policy and targets."""
+
         with self._transaction() as connection:
             cursor = connection.execute(
                 "SELECT r.update_id,r.policy_id,t.kind,t.record_id FROM removals r LEFT JOIN removal_targets t USING(update_id) "

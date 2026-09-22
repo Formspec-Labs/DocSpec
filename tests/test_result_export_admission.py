@@ -1,4 +1,11 @@
-"""Valid artifact hashes cannot excuse inconsistent imported Core records."""
+"""Import admission contract for Core exports: a valid artifact hash cannot excuse inconsistent imported
+records, so resealing an export with recomputed member pins still refuses a changed state key, wrong byte size,
+missing representation link, omitted root or altered provenance instant.
+
+Also pins that an understated root count cannot bypass the payload read bound, explicit selection roots retain
+original provenance, document-profile roots export complete stages after zero-work reuse, and a selected-field
+export preserves parent identity without the parent's bytes.
+"""
 
 from contextlib import contextmanager, closing
 import json
@@ -19,6 +26,7 @@ from tests.test_result_export import MAX_BYTES, PRODUCER, export, opened, retain
 retained = _retained_fixture
 
 def reseal(path):
+    """Recompute every member pin and the artifact root from current bytes, returning a valid-looking signature."""
     source = LocalMemberSource(path)
     root = json.loads((path / "artifact.json").read_bytes())
     # Saved descriptors retain the role and filename; recompute every byte pin.
@@ -88,6 +96,7 @@ def test_export_retains_original_provenance_from_explicit_selection_roots(tmp_pa
                                               operation_kind="transformation", configuration={})
         request = core.Request(format_version=1, request_id="request", definition_id="definition", inputs=(), dependencies=())
         def produce(context):
+            """Create the selected keyed state and generate its output record."""
             output = context.session.states.create_keyed(context.session, state_id="selected", representation_id="original", unit_id="import",
                 rows=[("row", core.Entity(format_version=1, entity_id="row", entity_type="occurrence", value=core.InlineValue(value={"answer": 42})))])
             context.generate_record(output, label="output")
@@ -165,6 +174,7 @@ def test_selected_fields_export_preserves_parent_identity_without_parent_bytes(t
                 definition=core.JsonFields(selectors=(core.Field(label="public", pointer="/public"),)))
         read = workspace.blobs.read
         def refuse_parent(reference, **kwargs):
+            """Fail if the direct selected-field export reads the original whole-parent blob."""
             if reference.digest == value.digest:
                 pytest.fail("direct selected-field export must not read the original whole parent")
             yield from read(reference, **kwargs)

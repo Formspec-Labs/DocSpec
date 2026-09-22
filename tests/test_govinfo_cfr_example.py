@@ -1,4 +1,9 @@
-"""Annual publisher metadata, exact section XML, and reusable processing stay distinct."""
+"""The GovInfo annual-CFR example keeps publisher metadata, exact section XML and reusable processing distinct.
+
+Unstated, ambiguous or failed section acquisitions refuse without publishing success; refusals retain the
+body they refused, a candidate change is rejected before any body request, and an existing output directory
+is never replaced.
+"""
 
 import json
 import socket
@@ -27,11 +32,14 @@ from tests.support.processing import _captured
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    """Route sockets through ``storage_only`` so only the retained fixture store may be reached."""
     monkeypatch.setattr(socket.socket, "connect", storage_only(socket.socket.connect))
     monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
 
 
 def _responses(monkeypatch, *, metadata=None, body=None, status=200, content_type="application/xml"):
+    """Install a mock fixture transport answering MODS with metadata and section requests with body,
+    status and content type."""
     metadata = (example.FIXTURES / "edition.xml").read_bytes() if metadata is None else metadata
     body = (example.FIXTURES / "section.xml").read_bytes() if body is None else body
 

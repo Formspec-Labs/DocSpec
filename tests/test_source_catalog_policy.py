@@ -1,4 +1,13 @@
-"""Injected source policies, row selection, and retained interpretation evidence."""
+"""Source-catalog policy contract: the generic builder accepts an injected policy and configuration shape,
+streams each source's records and renditions exactly once while merging multiple sources globally, and retains
+each row's normalization, selection and topic interpretations as evidence.
+
+Covers stable repeated-value indices in diagnostics, separate row families selected from one source system,
+malformed or mixed metadata values retained without aborting neighbors, explicit dispositions for missing
+required metadata or renditions, rendition preference recording every offer, the Federal Register policy
+requiring its current schema version, topic recovery only with evidence, and an observed crawl not claiming
+source completeness.
+"""
 
 from __future__ import annotations
 

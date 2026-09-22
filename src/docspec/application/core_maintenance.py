@@ -32,6 +32,7 @@ class _PhysicalIndex:
         self.directory.cleanup()
 
     def add(self, content, *, protected):
+        """Add one physical reference, refusing two claims of different immutable bytes for one locator."""
         payload = canonical_value_bytes(content.reference.to_dict())
         previous = self.connection.execute("SELECT reference FROM refs WHERE store=? AND locator=?", (content.store, content.reference.locator)).fetchone()
         if previous is not None:
@@ -46,22 +47,26 @@ class _PhysicalIndex:
         return row is not None and bool(row[0])
 
     def candidates(self):
+        """Yield unprotected content eligible for removal, ordered by store and locator."""
         for store, payload in self.connection.execute("SELECT store,reference FROM refs WHERE candidate=1 ORDER BY store,locator"):
             yield RemovalContent(store, BlobRef.from_dict(decode_canonical_json_value(payload, label="physical reference")))
 
 
 class CoreMaintenance:
+    """Maintain current selections and remove retained bytes under an authorizing policy."""
     def __init__(self, publisher, records):
         self.publisher, self.records = publisher, records
         self.ledger, self.blobs = publisher.ledger, publisher.blobs
 
     def select_current(self, update_id, dataset, target, expected_current):
+        """Switch a dataset's current state, validating the target when the update is new."""
         with self.publisher.session() as session:
             if not self.ledger.is_committed(update_id):
                 session.validate(MetadataBatch(update_id, retained=(target,)))
             return self.ledger.select_current(update_id, dataset, target, expected_current)
 
     def _policy(self, policy_id, keys, *, orphan_content):
+        """Refuse any removal the retained policy does not authorize, preserving the policy itself."""
         with owned_iterator(self.ledger.read_records([("retention_policy", policy_id)])) as batches:
             policy = next(batches)[0]
         if policy is None or not policy.available or not isinstance(policy.value, core.RetentionPolicy):
@@ -86,6 +91,7 @@ class CoreMaintenance:
             return decode_canonical_json_value(b"".join(chunks), label="retained physical manifest")
 
     def inventory_layer(self, index, reference, *, protected, scanned):
+        """Record a layer's physical references once per layer and protection identity."""
         identity = reference.layer_id, protected
         if identity in scanned:
             return
@@ -94,6 +100,7 @@ class CoreMaintenance:
             index.add(RemovalContent("records", item), protected=protected)
 
     def inventory_record(self, index, value, *, protected, scanned, entity_targets):
+        """Record the physical references a retained record owns, checking membership protection."""
         raw = record_value(value)
         content = raw.get("membership" if isinstance(value, core.StateRepresentation) else "edits" if isinstance(value, core.Revision) else "value")
         if not isinstance(content, dict) or content.get("kind") != "content":
@@ -124,6 +131,7 @@ class CoreMaintenance:
                     index.add(RemovalContent("blobs", _blob(record_value(content, core.ContentRef))), protected=protected)
 
     def _inventory(self, index, *, exclude=(), candidates=False):
+        """Index every retained record and source layer outside the removal scope."""
         excluded, scanned = set(exclude), set()
         entity_targets = {key[1] for key in excluded if key[0] == "entity"}
         if candidates:
@@ -211,6 +219,7 @@ class CoreMaintenance:
                 return self._delete(update_id, index)
 
     def resume(self, update_id):
+        """Resume an authorized removal from its retained intent, or return recorded outcome counts."""
         with self.ledger.content_guard(exclusive=True):
             intent = self.ledger.removal(update_id)
             if intent is None:
@@ -222,6 +231,7 @@ class CoreMaintenance:
             return self._counts(update_id)
 
     def _delete(self, update_id, index):
+        """Delete pending physical targets, recording retained, deleted, absent or failed outcomes."""
         with owned_iterator(self.ledger.removal_outcomes(update_id, pending_only=True)) as batches:
             for batch in batches:
                 for item in batch:

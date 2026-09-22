@@ -1,4 +1,11 @@
-"""A joined Federal Register document contributes one body, with all offers retained."""
+"""Joined Federal Register rendition policy: a matched filing contributes exactly one best body in preference
+order (full text XML, body HTML, HTML, PDF) while every usable offer is retained as evidence but only the
+selected one becomes a processing candidate.
+
+Covers Regulations.gov files outranking all FR offers, a shared XML/HTML locator not erasing the XML offer, no
+usable offer or an ambiguous filing yielding UNAVAILABLE with no fetch task, and the hashed policy declaring the
+single-body rule.
+"""
 
 from __future__ import annotations
 
@@ -39,10 +46,12 @@ def _offers(identity: str = "2026-10001") -> tuple[dict, ...]:
 
 
 def _source_order(offers):
+    """Sort offers into source-record order, by sourceRecordId then renditionId."""
     return tuple(sorted(offers, key=lambda value: (value["sourceRecordId"], value["renditionId"])))
 
 
 def _offered_ids(item) -> tuple[str, ...]:
+    """The federal-register family's offered rendition ids from the rendition-preference interpretation."""
     preference = _interpretation(item, "rendition-preference")
     return next(
         family["offeredRenditionIds"] for family in preference["families"] if family["familyId"] == "federal-register"

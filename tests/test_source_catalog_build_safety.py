@@ -1,4 +1,12 @@
-"""Bounded source-catalog admission, failed-build cleanup, and workspace recovery."""
+"""Source-catalog build safety: bounded admission of policy-authored rows, failure at any stage before
+publication leaves no catalog, and a killed build resumes from its committed workspace without recomputing
+already-staged policy output.
+
+Covers the distinct-join-identity limit, duplicate source item ids across inputs, dropped universe rows, a
+source stream failure, row/rendition-count/aggregate-byte limits, a producer gate that recomputes the catalog
+state before publication, resume publishing a byte-identical artifact while refusing a workspace staged by
+another build, and publication retry reusing staged blobs without recomputation.
+"""
 
 from __future__ import annotations
 
@@ -278,18 +286,16 @@ def test_producer_gate_recomputes_state_before_publication(
 def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifact(
     tmp_path: Path,
 ) -> None:
-    """The acceptance rule for resume, written before the feature existed.
-
-    A build that dies mid-stream and is resumed from its committed workspace
-    publishes byte-for-byte the artifact a fresh build publishes, computes only
-    the items after its last commit, and a workspace staged under another build
-    identity is refused rather than reused. Two catalog-A builds died this way
-    at 23 and 27.7 minutes with nothing readable left behind.
+    """Resume acceptance rule, written before the feature existed: a build that dies mid-stream and resumes
+    from its committed workspace publishes byte-for-byte the artifact a fresh build publishes, computes only
+    the items after its last commit, and refuses a workspace staged under another build identity; two catalog-A
+    builds died this way at 23 and 27.7 minutes with nothing readable left behind.
     """
 
     identities = tuple(f"2026-{index:05d}" for index in range(1, 8))
 
     def source() -> FakeSource:
+        """A seven-record Federal Register fake source."""
         return FakeSource(
             description(),
             tuple(record(identity) for identity in identities),
@@ -303,6 +309,7 @@ def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifac
         *,
         build_producer: Producer | None = None,
     ) -> SourceCatalogBuilder:
+        """A builder with a fixed request and two-item resume batches."""
         return SourceCatalogBuilder(
             store=LocalSourceCatalogStore(root),
             policy=policy,  # type: ignore[arg-type]
@@ -314,6 +321,7 @@ def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifac
         )
 
     def receipt_bytes(root: Path, reference: SourceCatalogRef) -> bytes:
+        """The published catalog-build-receipt.json bytes for a catalog reference."""
         return (root / reference.digest.removeprefix("sha256:") / "catalog-build-receipt.json").read_bytes()
 
     fresh_root = tmp_path / "fresh"
@@ -324,6 +332,7 @@ def test_a_build_resumed_from_a_killed_workspace_publishes_the_identical_artifac
     workspace_path = tmp_path / "resume" / "workspace.sqlite3"
 
     def durable() -> SqliteCatalogPolicyWorkspace:
+        """Open the one on-disk workspace so the killed build's staging survives for resume."""
         return SqliteCatalogPolicyWorkspace(path=workspace_path)
 
     resumed_root = tmp_path / "resumed"

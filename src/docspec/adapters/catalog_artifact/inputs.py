@@ -51,6 +51,11 @@ MAX_ORDERED_PASSES = 2
 
 
 def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]]]:
+    """Yield each validated source record with its renditions, refusing
+    malformed shapes, out-of-order identities, orphan renditions, and
+    per-record limits.
+    """
+
     renditions = iter(source.iter_renditions())
     next_rendition = next(renditions, None)
     previous_record_id: str | None = None
@@ -135,17 +140,12 @@ _RESUME_NAMESPACE = "source-catalog/resume"
 class _ResumeLedger:
     """Every resume point of one build, kept in the workspace it describes.
 
-    A durable workspace outlives a killed process, and SQLite discards whatever
-    followed the last commit when it is next opened, so this ledger is the whole
-    of what a resumed build may trust: the identity the workspace was staged
-    under (``open`` refuses any other), which inputs finished loading, whether
-    the policy's pre-pass finished, and the last committed batch of staged
-    items with the counts the receipt will need. Every mark commits, so the
-    ledger never claims more than the file holds.
-
-    A workspace with no ``commit`` cannot survive a kill; its ledger records
-    nothing and reports a fresh build, so the temporary-workspace path is the
-    build it always was.
+    A durable workspace outlives a killed process, so this ledger is the whole
+    of what a resumed build may trust: the identity it was staged under
+    (``open`` refuses any other), which inputs finished loading, whether the
+    policy's pre-pass finished, and the last committed batch with the counts
+    the receipt will need. Every mark commits; a workspace with no ``commit``
+    records nothing and reports a fresh build.
     """
 
     def __init__(self, workspace: CatalogPolicyWorkspace) -> None:
@@ -249,10 +249,16 @@ class _CatalogPolicyInputs:
 
     @staticmethod
     def _namespace(selector: SourceInputSelector) -> str:
+        """Return the workspace namespace for one policy selector's staged rows."""
+
         digest = sha256_digest(canonical_json_bytes(selector.to_dict()))
         return f"{_SOURCE_ROW_NAMESPACE_PREFIX}{digest}"
 
     def _load(self) -> None:
+        """Stage each not-yet-loaded source's rows under its selector
+        namespace, keyed by position so two inputs may share a logical id.
+        """
+
         if self._loaded:
             return
         for source_index, (source, description) in enumerate(zip(self._sources, self._descriptions, strict=True)):
@@ -293,17 +299,11 @@ class _CatalogPolicyInputs:
     ) -> None:
         """Let the policy own a repeated sourceRecordId, or keep the refusal.
 
-        Reached only when ``put`` has already refused, so a corpus with no
-        repeats pays nothing for this: the lookup and the resolution are on the
-        exception path, not per row. Measured over the 670 non-Federal-Register
-        catalog-A releases, exactly two of 2,221,713 records reach it.
-
-        A policy that does not implement ``resolve_source_record_collision``
-        keeps the refusal it has today, unchanged and with the same message.
-        The capability is read structurally rather than declared on the
-        protocol because absence has to mean "refuse as before" for every
-        policy that has not thought about it -- a default on the protocol would
-        silently opt them all in.
+        Reached only after ``put`` refused a duplicate, so a corpus without
+        repeats pays nothing. A policy lacking
+        ``resolve_source_record_collision`` keeps the existing refusal, and the
+        capability is read structurally because an absent method must mean
+        "refuse" for every policy that never opted in.
         """
 
         resolver = getattr(self._policy, "resolve_source_record_collision", None)
@@ -325,6 +325,8 @@ class _CatalogPolicyInputs:
         self._workspace.replace(namespace, (owner["record"]["sourceRecordId"],), owner)
 
     def _ensure_available(self, selector: SourceInputSelector) -> None:
+        """Refuse a selector whose source system and version match no configured input."""
+
         if not any(
             description.source_system_id == selector.source_system_id
             and description.source_system_version == selector.source_system_version
@@ -333,6 +335,10 @@ class _CatalogPolicyInputs:
             raise IntegrityError("catalog policy source input selector matched no source-native input")
 
     def _row(self, value: Mapping[str, Any]) -> SourceNativeRow:
+        """Build one SourceNativeRow from a workspace value, refusing an
+        invalid shape, source index, or filings list.
+        """
+
         if set(value) - {"discardedFilings"} != {"sourceIndex", "record", "renditions"}:
             raise IntegrityError("catalog policy workspace source row has an invalid closed shape")
         source_index = value["sourceIndex"]
@@ -368,6 +374,8 @@ class _CatalogPolicyInputs:
         *,
         after: str | None = None,
     ) -> Iterator[SourceNativeRow]:
+        """Yield one selector's staged rows in order, refusing a third read, a foreign row, or an unsorted stream."""
+
         self._ensure_available(selector)
         if self._opened[selector] >= MAX_ORDERED_PASSES:
             raise IntegrityError("catalog policy attempted to read one selected input more than twice")
@@ -392,6 +400,13 @@ class _CatalogPolicyInputs:
         self._completed.add(selector)
 
     def iter_universe_rows(self) -> Iterator[SourceNativeRow]:
+        """Merge every universe input into one globally ordered, distinct stream and account each id once.
+
+        Accounting belongs to the first ordered pass; a resumed pass checks
+        existing entries before writing, because a two-pass policy already
+        committed the whole universe in its pre-pass.
+        """
+
         if self._universe_passes >= MAX_ORDERED_PASSES:
             raise IntegrityError("catalog policy attempted to read the universe more than twice")
         self._universe_passes += 1
@@ -451,11 +466,15 @@ class _CatalogPolicyInputs:
                 stream.close()
 
     def iter_lookup_rows(self, selector: SourceInputSelector) -> Iterator[SourceNativeRow]:
+        """Yield a lookup input's rows, refusing a selector that is also a declared universe input."""
+
         if selector in self._universe_inputs:
             raise IntegrityError("catalog policy lookup input must differ from its universe input")
         yield from self._rows(selector)
 
     def finish(self) -> None:
+        """Refuse a policy that did not read and fully consume every declared universe input."""
+
         if not self._universe_passes or not set(self._universe_inputs).issubset(self._completed):
             raise IntegrityError("catalog policy did not read every declared universe input")
         # Compares which inputs were opened against which were drained, not how
@@ -474,6 +493,10 @@ def _policy_rows(
     workspace: CatalogPolicyWorkspace,
     ledger: _ResumeLedger,
 ) -> Iterator[SourceCatalogItem]:
+    """Yield policy items, refusing interpretations that differ from the
+    installed policy pin or output that omits universe ids.
+    """
+
     inputs: CatalogPolicyInputs = _CatalogPolicyInputs(
         sources,
         descriptions,

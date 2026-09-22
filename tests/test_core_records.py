@@ -21,6 +21,7 @@ FIXTURE = json.loads((Path(__file__).parent / "fixtures/core/lifecycle.json").re
 
 
 def example(field, value):
+    """Deep-copy the fixture record whose id field for its kind equals `value`."""
     return deepcopy(next(record for record in FIXTURE["records"]
                          if core.RECORD_ID_FIELDS[record["kind"]] == field and record.get(field) == value))
 
@@ -29,6 +30,7 @@ def example(field, value):
     value for key, value in record.items() if key.endswith("_id")
 ))
 def test_lifecycle_records_round_trip_through_the_generated_schema(raw):
+    """Every fixture record re-encodes to identical bytes and validates against the generated schema."""
     encoded = encode_record(raw)
     parsed = admit_record(encoded)
     assert parsed.__struct_config__.tag == raw["kind"]
@@ -44,6 +46,7 @@ def test_fixture_covers_each_top_level_record_family():
 
 
 def test_state_has_known_canonical_bytes_and_no_physical_identity():
+    """A state has known canonical bytes, and representations differ only by representation id."""
     state = core.State(format_version=1, state_id="s")
     assert encode_record(state) == b'{"format_version":1,"kind":"state","state_id":"s"}'
     before = core.StateRepresentation(format_version=1, representation_id="before", state_id="s", membership=())
@@ -57,6 +60,7 @@ def test_state_has_known_canonical_bytes_and_no_physical_identity():
     {"extra": 1}, {"kind": "unknown"},
 ])
 def test_fixed_shape_and_version_refusals_agree_with_generated_schema(mutation):
+    """Wrong version type or value, non-string ids, extra members and unknown kinds refuse in both encoder and schema."""
     raw = {"format_version": 1, "kind": "state", "state_id": "s", **mutation}
     with pytest.raises(IntegrityError):
         encode_record(raw)
@@ -64,6 +68,7 @@ def test_fixed_shape_and_version_refusals_agree_with_generated_schema(mutation):
 
 
 def test_wire_admission_requires_a_version_and_rejects_duplicate_keys():
+    """A missing `format_version`, a duplicate key and non-canonical spacing all refuse at admission."""
     with pytest.raises(IntegrityError, match="format_version"):
         admit_record(b'{"kind":"state","state_id":"s"}')
     with pytest.raises(IntegrityError, match="duplicate"):
@@ -78,12 +83,14 @@ def test_wire_admission_requires_a_version_and_rejects_duplicate_keys():
     {"nested": b"bytes"},
 ])
 def test_python_values_cannot_silently_change_type_during_encoding(value):
+    """Bytes, dates, decimals, UUIDs, integral floats, huge ints, lone surrogates and non-string keys all refuse."""
     record = core.Entity(format_version=1, entity_id="e", entity_type="occurrence", value=core.InlineValue(value=value))
     with pytest.raises(IntegrityError):
         encode_record(record)
 
 
 def test_retained_bytes_are_independent_of_mutable_python_inputs():
+    """Appending to the Python value after encoding does not change the admitted bytes."""
     value = {"nested": [1]}
     record = core.Entity(format_version=1, entity_id="e", entity_type="occurrence", value=core.InlineValue(value=value))
     retained = encode_record(record)
@@ -92,6 +99,7 @@ def test_retained_bytes_are_independent_of_mutable_python_inputs():
 
 
 def test_fixture_distinguishes_member_entity_content_request_and_attempt_identities():
+    """The fixture keeps member, entity, content, request and attempt identities distinct across equal values."""
     first = admit_record(encode_record(example("entity_id", "o1")))
     second = admit_record(encode_record(example("entity_id", "o2")))
     assert first.entity_id != second.entity_id and value_key(first.value.value) != value_key(second.value.value)
@@ -113,6 +121,7 @@ def test_fixture_distinguishes_member_entity_content_request_and_attempt_identit
 
 
 def test_reuse_selects_an_exact_result_without_rewriting_generation_or_roles():
+    """Reuse names the exact generating execution without inventing derivations or changing output roles."""
     results = [admit_record(encode_record(r)) for r in FIXTURE["records"] if r["kind"] == "result"]
     generated = {event.entity_id: result.execution_id for result in results for event in result.generations}
     assert generated == FIXTURE["expected"]["generating_execution"]
@@ -134,6 +143,7 @@ def test_reuse_selects_an_exact_result_without_rewriting_generation_or_roles():
     {"status": "failed", "error": "source refused"}, {"status": "interrupted"}, {"status": "incomplete"},
 ])
 def test_empty_null_failed_interrupted_and_incomplete_have_explicit_distinct_outcomes(outcome):
+    """Each outcome status round-trips with its own value, and failure keeps status and error apart."""
     result = core.Result(format_version=1, result_id="r", execution_id="x", outcome=core.Outcome(**outcome))
     decoded = admit_record(encode_record(result))
     assert decoded.outcome.status == outcome["status"]
@@ -147,6 +157,7 @@ def test_empty_null_failed_interrupted_and_incomplete_have_explicit_distinct_out
     {"status": "interrupted", "value": "null"},
 ])
 def test_missing_outputs_cannot_stand_in_for_success_or_failure(outcome):
+    """An absent outputs value, bare success, mixed value/error and bare failure all refuse."""
     with pytest.raises(IntegrityError):
         encode_record({"format_version": 1, "kind": "result", "result_id": "r", "execution_id": "x", "outcome": outcome})
 
@@ -195,6 +206,7 @@ def test_unknown_resource_versions_and_append_only_supplements_preserve_original
 
 @pytest.mark.parametrize("change", ["missing-value", "bad-pointer", "bad-sequence", "same-occurrence"])
 def test_revision_record_refusals(change):
+    """A missing patch value, bad JSON pointer, repeated sequence or same-occurrence edit all refuse."""
     revision = example("revision_id", "r1")
     if change == "missing-value":
         del revision["value_edits"][0]["patch"][0]["value"]
@@ -209,6 +221,7 @@ def test_revision_record_refusals(change):
 
 
 def test_json_patch_extra_members_are_ignored_but_explicit_null_is_a_value():
+    """Unknown patch members are ignored while an explicit null stays a present value."""
     revision = example("revision_id", "r1")
     revision["value_edits"][0]["patch"][0]["value"] = None
     decoded = admit_record(encode_record(revision))
@@ -218,6 +231,7 @@ def test_json_patch_extra_members_are_ignored_but_explicit_null_is_a_value():
 
 @pytest.mark.parametrize("change", ["adopted-generation", "missing-generation", "wrong-usage", "self-dependence", "naive-time"])
 def test_result_provenance_cannot_contradict_its_bindings(change):
+    """Adoption, a missing generation, an unknown usage, self-dependence and naive timestamps all refuse."""
     result = example("result_id", "rp")
     if change == "adopted-generation":
         result["outcome"]["outputs"][0]["production"] = "adopted"
@@ -234,6 +248,7 @@ def test_result_provenance_cannot_contradict_its_bindings(change):
 
 
 def test_fixture_actual_events_have_consistent_order_and_acyclic_derivation():
+    """The fixture's own generation/usage times are ordered and its derivation graph is acyclic."""
     generations, usages, derivations = [], [], []
     for result in [r for r in FIXTURE["records"] if r["kind"] == "result"]:
         for field, output in [("generations", generations), ("usages", usages)]:

@@ -1,4 +1,4 @@
-"""Contained local-file acquisition."""
+"""Contained local-file acquisition that streams only regular files below one configured root."""
 
 from __future__ import annotations
 
@@ -42,6 +42,11 @@ class LocalFileContentFetcher:
         task_id: str,
         attempt_id: str,
     ) -> FetchStream:
+        """Stream one contained regular file, refusing a non-regular file, an
+        oversize candidate, a sealed-size mismatch, or mutation before or
+        during the read.
+        """
+
         if max_bytes <= 0:
             raise ValueError("max_bytes must be positive")
         require_text(task_id, "task_id")

@@ -1,4 +1,11 @@
-"""Source-native CLI composition and complete destination publication."""
+"""Source-native CLI build contract: the optional source adapter is composed over local blob roots, a successful
+build publishes a verifiable snapshot and emits a pass report, and any failure leaves no destination, staging
+directory or success report.
+
+Covers pinning the source blob root across streams (a changed root refuses instead of rereading), shared
+verified-content-addressed blobs reused across new destinations, containment refusals for source/destination and
+destination/blob-store overlaps, and concurrent publishers leaving exactly one verified catalog.
+"""
 
 from __future__ import annotations
 
@@ -40,6 +47,8 @@ def test_spicy_docs_adapter_pins_the_source_blob_root_across_streams(
     observed: list[bytes] = []
 
     class FakeReader:
+        """Minimal source-native reader double that reads every blob through the supplied LocalBlobSource."""
+
         def __init__(
             self,
             source: object,

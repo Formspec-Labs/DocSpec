@@ -1,4 +1,7 @@
-"""Catalog schemas use the same compiled payload validator as Core."""
+"""Catalog schemas use the same compiled payload validator as Core.
+
+Compiles the policy, receipt, and source-item schemas once at import.
+"""
 
 from __future__ import annotations
 
@@ -16,4 +19,6 @@ _ITEM_VALIDATOR = compile_payload_schema(_SCHEMAS["source-item.schema.json"])
 
 
 def _verify_item_schema(value: object, label: str) -> None:
+    """Validate one catalog item payload against the compiled item schema."""
+
     validate_payload(_ITEM_VALIDATOR, value, label)

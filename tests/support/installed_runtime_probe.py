@@ -28,6 +28,13 @@ from examples.dataset_example_support import document_results, output_value
 
 
 def main():
+    """Qualify the installed wheel's capture, processing, evidence and independent reader.
+
+    Fails unless retained captures process without refetching, reused runs return
+    identical results, changed fetcher configuration is refused, and the exported
+    result reads back byte-identical while a mutated blob is refused.
+    """
+
     for case in canonical_json_corpus()["encodeAccepted"]:
         assert canonical_json_bytes(case["value"]) == bytes.fromhex(case["canonicalHex"])
     source_root = Path.cwd() / "examples" / "offline"

@@ -13,6 +13,8 @@ from docspec.errors import IntegrityError
 
 @dataclass(frozen=True, slots=True)
 class FetchMetadata:
+    """Reported identity, configuration, and invocation IDs of one acquisition attempt."""
+
     downloader_id: str
     downloader_configuration_digest: str
     transport_version: str | None
@@ -48,6 +50,8 @@ class FetchMetadata:
 
 @dataclass(slots=True)
 class FetchStream:
+    """Metadata and byte iterator of one acquisition, released exactly once via close()."""
+
     metadata: FetchMetadata
     chunks: Iterator[bytes]
     close_callback: Callable[[], None] | None = field(default=None, repr=False, compare=False)
@@ -94,6 +98,8 @@ class FetchStream:
 
 
 class ContentFetcher(Protocol):
+    """Declare a downloader's identity and fetch one candidate under an explicit byte bound."""
+
     @property
     def downloader_id(self) -> str: ...
 

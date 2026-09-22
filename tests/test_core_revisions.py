@@ -1,4 +1,8 @@
-"""Ordered membership validation and native partition reuse."""
+"""Revision resolution pins ordered edits and refuses invalid intermediate edits hidden by a later write.
+
+Also covers native partition reuse, puts checked against both revision inputs, explicit branch bases, and
+value-edit evidence matching the retained output.
+"""
 from tests.support.iceberg_records import files
 
 
@@ -19,16 +23,19 @@ from tests.test_core_states import open_core, occurrence
 
 
 def revision(edits):
+    """Build a revision over the root state with fixed revision/base/result identifiers."""
     return core.Revision(format_version=1, revision_id="revision", base_state_id="root", result_state_id="changed", edits=tuple(edits))
 
 
 def root(states, session, size=2):
+    """Create the root state with ``size`` occurrences and members ``a``/``b`` (``key-N`` when size != 2)."""
     states.create(session, state_id="root", representation_id="root-r", unit_id="root",
                   entities=[occurrence(f"e{i}", i) for i in range(size)],
                   members=[core.Membership(member_key=chr(97 + i) if size == 2 else f"key-{i}", occurrence_id=f"e{i}") for i in range(size)])
 
 
 def membership(layer):
+    """Decode a membership layer into a ``{member_key: occurrence_id}`` mapping."""
     return {value["member_key"]: value["occurrence_id"] for batch in layer.batches()
             for payload in batch.column("record_json").to_pylist()
             for value in [decode_canonical_json_value(payload)]}

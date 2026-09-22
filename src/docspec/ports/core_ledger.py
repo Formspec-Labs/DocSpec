@@ -1,4 +1,4 @@
-"""Bounded metadata exchange; application services own publication semantics."""
+"""Bounded metadata ledger for records, links, progress, and removals; publication belongs to application services."""
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -71,6 +71,8 @@ class RemovalOutcome:
 
 
 class CoreLedger(Protocol):
+    """Protected read and commit ledger of Core record metadata, links, progress, selections, and removals."""
+
     def content_guard(self, *, exclusive: bool = False) -> AbstractContextManager[None]: ...
 
     def request_guard(self, request_id: str) -> AbstractContextManager[None]: ...

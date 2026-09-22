@@ -1,4 +1,9 @@
-"""Concrete extraction challenges separate byte evidence from content suitability."""
+"""Extraction quality challenges pin what byte evidence can and cannot prove.
+
+A verified mapping does not establish that visible content is complete, and an unpinned capture cannot infer
+missing upstream text. Covers the visible-text and pypdf extractors, plus refusals for empty visible content
+and truncated page evidence.
+"""
 
 from dataclasses import replace
 
@@ -16,6 +21,7 @@ from tests.support.representation import install_fake_pypdf
 
 
 def _edited(payload, content, mappings):
+    """Rebuild a payload with ``content`` and ``mappings`` while keeping the original representation identity fields."""
     original = payload.representation
     return RepresentationPayload(Representation.create(
         source_item_id=original.source_item_id, file_id=original.file_id,

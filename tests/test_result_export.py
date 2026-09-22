@@ -1,4 +1,10 @@
-"""Selected Core exports preserve exact values without a workspace or producer."""
+"""Selected Core export contract: an export is self-contained and reopens without the workspace or producer,
+preserving exact selected values and blob bytes while excluding unrelated rows.
+
+Also pins export pin/producer identity checks, the output-byte bound, read-only ledger behavior, refusal of a
+mutated or pre-existing destination without publishing or replacing it, additional physical roots retaining
+their exact record, and input streams closing on failure.
+"""
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
@@ -22,6 +28,7 @@ PRODUCER = Producer("docspec", "git+https://example.test/docspec@" + "1" * 40,
 
 @pytest.fixture
 def retained(tmp_path):
+    """A workspace holding a selected state with one retained document plus unrelated states and inline secrets."""
     workspace = CoreWorkspace(tmp_path / "workspace")
     try:
         with workspace.publisher.session() as session:

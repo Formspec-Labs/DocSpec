@@ -13,6 +13,7 @@ from tests.test_core_selections import setup, import_root, select, fields
 
 
 def authorize(publisher, keys=(), *, orphans=False, identity="policy"):
+    """Publish and retain a removal policy naming `keys`, optionally allowing orphan collection."""
     policy = core.RetentionPolicy(format_version=1, policy_id=identity,
                                   description={"remove": [list(key) for key in keys], "collect_unreferenced": orphans})
     with publisher.session() as session:
@@ -21,6 +22,7 @@ def authorize(publisher, keys=(), *, orphans=False, identity="policy"):
 
 
 def records_for(ledger, keys):
+    """Read the given keys and flatten the batches into one entry per key."""
     return [row for batch in ledger.read_records(keys) for row in batch]
 
 
@@ -28,6 +30,7 @@ ROOT_KEYS = (("state", "root"), ("state_representation", "root-r"), ("entity", "
 
 
 def test_current_switch_is_guarded_and_retains_both_states(tmp_path):
+    """Switching current requires the expected base, and removing the current state refuses before any intent exists."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -47,6 +50,7 @@ def test_current_switch_is_guarded_and_retains_both_states(tmp_path):
 
 
 def test_policy_scope_and_recovery_commitments_refuse_before_intent(tmp_path):
+    """An absent policy, out-of-scope keys, commitments outside the state and bare membership entities all refuse first."""
     with ExitStack() as stack:
         records, ledger, states, selections, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -67,6 +71,7 @@ def test_policy_scope_and_recovery_commitments_refuse_before_intent(tmp_path):
 
 
 def test_direct_selection_survives_actual_parent_bulk_byte_reclamation(tmp_path):
+    """Direct selection evidence still answers after the parent's bulk bytes are deleted, and a repeat removal is idempotent."""
     with ExitStack() as stack:
         records, ledger, states, selections, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -99,6 +104,7 @@ def test_direct_selection_survives_actual_parent_bulk_byte_reclamation(tmp_path)
 
 
 def test_shared_entity_source_layer_and_content_are_retained(tmp_path):
+    """Removing one occurrence key keeps the entity source files that other member keys still depend on."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -118,6 +124,7 @@ def test_shared_entity_source_layer_and_content_are_retained(tmp_path):
 
 @pytest.mark.parametrize("after_delete", [False, True])
 def test_interrupted_deletion_reopens_and_resumes_durable_outcomes(tmp_path, monkeypatch, after_delete):
+    """An interrupted deletion records deleted/failed/pending outcomes, and resume completes from them."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -150,6 +157,7 @@ def test_interrupted_deletion_reopens_and_resumes_durable_outcomes(tmp_path, mon
 
 
 def test_orphans_need_explicit_policy_and_cannot_name_live_bytes(tmp_path):
+    """Orphan collection requires the policy's orphan flag and refuses bytes a retained commitment needs."""
     with ExitStack() as stack:
         records, ledger, _, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -182,6 +190,7 @@ def test_available_external_rows_never_hide_missing_bytes(tmp_path):
 
 
 def test_reclaimed_occurrence_can_only_restore_its_exact_canonical_identity(tmp_path):
+    """A reclaimed occurrence restores only its exact canonical value; a changed value refuses as immutable."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -246,6 +255,7 @@ def test_direct_opaque_members_keep_shared_blobs_when_parent_is_removed(tmp_path
 
 
 def test_resume_rechecks_new_retention_before_deleting_pending_orphan(tmp_path, monkeypatch):
+    """Resume rechecks retention, so a pending orphan that became referenced is retained rather than deleted."""
     with ExitStack() as stack:
         records, ledger, _, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -269,6 +279,7 @@ def test_resume_rechecks_new_retention_before_deleting_pending_orphan(tmp_path, 
 
 
 def test_cleanup_and_publication_hold_exclusive_and_shared_scopes_end_to_end(tmp_path, monkeypatch):
+    """Cleanup holds an exclusive scope and publication a shared one, each refusing while the other is active."""
     from docspec.errors import StateTransitionError
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
@@ -310,6 +321,7 @@ def test_orphan_collection_preserves_explicit_suspension_checkpoint(tmp_path):
 
 
 def test_pending_publication_protects_adopted_inputs_and_generated_content(tmp_path, monkeypatch):
+    """A pending publication protects adopted inputs, generated bytes and its journal until the result is retained."""
     from docspec.application.core_execution import CoreOperations
     from tests.test_core_execution import definition, request, progress
     with ExitStack() as stack:

@@ -46,6 +46,7 @@ def phrase_processor(revision, phrases=None, output=None, *, resource_id, resour
 
 
 def run_documents(workspace, pipeline, source_state_id, *, name, processors, output):
+    """Run the pipeline, writing ``{name}.json`` results or a ``{name}-failures.json`` receipt before re-raising."""
     try:
         state = pipeline.run(source_state_id, run_id=name, processors=processors)
     except Exception as error:
@@ -83,6 +84,7 @@ def matches(workspace, pipeline, state_id):
 
 
 def output_value(workspace, result, label):
+    """Read a labeled output value from inline, ``json-v1`` codec, or blob storage."""
     identifier = next(binding.entity_id for binding in result.outcome.outputs if binding.label == label)
     with workspace.publisher.session() as session:
         with closing(session.read_records([("entity", identifier)])) as rows:

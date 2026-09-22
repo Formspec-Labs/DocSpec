@@ -85,6 +85,7 @@ class QueryProfiles:
 
 
 class _Reader:
+    """Arrow reader proxy that collects its query profile when closed."""
     def __init__(self, reader, profiles, path):
         self.reader, self.profiles, self.path = reader, profiles, path
         self.closed = False
@@ -106,6 +107,7 @@ class _Reader:
 
 
 class _Relation:
+    """Relation proxy that opens and collects a profile around every materializing call."""
     def __init__(self, relation, cursor, profiles):
         self.relation, self.cursor, self.profiles = relation, cursor, profiles
     def __getattr__(self, name):
@@ -126,6 +128,7 @@ class _Relation:
 
 
 class _Cursor:
+    """Cursor proxy that profiles ``sql`` and ``execute`` and wraps returned relations."""
     def __init__(self, cursor, profiles):
         self.cursor, self.profiles = cursor, profiles
         self.pending = None
@@ -152,6 +155,7 @@ class _Cursor:
 
 
 def _unobserved(function):
+    """Return the original an observer replaced, so nested observations do not double count."""
     return getattr(function, "_core_probe_original", function)
 
 
@@ -255,10 +259,12 @@ def observations(workspace, metrics, profiles=None):
 
 
 def count_fixture(directory):
+    """Return the frozen fixture's member count from its Parquet footer."""
     return pq.ParquetFile(directory / "base.parquet").metadata.num_rows
 
 
 def build(workspace, directory, metrics):
+    """Import the frozen fixture as a root state through the production publisher."""
     metrics["fixture_rows_decoded"] = 0
     def rows():
         with pq.ParquetFile(directory / "base.parquet") as source:
@@ -273,11 +279,13 @@ def build(workspace, directory, metrics):
 
 
 def retained_selection(workspace, session, identity, state, selector, *, recover=False):
+    """Retain one selection over ``state`` under ``identity`` and return the retained value."""
     return workspace.selections.retain(session, selected_value_id=identity, definition=selector,
         origin=core.Origin(parent_entity_id=state), from_parent=recover)
 
 
 def evaluate(workspace, mode, count, metrics):
+    """Retain, time and independently check one selection mode against the fixture."""
     scope = tuple(f"{i:07d}" for i in range(min(count, 1024))) + ("missing",) if mode == "named" else None
     ordered = mode == "ordered-fields"
     rule = core.OperationDefinition(format_version=1, definition_id="capacity:position-order",
@@ -336,6 +344,7 @@ def evaluate(workspace, mode, count, metrics):
 
 
 def resolve_url(workspace, session, state, identity, executions):
+    """Resolve the URL-only operation over ``state``, recording every execution identity it runs."""
     definition = core.OperationDefinition(format_version=1, definition_id="url-operation", implementation_id="capacity:url-values",
         implementation_version="1", operation_kind="transformation", configuration={})
     request = core.Request(format_version=1, request_id=identity + ":request", definition_id=definition.definition_id,
@@ -358,6 +367,7 @@ def resolve_url(workspace, session, state, identity, executions):
 
 
 def revised(workspace, session, *, base, state, changes):
+    """Publish one value-edit revision and return the new occurrence identity per member key."""
     evidence, puts = [], []
     with closing(bounded_rows(changes, size=lambda row: len(canonical_value_bytes(row)), max_rows=VALUE_EDIT_BATCH_ROWS)) as groups:
         for group in groups:
@@ -374,6 +384,11 @@ def revised(workspace, session, *, base, state, changes):
 
 
 def edits(workspace, count, edit_count, *, profiles=None):
+    """Measure title and url revisions plus exact-input result reuse.
+
+    The title revision must reuse the baseline result; the url revision must not.
+    """
+
     count = min(count, edit_count)
     executions = []
     ranges = {}
@@ -439,6 +454,7 @@ def membership_edits(workspace, count, edit_count):
 
 
 def history(workspace, count, length):
+    """Create a chain of ``length`` single-member title revisions."""
     width = min(1024, count)
     ids = {f"{i:07d}": f"urn:docspec:fixture:occurrence:{i}" for i in range(width)}
     base = "root"
@@ -453,6 +469,7 @@ def history(workspace, count, length):
 
 
 def expected_value(ordinal, state, count, edit_count):
+    """Return the value independently expected for one ordinal in ``state``."""
     value = core_value(ordinal)
     if state in {"title", "url"} and ordinal < min(count, edit_count):
         value[state] = "changed-" + state + f"{ordinal:07d}"
@@ -465,6 +482,7 @@ def expected_value(ordinal, state, count, edit_count):
 
 
 def audit(workspace, state, fixture_count, edit_count):
+    """Verify every physical reference, then compare every value with its independent expectation."""
     count = total = 0
     with workspace.publisher.session() as session:
         manifest = workspace.states.manifest(session, state)
@@ -484,12 +502,14 @@ def audit(workspace, state, fixture_count, edit_count):
 
 
 def clean_directory(directory):
+    """Return the sibling directory the independently built clean tree uses."""
     directory = Path(directory)
     return directory.parent / (directory.name + "-clean")
 
 
 @contextmanager
 def control_workspace(directory, engine_memory_bytes=ENGINE_MEMORY_BYTES):
+    """Yield a workspace over ``directory`` with native scratch rooted inside it."""
     directory = Path(directory)
     scratch = directory / "scratch"
     scratch.mkdir(parents=True, exist_ok=True)
@@ -655,6 +675,7 @@ def payload_scan_bound(workspace, state_id, profiles, *, parent_files=None):
 
 def run_stage(directory, stage, *, count=CORE_MEMBER_COUNT, edit_count=1024, history_length=1000, suffix_length=16,
               state="root", engine_memory_bytes=ENGINE_MEMORY_BYTES):
+    """Run one named experiment stage against the frozen fixture directory."""
     if stage == "generate":
         return generate(directory, count)
     count = count_fixture(directory)

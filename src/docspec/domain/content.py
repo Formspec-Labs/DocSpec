@@ -1,4 +1,7 @@
-"""Source-catalog, exact-file, representation, segment, and processor records."""
+"""Frozen records for source-catalog items, captured files, representations, segments, and processor outputs.
+
+Every identity-bearing record derives its id as a content ``stable_urn`` and refuses a mismatched id at construction.
+"""
 
 from __future__ import annotations
 
@@ -132,6 +135,8 @@ def _derived_record_identity(
 
 @dataclass(frozen=True, slots=True)
 class CandidateFile:
+    """One candidate file declared by a source description, with optional expected digest and size."""
+
     candidate_id: str
     locator: str
     media_type: str
@@ -190,6 +195,8 @@ class CandidateFile:
 
 @dataclass(frozen=True, slots=True)
 class SourceItem:
+    """One source item version and its candidate files; an active item must carry at least one candidate."""
+
     item_id: str
     version: str
     candidates: tuple[CandidateFile, ...]
@@ -247,6 +254,8 @@ class SourceItem:
 
 @dataclass(frozen=True, slots=True)
 class CapturedFile:
+    """One acquired file whose ``file_id`` must match its content-derived ``captured-file`` URN."""
+
     file_id: str
     source_item_id: str
     source_version: str
@@ -395,6 +404,8 @@ class CapturedFile:
 
 @dataclass(frozen=True, slots=True)
 class EvidenceCoordinate:
+    """One coordinate reference into a source, with an optional half-open byte interval, page, or region."""
+
     coordinate_system: str
     source_digest: str
     start: int | None = None
@@ -480,7 +491,10 @@ class EvidenceMapping:
 
 
 def resolve_evidence_mapping(mapping: EvidenceMapping, start: int, end: int) -> EvidenceCoordinate:
-    """Resolve a contained representation interval through one persisted mapping."""
+    """Resolve a contained representation interval through one persisted mapping.
+
+    A derived mapping may only be used at its declared boundary.
+    """
 
     if not mapping.representation_start <= start <= end <= mapping.representation_end:
         raise ValueError("requested range leaves its representation evidence mapping")
@@ -503,6 +517,11 @@ def resolve_evidence_mapping(mapping: EvidenceMapping, start: int, end: int) -> 
 
 @dataclass(frozen=True, slots=True)
 class Representation:
+    """One physical representation of a captured file, with ordered, reversible evidence mappings.
+
+    Construction refuses overlapping or out-of-bounds mappings, a foreign file digest, and a mismatched identity.
+    """
+
     representation_id: str
     source_item_id: str
     file_id: str
@@ -663,6 +682,8 @@ class Representation:
 
 @dataclass(frozen=True, slots=True)
 class Segment:
+    """One content span of a representation; coordinates, content byte size, and identity must agree."""
+
     segment_id: str
     source_item_id: str
     file_id: str
@@ -817,6 +838,8 @@ class Segment:
 
 @dataclass(frozen=True, slots=True)
 class DerivedRecord:
+    """One processor output whose ``output_digest`` must match its value and ``derived_id`` its content URN."""
+
     derived_id: str
     source_item_id: str
     processor_id: str

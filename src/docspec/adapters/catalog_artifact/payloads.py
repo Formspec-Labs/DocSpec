@@ -16,12 +16,18 @@ from docspec.ports.source_catalog import SourceCatalogBlobSource
 
 
 class _CatalogPayloadSource:
+    """Open admitted partition payloads by content address, refusing any size or digest mismatch."""
+
     def __init__(self, source: SourceCatalogBlobSource, partitions: Sequence[_CatalogPartition]) -> None:
         self._source = source
         self._sizes = {partition.member.blob_ref: partition.member.byte_size for partition in partitions}
 
     @contextmanager
     def open(self, blob_ref: str) -> Iterator[BinaryIO]:
+        """Yield a seekable stream over the verified payload, retaining
+        provider bytes in a temporary file when the source is not a local file.
+        """
+
         expected_size = self._sizes[blob_ref]
         try:
             if isinstance(self._source, LocalBlobSource):

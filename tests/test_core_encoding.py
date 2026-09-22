@@ -15,12 +15,14 @@ from docspec.errors import IntegrityError
 
 
 def definition(identifier="definition", *, version="1", resources=()):
+    """Build a transformation operation definition with the given id, version and resources."""
     return core.OperationDefinition(format_version=1, definition_id=identifier,
                                     implementation_id="extract", implementation_version=version,
                                     operation_kind="transformation", configuration={}, resources=resources)
 
 
 def test_member_presence_and_material_identity_have_known_bytes():
+    """Member bytes distinguish absent, present-null, numbers and strings; duplicate labels and entity-only keys refuse."""
     fields = selected_fields([("missing", ABSENT), ("null", None), ("number", 1), ("string", "1")])
     assert member_bytes(fields) == (
         b'["present",[["missing","absent"],["null","present",null],'
@@ -38,6 +40,7 @@ def test_member_presence_and_material_identity_have_known_bytes():
 
 
 def test_member_stream_has_known_preimage_and_preserves_duplicate_counts():
+    """The stream digest uses the known preimage, keeps duplicates, and refuses unordered payloads unless explicitly ordered."""
     rows = [b'["absent"]', b'["present",["present",1]]', b'["present",["present",1]]']
     expected = b'["docspec-selected-members",1,[["absent"],["present",["present",1]],["present",["present",1]]]]'
     evidence = member_stream_evidence(iter(rows))
@@ -53,6 +56,7 @@ def test_member_stream_has_known_preimage_and_preserves_duplicate_counts():
 @pytest.mark.parametrize("mode", ["single", "batch", "mixed"])
 @pytest.mark.parametrize("values", [[], [None, {"\U00010000": "\u001f", "\ue000": 1}, "e\u0301", True]])
 def test_existing_array_digest_and_prefixed_stream_use_one_framer(prefix, mode, values):
+    """Single, batched and mixed payload accepts all digest to the same canonical array framing."""
     expected = canonical_value_bytes(values if prefix is None else [*prefix, values])
     digest = OrderedJsonSequenceDigester(prefix=prefix)
     payloads = [canonical_value_bytes(value) for value in values]
@@ -79,6 +83,7 @@ def test_existing_array_digest_and_prefixed_stream_use_one_framer(prefix, mode, 
 
 @pytest.mark.parametrize("invalid", ["1", bytearray(b"1"), memoryview(b"1"), 1, None])
 def test_admitted_batch_refuses_nonbytes_before_changing_digest(invalid):
+    """A non-bytes item refuses before appending, so the final digest covers only accepted payloads."""
     digest = OrderedJsonSequenceDigester()
     digest.accept_admitted_payload(b"null")
     with pytest.raises(TypeError):
@@ -99,6 +104,7 @@ def test_admitted_batch_requires_a_bounded_sequence(invalid):
 
 
 def test_definition_identity_is_not_effective_operation_identity():
+    """Correspondence bytes ignore `definition_id` and bind configuration, implementation, version and dependencies."""
     assert correspondence_bytes(definition(), {}) == (
         b'{"dependencies":{},"encoding_version":1,"operation":{"configuration":{},'
         b'"implementation_id":"extract","implementation_version":"1",'
@@ -115,6 +121,7 @@ def test_definition_identity_is_not_effective_operation_identity():
 
 
 def test_selection_versions_and_evidence_types_refuse_before_correspondence():
+    """A non-current selection version or malformed comparison evidence digest refuses before correspondence bytes exist."""
     with pytest.raises(IntegrityError):
         correspondence_bytes(definition(), {"x": (core.Whole(version=2), json_evidence(1))})
     with pytest.raises(IntegrityError):
@@ -124,6 +131,7 @@ def test_selection_versions_and_evidence_types_refuse_before_correspondence():
 
 
 def test_resource_uncertainty_and_content_identity_are_explicit():
+    """Certainty changes correspondence bytes, and content evidence binds digest and entity id but not locator."""
     a = core.Resource(label="model", description={"version": "1"}, certainty="established")
     b = core.Resource(label="model", description={"version": "1"}, certainty="uncertain")
     assert correspondence_bytes(definition(resources=(a,)), {}) != correspondence_bytes(definition(resources=(b,)), {})
@@ -136,6 +144,7 @@ def test_resource_uncertainty_and_content_identity_are_explicit():
 
 
 def test_named_scope_and_dependency_order_do_not_change_meaning():
+    """Named scope order and dependency insertion order leave correspondence unchanged; identity comparison still refuses."""
     evidence = member_stream_evidence([])
     a = core.StateMembers(member_selector=core.Whole(), scope=("b", "a"))
     b = core.StateMembers(member_selector=core.Whole(), scope=("a", "b"))
@@ -148,5 +157,6 @@ def test_named_scope_and_dependency_order_do_not_change_meaning():
 
 @pytest.mark.parametrize("value", [1.0, 2**53, b"not JSON", "\ud800"])
 def test_selected_values_cannot_bypass_the_shared_codec(value):
+    """Integral floats, huge integers, bytes and lone surrogates cannot enter member bytes."""
     with pytest.raises((TypeError, ValueError)):
         member_bytes(selected_fields([("v", value)]))

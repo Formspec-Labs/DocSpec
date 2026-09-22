@@ -1,4 +1,9 @@
-"""Installed native worker cancellation uses ordinary retained Core attempts."""
+"""Installed native worker cancellation uses ordinary retained Core attempts.
+
+Qualifies the installed-wheel Dagster path: a canceled run must retain one
+interrupted attempt, and its reexecution must repeat only the interrupted step,
+reuse the completed sibling, and leave no live resource behind.
+"""
 
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ def _write(path, value):
 
 @dagster.resource(config_schema=example.RUNTIME_CONFIG)
 def observed_runtime(context):
+    """Yield the example runtime with a resolver that blocks the second producer until released."""
     config = context.resource_config
     root = Path(config["workspace"]).parent / "evidence"
     root.mkdir(exist_ok=True)
@@ -55,10 +61,12 @@ def observed_runtime(context):
 
 
 def interruption_job():
+    """Return the job definition that runs the example through the observing runtime."""
     return build_dagster_definitions({"docspec_runtime": observed_runtime}).get_job_def(DAGSTER_JOB_NAME)
 
 
 def execute_cancelled_run(config_path, instance_root):
+    """Run the interruption job in a local temp instance and require it not to succeed."""
     with dagster.DagsterInstance.local_temp(instance_root) as instance:
         with dagster.execute_job(dagster.reconstructable(interruption_job), instance=instance,
                                 run_config=json.loads(Path(config_path).read_bytes())) as result:
@@ -70,6 +78,7 @@ def _events(instance, run_id):
 
 
 def _outputs(instance, run_id):
+    """Admit every successful ``execute_operation`` step output as a Core record."""
     values = {}
     with dagster.build_resources({"io_manager": dagster.FilesystemIOManager()}, instance=instance) as resources:
         for event in _events(instance, run_id):
@@ -84,6 +93,13 @@ def _outputs(instance, run_id):
 
 
 def interrupted_reexecution(root):
+    """Cancel a native run mid-producer, then reexecute and check attempts, outputs and cleanup.
+
+    Fails unless the canceled run retains exactly one interrupted result, the
+    completed sibling is not recomputed, and the reexecuted outputs are disjoint
+    from the originals.
+    """
+
     config = example.prepare(root)
     with CoreWorkspace(root / "workspace") as workspace:
         with workspace.ledger._transaction() as connection:

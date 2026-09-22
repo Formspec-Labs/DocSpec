@@ -179,10 +179,14 @@ def source_catalog_producer(
 
 @dataclass(frozen=True, slots=True)
 class _CatalogPartition:
+    """One source-items partition: its bucket id and the member descriptor that carries it."""
+
     partition_id: str
     member: MemberDescriptor
 
     def to_receipt(self) -> dict[str, object]:
+        """Return the receipt's partition row, refusing a descriptor without blobRef or recordCount."""
+
         if self.member.blob_ref is None or self.member.record_count is None:
             raise ValueError("source-item partitions require blobRef and recordCount")
         return {
@@ -194,6 +198,8 @@ class _CatalogPartition:
 
 
 def _partition_policy() -> dict[str, object]:
+    """Return the installed partition policy identity with its derived digest."""
+
     identity = {
         "policyId": CATALOG_PARTITION_POLICY_ID,
         "policyVersion": CATALOG_PARTITION_POLICY_VERSION,
@@ -203,6 +209,8 @@ def _partition_policy() -> dict[str, object]:
 
 
 def _partition_id(source_item_id: str) -> str:
+    """Return the zero-padded bucket id for one source item."""
+
     bucket = partition_bucket(source_item_id, CATALOG_PARTITION_BUCKET_COUNT)
     return f"{bucket:04d}"
 
@@ -212,19 +220,23 @@ def _partition_namespace(partition_id: str) -> str:
 
 
 def _mapping(value: object, label: str) -> Mapping[str, Any]:
+    """Return ``value`` as a mapping, refusing anything else with IntegrityError."""
+
     if not isinstance(value, Mapping):
         raise IntegrityError(f"{label} must be an object")
     return value
 
 
 def _text(value: object, label: str) -> str:
+    """Return nonempty text, refusing anything else with IntegrityError."""
+
     if not isinstance(value, str) or not value:
         raise IntegrityError(f"{label} must be nonempty text")
     return value
 
 
 def _utf16_key(value: str) -> bytes:
-    """Use the shared artifact ordering rule for DocSpec-owned row keys."""
+    """Use the shared artifact ordering rule for DocSpec-owned row keys, refusing a lone Unicode surrogate."""
 
     try:
         return value.encode("utf-16-be")
@@ -236,6 +248,8 @@ _SELECTED_DISPOSITION = CatalogDisposition.SELECTED.value
 
 
 def _source_catalog_succession(value: object) -> SourceCatalogSuccession:
+    """Convert a sealed Rulespec supersedes value into the domain succession record."""
+
     supersedes = Supersedes.from_dict(value, path="source-catalog/supersedes")
     return SourceCatalogSuccession(
         supersedes.logical_id,

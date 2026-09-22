@@ -1,4 +1,10 @@
-"""Joined Federal Register format choices are part of the saved policy identity."""
+"""Joined Federal Register format choices are part of the saved policy identity: a v1.3.0 member round-trips
+unchanged, while any changed rendition preference order, max-candidates or failure-fallback value refuses.
+
+The refusal is ValueError from from_member, so a saved policy whose configuration no longer matches the
+installed version cannot silently change joined-FR behavior; max-candidates must be an exact int (a bool or
+float refuses).
+"""
 
 import pytest
 

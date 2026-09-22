@@ -30,6 +30,8 @@ def _optional_selector(value: object) -> SourceInputSelector | None:
 
 
 def _agency_names(value: object, *, input_path: Path) -> dict[str, str]:
+    """Resolve an inline agency-name mapping or a path relative to the policy input file."""
+
     if isinstance(value, str):
         mapping_path = Path(value)
         if not mapping_path.is_absolute():
@@ -41,6 +43,8 @@ def _agency_names(value: object, *, input_path: Path) -> dict[str, str]:
 
 
 def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) -> FederalRegisterCatalogPolicy | RegulationsGovCatalogPolicy:
+    """Build the selected policy from its fields, refusing a missing regulations-gov document_input."""
+
     if policy_name == "regulations-gov":
         if fields.get("document_input") is None:
             raise ValueError("regulations-gov document_input is required and may not be null")
@@ -65,6 +69,8 @@ def build_policy(policy_name: str, fields: dict[str, Any], *, input_path: Path) 
 
 
 def write_member(policy_name: str, input_path: Path, output_path: Path) -> bytes:
+    """Prove the member round-trips before exclusive creation, so an existing member or symlink is never overwritten."""
+
     fields = read_object(
         input_path, label="catalog policy fields", error_type=SourceCatalogCliError
     )

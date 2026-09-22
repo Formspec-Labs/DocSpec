@@ -23,6 +23,7 @@ MAX_TERMS, MAX_PHRASES, MAX_PHRASE_CHARACTERS, MAX_MATCHES = 64, 256, 128, 1024
 
 
 def _terms(resource_bytes: bytes) -> tuple[tuple[str, str, str], ...]:
+    """Parse the closed vocabulary and enforce its term, phrase and character bounds."""
     value = thaw_json(parse_closed_json(resource_bytes, label="phrase vocabulary"))
     if not isinstance(value, dict) or set(value) != {"terms"} or not isinstance(value["terms"], list):
         raise ValueError("phrase vocabulary requires only a terms array")
@@ -62,6 +63,7 @@ class PhraseMatcher:
     patterns: tuple
 
     def __init__(self, resource: core.Resource, resource_bytes: bytes, *, case_sensitive=False, limits=ProcessorLimits()):
+        """Reject a non-bytes, oversized or digest-mismatched vocabulary and a non-bool flag, then compile patterns."""
         if not isinstance(resource_bytes, bytes):
             raise TypeError("phrase vocabulary must be immutable bytes")
         if len(resource_bytes) > MAX_RESOURCE_BYTES:
@@ -76,6 +78,7 @@ class PhraseMatcher:
             for identifier, label, phrase in _terms(resource_bytes)))
 
     def __call__(self, payload):
+        """Match every phrase and return the bounded, ordered response, refusing past the duration or output bound."""
         started = monotonic()
         content, evidence = payload["content"], payload["evidence"]
         text = content.decode("utf-8")

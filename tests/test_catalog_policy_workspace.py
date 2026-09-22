@@ -1,3 +1,9 @@
+"""SQLite catalog-policy workspace: exact keys, canonical order and scratch caps.
+
+Payloads round-trip verbatim under namespaced keys in canonical UTF-16 order, and the
+scratch allowance is checked before creating or reopening a database.
+"""
+
 from pathlib import Path
 import sqlite3
 
@@ -18,6 +24,7 @@ def test_workspace_round_trips_exact_keys_and_isolates_namespaces(tmp_path: Path
 
 
 def test_workspace_uses_canonical_utf16_tuple_order(tmp_path: Path) -> None:
+    """Keys iterate in canonical UTF-16 tuple order, where U+10000 sorts before U+E000."""
     keys = (
         ("\ue000",),
         ("\U00010000",),
@@ -86,6 +93,7 @@ def test_the_payload_fast_path_stores_and_streams_the_exact_bytes(tmp_path) -> N
 
 
 def test_workspace_scratch_cap_refuses_growth_and_removes_temporary_state(tmp_path):
+    """Exceeding the scratch allowance raises and closing removes every file it wrote."""
     allowance = 512 * 1024
     with SqliteCatalogPolicyWorkspace(directory=tmp_path, max_scratch_bytes=allowance) as workspace:
         workspace.put("small", ("one",), {"value": 1})
@@ -97,6 +105,7 @@ def test_workspace_scratch_cap_refuses_growth_and_removes_temporary_state(tmp_pa
 
 
 def test_workspace_checks_cap_before_creation_and_cleans_connection_failure(tmp_path, monkeypatch):
+    """A cap below the minimum SQLite size and a failed connection both leave the directory empty."""
     with pytest.raises(LimitExceededError, match="minimum SQLite"):
         SqliteCatalogPolicyWorkspace(directory=tmp_path, max_scratch_bytes=1)
     assert list(tmp_path.iterdir()) == []
@@ -111,6 +120,7 @@ def test_workspace_checks_cap_before_creation_and_cleans_connection_failure(tmp_
 
 
 def test_resume_refuses_an_existing_database_larger_than_the_allowance(tmp_path):
+    """A smaller allowance refuses an existing database, and the retained bytes stay readable."""
     path = tmp_path / "retained.sqlite3"
     with SqliteCatalogPolicyWorkspace(path=path) as workspace:
         workspace.put("large", ("one",), {"value": "x" * 1024**2})

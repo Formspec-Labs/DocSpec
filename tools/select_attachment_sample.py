@@ -1,44 +1,14 @@
 """Draw a sealed, deterministic, stratified sample of unavailable documents.
 
-The attachments campaign proposes fetching ~712,000 regulations.gov documents
-whose catalog rows carry no rendition. This tool draws the measured sample that
-should precede it, so the campaign's yield and cost are known before it is
-authorized rather than after.
-
-**Why a frame scan and not the 09-04 campaign receipt.** That receipt holds 55
-adjudicated rows, not a population. A stratified draw needs every unavailable
-row's ``restrictReasonType`` and agency, and those exist only in the catalog.
-
-**Why catalog policy 1.2.0.** 1.1.0 labelled every non-selected item the same
-way; 1.2.0 splits ``restrictReasonType`` into its own reason codes and moves the
-41 publisher test fixtures (``^(TRAIN|ERULE|TEST)-``) from ``failed`` to
-``excluded``. Filtering on ``disposition == "unavailable"`` under 1.2.0
-therefore drops the fixtures without a name pattern of its own. The catalog is
-not publishable -- it pins the pre-composite Federal Register release (DocSpec
-0003) -- but nothing about the Federal Register identity touches a
-regulations.gov document's withholding reason or agency, so it is a sound
-sampling frame while remaining an unsound artifact to serve from.
-
-**Determinism.** Selection ranks each row by ``sha256(salt || documentId)`` and
-takes the lowest within its stratum. There is no seed to trust and no PRNG to
-reproduce: anyone with the same frame and the same salt re-derives the identical
-set, and changing the salt is a visible change to the sealed file.
-
-**What this refines, and what it does not re-litigate.** The campaign is already
-sized: ``receipts/regs-document-attachments-2026-09-04.md`` puts recovery at
-**712,350 of 865,082 (82%)**, 95% band 657,099-750,366, from 306 documents
-probed at ``?include=attachments`` on a hash-partition frame that reproduced the
-full-corpus rates on three independent figures, and the estimate survived being
-re-derived under a different decomposition (712,318). This sample does not
-re-ask that question. It tightens the two cells the band actually rests on, adds
-per-agency rates the corpus estimate cannot give, and measures throughput at a
-registered key -- which the Zyte probe explicitly did not establish.
-
-**Disproportionate allocation is deliberate, and the weights ship with it.**
-Cells are sampled by where the estimate is loose rather than by size, so the raw
-sample fraction is a *wrong* estimate of the corpus-wide recoverable fraction.
-Every row carries a ``designWeight`` and the sealed file states the estimator.
-Reading the naive fraction off this sample is the error the weights prevent.
+The measured sample that should precede the ~712,000-document attachments
+campaign, so its yield and cost are known before authorization. Selection ranks
+rows by ``sha256(salt || documentId)`` and takes the lowest per
+``(restrictReasonType, documentType group)`` cell; the frame filters
+``disposition == "unavailable"`` under catalog policy 1.2.0, which drops the 41
+publisher test fixtures without a name pattern of its own. Allocation is
+deliberately disproportionate, so every row carries a ``designWeight`` and the
+raw sample fraction must not be read as a corpus rate. Run with
+``--catalog-root``, ``--blob-store`` and ``--out``.
 """
 
 from __future__ import annotations

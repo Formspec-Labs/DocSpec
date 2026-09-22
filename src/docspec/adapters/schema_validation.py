@@ -46,6 +46,8 @@ def compile_payload_schema(
 
 
 def validate_payload(validator: jsonschema_rs.Draft202012Validator, value: Any, label: str) -> None:
+    """Raise SchemaValidationError with the label and failing paths when a payload does not satisfy the validator."""
+
     try:
         validator.validate(value)
     except jsonschema_rs.ValidationError as error:

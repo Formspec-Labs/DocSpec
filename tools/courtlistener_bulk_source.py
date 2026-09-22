@@ -1,14 +1,12 @@
 """Map pinned CourtListener listing pages into DocSpec dataset selections.
 
-SpicyDocs owns listing grammar, filenames, URLs and exact source revision markers.
-This tool owns captured-input pins, page-set consistency, dataset scope and
-coverage accounting. ACTIVE means selected from this listing; EXCLUDED records
-our selection decision. DELETED records absence from a later captured listing,
-not independent proof that an object is unavailable at the publisher.
-
-The listing's ETag, size and timestamp describe an observed revision. They do not
-hash document bytes or establish that a later download still matches. Acquisition
-uses the injected HTTPS fetcher and retains its own byte evidence.
+SpicyDocs owns listing grammar, filenames, URLs and source revision markers; this
+tool owns captured-input pins, page-set consistency, dataset scope and coverage
+accounting. ACTIVE means selected from this listing, EXCLUDED records our
+selection decision, and DELETED records absence from a later captured listing --
+not independent proof an object is unavailable at the publisher. The listing's
+ETag, size and timestamp describe an observed revision and do not hash document
+bytes; acquisition still retains its own byte evidence.
 """
 
 from __future__ import annotations
@@ -50,8 +48,8 @@ _MEMBER_KEYS = frozenset({"path", "mediaType", "byteSize", "digest"})
 def parse_capture(pages: Sequence[bytes]) -> tuple[BulkObject, ...]:
     """Read pinned pages, rejecting repeated keys and inconsistent termination.
 
-    These checks establish what the supplied pages enumerate. They cannot prove
-    that the capture process retained every intermediate publisher response.
+    Establishes what the supplied pages enumerate, not that every intermediate
+    publisher response was retained.
     """
     if not pages:
         raise IntegrityError("bulk capture contains no listing pages")
@@ -107,9 +105,9 @@ def _closed_mapping(value: Any, keys: frozenset[str], label: str) -> dict[str, A
 def load_capture(pins_path: Path) -> BulkCapture:
     """Admit one pinned capture, refusing any byte that differs from its pin.
 
-    The pins file is the only thing named by path; the listing pages are resolved
-    below it, size-checked, and re-digested before a parser sees them. A capture
-    edited after the fact fails here rather than changing a population downstream.
+    Only the pins file is named by path; its listing pages are resolved below it,
+    size-checked and re-digested before parsing, so an edited capture fails here
+    rather than changing a population downstream.
     """
     path = _regular_file(Path(pins_path).resolve(strict=True), "bulk capture pins file")
     directory = path.parent
@@ -190,9 +188,8 @@ def build_source_items(
     """Turn one capture into the population a catalog publishes.
 
     ``datasets`` narrows scope; anything outside it is ``EXCLUDED`` — refused by
-    us, and recorded as such rather than omitted. Objects the previous capture
-    enumerated and this one does not become ``DELETED`` tombstones. This records
-    absence from the later listing separately from our selection decision.
+    us and recorded rather than omitted — and objects only the previous capture
+    enumerated become ``DELETED`` tombstones.
     """
     wanted = None if datasets is None else set(datasets)
     items: list[SourceItem] = []

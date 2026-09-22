@@ -1,4 +1,7 @@
-"""Use real SDK requests to distinguish transport retries from document attempts."""
+"""Retry accounting against a real SDK client: a local HTTP server answers HEAD/GET so the S3 fetcher's
+sdk_total_attempts limit is proven to include the initial request for each operation, and SDK transport retries
+stay separate from attributed document attempts in the runtime.
+"""
 
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +17,7 @@ from docspec.runtime.core import CoreWorkspace
 
 @contextmanager
 def _sdk_fetcher(monkeypatch, *, total_attempts, failing_operation):
+    """Yield a fetcher whose SDK client is redirected to a local server, leaving native retry configuration intact."""
     boto3 = pytest.importorskip("boto3")
     calls = []
 

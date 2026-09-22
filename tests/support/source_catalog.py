@@ -24,6 +24,7 @@ _FEDERAL_REGISTER_SOURCE = "https://www.federalregister.gov/api/v1"
 
 
 def producer() -> Producer:
+    """Return the fixed docspec source-catalog verifier pin."""
     implementation = "git+https://example.test/docspec@" + "1" * 40
     return Producer(
         "docspec",
@@ -35,6 +36,7 @@ def producer() -> Producer:
 
 
 def description(*, scope: str = "complete-snapshot") -> SourceNativeDescription:
+    """Return the fixed Federal Register source-native description at ``scope``."""
     return SourceNativeDescription(
         logical_id="urn:spicy:artifact:spicyregs-source-native-release:" + "a" * 64,
         artifact_digest=_SHA_A,
@@ -47,6 +49,7 @@ def description(*, scope: str = "complete-snapshot") -> SourceNativeDescription:
 
 
 def record(identity: str, *, malformed_rin: bool = False, agencies: bool = True) -> dict[str, Any]:
+    """Return one Federal Register source record; the flags make its RIN malformed or drop agencies."""
     return {
         "sourceRecordId": identity,
         "scopeId": "federal-register-documents",
@@ -74,6 +77,7 @@ def record(identity: str, *, malformed_rin: bool = False, agencies: bool = True)
 
 
 def renditions(identity: str) -> tuple[dict[str, Any], ...]:
+    """Return the html and pdf rendition rows for one source record."""
     return (
         {
             "sourceRecordId": identity,
@@ -98,6 +102,8 @@ def renditions(identity: str) -> tuple[dict[str, Any], ...]:
 
 @dataclass
 class FakeSource:
+    """In-memory source-native source over prepared records and renditions."""
+
     metadata: SourceNativeDescription
     records: tuple[Mapping[str, Any], ...]
     renditions: tuple[Mapping[str, Any], ...]

@@ -1,4 +1,10 @@
-"""Run provider examples outside both repositories using the same pinned wheels."""
+"""Build a throwaway environment from the pinned vendor wheels and run each provider example's own test outside
+both repositories.
+
+Verifies the vendored spicy-docs wheel against its manifest sha256, installs docspec, the provider extra and
+rulespec, asserts dagster/spicy_regs (plus httpx, boto3 and polars for the FEC example) are absent, then replays
+the example test offline against its copied fixtures.
+"""
 
 import hashlib
 import json

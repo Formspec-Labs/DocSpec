@@ -45,6 +45,7 @@ PAGE = (
 
 
 def text(result) -> str:
+    """Decode an extraction result's content as UTF-8 text."""
     return result.content.decode("utf-8")
 
 

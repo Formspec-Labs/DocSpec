@@ -16,12 +16,14 @@ from tests.test_core_revisions import membership
 
 
 def root(states, session, count=2):
+    """Publish a root state with `count` keyed occurrences and matching memberships."""
     states.create(session, state_id="root", representation_id="root-r", unit_id="root",
                   entities=(occurrence(f"e{i}", {"x": i, "body": "x" * 500}) for i in range(count)),
                   members=(core.Membership(member_key=f"key-{i}", occurrence_id=f"e{i}") for i in range(count)))
 
 
 def test_checkpoint_repacks_and_prunes_values_without_new_states_or_provenance(tmp_path, monkeypatch):
+    """Checkpointing rewrites value files while states, provenance counts and selection evidence stay identical."""
     with ExitStack() as stack:
         records, ledger, states, selections, publisher = setup(stack, tmp_path)
         records.max_member_bytes = 4096
@@ -76,6 +78,7 @@ def test_checkpoint_repacks_and_prunes_values_without_new_states_or_provenance(t
 
 
 def test_generic_compaction_rejects_a_changed_native_copy(tmp_path, monkeypatch):
+    """Compaction refuses when the repacked native copy no longer holds the same logical records."""
     with ExitStack() as stack:
         records, _, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
@@ -91,6 +94,7 @@ def test_generic_compaction_rejects_a_changed_native_copy(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_interrupted_checkpoint_reopens_and_retries_the_same_publication(tmp_path, monkeypatch, after_commit):
+    """Reopening after a lost checkpoint response lets the identical unit retry commit exactly once."""
     with ExitStack() as stack:
         _, ledger, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
@@ -117,6 +121,7 @@ def test_interrupted_checkpoint_reopens_and_retries_the_same_publication(tmp_pat
 
 
 def test_changed_membership_is_refused_before_selecting_a_checkpoint(tmp_path, monkeypatch):
+    """A native membership copy that differs from the state's records refuses before any checkpoint commits."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:

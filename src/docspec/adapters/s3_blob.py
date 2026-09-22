@@ -194,6 +194,8 @@ class S3ContentAddressedBlobStore:
         expected_size: int | None = None,
         max_bytes: int | None = None,
     ) -> BlobRef:
+        """Create the object only if absent, returning an existing matching reference and refusing a conflict."""
+
         require_text(media_type, "blob media_type")
         with staged_bytes(chunks, directory=self._staging_directory, limit=self.config.max_blob_bytes, max_bytes=max_bytes,
                           expected_digest=expected_digest, expected_size=expected_size) as (temporary, actual_digest, byte_size):
@@ -231,10 +233,14 @@ class S3ContentAddressedBlobStore:
             return reference
 
     def stat(self, reference: BlobRef) -> BlobRef:
+        """Validate the object against its reference and return the reference."""
+
         self._validate_head(reference, self._head_required(reference))
         return reference
 
     def ensure_ready(self, reference: BlobRef) -> None:
+        """Verify the object's bytes before a caller relies on them."""
+
         self.verify(reference)
 
     def delete(self, reference: BlobRef) -> bool:
@@ -281,6 +287,8 @@ class S3ContentAddressedBlobStore:
         chunk_size: int | None = None,
         max_bytes: int | None = None,
     ) -> Iterator[bytes]:
+        """Stream and hash the object's bytes, refusing a size or digest that differs from its reference."""
+
         effective_chunk_size = self.config.transfer_chunk_bytes if chunk_size is None else chunk_size
         if (
             isinstance(effective_chunk_size, bool)
@@ -322,6 +330,8 @@ class S3ContentAddressedBlobStore:
             raise IntegrityError("S3 blob bytes differ from their immutable reference")
 
     def read_range(self, reference: BlobRef, *, start: int, end: int) -> bytes:
+        """Read one contained half-open byte interval, refusing a shape mismatch."""
+
         if (
             isinstance(start, bool)
             or isinstance(end, bool)
@@ -369,6 +379,8 @@ class S3ContentAddressedBlobStore:
         return materialize_bytes(root, relative_path, self.read(reference))
 
     def verify(self, reference: BlobRef) -> None:
+        """Read the whole object to prove its immutable bytes."""
+
         for _ in self.read(reference, chunk_size=self.config.transfer_chunk_bytes):
             pass
 

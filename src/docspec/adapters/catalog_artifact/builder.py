@@ -1,4 +1,9 @@
-"""Stage policy output, account for bytes, verify, and publish one catalog."""
+"""Build one immutable source catalog from source-native rows and a selection policy.
+
+Stages policy output and payload blobs, validates and accounts every row,
+derives the catalog digests, runs the producer gate, and publishes the policy,
+receipt, manifest, and root members through staging.
+"""
 
 from __future__ import annotations
 
@@ -107,6 +112,8 @@ class SourceCatalogBuildRequest:
 
 @dataclass(frozen=True, slots=True)
 class _DescribedSource:
+    """Bind one source to its checked description so preflight and publication share it."""
+
     source: SourceNativeRecordSource
     description: SourceNativeDescription
 
@@ -144,6 +151,8 @@ def _snapshot_sources(
 
 @dataclass(frozen=True, slots=True)
 class SourceCatalogBuildResult:
+    """Published reference, verified summary, byte measurements, and which engine derived each digest set."""
+
     reference: SourceCatalogRef
     summary: SourceCatalogSnapshotSummary
     byte_measurements: Mapping[str, int]
@@ -156,6 +165,10 @@ class SourceCatalogBuildResult:
 
 
 class _CatalogRowPartitioner:
+    """Write policy rows to the workspace in UTF-16 order, tallying
+    dispositions and committing resume marks every batch.
+    """
+
     def __init__(
         self,
         rows: Iterable[SourceCatalogItem],
@@ -199,6 +212,10 @@ class _CatalogRowPartitioner:
         self.disposition_counts = self.tally.dispositions
 
     def stage(self, workspace: CatalogPolicyWorkspace) -> None:
+        """Validate and stage every remaining row, refusing duplicate or
+        out-of-order sourceItemId values and rows over the byte limit.
+        """
+
         previous: str | None = self.last_item_id
         started = False
         for item in self._rows:
@@ -249,6 +266,8 @@ class _CatalogRowPartitioner:
 
     @staticmethod
     def chunks(workspace: CatalogPolicyWorkspace, partition_id: str) -> Iterator[bytes]:
+        """Yield one NDJSON line per staged row, streaming stored canonical bytes when the workspace offers them."""
+
         iter_payloads = getattr(workspace, "iter_payloads", None)
         if iter_payloads is not None:
             # The workspace stores exactly the canonical bytes stage() produced;
@@ -262,6 +281,8 @@ class _CatalogRowPartitioner:
 
 
 def _measure_blob(chunks: Iterable[bytes]) -> tuple[str, int]:
+    """Return the blob's ``sha256:`` reference and byte size, requiring bytes chunks."""
+
     digest = hashlib.sha256()
     byte_size = 0
     for chunk in chunks:
@@ -294,6 +315,8 @@ class SourceCatalogBuilder:
         self._workspace_factory = workspace_factory
 
     def build(self, sources: Sequence[SourceNativeRecordSource]) -> SourceCatalogBuildResult:
+        """Build, gate-verify, and publish one catalog snapshot, returning its reference, summary, and measurements."""
+
         sources = _snapshot_sources(sources, self._request.accepted_record_outcomes)
         descriptions = tuple(source.describe() for source in sources)
         policy = {

@@ -71,10 +71,14 @@ class ProviderEvidence:
 
     @classmethod
     def digest_only(cls, digest: str) -> ProviderEvidence:
+        """Create digest-only evidence that persists no record."""
+
         return cls(ProviderEvidenceMode.DIGEST_ONLY, digest)
 
     @classmethod
     def redacted(cls, record: Mapping[str, Any]) -> ProviderEvidence:
+        """Create redacted-record evidence whose digest covers the frozen, secret-free record."""
+
         frozen = thaw_json(freeze_json(record, label="redacted provider evidence"))
         if not isinstance(frozen, dict):
             raise ValueError("redacted provider evidence must be a JSON object")
@@ -187,6 +191,8 @@ class DataUsePolicy:
 
     @classmethod
     def local_content(cls) -> DataUsePolicy:
+        """Create the local-only policy allowing every processor data field."""
+
         return cls.create(
             execution_scope=ProcessorExecutionScope.LOCAL_ONLY,
             allowed_fields=PROCESSOR_DATA_FIELDS,
@@ -214,6 +220,11 @@ class DataUsePolicy:
         *,
         external: bool,
     ) -> None:
+        """Enforce the policy's evidence mode for one invocation.
+
+        Refuses local evidence, external use the policy forbids, missing external evidence, and a mode mismatch.
+        """
+
         if not external:
             if evidence is not None:
                 raise ValueError("a local processor must not attach external provider evidence")
@@ -265,6 +276,8 @@ class DataUsePolicy:
 
 @dataclass(frozen=True, slots=True)
 class ProcessorLimits:
+    """Positive per-invocation bounds applied to one processor call."""
+
     max_input_bytes: int = 64 * 1024**2
     max_output_bytes: int = 8 * 1024**2
     max_output_records: int = 2048

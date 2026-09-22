@@ -1,9 +1,10 @@
 """One structural admission and encoding path for versioned Core records.
 
-Wire bytes use the shared canonical JSON format. Python callers may construct
-records or supply mappings; encode_record validates and snapshots them. Logical
-immutability is established by those retained bytes, not by freezing a mutable
-JSON object inside a Python record. Ledger admission owns cross-record checks.
+Wire bytes use the shared canonical JSON format; Python callers may construct
+records or supply mappings, and encode_record validates and snapshots them.
+Logical immutability is established by those retained bytes, not by freezing a
+mutable JSON object inside a Python record; ledger admission owns cross-record
+checks.
 """
 
 from __future__ import annotations

@@ -40,6 +40,8 @@ _Parser = HtmlVisibleTextExtractor | XmlVisibleTextExtractor
 
 
 def _headings(values: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
+    """Validate heading names and levels 1-6 and freeze them as a sorted tuple."""
+
     for name, level in values.items():
         require_text(name, "heading name")
         if type(level) is not int or not 1 <= level <= 6:
@@ -48,6 +50,8 @@ def _headings(values: Mapping[str, int]) -> tuple[tuple[str, int], ...]:
 
 
 def _parser_identity(parser: _Parser) -> tuple[str, str]:
+    """The block extractor ID and configuration digest derived from one visible-text parser."""
+
     return parser.extractor_id.replace("/v2", "-blocks/v2"), identity_digest(
         {
             "parserId": parser.extractor_id,
@@ -187,6 +191,8 @@ class VisibleTextExtractor:
 
 
 def _block_mappings(captured: CapturedFile, visible: VisibleText) -> tuple[EvidenceMapping, ...]:
+    """Map every visible-text block to its enclosing captured byte span."""
+
     mappings = []
     for block in visible.blocks:
         start, end = visible.rendition_range(block.representation_start, block.representation_end)

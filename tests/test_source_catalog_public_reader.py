@@ -1,4 +1,9 @@
-"""Public catalog admission, exact-byte access, and mapping/object parity."""
+"""Public source-catalog reader contract: mapping access admits once, never re-derives or reconstructs items,
+and matches the located-object view; streaming payload reads are bounded and close on partial consumption.
+
+Covers refusing members or payloads changed after admission (even as valid canonical JSON), pin mismatches,
+the shared domain refusals for malformed rows through both views, and the row-size limit on the mapping reader.
+"""
 
 from __future__ import annotations
 
@@ -37,6 +42,7 @@ def catalog(tmp_path: Path):
 
 
 def _prohibited(*args: Any, **kwargs: Any) -> Any:
+    """Fail if public mapping access repeats admission, derivation or SourceCatalogItem construction."""
     raise AssertionError("public mapping access must not repeat admission, derive, or construct SourceCatalogItem")
 
 
@@ -118,6 +124,8 @@ def test_public_factory_refuses_members_changed_after_admission(
 
 
 class _StreamingBlobs:
+    """Non-seekable public blob source double that records open/close counts and read sizes."""
+
     def __init__(self, payloads: dict[str, bytes]) -> None:
         self.payloads = payloads
         self.open_count = 0
@@ -143,6 +151,7 @@ class _StreamingBlobs:
 
 
 def _streaming_blobs(root: Path) -> _StreamingBlobs:
+    """Index the local content-addressed blobs as a non-seekable streaming source."""
     return _StreamingBlobs({"sha256:" + path.name: path.read_bytes() for path in (root / ".blobs" / "sha256").iterdir()})
 
 

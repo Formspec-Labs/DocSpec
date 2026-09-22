@@ -27,6 +27,7 @@ _CONTENT = b"First paragraph.\n\nSecond paragraph."
 
 
 def _record(identifier, *, title="Source title", candidates=True):
+    """Build one supplied catalog record with an optional digest-pinned text candidate."""
     return {
         "recordId": identifier, "sourceIssuedVersion": "v1", "title": title, "metadata": {},
         "candidateRenditions": [SourceCatalogCandidate(
@@ -66,6 +67,7 @@ class _ExcludeSuppliedPolicy(SuppliedRecordCatalogPolicy):
 
 @pytest.fixture
 def iteration(tmp_path, monkeypatch):
+    """Yield a catalog/pipeline harness over a temp root with fetch, extract and segment call counters."""
     root = tmp_path / "experiment"
     inputs = tmp_path / "inputs"
     inputs.mkdir()

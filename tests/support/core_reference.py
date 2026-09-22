@@ -32,6 +32,8 @@ def value_key(value: Any) -> tuple:
 
 
 def pointer_tokens(pointer: str) -> tuple[str, ...]:
+    """Split a JSON Pointer into tokens; anything that is not a legal pointer refuses."""
+
     if not isinstance(pointer, str) or (pointer and not pointer.startswith("/")):
         raise ValueError("invalid JSON Pointer")
     if re.search(r"~(?![01])", pointer):
@@ -55,6 +57,11 @@ def selected_field(value: Any, pointer: str) -> list:
 
 
 def selected_value(value: Any, selectors: list[dict] | None = None) -> list:
+    """Return ``["present", value]`` without selectors, else one labelled ``present``/``absent`` row per selector.
+
+    Duplicate selector labels are refused.
+    """
+
     if selectors is None:
         return ["present", deepcopy(value)]
     labels = [selector["label"] for selector in selectors]
@@ -71,6 +78,8 @@ class State:
 
     @classmethod
     def root(cls, state_id: str, rows: list[tuple[str, str, Any]]) -> State:
+        """Build a root state; member keys must be distinct strings and occurrences distinct identities."""
+
         keys = [row[0] for row in rows]
         entities = [row[1] for row in rows]
         if len(set(keys)) != len(keys) or len(set(entities)) != len(entities):
@@ -82,6 +91,13 @@ class State:
         return cls(state_id, dict(zip(keys, entities, strict=True)), deepcopy({e: v for _, e, v in rows}))
 
     def revise(self, state_id: str, edits: list[dict], new_values: dict[str, Any] | None = None) -> State:
+        """Return the revised state, applying edits in sequence order.
+
+        Refuses a reused state identity, a changed retained occurrence, edit
+        sequences that are not distinct nonnegative integers, an unknown
+        occurrence, and removing an absent member.
+        """
+
         if state_id == self.state_id:
             raise ValueError("revision requires a new state identity")
         occurrences = deepcopy(self.occurrences)

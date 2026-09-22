@@ -1,3 +1,10 @@
+"""Iceberg record storage contract: layers stream in stable order and reuse untouched partitions, snapshots
+publish atomically under concurrency, and arbitrary payloads round-trip through exact partition routing while
+lookups read one root and recheck later inputs.
+
+Refusals: unsorted or tampered records, and workspace path names never overriding the physical routing columns.
+"""
+
 from __future__ import annotations
 
 
@@ -33,6 +40,7 @@ POLICY = PartitionPolicy("source-item-sha256-v1", 8)
 
 
 def _bucket(value: str) -> int:
+    """The policy bucket for a source item id, matching the storage's partition routing."""
     return int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big") % POLICY.bucket_count
 
 

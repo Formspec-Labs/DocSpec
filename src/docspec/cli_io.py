@@ -28,6 +28,11 @@ def read_bytes(
     max_bytes: int = MAX_JSON_BYTES,
     error_type: type[DocSpecError] = CliError,
 ) -> bytes:
+    """Read one regular non-symlink file, bounding the actual read rather than just the stat.
+
+    Every refusal raises error_type.
+    """
+
     path = Path(path)
     if path.is_symlink() or not path.is_file():
         raise error_type(f"{label} must be a regular, non-symlink file: {path}")
@@ -49,6 +54,11 @@ def read_object(
     canonical: bool = False,
     error_type: type[DocSpecError] = CliError,
 ) -> dict[str, Any]:
+    """Read one bounded JSON object, parsed canonically when requested.
+
+    A non-object raises error_type; malformed or non-canonical bytes fail with IntegrityError from the shared parser.
+    """
+
     payload = read_bytes(path, label=label, error_type=error_type)
     parser = parse_canonical_json if canonical else parse_closed_json
     value = thaw_json(parser(payload, label=label))
@@ -58,6 +68,8 @@ def read_object(
 
 
 def existing_root(path: Path, *, label: str, error_type: type[DocSpecError] = CliError) -> Path:
+    """Return the resolved path of an existing non-symlink directory, or raise error_type."""
+
     path = Path(path)
     if path.is_symlink() or not path.is_dir():
         raise error_type(f"{label} must be an existing, non-symlink directory: {path}")
@@ -65,6 +77,11 @@ def existing_root(path: Path, *, label: str, error_type: type[DocSpecError] = Cl
 
 
 def emit(value: object, *, error: bool = False) -> None:
+    """Write canonical JSON to stdout, or redacted JSON to stderr when error is set.
+
+    Successful output must be secret-free; error output is redacted instead of refused.
+    """
+
     if error:
         value = redact(value)
     else:
@@ -75,6 +92,8 @@ def emit(value: object, *, error: bool = False) -> None:
 
 
 def emit_error(error: Exception) -> int:
+    """Emit the versioned CLI error envelope to stderr and return exit code 2."""
+
     emit({"format": "docspec-cli-error", "formatVersion": "1.0",
           "errorType": type(error).__name__, "message": str(error), "verdict": "fail"}, error=True)
     return 2

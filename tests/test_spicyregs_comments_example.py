@@ -1,4 +1,12 @@
-"""Public comment-table facts remain useful before any document acquisition."""
+"""SpicyRegs public comment-table example contract: table facts, nulls, field diagnostics and candidate
+attachments survive installed mapping before any document acquisition, and the example never touches the
+network.
+
+Covers exact metadata and evidence round-trips against the source adapter, metadata filtering reusing the
+catalog without rewriting output or treating null/empty as text, mixed attachment formats keeping original
+positions, whole-partition refusal on an invalid row without fabricating a partial catalog, the record bound
+refusing before catalog storage, and an existing output never being replaced.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +30,7 @@ from examples import spicyregs_comments as example
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    """Refuse every network connect so the example must work from its fixture table."""
     def refuse(*args, **kwargs):
         raise AssertionError("the comment example must never fetch a table or attachment over the network")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -29,6 +38,7 @@ def no_network(monkeypatch):
 
 
 def _catalog(report, output):
+    """Open the catalog published by the example under its report destination."""
     return open_local_catalog(SourceCatalogRef.from_dict(report["catalog"]), Path(output / "dataset"),
                               producer=example.catalog_producer())
 

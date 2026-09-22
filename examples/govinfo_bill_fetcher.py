@@ -47,6 +47,7 @@ class BillContentFetcher:
         })
 
     def fetch(self, candidate: CandidateFile, *, max_bytes: int, task_id: str, attempt_id: str) -> FetchStream:
+        """Fetch the selected package XML, refusing a differing candidate and retaining refusal evidence."""
         if candidate.locator != self.locator or candidate.media_type != "application/xml":
             raise IntegrityError("bill candidate differs from the explicitly selected package XML")
         receipt_name = "bill-text-" + identity_digest({"taskId": task_id, "attemptId": attempt_id}).split(":")[1]

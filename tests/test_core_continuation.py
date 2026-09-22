@@ -13,17 +13,20 @@ from tests.test_core_execution import setup, definition, request, progress
 
 
 def start(context):
+    """Suspend a first attempt after generating one value, recording `next` and the entity id."""
     entity = context.generate(core.InlineValue(value=2), label="first")
     context.suspend({"next": 1, "first": entity.entity_id})
 
 
 def finish(context, state):
+    """Resume by reading the suspended value, generating its triple, and deriving from the original."""
     value = context.read_value(state["first"])
     entity = context.generate(core.InlineValue(value=value * 3), label="last")
     context.derive(entity.entity_id, state["first"])
 
 
 def test_checkpoint_continues_after_reopen_with_original_attempt_and_events(tmp_path):
+    """Continuation after reopen keeps the original execution id with one execution and one event per generation."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         suspended = operations.run(definition(), request(), start)
@@ -45,6 +48,7 @@ def test_checkpoint_continues_after_reopen_with_original_attempt_and_events(tmp_
 
 
 def test_verifier_and_definition_refusals_do_not_claim_or_invoke_continuation(tmp_path):
+    """A failed verifier or changed definition refuses before the continuation runs and leaves the attempt incomplete."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         suspended = operations.run(definition(), request(), start)
@@ -61,6 +65,7 @@ def test_verifier_and_definition_refusals_do_not_claim_or_invoke_continuation(tm
 
 
 def test_only_one_concurrent_continuation_claim_can_run(tmp_path):
+    """Two concurrent resumes produce exactly one winner, and only the winner's continuation runs."""
     with ExitStack() as stack:
         _, operations = setup(stack, tmp_path)
         suspended = operations.run(definition(), request(), start)
@@ -83,6 +88,7 @@ def test_only_one_concurrent_continuation_claim_can_run(tmp_path):
 
 
 def test_repeated_suspension_preserves_the_complete_prefix(tmp_path):
+    """Suspending twice keeps every earlier generation and the full ordered output prefix."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         suspended = operations.run(definition(), request(), start)
@@ -99,6 +105,7 @@ def test_repeated_suspension_preserves_the_complete_prefix(tmp_path):
 
 
 def test_checkpoint_retains_prepared_prerequisites_before_suspending(tmp_path):
+    """A suspended operation retains its prepared prerequisite result, which the continuation adopts without a new generation."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         with operations.publisher.session() as session:
@@ -119,6 +126,7 @@ def test_checkpoint_retains_prepared_prerequisites_before_suspending(tmp_path):
 
 
 def test_missing_checkpoint_content_refuses_before_claiming_the_attempt(tmp_path):
+    """Deleted checkpoint bytes refuse before the continuation runs and leave the attempt incomplete."""
     with ExitStack() as stack:
         ledger, operations = setup(stack, tmp_path)
         suspended = operations.run(definition(), request(), start)

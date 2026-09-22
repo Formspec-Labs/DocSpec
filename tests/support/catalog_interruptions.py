@@ -1,4 +1,4 @@
-"""Source-catalog interruption and counting fixtures."""
+"""Catalog-policy wrappers that inject a mid-stream kill or count computed items."""
 
 from collections.abc import Iterator
 

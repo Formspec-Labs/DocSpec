@@ -1,22 +1,12 @@
 """Draw 30 real `docAbstract` values for the v13 display-rule check.
 
-SpicySearch is moving text policy 2.1 to 2.2 to read regulations.gov's
-`data/attributes/docAbstract` as the document-abstract role. The display rule is
-checked the way the inline-text scope was — three readers over 30 real values,
-because that method found a display rule the first time.
-
-**Values are reported exactly as stored, never cleaned.** A field that carries
-HTML, a placeholder, or a copy of the title is precisely what the display rule
-has to handle, so anomalies are *flagged beside* the text rather than repaired
-out of it. A sample that quietly normalises its values would prove the display
-rule unnecessary by removing the evidence for it.
-
-**The strata ask three different questions.** Notice and Other are the
-worst-covered types (0.088 and 0.241), where a populated value is unusual enough
-to be worth looking at. Rule and Proposed Rule are the well-covered types, which
-say what a normal value looks like. And 2016-or-later is the recency decline —
-coverage falls from 0.796 in 1997 to 0.073 in 2018 — so a value that survives
-there is drawn from the thinnest part of the corpus.
+Three readers judge the drawn values the way the inline-text scope was checked.
+Draws ``--per-stratum`` (default 10) per stratum: Notice/Other, the worst-covered
+types; Rule/Proposed Rule, the well-covered types that show what a normal value
+looks like; and 2016-or-later, the recency decline. Ranking is
+``sha256(salt || NUL || documentId)``, lowest-first. Values are reported exactly
+as stored and anomalies are flagged beside the text, never repaired out of it;
+the JSON receipt and ``.sha256`` sidecar go to ``--out``.
 """
 
 from __future__ import annotations

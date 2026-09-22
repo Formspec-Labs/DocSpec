@@ -1,4 +1,8 @@
-"""Production selection, direct retention, and exact parent recovery."""
+"""Selection storage pins binding evidence, direct retention and parent recovery against an independent model.
+
+Malformed or misrouted retained rows refuse; a direct selection survives parent-file loss while a recovery
+rereads the parent, and external rows must be admitted and canonical before retention.
+"""
 
 from collections import Counter
 from contextlib import ExitStack
@@ -17,6 +21,8 @@ from tests.test_core_states import open_core, occurrence
 
 
 def setup(stack, path):
+    """Open a core workspace with ``CoreSelectionStorage`` attached as ``publisher.selections``;
+    returns records, ledger, states, selections, publisher."""
     records, ledger, states, publisher = open_core(stack, path)
     selections = CoreSelectionStorage(records, states)
     publisher.selections = selections
@@ -24,16 +30,20 @@ def setup(stack, path):
 
 
 def fields(*pointers, identity=False):
+    """Build ``JsonFields`` selecting ``pointers`` as labels f0, f1, ... with value or identity comparison."""
     return core.JsonFields(selectors=tuple(core.Field(label=f"f{i}", pointer=pointer) for i, pointer in enumerate(pointers)),
                            comparison="identity" if identity else "value")
 
 
 def import_root(states, session, values):
+    """Create the root state from ``(member_key, entity_id, value)`` triples."""
     states.create(session, state_id="root", representation_id="root-r", unit_id="root", entities=[occurrence(entity, value) for _, entity, value in values],
                   members=[core.Membership(member_key=key, occurrence_id=entity) for key, entity, _ in values])
 
 
 def select(selections, session, identity, definition, *, parent="root", recover=False):
+    """Retain a selected value under ``identity``; ``recover=True`` recomputes it from the parent
+    instead of taking the direct path."""
     return selections.retain(session, selected_value_id=identity, definition=definition,
                              origin=core.Origin(parent_entity_id=parent), from_parent=recover)
 

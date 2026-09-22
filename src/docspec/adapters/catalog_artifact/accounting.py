@@ -16,9 +16,9 @@ from docspec.errors import IntegrityError, LimitExceededError
 class _DispositionTally:
     """Count rows by disposition and by (disposition, reasonCode).
 
-    One tally serves the build, both derivations and their merge, so the two
-    count sections a receipt reconciles come from one rule. It pickles across
-    the parallel derivation's worker boundary as a plain object.
+    One tally serves the build and both derivations, so the receipt's two count
+    sections come from one rule; it pickles across the parallel derivation's
+    worker boundary as a plain object.
     """
 
     def __init__(self) -> None:
@@ -97,17 +97,12 @@ _COLLAPSED_JOIN_ELIGIBLE_FLOOR: Final = 10_000
 def _refuse_collapsed_joins(join_coverage: list[dict[str, Any]]) -> None:
     """Refuse a build whose large join had candidates and matched none of them.
 
-    On 2026-09-05 the Federal Register join went from 430,323 matches to 0 --
-    every one of 499,238 eligible documents -- because the producer made the
-    indexed identity composite while the lookup still passed a bare number. The
-    build reported verdict "pass", and nothing downstream could tell: a catalog
-    with no joins is structurally identical to one whose documents genuinely
-    reference nothing.
-
-    This is a backstop, not the principled check. A build cannot know what its
-    coverage ought to be; only a comparison against the catalog it succeeds can
-    say that coverage fell from 86% to zero. That belongs in succession, and
-    this refuses meanwhile the one shape that is never a real corpus.
+    On 2026-09-05 the Federal Register join matched none of 499,238 eligible
+    documents while the build still reported "pass", because the indexed
+    identity became composite while the lookup passed a bare number. This is a
+    backstop for the one shape that is never a real corpus -- eligible at or
+    above ``_COLLAPSED_JOIN_ELIGIBLE_FLOOR`` with zero matched -- since only a
+    comparison against the catalog it succeeds can judge real coverage.
     """
     for coverage in join_coverage:
         eligible = coverage.get("eligible", 0)
@@ -122,6 +117,10 @@ def _accumulate_join_coverage(
     counts: dict[str, dict[str, int]],
     record: Mapping[str, Any],
 ) -> None:
+    """Add one join outcome to its per-join counts, refusing an unknown
+    outcome, a non-text identity, or too many identities.
+    """
+
     join_id = record["joinId"]
     if not isinstance(join_id, str):
         raise IntegrityError("catalog join identity must be text")

@@ -1,3 +1,8 @@
+"""The Iceberg writer must stream an input iterator without materializing it.
+
+Producer failures propagate the original exception, close the source once, leave no partial files, and keep
+lazy SQLite sources on their caller's thread.
+"""
 from __future__ import annotations
 
 import sqlite3
@@ -47,6 +52,7 @@ def test_arrow_producer_failure_preserves_error_and_closes_input(
     failure = error_type("input producer failed")
 
     class Source:
+        """Iterable row source that raises ``failure`` after ``fail_after`` rows and counts ``close`` calls."""
         def __init__(self) -> None:
             self.index = 0
             self.close_count = 0

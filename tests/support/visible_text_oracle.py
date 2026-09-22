@@ -2,53 +2,24 @@
 
 `docs/decisions/0001-document-release-2-0.md` requires a `document-body`'s
 `representation` to be `text/plain; charset=utf-8` -- "Markup is not search text:
-this is visible text extracted before segmentation"
-(`documents.schema.json`, `$defs/representation`). The five extractors in
-`processing/extraction.py` cannot supply that: every one of them is a
-**source-native passthrough** whose representation blob IS the captured file
-(`_passthrough_result`), which is the right answer for a store that keeps exact
-source bytes and the wrong one for a search corpus. This module is the missing
-half, and it does not replace them: an XML file still has a source-native
-representation, and now it also has a visible-text one.
+this is visible text extracted before segmentation" (`documents.schema.json`,
+`$defs/representation`). The extractors in `processing/extraction.py` are
+source-native passthroughs whose representation blob IS the captured file, which
+is the wrong answer for a search corpus; this module is the missing half and does
+not replace them -- an XML file keeps its source-native representation and gains
+a visible-text one.
 
-Two parsers, both standard library
-----------------------------------
-* XML through `xml.parsers.expat`, chosen over `ElementTree` for one reason:
-  expat reports `CurrentByteIndex`, so every run of character data carries the
-  exact byte range of the captured rendition it came from. Evidence that names
-  real bytes is the whole point of `rendition-utf8-byte`.
-* HTML through `html.parser.HTMLParser`, whose `getpos()` gives the same fact in
-  line/column form. Character references are folded by the parser
-  (`convert_charrefs=True`), so the emitted text is what a reader sees while the
-  recorded range still spans the `&amp;` that produced it.
-
-Neither parser is asked to understand a vocabulary. A **block** is any element
-that directly owns non-whitespace character data, found top-down: an element
-whose own text is only whitespace is a container and is descended into, and an
-element that owns text is emitted whole, inline children included. That rule
-needs no tag list and produced clean blocks on every document of the pinned
-corpus. The one vocabulary this module does declare is which tags are headings,
-and it is declared in the extractor's configuration so it rides inside the
-`extractorDigest` the release carries.
-
-Two layout modes, and why
--------------------------
-`processing/bounded_segmentation.py` tiles a representation into regions at
-blank lines and treats a lone ATX line as a heading. So the layout this module
-writes is the segmenter's input contract:
-
-* **normalized** (XML): each block's whitespace collapses to single spaces and
-  the block becomes one line, headings prefixed `#` by level. Structure the
-  markup carried becomes structure the segmenter can see.
-* **verbatim** (HTML): character data is copied unchanged. The pinned corpus's
-  HTML is a `<pre>` block holding a Federal Register document whose paragraphs
-  are already separated by blank lines; normalizing it would erase every one of
-  them and leave one region for the token budget to chop blindly.
-
-Every byte written that did not come from the source -- a separator, a `#`
-prefix, a collapsed space -- belongs to no run, and `rendition_range` maps a
-representation interval back through the runs that do. A segment therefore
-cites the captured bytes it was extracted from and never a byte it invented.
+XML goes through `xml.parsers.expat`, whose `CurrentByteIndex` gives every run of
+character data the exact captured byte range it came from; HTML goes through
+`html.parser.HTMLParser`, whose `getpos()` plus a byte-offset table gives the
+same fact with character references folded. A **block** is any element that
+directly owns non-whitespace character data, found top-down, and the one declared
+vocabulary -- which tags are headings -- lives in the extractor's configuration
+so it rides inside `extractorDigest`. XML is laid out **normalized** (whitespace
+collapsed, `#` headings) because that is the input `processing/bounded_segmentation.py`
+expects; HTML is **verbatim**, because the pinned corpus's `<pre>` paragraphs are
+already blank-line separated. Every byte written that did not come from the
+source belongs to no run, so `rendition_range` never invents a coordinate.
 """
 
 from __future__ import annotations
@@ -323,6 +294,7 @@ def _lay_out(
     *,
     normalize: bool,
 ) -> tuple[bytes, tuple[VisibleTextBlock, ...], tuple[TextRun, ...]]:
+    """Lay every block out in order, separated by blank lines, and return content, blocks and runs."""
     writer = _Writer()
     blocks: list[VisibleTextBlock] = []
     for node, level in nodes:
@@ -360,6 +332,7 @@ class XmlVisibleTextExtractor:
         self.configuration_digest = identity_digest(self.configuration)
 
     def extract(self, source_bytes: bytes) -> VisibleText:
+        """Return the visible-text representation; a capture with no visible text is refused."""
         root = _parse_xml(source_bytes)
         blocks = _walk_blocks(root, self._level)
         content, laid_out, runs = _lay_out(blocks, normalize=True)
@@ -404,6 +377,7 @@ class HtmlVisibleTextExtractor:
         self.configuration_digest = identity_digest(self.configuration)
 
     def extract(self, source_bytes: bytes) -> VisibleText:
+        """Return the visible-text representation; a capture with no visible text is refused."""
         root, element_count = _parse_html(source_bytes)
         blocks = _walk_blocks(root, self._level)
         content, laid_out, runs = _lay_out(blocks, normalize=False)
@@ -558,6 +532,7 @@ class _HtmlTreeBuilder(HTMLParser):
 
 
 def _parse_html(source_bytes: bytes) -> tuple[_Node, int]:
+    """Decode the capture, build the element tree and count elements, mapping positions to byte offsets."""
     text = decode_utf8(source_bytes, label="captured HTML")
     offsets = None if text.isascii() else utf8_byte_offsets(text)
     builder = _HtmlTreeBuilder(offsets)

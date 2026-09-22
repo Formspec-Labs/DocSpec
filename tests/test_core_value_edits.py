@@ -1,4 +1,9 @@
-"""RFC 6902 examples, an independent sequence model, and actual publication."""
+"""RFC 6902 patch semantics are pinned against the spec examples and an independent sequence model.
+
+Every published value edit must record real provenance or fail cleanly: batch edits bound input count,
+instruction bytes, prefetch and expansion before any attempt, and a failed patch records a failed result
+with no partial entity outputs.
+"""
 
 from contextlib import ExitStack
 from copy import deepcopy

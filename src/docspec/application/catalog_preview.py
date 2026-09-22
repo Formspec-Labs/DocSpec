@@ -14,12 +14,14 @@ from .comparison import json_changes, json_equal, paired_rows
 
 
 def validate_preview_limits(sample_limit: int, max_sample_bytes: int) -> None:
+    """Raise ValueError unless both preview limits are non-negative integers."""
     for name, value in (("sample_limit", sample_limit), ("max_sample_bytes", max_sample_bytes)):
         if type(value) is not int or value < 0:
             raise ValueError(f"catalog preview {name} must be a non-negative integer")
 
 
 def _summary(summary: SourceCatalogSnapshotSummary) -> dict[str, Any]:
+    """Render one admitted catalog summary as the preview's catalog object."""
     succession = summary.succession
     return {
         "logicalId": summary.logical_id, "artifactDigest": summary.artifact_digest,
@@ -43,6 +45,7 @@ def _summary(summary: SourceCatalogSnapshotSummary) -> dict[str, Any]:
 def _append_sample(
     sample: list[dict[str, Any]], value: dict[str, Any], used: int, limit: int, maximum: int,
 ) -> int:
+    """Append one sample entry when count and canonical byte limits allow, returning bytes used."""
     if len(sample) < limit and used < maximum:
         size = len(canonical_json_bytes(value))
         if used + size <= maximum:

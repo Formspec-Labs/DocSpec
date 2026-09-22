@@ -115,6 +115,8 @@ class SpicyDocsSourceNativeAdapter:
         accepted_verifier_implementation_ids: frozenset[str],
         logical_id: str | None = None,
     ) -> SpicyDocsSourceNativeAdapter:
+        """Create the adapter over local member and blob roots, refusing an artifact digest that differs."""
+
         adapter = cls(
             LocalMemberSource(Path(root)),
             blob_source=LocalBlobSource(Path(blob_root)),
@@ -127,6 +129,8 @@ class SpicyDocsSourceNativeAdapter:
         return adapter
 
     def describe(self) -> SourceNativeDescription:
+        """Return the pinned source-native description."""
+
         return self._description
 
     def record_evidence(self, source_record_id: str) -> Mapping[str, Any] | None:
@@ -142,9 +146,13 @@ class SpicyDocsSourceNativeAdapter:
         return self._reader.read_evidence(blob_ref, max_bytes=max_bytes)
 
     def iter_records(self) -> Iterator[Mapping[str, Any]]:
+        """Stream the source's published records."""
+
         yield from self._reader.iter_records()
 
     def iter_renditions(self) -> Iterator[Mapping[str, Any]]:
+        """Stream the provider's renditions for published records."""
+
         yield from self._reader.iter_renditions()
 
 

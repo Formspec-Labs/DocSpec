@@ -14,6 +14,7 @@ from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 @dataclass(frozen=True, slots=True)
 class ReuseRequest:
+    """One candidate request to reuse, with its selection identity, target and eligibility policy."""
     definition: core.OperationDefinition
     request: core.Request
     selection_id: str
@@ -24,17 +25,20 @@ class ReuseRequest:
 
 @dataclass(frozen=True, slots=True)
 class Resolution:
+    """A published association selection together with the result it reuses."""
     selection: core.Selection
     result: core.Result
 
 
 def selection_for(result, request_id, *, selection_id, target, output_labels=None):
+    """Build an admitted Selection binding one result to its request and target."""
     return admit_record(encode_record(core.Selection(format_version=1, selection_id=selection_id, target=target,
         request_id=request_id, selected_result_id=result.result_id,
         output_labels=tuple(output.label for output in result.outcome.outputs) if output_labels is None else tuple(output_labels))))
 
 
 class CoreReuse:
+    """Choose reusable results and publish exact associations through the dependency owner."""
     def __init__(self):
         self.dependencies = CoreDependencies()
 
@@ -63,6 +67,7 @@ class CoreReuse:
 
     @staticmethod
     def selection(call, result):
+        """Build the association record for one chosen result."""
         return selection_for(result, call.request.request_id, selection_id=call.selection_id,
                              target=call.target, output_labels=call.output_labels)
 

@@ -53,6 +53,8 @@ FIELDS = (("url", "/url"), ("metadata", "/metadata/field"))
 
 @contextmanager
 def connection(scratch: Path):
+    """Yield the experiment's bounded DuckDB connection over ``scratch``."""
+
     scratch.mkdir(parents=True, exist_ok=True)
     con = connect(scratch, memory_bytes=ENGINE_MEMORY_BYTES, threads=ENGINE_THREADS)
     try:
@@ -77,6 +79,8 @@ def write_rows(path: Path, rows: Iterable[tuple], schema: pa.Schema, *, byte_col
 
 
 def generate(directory: Path, count: int) -> dict:
+    """Write the frozen workload as bounded Parquet row groups; an existing file is refused."""
+
     directory.mkdir(parents=True, exist_ok=True)
     rows = (
         (key, entity, canonical_value_bytes(value).decode("utf-8"))
@@ -135,6 +139,8 @@ def framed_digest(con: duckdb.DuckDBPyConnection, source: Path, *, read_rows: in
 
 
 def evaluate(directory: Path, mode: str, *, read_rows: int = 256) -> dict:
+    """Extract, convert and digest one mode, asserting extraction and comparison agree."""
+
     metrics = {}
     selected = directory / f"{mode}.parquet"
     with connection(directory / "scratch") as con:

@@ -4,6 +4,8 @@ from docspec.domain.identity import sha256_digest
 
 
 def content_statistics(content, segment_id, evidence):
+    """Build the local statistics record for one segment; text-derived counts are None for non-UTF-8 bytes."""
+
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:

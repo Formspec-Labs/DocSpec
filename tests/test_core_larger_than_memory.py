@@ -13,6 +13,7 @@ from tests.support.core_larger_than_memory import derive, file_digest
 
 
 def test_two_copy_fresh_process_recipe_preserves_values_and_checks_complete_outputs(tmp_path):
+    """Four fresh subprocess stages copy the source, keep it byte-identical and verify all 32 outputs."""
     source = tmp_path / "source"
     generate(source, 16)
     fixture = source / "base.parquet"
@@ -45,6 +46,7 @@ def test_two_copy_fresh_process_recipe_preserves_values_and_checks_complete_outp
 
 
 def test_derivation_refuses_an_unpinned_source_without_creating_a_fixture(tmp_path):
+    """A source whose digest does not match the supplied pin refuses before creating a fixture."""
     source = tmp_path / "source"
     generate(source, 2)
     trial = tmp_path / "trial"
@@ -56,6 +58,7 @@ def test_derivation_refuses_an_unpinned_source_without_creating_a_fixture(tmp_pa
 
 @pytest.mark.parametrize("replace_missing", [False, True])
 def test_oracle_rejects_missing_keys_even_when_a_valid_duplicate_preserves_count(tmp_path, monkeypatch, replace_missing):
+    """The oracle still reports a duplicate key or incomplete population when the row count is preserved."""
     from contextlib import closing
 
     from docspec.runtime import CoreWorkspace

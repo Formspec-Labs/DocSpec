@@ -1,4 +1,11 @@
-"""Pinned filesystem identity, staging cleanup, and atomic catalog publication."""
+"""Source-catalog storage contract: destination, staging, blob and shared SHA roots are pinned by descriptor
+and re-checked during use, so a path swapped for a symlink refuses with IntegrityError and never mutates or
+deletes outside bytes.
+
+Also pins atomic publication (process exit after rename keeps the catalog, before rename leaves no root and a
+retry succeeds), rejection of symlink or non-directory roots without mutation, and staging sessions refusing
+same-name replacement and tombstones before cleanup.
+"""
 
 from __future__ import annotations
 
@@ -66,6 +73,7 @@ def test_local_source_catalog_publication_store_refuses_a_replaced_parent(
 
 
 def _publish_and_exit(destination: Path, published: bool) -> None:
+    """Publish or abandon a catalog, then exit via os._exit to model process loss rather than an exception."""
     publication = LocalSourceCatalogPublication(destination)
     (publication.root / 'artifact.json').write_bytes(b"artifact\n" if published else b"unpublished\n")
     if published:
@@ -76,6 +84,7 @@ def _publish_and_exit(destination: Path, published: bool) -> None:
 
 
 def _crash_publication(destination: Path, *, published: bool) -> None:
+    """Run _publish_and_exit in a spawned process and assert its crash exit code."""
     process = get_context("spawn").Process(target=_publish_and_exit, args=(destination, published))
     process.start()
     try:

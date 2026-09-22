@@ -1,4 +1,9 @@
-"""Iceberg's indexes preserve exact keys; DocSpec does not keep a parallel index."""
+"""Record identity-bound contract: Iceberg's own indexes preserve exact keys (including empty, unicode,
+10,000-byte and NUL identities) in ordered and unordered writes, and DocSpec keeps no parallel index.
+
+Covers native lookup distinguishing combining-mark from precomposed values, disjoint union keeping base files
+while checking overlap, and exclude_existing filtering an overlapping delta.
+"""
 
 from contextlib import closing
 
@@ -16,6 +21,7 @@ POLICY = PartitionPolicy('single', 1)
 
 
 def layer(storage, identities, *, ordered=True):
+    """Retain one layer holding the given identities, sorted unless the write is declared unordered."""
     return storage.retain_batches(
         encoded_batches(((key, 'same', canonical_json_bytes({'id': key, 'group': 'same', 'value': key}))
                          for key in sorted(identities, reverse=not ordered)), ENCODED_RECORD_SCHEMA, byte_column=2),

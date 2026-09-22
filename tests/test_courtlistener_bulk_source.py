@@ -1,4 +1,9 @@
-"""Qualify provider listing values through DocSpec selection and catalog admission."""
+"""Qualify CourtListener bulk-listing captures end to end through selection and catalog admission.
+
+Provider values become unchanged candidates, capture identity derives from pinned bytes, the population
+separates our exclusions from publisher withdrawals, and the pinned enumeration is restated so a silently
+reshaped capture fails a test rather than a coverage claim.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +35,7 @@ EXPECTED_OPINIONS_DUMPS = 36
 
 
 def _page(entries: str, *, prefix: str = "bulk-data/", truncated: bool = False, token: str | None = None) -> bytes:
+    """Build an S3 ListBucketResult page carrying ``entries`` with the chosen truncation marker."""
     marker = "<IsTruncated>true</IsTruncated>" if truncated else "<IsTruncated>false</IsTruncated>"
     continuation = f"<NextContinuationToken>{token}</NextContinuationToken>" if token else ""
     return (
@@ -41,6 +47,7 @@ def _page(entries: str, *, prefix: str = "bulk-data/", truncated: bool = False, 
 
 
 def _entry(key: str, size: int = 10, etag: str = "abc", modified: str = "2026-06-30T04:11:47.000Z") -> str:
+    """Build one Contents listing entry with key, size, quoted ETag and modification time."""
     return (
         f"<Contents><Key>{key}</Key><LastModified>{modified}</LastModified>"
         f'<ETag>&quot;{etag}&quot;</ETag><Size>{size}</Size></Contents>'
@@ -153,6 +160,7 @@ def test_capture_identity_is_derived_from_its_content(tmp_path: Path):
 
 
 def _capture(*keys: str, capture_id: str = "urn:test:capture") -> BulkCapture:
+    """Build an in-memory capture over ``keys`` with fixed size, ETag and date."""
     return BulkCapture(
         capture_id=capture_id,
         objects=tuple(BulkObject(k, 10, "e", "2026-06-30T00:00:00.000Z") for k in keys),
@@ -161,7 +169,8 @@ def _capture(*keys: str, capture_id: str = "urn:test:capture") -> BulkCapture:
 
 
 def test_population_separates_what_we_refused_from_what_the_publisher_withdrew():
-    """The two are recorded differently because they have opposite remedies."""
+    """The two are recorded differently because they have opposite remedies: our scope refusal is EXCLUDED,
+    a publisher withdrawal is DELETED."""
     previous = _capture(
         "bulk-data/opinions-2026-03-31.csv.bz2",
         "bulk-data/opinions-2026-06-30.csv.bz2",
@@ -257,13 +266,11 @@ def test_population_publishes_as_a_verified_shared_source_catalog(tmp_path: Path
 
 @pytest.mark.integration
 def test_a_real_enumerated_dump_acquires_through_the_https_fetcher():
-    """Prove the path end to end on the smallest thing the publisher enumerates.
+    """Prove the enumerated path end to end over the network on the smallest dump the publisher offers
+    (~81 KiB).
 
-    The `courts` dump is ~81 KiB, so this is a real network acquisition that
-    stays polite. It checks the part that a fixture cannot: that the locator and
-    size this module derives from the listing are the ones the publisher actually
-    serves, and that the acquisition comes back with a receipt naming the
-    downloader and its sealed configuration.
+    Checks the part a fixture cannot: the locator and size derived from the listing are what the publisher
+    actually serves, and the receipt names the downloader and its sealed configuration.
     """
     from docspec.adapters.content_fetchers import (
         HttpsContentFetcher,

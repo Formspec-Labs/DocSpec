@@ -86,6 +86,7 @@ class RegulationsGovCatalogPolicy:
     policy_version = "1.3.0"
 
     def __post_init__(self) -> None:
+        """Validate selectors, names, language, URL template and budget, sorting agency names."""
         expected = (
             (self.document_input, _DOCUMENT_SCOPE, _DOCUMENT_SCHEMA, _SCHEMA_VERSION),
             (self.docket_input, _DOCKET_SCOPE, _DOCKET_SCHEMA, _SCHEMA_VERSION),
@@ -126,6 +127,7 @@ class RegulationsGovCatalogPolicy:
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        """Declare the document, docket and comment inputs that form the universe."""
         return tuple(
             selector
             for selector in (
@@ -288,16 +290,10 @@ class RegulationsGovCatalogPolicy:
         """Return this policy's digest, canonicalizing the member at most once.
 
         The digest is a pure function of the fields, but every interpretation of
-        every catalog row stamps it, so the uncached property canonicalized the
-        whole policy member once per item. That member is 17,880 bytes here --
-        ``configuration`` embeds a 314-entry agency map -- and measured 166.5 us
-        per call, so a 49,884-item build spent 8.3 s of its 82.9 s wall clock,
-        and a profiled run 26.9 s of 218 s, rebuilding one constant. Worse, the
-        cost is O(items x policy size): every agency added to ``agencyNames``
-        slowed down every row.
-
-        Filling the cache lazily rather than in ``__post_init__`` keeps
-        construction -- and the errors a malformed configuration raises -- exactly
+        every catalog row stamps it, so the uncached property made the cost
+        O(items x policy size) -- a 17,880-byte member measured 166.5 us per
+        call. Filling the cache lazily rather than in ``__post_init__`` keeps
+        construction, and the errors a malformed configuration raises, exactly
         where they were.
         """
 
@@ -310,6 +306,7 @@ class RegulationsGovCatalogPolicy:
 
     @classmethod
     def from_member(cls, value: object) -> RegulationsGovCatalogPolicy:
+        """Rebuild the installed policy from a member, refusing any difference."""
         member = closed_mapping(
             value,
             {"format", "formatVersion", "policyId", "policyVersion", "configuration"},
@@ -392,33 +389,17 @@ class RegulationsGovCatalogPolicy:
     ) -> SourceRecordCollisionResolution | None:
         """Pick the owning filing when one document is mirrored under two agencies.
 
-        Regulations.gov publishes a Federal Register document under each agency
-        that filed it, so the same ``documentId`` can arrive from two releases.
-        DocSpec decision 0004 rules that this is one item with the non-owning
-        filing recorded rather than dropped.
+        DocSpec decision 0004 rules that the same ``documentId`` filed under two
+        agencies is one item, with the non-owning filing recorded rather than
+        dropped. The owner is the filing that passes both measured tests --
+        ``documentId`` starts with ``docketId + "-"`` and ``docketId`` starts
+        with ``agencyId`` -- where prefix containment is deliberate because
+        40,485 of 1,797,201 tested records carry multi-segment sequences such as
+        ``DOT-OST-1995-125-0050-0001``.
 
-        The owner is decided by measurement, not preference. Two tests over all
-        1,797,201 document records carrying both a documentId and a docketId --
-        the population the rule can be evaluated over -- produce four exceptions
-        between them:
-
-        * ``documentId`` starts with ``docketId + "-"`` -- three exceptions.
-        * ``docketId`` starts with ``agencyId`` -- one exception.
-
-        A filing that fails either test is the cross-file; the one that passes
-        both owns the document. Both blocking records are resolved this way and
-        neither is caught by both tests, so the rules are not redundant.
-
-        Prefix *containment* is deliberate, not "docket plus one trailing
-        segment": 40,485 of those records carry two-segment sequences such as
-        ``DOT-OST-1995-125-0050-0001`` in docket ``DOT-OST-1995-125``, and the
-        narrower reading reports every one of them as a violation.
-
-        Returns ``None`` when neither filing can be distinguished, which keeps
-        the loader's refusal rather than guessing. This rule answers "which
-        mirror owns one document id"; it does not answer "which of two
-        differing document ids is canonical", and 0004 measures that it
-        resolves none of the 16,652 groups posing that second question.
+        Returns ``None`` when neither filing can be distinguished, keeping the
+        loader's refusal; the rule answers which mirror owns one document id,
+        not which of two differing ids is canonical.
         """
 
         candidates = [stored, incoming]
@@ -463,6 +444,10 @@ class RegulationsGovCatalogPolicy:
         inputs: CatalogPolicyInputs,
         workspace: CatalogPolicyWorkspace,
     ) -> Iterator[SourceCatalogItem]:
+        """Index and sample when fresh, then yield one interpreted item per universe row.
+
+        A resumed run continues from its last committed item with its selected count.
+        """
         resume = getattr(inputs, "resume", FRESH_BUILD)
         if not resume.indexed:
             _index_rows(

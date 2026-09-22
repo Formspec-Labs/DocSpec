@@ -1,4 +1,4 @@
-"""Comment and docket normalization, selection and source provenance."""
+"""Regulations.gov comment and docket normalization, selection and source provenance."""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ def _docket_item_from_row(
     interpretation_pin: Callable[[], Mapping[str, Any]],
     language: str,
 ) -> SourceCatalogItem:
+    """Interpret one Regulations.gov docket row into a catalog item."""
     native, attributes = _record_data(record, expected_type="dockets")
     source_item_id = str(record["sourceRecordId"])
     data = native["data"]
@@ -183,6 +184,7 @@ def _comment_item_from_row(
     interpretation_pin: Callable[[], Mapping[str, Any]],
     language: str,
 ) -> SourceCatalogItem:
+    """Interpret one Regulations.gov comment row, joining its declared docket and document."""
     native, attributes = _record_data(record, expected_type="comments")
     source_item_id = str(record["sourceRecordId"])
     data = native["data"]

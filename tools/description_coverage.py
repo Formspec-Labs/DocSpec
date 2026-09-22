@@ -1,22 +1,13 @@
 """Measure per-source description coverage, so an evaluation reads against a denominator.
 
-A retrieval score over a field is meaningless without knowing how often the field
-is there. The Federal Register topic census made the point sharply: a gate floor
-was set at 0.3 from a 93-subject sample when the true ratio is 0.114, and it would
-have failed a release on a coverage fact rather than a retrieval defect.
-
-**The two sources name the field differently, and neither normalizes it.**
-Federal Register carries ``abstract`` at the root of its source record;
-regulations.gov carries ``docAbstract`` under ``data.attributes``. Neither
-appears in ``normalizedMetadata``, which holds title, agencies, documentType,
-dates, docket ids, RINs, language and sourceUrl and no description at all. So a
-consumer reading normalized metadata sees no description on either source, and
-one reading source-native facts must know two different field names. Both facts
-are reported rather than papered over.
-
-**Empty is counted three ways** -- absent key, null, and present-but-blank --
-because they are different upstream conditions and collapsing them would hide
-which one a fix would have to address.
+Reads a catalog's source-item blobs and writes a JSON receipt to ``--out``, one
+``--catalog ROOT BLOBS SCOPE`` per source (``federal-register-documents`` or
+``regulations-gov-documents``). The two sources name the field differently and
+neither normalizes it: Federal Register carries ``abstract`` at the root of its
+source record, regulations.gov carries ``docAbstract`` under ``data.attributes``,
+and neither appears in ``normalizedMetadata``. Empty is counted three ways --
+absent, null, and present-but-blank -- because collapsing them would hide which
+upstream condition a fix would have to address.
 """
 
 from __future__ import annotations
@@ -44,6 +35,7 @@ SOURCES = {
 
 
 def _describe(fact: dict[str, Any], scope: str) -> tuple[str | None, str, dict[str, Any]]:
+    """Return one description's value, its state (present/absent/null/blank), and its node."""
     field, path = SOURCES[scope]
     node = fact["fields"]
     for step in path:

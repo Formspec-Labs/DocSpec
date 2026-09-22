@@ -45,6 +45,7 @@ class RegulationsGovSamplePolicy:
     per_partition_limit: int
 
     def __post_init__(self) -> None:
+        """Require a nonempty seed and a positive integer per-partition limit."""
         if not isinstance(self.seed, str) or not self.seed:
             raise ValueError("Regulations.gov sample seed must be nonempty")
         if (
@@ -66,6 +67,7 @@ class RegulationsGovSamplePolicy:
 
     @classmethod
     def from_dict(cls, value: object) -> RegulationsGovSamplePolicy:
+        """Rebuild the installed sample policy from a member, refusing any difference."""
         item = closed_mapping(
             value,
             {
@@ -86,6 +88,7 @@ class RegulationsGovSamplePolicy:
 
 
 def _draw_document_sample(workspace: CatalogPolicyWorkspace, *, sample: RegulationsGovSamplePolicy | None) -> None:
+    """Draw the deterministic stratified sample into the workspace's order, count, detail and drawn indexes."""
     if sample is None:
         raise AssertionError("sample staging requires a sample policy")
     for value in workspace.iter_ordered(_DOCUMENT_INDEX):
@@ -202,6 +205,7 @@ def _sampling_result(
     workspace: CatalogPolicyWorkspace,
     sample: RegulationsGovSamplePolicy | None,
 ) -> dict[str, Any]:
+    """Describe one document's sampling outcome, requiring details when a sample is configured."""
     if sample is None:
         return {
             "frameAdmitted": not withdrawn,

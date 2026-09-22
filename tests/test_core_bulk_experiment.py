@@ -23,6 +23,7 @@ FIXTURES = json.loads((Path(__file__).parent / "fixtures/core/selected-values.js
 
 
 def source(path, rows):
+    """Write rows as a Parquet source table with canonical JSON bytes in the byte column."""
     return write_rows(path, (
         (key, entity, canonical_value_bytes(value).decode()) for key, entity, value in rows
     ), SOURCE_SCHEMA, byte_column=2)
@@ -30,6 +31,7 @@ def source(path, rows):
 
 @pytest.mark.parametrize("case", FIXTURES, ids=lambda case: case["name"])
 def test_sql_extraction_and_canonical_bytes_match_known_answers(tmp_path, case):
+    """SQL extraction matches each fixture's known canonical answer, and an invalid pointer refuses."""
     path = tmp_path / "source.parquet"
     source(path, [("k", "e", case["value"])])
     with connection(tmp_path / "scratch") as con:
@@ -44,6 +46,7 @@ def test_sql_extraction_and_canonical_bytes_match_known_answers(tmp_path, case):
 @given(json_values)
 @settings(max_examples=80, deadline=None)
 def test_sql_preserves_the_whole_admitted_json_domain(value):
+    """DuckDB's json_extract round-trips every generated admitted value without type or byte drift."""
     # A native relation exercises generated values without a temporary file per
     # Hypothesis example. Expected logical types come from the independent oracle.
     import duckdb
@@ -60,6 +63,7 @@ def test_sql_preserves_the_whole_admitted_json_domain(value):
 
 
 def test_named_scope_multiset_materiality_and_chunk_sizes(tmp_path):
+    """Scope, material keys/entities and read chunk sizes all match the oracle and one fixed digest."""
     rows = [("a", "e1", {}), ("b", "e2", {"x": None}), ("c", "e3", {"x": 1}), ("d", "e4", {"x": 1})]
     path = tmp_path / "source.parquet"
     source(path, rows)
@@ -88,6 +92,7 @@ def test_named_scope_multiset_materiality_and_chunk_sizes(tmp_path):
 
 
 def test_whole_state_retains_keys_and_duplicate_occurrences(tmp_path):
+    """Whole-state selection keeps member keys and both occurrences that carry an equal value."""
     path = tmp_path / "source.parquet"
     rows = [("a", "e1", {"x": 1}), ("b", "e2", {"x": 1})]
     source(path, rows)
@@ -98,6 +103,7 @@ def test_whole_state_retains_keys_and_duplicate_occurrences(tmp_path):
 
 
 def test_full_workload_oracle_orders_complete_values_not_just_prefixes():
+    """The 2050-member workload equals the oracle's full sorted byte order, not a shared prefix."""
     from tests.support.core_bulk_expected import expected_rows
     from tests.support.core_workload import core_members
 
@@ -116,6 +122,7 @@ def test_duplicate_scope_and_selector_labels_refuse(tmp_path):
 
 
 def test_handoffs_are_bounded_by_bytes_as_well_as_rows(tmp_path):
+    """Write batches are capped by bytes (three row groups here), and one oversized row refuses."""
     payload = b"x" * (BATCH_BYTES // 2)
     path = tmp_path / "bytes.parquet"
     result = write_rows(path, [(payload,)] * 5, SELECTED_SCHEMA, byte_column=0)
@@ -127,6 +134,7 @@ def test_handoffs_are_bounded_by_bytes_as_well_as_rows(tmp_path):
 
 @pytest.mark.parametrize("token", ["", "~", "/", "a\x00b", '"', "\\", "01", "-1", "٩", "9" * 5000])
 def test_pointer_object_tokens_are_not_treated_as_array_indices(tmp_path, token):
+    """RFC 6901 object tokens, including numeric-looking and escaped ones, resolve as keys not indices."""
     pointer = "/" + token.replace("~", "~0").replace("/", "~1")
     path = tmp_path / "source.parquet"
     value = {token: "found"}

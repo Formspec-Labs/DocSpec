@@ -22,6 +22,8 @@ from docspec.ports.record_storage import BATCH_ROWS
 
 
 class CoreWorkspace:
+    """One local Core assembly owning its record, ledger, blob, state, selection and operation components."""
+
     def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, catalog=None, create=True):
         self.path = Path(path).resolve()
         self._resources = ExitStack()
@@ -41,6 +43,8 @@ class CoreWorkspace:
             raise
 
     def documents(self, *, fetcher, extractor=None, segmenter=None):
+        """Return a document pipeline bound to this workspace and the supplied fetcher."""
+
         from docspec.application.documents import DocumentPipeline
         return DocumentPipeline(self.publisher, fetcher=fetcher, extractor=extractor, segmenter=segmenter)
 
@@ -56,6 +60,8 @@ class CoreWorkspace:
                                             unit_id=state_id + ":import", rows=entities())
 
     def retain(self, records, *, unit_id, roots):
+        """Retain one bounded metadata unit of records and roots, reporting whether it committed."""
+
         with self.publisher.session() as session:
             return session.publish(MetadataBatch(unit_id, records=bounded_items(records, limit=BATCH_ROWS),
                                                  retained=bounded_items(roots, limit=BATCH_ROWS)))

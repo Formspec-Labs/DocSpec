@@ -22,6 +22,8 @@ class HttpsContentFetcherError(ConnectionError, DocSpecError):
 
 
 def _https_host(value: object) -> str:
+    """Validate one exact lowercase ASCII host name, refusing ports, credentials, and a trailing dot."""
+
     host = require_text(value, "HTTPS allowed host").lower()
     try:
         host.encode("ascii")
@@ -52,6 +54,8 @@ class HttpsContentFetcherConfig:
     max_connections: int = 16
 
     def __post_init__(self) -> None:
+        """Normalize allowed hosts and refuse an empty host list, bad host spellings, or non-positive bounds."""
+
         hosts = tuple(sorted({_https_host(host) for host in self.allowed_hosts}))
         if not hosts:
             raise ValueError("HTTPS acquisition requires at least one allowed host")
@@ -89,6 +93,8 @@ class HttpsContentFetcherConfig:
 
 
 def _validated_https_url(url: object, allowed_hosts: tuple[str, ...], label: str) -> str:
+    """Require a fragment-free HTTPS URL without credentials or explicit port on an allowed host."""
+
     try:
         value = require_text(url, label)
     except ValueError as error:
@@ -116,6 +122,8 @@ def _validated_https_url(url: object, allowed_hosts: tuple[str, ...], label: str
 
 
 def _content_length(value: object) -> int | None:
+    """Parse a declared content length, refusing anything but ASCII digits."""
+
     if value is None:
         return None
     if not isinstance(value, str) or not value.isascii() or not value.isdigit():
@@ -129,6 +137,8 @@ class HttpsContentFetcher:
     downloader_id = "docspec.content-fetcher.https.v1"
 
     def __init__(self, client: Any, config: HttpsContentFetcherConfig) -> None:
+        """Require a client exposing ``stream``; the config carries the identity-bearing bounds."""
+
         if client is None or not callable(getattr(client, "stream", None)):
             raise ValueError("HTTPS client must provide streaming requests")
         self.client = client
@@ -163,6 +173,8 @@ class HttpsContentFetcher:
         return cls(client, config)
 
     def _open(self, url: str) -> tuple[Any, Any]:
+        """Open one streaming GET, reporting client failures as HttpsContentFetcherError."""
+
         try:
             context = self.client.stream(
                 "GET",
@@ -193,6 +205,13 @@ class HttpsContentFetcher:
         task_id: str,
         attempt_id: str,
     ) -> FetchStream:
+        """Stream one candidate within the allowed hosts, redirect, size, and identity-encoding bounds.
+
+        A 429 or 5xx response is retryable and raises HttpsContentFetcherError;
+        any other non-200 status, redirect bound, or size mismatch refuses with
+        IntegrityError.
+        """
+
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes <= 0:
             raise ValueError("max_bytes must be a positive integer")
         require_text(task_id, "task_id")

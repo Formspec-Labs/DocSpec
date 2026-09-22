@@ -15,23 +15,27 @@ from tests.test_core_selections import fields, setup
 
 
 def definition(*, uncertain=False):
+    """Build a transformation definition, optionally declaring one uncertain `source` resource."""
     resources = (core.Resource(label="source", description={"version": "unknown"}, certainty="uncertain"),) if uncertain else ()
     return core.OperationDefinition(format_version=1, definition_id="definition", implementation_id="dependency-test",
         implementation_version="1", operation_kind="transformation", configuration={}, resources=resources)
 
 
 def request(identity="q", *, parent="old", dependencies=None):
+    """Build a request binding one whole input to `parent` plus a `/url` dependency by default."""
     return core.Request(format_version=1, request_id=identity, definition_id="definition",
         inputs=(core.WholeInput(label="input", entity_id=parent),), dependencies=tuple(dependencies) if dependencies is not None else (
             core.Dependency(label="url", binding_label="input", selection=fields("/url")),))
 
 
 def retain(session, identity, value):
+    """Publish an artifact entity and retain it under its own identity."""
     entity = core.Entity(format_version=1, entity_id=identity, entity_type="artifact", value=core.InlineValue(value=value))
     session.publish(MetadataBatch("retain:" + identity, records=(entity,), retained=(("entity", identity),)))
 
 
 def original(session, *, result_id="result", uncertain=False, requested=None):
+    """Publish one operation/request/execution/result set and return the operation and request."""
     requested = request() if requested is None else requested
     operation = definition(uncertain=uncertain)
     execution = core.Execution(format_version=1, execution_id=result_id + ":execution", request_id=requested.request_id)
@@ -42,12 +46,14 @@ def original(session, *, result_id="result", uncertain=False, requested=None):
 
 
 def omission(identity="omission", *, scope="dependency", label="title", result_id="result"):
+    """Build a dependency-omission evidence record for `result_id`."""
     description = core.DependencyOmission(scope=scope, label=label, reason="discovered material input")
     return core.DependencyEvidence(format_version=1, evidence_id=identity, result_id=result_id, status="omission",
                                    description=record_value(description, core.DependencyOmission))
 
 
 def supplement(session, observation, *, identity="supplement", supersedes="omission", receipt="receipt", receipt_value=None):
+    """Retain a receipt and build the supplement evidence that corrects `supersedes` with the observation."""
     payload = record_value(observation, core.HistoricalDependencyObservation)
     retain(session, receipt, payload if receipt_value is None else receipt_value)
     description = core.DependencySupplement(reason="retained original observation", observation=observation, supporting_entities=(receipt,))
@@ -56,10 +62,12 @@ def supplement(session, observation, *, identity="supplement", supersedes="omiss
 
 
 def candidates(ledger, digest):
+    """List result ids the ledger indexes under one correspondence digest, preserving order."""
     return [item.result_id for batch in ledger.find_candidates([("lookup", digest)]) for item in batch]
 
 
 def test_metadata_only_change_and_material_change_use_the_same_selection_owner(tmp_path):
+    """A metadata-only change keeps the original digest and adequacy; a bound-value change issues a new digest."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -78,6 +86,7 @@ def test_metadata_only_change_and_material_change_use_the_same_selection_owner(t
 
 
 def test_corrected_history_reindexes_without_changing_original_records(tmp_path):
+    """A supplement yields a new adequacy digest while the stored request and original records stay byte-identical."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -106,6 +115,7 @@ def test_corrected_history_reindexes_without_changing_original_records(tmp_path)
 
 
 def test_unknown_resource_needs_original_observation_not_current_value(tmp_path):
+    """An uncertain resource needs a retained historical observation; a current-value receipt cannot clear it."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -129,6 +139,7 @@ def test_unknown_resource_needs_original_observation_not_current_value(tmp_path)
 
 @pytest.mark.parametrize("bad", ["unrelated", "cross-result", "self-reference", "uncertain", "conflicting-resource"])
 def test_invalid_supplements_never_clear_omissions(tmp_path, bad):
+    """Unrelated, cross-result, self-referential, uncertain or conflicting supplements all refuse and leave the omission."""
     with ExitStack() as stack:
         _, _, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -163,6 +174,7 @@ def test_one_correction_does_not_clear_an_unrelated_omission(tmp_path):
 
 
 def test_omission_is_recordable_when_original_input_is_no_longer_available(tmp_path):
+    """A removed input makes the assessment unavailable and digestless while the omission is still recordable."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
@@ -197,6 +209,7 @@ def test_evidence_publication_refuses_a_concurrent_version_change(tmp_path, monk
 
 @pytest.mark.parametrize("replace_original", [False, True])
 def test_added_historical_binding_requires_receipt_and_preserves_original_inputs(tmp_path, replace_original):
+    """A historical input needs a retained receipt and may not replace an original request input."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -252,6 +265,7 @@ def comparison_artifacts(ledger):
 
 
 def test_evaluated_comparison_survives_input_byte_removal_and_reopen(tmp_path, monkeypatch):
+    """The indexed comparison snapshot answers after the input's bytes are removed and the store reopened."""
     with ExitStack() as stack:
         _, ledger, _, selections, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -280,6 +294,7 @@ def test_evaluated_comparison_survives_input_byte_removal_and_reopen(tmp_path, m
 
 
 def test_new_omission_blocks_old_snapshot_and_resource_correction_reuses_unchanged_values(tmp_path, monkeypatch):
+    """A new omission invalidates the old snapshot; a resource correction reindexes without re-evaluating unchanged dependencies."""
     with ExitStack() as stack:
         _, ledger, _, selections, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -331,6 +346,7 @@ def test_new_selector_cannot_borrow_snapshot_values_from_another_selector(tmp_pa
 
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_snapshot_and_candidate_publication_retry_is_atomic(tmp_path, monkeypatch, after_commit):
+    """An interrupted snapshot publication leaves snapshot and candidate in the same state, and a retry converges."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -356,6 +372,7 @@ def test_snapshot_and_candidate_publication_retry_is_atomic(tmp_path, monkeypatc
 
 
 def test_snapshot_version_follows_correction_in_the_same_transaction(tmp_path, monkeypatch):
+    """The corrected snapshot and its version bump share one transaction, so an interruption leaves neither."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         service = CoreDependencies()
@@ -387,6 +404,7 @@ def test_snapshot_version_follows_correction_in_the_same_transaction(tmp_path, m
 
 
 def test_pending_data_can_supply_current_inputs_but_cannot_supply_historical_receipts(tmp_path):
+    """Pending records may satisfy current inputs, but only retained records can support a historical receipt."""
     from docspec.application.core_publication import _PublicationReadView
 
     with ExitStack() as stack:

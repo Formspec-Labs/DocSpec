@@ -1,4 +1,8 @@
-"""Python and command callers use the same retained Core workspace."""
+"""CLI and Python callers share one retained Core workspace and produce identical meanings.
+
+Covers state create/revise/upsert/select, execution inspection and reuse, document import and run routing,
+result inspection without bulk reads, and export reopening after the source workspace is gone.
+"""
 
 from docspec.cli import main
 from docspec.domain import core
@@ -8,6 +12,7 @@ from docspec.runtime.core import CoreWorkspace
 
 
 def write(path, value):
+    """Write ``value`` as canonical JSON bytes and return the path as a string."""
     path.write_bytes(canonical_value_bytes(value))
     return str(path)
 
@@ -40,6 +45,7 @@ def test_cli_create_revise_compare_select_and_reopen(tmp_path, capfdbinary):
 
 
 def produce(context):
+    """Referenced producer that emits the ``input`` value plus one as a generated inline value."""
     source = context.read_value("input")
     context.generate(core.InlineValue(value=source["x"] + 1), label="value")
 

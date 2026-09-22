@@ -23,6 +23,8 @@ from .io import ROOT_BYTES, RECORD_BYTES, MANIFEST_BYTES, MANIFEST_KEY, INDEX_KE
 
 
 class _ExportBlobs:
+    """Expose admitted export blobs through the blob-source surface the Core publisher expects."""
+
     def __init__(self, view):
         self.view = view
     def stat(self, reference):
@@ -65,6 +67,8 @@ class AdmittedResultExport:
         with verified_open(self._source, self._member(key)):
             pass
     def _reference(self, reference):
+        """Resolve one reference to its member descriptor, refusing a reference or descriptor outside this export."""
+
         self._require_open()
         value = self._index.lookup_record("references", identity_digest(reference.to_dict()))
         if value != reference.to_dict():
@@ -75,9 +79,13 @@ class AdmittedResultExport:
         return member
     @contextmanager
     def open_blob(self, reference):
+        """Yield a verified stream over one referenced blob."""
+
         with verified_open(self._source, self._reference(reference)) as stream:
             yield stream
     def read_blob(self, reference, *, max_bytes):
+        """Read a referenced blob up to the caller's cap, refusing a larger blob or a negative cap."""
+
         if type(max_bytes) is not int or max_bytes < 0:
             raise ValueError("max_bytes must be non-negative")
         if reference.byte_size > max_bytes:
@@ -93,11 +101,15 @@ class AdmittedResultExport:
         self._require_open()
         return dict(self._summary)
     def record(self, kind, identity):
+        """Return one exported ledger record's value after re-verifying the metadata member."""
+
         self._verify("ledger.sqlite")
         with owned_iterator(self._ledger.read_records([(kind, identity)])) as batches:
             row = next(batches)[0]
         return None if row is None else row.value
     def roots(self):
+        """Iterate the exported selected root keys."""
+
         self._require_open()
         with verified_open(self._source, self._member("roots.jsonl")) as stream:
             while payload := stream.readline(RECORD_BYTES + 1):
@@ -105,6 +117,8 @@ class AdmittedResultExport:
                     raise LimitExceededError("export root key exceeds its byte limit")
                 yield tuple(decode_canonical_json_value(payload.removesuffix(b"\n"), label="export root key"))
     def rows(self, state_id=None):
+        """Iterate the selected state's rows after re-verifying the metadata and every referenced record member."""
+
         self._verify("ledger.sqlite")
         state_id = self._state_id if state_id is None else state_id
         with self._publisher.session() as session:
@@ -115,6 +129,11 @@ class AdmittedResultExport:
             yield from self._states.rows(session, state_id)
 
     def _admit(self, artifact, source, *, producer):
+        """Validate kind, producer, schema, manifest, members, index,
+        references, roots and selected state, then bind the publisher over the
+        export's storage.
+        """
+
         root, spec = artifact.root, artifact.root["spec"]
         if (root["kind"] != "docspec-core-export" or root["producer"] != producer.as_dict()
                 or set(spec) != {"stateId", "schemaId", "requestDigest"} or spec["schemaId"] != "urn:docspec:core-export:2"):
@@ -172,6 +191,10 @@ class AdmittedResultExport:
 
 
 def open_result_export(path, *, expected_pin, producer, max_output_bytes):
+    """Open and fully admit a local export directory, refusing oversize
+    inputs and wrapping invalid content in IntegrityError.
+    """
+
     require_limit(max_output_bytes)
     resources = ExitStack()
     view = None

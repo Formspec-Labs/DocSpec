@@ -28,6 +28,8 @@ class TiktokenCounter:
     """Pinned OpenAI-compatible token counter for bounded segmentation."""
 
     def __init__(self, encoding_name: str = DEFAULT_TOKEN_ENCODING) -> None:
+        """Load the pinned tiktoken encoding, raising RuntimeError when the extra or its version is unavailable."""
+
         try:
             provider = import_module(TOKEN_COUNTER_DISTRIBUTION)
         except ModuleNotFoundError as error:
@@ -44,4 +46,6 @@ class TiktokenCounter:
         self._encoding = provider.get_encoding(encoding_name)
 
     def count(self, text: str) -> int:
+        """Count the encoding's tokens for text, treating no token as disallowed."""
+
         return len(self._encoding.encode(text, disallowed_special=()))

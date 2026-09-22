@@ -1,3 +1,8 @@
+"""The processing pipeline preserves exact source bytes and retry-stable extractor identities.
+
+Persisted representations and segments reload with checkable evidence, tampered payloads fail closed,
+optional pypdf loads only when a PDF is selected, and its absence yields one actionable docspec[pdf] failure.
+"""
 from __future__ import annotations
 
 from dataclasses import replace
@@ -119,6 +124,7 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
     parsed_sources: list[bytes] = []
 
     class FakePage:
+        """Test page object returning the given text."""
         def __init__(self, text: str | None) -> None:
             self._text = text
 
@@ -126,6 +132,7 @@ def test_pypdf_is_loaded_only_when_selected_and_pages_round_trip(monkeypatch: py
             return self._text
 
     class FakeReader:
+        """Test reader that records parsed streams, requires ``strict is False``, and exposes three fixed pages."""
         is_encrypted = False
 
         def __init__(self, stream: BytesIO, *, strict: bool) -> None:

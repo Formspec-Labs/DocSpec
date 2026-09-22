@@ -23,6 +23,7 @@ VALUES = [("a", "e0", {"url": 1, "title": "old", "position": 2}),
 
 
 def revise(publisher, session):
+    """Publish a value edit on `e0` plus a revision, and return the edit's new occurrence id."""
     operations = CoreOperations(publisher)
     operation, edit = prepare_value_edit(operations, "e0", [
         {"op": "replace", "path": "/title", "value": "new"},
@@ -37,12 +38,14 @@ def revise(publisher, session):
 
 
 def parent_evidence(selections, session, state, definition):
+    """Return the selection evidence the oracle computes for a from-parent definition of `state`."""
     selected = core.SelectedValue(format_version=1, selected_value_id="oracle", definition=definition,
                                   origin=core.Origin(parent_entity_id=state), value=core.FromParent())
     return selections.evidence(session, selected)
 
 
 def observe_computed(monkeypatch, selections):
+    """Wrap the computed-row reader to record each (parent, scope) call and return the call list."""
     actual, calls = selections._computed_rows, []
     def computed(session, parent, definition, **kwargs):
         addresses = kwargs.get("addresses")
@@ -56,6 +59,7 @@ def observe_computed(monkeypatch, selections):
 @pytest.mark.parametrize("named,identity,ordered", [(False, False, False), (True, False, False),
                                                    (False, True, False), (True, False, True)])
 def test_reopened_binding_uses_changed_values_and_retains_current_origins(tmp_path, monkeypatch, named, identity, ordered):
+    """A reopened binding re-evaluates changed members while reusing unchanged origins, and writes no new files."""
     definition = core.StateMembers(member_selector=fields("/url", identity=identity), material_keys=True,
         scope=("a", "b", "c", "d", "missing") if named else None, sort_rule="position" if ordered else None)
     with ExitStack() as stack:
@@ -90,6 +94,7 @@ def test_reopened_binding_uses_changed_values_and_retains_current_origins(tmp_pa
 
 
 def test_advertised_edits_cannot_hide_actual_changed_membership(tmp_path, monkeypatch):
+    """Untrusted revision metadata claiming no edits cannot hide a replaced member from re-evaluation."""
     definition = core.StateMembers(member_selector=fields("/url"), material_keys=True)
     with ExitStack() as stack:
         _, _, states, selections, publisher = setup(stack, tmp_path)
@@ -114,6 +119,7 @@ def test_advertised_edits_cannot_hide_actual_changed_membership(tmp_path, monkey
 
 
 def test_supplied_direct_values_cannot_certify_or_poison_parent_evaluation(tmp_path, monkeypatch):
+    """A supplied value cannot impersonate a computed selection, and foreign read-only markers never certify one."""
     definition = core.StateMembers(member_selector=fields("/url"), material_keys=True)
     with ExitStack() as stack:
         _, ledger, states, selections, publisher = setup(stack, tmp_path)
@@ -147,6 +153,7 @@ def test_supplied_direct_values_cannot_certify_or_poison_parent_evaluation(tmp_p
 
 
 def test_cached_layer_removal_requires_fresh_parent_evaluation(tmp_path, monkeypatch):
+    """Removing the cached layer forces one fresh parent evaluation, and removing the parent state refuses."""
     definition = core.StateMembers(member_selector=fields("/url"), material_keys=True)
     with ExitStack() as stack:
         _, ledger, states, selections, publisher = setup(stack, tmp_path)
@@ -168,6 +175,7 @@ def test_cached_layer_removal_requires_fresh_parent_evaluation(tmp_path, monkeyp
 
 
 def test_computation_witness_must_match_exact_published_record(tmp_path):
+    """A publication witness whose bytes differ from the published record refuses."""
     from docspec.adapters.storage.core_selections import _selector_key
     definition = core.StateMembers(member_selector=fields("/url"), material_keys=True)
     with ExitStack() as stack:
@@ -185,6 +193,7 @@ def test_computation_witness_must_match_exact_published_record(tmp_path):
 
 @pytest.mark.parametrize("count,width", [(2047, 8), (2048, 8), (2049, 4096)])
 def test_native_delta_reuses_exact_multiset_above_former_limits(tmp_path, monkeypatch, count, width):
+    """At 2047/2048/2049 members the native delta reuses the exact multiset without repeating the full comparison hash."""
     from docspec.adapters.storage import core_selections
     definition = core.StateMembers(member_selector=core.Whole())
     with ExitStack() as stack:
@@ -219,6 +228,7 @@ def test_native_delta_reuses_exact_multiset_above_former_limits(tmp_path, monkey
 
 
 def test_changed_duplicate_counts_require_new_evidence(tmp_path):
+    """Changing which occurrence supplies a duplicate value requires fresh selection evidence."""
     definition = core.StateMembers(member_selector=fields("/url"))
     with ExitStack() as stack:
         _, _, states, selections, publisher = setup(stack, tmp_path)
@@ -235,6 +245,7 @@ def test_changed_duplicate_counts_require_new_evidence(tmp_path):
 
 
 def test_retained_evidence_is_checked_at_external_admission(tmp_path):
+    """Admission refuses a retained manifest whose embedded evidence digest was altered."""
     with ExitStack() as stack:
         _, _, states, selections, publisher = setup(stack, tmp_path)
         with publisher.session() as session:

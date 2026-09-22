@@ -39,11 +39,13 @@ def test_labeled_composites_preserve_order_and_field_absence():
 
 
 def test_array_positions_are_reevaluated_against_each_immutable_parent():
+    """Array positions resolve against the parent they were evaluated on, so a shifted list yields the old element."""
     assert selected_field(["old", "next"], "/1") == ["present", "next"]
     assert selected_field(["new", "old", "next"], "/1") == ["present", "old"]
 
 
 def test_title_revision_preserves_url_correspondence_and_original_state():
+    """A title-only revision keeps URL selection equal while whole-value and material-entity selections differ."""
     base = State.root("s1", [("a", "e1", {"url": "u", "title": "old"})])
     changed = base.revise("s2", [{"sequence": 0, "member_key": "a", "op": "put", "occurrence_id": "e2"}], {
         "e2": {"url": "u", "title": "new"},
@@ -59,6 +61,7 @@ def test_title_revision_preserves_url_correspondence_and_original_state():
 
 
 def test_equal_root_values_remain_distinct_occurrences_and_duplicates():
+    """Two equal values stay distinct occurrences, and reusing one occurrence id under two keys refuses."""
     root = State.root("s", [("a", "e1", 1), ("b", "e2", 1)])
     assert root.members == {"a": "e1", "b": "e2"}
     assert root.selected_members() == [["present", ["present", 1]], ["present", ["present", 1]]]
@@ -76,6 +79,7 @@ def test_named_member_absence_differs_from_missing_field_and_null():
 
 
 def test_material_keys_and_consumed_order_change_comparison():
+    """Material keys and consumed key order change comparison even when the multiset is equal."""
     root = State.root("s1", [("a", "e1", 1), ("b", "e2", 2)])
     swapped = root.revise("s2", [
         {"sequence": 0, "member_key": "a", "op": "put", "occurrence_id": "e2"},
@@ -104,6 +108,7 @@ def test_later_edits_cannot_hide_invalid_preconditions(edits):
 
 
 def test_retained_occurrence_cannot_change_value_or_type():
+    """Republishing a retained occurrence with a different value or type refuses."""
     root = State.root("s1", [("a", "e", 1)])
     with pytest.raises(ValueError, match="cannot change"):
         root.revise("s2", [], {"e": True})
@@ -119,6 +124,7 @@ def test_root_preserves_every_key_occurrence_and_value(rows):
 
 @given(membership_histories())
 def test_revision_order_is_explicit_and_checkpoint_preserves_effective_state(case):
+    """Reversed edits produce the explicit precondition order, and a midpoint checkpoint yields the same final state."""
     initial, edits, expected = case
     root = State("s1", initial.copy(), {"e0": 0, "e1": 1, "e2": 2})
     result = root.revise("s2", list(reversed(edits)))
@@ -132,6 +138,7 @@ def test_revision_order_is_explicit_and_checkpoint_preserves_effective_state(cas
 
 @given(json_values)
 def test_whole_selection_keeps_exact_json_type_and_is_independent(value):
+    """Whole selection keeps the exact JSON type and does not track later mutation of the source."""
     selected = selected_field(value, "")
     assert value_key(selected) == value_key(["present", value])
     if isinstance(value, list):
@@ -192,6 +199,7 @@ def test_observed_events_respect_activity_bounds():
 
 @pytest.mark.parametrize("change", [None, "late-usage", "wrong-source", "other-activity", "unknown-event"])
 def test_qualified_derivation_identifies_its_actual_usage_and_generation(change):
+    """A qualified derivation must name its actual usage and generation events in the same activity."""
     generation = {"event_id": "g", "entity": "output", "activity": "transform", "position": 2}
     usage = {"event_id": "u", "entity": "input", "activity": "transform", "position": 1}
     relation = {"generated": "output", "used": "input", "generation_event": "g", "usage_event": "u"}
@@ -212,6 +220,7 @@ def test_qualified_derivation_identifies_its_actual_usage_and_generation(change)
 
 
 def test_unknown_intermediate_time_does_not_hide_impossible_derivation_order():
+    """An untimed intermediate cannot mask a transitive contradiction between two timed derivations."""
     with pytest.raises(ValueError, match="transitive derivation"):
         check_provenance(generations=[
             {"entity": "first", "activity": "a", "position": 2},

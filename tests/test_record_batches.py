@@ -1,4 +1,11 @@
-"""Native handoffs preserve bytes and the storage owner's existing failure rules."""
+"""Native record-batch handoff contract: admitted batches preserve payload bytes and share the storage owner's
+existing failure rules, without re-parsing or re-encoding admitted payloads.
+
+Covers typed auxiliary columns counting toward write and lookup limits, disjoint union sharing files and
+refusing duplicate identities, joins and incremental writes reusing admission, partition selection and cancel
+keeping other readers usable, producer failure keeping its original error and closing once, invalid handoff
+shapes, shared byte and row limits, buffer reuse, and packed member ordering.
+"""
 from tests.support.iceberg_records import files
 
 
@@ -24,6 +31,7 @@ PHYSICAL = pa.schema([
 
 
 def batches(count):
+    """Encode the first ``count`` test rows into physical record batches."""
     return encoded_batches(
         ((_row(n)["recordId"], _row(n)["sourceItemId"], canonical_json_bytes(_row(n))) for n in range(count)),
         PHYSICAL, byte_column=2,
@@ -31,6 +39,7 @@ def batches(count):
 
 
 def write(storage, values):
+    """Write batches into the shared test-records layer."""
     return storage.write_batches(values, layer_kind="test-records", schema=SCHEMA, partition_policy=POLICY)
 
 

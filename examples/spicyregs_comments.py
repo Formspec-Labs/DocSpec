@@ -126,6 +126,7 @@ def inspect_comments(catalog, docket_id: str) -> dict:
 
 
 def run_example(output: Path, *, docket_id: str = DOCKET, invalid_row: bool = False) -> dict:
+    """Publish the synthetic partition; an invalid row must be refused by the source, never admitted."""
     if not output.is_absolute() or output.exists():
         raise ValueError("output must be an absolute path that does not exist")
     provider = provider_installation()

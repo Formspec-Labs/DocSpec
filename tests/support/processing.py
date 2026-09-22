@@ -8,6 +8,7 @@ from docspec.domain.references import BlobRef
 
 
 def _captured(content: bytes, media_type: str) -> CapturedFile:
+    """Build the fixture captured-file record for ``content`` with a digest-addressed locator."""
     blob = BlobRef(
         locator=f"fixture://{sha256_digest(content).removeprefix('sha256:')}",
         digest=sha256_digest(content),

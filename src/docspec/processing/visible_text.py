@@ -176,6 +176,8 @@ class _Writer:
         return start, self.length
 
     def write_run(self, text: str, rendition_start: int, rendition_end: int) -> None:
+        """Record one run, exact only when its bytes reproduce the captured slice."""
+
         start, end = self.write(text)
         if end > start:
             self.runs.append(

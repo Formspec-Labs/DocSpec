@@ -79,6 +79,11 @@ class SourceCatalogArtifactVerifier:
         self.receipt: Mapping[str, Any] | None = None
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
+        """Check kind, spec, inputs, policy, receipt, member descriptors,
+        partitions, counts, and byte accounting, then publish ``summary``,
+        ``partitions``, and ``receipt``.
+        """
+
         root = artifact.root
         if root["kind"] != CATALOG_KIND:
             raise IntegrityError("source catalog reference names a different product kind")
@@ -270,6 +275,10 @@ class SourceCatalogBuildGateVerifier:
         self.derivation: Mapping[str, object] = {}
 
     def __call__(self, artifact: VerifiedArtifact, source: MemberSource) -> None:
+        """Run the receipt checks, then rederive every digest and diagnostic
+        and refuse any mismatch with the sealed receipt.
+        """
+
         receipt_verifier = SourceCatalogArtifactVerifier(self._producer, self._blob_source)
         receipt_verifier(artifact, source)
         summary = receipt_verifier.summary

@@ -46,6 +46,8 @@ def _existing_entities(session, identities):
 
 
 class CoreStateStorage:
+    """Write, verify and resolve Core states, representations and membership revisions."""
+
     def __init__(self, records):
         self.records = records
 
@@ -199,6 +201,8 @@ class CoreStateStorage:
                 raise IntegrityError("complete root membership refers to a missing occurrence")
 
     def check_representation(self, session, value, *, retained=False, publish_entities=True):
+        """Check a representation's manifest and layers and return its membership layer."""
+
         content = value["membership"]
         if content["kind"] != "content" or content["codec"] != "json-v1":
             raise IntegrityError("Core state storage requires its JSON manifest")
@@ -266,6 +270,8 @@ class CoreStateStorage:
         raise IntegrityError("state has no available bulk representation")
 
     def manifest(self, session, state_id):
+        """Return the stored manifest of a state's retained bulk representation."""
+
         representation = self.representation(session, state_id)
         return session.ready_states[representation.membership.digest]
 

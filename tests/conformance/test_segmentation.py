@@ -1,3 +1,8 @@
+"""Conformance: segmentation is deterministic and covers each supported content type.
+
+Segments must be ordered, non-overlapping and byte-exact against the
+representation, with page and record coverage pinned per media type.
+"""
 
 from __future__ import annotations
 

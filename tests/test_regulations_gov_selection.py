@@ -1,4 +1,11 @@
-"""Regulations.gov selection precedence, sampling, budgets, refusal accounting, and resume."""
+"""Regulations.gov selection contract: stratified sampling is deterministic and accounts for undrawn rows, the
+selected-item budget runs after source and rendition checks, and a resumed build carries the exhausted budget
+across the kill.
+
+Also pins refusal accounting: publisher withholding from restrictReasonType is read verbatim (an unknown value
+fails loudly instead of landing in a bucket), publisher test-fixture ids are excluded before withdrawal, and
+the build receipt's reasonCounts sum to each dispositionCounts bucket.
+"""
 
 from __future__ import annotations
 
@@ -162,12 +169,10 @@ def test_selected_item_budget_runs_after_source_and_rendition_checks(
 def test_publisher_declared_withholding_is_read_verbatim_and_never_inferred(
     tmp_path: Path,
 ) -> None:
-    """``restrictReasonType`` is the publisher's own statement that it withholds
-    the content (decision 0005). Each of its four values maps to exactly one
-    reason code; a value the policy does not know fails loudly instead of
-    landing in a bucket; a record with no value keeps the acquired-source
-    reason; and a record carrying the field alongside a real rendition stays
-    selected, because the field labels an absence rather than creating one.
+    """``restrictReasonType`` is the publisher's own statement that it withholds the content (decision 0005):
+    each known value maps to exactly one reason code, an unknown value fails loudly (source.restrict-reason-unread)
+    instead of landing in a bucket, no value keeps the acquired-source reason, and carrying the field alongside a
+    real rendition stays selected because it labels an absence rather than creating one.
     """
 
     def without_rendition(name: str, **attributes: object) -> SourceCatalogItem:
@@ -242,12 +247,9 @@ def test_publisher_declared_withholding_is_read_verbatim_and_never_inferred(
 def test_publisher_test_fixture_ids_are_excluded_for_documents_and_dockets(
     tmp_path: Path,
 ) -> None:
-    """Regulations.gov publishes its own internal test fixtures through the
-    same public API as real filings, under a ``TRAIN-``/``ERULE-``/``TEST-``
-    source item id prefix. They 404 at both document and docket level on the
-    public API, so a build must not read them as a real acquisition failure
-    or a real withdrawal; they are excluded under their own reason code and
-    the fixture decision is the only decision recorded.
+    """Regulations.gov publishes its own internal test fixtures under a TRAIN-/ERULE-/TEST- source item id
+    prefix; they 404 at document and docket level, so a build must not read them as a real acquisition failure or
+    withdrawal but exclude them at source.publisher-test-fixture with only that decision recorded.
     """
 
     items = _build_items(
@@ -269,14 +271,9 @@ def test_publisher_test_fixture_ids_are_excluded_for_documents_and_dockets(
 def test_publisher_test_fixture_excludes_rather_than_deletes_when_also_withdrawn(
     tmp_path: Path,
 ) -> None:
-    """The ordering property: measured 2026-09-04, 4 of catalog-A's 41 test
-    fixtures are also marked withdrawn. If the fixture check ran after
-    ``source-withdrawal`` instead of before it, these would come out
-    ``deleted`` at ``source.withdrawn-after-publication`` instead of
-    ``excluded`` at ``source.publisher-test-fixture`` -- this test fails if
-    the check is moved after withdrawal. Covers both the document path
-    (its own inline cascade) and the comment path (the shared
-    ``_selection_result`` cascade), which are two different call sites.
+    """Ordering property (measured: 4 of 41 test fixtures are also withdrawn): the fixture check must run before
+    source-withdrawal, or those rows would come out deleted at source.withdrawn-after-publication instead of
+    excluded at source.publisher-test-fixture; covers the document and comment cascades as two call sites.
     """
 
     document = _build(
@@ -316,9 +313,8 @@ def test_publisher_test_fixture_excludes_rather_than_deletes_when_also_withdrawn
 
 
 def test_ids_merely_containing_fixture_letters_are_unaffected(tmp_path: Path) -> None:
-    """The match is anchored at the start of the source item id; a real
-    filing that only contains ``TRAIN``/``TEST`` elsewhere in its id must not
-    be caught.
+    """The fixture match is anchored at the start of the source item id, so a real filing merely containing
+    TRAIN/TEST elsewhere in its id keeps its normal disposition.
     """
 
     contains = _build(
@@ -361,9 +357,8 @@ def test_test_fixture_pattern_and_reason_code_are_sealed_and_round_trip(
 def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
     tmp_path: Path,
 ) -> None:
-    """The receipt's ``reasonCounts`` rows say why rows were not selected, in
-    sealed UTF-16 order, and sum to each ``dispositionCounts`` bucket -- here
-    including ``excluded``, a disposition no built catalog had carried before
+    """The receipt's reasonCounts rows say why rows were not selected, in sealed UTF-16 order, and sum to each
+    dispositionCounts bucket -- here including ``excluded``, a disposition no built catalog had carried before
     this section existed.
     """
 
@@ -414,16 +409,15 @@ def test_receipt_reason_counts_reconcile_to_every_non_selected_bucket(
 
 
 def test_resume_carries_the_selected_item_budget_across_the_kill(tmp_path: Path) -> None:
-    """A resumed Regulations.gov build skips the indexing phase it already
-    committed, restarts the item stream after its last committed batch, and
-    carries the selected-item count forward, so a budget exhausted before the
-    kill stays exhausted after it. Losing that count would select two more
-    comments and publish a different catalog under the same inputs.
+    """A resumed Regulations.gov build skips the indexing phase it already committed, restarts the item stream
+    after its last committed batch and carries the selected-item count forward, so a budget exhausted before the
+    kill stays exhausted after it; losing that count would publish a different catalog under the same inputs.
     """
 
     base = _policy(include_comments=True)
 
     def policy() -> RegulationsGovCatalogPolicy:
+        """A fresh policy with a two-item selected budget."""
         return RegulationsGovCatalogPolicy(
             document_input=base.document_input,
             docket_input=base.docket_input,
@@ -434,6 +428,7 @@ def test_resume_carries_the_selected_item_budget_across_the_kill(tmp_path: Path)
         )
 
     def sources() -> list[_Source]:
+        """The four-source universe: empty documents and dockets, five comments, and an observed-crawl FR source."""
         return [
             _Source(_description("documents", _DOCUMENT_SYSTEM, _REGULATIONS_VERSION), (), ()),
             _Source(_description("dockets", _DOCKET_SYSTEM, _REGULATIONS_VERSION), ()),
@@ -463,6 +458,7 @@ def test_resume_carries_the_selected_item_budget_across_the_kill(tmp_path: Path)
     workspace_path = tmp_path / "workspace.sqlite3"
 
     def durable() -> SqliteCatalogPolicyWorkspace:
+        """Open the one on-disk workspace so resume state survives the killed build."""
         return SqliteCatalogPolicyWorkspace(path=workspace_path)
 
     killed = KillAfter(policy(), yields=3)

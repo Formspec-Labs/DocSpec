@@ -16,6 +16,7 @@ from tests.test_core_selections import setup
 
 
 def resolve(operations, calls, *, identity, parent="old", fresh=False, policy=lambda result: True, operation=None):
+    """Resolve one request with a recording producer, the identity-derived selection id and a parent origin."""
     def producer(context):
         calls.append(context.execution.execution_id)
         value = context.read_value(parent)
@@ -25,6 +26,7 @@ def resolve(operations, calls, *, identity, parent="old", fresh=False, policy=la
 
 
 def test_metadata_only_reuse_and_explicit_fresh_alternatives_preserve_exact_choices(tmp_path):
+    """Metadata-only changes reuse the result, explicit fresh work makes a new one, and a historical choice never reruns today's policy."""
     calls = []
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
@@ -54,6 +56,7 @@ def test_metadata_only_reuse_and_explicit_fresh_alternatives_preserve_exact_choi
 
 
 def test_omission_blocks_reuse_and_later_resource_evidence_uses_effective_definition(tmp_path):
+    """An omission blocks reuse, and a corrected resource reuses the earlier result under its effective definition."""
     calls = []
     with ExitStack() as stack:
         _, _, _, _, publisher = setup(stack, tmp_path)
@@ -82,6 +85,7 @@ def test_omission_blocks_reuse_and_later_resource_evidence_uses_effective_defini
 
 
 def test_batch_candidates_skip_unavailable_outputs_and_keep_multiple_results(tmp_path):
+    """Batch reuse skips a result whose output bytes were removed and returns one choice per request."""
     calls = []
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
@@ -103,6 +107,7 @@ def test_batch_candidates_skip_unavailable_outputs_and_keep_multiple_results(tmp
 
 
 def test_publisher_refuses_forged_reuse_but_evaluates_staged_current_inputs(tmp_path):
+    """A forged selection whose input does not correspond refuses, while a matching staged input is admitted."""
     calls = []
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
@@ -127,6 +132,7 @@ def test_publisher_refuses_forged_reuse_but_evaluates_staged_current_inputs(tmp_
 
 
 def test_resolved_attempt_continues_and_publishes_its_original_selection(tmp_path):
+    """A suspended resolved attempt continues and publishes its original selection; a later resolve returns that same result."""
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
         operations = CoreOperations(publisher)
@@ -147,6 +153,7 @@ def test_resolved_attempt_continues_and_publishes_its_original_selection(tmp_pat
 
 
 def test_new_input_records_use_the_existing_import_and_execution_path(tmp_path):
+    """Input records passed to resolve are imported through the existing path and yield an empty success."""
     with ExitStack() as stack:
         _, _, _, _, publisher = setup(stack, tmp_path)
         data = core.Entity(format_version=1, entity_id="old", entity_type="artifact", value=core.InlineValue(value={"url": "u"}))
@@ -156,6 +163,7 @@ def test_new_input_records_use_the_existing_import_and_execution_path(tmp_path):
 
 
 def test_reuse_after_old_input_deletion_retains_comparison_evidence_and_new_inputs(tmp_path):
+    """After the old input's bytes are deleted, reuse answers from retained comparison evidence and keeps the new input."""
     calls = []
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
@@ -185,6 +193,7 @@ def test_reuse_after_old_input_deletion_retains_comparison_evidence_and_new_inpu
 
 
 def test_policy_cannot_waive_a_new_omission_between_lookup_and_commit(tmp_path):
+    """An omission recorded between lookup and commit defeats the reuse policy, so a fresh attempt runs."""
     calls, policies = [], []
     with ExitStack() as stack:
         _, ledger, _, _, publisher = setup(stack, tmp_path)
@@ -204,6 +213,7 @@ def test_policy_cannot_waive_a_new_omission_between_lookup_and_commit(tmp_path):
 
 
 def test_failed_policy_is_visible_and_does_not_trigger_execution(tmp_path):
+    """A reuse policy that raises propagates without running the producer."""
     calls = []
     with ExitStack() as stack:
         _, _, _, _, publisher = setup(stack, tmp_path)
@@ -219,6 +229,7 @@ def test_failed_policy_is_visible_and_does_not_trigger_execution(tmp_path):
 
 
 def test_supplemented_historical_input_can_be_removed_after_comparison_is_retained(tmp_path):
+    """Once the supplemented comparison is retained, the historical input can be removed and reuse still answers."""
     from docspec.application.core_maintenance import CoreMaintenance
     from tests.test_core_dependencies import original
     from tests.test_core_selections import fields

@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 
 
 def storage_only(connect):
+    """Return a connect wrapper that permits only the configured storage catalog host."""
     catalog = urlsplit(os.environ.get("DOCSPEC_ICEBERG_URI", ""))
     allowed = {(item[4][0], catalog.port or 80) for item in socket.getaddrinfo(
         catalog.hostname, catalog.port or 80, type=socket.SOCK_STREAM)} if catalog.hostname else set()

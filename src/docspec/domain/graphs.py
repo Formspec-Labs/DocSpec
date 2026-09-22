@@ -4,6 +4,8 @@ from graphlib import CycleError, TopologicalSorter
 
 
 def operation_order(dependencies, *, label="operation dependencies"):
+    """Return a deterministic topological order, refusing unknown or cyclic dependencies."""
+
     unknown = set().union(*(set(parents) for parents in dependencies.values())) - dependencies.keys() if dependencies else set()
     if unknown:
         raise ValueError(f"{label} include unknown operations: {sorted(unknown)}")

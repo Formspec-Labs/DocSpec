@@ -1,4 +1,8 @@
-"""Qualify the native DI example and interruption through installed packages."""
+"""Qualify the native Dagster experiment through installed wheel packages in an isolated interpreter.
+
+The run must repeat no captures and reexecute no completed sibling; the wheel under test comes from the
+``docspec_wheel`` fixture.
+"""
 
 import json
 import shutil

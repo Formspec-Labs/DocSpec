@@ -1,4 +1,8 @@
-"""Exercise literal GAO topics through the provider wheel and DocSpec catalog."""
+"""Exercise literal GAO topic selections through the provider wheel and the DocSpec catalog.
+
+Topic matching is exact and case-sensitive, a source refusal must survive without producing a catalog, and
+an existing output is never replaced.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    """Refuse any socket connection so the retained GAO example cannot use the network."""
     def refuse(*args, **kwargs):
         raise AssertionError("the retained GAO topic example must not use a network connection")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -34,6 +39,7 @@ def no_network(monkeypatch):
 
 
 def _open_catalog(result, output):
+    """Open the local catalog named by the example result."""
     return open_local_catalog(SourceCatalogRef.from_dict(result["catalog"]), Path(output / "dataset"),
                               producer=example.catalog_producer())
 

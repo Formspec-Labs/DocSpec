@@ -1,4 +1,11 @@
-"""Public S3 candidates acquire an observed revision and reuse its retained bytes."""
+"""Anonymous public-S3 fetcher contract: an unpinned candidate observes its revision with HEAD and streams the
+body back under IfMatch, while a preobserved candidate uses its exact pin without a HEAD and is never silently
+re-observed.
+
+Covers locator and source-boundary checks before any request, known-size and max_bytes refusals before download,
+invalid observation metadata and post-HEAD drift refusals that close the body, classified provider errors keeping
+their meaning, and a catalog capture retaining the observed transport version so later processing never refetches.
+"""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -36,6 +43,8 @@ class _ProviderError(Exception):
 
 
 class _Client:
+    """Stub S3 client with injectable HEAD/GET errors, post-HEAD response changes and recorded request bodies."""
+
     def __init__(self):
         self.headers = {"ContentLength": len(CONTENT), "ETag": OBSERVATION["etag"], "LastModified": MODIFIED}
         self.get_changes = {}

@@ -1,3 +1,9 @@
+"""Content fetchers: bounded streaming, pinned source evidence, and close on every path.
+
+Delegate metadata is verified before any byte is read, URLs and redirects must stay inside
+the sealed configuration, and an active consumer error is never masked by a close error.
+"""
+
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
@@ -32,6 +38,7 @@ LAST_MODIFIED = "2026-08-06T12:00:00Z"
 
 @pytest.mark.parametrize("original", [KeyboardInterrupt("worker stopped"), IntegrityError("bad source")])
 def test_stream_cleanup_preserves_an_active_interruption_or_source_failure(original):
+    """A close failure during an active exception is attached as a note, never masking it."""
     closes = []
 
     def close():
@@ -50,6 +57,7 @@ def test_stream_cleanup_preserves_an_active_interruption_or_source_failure(origi
 
 
 def test_stream_cleanup_error_without_an_active_failure_still_refuses():
+    """With no active failure the original close error is raised."""
     def close():
         raise OSError("fixture close failed")
 
@@ -61,6 +69,7 @@ def test_stream_cleanup_error_without_an_active_failure_still_refuses():
 
 
 class _S3Error(Exception):
+    """Provider-shaped error carrying a code and HTTP status but no public detail."""
     def __init__(self, code: str, status: int) -> None:
         super().__init__(f"provider error {code}")
         self.response = {
@@ -70,6 +79,7 @@ class _S3Error(Exception):
 
 
 class _Body:
+    """Counting S3 body that records read sizes, counts closes and can fail after N reads."""
     def __init__(self, payload: bytes, *, fail_after_reads: int | None = None) -> None:
         self.payload = payload
         self.position = 0
@@ -99,6 +109,7 @@ class _Body:
 
 
 class _Client:
+    """Minimal S3 client that records requests and returns one fresh body per call."""
     def __init__(self, payload: bytes) -> None:
         self.payload = payload
         self.etag = '"etag-v1"'
@@ -125,6 +136,7 @@ class _Client:
 
 
 class _HttpResponse:
+    """Synthetic httpx-style response with headers, close counting and mid-stream failure."""
     def __init__(
         self,
         payload: bytes = b"exact bytes",
@@ -147,6 +159,7 @@ class _HttpResponse:
 
 
 class _HttpContext:
+    """Context manager that yields a response or raises an injected exception and closes on exit."""
     def __init__(self, result: _HttpResponse | Exception) -> None:
         self.result = result
 
@@ -161,6 +174,7 @@ class _HttpContext:
 
 
 class _HttpClient:
+    """Minimal httpx client mapping each URL to one response and recording requests."""
     def __init__(self, responses: dict[str, _HttpResponse | Exception]) -> None:
         self.responses = responses
         self.requests: list[dict[str, Any]] = []
@@ -171,6 +185,7 @@ class _HttpClient:
 
 
 def _config(*, chunk_size: int = 3) -> AnonymousS3ContentFetcherConfig:
+    """Sealed anonymous-S3 configuration for the mirrulations test prefix."""
     return AnonymousS3ContentFetcherConfig(
         bucket="mirrulations",
         prefix="raw-data/SEC/SEC-202",
@@ -179,6 +194,7 @@ def _config(*, chunk_size: int = 3) -> AnonymousS3ContentFetcherConfig:
 
 
 def _candidate(payload: bytes = b"exact bytes") -> CandidateFile:
+    """Pin an S3 candidate to its exact size, ETag and last-modified transport version."""
     bucket = "mirrulations"
     key = "raw-data/SEC/SEC-202/example/documents/SEC-2020-0001-0001.json"
     return CandidateFile(
@@ -207,6 +223,7 @@ def _candidate(payload: bytes = b"exact bytes") -> CandidateFile:
 
 
 def _https_config(*, allowed_hosts: tuple[str, ...] = ("sources.example",), chunk_size: int = 3) -> HttpsContentFetcherConfig:
+    """HTTPS configuration restricted to the given hosts with a sealed user agent."""
     return HttpsContentFetcherConfig(
         allowed_hosts=allowed_hosts,
         user_agent="docspec-test/1.0 (+https://example.test/contact)",
@@ -215,6 +232,7 @@ def _https_config(*, allowed_hosts: tuple[str, ...] = ("sources.example",), chun
 
 
 def _https_candidate(payload: bytes = b"exact bytes", *, locator: str = "https://sources.example/document") -> CandidateFile:
+    """Build an HTTPS candidate at the given locator with the payload's expected size."""
     return CandidateFile(
         "source-html",
         locator,
@@ -249,6 +267,7 @@ def test_fetch_stream_closes_unstarted_source_once() -> None:
 
 
 def test_local_fetcher_does_not_double_close_descriptors_under_concurrency(tmp_path: Path) -> None:
+    """500 concurrent reads each return the exact bytes with no descriptor double-close."""
     source = b"concurrent local bytes"
     (tmp_path / "source.txt").write_bytes(source)
     fetcher = LocalFileContentFetcher(tmp_path, chunk_size=3)
@@ -268,6 +287,7 @@ def test_local_fetcher_does_not_double_close_descriptors_under_concurrency(tmp_p
 
 
 def test_local_file_fetcher_is_contained_streamed_and_receipted(tmp_path: Path) -> None:
+    """Reads stay inside the root, respect the byte cap, and carry the fetcher's sealed identity."""
     source_root = tmp_path / "source"
     source_root.mkdir()
     (source_root / "document.txt").write_bytes(b"exact bytes")
@@ -566,6 +586,7 @@ def test_anonymous_s3_fetcher_fails_before_io_for_bounds_and_source_escape() -> 
 
 
 def replace_candidate(candidate: CandidateFile, **changes: Any) -> CandidateFile:
+    """Rebuild a candidate with replacements, re-deriving its S3 transport pin from new metadata."""
     values = {
         "candidate_id": candidate.candidate_id,
         "locator": candidate.locator,
@@ -652,6 +673,7 @@ def test_routing_fetcher_pins_delegate_configuration_and_rejects_unknown_scheme(
 
 @pytest.mark.parametrize("route", ["local", "s3", "https"])
 def test_router_can_use_one_route_and_tracks_its_current_settings(tmp_path, route):
+    """A single-route router follows its delegate's live settings; no route at all is a ValueError."""
     delegates = {
         "local": LocalFileContentFetcher(tmp_path),
         "s3": AnonymousS3ContentFetcher(_Client(b"exact bytes"), _config()),
@@ -672,6 +694,7 @@ def test_router_can_use_one_route_and_tracks_its_current_settings(tmp_path, rout
 @pytest.mark.parametrize("binding", ["router", "bound"])
 @pytest.mark.parametrize("damage", ["implementation", "configuration", "task", "attempt", "version", "changed-during-fetch"])
 def test_fetch_binding_refuses_wrong_evidence_and_closes_before_reading(damage, binding):
+    """Wrong child downloader evidence refuses before any byte is read, and the child still closes."""
     from docspec.ports.content_fetcher import BoundContentFetcher
     class Delegate:
         downloader_id = "test.route"

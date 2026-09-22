@@ -86,6 +86,8 @@ def _require_new_outputs(
     blob_store: Path | None,
     source_native_roots: tuple[Path, ...],
 ) -> None:
+    """Refuse a destination containing or contained by an input path, or an existing file or symlink."""
+
     if blob_store is not None and _paths_overlap(destination, blob_store):
         raise SourceCatalogCliError("artifact and blob store paths must not contain one another")
     if any(_paths_overlap(destination, root) for root in source_native_roots):
@@ -97,6 +99,8 @@ def _require_new_outputs(
 
 
 def _producer(args: argparse.Namespace):
+    """Build the producer pin with this DocSpec's own verifier identity."""
+
     return source_catalog_producer(
         implementation_id=args.implementation_id,
         verifier_id="urn:docspec:verifier:source-catalog",
@@ -106,6 +110,8 @@ def _producer(args: argparse.Namespace):
 
 
 def _verify(args: argparse.Namespace) -> int:
+    """Verify one referenced catalog and emit its report with the passing verdict."""
+
     root = _existing_root(args.root, label="source catalog root")
     reference = SourceCatalogRef.from_dict(
         _read_object(args.reference, label="source catalog reference", canonical=False)
@@ -141,6 +147,8 @@ def _verify(args: argparse.Namespace) -> int:
 
 
 def _build(args: argparse.Namespace) -> int:
+    """Build one complete immutable source-catalog snapshot and emit its build report."""
+
     lengths = {
         len(args.source_native),
         len(args.source_native_artifact_digest),
@@ -375,6 +383,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Parse arguments and convert expected operator failures into emitted JSON errors."""
+
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))

@@ -1,4 +1,8 @@
-"""Header observations preserve image bytes and name malformed-header corrections."""
+"""Image header observations preserve the exact encoded bytes while matching the old reader's dimensions.
+
+A named-format correction may only read the frame the header actually declares, and a reader identity drift
+is refused before any header is read.
+"""
 
 from hashlib import sha256
 from pathlib import Path
@@ -17,6 +21,7 @@ SOF = b'\xff\xc0\x00\x0b\x08\x01\xe0\x02\x80\x01\x01\x11\x00'
 
 
 def _extract(source, media_type='image/unknown'):
+    """Extract via ``ImageExtractor``, assert byte and digest passthrough, and return the result."""
     captured = _captured(source, media_type)
     result = ImageExtractor().extract(captured, source)
     assert result.payload.content == source

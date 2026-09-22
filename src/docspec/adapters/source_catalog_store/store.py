@@ -31,6 +31,8 @@ class LocalSourceCatalogPublication:
     """Stage and conditionally publish one complete local catalog destination."""
 
     def __init__(self, destination: Path) -> None:
+        """Create a randomly named staging session beside the destination, refusing to replace an existing directory."""
+
         selected = Path(destination)
         if selected.name in {"", ".", ".."}:
             raise ValueError("source-catalog destination must name one directory")
@@ -84,6 +86,8 @@ class LocalSourceCatalogPublication:
         )
 
     def remove_empty_directory(self, name: str) -> None:
+        """Remove one empty staged internal directory, refusing a non-empty one."""
+
         selected = _pin_directory(
             name,
             label="source-catalog staged internal directory",
@@ -107,6 +111,8 @@ class LocalSourceCatalogPublication:
             os.close(selected.descriptor)
 
     def publish(self) -> None:
+        """Publish the staging session as the destination without replacing an existing directory."""
+
         if self._published:
             raise IntegrityError("source-catalog destination is already published")
         self._require_named_parent()
@@ -137,6 +143,8 @@ class LocalSourceCatalogPublication:
         self._require_named_parent()
 
     def close(self) -> None:
+        """Clean up the staging session unless it was published."""
+
         if self._closed:
             return
         self._closed = True
@@ -175,6 +183,8 @@ class LocalSourceCatalogStore:
         shared_blob_root: Path | None = None,
         _expected_root_identity: _IDENTITY | None = None,
     ) -> None:
+        """Pin the catalog root and an optional shared blob root, refusing a shared root on another filesystem."""
+
         selected = Path(root)
         selected_root = _pin_directory(
             selected,
@@ -223,6 +233,8 @@ class LocalSourceCatalogStore:
 
     @contextmanager
     def stage(self) -> Iterator[SourceCatalogStaging]:
+        """Yield one exclusive staging transaction, cleaning the session on every exit path."""
+
         store_root = _pin_directory(
             self.root,
             label="source-catalog root",
@@ -288,10 +300,14 @@ class LocalSourceCatalogStore:
                 os.close(store_root.descriptor)
 
     def source_for(self, reference: SourceCatalogRef) -> MemberSource:
+        """Return the pinned member source for a reference, refusing a locator that differs from its exact digest."""
+
         digest_name = reference.digest.removeprefix("sha256:")
         if reference.locator != f"{digest_name}/artifact.json":
             raise IntegrityError("source-catalog locator differs from its exact artifact digest")
         return self._pinned_reader_root.member_source(digest_name)
 
     def blob_source(self) -> SourceCatalogBlobSource:
+        """Return the pinned blob source over the published CAS."""
+
         return self._pinned_reader_root.blob_source(".blobs")

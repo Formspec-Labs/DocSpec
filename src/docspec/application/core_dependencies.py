@@ -21,10 +21,12 @@ from docspec.ports.record_storage import BATCH_ROWS
 
 
 def _typed(value, record_type):
+    """Convert a record value through snapshot JSON into its strict msgspec struct type."""
     return msgspec.convert(snapshot_json_value(record_value(value, record_type)), type=record_type, strict=True)
 
 
 def binding_key(binding):
+    """Map a whole-input, state-input or selected-value binding to its ledger key tuple."""
     if isinstance(binding, core.WholeInput):
         return "entity", binding.entity_id
     if isinstance(binding, core.StateInput):
@@ -34,6 +36,7 @@ def binding_key(binding):
 
 @dataclass(frozen=True, slots=True)
 class DependencyAssessment:
+    """Evaluated dependency evidence and adequacy for one request, with its guard and support records."""
     effective_definition: core.OperationDefinition
     effective_request: core.Request
     dependencies: Mapping[str, tuple[core.Selector, core.ComparisonEvidence]]
@@ -58,6 +61,7 @@ def corresponds(requested: DependencyAssessment, retained: DependencyAssessment)
 
 
 class _EvidenceRead:
+    """Read retained dependency evidence through one session, tracking guarded keys and refusals."""
     def __init__(self, session):
         self.session = session
         self.rows = {}
@@ -91,10 +95,11 @@ class _EvidenceRead:
 
 
 class CoreDependencies:
-    """Use existing ledger transactions and selected-value evaluation."""
+    """Assess declared dependency evidence and index exact comparison snapshots for reuse."""
 
     @staticmethod
     def _original(reader, result_id):
+        """Read the successful retained result's original request and definition."""
         result = reader.one(("result", result_id), historical=True)
         if result.outcome.status != "success":
             raise IntegrityError("correspondence requires a successful retained result")
@@ -105,6 +110,7 @@ class CoreDependencies:
 
     @staticmethod
     def _evidence(reader, result_id):
+        """Load the result's evidence records and mark them as support."""
         with owned_iterator(reader.session.ledger.read_dependencies([result_id])) as batches:
             keys = bounded_items((link.target for batch in batches for link in batch if link.relation == "evidence"), limit=BATCH_ROWS)
         values = reader.load(keys, historical=True)
@@ -113,6 +119,7 @@ class CoreDependencies:
 
     @staticmethod
     def _receipt(reader, supplement, result_id):
+        """Require every supporting entity to establish the stated historical observation."""
         observation = supplement.observation
         if observation.result_id != result_id:
             raise IntegrityError("a supplement must describe its original result")
@@ -131,6 +138,7 @@ class CoreDependencies:
             reader.support.add(("entity", receipt.entity_id))
 
     def _fold(self, reader, request, definition, result_id, evidence, *, admitting=()):
+        """Apply omission and supplement evidence to the request and definition, refusing conflicts."""
         resources = {item.label: item for item in definition.resources}
         dependencies = {item.label: item for item in request.dependencies}
         inputs = {item.label: item for item in request.inputs}
@@ -187,6 +195,7 @@ class CoreDependencies:
 
     @staticmethod
     def _meaning(dependency, binding):
+        """Return the canonical bytes that pin one dependency together with its input binding."""
         return canonical_value_bytes([record_value(dependency, core.Dependency), record_value(binding, core.InputBinding)])
 
     def _comparisons(self, reader, result_id, definition, evidence_ids, version, wanted):
@@ -260,6 +269,7 @@ class CoreDependencies:
         return (artifact,), (key,), (link,)
 
     def _assess(self, reader, request, definition, *, result_id=None, additions=()):
+        """Assess one request and definition against its folded evidence into adequacy and comparisons."""
         request, definition = _typed(request, core.Request), _typed(definition, core.OperationDefinition)
         if request.definition_id != definition.definition_id:
             raise IntegrityError("request refers to another operation definition")
@@ -320,16 +330,19 @@ class CoreDependencies:
                                     tuple(sorted(reader.support)))
 
     def assess(self, session, request, definition, *, result_id=None):
+        """Assess a fresh request before any result exists."""
         session._active()
         return self._assess(_EvidenceRead(session), request, definition, result_id=result_id)
 
     def assess_result(self, session, result_id):
+        """Assess a retained result from its original request and historical evidence."""
         session._active()
         reader = _EvidenceRead(session)
         request, definition = self._original(reader, result_id)
         return self._assess(reader, request, definition, result_id=result_id)
 
     def index_result(self, session, result_id):
+        """Index the result's exact comparison snapshot and dependency links in one transaction."""
         assessment = self.assess_result(session, result_id)
         version = dict(assessment.expected_versions)[("result", result_id)]
         records, retained, links = self._snapshot(assessment, result_id)
@@ -340,6 +353,10 @@ class CoreDependencies:
         return assessment
 
     def record_evidence(self, session, evidence):
+        """Record immutable dependency evidence and return its result's updated assessment.
+
+        Raises IntegrityError when the evidence identity already holds a different value.
+        """
         session._active()
         evidence = _typed(evidence, core.DependencyEvidence)
         unit_id = "dependency-evidence:" + evidence.evidence_id

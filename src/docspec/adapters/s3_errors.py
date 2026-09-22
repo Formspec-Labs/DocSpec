@@ -8,6 +8,8 @@ from collections.abc import Mapping
 
 
 def provider_error_identity(error: Exception) -> tuple[str | None, int | None]:
+    """Extract the provider error code and HTTP status, or (None, None) when the exception carries neither."""
+
     response = getattr(error, "response", None)
     if not isinstance(response, Mapping):
         return None, None

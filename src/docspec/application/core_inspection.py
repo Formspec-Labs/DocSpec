@@ -10,6 +10,11 @@ from docspec.errors import IntegrityError
 
 
 def inspect_record(session, key, *, progress_limit=20):
+    """Assemble one record's retained meaning, execution, outputs and recent progress.
+
+    Raises IntegrityError when the record does not exist; ``progress_limit``
+    must be an integer between 0 and 2048.
+    """
     if type(progress_limit) is not int or not 0 <= progress_limit <= 2048:
         raise ValueError("progress limit must be between 0 and 2048")
 

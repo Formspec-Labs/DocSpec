@@ -52,6 +52,7 @@ def row(document_id: str, docket_id: str, agency_id: str, *, title: str = "A rul
 
 
 def policy() -> RegulationsGovCatalogPolicy:
+    """Build the regulations.gov catalog policy with the document selector and DHS agency names."""
     return RegulationsGovCatalogPolicy(
         document_input=SELECTOR,
         docket_input=None,
@@ -161,6 +162,7 @@ class _Source:
 
 
 def native_record(document_id: str, docket_id: str, agency_id: str) -> dict[str, Any]:
+    """Build a source-native regulations.gov document record with the given ids."""
     return {
         "sourceRecordId": document_id,
         "scopeId": "regulations-gov-documents",
@@ -183,13 +185,11 @@ def native_record(document_id: str, docket_id: str, agency_id: str) -> dict[str,
 
 
 def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None:
-    """The collapse is only real if the retained filing survives the chain.
+    """The collapse is only real if the retained filing survives the loader and workspace to reach the
+    policy byte for byte, not merely present.
 
-    It crosses a closed workspace shape and a frozen dataclass between being
-    written and being read. Either one silently omitting it would leave the
-    build green and the evidence gone, which is the failure this asserts
-    against -- the discarded record and its renditions, byte for byte, not
-    merely present.
+    The discarded record and its renditions cross a closed workspace shape and a frozen dataclass, either
+    of which silently omitting them would leave the build green and the evidence gone.
     """
 
     from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
@@ -248,14 +248,8 @@ def test_the_discarded_filing_reaches_the_policy_byte_for_byte(tmp_path) -> None
 
 
 def test_the_retained_filing_is_emitted_as_an_item_observation(tmp_path) -> None:
-    """Arrival at the policy row is not arrival at the item.
-
-    The row-level test above proves the filing survives the loader and the
-    frozen dataclass. This proves the policy then writes it where a consumer
-    can read it, byte-for-byte, under a key the schema already accepts. Without
-    this the evidence would reach the policy and stop there, and the build
-    would be green.
-    """
+    """Arrival at the policy row is not arrival at the item: the policy must write the retained filing
+    where a consumer can read it, byte for byte, under a schema-accepted key."""
 
     from docspec.adapters.catalog_policy_workspace import SqliteCatalogPolicyWorkspace
 
@@ -320,13 +314,8 @@ def test_the_retained_filing_is_emitted_as_an_item_observation(tmp_path) -> None
 
 
 def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:
-    """No schema version moves, so the emitted shape must fit what is installed.
-
-    `sourceObservations` items are additionalProperties: false over exactly
-    observationKey and observationValue, and the value is unconstrained. This
-    asserts against the real installed schema rather than a copy of it, so the
-    claim in 0004 that no version needs to move is checked rather than stated.
-    """
+    """No schema version moves, so the emitted shape must fit the installed sourceObservations schema:
+    additionalProperties false over exactly observationKey and observationValue, with an unconstrained value."""
 
     from docspec.adapters.catalog_artifact.schemas import _SCHEMAS
 
@@ -339,19 +328,8 @@ def test_the_observation_shape_satisfies_the_installed_item_schema() -> None:
 
 
 def test_a_row_carrying_a_discard_survives_the_join_index_round_trip() -> None:
-    """The write side and the read side of the join index must agree on the shape.
-
-    Found by a real build, not by this suite: the collapse fired correctly on
-    the first colliding record after fourteen minutes and then could not be read
-    back, because `_carried_discards` began writing a third key that
-    `_stored_row`'s closed-shape guard still refused.
-
-    Every ordinary row round-trips cleanly -- `_carried_discards` returns `{}`
-    when there is nothing to carry, which is ~1.94M of 1.94M rows -- so nothing
-    smaller than a real collision could expose it. That is why this asserts the
-    three-key shape directly rather than relying on a fixture that happens to
-    collide.
-    """
+    """The join index must round-trip a row carrying a discard; a real build found that `_carried_discards`
+    wrote a third key its reader still refused, which no fixture without a collision could expose."""
 
     from docspec.application.regulations_gov_catalog.indexed_rows import (
         _carried_discards,

@@ -1,4 +1,11 @@
-"""Canonical catalog rows, schema equivalence, and verified reader behavior."""
+"""Catalog row and reader contract: a stored row is byte-identical to its reserialized item, the compiled
+schema engine keeps source meaning while refusing missing, mistyped or extra fields at a precise instance path,
+and verify_snapshot re-derives the catalog state independently, memoizing one verdict per reader.
+
+Also pins that the incremental framed-section hasher matches rulespec's batch framing byte for byte (with over-
+and under-count refusals), an unverified reader validates every row, and trusted construction equals validated
+construction on admitted rows.
+"""
 
 from __future__ import annotations
 
@@ -22,12 +29,9 @@ from tests.support.source_catalog_builds import (
 
 
 def test_the_incremental_framer_equals_rulespec_batch_framing_byte_for_byte() -> None:
-    """The one-pass derivation only holds if the incremental hasher IS the protocol.
-
-    ``_FramedSectionHasher`` re-states ``framed_section_digest``'s byte layout so
-    ten digests can share one pass over the rows. This pins the two functions to
-    each other across shapes: empty sections, one record, many records, nested
-    values, non-ASCII text, and empty payload objects.
+    """The one-pass derivation only holds if the incremental hasher IS the protocol: ``_FramedSectionHasher``
+    re-states ``framed_section_digest``'s byte layout so ten digests share one pass, pinned here across empty,
+    single, many-record, nested, non-ASCII and empty-payload shapes, plus over- and under-count refusals.
     """
 
     from rulespec_artifacts import FramedSection, framed_section_digest
@@ -56,11 +60,8 @@ def test_the_incremental_framer_equals_rulespec_batch_framing_byte_for_byte() ->
 
 
 def test_a_stored_catalog_row_is_byte_identical_to_its_reserialized_item(tmp_path: Path) -> None:
-    """The state digest frames raw row bytes; this is the identity that permits it.
-
-    Every staged row must satisfy raw == canonical(to_dict(from_dict(parse(raw)))),
-    or framing raw bytes would diverge from framing re-serialized items. Proven
-    here on a real built catalog rather than assumed.
+    """The state digest frames raw row bytes, so every staged row must satisfy raw ==
+    canonical(to_dict(from_dict(parse(raw)))); proven on a real built catalog rather than assumed.
     """
 
     from rulespec_artifacts import canonical_json_bytes, parse_canonical_json
@@ -118,12 +119,9 @@ def test_verify_snapshot_re_derives_digests_and_memoizes_per_reader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The consumer's verify must be the producer's gate, run again, once.
-
-    A fresh reader's verify_snapshot performs the full independent derivation
-    (spied), refuses a spec whose digest its derivation contradicts, and a
-    second verify of the same digest returns the memoized verdict with no new
-    derivation.
+    """The consumer's verify must be the producer's gate run again, once: a fresh reader's verify_snapshot
+    performs the full independent derivation (spied), refuses a spec whose digest its derivation contradicts,
+    and a second verify of the same digest returns the memoized verdict with no new derivation.
     """
 
     source = FakeSource(
@@ -169,9 +167,8 @@ def test_a_verified_reader_streams_items_without_repeating_the_row_proofs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """After verify_snapshot memoizes a digest, open_snapshot's items stream skips
-    the per-row schema and canonicality proofs it already ran; a reader that
-    never verified still validates every row."""
+    """After verify_snapshot memoizes a digest, open_snapshot's items stream skips the per-row schema and
+    canonicality proofs it already ran, while a reader that never verified still validates every row."""
 
     source = FakeSource(
         description(),
@@ -198,11 +195,9 @@ def test_a_verified_reader_streams_items_without_repeating_the_row_proofs(
 
 
 def test_trusted_construction_equals_validated_construction_on_real_rows(tmp_path: Path) -> None:
-    """Wrapping alone must yield the same items as full validation on admitted rows.
-
-    A verified reader re-streams its catalog under trusted_json_input; every
-    item it constructs must equal the item full validation constructs from the
-    same bytes, and trusted construction must never leak past its context.
+    """Wrapping alone must yield the same items as full validation on admitted rows: a verified reader
+    re-streams under trusted_json_input, every item it constructs equals the item full validation constructs
+    from the same bytes, and trusted construction never leaks past its context.
     """
 
     from docspec.domain.identity import trusted_json_input

@@ -118,6 +118,7 @@ def _source_fact(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _record_data(record: Mapping[str, Any], *, expected_type: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+    """Return a row's native payload and attributes, refusing a different data type."""
     native = record.get("record")
     if not isinstance(native, Mapping):
         raise IntegrityError(f"Regulations.gov {expected_type} payload must be an object")
@@ -138,6 +139,7 @@ def _agency(
     value: object,
     agency_names: Mapping[str, str],
 ) -> tuple[list[dict[str, str]], tuple[Any, ...]]:
+    """Resolve one agency id to its name, keeping unknown or malformed ids as unparseable."""
     agency_id, malformed = _text(value)
     if agency_id is None:
         return [], malformed
@@ -155,6 +157,7 @@ def _join_result(
     lookup_scope_id: str,
     matched: tuple[Mapping[str, Any], tuple[Mapping[str, Any], ...]] | None,
 ) -> dict[str, Any]:
+    """Describe one exact-key join outcome as not-stated, no-match or matched."""
     if source_value is None:
         outcome = "not-stated"
     elif matched is None:
@@ -176,6 +179,7 @@ def _candidate_from_rendition(
     *,
     rendition_id: str,
 ) -> SourceCatalogCandidate | None:
+    """Build one rendition candidate, refusing an unsupported locator or a mismatched immutable object."""
     locator = value.get("locator")
     if locator is None:
         return None
@@ -258,6 +262,7 @@ def _selection_result(
     candidates: tuple[SourceCatalogCandidate, ...],
     budget_available: bool,
 ) -> tuple[SourceCatalogSelection, tuple[CatalogSelectionDecision, ...]]:
+    """Apply the shared ordered selection decisions for comments and dockets."""
     decisions: list[CatalogSelectionDecision] = []
     fixture_selection = _test_fixture_selection(source_item_id)
     if fixture_selection is not None:
@@ -333,6 +338,7 @@ def _source_record_candidate(raw_source_url: object) -> SourceCatalogCandidate |
 def _source_kind_rendition_preference(
     renditions: tuple[Mapping[str, Any], ...], raw_source_url: object, *, include_files: bool
 ) -> tuple[tuple[SourceCatalogCandidate, ...], tuple[CatalogRenditionFamily, ...], str | None, tuple[str, ...]]:
+    """Order the file and source-record families for one comment or docket row."""
     order = ("regulations-gov-file", "regulations-gov-record") if include_files else ("regulations-gov-record",)
     by_family: dict[str, list[SourceCatalogCandidate]] = {family: [] for family in order}
     claimed: set[str] = set()

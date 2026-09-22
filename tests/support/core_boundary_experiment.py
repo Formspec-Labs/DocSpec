@@ -34,6 +34,8 @@ def _entity(identity, value):
 
 
 def _nested_patch(value):
+    """Return the JSON Patch instruction list exercised against one fixture value."""
+
     instructions = []
     if "field" in value["metadata"]:
         instructions.append({"op": "test", "path": "/metadata/field", "value": value["metadata"]["field"]})
@@ -46,6 +48,8 @@ def _nested_patch(value):
 
 
 def _expected_nested(ordinal):
+    """Return the fixture value independently expected after ``_nested_patch``."""
+
     expected = core_workload.core_value(ordinal)
     expected["metadata"]["review"] = {"nested": ["1", None, True, 1, {"a/b": "e\u0301😀"}]}
     expected["metadata"]["copied"] = None
@@ -150,6 +154,12 @@ def schema(directory, count):
 
 
 def _inline_attempt(path, record_bytes):
+    """Publish one inline record of exactly ``record_bytes`` and report what the owners did.
+
+    An over-limit attempt records the refusal instead of failing the probe, so
+    the caller can assert which byte ceiling it hit.
+    """
+
     identity = "boundary:inline"
     overhead = len(encode_record(_entity(identity, "")))
     entity = _entity(identity, "x" * (record_bytes - overhead))
@@ -226,6 +236,8 @@ def boundary(directory, _count=None):
 
 
 def run_stage(directory, stage, *, count=1024):
+    """Run one boundary stage in a fresh directory, refusing a count outside the fixed workload."""
+
     directory.mkdir(parents=True, exist_ok=True)
     if not 1 <= count <= core_workload.CORE_MEMBER_COUNT:
         raise ValueError("count outside fixed Core workload")

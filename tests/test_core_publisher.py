@@ -14,26 +14,31 @@ from docspec.ports.core_ledger import MetadataBatch
 
 
 def entity(identity, value, *, occurrence=False):
+    """Build an artifact, or occurrence, entity carrying the given value."""
     return core.Entity(format_version=1, entity_id=identity,
                        entity_type="occurrence" if occurrence else "artifact", value=value)
 
 
 def definition(*, capture=False):
+    """Build a transformation definition, or a capture definition when `capture` is true."""
     return core.OperationDefinition(format_version=1, definition_id="definition", implementation_id="test:operation",
                                     implementation_version="1", operation_kind="capture" if capture else "transformation", configuration={})
 
 
 def outcome(*, outputs=(), generations=()):
+    """Build the `result` outcome whose value states whether outputs were bound."""
     return core.Result(format_version=1, result_id="result", execution_id="execution",
                        outcome=core.Outcome(status="success", value="outputs" if outputs else "empty", outputs=tuple(outputs)),
                        generations=tuple(generations))
 
 
 def snapshot(ledger, key):
+    """Read exactly one record for the key and return it."""
     return next(ledger.read_records([key]))[0]
 
 
 def test_retention_scope_can_exceed_new_record_count_without_unbounded_bindings(tmp_path, monkeypatch):
+    """2100 scoped entities bind in batches no larger than BATCH_ROWS, and a repeated publish is idempotent."""
     from docspec.ports.record_storage import BATCH_ROWS
 
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
@@ -84,6 +89,7 @@ def test_retention_scope_can_exceed_new_record_count_without_unbounded_bindings(
 
 
 def test_import_complete_inline_state_without_inventing_execution(tmp_path):
+    """Importing a complete inline state records no provenance, retries as a no-op, and a closed session refuses."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         publisher = CorePublisher(ledger, LocalContentAddressedBlobStore(tmp_path / "blobs"))
         records = (
@@ -108,6 +114,7 @@ def test_import_complete_inline_state_without_inventing_execution(tmp_path):
 
 
 def test_complete_state_refuses_missing_values_and_conflicting_representation(tmp_path):
+    """A retained state without a membership representation and a second disagreeing representation both refuse."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         publisher = CorePublisher(ledger, LocalContentAddressedBlobStore(tmp_path / "blobs"))
         state = core.State(format_version=1, state_id="s")
@@ -123,6 +130,7 @@ def test_complete_state_refuses_missing_values_and_conflicting_representation(tm
 
 
 def test_direct_projected_input_does_not_retain_its_parent_and_new_bytes_are_not_reread(tmp_path, monkeypatch):
+    """A selected input retains only the selected value, never its parent, and verified bytes are not reread."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
         publisher = CorePublisher(ledger, blobs)
@@ -151,6 +159,7 @@ def test_direct_projected_input_does_not_retain_its_parent_and_new_bytes_are_not
 
 
 def test_whole_input_obligation_is_not_reduced_by_narrow_dependency(tmp_path):
+    """A whole-input obligation still requires the entity's bytes even when a narrow dependency exists."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
         publisher = CorePublisher(ledger, blobs)
@@ -169,6 +178,7 @@ def test_whole_input_obligation_is_not_reduced_by_narrow_dependency(tmp_path):
 
 
 def test_opaque_content_cannot_be_relabelled_as_admitted_json(tmp_path):
+    """Retaining non-JSON bytes under a `json-v1` codec refuses."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         publisher = CorePublisher(ledger, LocalContentAddressedBlobStore(tmp_path / "blobs"))
         with publisher.session() as session:
@@ -180,6 +190,7 @@ def test_opaque_content_cannot_be_relabelled_as_admitted_json(tmp_path):
 
 @pytest.mark.parametrize("after_commit", [False, True])
 def test_publication_reconciles_lost_commit_response(tmp_path, monkeypatch, after_commit):
+    """On reopen a lost commit response is reconciled so the retry is exactly-once either way."""
     path = tmp_path / "ledger.sqlite"
     blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
     with closing(LocalSqliteCoreLedger(path)) as ledger:
@@ -204,6 +215,7 @@ def test_publication_reconciles_lost_commit_response(tmp_path, monkeypatch, afte
 
 
 def test_missing_root_reports_admission_error(tmp_path):
+    """A retained key whose required selection is missing reports an admission error."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         with CorePublisher(ledger, LocalContentAddressedBlobStore(tmp_path / "blobs")).session() as session:
             with pytest.raises(IntegrityError, match="required selection"):
@@ -211,6 +223,7 @@ def test_missing_root_reports_admission_error(tmp_path):
 
 
 def test_reuse_retains_only_selected_outputs_and_requested_inputs(tmp_path, monkeypatch):
+    """Reuse keeps only selected outputs and requested inputs, rechecks evidence, and never rereads admitted bytes."""
     with closing(LocalSqliteCoreLedger(tmp_path / "ledger.sqlite")) as ledger:
         blobs = LocalContentAddressedBlobStore(tmp_path / "blobs")
         publisher = CorePublisher(ledger, blobs)

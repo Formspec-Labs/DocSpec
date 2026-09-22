@@ -1,32 +1,14 @@
 """Resolve the Federal Register empty-topic arrays against the live publisher.
 
-SpicySearch decision 0007: *"The Federal Register topic lane remains unqualified
-until DocSpec's pinned 30-row live-source receipt resolves the predecessor's
-ambiguous empty-topic arrays."* An empty ``sourceObservedTopics`` has two
-possible causes and the catalog cannot tell them apart on its own: the publisher
-printed no topics, or something between the publisher and the catalog dropped
-them. Only the publisher can settle it, so this asks the publisher.
-
-**Why the empty case is observable at all.** ``federalregister.gov/api/v1``
-returns ``"topics": []`` rather than omitting the key, verified before this ran.
-Against an API that omitted the key, absence and emptiness would be the same
-byte and the receipt could not distinguish them.
-
-**The strata are the point.** Ten documents with topics, ten empty after 2000,
-and ten empty before 2000, because the three ask different questions. The
-populated rows test that topics survive the pipeline intact; the post-2000
-empties are the ambiguous case 0007 names; and the pre-2000 empties test the
-topic cliff, which an earlier probe attributed to the publisher's own API rather
-than to ingest (``receipts/fr-topics-live-vs-parquet-2026-09-02.json``). That
-probe compared the publisher to a *parquet*; this one compares the publisher to
-the DocSpec catalog, which is the artifact 0007 gates on.
-
-**Shape, not just presence.** Each row records the catalog's
-``observedTopicScheme`` and ``observedTopicId`` beside the publisher's string, so
-"arrives as the publisher printed it" is checked rather than asserted. The
-Federal Register prints a flat list of subject strings and has no thesaurus /
-ad-hoc division, so there is no such split to preserve on this source; the row
-shape records that rather than leaving it implied.
+SpicySearch decision 0007 holds the Federal Register topic lane unqualified
+until a pinned 30-row live-source receipt settles whether an empty
+``sourceObservedTopics`` means the publisher printed no topics or something
+between publisher and catalog dropped them. The API returns ``"topics": []``
+rather than omitting the key, which is what makes the empty case observable.
+Draws ten documents per stratum -- populated, empty after 2000, empty before
+2000 -- and records the catalog's ``observedTopicScheme`` and
+``observedTopicId`` beside the publisher's string, so shape is checked rather
+than asserted. Writes the receipt and a ``.sha256`` sidecar to ``--out``.
 """
 
 from __future__ import annotations
@@ -93,6 +75,7 @@ def _scan(args: tuple[str, str]) -> tuple[list[dict[str, Any]], dict[str, int]]:
 
 
 def fetch_live(document_number: str, timeout: float) -> dict[str, Any]:
+    """Ask the publisher for one document's topics, returning status facts instead of raising."""
     url = f"{API}/{document_number}.json?fields[]=document_number&fields[]=topics&fields[]=publication_date"
     request = urllib.request.Request(url, headers={"User-Agent": UA})
     try:

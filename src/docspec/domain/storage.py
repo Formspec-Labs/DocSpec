@@ -10,6 +10,8 @@ from docspec.domain.identity import require_text
 
 @dataclass(frozen=True, slots=True)
 class RecordSchema:
+    """Closed logical schema naming its identity and partition fields, with optional typed columns."""
+
     schema_id: str
     fields: tuple[str, ...]
     identity_field: str
@@ -32,6 +34,8 @@ class RecordSchema:
 
 @dataclass(frozen=True, slots=True)
 class PartitionPolicy:
+    """Partition identity with a bucket count between 1 and 65536."""
+
     policy_id: str
     bucket_count: int
 

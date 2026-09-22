@@ -30,6 +30,8 @@ _IDENTITY = tuple[int, int]
 
 @dataclass(frozen=True)
 class _PinnedDirectory:
+    """One open directory: its resolved path, descriptor, and (device, inode) identity."""
+
     path: Path
     descriptor: int
     identity: _IDENTITY
@@ -46,7 +48,11 @@ def _pin_directory(
     expected_identity: _IDENTITY | None = None,
     error_type: type[Exception] = IntegrityError,
 ) -> _PinnedDirectory | None:
-    """Open one real directory, using a pinned parent for every internal child."""
+    """Open one real directory, using a pinned parent for every internal child.
+
+    Refuses a symlink or an identity other than ``expected_identity``, and
+    returns None only for a missing directory when ``missing_ok`` is set.
+    """
 
     selected = Path(path)
     if parent is not None and (
@@ -102,6 +108,8 @@ def _create_random_directory(
     prefix: str,
     label: str,
 ) -> tuple[str, _PinnedDirectory]:
+    """Create and pin one randomly named directory below a pinned parent."""
+
     for _ in range(128):
         name = f"{prefix}{secrets.token_hex(16)}"
         try:
@@ -117,6 +125,8 @@ def _create_random_directory(
 
 
 def _create_random_file(directory: _PinnedDirectory, *, prefix: str) -> tuple[str, int]:
+    """Create one exclusive randomly named file and return its name and descriptor."""
+
     flags = (
         os.O_WRONLY
         | os.O_CREAT
@@ -135,6 +145,8 @@ def _create_random_file(directory: _PinnedDirectory, *, prefix: str) -> tuple[st
 
 
 def _sync_directory_descriptor(directory: _PinnedDirectory) -> None:
+    """Fsync a directory descriptor, except on Windows."""
+
     if os.name != "nt":
         os.fsync(directory.descriptor)
 
@@ -144,6 +156,8 @@ def _cleanup_session_at(
     session_name: str,
     session_identity: _IDENTITY,
 ) -> None:
+    """Move one verified staging session to a tombstone and remove it, refusing a replaced session."""
+
     try:
         metadata = os.stat(
             session_name,
@@ -253,6 +267,10 @@ def _publish_directory_no_replace_at(
     destination_parent: _PinnedDirectory,
     destination_name: str,
 ) -> None:
+    """Publish a verified staged directory without replacing an existing
+    destination and confirm its identity after the move.
+    """
+
     _require_child_identity(
         source_parent,
         source_name,
@@ -286,6 +304,8 @@ def _publish_directory_no_replace_at(
 
 
 def _entry_exists(directory: _PinnedDirectory, name: str) -> bool:
+    """Return whether one name exists below a pinned directory."""
+
     try:
         os.stat(name, dir_fd=directory.descriptor, follow_symlinks=False)
     except FileNotFoundError:
@@ -300,6 +320,8 @@ def _require_child_identity(
     *,
     label: str,
 ) -> None:
+    """Refuse when the named child is not the expected directory identity."""
+
     try:
         metadata = os.stat(name, dir_fd=parent.descriptor, follow_symlinks=False)
     except OSError as error:
@@ -312,6 +334,8 @@ def _require_child_identity(
 
 
 def _object_parts(object_key: str) -> tuple[str, ...]:
+    """Split an object key into safe relative parts, refusing absolute, escaping, or backslash spellings."""
+
     key = PurePosixPath(object_key)
     if key.is_absolute() or not key.parts or any(part in {"", ".", ".."} for part in key.parts):
         raise ValueError("source-catalog object key must be a contained relative path")
@@ -321,6 +345,8 @@ def _object_parts(object_key: str) -> tuple[str, ...]:
 
 
 def _duplicate_directory(directory: _PinnedDirectory) -> _PinnedDirectory:
+    """Duplicate a pinned directory's descriptor, refusing an identity change."""
+
     descriptor = os.open(".", _DIRECTORY_FLAGS, dir_fd=directory.descriptor)
     metadata = os.fstat(descriptor)
     identity = (metadata.st_dev, metadata.st_ino)
@@ -336,6 +362,8 @@ def _member_parent(
     *,
     create: bool,
 ) -> tuple[_PinnedDirectory, str]:
+    """Walk to an object key's parent directory, optionally creating intermediate directories."""
+
     parts = _object_parts(object_key)
     current = _duplicate_directory(root)
     try:
@@ -356,6 +384,8 @@ def _member_parent(
 
 
 def _open_member_at(root: _PinnedDirectory, object_key: str) -> int:
+    """Open one contained member file, refusing anything but a regular file."""
+
     parent, name = _member_parent(root, object_key, create=False)
     try:
         descriptor = os.open(name, _READ_FLAGS, dir_fd=parent.descriptor)
@@ -379,6 +409,8 @@ def _verify_blob_at(
     blob_ref: str,
     byte_size: int,
 ) -> None:
+    """Verify one blob's size and sha256 against its declared content address."""
+
     try:
         descriptor = os.open(name, _READ_FLAGS, dir_fd=directory.descriptor)
     except FileNotFoundError as error:
@@ -403,6 +435,8 @@ def _verify_blob_at(
 
 
 def _open_blob_file(blob_root: _PinnedDirectory, blob_ref: str) -> int:
+    """Open one CAS blob file under ``sha256/``, refusing anything but a regular file."""
+
     selected_sha = _pin_directory(
         "sha256",
         label="source-catalog SHA-256 root",
