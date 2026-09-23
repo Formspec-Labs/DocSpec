@@ -3,14 +3,16 @@
 **Yes: DocSpec can register a spicy-regs generation's Parquet as a pinned Iceberg
 table without rewriting a byte, and read it through its own `iceberg_scan` form.**
 Admitting the fork-host Federal Register generation took **12.1 s at 1.09 GiB peak**
-for 1,009,005 rows. The row-copied import it would replace took 16 min 49 s at
-8.80 GiB for 1,007,639 rows
-([reimport receipt](2026-09-14-iceberg-catalog-reimport.md)). That time covers
-rulespec admission, placing the member, registering and pinning the table, and
-computing a stable occurrence identity for every row. The §6 falsifier in the
+for 1,009,005 rows. That time covers rulespec admission, placing the member,
+registering and pinning the table, and computing a stable occurrence identity for
+every row. The row-copied import it would replace took 16 min 49 s at 8.80 GiB
+for 1,007,639 rows ([reimport receipt](2026-09-14-iceberg-catalog-reimport.md)),
+but it imported different content: 7.6 GB of catalog-item JSON through DocSpec's
+policy. The saving is mostly native vectorized work, not the avoided copy (see
+[review corrections](#review-corrections-2026-09-23)). The §6 falsifier in the
 consolidation path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`)
-therefore does not fire, and Track D continues past D2. The CTAS fallback also
-works (4.4 s, 0.28 GiB), but it is not needed.
+does not fire, and Track D continues past D2. The CTAS fallback also works
+(4.4 s, 0.28 GiB), but it is not needed.
 
 The [harness](2026-09-23-admit-by-reference-spike.py) and
 [receipt](2026-09-23-admit-by-reference-spike.json) record every number below.
@@ -106,7 +108,7 @@ occurrence_id = 'urn:docspec:table-occurrence:v1:' || sha256(to_json(['federal_r
 | changed | 2 (`comments_close_on`) |
 | removed | 0 |
 | unchanged, same occurrence ID | 1,008,901 |
-| what D1's hash of pin and key would report | 1,009,005 |
+| what D1's hash of pin and key would report (computed as the sum of every row, not measured) | 1,009,005 |
 
 `changes` ran in `CoreStateStorage.changes`' own form: one outer join over the
 two written membership files, keeping keys whose canonical bytes differ. It took
@@ -201,3 +203,42 @@ uv run --frozen python tools/with_iceberg.py \
 
 The run takes about four minutes. Temporary storage lives under the fixture's
 `TMPDIR` and is removed afterwards.
+
+## Review corrections (2026-09-23)
+
+A cross-stack review re-derived the digests, the 102/0/2 change counts and the
+digest rule on 20,415 rows, including the 69 rows with control characters, and
+confirmed them. It also found the following. The numbers above stand; these
+correct what they were taken to mean.
+
+- **The baseline is not like for like.** The 16 min 49 s imported 7.6 GB of
+  catalog-item JSON, which is different content. The CTAS copy took 4.4 s, while
+  registration by reference took 0.55 s. The identity pass, about 10.5 s, is
+  common to both paths. Most of the saving against the baseline therefore comes
+  from native vectorized encoding, not from avoiding a copy. A like-for-like arm
+  would push the same 23 columns through C26's JSON derive: about 9 min at
+  0.54 ms/record, an estimate that was not measured here.
+- **Direct comparison is cheaper than digests.** The all-column join took 2.56 s
+  per million rows, against 10.4–18.0 µs per row for the identity pass. The
+  identity arm ran at 16.7–18.0 µs/row under heavier load; the admission arm ran
+  at 10.4. A materialized membership is worth keeping because it freezes minted
+  IDs against later spelling changes, not because it is fast.
+- **"D1 would report 1,009,005" is a sum.** It is added + removed + changed +
+  unchanged, which is what a pin-keyed identity reports by construction. It was
+  not measured.
+- **The receipt did not cover these cases:**
+  - **Keys:** the harness framed the occurrence URN and the membership bytes
+    with raw `to_json` on the key. That is correct only for keys without control
+    characters, which holds for every FR key.
+  - **NaN:** the spellings arm excluded NaN. DuckDB 1.5.5 spells a NaN with its
+    sign bit set as `-nan`, where Python spells `nan`.
+  - **Types:** BOOLEAN, INTEGER, DATE and TIMESTAMP were not tested, although
+    the spicy-regs dictionary declares BOOLEAN, INTEGER and DATE.
+  - **Memory:** memory was not scaled. The identity pass kept 1 M rows in a
+    temporary table.
+  - **Scope:** the URN scope `federal_register.parquet` is a file name.
+    Decision 0007 scopes by family and table name instead.
+
+  The IDs this harness minted illustrate the rule; they are not the IDs C27
+  would mint.
+

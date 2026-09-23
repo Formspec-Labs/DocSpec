@@ -1060,172 +1060,282 @@ imported states. Release
 ### C27 · Admit a producer generation by reference
 
 **Depends on:** C26, and C28 (register members per layer, owned by its own
-lane). **Status:** proposed (2026-09-23), under
+lane), which must accept the version-3 extension point in step 9. **Status:**
+proposed (2026-09-23, revised after review the same day), under
 [decision 0007](decisions/0007-table-shaped-states-by-reference.md), not yet
-accepted. This is D3 of the consolidation path (spicy-docs
-`docs/research/consolidation-path-2026-09-22.md`, Track D).
+accepted. Open rulings R1–R6 are listed there. This is D3 of the consolidation
+path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`, Track D).
 
-**Why:** DocSpec copies every spicy-regs catalog row into its own canonical-JSON
-occurrence records. That took 16 min 49 s and 8.80 GiB for 1,007,639 Federal
-Register rows, and 50 min 42 s for 2,221,713 Regulations.gov rows
-([reimport](history/probes/2026-09-14-iceberg-catalog-reimport.md)). The
-[D2 spike](history/probes/2026-09-23-admit-by-reference-spike.md) registered
-the producer's own Parquet as a pinned Iceberg table without rewriting it. That
-admitted 1,009,005 rows, with a stable occurrence identity for each, in 12.1 s
-at 1.09 GiB. Separately, occurrence IDs minted per import make `changes` report
-every member of a re-admitted state as changed: 10,000 of 10,000, with unchanged
-values (PM01 gate, `~/Work/corpora/pm01-gate-2026-09-23/README.md`, finding 1).
-Every incremental update would then be a full rebuild.
+**Why:** DocSpec holds spicy-regs rows as its own canonical-JSON occurrence
+records, one ledger-registered entity each. Importing its Federal Register
+catalog took 16 min 49 s at 8.80 GiB for 1,007,639 records and left a 1.310 GB
+workspace ([reimport](history/probes/2026-09-14-iceberg-catalog-reimport.md)).
+That run imported different content: 7.6 GB of catalog-item JSON through
+DocSpec's policy. The [D2 spike](history/probes/2026-09-23-admit-by-reference-spike.md)
+admitted the producer's generation (1,009,005 rows) by reference in 12.1 s at
+1.09 GiB, with no second copy of its bytes.
+
+Most of that saving is native vectorized encoding. The by-reference step itself
+took 0.55 s, against 4.4 s for a CTAS copy; the identity pass (about 10.5 s) is
+common to both. A like-for-like arm, C26's JSON derive over the same 23 columns,
+would take about 9 min at 0.54 ms/record (estimated, not measured).
+
+Separately, occurrence IDs minted per import make `changes` report every
+re-admitted member as changed: 10,000 of 10,000 with unchanged values (PM01
+gate, `~/Work/corpora/pm01-gate-2026-09-23/README.md`, finding 1). Every
+incremental update would then be a full rebuild.
 
 **Change:** add `CoreWorkspace.admit_generation(source, *, family, table,
 dataset=None)`. `source` is a local generation directory, or a base URL read
-through the existing HTTPS fetcher (the `http` extra). The operation runs these
-steps:
+through the existing HTTPS fetcher (the `http` extra).
 
 1. **Read and admit.** Read `publication.json` (format `spicy-regs-publication`
-   v1, bounded) and take the family's `logicalId`, `artifactDigest`, `prefix`
-   and the table descriptor. The index is an untrusted pointer; admission
-   establishes trust. Fetch `artifact.json`, `members.json` and the member into
-   a staging directory in the record store, hashing while writing. Then run
+   v1, bounded) as an untrusted pointer: the family's `logicalId`,
+   `artifactDigest` and table descriptor. Stage `artifact.json`, `members.json`
+   and the member in the record store, hashing while writing. Then run
    `rulespec_artifacts.admit_artifact(LocalMemberSource(staging),
    expected_pin=ArtifactPin(logicalId, artifactDigest), semantic_verifier=…)`.
-   The verifier requires kind `spicy-regs-rollup-generation`, `complete-family`
-   status (a `local-partial` generation refuses), the index descriptor equal to
-   the member descriptor, and Parquet footer columns and row count equal to
-   `spec.tables[table]`. Retain the root and manifest as blobs.
-2. **Register without rewriting.** Rename the member into
-   `iceberg/<table>/data/`. Create the table from the Parquet's Arrow schema,
-   call `add_files`, which writes `schema.name-mapping.default`, drop the
-   catalog handle, and pin. The sealed checksum of the data file must equal the
-   member digest. A new table-layer profile (root format
-   `docspec-iceberg-table`) records the columns, source pin, member digest and
-   rule versions. Its native relation yields the table's own columns: the
-   encoded-record profile refuses such a table with "Referenced column
-   record_identity not found". File-level admission (`verify_members`,
-   `available`, `physical_references`, `delete`) is unchanged; `verify` compares
-   a native `count(*)` with `recordCount`. Referenced files are exempt from
-   `max_member_bytes`, which sizes DocSpec's own writes; a row group above it
-   refuses instead. On the 2026-09-23 index, 5 of 74 tables exceed 256 MiB.
-3. **Key.** Take the member key from the first identity source that applies:
-   - identity fields declared in the artifact (none today; the consolidation
-     path's §7 adds none);
-   - `spicy_docs.schemas.TABLE_CONTRACTS[stem].identity`;
-   - [decision 0003](decisions/0003-federal-register-record-identity.md) for
-     `federal_register`, `(document_number, publication_date)`;
-   - otherwise refuse.
+   The verifier requires:
+   - kind `spicy-regs-rollup-generation`;
+   - `complete-family` status (a `local-partial` generation refuses);
+   - an index descriptor equal to the member descriptor;
+   - Parquet footer columns and row count equal to `spec.tables[table]`.
 
-   A single column is spelled as its value. Decision 0003 is spelled
-   `number@date`, as the retained catalog states spell it, so Engine's
-   `stable_id(source_id, member_key)` survives the cutover. Other composites are
-   spelled as the canonical JSON array of their values. A NULL or empty
-   component refuses, and so does a duplicate key (a native `GROUP BY`).
-   In the current generation, document number alone has 483 fewer distinct
-   values than rows; the composite key is unique.
+   Retain the root and the manifest as blobs.
+2. **Register without rewriting.** Rename the member into
+   `iceberg/<table>/data/`, then create the table from its Arrow schema and call
+   `add_files`, which writes `schema.name-mapping.default`. Drop the catalog
+   handle and pin. The sealed checksum of the data file must equal the member
+   digest. A new table-layer profile (root format `docspec-iceberg-table`)
+   records the columns, source pin, member digest and rule versions, and its
+   native relation yields the table's own columns.
+   - The encoded-record profile refuses such a table ("Referenced column
+     record_identity not found").
+   - File-level admission (`verify_members`, `available`,
+     `physical_references`, `delete`) is unchanged. `verify` compares a native
+     `count(*)` with `recordCount`.
+   - Referenced files are exempt from `max_member_bytes`, which sizes DocSpec's
+     own writes; a row group above it refuses instead.
+   - `add_files` refuses Parquet that already carries field IDs. If a producer
+     starts writing them, registration checks them against the schema instead.
+3. **Member key: a per-table spelling owned by spicy-docs.** The spelling is a
+   versioned, declared function. spicy-docs owns its Python reference, for
+   example `federal_register_source_record_id`, which gives `number@date`.
+   DocSpec compiles the declaration to SQL and tests it against that reference.
+   - The spelling's ID and version enter the rules and the state identity.
+   - Every later generation of a dataset must use the spelling of its first
+     admission, or refuse. A new spelling is an explicit re-key, reported as a
+     full change.
+   - This prevents a flip. If a FR contract later lands under B2, B19 or B26
+     with a different default spelling, every Engine ID
+     (`stable_id(source_id, member_key)`) and every occurrence would otherwise
+     change.
+   - Identity sources, in order:
+     1. identity fields declared in the artifact (none today);
+     2. the `spicy_docs.schemas.TABLE_CONTRACTS` identity;
+     3. [decision 0003](decisions/0003-federal-register-record-identity.md)
+        for FR;
+     4. otherwise refuse.
+   - Until spicy-docs declares spellings, admissible tables are FR
+     (`federal_register_source_record_id`) and single-column contracts (the
+     value itself, spelling `value/1`). Composite contracts wait (ruling R6).
+   - A NULL or empty component refuses, and so does a duplicate key (a native
+     `GROUP BY`).
 4. **Occurrence identity.** Compute
-   `stable_urn("table-occurrence", [table, member_key, "sha256:" + row_digest])`.
-   The row digest is the SHA-256 of the row's canonical JSON under
-   `docspec-table-row/1`, computed natively in the same pass (see decision 0007
-   for the spellings). The rule's version is the URN's `v1`, so a new rule
-   opens a new identity space. The pin enters the state's identity, never an
-   occurrence's. Unchanged rows therefore keep their occurrence across
-   generations, and `changes` follows real change. On two consecutive fork-host
-   generations: 102 added, 2 changed, 1,008,901 unchanged; a pin-keyed identity
-   would report 1,009,005.
-5. **Membership.** Write the membership layer in the existing
-   `core-membership:1` format (canonical `Membership` bytes), natively from the
-   identity pass, through a new record-store method that inserts from a native
-   relation. `retain_batches`' per-row Python loop in `_incoming` would repeat
-   the work PM01 profiled. Existing `changes`, `compare` and scoped lookups then
-   work unchanged. The spike measured 46.5 B/row; a compact key-plus-digest
-   index is only 26% smaller, so the existing format stays.
-6. **Publish once.** Write one metadata unit per generation: the `State`, its
-   `StateRepresentation`, and the admission's definition, request and result.
-   The manifest is `{"format": "docspec-core-state", "version": 3, "table":
-   <LayerRef>, "membership": <LayerRef>, "rules": {…}}`. No per-row ledger
-   record is written. The state ID is
-   `stable_urn("generation-admission", [logicalId, artifactDigest, table, rule
-   versions])`, so re-admitting a pin returns the same state. `dataset=`
-   advances the current pointer with the existing stale-base check.
-7. **Read.** `CoreStateStorage` resolves a version-3 manifest by joining
-   membership to a native view over the table. The view builds each
-   occurrence's `inline_occurrence_payload` bytes; the spike's oracle found them
-   identical to Python's on all 1,009,005 rows. `rows`, `lookup`, `read_value`,
-   `values`, `changes` and `compare` need no second copy. A new
-   `CoreStateReader.table()` returns the typed relation `(member_key,
-   occurrence_id, <producer columns>)` for typed consumers such as Engine and
-   C29.
-8. **Scope.** A table-shaped state is revised by admitting the next generation,
-   not by `Put`/`Remove` edits; a base-state edit against it refuses. Provenance
-   stays at the batch boundary (Core §4.5). Against the dataset's previous
-   generation, the result records how many occurrences were generated and how
-   many adopted. Membership anti-joins recover which ones (Core §4.4, §8).
-9. **C28.** The table layer is the state's entity layer, registered once
-   through its manifest. C28's member resolution goes from occurrence ID to key
-   through membership, then to the table view. C28's rule that one identity
-   holds identical bytes in every layer holds by construction.
-10. **Retention.** Retention and removal act per layer, as for every
-    representation: the member, metadata, checksum tree and root are the table
-    layer's physical references. Removing a generation's state frees its table
-    and membership layers unless another retained state references them.
+   `stable_urn("table-occurrence", [family, table_name, member_key, "sha256:" +
+   row_digest])`. `table_name` is the logical name (`federal_register`), not the
+   file name. The family alone would merge sibling tables of multi-table
+   families. The URN's `v1` is the row rule's version, and the pin enters only
+   the state's identity.
+   - **Row digest (`docspec-table-row/1`):** the SHA-256 of the row's canonical
+     JSON, keys sorted. Every string, including keys and the URN and membership
+     framing, uses the guarded spelling: the raw-text escape chain for strings
+     that hold a control character, `to_json` otherwise. DuckDB's `to_json`
+     writes `\u001F` where canonical JSON writes `\u001f`.
+
+     | Type | Spelling |
+     | --- | --- |
+     | BOOLEAN | `true` or `false` |
+     | INTEGER, SMALLINT | an integer |
+     | BIGINT | an integer when \|v\| ≤ 2^53−1, else a decimal string |
+     | DOUBLE | `CASE WHEN isnan(v) THEN 'nan' ELSE CAST(v AS VARCHAR) END`, as a string; DuckDB spells a NaN with its sign bit set as `-nan`, Python as `nan` |
+     | DATE, TIMESTAMP | ISO 8601 strings, TIMESTAMP in UTC |
+     | anything else | refused |
+   - **Oracle.** Every spelling, including keys with control characters, NaN,
+     BOOLEAN, INTEGER and DATE, is tested against the Python reference on a
+     fixed corpus before any identity is minted. The spike covered only
+     VARCHAR, BIGINT and non-NaN DOUBLE.
+5. **First admission of a dataset.** One native identity pass mints every
+   occurrence and streams, sorted by key, into the membership layer
+   (`core-membership:1` canonical `Membership` bytes). It must not materialize
+   a temporary table: the spike's 1 M-row table would be about 14–15 GB for
+   `court_citation_map`, against the 6 GiB allowance. The sort may spill to
+   DocSpec's scratch directory. The same pass appends the minted-occurrence
+   index (step 7).
+6. **Each later admission.** The base is the dataset's current state, and it
+   must have the same schema. One direct all-column join finds the added,
+   removed and changed keys: 2.56 s per million rows, against 10.4–18.0 µs per
+   row for a digest pass.
+   - Only added and changed rows get a digest and an ID.
+   - Unchanged keys keep their base occurrence (carried forward), so minted IDs
+     stay frozen even if a spelling later changes. That, and serving existing
+     readers, is why membership is materialized. Speed is not the reason.
+   - The new membership is the base membership plus those changes, through the
+     record store's `apply_changes`. It shares the base's files and grows with
+     the change.
+   - A schema change, such as B2 adding `topics_json`, changes every row: every
+     occurrence is minted again and reported as changed.
+7. **Minted-occurrence index.** One append-only typed layer per dataset holds
+   `occurrence_hash BLOB(32)` (the URN's digest), `member_key`,
+   `row_digest BLOB(32)` and `first_state_id`. Each admission appends one file
+   of its newly minted occurrences, sorted by `occurrence_hash`, so lookups
+   prune on row-group bounds. Each state pins the index snapshot as of its
+   admission. The index serves three purposes:
+   - it tells generation from adoption (R1, option b);
+   - it resolves an occurrence to its key without a full scan;
+   - it survives the removal of the state that first admitted an occurrence.
+
+   A lookup that reads the row checks its digest against the index. The index
+   costs about 35–50 B per distinct occurrence ever minted, once, not per
+   generation (estimated from the spike's 34.5 B/row key-plus-digest file).
+8. **Publish once.** Write one metadata unit per generation: the `State`, its
+   `StateRepresentation` and the admission's definition, request and result.
+   No per-row ledger records are written.
+   - The manifest is `{"format": "docspec-core-state", "version": 3, "table":
+     <LayerRef>, "membership": <LayerRef>, "occurrences": <LayerRef>, "rules":
+     {…}}`.
+   - The state ID is `stable_urn("generation-admission", [logicalId,
+     artifactDigest, family, table_name, rule and spelling versions])`, so
+     re-admitting a pin returns the same state.
+   - `dataset=` advances the current pointer with the existing stale-base
+     check.
+   - Provenance follows R1. Under option (b), the result records the generated
+     and adopted counts at the batch boundary, and the index recovers which
+     occurrences were which.
+9. **The version-3 extension point C28 must accept.** None of this exists in the
+   C28 lane today: its `_references` accepts only manifest version 2, and
+   `find_members` reads `record_identity`/`record_json` from entity layers.
+   - `CoreStateStorage._references` dispatches on `version`: 2 gives `{entities,
+     membership}` (unchanged); 3 gives `{table, membership, occurrences,
+     rules}`.
+   - C28's `_entity_layers` yields, for a version-3 representation, the
+     occurrence-index layer, never the table.
+   - `find_members` takes a resolver for each layer profile. Encoded layers keep
+     `lookup_batches`. Table layers look up the requested identities in the
+     pinned index, read those keys from the newest retained state whose
+     membership holds that occurrence, and build occurrence records only for
+     those rows. Building them for a whole layer costs 12.9–24.2 s per million
+     rows (spike oracle), so that must never happen per session.
+   - C28's rule that one identity holds identical bytes in every layer holds by
+     construction; the index digest check enforces it.
+   - `member_contents` yields nothing for table layers, whose values are inline.
+     `CoreMaintenance` inventories the three version-3 layers.
+10. **Read.** `rows`, `lookup`, `read_value`, `values`, `changes` and `compare`
+    work through membership joined to a native view that builds each
+    occurrence's `inline_occurrence_payload` bytes. The spike found them equal
+    to Python's on all 1,009,005 rows. A new `CoreStateReader.table()` returns
+    the typed relation `(member_key, occurrence_id, <producer columns>)`, so
+    typed consumers skip the JSON records.
+11. **Retain and remove superseded generations.** Without a rule, every
+    generation keeps a full, unshared producer file (FR 156 MB). Stable IDs also
+    keep old generations pinned, because Engine keeps each unchanged row's old
+    `retained_ref` and reads originals from that exact state and pin
+    (`spicyengine/src/spicyengine/indexing/originals.py`). The rule:
+    - A superseded generation may be removed under an explicit policy (C18)
+      when no current result binds it as an input. Historical provenance stays
+      (Core §5.3).
+    - Before removal, C28 member pins held in its layers move to the newest
+      retained layer holding the same occurrence, whose bytes are identical by
+      construction. A still-pinned occurrence that no newer layer holds is
+      copied natively into the dataset's small retired-occurrence layer. One
+      straggler never keeps a whole producer file alive.
+    - Engine resolves `retained_ref` through its newest served source state
+      for that `source_id`, accepting when that state holds the same occurrence
+      at that key. It falls back to the exact pin only while that pin is
+      retained. After each publish, every served row's occurrence is in the
+      newest state, because changed rows were rewritten. This is a spicyengine
+      follow-up (R3).
+12. **Scope.** A table-shaped state is revised only by admitting the next
+    generation; a `Put`/`Remove` edit on a table-shaped base refuses.
+
+**Coverage.** With spicy-docs 0.26.6, 40 of the 74 tables on the 2026-09-23
+index have an identity source: 39 contracts, plus FR through decision 0003.
+- **Admissible now:** FR and 8 single-column contracts, about 1.44 M rows.
+- **After spicy-docs declares key spellings (R6):** 31 composite contracts,
+  0.87 M rows.
+- **No identity source:** 34 tables holding 139.0 M of the 141.3 M rows,
+  including every `court_*` and `fec_*` table. They wait for B26; separately,
+  spicy-regs' own `table_metadata.json` declares no identity for 23 tables
+  (B19).
+- **Churn:** 17 tables carry observed- or fetched-time columns (by name;
+  whether they refresh on unchanged rows was not checked). A refresh would
+  change every row digest in every generation (R5).
+
+The design targets FR first, then the rulemaking tables Search reads.
 
 **Sizing, from the spike's numbers:** see the
-[receipt](history/probes/2026-09-23-admit-by-reference-spike.md) for each
-figure and its caveats.
+[receipt](history/probes/2026-09-23-admit-by-reference-spike.md) and its review
+corrections.
 
-- **One Federal Register generation:** 12.1 s, 1.09 GiB peak, and about 203 MB
-  of workspace (156 MB member, 47 MB membership, 18 KB of table metadata),
-  against 1,009 s, 8.80 GiB and 1.310 GB for the row copy. The native identity
-  pass is 87% of the time: 10.5 s per million all-VARCHAR rows at one thread.
-- **Every table on the 2026-09-23 index:** 74 tables, 7.118 GB, 141,328,964
-  rows. That would take about 7.1 GB of members plus about 6.6 GB of membership
-  at 46.5 B/row. The identity pass would take 8–25 min at one thread: 67 s per
-  GB scaled by compressed bytes, or 10.4 µs per row scaled by rows.
-- **Narrow tables:** membership exceeds the table itself. `court_citation_map`
-  holds 77.5 M rows in 441 MB and would carry about 3.6 GB of membership. Admit
-  only the tables a consumer reads, FR first; for narrow tables, decide between
-  the compact index and recomputing identity at `changes` when a consumer needs
-  one.
-- **Caveats:** one run, at load 7–27; FR is all-VARCHAR, and BIGINT and DOUBLE
-  spellings were checked only on synthetic values; network time is excluded;
-  DuckDB threading was not measured.
+- **First FR admission:** 12.1 s, 1.09 GiB, and about 203 MB (156 MB member,
+  47 MB membership, 18 KB of table metadata), plus an index of about 35–50 MB.
+- **Each later FR generation:** the direct compare (about 2.6 s), IDs for the
+  changed rows (104 in the spike's pair), a membership delta of kilobytes, and
+  the new 156 MB member.
+- **N generations:** without removal, N × 156 MB. Keeping two generations, FR
+  holds about 0.4 GB.
+- **All 74 tables (only after B26):** a first admission takes 25–42 min at one
+  thread (10.4–18.0 µs/row × 141.3 M rows). It stores about 6.6 GB of first
+  membership plus about 5–7 GB of index, both estimated. Each later generation
+  costs about 6 min of direct compare plus 7.1 GB of new members. Keeping two
+  generations holds about 27 GB.
+- **Memory:** unmeasured beyond 1 M rows. The largest first admission,
+  `court_citation_map` at 77.5 M rows, depends on the spilled sort in step 5.
+- **Caveats:** one run at load 7–27; FR is all-VARCHAR; threading and network
+  time were not measured.
 
-**Gate** (the consolidation path's §6, restated with the identity claim):
+**Gate** (the consolidation path's §6 shape):
 
 - **Claim:** C27 admits the fork-host `federal-register` generation
   `sha256:731984ca…` into a table-shaped state whose contract columns equal the
   retained catalog on every `(document_number, publication_date)` key that
-  catalog holds. Admitting the prior generation (`sha256:6c215859…`) first,
-  then this one, gives a `changes` whose added, removed and changed counts equal
-  a direct all-column comparison.
-- **Population:** all 1,009,005 rows, and the 1,008,903 of the prior
-  generation.
+  catalog holds. Admitted after the prior generation (`sha256:6c215859…`), its
+  `changes` counts equal a direct all-column comparison, and 1,008,901
+  occurrences are carried forward, not minted.
+- **Population:** all 1,009,005 rows, and the prior generation's 1,008,903.
+  Add a synthetic third generation that restores a changed row to its prior
+  value (A→B→A), with a NaN (sign bit set), a BOOLEAN, an INTEGER, a DATE and a
+  key containing a control character.
 - **Reference:** the retained `catalog-B-composite` (1,007,639 records),
   decoded through DocSpec's JSON path and projected with spicy-docs'
-  `FEDERAL_REGISTER_COLUMNS` projection, never through the table view under
-  test. For `changes`, the reference is a column-by-column join of the two
-  members, not digests.
-- **Threshold:** a two-way `EXCEPT` over the shared contract columns returns
-  zero rows in both directions (`topics_json` is absent from the generation and
-  `rin` is extra, per B2). Generation-only keys are counted, each post-dates
-  2026-09-14, and any exception is listed by key. The admitted count equals
-  `recordCount`, and the compared-key count equals the reference's. `changes`
-  counts equal the reference exactly. The ledger grows by a constant number of
-  records per generation. Wall time, bytes downloaded, workspace bytes, ledger
-  bytes per generation and peak memory are recorded beside 16 min 49 s,
-  0.69 KB/record and 8.80 GiB, and beside the spike's 12.1 s and 1.09 GiB.
+  `FEDERAL_REGISTER_COLUMNS` projection, not the table view. For `changes`, a
+  column-by-column join of the members read by pyarrow. For spellings, the
+  Python reference.
+- **Threshold:**
+  - A two-way `EXCEPT` over the shared contract columns returns zero rows in
+    both directions (`topics_json` is absent and `rin` extra, per B2).
+    Generation-only keys are counted, each post-dates 2026-09-14, and
+    exceptions are listed by key.
+  - The admitted count equals `recordCount`, and the compared-key count equals
+    the reference's.
+  - `changes` equals the reference exactly.
+  - The A→B→A row resolves to its first occurrence, recorded per R1.
+  - The ledger grows by a constant number of records per generation.
+  - Record wall time, bytes downloaded, bytes written per generation (member,
+    membership delta, index delta), ledger bytes and peak memory, beside
+    16 min 49 s, 0.69 KB/record and 8.80 GiB (the baseline imported different
+    content) and beside the spike's 12.1 s and 1.09 GiB.
 - **What would make a clean result wrong:**
   - A comparison in the admitting session: compare in a fresh process.
   - An empty or narrowed key set: assert both counts first.
-  - A data set without control characters, which cannot exercise the escaping:
-    the spike's `spellings` corpus runs as a unit test with a Python oracle.
-  - Digests checked only against themselves: the oracle recomputes them through
-    pyarrow and Rulespec.
-  - `modify_date`, which is NULL on every generation row, compared against a
-    catalog that fills it: adjudicate it by key under B2 before calling the
-    gate.
-- **Falsifier:** if admission is not materially below 16 min 49 s, or
-  `changes` reports more members than the direct comparison, C27's premise is
-  wrong and the row copy stays.
+  - FR data, which lacks the offending characters and types: the synthetic
+    generation and the spelling corpus supply them.
+  - Digests checked only against themselves: the oracle recomputes them.
+  - `modify_date`, NULL on every generation row, compared against a catalog
+    that fills it: adjudicate it by key under B2.
+- **Falsifier:** admission not materially below the like-for-like C26 derive
+  (about 9 min), or `changes` reporting more than the direct comparison.
+  C27's premise is then wrong, and the row copy stays.
 - **Receipt:** `~/Work/corpora/supply-2026-09-02/receipts/consolidation-path-2026-09-22/`,
   plus `history/probes/<date>-admit-generation-gate.{md,json}`.
 
@@ -1234,17 +1344,23 @@ figure and its caveats.
 - Tests cover:
   - admission of a local and an HTTPS generation;
   - refusal of a wrong pin, a `local-partial` generation, a descriptor or
-    footer mismatch, a duplicate or NULL key, and an unsupported column type;
+    footer mismatch, a duplicate or NULL key, a spelling change, and an
+    unsupported type;
   - exact retry;
-  - identity stable across two generations, with `changes` proportional to
-    change;
-  - reads through every existing reader;
+  - carry-forward of unchanged occurrences;
+  - A→B→A under R1;
+  - reads through every existing reader and `table()`;
+  - C28 member resolution through the index;
   - relocation, and a flipped byte refused;
-  - removal freeing a generation's layers.
-- The native spellings equal the Python oracle on the spike's corpus.
+  - removal of a superseded generation after pin transfer.
+- The native spellings equal the Python reference on the corpus.
 - The gate passes, and [python-runs](python-runs.md) documents the API.
-- Follow-ups outside this task: D4's deletion of the row-copy example, D5's
-  release, and D6's Search reader.
+- Follow-ups outside this task:
+  - D4's deletion of the row-copy example;
+  - D5's release;
+  - D6's Search reader (Search's `prepare` refuses generation rows today);
+  - Engine's `retained_ref` resolution (R3);
+  - spicy-docs' declared key spellings (R6).
 
 ### C28 · Register bulk state members per layer
 
@@ -1371,94 +1487,101 @@ hangs in this environment under load on the base as well, passes alone, and
 passed in an independent full run of the branch.
 ### C29 · Typed derived layers
 
-**Depends on:** C27. **Status:** proposed (2026-09-23), under
+**Depends on:** C27, and D6 (Search can read generation rows). **Status:**
+proposed (2026-09-23, revised after review the same day), under
 [decision 0007](decisions/0007-table-shaped-states-by-reference.md), not yet
 accepted.
 
 **Why:** Search's prepared metadata is one JSON value per member, stored as
-canonical JSON inside a canonical-JSON occurrence record. Engine then decodes
-every value and flattens it into typed Iceberg columns
-(`spicyengine/src/spicyengine/indexing/prepared_table.py`, `arrow_schema()`).
-That is a middle copy in a third format. PM01 measured 712–784 B/record of
-prepared Parquet, a derive at 0.81 ms/record after the encode-once fix (pure
-`prepare()` costs 0.157), and an Engine first publish at 0.33 ms/record. Body
-and segment extraction and fusion joins would repeat the pattern.
+canonical JSON inside a canonical-JSON occurrence record. Engine decodes every
+value and builds its typed row with `row()`
+(`spicyengine/src/spicyengine/indexing/prepared_table.py`). PM01 measured
+712–784 B/record of prepared Parquet, a derive at 0.81 ms/record after the
+encode-once fix (pure `prepare()` costs 0.157), and an Engine first publish at
+0.33 ms/record. Body and segment extraction and fusion joins would repeat the
+JSON layer.
 
 **Change:** add `CoreWorkspace.derive_table(batches, *, schema, batch_id,
 definition, inputs, base_state_id=None, removals=(), dataset=None)`, C26's
 `derive` with typed rows:
 
-- **Rows.** Arrow batches in a declared schema that includes `member_key` and
-  `source_occurrence_id`. DocSpec writes them natively into a table layer of
-  its own, with Iceberg field IDs, applies C27's key and occurrence rules
-  (table scope is the definition ID), writes the membership layer, and publishes
-  one metadata unit. `generating_request` and lineage readback are unchanged:
-  each source generation binds as a `StateInput` and each lookup as a
-  `WholeInput`.
-- **Column types.** `docspec-table-row/1` spells VARCHAR, BIGINT and DOUBLE
-  (measured), and adds DATE and TIMESTAMP (ISO 8601, UTC) and LIST<VARCHAR> (a
-  canonical JSON array). Engine's schema needs exactly these. Each native
-  spelling is tested against the Python oracle before first use.
-- **Incremental derive.** With `base_state_id`, the caller supplies only changed
-  rows and removals, taken from the source's `changes`, which C27 makes
-  proportional to change. DocSpec applies them with the record store's existing
-  `apply_changes` MERGE, so unchanged data files are shared, and updates
-  membership the same way. Edits are rows in a layer rather than a JSON edit
-  list, so C26's 8 MiB edit bound does not apply.
-- **`changes` between derived generations.** The same native outer join over
-  `(member_key, occurrence_id)` memberships as C27.
+- **Rows and identity.** Arrow batches in a declared schema that includes
+  `member_key` and `source_occurrence_id`. DocSpec writes them natively into a
+  table layer of its own, with field IDs. It applies C27's rules (dataset scope
+  is the definition ID, plus C27's row rule and minted-occurrence index), and
+  publishes one metadata unit. Each source binds as a `StateInput` and each
+  lookup as a `WholeInput`, and `generating_request` is unchanged.
+- **Types.** C27's `docspec-table-row/1`, plus LIST<VARCHAR> spelled as a
+  canonical array, each tested against the Python reference before first use.
+- **Incremental derive.** With `base_state_id`, the caller supplies changed rows
+  and removals taken from the source's `changes`. They go through the record
+  store's `apply_changes` on both the table and the membership, so unchanged
+  files are shared. Edits are rows in a layer, so C26's 8 MiB edit bound does
+  not apply. Derived changes are at most the source's: a source change can
+  leave a prepared value unchanged.
 - **One-to-many layers.** Bodies and segments use a declared composite key
-  (`member_key`, `segment_index`), spelled as C27 spells composites. When a
-  source member changes, all rows derived from it are replaced. Captured body
+  (`member_key`, `segment_index`), spelled by a declared function. When a
+  source member changes, every row derived from it is replaced. Captured body
   bytes stay content-addressed blobs in the document pipeline, and the segment
   layer carries their digest.
-- **Fusion.** A join over several admitted or derived states is written as a
-  typed layer, and each row carries the `source_occurrence_id` of every row it
-  joined. A change in any input then finds its affected rows by semi-join,
-  C16's affected-result query done natively.
-- **Search.** The preparer emits batches in Engine's typed columns, meaning
-  `arrow_schema()` minus the Engine-owned `id`, `source_id`, `retained_ref` and
-  `content_sha256`, keyed by `member_key` and `source_occurrence_id`. The JSON
-  encoding of the metadata value disappears. Preparation stays in Python, once
-  per changed member.
-- **Engine.** Engine reads the pinned derived layer through `table()` and
-  either serves it directly or copies it natively. `retained_ref` comes from
-  the state, pin, key and occurrence columns, with no JSON flattening.
-- **Retention.** Retention and removal act per layer, as in C28. An
-  incremental derived layer shares its base's files through snapshot lineage;
-  removing an older derived state frees only files that no retained layer
-  references. A derived state's retention needs its `StateInput`s retained
-  (Core §5.2), so removing a source generation is policy-authorized only with,
-  or after, the derived states that bind it (C18).
+- **Fusion.** A join over several states is written as a typed layer whose rows
+  carry the `source_occurrence_id` of every row they joined. A change in any
+  input finds its affected rows by semi-join, C16's affected-result query done
+  natively.
+- **Search.** The preparer emits the typed prepared fields: title, source URL,
+  primary and related text, identifiers, filters, dates and display fields. It
+  also emits the display `metadata` JSON Engine keeps as one string column. The
+  JSON value per member disappears, and preparation stays in Python, once per
+  changed member.
+- **Engine keeps its own table contract.** `PreparedTable` refuses any schema
+  but `iceberg_schema()` and partitions by `bucket(id)`. `row()` enforces sorted
+  unique lists, UTC timestamps, a 64 KiB display bound and a 16 MiB row bound.
+  It derives `id`, `expanded_*`, `publication_date`, `retained_ref` and
+  `content_sha256`. C29 does not let Engine serve DocSpec's layer as is.
+  Engine reads the typed columns through `table()` instead of parsing JSON,
+  applies `row()`'s invariants in bulk, and writes its own table: a native
+  copy, with no JSON flattening.
+  - **Cutover cost.** `content_sha256` covers `(source_id, member_key,
+    occurrence_id, metadata)`, and C29 mints new derived occurrence IDs, so
+    cutover means one full Engine republish. It counts toward ruling R2.
+  - **Update cost.** Engine updates by copy-on-write and rewrites every file
+    holding a changed row (PM01 finding 2). "Only changed rows" bounds rows,
+    not bytes.
+- **Retention.** Retention and removal act per layer, as in C28. An incremental
+  derived layer shares its base's files; removing an older derived state frees
+  only files that no retained layer references. Removing a source generation
+  follows C27's retention rule.
 - **The JSON entity path remains** for documents and captured artifacts,
-  evidence, supplied records, and small, nested or irregular values. It also
-  holds per-occurrence operation results and reuse associations. A layer is
-  typed only when its rows share one declared schema and arrive in bulk.
+  evidence, supplied records, small, nested or irregular values, per-occurrence
+  results and reuse associations. A layer is typed only when its rows share one
+  declared schema and arrive in bulk.
 
 **Gate:**
 
-- **Claim:** Search's prepared metadata, written as a typed derived layer over
-  the admitted FR generation, equals the JSON-derived values member by member.
-  An incremental derive over the next generation writes, and Engine
-  republishes, only the members `changes` reports.
+- **Claim:** Search's prepared fields, written as a typed derived layer over the
+  admitted FR generation, equal the JSON-derived values member by member. Over
+  the next generation, an incremental derive writes only the members whose
+  prepared value changed, and Engine republishes only those.
 - **Population:** PM01's 10,000-record FR sample in md5 order, then all
   1,009,005 rows.
 - **Reference:** Search's JSON derive over the same admitted state, decoded
   with Python `json`, not through Engine's `row()`.
-- **Threshold:** zero differing (member key, column) values; the derived
-  `changes` equals the source's (104 for the spike's pair); Engine makes one
-  publish with exactly those rows; the ledger grows by a constant number of
-  records per derive. Milliseconds per record are recorded beside PM01's 0.81.
+- **Threshold:**
+  - Zero differing (member key, field) values.
+  - Derived `changes` at most the source's `changes` (104 for the spike's
+    pair), and exactly the members whose prepared value differs.
+  - Engine publishes exactly those rows. Record the bytes it rewrites.
+  - The ledger grows by a constant number of records per derive.
+  - Record milliseconds per record beside PM01's 0.81.
 - **What would make a clean result wrong:**
   - Both sides share `prepare()`, so equality shows the storage round trip, not
     that preparation is correct (PM01 noted this).
-  - A typing step shared by both sides would hide a typing bug.
-  - A sample with empty date or list fields would not exercise their
-    spellings: include members with every `DATE_FIELDS` and `FILTER_FIELDS`
-    entry populated.
-- **Falsifier:** if a typed derive is not materially cheaper than 0.81 ms per
-  record, or Engine still needs a flattening copy, the second format does not
-  pay, and the JSON path stays.
+  - A typing step shared by both sides would hide its bugs.
+  - A sample with empty date or list fields: include members with every
+    `DATE_FIELDS` and `FILTER_FIELDS` entry populated.
+  - Row counts alone would hide copy-on-write amplification.
+- **Falsifier:** a typed derive not materially cheaper than 0.81 ms per record,
+  or Engine still needing a JSON parse. The JSON path then stays.
 - **Receipt:** `history/probes/<date>-typed-derived-layers.{md,json}`.
 
 **Done when:**
@@ -1468,7 +1591,7 @@ definition, inputs, base_state_id=None, removals=(), dataset=None)`, C26's
   - retry and refusal as for C26;
   - a one-to-many layer;
   - a two-input fusion layer finding the rows a change affects;
-  - removal of an older derived state sharing files with a newer one.
+  - removal of an older derived state that shares files with a newer one.
 - The gate passes.
 - Search and Engine adopt it through their own plans.
 
