@@ -187,6 +187,37 @@ def admit_record(data: bytes) -> core.CoreRecord:
     return _convert(decode_canonical_json_value(data, label="Core record"))
 
 
+def stored_record(data: bytes) -> core.CoreRecord:
+    """Decode bytes read back from record files whose digests were already checked.
+
+    Canonical form was established once when the bytes were admitted and
+    written; the reader re-hashed every pinned file on open. Re-encoding each
+    row again to prove canonical form costs about 20 times a native decode.
+    """
+    try:
+        return _check(msgspec.json.decode(data, type=core.CoreRecord))
+    except (msgspec.ValidationError, msgspec.DecodeError) as error:
+        raise IntegrityError(f"invalid stored Core record: {error}") from error
+
+
+_INLINE_VALUE_TAIL = b'"value":null}}'
+
+
+def inline_occurrence_payload(entity_id: str, value_bytes: bytes) -> bytes:
+    """Canonical bytes of an inline occurrence entity around its value's canonical bytes.
+
+    Canonical JSON sorts object keys and adds no whitespace; ``value`` sorts
+    last in both the entity and its inline value, so the record is its
+    null-valued encoding with the value's bytes in place of ``null``. The
+    value is then encoded once rather than once per record that carries it.
+    """
+    head = encode_record(core.Entity(format_version=1, entity_id=entity_id, entity_type="occurrence",
+                                     value=core.InlineValue(value=None)))
+    if not head.endswith(_INLINE_VALUE_TAIL):
+        raise IntegrityError("inline occurrence encoding no longer ends with its value")
+    return head[:-len(b"null}}")] + value_bytes + b"}}"
+
+
 @lru_cache(maxsize=128)
 def _struct_fields(record_type: type[core.Fixed]):
     # Core schemas are immutable. Cache their descriptions, never record values;
@@ -264,6 +295,19 @@ class AdmittedRecord:
     @property
     def value(self) -> dict[str, Any]:
         return _plain(self.record)
+
+
+def stored_snapshot(payload: bytes) -> AdmittedRecord:
+    """Admit bytes that DocSpec itself encoded canonically and just read back from its record files.
+
+    Persisted rows are still validated, with the complete typed decode and
+    record checks; only the canonical re-encoding that proved their byte form
+    at encode time is not repeated. Caller-supplied bytes use ``AdmittedRecord``.
+    """
+    stored_record(payload)
+    snapshot = object.__new__(AdmittedRecord)
+    object.__setattr__(snapshot, "_payload", payload)
+    return snapshot
 
 
 def record_parts(value: core.CoreRecord | dict[str, Any] | AdmittedRecord) -> tuple[dict[str, Any], bytes]:

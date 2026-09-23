@@ -10,7 +10,7 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.storage.core_entities import ENTITY_SCHEMA, ENTITY_POLICY
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
-from docspec.domain.core_admission import AdmittedRecord, admit_record, encode_record, record_value
+from docspec.domain.core_admission import AdmittedRecord, admit_record, encode_record, record_value, stored_record, stored_snapshot
 from docspec.domain.identity import canonical_value_bytes, sha256_digest, decode_canonical_json_value
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
@@ -25,10 +25,15 @@ _POLICY = PartitionPolicy("core-keys:1", 1)
 _READY_STATE_LIMIT = 4
 
 
-def _entity_rows(entities, observe=None):
+def _entity_rows(entities, observe=None, *, encoded=False):
+    """Occurrence rows for the entity writer; ``encoded`` rows are (entity ID, canonical bytes) already."""
     for entity in entities:
         if observe is not None:
             observe()
+        if encoded:
+            entity_id, payload = entity
+            yield entity_id, entity_id, payload
+            continue
         value = record_value(entity, core.Entity)
         if value["entity_type"] != "occurrence":
             raise IntegrityError("state values must be occurrence entities")
@@ -50,22 +55,30 @@ class CoreStateStorage:
     def __init__(self, records):
         self.records = records
 
-    def create_keyed(self, session, *, state_id, representation_id, unit_id, rows):
+    def create_keyed(self, session, *, state_id, representation_id, unit_id, rows, encoded=False):
         """Import one-shot keyed entities through the shared state writer.
 
         Only membership addresses spool to disk; entity payloads pass directly
-        to the existing bounded writer and are admitted there once.
+        to the existing bounded writer and are admitted there once. ``encoded``
+        rows are (member key, occurrence ID, canonical occurrence bytes) from a
+        caller that already encoded them, so the writer does not do it again.
         """
         schema = pa.schema([("member_key", pa.string()), ("occurrence_id", pa.string())])
         with owned_iterator(rows) as source, TemporaryFile() as spool:
             def entities():
                 pending, size = [], 0
                 with pa.ipc.new_stream(spool, schema) as writer:
-                    for key, entity in source:
-                        if not isinstance(entity, core.Entity):
-                            raise IntegrityError("keyed state values must be occurrence entities")
-                        member = record_value(core.Membership(member_key=key, occurrence_id=entity.entity_id), core.Membership)
-                        row_size = len(key.encode("utf-8")) + len(entity.entity_id.encode("utf-8"))
+                    for row in source:
+                        if encoded:
+                            key, entity_id, payload = row
+                            entity = entity_id, payload
+                        else:
+                            key, entity = row
+                            if not isinstance(entity, core.Entity):
+                                raise IntegrityError("keyed state values must be occurrence entities")
+                            entity_id = entity.entity_id
+                        member = record_value(core.Membership(member_key=key, occurrence_id=entity_id), core.Membership)
+                        row_size = len(key.encode("utf-8")) + len(entity_id.encode("utf-8"))
                         if row_size > BATCH_BYTES:
                             raise LimitExceededError("membership addresses exceed the batch byte limit")
                         if pending and (len(pending) == BATCH_ROWS or size + row_size > BATCH_BYTES):
@@ -85,9 +98,9 @@ class CoreStateStorage:
                             yield core.Membership(**value)
 
             return self.create(session, state_id=state_id, representation_id=representation_id,
-                               unit_id=unit_id, entities=entities(), members=members())
+                               unit_id=unit_id, entities=entities(), members=members(), encoded=encoded)
 
-    def create(self, session, *, state_id: str, representation_id: str, unit_id: str, entities, members):
+    def create(self, session, *, state_id: str, representation_id: str, unit_id: str, entities, members, encoded=False):
         """Import occurrence and membership streams under publication protection.
 
         Equal values need not share occurrence identities; several member keys
@@ -96,7 +109,7 @@ class CoreStateStorage:
         session._active()
         with owned_iterator(entities) as entity_source, owned_iterator(members) as member_source:
             entity_layer = self.records.retain_batches(
-                encoded_batches(_entity_rows(entity_source, session.generated_row), ENCODED_RECORD_SCHEMA, byte_column=2), layer_kind="core-entities",
+                encoded_batches(_entity_rows(entity_source, session.generated_row, encoded=encoded), ENCODED_RECORD_SCHEMA, byte_column=2), layer_kind="core-entities",
                 schema=ENTITY_SCHEMA, partition_policy=ENTITY_POLICY, ordered=False,
             )
             def member_rows():
@@ -110,7 +123,8 @@ class CoreStateStorage:
             )
             self._match_members({"entities": entity_layer, "membership": member_layer})
             content = self._state_content(session, entity_layer, member_layer)
-            self._retain_entities(session, entity_layer)
+            # This call encoded every payload it just wrote; it does not admit them again.
+            self._retain_entities(session, entity_layer, written=True)
             state = core.State(format_version=1, state_id=state_id)
             representation = core.StateRepresentation(format_version=1, representation_id=representation_id,
                                                        state_id=state_id, membership=content)
@@ -142,12 +156,12 @@ class CoreStateStorage:
         while len(session.ready_states) > _READY_STATE_LIMIT:
             session.ready_states.pop(next(iter(session.ready_states)))
 
-    def _retain_entities(self, session, admitted, *, publish=True):
+    def _retain_entities(self, session, admitted, *, publish=True, written=False):
         def entities():
             with closing(admitted.batches()) as batches:
                 for batch in batches:
                     for payload in batch.column("record_json").to_pylist():
-                        record = AdmittedRecord(payload)
+                        record = stored_snapshot(payload) if written else AdmittedRecord(payload)
                         value = record.value
                         if value["kind"] != "entity" or value["entity_type"] != "occurrence":
                             raise IntegrityError("root values must be occurrence entities")
@@ -375,7 +389,7 @@ class CoreStateStorage:
             with closing(bounded_batches(batches, byte_column="occurrence_record")) as bounded:
                 for batch in bounded:
                     for key, payload in zip(batch.column("member_key").to_pylist(), batch.column("occurrence_record").to_pylist(), strict=True):
-                        yield key, admit_record(payload)
+                        yield key, stored_record(payload)
 
     def compare(self, session, older, newer, *, sample_limit=20):
         """Compare complete keyed states natively; return only bounded samples."""

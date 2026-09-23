@@ -1021,6 +1021,15 @@ result, so no payload is written or receipted twice. `generating_request` finds
 the generating result through the ledger's output links; `changes` reuses
 certified revision keys and the native address join that selections use.
 Producer failure records the attempt without retaining a rows state.
+Each value is canonically encoded once: its bytes frame the retry digest and
+complete the stored occurrence record (`inline_occurrence_payload`), and the
+spool keeps that record, so the writer neither decodes nor re-encodes it. Rows
+the writer has just stored, and rows read back from files re-hashed on open,
+are validated by the typed native decode (`stored_record`) instead of proving
+canonical form again; caller-supplied bytes keep full admission. On 5,000 real
+prepared values this took derive from 1.36 to 0.54 ms per record and reads from
+0.23 to 0.028, with byte-identical stored records
+([probe](history/probes/2026-09-23-derive-encode-once.json)).
 
 **Done when:** tests cover an initial derive, incremental puts and removals,
 exact retry, refusal of changed input under one batch ID, a stale dataset base,

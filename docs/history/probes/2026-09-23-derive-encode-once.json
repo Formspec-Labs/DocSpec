@@ -1,0 +1,76 @@
+{
+  "recorded": "2026-09-23",
+  "harness": "bench_derive.py: CoreWorkspace.derive of real SpicySearch prepared values (no base), then open_state().values(); canonical encode/parse calls counted at docspec.domain.identity",
+  "input": "first 5,000 rows of the PM01 gate's Federal Register 10k prepared values (md5(member_key) frame)",
+  "caveat": "Wall times on a shared machine at load 6-13; encode/parse counts and the output fingerprint are contention-immune. The fingerprint hashes every (member key, stored occurrence record) pair plus the rows-state identity.",
+  "before": {
+    "label": "before",
+    "rows": 5000,
+    "read": 5000,
+    "state_id": "urn:docspec:execution:5a79d879-4e2f-4298-a21f-133248df51d5:state",
+    "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+    "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+    "load": [
+      7.3232421875,
+      7.40185546875,
+      7.2236328125
+    ],
+    "phases": [
+      {
+        "phase": "derive",
+        "wall_seconds": 6.802,
+        "cpu_seconds": 6.646,
+        "encodes": 35069,
+        "parses": 10021,
+        "encodes_per_row": 7.01,
+        "parses_per_row": 2.0,
+        "ms_per_row": 1.36
+      },
+      {
+        "phase": "read-values",
+        "wall_seconds": 1.162,
+        "cpu_seconds": 1.16,
+        "encodes": 17,
+        "parses": 5029,
+        "encodes_per_row": 0.0,
+        "parses_per_row": 1.01,
+        "ms_per_row": 0.232
+      }
+    ]
+  },
+  "after": {
+    "label": "after-1",
+    "rows": 5000,
+    "read": 5000,
+    "state_id": "urn:docspec:execution:f3d0bd64-3ecf-42e4-84a6-0a6c47ebba16:state",
+    "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+    "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+    "load": [
+      7.59130859375,
+      7.4365234375,
+      7.2529296875
+    ],
+    "phases": [
+      {
+        "phase": "derive",
+        "wall_seconds": 2.707,
+        "cpu_seconds": 2.586,
+        "encodes": 35069,
+        "parses": 21,
+        "encodes_per_row": 7.01,
+        "parses_per_row": 0.0,
+        "ms_per_row": 0.541
+      },
+      {
+        "phase": "read-values",
+        "wall_seconds": 0.14,
+        "cpu_seconds": 0.14,
+        "encodes": 17,
+        "parses": 29,
+        "encodes_per_row": 0.0,
+        "parses_per_row": 0.01,
+        "ms_per_row": 0.028
+      }
+    ]
+  }
+}

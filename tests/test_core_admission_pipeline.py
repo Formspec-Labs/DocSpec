@@ -19,6 +19,7 @@ def entity_codec_counts():
     """Count entity schema conversions and canonical encodes/decodes by patching all docspec modules."""
     counts = Counter()
     convert, encode, decode = core_admission._convert, identity.canonical_value_bytes, identity.decode_canonical_json_value
+    stored = core_admission.stored_record
     def converted(value, *args, **kwargs):
         if isinstance(value, dict) and value.get("kind") == "entity":
             counts["schema_conversions"] += 1
@@ -32,8 +33,14 @@ def entity_codec_counts():
         if isinstance(result, dict) and result.get("kind") == "entity":
             counts["canonical_decodes"] += 1
         return result
+    def validated(payload):
+        result = stored(payload)
+        if isinstance(result, core.Entity):
+            counts["stored_validations"] += 1
+        return result
     with ExitStack() as stack:
         stack.enter_context(patch.object(core_admission, "_convert", converted))
+        stack.enter_context(patch.object(core_admission, "stored_record", validated))
         for module in tuple(sys.modules.values()):
             if getattr(module, "__name__", "").startswith("docspec."):
                 for name, function in tuple(vars(module).items()):
@@ -50,8 +57,10 @@ def test_root_entity_handoff_does_not_repeat_encoding_or_selection_admission(tmp
     with CoreWorkspace(tmp_path) as workspace, entity_codec_counts() as counts:
         workspace.create("root", ((str(index), {"body": "x" * 8192, "url": f"u{index}"}) for index in range(count)))
     # Before the admitted-byte handoff these actual counts were 5 / 3 / 2
-    # per entity. Initial Python admission and persisted-byte admission remain.
-    assert counts == {"schema_conversions": count * 2, "canonical_encodes": count, "canonical_decodes": count}
+    # per entity, then 2 / 1 / 1. Initial Python admission encodes once;
+    # persisted rows are still validated, by the typed native decode, without
+    # re-proving the canonical form that encoding established.
+    assert counts == {"schema_conversions": count, "canonical_encodes": count, "stored_validations": count}
     with CoreWorkspace(tmp_path) as reopened:
         assert [entity.value.value["url"] for _, entity in reopened.rows("root")] == [f"u{i}" for i in range(count)]
 
@@ -134,3 +143,76 @@ def test_checkpoint_compares_existing_metadata_without_rereading_payloads(tmp_pa
                 workspace.retain((AdmittedRecord(altered),), unit_id="conflict", roots=(("entity", altered.entity_id),))
         assert list(workspace.rows("root")) == before
         assert not workspace.ledger.is_committed("conflict")
+
+
+@contextmanager
+def canonical_work():
+    """Count canonical bytes encoded and canonical parses across all docspec modules."""
+    counts = Counter()
+    encode, parse = identity._artifact_canonical_json_bytes, identity._artifact_parse_canonical_json
+    def encoded(value, *args, **kwargs):
+        result = encode(value, *args, **kwargs)
+        counts["encoded_bytes"] += len(result)
+        return result
+    def parsed(value, *args, **kwargs):
+        counts["parses"] += 1
+        return parse(value, *args, **kwargs)
+    with patch.object(identity, "_artifact_canonical_json_bytes", encoded), \
+            patch.object(identity, "_artifact_parse_canonical_json", parsed):
+        yield counts
+
+
+def test_derive_encodes_each_value_once_and_reads_without_reparsing(tmp_path):
+    """Derive encodes each value once; writing and reading its rows parse none of them again.
+
+    The marginal cost between two batch sizes excludes fixed per-derive and
+    per-open records (definition, request, result and state manifests).
+    """
+    body = "x" * 8192
+    definition = core.OperationDefinition(format_version=1, definition_id="urn:test:encode-once",
+        implementation_id="test.encode-once", implementation_version="1", operation_kind="transformation",
+        configuration={})
+    work = {}
+    for count in (16, 32):
+        rows = [(f"k{index:02d}", {"body": body, "n": index}) for index in range(count)]
+        with CoreWorkspace(tmp_path / str(count)) as workspace:
+            with canonical_work() as derived:
+                state = workspace.derive(iter(rows), batch_id="once", definition=definition, inputs=())
+            with canonical_work() as read, workspace.open_state(state.state_id) as reader:
+                assert [(key, value) for key, _, value in reader.values()] == rows
+        work[count] = derived, read
+    # Before, each added row cost seven encodes of its value and two parses to
+    # derive, and one parse to read. Opening a state still parses its records.
+    (derived_16, read_16), (derived_32, read_32) = work[16], work[32]
+    per_row = (derived_32["encoded_bytes"] - derived_16["encoded_bytes"]) / 16
+    assert len(body) <= per_row < len(body) + 1024
+    assert derived_32["parses"] == derived_16["parses"] and read_32["parses"] == read_16["parses"]
+    assert read_32["encoded_bytes"] == read_16["encoded_bytes"]
+
+
+def test_inline_occurrence_payload_equals_the_full_record_encoding():
+    """The spliced occurrence record is byte-identical to encoding the whole record."""
+    # Canonical JSON admits no binary floats; keys sort by UTF-16 code units.
+    samples = [None, True, 0, -1, 2**53 - 1, "", "é\n\"\u0001\U0001f600", [], {},
+               {"\U0001f600": 1, "\ue000": 2, "a": [{"z": None, "b": [1, -2]}]},
+               {"value": {"value": None}, "kind": "entity"}]
+    for index, value in enumerate(samples):
+        entity_id = f"urn:test:occurrence:{index}"
+        expected = core_admission.encode_record(core.Entity(format_version=1, entity_id=entity_id,
+            entity_type="occurrence", value=core.InlineValue(value=value)))
+        spliced = core_admission.inline_occurrence_payload(entity_id, identity.canonical_value_bytes(value))
+        assert spliced == expected
+        assert core_admission.stored_record(spliced) == core_admission.admit_record(spliced)
+
+
+@pytest.mark.parametrize("payload", [
+    b'{"entity_id":"one","entity_type":"occurrence","format_version":1,"kind":"entity","value":{"kind":"inline","value":[1',
+    b'{"entity_id":"one","entity_type":"elsewhere","format_version":1,"kind":"entity","value":{"kind":"inline","value":1}}',
+    b'{"entity_id":1,"entity_type":"occurrence","format_version":1,"kind":"entity","value":{"kind":"inline","value":1}}',
+])
+def test_stored_rows_are_still_validated(payload):
+    """A truncated or mistyped persisted row is refused without the canonical re-proof."""
+    with pytest.raises(IntegrityError):
+        core_admission.stored_record(payload)
+    with pytest.raises(IntegrityError):
+        core_admission.stored_snapshot(payload)

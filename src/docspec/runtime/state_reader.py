@@ -3,7 +3,7 @@
 from contextlib import closing, contextmanager
 
 from docspec.domain import core
-from docspec.domain.core_admission import admit_record, record_value
+from docspec.domain.core_admission import record_value, stored_record
 from docspec.domain.identity import canonical_value_bytes, require_text, sha256_digest
 from docspec.domain.references import BlobRef
 from docspec.domain.streams import owned_iterator
@@ -37,6 +37,8 @@ class CoreStateReader:
         # Publication checked the logical rows and complete membership before
         # retaining this representation. Bind that verdict to its unchanged bytes
         # on every reopen; a full logical audit remains records.verify/admit.
+        # Rows read below come from these re-hashed files, so each decodes
+        # natively (``stored_record``) rather than proving canonical form again.
         for layer in layers.values():
             states.records.verify_members(layer.reference)
         self._layers = {name: states.records.admitted(layer.reference) for name, layer in layers.items()}
@@ -110,7 +112,7 @@ class CoreStateReader:
                         if identity is not None:
                             raise IntegrityError("state member occurrence payload is unavailable")
                         raise LookupError("state member does not exist: " + key)
-                    yield key, admit_record(payload)
+                    yield key, stored_record(payload)
 
     def values(self, *, member_keys=None):
         """Stream values, optionally selecting one bounded group of exact members.
@@ -148,7 +150,7 @@ class CoreStateReader:
                     elif payload is None:
                         raise IntegrityError("state member occurrence payload is unavailable")
                     else:
-                        entity = admit_record(payload)
+                        entity = stored_record(payload)
                         yield key, entity.entity_id, self._read_value(entity)
 
     def lookup(self, member_key, *, occurrence_id=None):
@@ -160,7 +162,7 @@ class CoreStateReader:
                     row = next(bounded).to_pylist()[0]
         if occurrence_id is not None and occurrence_id != row["occurrence_id"]:
             raise IntegrityError("state member differs from the expected occurrence identity")
-        return None if row["occurrence_id"] is None else admit_record(row["occurrence_record"])
+        return None if row["occurrence_id"] is None else stored_record(row["occurrence_record"])
 
     def read_value(self, member_key, *, occurrence_id=None):
         """Read the member's JSON value or opaque bytes, bounded to 8 MiB.

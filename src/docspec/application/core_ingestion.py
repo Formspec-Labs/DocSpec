@@ -1,12 +1,13 @@
 """Incremental imports through the shared revision and publication owners."""
 
 from hashlib import sha256
+import struct
 from tempfile import TemporaryFile
 
 from docspec.application.core_dependencies import binding_key
 from docspec.application.core_edits import compose_revision
 from docspec.domain import core
-from docspec.domain.core_admission import admit_record, encode_record, record_value
+from docspec.domain.core_admission import admit_record, encode_record, inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value, require_text, stable_urn
 from docspec.domain.streams import bounded_items, owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError, StaleBaseError
@@ -97,6 +98,9 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
     # change fails before the rest is prepared. A state without a base keeps
     # only its member keys and has no edit bound. Removals are consumed after
     # the rows, so a caller may discover them while streaming prepared values.
+    # Each value is encoded once: its canonical bytes frame the retry digest
+    # ([key, value]) and complete the stored occurrence record, and the spool
+    # keeps that record so the writer never decodes or re-encodes it.
     with owned_iterator(rows) as source, TemporaryFile() as spool:
         digest, keys, edits, edit_bytes = sha256(), set(), [], 2
 
@@ -112,20 +116,21 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
                 raise IntegrityError("derive member keys must be strings")
             if key in keys:
                 raise IntegrityError("derive batch contains a duplicate member key")
-            entity = core.Entity(format_version=1, entity_id=occurrence(key),
-                                 entity_type="occurrence", value=core.InlineValue(value=value))
-            payload = encode_record(entity)
-            if len(payload) > BATCH_BYTES:
-                raise LimitExceededError("derive occurrence exceeds the 8 MiB record limit")
+            entity_id = occurrence(key)
             try:
-                framed = canonical_value_bytes([key, value]) + b"\n"
+                value_bytes = canonical_value_bytes(value)
             except (TypeError, ValueError) as error:
                 raise IntegrityError("derive rows are outside their JSON codec") from error
-            digest.update(framed)
-            spool.write(framed)
+            payload = inline_occurrence_payload(entity_id, value_bytes)
+            if len(payload) > BATCH_BYTES:
+                raise LimitExceededError("derive occurrence exceeds the 8 MiB record limit")
+            # Canonical arrays are their items' canonical bytes, comma-joined.
+            digest.update(b"[" + canonical_value_bytes(key) + b"," + value_bytes + b"]\n")
+            encoded_key = key.encode("utf-8")
+            spool.write(struct.pack(">II", len(encoded_key), len(payload)) + encoded_key + payload)
             keys.add(key)
             if base_state_id is not None:
-                edit(core.Put(sequence=len(edits), member_key=key, occurrence_id=entity.entity_id), core.Put)
+                edit(core.Put(sequence=len(edits), member_key=key, occurrence_id=entity_id), core.Put)
         removals = tuple(removals)
         if any(not isinstance(key, str) for key in removals) or len(set(removals)) != len(removals):
             raise IntegrityError("derive removals must be distinct member keys")
@@ -146,10 +151,10 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
 
         def entities():
             spool.seek(0)
-            for line in spool:
-                key, value = decode_canonical_json_value(line.rstrip(b"\n"))
-                yield key, core.Entity(format_version=1, entity_id=occurrence(key),
-                    entity_type="occurrence", value=core.InlineValue(value=value))
+            while header := spool.read(8):
+                key_size, payload_size = struct.unpack(">II", header)
+                key = spool.read(key_size).decode("utf-8")
+                yield key, occurrence(key), spool.read(payload_size)
 
         def produce(context):
             session = context.session
@@ -166,7 +171,7 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
                 existing = next(batches)[0]
             if existing is None:
                 session.states.create_keyed(session, state_id=rows_state_id, representation_id=rows_state_id + ":physical",
-                                            unit_id=rows_state_id + ":import", rows=entities())
+                                            unit_id=rows_state_id + ":import", rows=entities(), encoded=True)
             elif not existing.available:
                 raise IntegrityError("derive rows state is unavailable")
             caller_usages = [context.use(binding_key(item)[1]) for item in inputs]
