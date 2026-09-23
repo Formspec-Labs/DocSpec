@@ -473,6 +473,20 @@ class LocalSqliteCoreLedger:
                 results[key[1]] = value
             if kind == "dependency_evidence":
                 evidence[key[1]] = value["result_id"]
+        members, member_layers = {}, {}
+        def pin(member):
+            record, layer = member
+            value, payload = record_parts(record)
+            if value["kind"] != "entity" or value["entity_type"] != "occurrence":
+                raise IntegrityError("only bulk occurrence members are pinned to their layer")
+            member_layers[layer.layer_id] = _encode(layer.to_dict())
+            return "entity", value["entity_id"], None, None, sha256_digest(payload), layer.layer_id, len(payload)
+        for row in _collect_parameters(batch.members, pin):
+            if self.record_storage is None:
+                raise IntegrityError("bulk member pins require the retained record store")
+            if members.get(row[:2], row) != row or row[:2] in records:
+                raise IntegrityError("metadata unit contains conflicting record identities")
+            members[row[:2]] = row
         retained = sorted(set(_collect_parameters(batch.retained, _key)))
         candidates = sorted(set((require_sha256(digest), require_text(result, "candidate result")) for digest, result in _collect(batch.candidates)))
         links = sorted(set(_collect_parameters(batch.links, lambda link: (
@@ -493,6 +507,8 @@ class LocalSqliteCoreLedger:
             return (*_key(key), version)
         versions = _collect_parameters(batch.expected_versions, expected)
         receipt = _encode({
+            # Member pins follow from the retained keys; a retry finds them already
+            # pinned, so they stay out of the unit's identity.
             "records": [[*key, row[4]] for key, row in sorted(records.items())],
             "retained": [list(key) for key in retained], "candidates": [list(row) for row in candidates],
             # Snapshot guards apply to a new write, not the identity of an
@@ -504,6 +520,7 @@ class LocalSqliteCoreLedger:
         with self.content_guard():
             layers = ({batch.record_layer.layer_id: _encode(batch.record_layer.to_dict())} if batch.record_layer is not None else
                       self._external_entities(records, batch.unit_id, receipt) if self.record_storage is not None else {})
+            layers = {**member_layers, **layers}
             with self._transaction(write=True) as connection:
                 if not self._unit(connection, batch.unit_id, "commit", receipt):
                     return False
@@ -513,6 +530,22 @@ class LocalSqliteCoreLedger:
                     if existing is not None and existing[0] != reference:
                         raise IntegrityError("record layer identity conflicts with its retained reference")
                     connection.execute("INSERT INTO record_layers VALUES (?,?) ON CONFLICT DO NOTHING", (layer_id, reference))
+                if members:
+                    # Pin referenced bulk members before version guards read their
+                    # retention. A row another unit already pinned must agree.
+                    connection.execute("CREATE TEMP TABLE pinned AS SELECT * FROM records WHERE 0")
+                    _bind(connection, "INSERT INTO pinned VALUES (?,?,?,?,?,?,?)", members.values())
+                    if connection.execute(
+                        "SELECT 1 FROM pinned p JOIN records r USING(kind,record_id) WHERE p.row_digest!=r.row_digest LIMIT 1"
+                    ).fetchone():
+                        raise IntegrityError("metadata record conflicts with its immutable identity")
+                    if connection.execute(
+                        "SELECT 1 FROM pinned p JOIN records r ON r.kind='state' AND r.record_id=p.record_id LIMIT 1"
+                    ).fetchone():
+                        raise IntegrityError("data identity is ambiguous between an entity and a state")
+                    connection.execute("INSERT INTO records SELECT * FROM pinned WHERE true ON CONFLICT DO NOTHING")
+                    connection.execute("INSERT INTO retention(kind,record_id,unit_id,available) SELECT kind,record_id,?,1 "
+                                       "FROM pinned WHERE true ON CONFLICT DO NOTHING", (batch.unit_id,))
                 _bind(connection, "INSERT INTO incoming VALUES (?,?,?,?,?,?,?)", records.values())
                 if connection.execute(
                     "SELECT 1 FROM incoming i JOIN records r USING(kind,record_id) WHERE i.row_digest!=r.row_digest LIMIT 1"

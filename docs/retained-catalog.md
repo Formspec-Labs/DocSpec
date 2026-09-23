@@ -11,8 +11,10 @@ physical representation and validates the data it consumes. Publication and
 current selection use the shared publisher's required-content checks.
 
 A record whose payload was removed under policy can retain its identity, digest
-and provenance while its value is unavailable. Data still marked available must
-exist and pass integrity checks. Neither a descriptor nor an old successful test
+and provenance while its value is unavailable. A state member that no publication
+has referenced has no record of its own: it reads through its state's entity
+layer, and stops resolving once that state is removed. Data still marked
+available must exist and pass integrity checks. Neither a descriptor nor an old successful test
 is fresh proof of complete physical availability.
 
 Use a pinned [result export](result-exports.md) for read-only independent access

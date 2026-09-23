@@ -3,6 +3,7 @@
 from contextlib import closing, contextmanager
 from tempfile import TemporaryFile
 
+import msgspec
 import pyarrow as pa
 
 from docspec.ports.record_storage import bounded_batches, bounded_rows
@@ -10,7 +11,7 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.storage.core_entities import ENTITY_SCHEMA, ENTITY_POLICY
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
-from docspec.domain.core_admission import AdmittedRecord, admit_record, encode_record, record_value, stored_record, stored_snapshot
+from docspec.domain.core_admission import admit_record, encode_record, record_value, stored_record
 from docspec.domain.identity import canonical_value_bytes, sha256_digest, decode_canonical_json_value
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
@@ -123,8 +124,9 @@ class CoreStateStorage:
             )
             self._match_members({"entities": entity_layer, "membership": member_layer})
             content = self._state_content(session, entity_layer, member_layer)
-            # This call encoded every payload it just wrote; it does not admit them again.
-            self._retain_entities(session, entity_layer, written=True)
+            # Members are registered through this state's manifest, once per
+            # layer; only their content references need checking here.
+            self._check_member_content(session, entity_layer)
             state = core.State(format_version=1, state_id=state_id)
             representation = core.StateRepresentation(format_version=1, representation_id=representation_id,
                                                        state_id=state_id, membership=content)
@@ -135,6 +137,8 @@ class CoreStateStorage:
                 retained = self.check_representation(session, record_value(existing.value), retained=True)
                 if not self.same_membership(session, retained, member_layer.reference):
                     raise IntegrityError("retry changes immutable state membership")
+                self._same_values(self._references(session.ready_states[existing.value.membership.digest])["entities"],
+                                  entity_layer)
                 representation = existing.value
             session.publish(MetadataBatch(unit_id, records=(state, representation), retained=(("state", state_id),)))
             return state
@@ -156,33 +160,92 @@ class CoreStateStorage:
         while len(session.ready_states) > _READY_STATE_LIMIT:
             session.ready_states.pop(next(iter(session.ready_states)))
 
-    def _retain_entities(self, session, admitted, *, publish=True, written=False):
-        def entities():
-            with closing(admitted.batches()) as batches:
-                for batch in batches:
-                    for payload in batch.column("record_json").to_pylist():
-                        record = stored_snapshot(payload) if written else AdmittedRecord(payload)
-                        value = record.value
-                        if value["kind"] != "entity" or value["entity_type"] != "occurrence":
-                            raise IntegrityError("root values must be occurrence entities")
-                        if publish:
-                            # The ledger receipt repeats the identity twice and
-                            # adds its digest and framing. Reserve that space;
-                            # keep the admitted entity bytes unchanged.
-                            # A near-limit singleton still reaches the ledger's
-                            # exact framing check; this estimate only groups rows.
-                            size = min(BATCH_BYTES, len(payload) + 2 * len(canonical_value_bytes(value["entity_id"])) + 160)
-                            yield record, value["entity_id"], size
-                            continue
-                        if value["value"]["kind"] == "content":
-                            session.check_content(value["value"])
+    def _check_member_content(self, session, entities):
+        """Check the blobs that content-valued members reference; inline members need no row work."""
+        for content in self.member_contents(entities):
+            session.check_content(content)
 
-        with closing(bounded_rows(entities(), size=lambda row: row[2])) as groups:
-            for index, group in enumerate(groups):
-                session.publish(MetadataBatch(
-                    f"{admitted.reference.layer_id}:entities:{index}", records=tuple(row[0] for row in group),
-                    retained=tuple(("entity", row[1]) for row in group), record_layer=admitted.reference,
-                ))
+    def member_contents(self, entities):
+        """Stream the distinct content references a bulk entity layer holds, for publication and cleanup."""
+        with self.records.relations({"entities": entities}) as relations:
+            contents = relations["entities"].filter(
+                "json_extract_string(decode(record_json), '/value/kind') = 'content'"
+            ).project("json_extract(decode(record_json), '/value')::VARCHAR AS content").distinct()
+            with closing(contents.to_arrow_reader(256)) as reader:
+                for batch in reader:
+                    for payload in batch.column(0).to_pylist():
+                        yield msgspec.convert(msgspec.json.decode(payload), type=core.ContentRef, strict=True)
+
+    def _same_values(self, older, newer):
+        """Refuse a retry whose occurrences reuse an identity with different bytes."""
+        with self.records.relations({"old": self.records.admitted(older), "new": newer}) as relations:
+            old = relations["old"].project("record_identity AS old_id, record_json AS old_json")
+            new = relations["new"].project("record_identity AS new_id, record_json AS new_json")
+            if old.join(new, "old_id = new_id").filter("old_json IS DISTINCT FROM new_json").limit(1).fetchone():
+                raise IntegrityError("retry conflicts with immutable retained occurrences")
+
+    def find_members(self, session, identities):
+        """Locate occurrences that have no ledger row in retained states' entity layers: identity -> (layer, size).
+
+        Bulk members are registered once per layer, by their state's manifest,
+        not once per member. A copy of one identity in several layers (a
+        revision union, a checkpoint) must hold identical bytes. One native
+        query compares the copies; only identities and sizes reach Python.
+        The newest layer holding a member is chosen, so a pin never keeps a
+        superseded layer alive. Every available entity layer is admitted, so
+        the cost grows with the number of retained layers, not their members.
+        """
+        wanted = sorted(set(identities))
+        layers = self._entity_layers(session) if wanted else ()
+        if not layers:
+            return {}
+        # Snapshot commit time from each layer's digest-bound Iceberg metadata.
+        admitted = sorted((self.records.admitted(layer) for layer in layers), reverse=True,
+                          key=lambda layer: (layer.table.metadata.last_updated_ms, layer.reference.layer_id))
+        layers = [layer.reference for layer in admitted]
+        names = {f"layer_{index}": layer for index, layer in enumerate(admitted)}
+        with self.records.relations(names, identities={name: wanted for name in names}) as relations:
+            copies = None
+            for index, name in enumerate(names):
+                layer = relations[name].project(f"record_identity, record_json, {index} AS layer_index")
+                copies = layer if copies is None else copies.union(layer)
+            found = copies.aggregate("record_identity, min(layer_index), count(DISTINCT record_json), "
+                                     "max(octet_length(record_json))", "record_identity").fetchall()
+        if any(row[2] != 1 for row in found):
+            raise IntegrityError("occurrence identity holds different values in retained layers")
+        return {identity: (layers[index], size) for identity, index, _, size in found}
+
+    def locate_in(self, session, state_id, identities):
+        """Locate members of one known state through its own entity layer: identity -> (layer, size).
+
+        A caller that knows the state need not search every retained layer.
+        """
+        layer = self.layers(session, state_id)["entities"]
+        wanted = sorted(set(identities))
+        with self.records.relations({"entities": layer}, identities={"entities": wanted}) as relations:
+            found = relations["entities"].project("record_identity, octet_length(record_json)").fetchall()
+        return {identity: (layer.reference, size) for identity, size in found}
+
+    def member_payloads(self, layer, identities):
+        """Stream (identity, exact bytes) for members of one entity layer in bounded batches."""
+        for batch in self.records.lookup_batches(layer, sorted(identities)):
+            yield from zip(batch.column("record_identity").to_pylist(), batch.column("record_json").to_pylist(), strict=True)
+
+    def _entity_layers(self, session):
+        """The distinct entity layers of available retained state representations, once per session."""
+        if session.entity_layers is None:
+            layers = {}
+            with owned_iterator(session.ledger.retained_records(kind="state_representation")) as batches:
+                for batch in batches:
+                    for row in batch:
+                        membership = row.value.membership if row.available else None
+                        if isinstance(membership, core.ContentRef):
+                            manifest = session.ready_states.get(membership.digest) or session.read_json(
+                                membership, label="Core state manifest")
+                            reference = self._references(manifest)["entities"]
+                            layers[reference.layer_id] = reference
+            session.entity_layers = tuple(layers.values())
+        return session.entity_layers
 
     def _references(self, manifest):
         if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership"}
@@ -213,7 +276,7 @@ class CoreStateStorage:
             if members.join(entities, "occurrence_id = entity_id", how="anti").limit(1).fetchone():
                 raise IntegrityError("complete root membership refers to a missing occurrence")
 
-    def check_representation(self, session, value, *, retained=False, publish_entities=True):
+    def check_representation(self, session, value, *, retained=False):
         """Check a representation's manifest and layers and return its membership layer."""
 
         content = value["membership"]
@@ -228,7 +291,7 @@ class CoreStateStorage:
             layers = self._layers(manifest, retained=retained)
             if not retained:
                 self._match_members(layers)
-                self._retain_entities(session, layers["entities"], publish=publish_entities)
+                self._check_member_content(session, layers["entities"])
             self._remember(session, content["digest"], manifest)
         return self._references(manifest)["membership"]
 
@@ -322,9 +385,6 @@ class CoreStateStorage:
         # compact() already compared exact canonical rows. Transfer that scoped
         # proof to publication instead of hashing/comparing membership again.
         session.membership_equivalence.add(tuple(sorted((members.reference.digest, references["membership"].reference.digest))))
-        # This same metadata path compares every immutable occurrence digest
-        # before updating its physical location. No generation is asserted.
-        self._retain_entities(session, values)
         result = core.StateRepresentation(format_version=1, representation_id=representation_id, state_id=state_id,
                                           membership=content, revision_id=source.revision_id)
         session.publish(MetadataBatch(unit_id, records=(result,), retained=(("state", state_id),)))

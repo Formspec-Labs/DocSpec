@@ -122,6 +122,13 @@ class CoreMaintenance:
                         raise IntegrityError("retained state membership requires an occurrence in the removal scope")
             for layer in layers.values():
                 self.inventory_layer(index, layer, protected=protected, scanned=scanned)
+            # Bulk members have no ledger rows; their layer names the blobs they
+            # reference. Representations sharing one layer scan it once.
+            if ("contents", layers["entities"].layer_id, protected) not in scanned:
+                scanned.add(("contents", layers["entities"].layer_id, protected))
+                with closing(self.publisher.states.member_contents(self.records.admitted(layers["entities"]))) as contents:
+                    for content in contents:
+                        index.add(RemovalContent("blobs", _blob(record_value(content, core.ContentRef))), protected=protected)
         elif isinstance(value, core.SelectedValue) and isinstance(value.definition, core.StateMembers):
             manifest = self._json(reference)
             layer = self.publisher.selections._reference(manifest)

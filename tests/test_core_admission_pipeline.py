@@ -40,7 +40,6 @@ def entity_codec_counts():
         return result
     with ExitStack() as stack:
         stack.enter_context(patch.object(core_admission, "_convert", converted))
-        stack.enter_context(patch.object(core_admission, "stored_record", validated))
         for module in tuple(sys.modules.values()):
             if getattr(module, "__name__", "").startswith("docspec."):
                 for name, function in tuple(vars(module).items()):
@@ -48,6 +47,8 @@ def entity_codec_counts():
                         stack.enter_context(patch.object(module, name, encoded))
                     elif function is decode:
                         stack.enter_context(patch.object(module, name, decoded))
+                    elif function is stored:
+                        stack.enter_context(patch.object(module, name, validated))
         yield counts
 
 
@@ -57,12 +58,15 @@ def test_root_entity_handoff_does_not_repeat_encoding_or_selection_admission(tmp
     with CoreWorkspace(tmp_path) as workspace, entity_codec_counts() as counts:
         workspace.create("root", ((str(index), {"body": "x" * 8192, "url": f"u{index}"}) for index in range(count)))
     # Before the admitted-byte handoff these actual counts were 5 / 3 / 2
-    # per entity, then 2 / 1 / 1. Initial Python admission encodes once;
-    # persisted rows are still validated, by the typed native decode, without
-    # re-proving the canonical form that encoding established.
-    assert counts == {"schema_conversions": count, "canonical_encodes": count, "stored_validations": count}
-    with CoreWorkspace(tmp_path) as reopened:
+    # per entity, then 2 / 1 / 1, then one conversion and one encode with one
+    # stored validation to publish a ledger row per member. Members are now
+    # registered through the state's layer, so import reads none back.
+    assert counts == {"schema_conversions": count, "canonical_encodes": count}
+    with CoreWorkspace(tmp_path) as reopened, entity_codec_counts() as counts:
         assert [entity.value.value["url"] for _, entity in reopened.rows("root")] == [f"u{i}" for i in range(count)]
+    # Reading validates each persisted row once, by the typed native decode,
+    # without re-proving the canonical form that encoding established.
+    assert counts == {"stored_validations": count}
 
 
 def test_snapshot_detaches_input_and_public_values_without_stale_bytes(tmp_path):
@@ -127,20 +131,25 @@ def test_snapshot_has_no_unchecked_admission_path(value):
         AdmittedRecord(value)
 
 
-def test_checkpoint_compares_existing_metadata_without_rereading_payloads(tmp_path, monkeypatch):
+def test_checkpoint_repacks_members_without_rereading_or_registering_them(tmp_path, monkeypatch):
+    """A checkpoint neither looks members up by identity nor adds ledger rows; their identities stay immutable."""
     with CoreWorkspace(tmp_path) as workspace:
         workspace.create("root", ((str(index), {"url": f"u{index}", "body": "x" * 8192}) for index in range(8)))
         before = list(workspace.rows("root"))
         def unexpected(*args, **kwargs):
-            raise AssertionError("incoming occurrence comparison reread an old payload")
+            raise AssertionError("checkpoint looked up a member payload by identity")
         with monkeypatch.context() as guarded:
             guarded.setattr(workspace.records, "lookup_batches", unexpected)
             with workspace.publisher.session() as session:
                 workspace.states.checkpoint(session, "root", representation_id="checkpoint", unit_id="checkpoint")
-            altered = core.Entity(format_version=1, entity_id=before[0][1].entity_id,
-                                  entity_type="occurrence", value=core.InlineValue(value={"changed": True}))
-            with pytest.raises(IntegrityError, match="immutable"):
-                workspace.retain((AdmittedRecord(altered),), unit_id="conflict", roots=(("entity", altered.entity_id),))
+        with workspace.ledger._transaction() as connection:
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity'").fetchone() == (0,)
+        # The checkpoint's layer holds the same bytes as the original, so a
+        # conflicting record is refused against either copy.
+        altered = core.Entity(format_version=1, entity_id=before[0][1].entity_id,
+                              entity_type="occurrence", value=core.InlineValue(value={"changed": True}))
+        with pytest.raises(IntegrityError, match="immutable"):
+            workspace.retain((AdmittedRecord(altered),), unit_id="conflict", roots=(("entity", altered.entity_id),))
         assert list(workspace.rows("root")) == before
         assert not workspace.ledger.is_committed("conflict")
 
@@ -214,5 +223,3 @@ def test_stored_rows_are_still_validated(payload):
     """A truncated or mistyped persisted row is refused without the canonical re-proof."""
     with pytest.raises(IntegrityError):
         core_admission.stored_record(payload)
-    with pytest.raises(IntegrityError):
-        core_admission.stored_snapshot(payload)

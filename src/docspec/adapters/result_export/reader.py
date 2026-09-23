@@ -101,10 +101,14 @@ class AdmittedResultExport:
         self._require_open()
         return dict(self._summary)
     def record(self, kind, identity):
-        """Return one exported ledger record's value after re-verifying the metadata member."""
+        """Return one exported record's value after re-verifying the metadata member.
+
+        A member of an exported state has no ledger row; it resolves through
+        the state's entity layer, as it does in a workspace.
+        """
 
         self._verify("ledger.sqlite")
-        with owned_iterator(self._ledger.read_records([(kind, identity)])) as batches:
+        with self._publisher.session() as session, owned_iterator(session.read_records([(kind, identity)])) as batches:
             row = next(batches)[0]
         return None if row is None else row.value
     def roots(self):
@@ -176,7 +180,7 @@ class AdmittedResultExport:
                 for batch in self._ledger.read_records(keys):
                     for row in batch:
                         if row.available:
-                            self._states.check_representation(session, record_value(row.value), retained=False, publish_entities=False)
+                            self._states.check_representation(session, record_value(row.value), retained=False)
             with owned_iterator(self.roots()) as selected:
                 while group := tuple(islice(selected, 16)):
                     root_count += len(group)

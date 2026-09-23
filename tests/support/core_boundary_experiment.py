@@ -153,42 +153,28 @@ def schema(directory, count):
             "admission": stats, "metrics": metrics}
 
 
-def _inline_attempt(path, record_bytes):
-    """Publish one inline record of exactly ``record_bytes`` and report what the owners did.
-
-    An over-limit attempt records the refusal instead of failing the probe, so
-    the caller can assert which byte ceiling it hit.
-    """
-
-    identity = "boundary:inline"
+def _sized_entity(identity, record_bytes):
     overhead = len(encode_record(_entity(identity, "")))
     entity = _entity(identity, "x" * (record_bytes - overhead))
     assert len(encode_record(entity)) == record_bytes
-    observed, metrics, original_encode = {}, {}, ledger_module._encode
-    def encode(value):
-        payload = original_encode(value)
-        if (isinstance(value, dict) and set(value) == {"records", "retained", "candidates", "links"}
-                and any(record[:2] == ["entity", identity] for record in value["records"])):
-            observed["commit_receipt_bytes"] = len(payload)
-        return payload
+    return entity, overhead
+
+
+def _bulk_attempt(path, record_bytes):
+    """Import one state member of exactly ``record_bytes`` and report whether it published and reopened.
+
+    A state registers its members through its layer, so only the native
+    record ceiling bounds a member; no per-member commit receipt shares it.
+    """
+
+    entity, overhead = _sized_entity("boundary:member", record_bytes)
+    observed, metrics = {}, {}
     with CoreWorkspace(path) as workspace, core_runtime_experiment.observations(workspace, metrics):
-        commit = workspace.ledger.commit
-        def captured(batch):
-            if batch.record_layer is not None:
-                observed["layer"] = batch.record_layer
-            return commit(batch)
-        with patch.object(ledger_module, "_encode", encode), patch.object(workspace.ledger, "commit", captured):
-            try:
-                with workspace.publisher.session() as session:
-                    workspace.states.create_keyed(session, state_id="root", representation_id="root:physical", unit_id="root:import", rows=(("one", entity),))
-            except LimitExceededError as error:
-                observed["refusal"] = str(error)
-        layer = observed.pop("layer", None)
-        if layer is not None:
-            with closing(workspace.records.admit(layer).batches()) as batches:
-                payloads = [payload for batch in batches for payload in batch.column("record_json").to_pylist()]
-            assert len(payloads) == 1 and payloads[0] == encode_record(entity)
-            observed["native_encoded_record_admitted"] = True
+        try:
+            with workspace.publisher.session() as session:
+                workspace.states.create_keyed(session, state_id="root", representation_id="root:physical", unit_id="root:import", rows=(("one", entity),))
+        except LimitExceededError as error:
+            observed["refusal"] = str(error)
     with CoreWorkspace(path) as workspace:
         published = next(workspace.ledger.read_records((("state", "root"),)))[0] is not None
         if published:
@@ -199,17 +185,51 @@ def _inline_attempt(path, record_bytes):
             "record_framing_bytes": overhead - 2, "published_and_reopened": published, "metrics": metrics, **observed}
 
 
+def _inline_attempt(path, record_bytes):
+    """Publish one record of exactly ``record_bytes`` and report what the owners did.
+
+    An over-limit attempt records the refusal instead of failing the probe, so
+    the caller can assert which byte ceiling it hit.
+    """
+
+    identity = "boundary:inline"
+    entity, overhead = _sized_entity(identity, record_bytes)
+    observed, metrics, original_encode = {}, {}, ledger_module._encode
+    def encode(value):
+        payload = original_encode(value)
+        if (isinstance(value, dict) and set(value) == {"records", "retained", "candidates", "links"}
+                and any(record[:2] == ["entity", identity] for record in value["records"])):
+            observed["commit_receipt_bytes"] = len(payload)
+        return payload
+    with CoreWorkspace(path) as workspace, core_runtime_experiment.observations(workspace, metrics):
+        with patch.object(ledger_module, "_encode", encode):
+            try:
+                with workspace.publisher.session() as session:
+                    session.publish(MetadataBatch("boundary:inline", records=(entity,), retained=(("entity", identity),)))
+            except LimitExceededError as error:
+                observed["refusal"] = str(error)
+    with CoreWorkspace(path) as workspace:
+        row = next(workspace.ledger.read_records((("entity", identity),)))[0]
+        published = row is not None
+        if published:
+            assert row.retained and row.available and row.value == entity
+        assert published == ("refusal" not in observed)
+    return {"encoded_record_bytes": record_bytes, "json_value_bytes": len(canonical_value_bytes(entity.value.value)),
+            "record_framing_bytes": overhead - 2, "published_and_reopened": published, "metrics": metrics, **observed}
+
+
 def boundary(directory, _count=None):
     """Distinguish native record, inline publication and ContentRef value limits."""
+    native = _bulk_attempt(directory / "native-record-ceiling", BATCH_BYTES)
+    above_record = _bulk_attempt(directory / "native-record-over", BATCH_BYTES + 1)
+    assert native["published_and_reopened"] and not above_record["published_and_reopened"]
     exact = _inline_attempt(directory / "inline-record-ceiling", BATCH_BYTES)
-    assert exact["native_encoded_record_admitted"] and not exact["published_and_reopened"]
+    assert not exact["published_and_reopened"]
     # Measure the actual owner-produced receipt; do not reproduce ledger framing.
     supported_size = BATCH_BYTES - exact["commit_receipt_bytes"]
     supported = _inline_attempt(directory / "inline-publication-ceiling", supported_size)
     next_byte = _inline_attempt(directory / "inline-publication-over", supported_size + 1)
-    above_record = _inline_attempt(directory / "inline-record-over", BATCH_BYTES + 1)
     assert supported["published_and_reopened"] and not next_byte["published_and_reopened"]
-    assert not above_record["published_and_reopened"] and not above_record.get("native_encoded_record_admitted", False)
     value = "x" * (BATCH_BYTES - 2)
     assert len(canonical_value_bytes(value)) == BATCH_BYTES
     path, metrics = directory / "content-value-ceiling", {}
@@ -228,11 +248,12 @@ def boundary(directory, _count=None):
         row = next(workspace.ledger.read_records((("entity", entity.entity_id),)))[0]
         assert row.retained and row.available and row.value.value == content
         assert session.read_json(content, label="boundary value") == value
-    return {"ceiling_bytes": BATCH_BYTES, "native_record_ceiling": exact, "inline_publication_ceiling": supported,
-            "inline_publication_plus_one": next_byte, "native_record_plus_one": above_record,
+    return {"ceiling_bytes": BATCH_BYTES, "native_record_ceiling": native, "native_record_plus_one": above_record,
+            "inline_record_ceiling": exact, "inline_publication_ceiling": supported, "inline_publication_plus_one": next_byte,
             "content_reference_value": {"encoded_json_value_bytes": BATCH_BYTES, "encoded_record_bytes": len(encode_record(entity)),
                 "published_and_reopened": True, "plus_one_refusal": refusal, "metrics": metrics},
-            "scope": "Native encoded records and JSON ContentRef values each permit 8 MiB; inline publication shares 8 MiB between records, commit receipt and guards."}
+            "scope": "State members, native encoded records and JSON ContentRef values each permit 8 MiB; "
+                     "an explicitly published record shares 8 MiB with its commit receipt and guards."}
 
 
 def run_stage(directory, stage, *, count=1024):

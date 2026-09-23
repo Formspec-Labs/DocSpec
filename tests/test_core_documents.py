@@ -186,6 +186,29 @@ def test_documents_batch_lookup_publication_and_survive_sibling_failure(tmp_path
         assert workspace.ledger.current("docs") == ("state", "repaired")
 
 
+def test_document_runs_pin_sources_through_their_state_without_searching_layers(tmp_path, monkeypatch):
+    """Captures resolve sources through the source state's own layer and pin each once; segments add no member rows."""
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    (inputs / "file.txt").write_text("Hello world.\n\nSecond paragraph.")
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        workspace.create("unrelated", [("key", {"n": 1})])
+        pipeline = workspace.documents(fetcher=LocalFileContentFetcher(inputs))
+        pipeline.import_sources([SourceItem(f"document-{index}", "1", (CandidateFile("text", "file.txt", "text/plain"),))
+                                 for index in range(3)], state_id="catalog")
+        def unexpected(*args, **kwargs):
+            raise AssertionError("a document run searched every retained layer for a source")
+        monkeypatch.setattr(workspace.states, "find_members", unexpected)
+        pipeline.run("catalog", run_id="processed")
+        with workspace.publisher.session() as session:
+            layer = workspace.states.layers(session, "catalog")["entities"].reference
+        sources = sorted(entity_id for _, entity_id, _ in pipeline.rows("catalog"))
+        with workspace.ledger._transaction() as connection:
+            assert [row[0] for row in connection.execute(
+                "SELECT record_id FROM records WHERE kind='entity' AND source_layer=? ORDER BY record_id", (layer.layer_id,))] == sources
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity' AND record_id LIKE '%:segments:%'").fetchone() == (0,)
+
+
 def test_document_roots_include_inactive_sources_and_candidate_order(tmp_path):
     """Retained roots list the state first, then active source selections, and inactive sources last."""
     from docspec.domain.content import SourceItemState

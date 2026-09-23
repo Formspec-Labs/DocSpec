@@ -33,15 +33,18 @@ def test_actual_record_publication_and_content_value_boundaries(tmp_path):
     """Publication accepts exactly the byte ceilings it claims: one byte over refuses in each path."""
     result = run_stage(tmp_path, "boundary")
     native, published = result["native_record_ceiling"], result["inline_publication_ceiling"]
-    assert native["encoded_record_bytes"] == BATCH_BYTES
-    assert native["native_encoded_record_admitted"] and not native["published_and_reopened"]
-    assert published["encoded_record_bytes"] == BATCH_BYTES - native["commit_receipt_bytes"]
+    # A state member is bounded by the native record ceiling alone.
+    assert native["encoded_record_bytes"] == BATCH_BYTES and native["published_and_reopened"]
+    assert result["native_record_plus_one"]["encoded_record_bytes"] == BATCH_BYTES + 1
+    assert not result["native_record_plus_one"]["published_and_reopened"]
+    # An explicitly published record shares the unit's bytes with its receipt.
+    exact = result["inline_record_ceiling"]
+    assert exact["encoded_record_bytes"] == BATCH_BYTES and not exact["published_and_reopened"]
+    assert published["encoded_record_bytes"] == BATCH_BYTES - exact["commit_receipt_bytes"]
     assert published["encoded_record_bytes"] + published["commit_receipt_bytes"] == BATCH_BYTES
     assert published["published_and_reopened"]
     assert result["inline_publication_plus_one"]["encoded_record_bytes"] == published["encoded_record_bytes"] + 1
     assert not result["inline_publication_plus_one"]["published_and_reopened"]
-    assert result["native_record_plus_one"]["encoded_record_bytes"] == BATCH_BYTES + 1
-    assert not result["native_record_plus_one"].get("native_encoded_record_admitted", False)
     content = result["content_reference_value"]
     assert content["encoded_json_value_bytes"] == BATCH_BYTES and content["encoded_record_bytes"] < 1024
     assert content["published_and_reopened"] and content["plus_one_refusal"]

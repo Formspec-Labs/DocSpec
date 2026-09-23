@@ -468,9 +468,11 @@ precision; absent times remain unknown. Entity and state IDs share one data
 identity namespace so result bindings resolve without ambiguity.
 
 Materialized roots retain membership and canonical entity rows in pinned
-Iceberg snapshots. The ledger keeps immutable entity digests and references to those
-rows; its ordinary record API resolves bounded requests through the same native
-storage queries. Moving a validated entity between inline and bulk storage
+Iceberg snapshots. A state's manifest registers its members once per layer. The
+ledger keeps immutable digests and layer references for entities published as
+records, and for a state member once a publication references it by identity;
+the publisher resolves other members through their states' entity layers with
+the same native storage queries. Moving a validated entity between inline and bulk storage
 changes its physical location, preserving its logical record and identity.
 Root publication follows a native membership-to-occurrence completeness check.
 Root reads join these retained layers directly in DuckDB.

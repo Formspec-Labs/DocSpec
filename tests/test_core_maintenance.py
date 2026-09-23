@@ -26,7 +26,21 @@ def records_for(ledger, keys):
     return [row for batch in ledger.read_records(keys) for row in batch]
 
 
-ROOT_KEYS = (("state", "root"), ("state_representation", "root-r"), ("entity", "e"))
+def member(publisher, identity):
+    """Read one entity by identity through publication, which resolves unpinned bulk members."""
+    with publisher.session() as session:
+        return next(session.read_records([("entity", identity)]))[0]
+
+
+def pin(publisher, *identities, unit="pin"):
+    """Reference bulk members by identity, which gives each a ledger row at its layer."""
+    with publisher.session() as session:
+        session.publish(MetadataBatch(unit, retained=tuple(("entity", identity) for identity in identities)))
+
+
+# A bulk member has no ledger row of its own: removal names its state.
+ROOT_KEYS = (("state", "root"), ("state_representation", "root-r"))
+PINNED_KEYS = ROOT_KEYS + (("entity", "e"),)
 
 
 def test_current_switch_is_guarded_and_retains_both_states(tmp_path):
@@ -64,10 +78,14 @@ def test_policy_scope_and_recovery_commitments_refuse_before_intent(tmp_path):
             maintenance.remove_under_policy("outside", "policy", [("selected_value", "recovery")])
         with pytest.raises(IntegrityError, match="commitments outside"):
             maintenance.remove_under_policy("required", "policy", ROOT_KEYS)
+        authorize(publisher, [("entity", "e")], identity="member-policy")
+        with pytest.raises(IntegrityError, match="retained historical records"):
+            maintenance.remove_under_policy("unpinned", "member-policy", [("entity", "e")])
+        pin(publisher, "e")
         with pytest.raises(IntegrityError, match="state membership"):
-            maintenance.remove_under_policy("member", "policy", [("entity", "e")])
-        assert ledger.removal("required") is None
-        assert all(row.available for row in records_for(ledger, ROOT_KEYS))
+            maintenance.remove_under_policy("member", "member-policy", [("entity", "e")])
+        assert ledger.removal("required") is None and ledger.removal("member") is None
+        assert all(row.available for row in records_for(ledger, PINNED_KEYS))
 
 
 def test_direct_selection_survives_actual_parent_bulk_byte_reclamation(tmp_path):
@@ -90,21 +108,21 @@ def test_direct_selection_survives_actual_parent_bulk_byte_reclamation(tmp_path)
         assert all(not (records.root / ref.locator).exists() for ref in old_files)
         stored = records_for(ledger, ROOT_KEYS)
         assert all(row.retained and not row.available and row.evidence_version == 1 for row in stored)
-        assert stored[-1].value is None
         with ledger._transaction() as connection:
             assert connection.execute("SELECT count(*) FROM records").fetchone() == before
-            assert connection.execute("SELECT row_digest,source_layer FROM records WHERE record_id='e'").fetchone()[0].startswith("sha256:")
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity'").fetchone() == (0,)
         assert maintenance.remove_under_policy("remove", "policy", ROOT_KEYS) == outcome
     with ExitStack() as stack:
         records, ledger, _, selections, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
             assert selections.evidence(session, direct) == expected
-        assert records_for(ledger, [("entity", "e")])[0].value is None
+        # The removed state's layer released the member with its bytes.
+        assert member(publisher, "e") is None
         assert ledger.removal("remove")[2]
 
 
 def test_shared_entity_source_layer_and_content_are_retained(tmp_path):
-    """Removing one occurrence key keeps the entity source files that other member keys still depend on."""
+    """Removing a state keeps its entity files while a pinned member still depends on them."""
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         maintenance = CoreMaintenance(publisher, records)
@@ -113,13 +131,14 @@ def test_shared_entity_source_layer_and_content_are_retained(tmp_path):
             manifest = states.manifest(session, "root")
             layer = states._references(manifest)["entities"]
             old_files = list(records.physical_references(layer))
-        keys = ROOT_KEYS
-        authorize(publisher, keys)
-        outcome = maintenance.remove_under_policy("shared", "policy", keys)
+        pin(publisher, "keep")
+        authorize(publisher, ROOT_KEYS)
+        outcome = maintenance.remove_under_policy("shared", "policy", ROOT_KEYS)
         assert outcome["retained"] == len(old_files)
         assert all((records.root / ref.locator).exists() for ref in old_files)
         assert records_for(ledger, [("entity", "keep")])[0].value.value.value == 2
-        assert records_for(ledger, [("entity", "e")])[0].value is None
+        # An unpinned member leaves with its state, though its bytes stay shared.
+        assert records_for(ledger, [("entity", "e")]) == [None] and member(publisher, "e") is None
 
 
 @pytest.mark.parametrize("after_delete", [False, True])
@@ -186,7 +205,7 @@ def test_available_external_rows_never_hide_missing_bytes(tmp_path):
             for reference in records.physical_references(layer):
                 (records.root / reference.locator).unlink()
         with pytest.raises((IntegrityError, FileNotFoundError)):
-            records_for(ledger, [("entity", "e")])
+            member(publisher, "e")
 
 
 def test_reclaimed_occurrence_can_only_restore_its_exact_canonical_identity(tmp_path):
@@ -196,8 +215,10 @@ def test_reclaimed_occurrence_can_only_restore_its_exact_canonical_identity(tmp_
         maintenance = CoreMaintenance(publisher, records)
         with publisher.session() as session:
             import_root(states, session, [("key", "e", {"x": 1})])
-        authorize(publisher, ROOT_KEYS)
-        maintenance.remove_under_policy("remove", "policy", ROOT_KEYS)
+        # Only a pinned member keeps a historical row to restore against.
+        pin(publisher, "e")
+        authorize(publisher, PINNED_KEYS)
+        maintenance.remove_under_policy("remove", "policy", PINNED_KEYS)
         assert records_for(ledger, [("entity", "e")])[0].value is None
         from tests.test_core_states import occurrence
         with publisher.session() as session:
@@ -232,7 +253,9 @@ def test_obsolete_representation_reclaims_stale_source_files_after_compaction(tm
         assert all((records.root / locator).exists() for locator in current_refs)
         with publisher.session() as session:
             assert selections.evidence(session, selected) == expected
-        assert all(row.available for row in records_for(ledger, [("entity", f"e{i}") for i in range(512)]))
+            # Members resolve through the checkpoint's layer after the original's removal.
+            keys = [("entity", f"e{i}") for i in range(512)]
+            assert all(row.available for batch in session.read_records(keys) for row in batch)
 
 
 def test_direct_opaque_members_keep_shared_blobs_when_parent_is_removed(tmp_path):
@@ -251,7 +274,76 @@ def test_direct_opaque_members_keep_shared_blobs_when_parent_is_removed(tmp_path
         with publisher.session() as session:
             assert selections.evidence(session, direct) == evidence
             assert b"".join(publisher.blobs.read(BlobRef(content.locator, content.digest, content.byte_size, content.media_type))) == b"opaque document bytes"
-        assert not records_for(ledger, [("entity", "e")])[0].available
+        assert member(publisher, "e") is None
+
+
+def test_retained_state_protects_member_content_without_member_rows(tmp_path):
+    """A state's content-valued members protect their blobs through its layer; removing the state releases them."""
+    with ExitStack() as stack:
+        records, ledger, states, _, publisher = setup(stack, tmp_path)
+        maintenance = CoreMaintenance(publisher, records)
+        with publisher.session() as session:
+            content = session.retain_bytes([b"member document bytes"])
+            entity = core.Entity(format_version=1, entity_id="e", entity_type="occurrence", value=content)
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root", entities=[entity],
+                          members=[core.Membership(member_key="key", occurrence_id="e")])
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity'").fetchone() == (0,)
+        blob = RemovalContent("blobs", BlobRef(content.locator, content.digest, content.byte_size, content.media_type))
+        authorize(publisher, ROOT_KEYS, orphans=True)
+        with pytest.raises(IntegrityError, match="required by a retained commitment"):
+            maintenance.remove_under_policy("orphan", "policy", orphan_content=[blob])
+        maintenance.remove_under_policy("remove", "policy", ROOT_KEYS)
+        outcomes = {row.content: row.status for batch in ledger.removal_outcomes("remove") for row in batch}
+        assert outcomes[blob] == "deleted"
+        with pytest.raises(IntegrityError, match="size or storage type"):
+            publisher.blobs.stat(blob.reference)
+
+
+def test_existing_member_rows_protect_their_layer_until_removed_explicitly(tmp_path):
+    """Workspaces are not migrated: rows written per member keep their layer until a policy removes those rows too."""
+    from docspec.domain.core_admission import AdmittedRecord
+    from tests.test_core_states import occurrence
+    with ExitStack() as stack:
+        records, ledger, states, _, publisher = setup(stack, tmp_path)
+        maintenance = CoreMaintenance(publisher, records)
+        with publisher.session() as session:
+            import_root(states, session, [("key", "e", {"x": 1})])
+            layer = states.layers(session, "root")["entities"].reference
+            files = list(records.physical_references(layer))
+        # The row DocSpec 0.9.1 published for every member of a new state.
+        ledger.commit(MetadataBatch(layer.layer_id + ":entities:0", records=(AdmittedRecord(occurrence("e", {"x": 1})),),
+                                    retained=(("entity", "e"),), record_layer=layer))
+        authorize(publisher, PINNED_KEYS)
+        maintenance.remove_under_policy("state", "policy", ROOT_KEYS)
+        assert all((records.root / ref.locator).exists() for ref in files)
+        assert records_for(ledger, [("entity", "e")])[0].value == occurrence("e", {"x": 1})
+        maintenance.remove_under_policy("rows", "policy", [("entity", "e")])
+        assert not any((records.root / ref.locator).exists() for ref in files)
+
+
+def test_pinned_member_follows_its_newest_copy_so_superseded_layers_release(tmp_path):
+    """A member present in an original and a checkpoint layer pins to the checkpoint; the original can go."""
+    with ExitStack() as stack:
+        records, ledger, states, _, publisher = setup(stack, tmp_path)
+        maintenance = CoreMaintenance(publisher, records)
+        with publisher.session() as session:
+            import_root(states, session, [("key", "e", {"x": 1}), ("other", "f", {"x": 2})])
+            original = states.layers(session, "root")["entities"].reference
+            # Named to sort after the original, so layer order alone would not choose it.
+            states.checkpoint(session, "root", representation_id="z-checkpoint", unit_id="checkpoint")
+            compacted = states.layers(session, "root")["entities"].reference
+        assert original.layer_id != compacted.layer_id
+        pin(publisher, "e")
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT source_layer FROM records WHERE kind='entity' AND record_id='e'").fetchone() == (compacted.layer_id,)
+        old_files = {ref.locator for ref in records.physical_references(original)} - {
+            ref.locator for ref in records.physical_references(compacted)}
+        authorize(publisher, [("state_representation", "root-r")])
+        maintenance.remove_under_policy("obsolete", "policy", [("state_representation", "root-r")])
+        assert old_files and not any((records.root / locator).exists() for locator in old_files)
+        assert records_for(ledger, [("entity", "e")])[0].value.value.value == {"x": 1}
+        assert member(publisher, "f").value.value.value == {"x": 2}
 
 
 def test_resume_rechecks_new_retention_before_deleting_pending_orphan(tmp_path, monkeypatch):
@@ -402,8 +494,9 @@ def test_staged_validation_is_read_only_and_rejects_conflicting_reclaimed_identi
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
             import_root(states, session, [("key", "e", {"x": 1})])
-        authorize(publisher, ROOT_KEYS)
-        CoreMaintenance(publisher, records).remove_under_policy("remove", "policy", ROOT_KEYS)
+        pin(publisher, "e")
+        authorize(publisher, PINNED_KEYS)
+        CoreMaintenance(publisher, records).remove_under_policy("remove", "policy", PINNED_KEYS)
         with publisher.session() as session:
             with pytest.raises(IntegrityError, match="immutable retained record"):
                 session.validate(MetadataBatch("bad", records=(occurrence("e", {"x": 2}),), retained=(("entity", "e"),)))

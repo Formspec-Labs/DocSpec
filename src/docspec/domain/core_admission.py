@@ -297,19 +297,6 @@ class AdmittedRecord:
         return _plain(self.record)
 
 
-def stored_snapshot(payload: bytes) -> AdmittedRecord:
-    """Admit bytes that DocSpec itself encoded canonically and just read back from its record files.
-
-    Persisted rows are still validated, with the complete typed decode and
-    record checks; only the canonical re-encoding that proved their byte form
-    at encode time is not repeated. Caller-supplied bytes use ``AdmittedRecord``.
-    """
-    stored_record(payload)
-    snapshot = object.__new__(AdmittedRecord)
-    object.__setattr__(snapshot, "_payload", payload)
-    return snapshot
-
-
 def record_parts(value: core.CoreRecord | dict[str, Any] | AdmittedRecord) -> tuple[dict[str, Any], bytes]:
     """Read a checked value and its original canonical bytes without re-encoding."""
     snapshot = value if type(value) is AdmittedRecord else AdmittedRecord(value)

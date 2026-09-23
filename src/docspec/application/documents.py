@@ -313,6 +313,10 @@ class DocumentPipeline:
                     with closing(bounded_rows(work_items, size=lambda row: len(canonical_value_bytes(row)), max_rows=32)) as work_groups:
                         for work in work_groups:
                             with self.publisher.session() as active:
+                                # Sources are members of the source state; resolve them through its
+                                # layer once, rather than searching every retained layer per capture.
+                                sources = {source_id for _, source_id, _, _ in work}
+                                active.bulk_member_records(sources, active.states.locate_in(active, source_state_id, sources))
                                 calls = (self._capture_call(active, source_id, index, identity=prefix + ":capture", fresh=fresh,
                                     observe_source_bytes=source_bytes)
                                     for key, source_id, index, prefix in work)

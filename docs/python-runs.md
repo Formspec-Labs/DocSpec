@@ -73,6 +73,13 @@ order. Close the iterator when stopping early. `compare` computes complete
 counts in DuckDB and returns a bounded sample; it distinguishes a changed
 occurrence from changed value content.
 
+A member can also be read by its occurrence ID, as `inspect("entity", id)`, a
+`WholeInput` or a value edit do. It has no ledger row until a publication
+references it that way, so the first read searches every retained state's entity
+layer, one layer admission each; the referencing publication then pins it and
+later reads use that row. Read whole states through `rows`, `open_state` or
+`compare`, which never search by identity.
+
 Run the [two-field example](../examples/core_values.py) with
 `python -m examples.core_values /path/to/new-workspace`. It performs immutable
 title and URL edits, keeps the original result for the title change, executes
@@ -306,7 +313,9 @@ closed description names `remove` keys and a `collect_unreferenced` boolean.
 `remove_under_policy` refuses unsupported scope and outstanding retention
 obligations. It records authorization, availability changes and each physical
 outcome. Use `resume(update_id)` after interruption. Historical identities and
-provenance remain even when authorized bytes have been removed.
+provenance remain even when authorized bytes have been removed. A policy names
+states rather than their members; a member that no publication referenced by
+identity stops resolving with its state.
 
 ## Use the same operations from commands
 

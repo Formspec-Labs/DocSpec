@@ -7,11 +7,24 @@ SQLite remains the authoritative ledger for provenance, publication, progress an
 retention. Opaque document bytes remain in the content-addressed blob store.
 
 `CoreWorkspace` stores all entity values in the record store: source documents,
-generated outputs, lookup inputs, and dependency comparisons. SQLite keeps their
-IDs, digests, sizes and layer locations, together with the bounded operation
-descriptions, relationships and retry state needed for publication. Status-only
-reads do not load value payloads. Publication and comparison writes share bounded
-batches; retry reuses their existing physical locations.
+generated outputs, lookup inputs, and dependency comparisons. For an entity
+published as a record, SQLite keeps its ID, digest, size and layer location,
+together with the bounded operation descriptions, relationships and retry state
+needed for publication. Status-only reads do not load value payloads. Publication
+and comparison writes share bounded batches; retry reuses their existing physical
+locations.
+
+A bulk state registers its members once per layer: its manifest names the entity
+and membership layers, and a member gets no SQLite row of its own. The first
+publication that references a member by identity (a whole-value input, an adopted
+or selected output, a parent) pins it with one row and one retention row at its
+existing layer. Until then a read by identity searches the entity layers of every
+available retained state, admitting each layer once per session, and refuses
+copies that differ. Callers that know the state resolve through its layer alone,
+as document runs do for their sources. Workspaces written by DocSpec 0.9.1 or
+earlier keep their row per member and read as before; they are not migrated,
+and releasing those rows is an explicit removal. See
+[C28](core-model-implementation-tasks.md#c28--register-bulk-state-members-per-layer).
 
 New literal selected values use the existing content store. Existing inline
 records remain readable, and an exact legacy selection retry preserves its

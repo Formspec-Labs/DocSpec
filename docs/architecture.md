@@ -55,7 +55,8 @@ second document planner, cache, or publication lifecycle.
 | Shared encoder and admission | Exact value types, canonical bytes, SHA-256, typed metadata and supplied JSON Schemas |
 
 Bulk members remain in native layers; the ledger does not create a per-member
-SQLite graph. Physical representation is separate from logical state identity.
+SQLite graph. A member gains a ledger row only when a publication references it
+by identity. Physical representation is separate from logical state identity.
 See [record storage](record-storage.md) and the
 [implementation plan](core-model-implementation-plan.md).
 

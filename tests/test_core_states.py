@@ -166,13 +166,16 @@ def test_bulk_root_recovers_scalar_and_structured_values_without_invented_proven
         with publisher.session() as session:
             states.create(session, state_id="root", representation_id="root-physical", unit_id="import-root", entities=entities, members=members)
         with ledger._transaction() as connection:
-            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity' AND payload IS NULL AND source_layer IS NOT NULL").fetchone() == (4,)
+            # Members are registered by the state's manifest, not one ledger row each.
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity'").fetchone() == (0,)
             assert connection.execute("SELECT count(*) FROM provenance_events").fetchone() == (0,)
     with ExitStack() as stack:
         records, ledger, states, publisher = open_core(stack, tmp_path)
         with publisher.session() as session:
-            rows = [row for batch in ledger.read_records([("entity", "d"), ("entity", "absent"), ("entity", "a"), ("entity", "d")]) for row in batch]
+            keys = [("entity", "d"), ("entity", "absent"), ("entity", "a"), ("entity", "d")]
+            rows = [row for batch in session.read_records(keys) for row in batch]
             assert [None if row is None else row.value for row in rows] == [entities[3], None, entities[0], entities[3]]
+            assert all(row is None for batch in ledger.read_records(keys) for row in batch)
             def unexpected(*args, **kwargs):
                 raise AssertionError("retained bulk state reread all payloads for admission")
             monkeypatch.setattr(records, "admit", unexpected)
@@ -198,64 +201,58 @@ def test_root_larger_than_metadata_unit_and_empty_root_use_same_path(tmp_path):
                               members=(core.Membership(member_key=f"key-{i:05}", occurrence_id=f"entity-{i:05}") for i in range(count)))
                 with states.relation(session, state_id) as relation:
                     assert relation.aggregate("count(*)").fetchone() == (count,)
-        assert next(ledger.read_records([("entity", "entity-04096")]))[0].value.value.value == 4096
+        with publisher.session() as session:
+            assert next(session.read_records([("entity", "entity-04096")]))[0].value.value.value == 4096
 
 
-def test_entity_publication_coalesces_reads_and_retries_across_chunk_sizes(tmp_path, monkeypatch):
-    from docspec.adapters.storage import core_states
+def ledger_rows(ledger):
+    """Count ledger records and retention rows by kind."""
+    with ledger._transaction() as connection:
+        return (dict(connection.execute("SELECT kind,count(*) FROM records GROUP BY kind").fetchall()),
+                dict(connection.execute("SELECT kind,count(*) FROM retention GROUP BY kind").fetchall()))
 
-    count = 2305
+
+def test_bulk_state_registers_members_per_layer_not_per_row(tmp_path):
+    """A 1,000-member state adds its state and representation rows only; members resolve through its layer.
+
+    Before layer registration each member cost one records row and one
+    retention row, about 700 bytes and 0.25 ms of ledger work.
+    """
+    count = 1000
     with ExitStack() as stack:
         _, ledger, states, publisher = open_core(stack, tmp_path)
         with publisher.session() as session:
             states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
-                                rows=((str(i), occurrence(f"e{i:05}", i)) for i in range(count)))
-            admitted = states.layers(session, "root")["entities"]
-            with closing(admitted.batches()) as batches:
-                assert sum(1 for _ in batches) == 10
-            with ledger._transaction() as connection:
-                original_units = connection.execute("SELECT * FROM units ORDER BY unit_id").fetchall()
-                assert connection.execute("SELECT count(*) FROM units WHERE unit_id LIKE ?",
-                                          (admitted.reference.layer_id + ":entities:%",)).fetchone() == (2,)
-            batches = type(admitted).batches
-            def smaller_batches(layer, **kwargs):
-                with closing(batches(layer, **kwargs)) as source:
-                    for batch in source:
-                        for offset in range(0, batch.num_rows, 37):
-                            yield batch.slice(offset, 37)
-            monkeypatch.setattr(type(admitted), "batches", smaller_batches)
-            canonical = core_states.canonical_value_bytes
-            def identity_only(value):
-                assert isinstance(value, str), "entity publication re-encoded an admitted record"
-                return canonical(value)
-            monkeypatch.setattr(core_states, "canonical_value_bytes", identity_only)
-            states._retain_entities(session, admitted)
-            with ledger._transaction() as connection:
-                assert connection.execute("SELECT * FROM units ORDER BY unit_id").fetchall() == original_units
-            rows = [row for batch in ledger.read_records(("entity", f"e{i:05}") for i in range(count)) for row in batch]
-            assert [row.value.value.value for row in rows] == list(range(count))
+                                rows=((f"k{i:04}", occurrence(f"e{i:04}", {"n": i})) for i in range(count)))
+        expected = {"state": 1, "state_representation": 1}
+        assert ledger_rows(ledger) == (expected, expected)
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT unit_id FROM units").fetchall() == [("root",)]
+        with publisher.session() as session:
+            wanted = [("entity", "e0500"), ("entity", "e0999"), ("entity", "absent")]
+            rows = [row for batch in session.read_records(wanted) for row in batch]
+        assert [row and (row.value.value.value, row.retained, row.available) for row in rows] == [
+            ({"n": 500}, True, True), ({"n": 999}, True, True), None]
+        assert ledger_rows(ledger) == (expected, expected)
 
 
-def test_entity_publication_reserves_metadata_receipt_bytes(tmp_path):
+def test_member_reads_by_identity_stay_within_the_batch_byte_limit(tmp_path):
     from docspec.domain.core_admission import encode_record
 
-    # Both payloads fit one read batch, but their publication receipt does not.
+    # Both payloads fit one read batch; escaped identities reach the native lookup intact.
     identities = ('escaped"identity', 'other\\identity')
     entities = [occurrence(identity, "x" * (BATCH_BYTES // 2 - len(encode_record(occurrence(identity, ""))) - 8))
                 for identity in identities]
     assert sum(len(encode_record(entity)) for entity in entities) == BATCH_BYTES - 16
     with ExitStack() as stack:
-        _, ledger, states, publisher = open_core(stack, tmp_path)
+        _, _, states, publisher = open_core(stack, tmp_path)
         with publisher.session() as session:
             states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
                                 rows=zip(identities, entities, strict=True))
-            admitted = states.layers(session, "root")["entities"]
-            with closing(admitted.batches()) as batches:
-                assert [batch.num_rows for batch in batches] == [2]
-            with ledger._transaction() as connection:
-                assert connection.execute("SELECT count(*) FROM units WHERE unit_id LIKE ?",
-                                          (admitted.reference.layer_id + ":entities:%",)).fetchone() == (2,)
-            assert [row.value for batch in ledger.read_records(("entity", identity) for identity in identities) for row in batch] == entities
+        with publisher.session() as session:
+            batches = list(session.read_records(("entity", identity) for identity in identities))
+        assert [len(batch) for batch in batches] == [2]
+        assert [row.value for row in batches[0]] == entities
 
 
 def test_missing_member_and_conflicting_occurrence_do_not_publish_root(tmp_path):
@@ -266,13 +263,30 @@ def test_missing_member_and_conflicting_occurrence_do_not_publish_root(tmp_path)
                 states.create(session, state_id="missing", representation_id="m", unit_id="missing-root", entities=[],
                               members=[core.Membership(member_key="", occurrence_id="absent")])
             assert not ledger.is_committed("missing-root")
+            members = [core.Membership(member_key="k", occurrence_id="same-id")]
             states.create(session, state_id="first", representation_id="first-r", unit_id="first", entities=[occurrence("same-id", 1)],
-                          members=[core.Membership(member_key="k", occurrence_id="same-id")])
+                          members=members)
+            # A retry cannot change the bytes of the occurrences it already retained.
             with pytest.raises(IntegrityError, match="immutable"):
-                states.create(session, state_id="conflict", representation_id="conflict-r", unit_id="conflict", entities=[occurrence("same-id", "1")],
-                              members=[core.Membership(member_key="k", occurrence_id="same-id")])
-            assert not ledger.is_committed("conflict")
-            assert next(ledger.read_records([("entity", "same-id")]))[0].value.value.value == 1
+                states.create(session, state_id="first", representation_id="first-r", unit_id="first-retry",
+                              entities=[occurrence("same-id", "1")], members=members)
+            assert not ledger.is_committed("first-retry")
+            # Nor can an explicit record reassign a retained member's identity.
+            with pytest.raises(IntegrityError, match="immutable"):
+                session.publish(MetadataBatch("conflict-record", records=(occurrence("same-id", "1"),), retained=(("entity", "same-id"),)))
+            assert not ledger.is_committed("conflict-record")
+            assert next(session.read_records([("entity", "same-id")]))[0].value.value.value == 1
+            # Another state is not compared at write: DocSpec scopes the IDs it
+            # mints. A caller that reuses one with other bytes makes every
+            # lookup by identity refuse.
+            states.create(session, state_id="conflict", representation_id="conflict-r", unit_id="conflict",
+                          entities=[occurrence("same-id", "1")], members=members)
+        with publisher.session() as session:
+            with pytest.raises(IntegrityError, match="different values"):
+                next(session.read_records([("entity", "same-id")]))
+            with pytest.raises(IntegrityError, match="different values"):
+                session.publish(MetadataBatch("pin", retained=(("entity", "same-id"),)))
+        assert not ledger.is_committed("pin")
 
 
 def test_root_producer_failure_closes_stream_and_leaves_no_published_state(tmp_path):
@@ -305,21 +319,26 @@ def test_source_key_survives_changed_occurrence_and_opaque_values_stay_exact(tmp
                 with states.relation(session, state_id) as relation:
                     key, identity, _ = relation.fetchone()
                     assert (key, identity) == ("stable-source-key", expected)
-            retained = next(ledger.read_records([("entity", "raw")]))[0].value.value
+            retained = next(session.read_records([("entity", "raw")]))[0].value.value
             blob = next(blob for blob in session.ready if blob.digest == retained.digest)
             assert b"".join(session.blobs.read(blob)) == b"opaque\x00\xffbytes"
 
 
 def test_external_entity_reads_observe_payload_byte_limit(tmp_path):
+    """By-identity reads bound their batches whether a member is read through its layer or its pin."""
     from docspec.domain.core_admission import encode_record
     body = "x" * (2 * 1024**2)
+    keys = [("entity", str(i)) for i in range(5)]
     with ExitStack() as stack:
         _, ledger, states, publisher = open_core(stack, tmp_path)
         with publisher.session() as session:
             states.create(session, state_id="root", representation_id="r", unit_id="root",
                           entities=(occurrence(str(i), body) for i in range(5)),
                           members=(core.Membership(member_key=str(i), occurrence_id=str(i)) for i in range(5)))
-            batches = list(ledger.read_records(("entity", str(i)) for i in range(5)))
+            unpinned = list(session.read_records(keys))
+            session.publish(MetadataBatch("pin", retained=tuple(keys[:2])))
+            session.publish(MetadataBatch("pin-rest", retained=tuple(keys[2:])))
+        for batches in (unpinned, list(ledger.read_records(keys))):
             assert sum(len(batch) for batch in batches) == 5
             assert len(batches) > 1
             assert all(sum(len(encode_record(row.value)) for row in batch) <= BATCH_BYTES for batch in batches)
@@ -365,3 +384,101 @@ def test_import_order_is_immaterial_and_duplicate_keys_refuse(tmp_path):
                 states.create(session, state_id="invalid", representation_id="invalid", unit_id="invalid", entities=entities,
                               members=[members[0], members[1], members[0]])
             assert not ledger.is_committed("invalid")
+
+
+def member_rows(ledger, identity):
+    """Return one entity's ledger pin and retention rows."""
+    with ledger._transaction() as connection:
+        return (connection.execute("SELECT payload IS NULL,source_layer,byte_size FROM records "
+                                   "WHERE kind='entity' AND record_id=?", (identity,)).fetchall(),
+                connection.execute("SELECT unit_id,available FROM retention WHERE kind='entity' AND record_id=?",
+                                   (identity,)).fetchall())
+
+
+def test_whole_input_reference_pins_a_member_once_at_its_layer(tmp_path):
+    """The first reference by identity pins a member with one row and one retention row; later ones add none."""
+    from docspec.application.core_edits import prepare_value_edit
+    from docspec.application.core_execution import CoreOperations
+    from docspec.domain.core_admission import encode_record
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
+                                rows=[("a", occurrence("e0", {"n": 0})), ("b", occurrence("e1", {"n": 1}))])
+            layer = states.layers(session, "root")["entities"].reference
+        assert member_rows(ledger, "e0") == ([], [])
+        pinned = None
+        for replacement in ({"n": 10}, {"n": 20}):
+            with publisher.session() as session:
+                value, _ = prepare_value_edit(operations, "e0", [{"op": "replace", "path": "", "value": replacement}], session=session)
+                operations.publish((value,), session=session)
+            records, retention = member_rows(ledger, "e0")
+            assert records == [(1, layer.layer_id, len(encode_record(occurrence("e0", {"n": 0}))))]
+            assert len(retention) == 1 and retention[0][1] == 1
+            pinned = pinned or retention
+            assert retention == pinned
+        assert member_rows(ledger, "e1") == ([], [])
+        assert next(ledger.read_records([("entity", "e0")]))[0].value == occurrence("e0", {"n": 0})
+
+
+def test_retried_unit_that_pinned_members_keeps_its_identity(tmp_path):
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
+                                rows=[("a", occurrence("e0", 0)), ("b", occurrence("e1", 1))])
+        batch = MetadataBatch("reference", retained=(("entity", "e0"), ("entity", "e1")))
+        with publisher.session() as session:
+            assert session.publish(batch) is True
+        pinned = [member_rows(ledger, identity) for identity in ("e0", "e1")]
+        assert all(len(records) == 1 and retention == [("reference", 1)] for records, retention in pinned)
+        # The retry finds its members pinned; pins stay out of the unit's receipt.
+        for _ in range(2):
+            with publisher.session() as session:
+                assert session.publish(batch) is False
+        with publisher.session() as session:
+            assert session.publish(MetadataBatch("again", retained=(("entity", "e0"),))) is True
+        assert [member_rows(ledger, identity) for identity in ("e0", "e1")] == pinned
+
+
+def test_revision_put_of_a_member_copies_it_without_a_pin(tmp_path):
+    """A revision's puts resolve by identity and join its layers; only the result state is published."""
+    from docspec.application.core_edits import prepare_revision
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root", rows=[("a", occurrence("e0", 0))])
+            states.create_keyed(session, state_id="other", representation_id="o", unit_id="other", rows=[("x", occurrence("e2", 2))])
+            change = core.Revision(format_version=1, revision_id="revision", base_state_id="root", result_state_id="changed",
+                                   edits=(core.Put(sequence=0, member_key="c", occurrence_id="e2"),))
+            operations.publish((prepare_revision(operations, change, session=session),), session=session)
+            assert [(key, entity.entity_id, entity.value.value) for key, entity in states.rows(session, "changed")] == [
+                ("a", "e0", 0), ("c", "e2", 2)]
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='entity'").fetchone() == (0,)
+
+
+def test_existing_member_rows_take_precedence_over_layer_search(tmp_path, monkeypatch):
+    """A workspace written before layer registration keeps its row per member; reads and references use it as before."""
+    from docspec.domain.core_admission import AdmittedRecord
+    entities = [occurrence("e0", 0), occurrence("e1", 1)]
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create_keyed(session, state_id="root", representation_id="r", unit_id="root",
+                                rows=zip(("a", "b"), entities, strict=True))
+            layer = states.layers(session, "root")["entities"].reference
+        # The rows DocSpec 0.9.1 published for every member of a new state.
+        ledger.commit(MetadataBatch(layer.layer_id + ":entities:0", records=tuple(AdmittedRecord(entity) for entity in entities),
+                                    retained=(("entity", "e0"), ("entity", "e1")), record_layer=layer))
+        before = [member_rows(ledger, identity) for identity in ("e0", "e1")]
+        def unexpected(*args, **kwargs):
+            raise AssertionError("a member with a ledger row was searched for in the layers")
+        monkeypatch.setattr(states, "find_members", unexpected)
+        with publisher.session() as session:
+            assert [row.value for batch in session.read_records([("entity", "e0"), ("entity", "e1")]) for row in batch] == entities
+            assert session.publish(MetadataBatch("reference", retained=(("entity", "e0"),))) is True
+        assert [member_rows(ledger, identity) for identity in ("e0", "e1")] == before

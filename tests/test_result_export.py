@@ -90,6 +90,23 @@ def test_zero_work_successor_exports_complete_retained_population(retained, tmp_
         assert list(view.rows()) == before
 
 
+def test_export_root_names_an_unpinned_member_without_writing_the_source(retained, tmp_path):
+    """A member of a bulk state resolves through its layer as an export root; export pins nothing in the source."""
+    workspace, reference = retained
+    def ledger_rows():
+        with workspace.ledger._transaction() as connection:
+            return connection.execute("SELECT kind,record_id FROM records ORDER BY kind,record_id").fetchall()
+    before = ledger_rows()
+    assert ("entity", "document") not in before
+    pin = export(workspace, tmp_path / "member-root", additional_roots=[("entity", "document")])
+    assert ledger_rows() == before
+    with opened(tmp_path / "member-root", pin) as view:
+        document = view.record("entity", "document")
+        assert (document.value.digest, document.value.locator) == (reference.digest, reference.locator)
+        assert view.read_blob(reference, max_bytes=1024) == b"retained document\n"
+        assert view.record("entity", "unused") is None
+
+
 def test_export_repacks_artifacts_without_inline_values_or_unselected_rows(retained, tmp_path):
     workspace, _ = retained
     artifact = core.Entity(format_version=1, entity_id="prepared", entity_type="artifact",

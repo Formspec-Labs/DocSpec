@@ -100,10 +100,12 @@ or second metadata writer were added.
 - The shared blob and Parquet adapters remain. Local blob and record deletion
   use the same verified, durable unlink helper. Core cleanup preserves shared
   files, records intent before changing availability, and records resumable
-  outcomes for each physical target. Available entity rows pin their current
-  source layers; authorized removal can reclaim bulk values while retaining
-  their ledger identity, digest and provenance. Exact restoration validates the
-  original digest.
+  outcomes for each physical target. Available entity rows, including state
+  members pinned by a reference, pin their current source layers; a state
+  protects its own layers through its manifest. Authorized removal names states,
+  not their unpinned members, and can reclaim bulk values while retaining the
+  ledger identity, digest and provenance of every row. Exact restoration
+  validates the original digest.
 - Explicit checkpoints and pending publication journals remain protected while
   their attempts are recoverable. Retention uses the publisher's existing
   obligation checks for both retained roots and staged journal records. A

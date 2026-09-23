@@ -423,7 +423,9 @@ execution or provenance events.
 
 The ledger stores entity identities, canonical row digests and physical layer
 references, with payloads in Parquet. Its existing record API resolves requested
-entities in bounded native lookups and checks the pinned bytes. A validated
+entities in bounded native lookups and checks the pinned bytes. (Since
+[C28](#c28--register-bulk-state-members-per-layer), a state's members get these
+rows only when a publication references them by identity.) A validated
 physical copy can replace an inline SQLite payload without changing the entity.
 Complete state reads join native membership and entity relations; they do not
 build an entire state in Python. [Root checks](../tests/test_core_states.py) cover
@@ -1039,8 +1041,8 @@ the API, and the release is 0.9.0. SpicySearch and Engine consume it through
 their [prepared metadata](../../spicyengine/PLAN.md#pm01) task.
 
 **Verified:** the focused
-[derivation suite](../../tests/test_core_derivation.py) and the retained
-[ingestion suite](../../tests/test_core_ingestion.py) pass together with the
+[derivation suite](../tests/test_core_derivation.py) and the retained
+[ingestion suite](../tests/test_core_ingestion.py) pass together with the
 broader Core suites under the project gate. The derivation suite covers an
 initial derive and its provenance readback to the rows state and every lookup
 pin, incremental puts and removals sharing base files, removals-only revisions,
@@ -1054,6 +1056,81 @@ chain agreeing with a full comparison, and `generating_request` for derived and
 imported states. Release
 0.9.0 and consumer cutover remain with the Engine
 [PM01](../../spicyengine/PLAN.md#pm01) gate.
+
+### C28 · Register bulk state members per layer
+
+**Depends on:** C10, C18, C26. **Status:** implemented (2026-09-23).
+
+**Why:** `CoreStateStorage.create` published one ledger `records` row (no
+payload, its layer, digest and size) and one `retention` row for every member
+of a bulk state. On 10,000 real prepared values that was 0.22–0.23 ms of a
+0.50–0.54 ms per-row derive, and 729 bytes of ledger per member. The retained
+Federal Register and Regulations.gov catalog ledgers are 698 MB and 1.54 GB;
+1,008,682 and 2,222,756 of their rows are these member rows, against 49 other
+records each. The [architecture](architecture.md) and [extension guide](extensions.md)
+already said the ledger creates no per-member SQLite graph, and the Core model
+requires no physical record per member ([§1](core-model.md#1-scope-and-conformance),
+[§3.2](core-model.md#32-complete-retained-states), [§8](core-model.md#8-logical-and-physical-representation)).
+
+**Change:** register a bulk state's members once per layer, through the manifest
+that already names its entity and membership layers and protects their files.
+Give a member a ledger row only when a publication references it by identity.
+Existing workspaces are not migrated: their member rows keep working, and a row
+found in the ledger always takes precedence over the layers.
+
+**Delivered implementation:** `create` writes no member rows. It still checks
+the blobs of content-valued members with one native scan (`member_contents`),
+and a retry that finds its representation also refuses an occurrence whose bytes
+changed. `Publication.read_records` resolves an entity with no row through the
+entity layers of the available retained states (`CoreStateStorage.find_members`):
+one native query over all of them returns each identity's layer and size, refuses
+copies that differ, and prefers the newest layer so a pin never keeps a
+superseded one alive. Payloads then stream in byte-bounded groups, pass full
+admission, and stay in a session cache bounded like the record window. The
+publication check resolves referenced entity and data keys the same way and
+hands them to the ledger as `MetadataBatch.members`; `commit` inserts their rows
+and retention rows before the expected-version check, refuses a digest or
+entity/state conflict, and leaves them out of the unit receipt so a retried unit
+keeps its identity. An incoming occurrence record is compared with any retained
+copy; incoming states and artifacts cannot be bulk members and never search the
+layers, so state creation, derive and generated outputs stay flat. Revision puts
+copy their occurrences into the digest-scoped inputs state and pin nothing.
+Document runs resolve sources through the source state's own layer
+(`locate_in`). Cleanup finds member blobs by scanning each entity layer once.
+Exports stay read-only on the source and retain an unpinned member root in their
+own ledger. `stored_snapshot` and `_retain_entities` are removed.
+
+Two semantics changed. A removal policy names states and representations; an
+unpinned member is not a removal target, and after its state's removal it no
+longer resolves by identity. A caller-chosen occurrence ID reused with other
+bytes in another state is no longer refused when that state is written; every
+later read or pin of that ID refuses. DocSpec's own IDs cannot collide this way:
+they are scoped by state, batch, run, execution or value digest. A read by
+identity of an unpinned member admits every retained entity layer, about 6–10 ms
+per layer on the probe machine; a pinned member reads from its row as before.
+
+**Done when:** creating a state writes no entity rows; by-identity reads, whole
+inputs, adopted and selected outputs, parents and export roots resolve unpinned
+members; the first reference pins once and later references and retries add
+nothing; differing copies refuse; cleanup protects member blobs and releases a
+removed state's layers; old member rows keep reading and protecting their layer
+until removed; derive output is byte-identical; the gate passes.
+
+**Verified:** the [probe](history/probes/2026-09-23-layer-ledger.json) derives the
+first 10,000 PM01 Federal Register prepared values in 0.277–0.283 ms per row
+against 0.504–0.535 on the base, interleaved at load 5–12: `_retain_entities`'
+0.22–0.23 ms is replaced by a 0.006 ms content scan, ledger commits drop from 15
+to 4, and no layer search runs. `bench_derive` on 5,000 rows: 0.334 against 0.540
+ms per row, 6.01 against 7.01 encodes per row, with the fingerprint and rows-state
+identity of the earlier receipts. The bench ledger holds 8 records and 8
+retention rows in 102,400 bytes, against 5,008 and 5,008 in 3,645,440. The
+[state](../tests/test_core_states.py), [maintenance](../tests/test_core_maintenance.py),
+[document](../tests/test_core_documents.py) and [export](../tests/test_result_export.py)
+suites cover each behavior above, including a 1,000-member state that adds no
+entity rows (it fails on the base). The gate's full run passes except
+`test_source_catalog_workers.py::test_derivation_names_the_engine_that_produced_the_digests`,
+whose forced-timeout pool fallback hung under load on the base as well; alone,
+that file passes.
 
 ## Coverage against the spec and plan
 

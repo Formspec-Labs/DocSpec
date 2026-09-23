@@ -73,9 +73,12 @@ failed targets. `resume` continues the same intent after interruption; CLI
 Python API input, not an automatic scan of the entire store.
 
 Shared files remain until no protected reference needs them. Removing bulk
-payloads preserves ledger identity, digest, provenance and availability history.
-Known unavailable values may read as `None`; loss of bytes still marked available
-is an integrity error. Restoration must match the original canonical digest.
+payloads preserves the ledger identity, digest, provenance and availability
+history of every row. A state member has a row only once a publication has
+referenced it by identity, so a policy removes its state; an unpinned member stops
+resolving with that state. Known unavailable values may read as `None`; loss of
+bytes still marked available is an integrity error. Restoration must match the
+original canonical digest.
 
 ## Compact without changing logical meaning
 

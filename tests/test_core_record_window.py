@@ -8,6 +8,7 @@ import pytest
 from docspec.application.core_execution import CoreOperations, ResolveCall
 from docspec.domain import core
 from docspec.errors import IntegrityError, LimitExceededError
+from docspec.ports.core_ledger import MetadataBatch
 from docspec.application.core_reuse import CoreReuse, ReuseRequest
 from docspec.domain.core_admission import encode_record
 from tests.test_core_dependencies import definition, request, retain
@@ -19,13 +20,16 @@ def test_window_bulk_reads_detach_values_and_refresh_metadata(tmp_path, monkeypa
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
             import_root(states, session, [(str(i), f"e{i}", {"url": str(i)}) for i in range(4)])
+            keys = [("entity", f"e{i}") for i in range(4)]
+            # Referencing the members pins them, so their retention metadata
+            # lives in the ledger like any other record the window reads.
+            session.publish(MetadataBatch("pin", retained=tuple(keys)))
             lookups = []
             original = records.lookup_batches
             def lookup(*args, **kwargs):
                 lookups.append(args[1])
                 yield from original(*args, **kwargs)
             monkeypatch.setattr(records, "lookup_batches", lookup)
-            keys = [("entity", f"e{i}") for i in range(4)]
             with session.record_window(keys):
                 assert len(lookups) == 1
                 for key in keys:

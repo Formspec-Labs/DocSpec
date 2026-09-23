@@ -38,6 +38,9 @@ class MetadataBatch:
     # Internal bulk admission: the supplied entity records already exist as
     # exact canonical rows in this protected layer. SQLite stores their pins.
     record_layer: LayerRef | None = None
+    # Bulk state members get no ledger row when written; a publication that
+    # references one by identity pins it here, each at its existing layer.
+    members: tuple[tuple[AdmittedRecord, LayerRef], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
