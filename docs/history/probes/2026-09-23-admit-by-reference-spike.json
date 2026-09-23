@@ -1,0 +1,415 @@
+{
+ "arms": {
+  "admission_current": {
+   "admission_duplicate_keys": 0,
+   "admission_identity_seconds": 10.511069583997596,
+   "admission_rows": 1009005,
+   "admit_seconds": 0.06663899999693967,
+   "arm": "admission",
+   "docspec_added_bytes": 17790,
+   "layer_root_bytes": 1219,
+   "load_average": [
+    7.0615234375,
+    10.66845703125,
+    12.12109375
+   ],
+   "membership_bytes": 46871249,
+   "membership_write_seconds": 0.6956087500002468,
+   "peak_rss_bytes": 1171603456,
+   "pin_seconds": 0.06793408300291048,
+   "place_seconds": 0.13213562500459375,
+   "process_seconds": 12.17707979199622,
+   "register_seconds": 0.3506061250009225,
+   "seconds": 12.10509333400114
+  },
+  "admit_current": {
+   "arm": "admit",
+   "family": "federal-register",
+   "kind": "spicy-regs-rollup-generation",
+   "load_average": [
+    7.53662109375,
+    10.70703125,
+    12.1259765625
+   ],
+   "members": [
+    {
+     "byte_size": 155924250,
+     "object_key": "federal_register.parquet",
+     "record_count": 1009005,
+     "sha256": "sha256:47ad12123f8076682c8f0a4dd5ed6a63949f6559515df2100900ecb9c08f6891"
+    }
+   ],
+   "peak_rss_bytes": 37158912,
+   "process_seconds": 0.10921374999452382,
+   "seconds": 0.06461745799606433,
+   "total_record_count": 1009005
+  },
+  "admit_prior": {
+   "arm": "admit",
+   "family": "federal-register",
+   "kind": "spicy-regs-rollup-generation",
+   "load_average": [
+    7.53662109375,
+    10.70703125,
+    12.1259765625
+   ],
+   "members": [
+    {
+     "byte_size": 155924847,
+     "object_key": "federal_register.parquet",
+     "record_count": 1008903,
+     "sha256": "sha256:18afcd6eca3e6c5df44ea60b3b86f0ffef320cf645cdeb28c8f996b32dff32ce"
+    }
+   ],
+   "peak_rss_bytes": 37715968,
+   "process_seconds": 0.10955441699479707,
+   "seconds": 0.06547562500054482,
+   "total_record_count": 1008903
+  },
+  "ctas_current": {
+   "arm": "ctas",
+   "copy_seconds": 4.416750666001462,
+   "data_bytes": 188927777,
+   "data_files": 2,
+   "load_average": [
+    24.0595703125,
+    18.0087890625,
+    14.9912109375
+   ],
+   "peak_rss_bytes": 300318720,
+   "pin_seconds": 0.09393029200145975,
+   "process_seconds": 5.056789708003635
+  },
+  "identity": {
+   "added_publication_dates": [
+    "2026-09-22",
+    "2026-09-22"
+   ],
+   "arm": "identity",
+   "changed_by_column_compare": 2,
+   "changed_fields": {
+    "abstract": 0,
+    "agencies_json": 0,
+    "agency_slugs": 0,
+    "body_html_url": 0,
+    "cfr_references_json": 0,
+    "comments_close_on": 2,
+    "docket_ids_json": 0,
+    "document_number": 0,
+    "document_type": 0,
+    "effective_on": 0,
+    "end_page": 0,
+    "executive_order_number": 0,
+    "html_url": 0,
+    "modify_date": 0,
+    "pdf_url": 0,
+    "publication_date": 0,
+    "regulation_id_numbers_json": 0,
+    "rin": 0,
+    "signing_date": 0,
+    "start_page": 0,
+    "subtype": 0,
+    "title": 0,
+    "volume": 0
+   },
+   "changes": {
+    "added": 102,
+    "changed": 2,
+    "removed": 0,
+    "unchanged": 1008901
+   },
+   "changes_seconds": 0.3956239170001936,
+   "column_compare_seconds": 2.556568874999357,
+   "compact_index_bytes": 34842106,
+   "compact_index_seconds": 0.8375330409980961,
+   "current_duplicate_keys": 0,
+   "current_identity_seconds": 16.85527741700207,
+   "current_rows": 1009005,
+   "load_average": [
+    22.35205078125,
+    14.318359375,
+    13.3720703125
+   ],
+   "membership_bytes": 46871249,
+   "membership_write_seconds": 0.9709866249977495,
+   "peak_rss_bytes": 2700132352,
+   "prior_duplicate_keys": 0,
+   "prior_identity_seconds": 18.197296500002267,
+   "prior_rows": 1008903,
+   "process_seconds": 44.75346904100297,
+   "remint_would_report": 1009005
+  },
+  "noop": {
+   "arm": "noop",
+   "load_average": [
+    6.98583984375,
+    10.77685546875,
+    12.17626953125
+   ],
+   "peak_rss_bytes": 109821952,
+   "process_seconds": 0.3001980840053875
+  },
+  "oracle": {
+   "arm": "oracle",
+   "load_average": [
+    26.9189453125,
+    16.865234375,
+    14.3779296875
+   ],
+   "mismatches": {
+    "bucket_hash": 0,
+    "compared_rows": 1009005,
+    "key_sets": 0,
+    "membership_bytes_written": 0,
+    "occurrence_id": 0,
+    "occurrence_record": 0,
+    "occurrence_record_rows": 1009005,
+    "row_digest": 0
+   },
+   "native_occurrence_record_seconds": 24.217755875004514,
+   "oracle_seconds": 44.610807750003005,
+   "peak_rss_bytes": 3558342656,
+   "process_seconds": 71.04576600000291
+  },
+  "read_ctas": {
+   "arm": "read",
+   "count_seconds": 0.8580015830011689,
+   "except_all_member_only": 0,
+   "except_all_scan_only": 0,
+   "except_seconds": 12.506001207999361,
+   "expected_rows": 1009005,
+   "label": "ctas",
+   "load_average": [
+    23.3740234375,
+    18.05810546875,
+    15.04345703125
+   ],
+   "nonnull_counts": {
+    "*": 1009005,
+    "abstract": 646281,
+    "agencies_json": 1009005,
+    "agency_slugs": 1003119,
+    "body_html_url": 1009005,
+    "cfr_references_json": 1009005,
+    "comments_close_on": 266739,
+    "docket_ids_json": 1009005,
+    "document_number": 1009005,
+    "document_type": 1009002,
+    "effective_on": 154384,
+    "end_page": 1007549,
+    "executive_order_number": 1544,
+    "html_url": 1009005,
+    "modify_date": 0,
+    "pdf_url": 975520,
+    "publication_date": 1009005,
+    "regulation_id_numbers_json": 1009005,
+    "rin": 118925,
+    "signing_date": 8428,
+    "start_page": 1007549,
+    "subtype": 8469,
+    "title": 1009005,
+    "volume": 1009005
+   },
+   "nonnull_equal": true,
+   "peak_rss_bytes": 4754849792,
+   "process_seconds": 14.639870291000989,
+   "pyiceberg_nonnull": {
+    "document_number": 1009005,
+    "publication_date": 1009005,
+    "rin": 118925
+   },
+   "pyiceberg_rows": 1009005,
+   "pyiceberg_seconds": 0.0670964999953867,
+   "rows": 1009005
+  },
+  "read_current": {
+   "arm": "read",
+   "count_seconds": 0.5931720829976257,
+   "except_all_member_only": 0,
+   "except_all_scan_only": 0,
+   "except_seconds": 13.414910916995723,
+   "expected_rows": 1009005,
+   "label": "current",
+   "load_average": [
+    10.8310546875,
+    11.26318359375,
+    12.29833984375
+   ],
+   "nonnull_counts": {
+    "*": 1009005,
+    "abstract": 646281,
+    "agencies_json": 1009005,
+    "agency_slugs": 1003119,
+    "body_html_url": 1009005,
+    "cfr_references_json": 1009005,
+    "comments_close_on": 266739,
+    "docket_ids_json": 1009005,
+    "document_number": 1009005,
+    "document_type": 1009002,
+    "effective_on": 154384,
+    "end_page": 1007549,
+    "executive_order_number": 1544,
+    "html_url": 1009005,
+    "modify_date": 0,
+    "pdf_url": 975520,
+    "publication_date": 1009005,
+    "regulation_id_numbers_json": 1009005,
+    "rin": 118925,
+    "signing_date": 8428,
+    "start_page": 1007549,
+    "subtype": 8469,
+    "title": 1009005,
+    "volume": 1009005
+   },
+   "nonnull_equal": true,
+   "peak_rss_bytes": 4592107520,
+   "process_seconds": 15.121868125002948,
+   "pyiceberg_nonnull": {
+    "document_number": 1009005,
+    "publication_date": 1009005,
+    "rin": 118925
+   },
+   "pyiceberg_rows": 1009005,
+   "pyiceberg_seconds": 0.026774999998451676,
+   "rows": 1009005
+  },
+  "register_current": {
+   "arm": "register",
+   "data_files": [
+    "federal_register.parquet"
+   ],
+   "docspec_added_bytes": 17795,
+   "label": "current",
+   "layer_root_bytes": 1219,
+   "load_average": [
+    7.53662109375,
+    10.70703125,
+    12.1259765625
+   ],
+   "name_mapping_set": true,
+   "peak_rss_bytes": 154943488,
+   "pin_seconds": 0.06937487499817507,
+   "place_seconds": 0.20746712500113063,
+   "process_seconds": 0.7294781250020606,
+   "register_seconds": 0.16598425000120187,
+   "sealed_data_digest_equals_member": true,
+   "table_properties": [
+    "schema.name-mapping.default",
+    "write.parquet.compression-codec"
+   ]
+  },
+  "register_prior": {
+   "arm": "register",
+   "data_files": [
+    "federal_register.parquet"
+   ],
+   "docspec_added_bytes": 17792,
+   "label": "prior",
+   "layer_root_bytes": 1219,
+   "load_average": [
+    7.53662109375,
+    10.70703125,
+    12.1259765625
+   ],
+   "name_mapping_set": true,
+   "peak_rss_bytes": 152944640,
+   "pin_seconds": 0.07235437499912223,
+   "place_seconds": 0.22623408299841685,
+   "process_seconds": 0.8286745000004885,
+   "register_seconds": 0.19962600000144448,
+   "sealed_data_digest_equals_member": true,
+   "table_properties": [
+    "schema.name-mapping.default",
+    "write.parquet.compression-codec"
+   ]
+  },
+  "relocate_current": {
+   "arm": "relocate",
+   "except_all_member_only": 0,
+   "except_all_scan_only": 0,
+   "label": "current",
+   "load_average": [
+    22.109375,
+    18.03857421875,
+    15.0888671875
+   ],
+   "peak_rss_bytes": 4655546368,
+   "process_seconds": 13.009331666005892,
+   "rows": 1009005,
+   "tamper": "refused: retained Iceberg file differs from its checksum"
+  },
+  "spellings": {
+   "arm": "spellings",
+   "bigint_to_json_vs_str_mismatches": 0,
+   "double_cast_vs_python_repr_mismatches": 0,
+   "doubles": 299864,
+   "federal_register": {
+    "digest_disagreements": 0,
+    "guarded_seconds": 11.228515082999365,
+    "rows_with_control_characters": 69,
+    "to_json_seconds": 7.251910124999995
+   },
+   "guarded_mismatches": 0,
+   "integers": 100007,
+   "load_average": [
+    24.15185546875,
+    17.9248046875,
+    14.9443359375
+   ],
+   "peak_rss_bytes": 1289863168,
+   "process_seconds": 57.33479395900213,
+   "strings": 200023,
+   "to_json_mismatched_edge_cases": [
+    "'\\x0b'",
+    "'\\x1f'",
+    "'\\\\\\x1f'",
+    "'\\\\\\\\u000B\\x0b'"
+   ],
+   "to_json_mismatches": 19953,
+   "to_json_mismatches_without_control_characters": 0
+  },
+  "verify_current": {
+   "arm": "verify",
+   "available_seconds": 0.0016392500037909485,
+   "encoded_relation_error": "record Iceberg operation failed: Binder Error: Referenced column \"record_identity\" not found in FROM clause!\nCandidate bindings: \"document_type\", \"modify_date\", \"rin\", \"publication_date\", \"end_page\"",
+   "label": "current",
+   "load_average": [
+    7.53662109375,
+    10.70703125,
+    12.1259765625
+   ],
+   "peak_rss_bytes": 133316608,
+   "process_seconds": 0.4273613339973963,
+   "verify_members_seconds": 0.068540332998964
+  }
+ },
+ "pins": {
+  "current": {
+   "artifactDigest": "sha256:731984ca92583f93350fa0c029d7bfa32809c0240b41b5607cd05967996bed28",
+   "dir": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/current",
+   "indexRead": "publication-2026-09-23.json, read 2026-09-23",
+   "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:cc996f7f5aa48c80fbe415a3f1973d0ce635e71812f2a0cda688614678001a70"
+  },
+  "prior": {
+   "artifactDigest": "sha256:6c2158592129788de7fb5601251e9386b150934496efff4a7155a1ef95df5aed",
+   "dir": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/prior",
+   "indexRead": "fork-execution-2026-09-21/current-regulatory-download/download-runs/2557dd80466f461daff8df8c532a6d0c/download.json, read 2026-09-21",
+   "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:0c9b08c26004270418bf7ab5fec5f7ec99042561fe45e58a667fa68327f424f5"
+  }
+ },
+ "question": "Can DocSpec register a producer generation's id-less Parquet as a pinned Iceberg table without rewriting its bytes, and read it through its own iceberg_scan form?",
+ "settings": {
+  "catalog": "tools/with_iceberg.py REST fixture",
+  "engine": "docspec.adapters.storage.engine.connect defaults: 1 thread, 6 GiB managed memory",
+  "repetitions": 1
+ },
+ "software": {
+  "cpus": 14,
+  "docspec_commit": "38043c4759c8263d9944508f92ee6b48588f6cbc",
+  "duckdb": "1.5.5",
+  "machine": "macOS-26.6-arm64-arm-64bit",
+  "pyarrow": "25.0.1",
+  "pyiceberg": "0.12.0",
+  "python": "3.12.9"
+ }
+}
