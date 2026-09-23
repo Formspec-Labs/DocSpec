@@ -30,7 +30,7 @@ def test_installed_native_dagster_resources_recover_core_attempts(tmp_path, docs
     command([uv, "venv", "--python", sys.executable, str(environment)])
     python = environment / "bin/python"
     command([uv, "pip", "install", "--python", str(python), str(docspec_wheel),
-             str(ROOT / "vendor/rulespec_artifacts-1.1.0-py3-none-any.whl"),
+             str(ROOT / "vendor/rulespec_artifacts-1.1.1-py3-none-any.whl"),
              str(ROOT / "vendor" / json.loads((ROOT / "vendor/spicy_docs.json").read_text())["filename"]),
              f"dagster=={version('dagster')}"])
     examples = tmp_path / "examples"

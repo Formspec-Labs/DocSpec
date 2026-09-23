@@ -101,9 +101,9 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     provider = json.loads((ROOT / "vendor/spicy_docs.json").read_text(encoding="utf-8"))
 
     assert project["project"]["version"] == __version__
-    assert "rulespec-artifacts==1.1.0" in project["project"]["dependencies"]
+    assert "rulespec-artifacts==1.1.1" in project["project"]["dependencies"]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
-        "path": "vendor/rulespec_artifacts-1.1.0-py3-none-any.whl"
+        "path": "vendor/rulespec_artifacts-1.1.1-py3-none-any.whl"
     }
     assert project["tool"]["uv"]["sources"]["spicy-docs"] == {
         "path": "vendor/" + provider["filename"]
@@ -274,7 +274,7 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
             "install",
             "--python",
             str(environment_python),
-            str(ROOT / "vendor" / "rulespec_artifacts-1.1.0-py3-none-any.whl"),
+            str(ROOT / "vendor" / "rulespec_artifacts-1.1.1-py3-none-any.whl"),
             str(ROOT / "vendor" / json.loads((ROOT / "vendor/spicy_docs.json").read_text())["filename"]),
             str(wheel),
         ],

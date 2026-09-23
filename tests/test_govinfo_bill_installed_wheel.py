@@ -38,7 +38,7 @@ def test_bill_example_uses_installed_provider_and_reprocesses_offline(tmp_path, 
     with zipfile.ZipFile(docspec) as archive:
         assert not any(name.startswith("spicy_docs/") or name.endswith(".whl") for name in archive.namelist())
     spicy_docs = Path(shutil.copy2(provider, wheels / provider.name))
-    rulespec = Path(shutil.copy2(ROOT / "vendor/rulespec_artifacts-1.1.0-py3-none-any.whl", wheels))
+    rulespec = Path(shutil.copy2(ROOT / "vendor/rulespec_artifacts-1.1.1-py3-none-any.whl", wheels))
     venv = tmp_path / "environment"
     run([uv, "venv", "--python", sys.executable, venv])
     python = venv / "bin/python"

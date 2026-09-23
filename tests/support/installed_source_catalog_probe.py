@@ -545,7 +545,7 @@ def admit_catalog(build_report: dict[str, object], destination: Path, name: str)
 
 assert sys.version_info[:2] == (3, 12)
 assert importlib.metadata.version("docspec") == "__DOCSPEC_VERSION__"
-assert importlib.metadata.version("rulespec-artifacts") == "1.1.0"
+assert importlib.metadata.version("rulespec-artifacts") == "__RULESPEC_VERSION__"
 assert importlib.metadata.version("spicy-docs") == "__SPICY_DOCS_VERSION__"
 provider_requirements = [
     "".join(requirement.split()).replace('"', "'")
