@@ -19,7 +19,7 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
 from docspec.adapters.storage.files import _available_paths, _contained, _read_exact, _storage_root, _write_once, delete_content, sha256_file
-from docspec.adapters.storage.iceberg import IcebergCatalog, recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_files
+from docspec.adapters.storage.iceberg import IcebergCatalog, recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_data_files, snapshot_files
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_text, sha256_digest, stable_urn, thaw_json
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket, record_key
@@ -413,11 +413,26 @@ class IcebergRecordStorage:
     def lookup_batches(self, reference, record_ids):
         """Stream bounded batches of records for the requested identities."""
 
-        layer = self.admitted(reference)
+        layer = reference if isinstance(reference, AdmittedRecordLayer) else self.admitted(reference)
         with owned_iterator(bounded_rows(record_ids, size=lambda key: len(record_key(key, 'record_id').encode()))) as chunks:
             for keys in chunks:
                 with self._relation(layer, record_ids=list(keys)) as relation, closing(relation.order('record_identity').to_arrow_reader(256)) as reader:
                     yield from bounded_batches(reader, byte_column=tuple(_physical_schema(layer.schema).names) if layer.schema.columns else 'record_json', max_value_bytes=self.max_record_bytes)
+
+    def data_files(self, reference):
+        """Locators of the data files in a layer's pinned snapshot; layers built on one another share them."""
+
+        for path in snapshot_data_files(self.admitted(reference).table):
+            yield path.relative_to(self.root).as_posix()
+
+    @contextmanager
+    def file_relation(self, locators):
+        """Read whole data files by locator, including rows a sharing snapshot's delete files exclude."""
+
+        paths = [str(_contained(self.root, locator)) for locator in locators]
+        with self._cursor() as cursor:
+            yield cursor.sql("SELECT record_identity, partition_value, record_json FROM read_parquet(["
+                             + ", ".join(literal(path) for path in paths) + "])")
 
     def physical_references(self, reference):
         """Stream the layer's recovery files followed by its root reference."""

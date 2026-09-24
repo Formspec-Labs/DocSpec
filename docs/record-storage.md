@@ -17,13 +17,18 @@ locations.
 A bulk state registers its members once per layer: its manifest names the entity
 and membership layers, and a member gets no SQLite row of its own. The first
 publication that references a member by identity (a whole-value input, an adopted
-or selected output, a parent) pins it with one row and one retention row at its
-existing layer. Until then a read by identity searches the entity layers of every
+or selected output, a parent or a directly selected origin) pins it with one row
+and one retention row at the newest layer that holds it; reads and inspection pin
+nothing. Until then a read by identity searches the entity layers of every
 available retained state, admitting each layer once per session, and refuses
 copies that differ. Callers that know the state resolve through its layer alone,
-as document runs do for their sources. Workspaces written by DocSpec 0.9.1 or
-earlier keep their row per member and read as before; they are not migrated,
-and releasing those rows is an explicit removal. See
+as document runs do for their sources. Writing a state refuses a member whose
+identity the ledger already holds with other bytes or as a state, and publishing
+an entity or state whose identity the caller chose refuses one a bulk member
+already holds differently; identities DocSpec mints for its own outputs skip that
+search. Workspaces written by DocSpec 0.9.1 or earlier keep their row per member
+and read as before; they are not migrated, and releasing those rows is an
+explicit removal. See
 [C28](core-model-implementation-tasks.md#c28--register-bulk-state-members-per-layer).
 
 New literal selected values use the existing content store. Existing inline

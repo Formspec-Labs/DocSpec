@@ -122,11 +122,13 @@ class CoreMaintenance:
                         raise IntegrityError("retained state membership requires an occurrence in the removal scope")
             for layer in layers.values():
                 self.inventory_layer(index, layer, protected=protected, scanned=scanned)
-            # Bulk members have no ledger rows; their layer names the blobs they
-            # reference. Representations sharing one layer scan it once.
-            if ("contents", layers["entities"].layer_id, protected) not in scanned:
-                scanned.add(("contents", layers["entities"].layer_id, protected))
-                with closing(self.publisher.states.member_contents(self.records.admitted(layers["entities"]))) as contents:
+            # Bulk members have no ledger rows; their layer's data files name the
+            # blobs they reference. Revision layers share their base's files,
+            # so each file is read once per protection.
+            files = [locator for locator in self.records.data_files(layers["entities"]) if ("contents", locator, protected) not in scanned]
+            scanned.update(("contents", locator, protected) for locator in files)
+            if files:
+                with closing(self.publisher.states.member_contents(files=files)) as contents:
                     for content in contents:
                         index.add(RemovalContent("blobs", _blob(record_value(content, core.ContentRef))), protected=protected)
         elif isinstance(value, core.SelectedValue) and isinstance(value.definition, core.StateMembers):
@@ -184,6 +186,8 @@ class CoreMaintenance:
                                                           retained=tuple(tuple(key) for key in document["roots"])))
                     if excluded.intersection(required):
                         raise IntegrityError("recoverable operation requires records in the removal scope")
+                    if excluded:
+                        self._members_outside(session, required, excluded)
                     # Prepared records have no retention row until publication.
                     # Their entity values may already live in a shared physical
                     # layer, which remains necessary for exact recovery.
@@ -193,6 +197,20 @@ class CoreMaintenance:
                                 self.inventory_layer(index, layer, protected=True, scanned=scanned)
                     for record in staged:
                         self.inventory_record(index, record, protected=True, scanned=scanned, entity_targets=entity_targets)
+
+    def _members_outside(self, session, required, excluded):
+        """Refuse a removal that would leave a recoverable operation's bulk member unresolvable.
+
+        A member the journal binds by identity has no ledger row to protect; it
+        must stay in the entity layer of some state outside the removal scope.
+        """
+        entities = [key for key in required if key[0] == "entity"]
+        with owned_iterator(self.ledger.read_records(entities, include_values=False)) as batches:
+            unpinned = {key[1] for key, row in zip(entities, (row for batch in batches for row in batch), strict=True) if row is None}
+        if unpinned:
+            states = self.publisher.states
+            if unpinned - states.find_members(session, unpinned, layers=states.entity_layers(session, exclude=excluded)).keys():
+                raise IntegrityError("recoverable operation requires records in the removal scope")
 
     def remove_under_policy(self, update_id, policy_id, keys=(), *, orphan_content=()):
         """Authorize exact keys; retain shared bytes, journal each physical outcome.

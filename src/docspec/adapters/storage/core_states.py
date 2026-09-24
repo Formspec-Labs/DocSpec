@@ -41,6 +41,11 @@ def _entity_rows(entities, observe=None, *, encoded=False):
         yield value["entity_id"], value["entity_id"], canonical_value_bytes(value)
 
 
+def _newest_first(layers):
+    """Order admitted layers by commit time from their digest-bound Iceberg metadata, newest first."""
+    return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.table.metadata.last_updated_ms, layer.reference.layer_id)))
+
+
 def _existing_entities(session, identities):
     with owned_iterator(session.read_records(("entity", identity) for identity in identities)) as batches:
         for batch in batches:
@@ -125,8 +130,10 @@ class CoreStateStorage:
             self._match_members({"entities": entity_layer, "membership": member_layer})
             content = self._state_content(session, entity_layer, member_layer)
             # Members are registered through this state's manifest, once per
-            # layer; only their content references need checking here.
+            # layer; only their content references and any ledger rows that
+            # already name their identities need checking here.
             self._check_member_content(session, entity_layer)
+            self._check_ledger_copies(session, entity_layer)
             state = core.State(format_version=1, state_id=state_id)
             representation = core.StateRepresentation(format_version=1, representation_id=representation_id,
                                                        state_id=state_id, membership=content)
@@ -165,10 +172,15 @@ class CoreStateStorage:
         for content in self.member_contents(entities):
             session.check_content(content)
 
-    def member_contents(self, entities):
-        """Stream the distinct content references a bulk entity layer holds, for publication and cleanup."""
-        with self.records.relations({"entities": entities}) as relations:
-            contents = relations["entities"].filter(
+    def member_contents(self, entities=None, *, files=None):
+        """Stream the distinct content references an admitted entity layer holds, for publication and cleanup.
+
+        Cleanup passes ``files`` instead: whole data files, which layers built
+        on one another share. A row a sharing snapshot deleted still counts,
+        which can only protect more.
+        """
+        with (entities.relation() if files is None else self.records.file_relation(files)) as rows:
+            contents = rows.filter(
                 "json_extract_string(decode(record_json), '/value/kind') = 'content'"
             ).project("json_extract(decode(record_json), '/value')::VARCHAR AS content").distinct()
             with closing(contents.to_arrow_reader(256)) as reader:
@@ -184,26 +196,22 @@ class CoreStateStorage:
             if old.join(new, "old_id = new_id").filter("old_json IS DISTINCT FROM new_json").limit(1).fetchone():
                 raise IntegrityError("retry conflicts with immutable retained occurrences")
 
-    def find_members(self, session, identities):
-        """Locate occurrences that have no ledger row in retained states' entity layers: identity -> (layer, size).
+    def find_members(self, session, identities, *, layers=None):
+        """Locate occurrences with no ledger row in retained entity layers: identity -> (admitted layer, size).
 
         Bulk members are registered once per layer, by their state's manifest,
-        not once per member. A copy of one identity in several layers (a
-        revision union, a checkpoint) must hold identical bytes. One native
-        query compares the copies; only identities and sizes reach Python.
-        The newest layer holding a member is chosen, so a pin never keeps a
-        superseded layer alive. Every available entity layer is admitted, so
-        the cost grows with the number of retained layers, not their members.
+        not once per member. By default every available state's entity layer is
+        searched; ``layers`` (admitted, newest first) narrows the search to
+        states the caller names. Copies of one identity in the searched layers
+        must hold identical bytes: one native query compares them and only
+        identities and sizes reach Python. The newest layer holding a member is
+        chosen, so a pin never keeps a superseded layer alive.
         """
         wanted = sorted(set(identities))
-        layers = self._entity_layers(session) if wanted else ()
+        layers = (self.entity_layers(session) if layers is None else tuple(layers)) if wanted else ()
         if not layers:
             return {}
-        # Snapshot commit time from each layer's digest-bound Iceberg metadata.
-        admitted = sorted((self.records.admitted(layer) for layer in layers), reverse=True,
-                          key=lambda layer: (layer.table.metadata.last_updated_ms, layer.reference.layer_id))
-        layers = [layer.reference for layer in admitted]
-        names = {f"layer_{index}": layer for index, layer in enumerate(admitted)}
+        names = {f"layer_{index}": layer for index, layer in enumerate(layers)}
         with self.records.relations(names, identities={name: wanted for name in names}) as relations:
             copies = None
             for index, name in enumerate(names):
@@ -215,37 +223,66 @@ class CoreStateStorage:
             raise IntegrityError("occurrence identity holds different values in retained layers")
         return {identity: (layers[index], size) for identity, index, _, size in found}
 
-    def locate_in(self, session, state_id, identities):
-        """Locate members of one known state through its own entity layer: identity -> (layer, size).
-
-        A caller that knows the state need not search every retained layer.
-        """
-        layer = self.layers(session, state_id)["entities"]
-        wanted = sorted(set(identities))
-        with self.records.relations({"entities": layer}, identities={"entities": wanted}) as relations:
-            found = relations["entities"].project("record_identity, octet_length(record_json)").fetchall()
-        return {identity: (layer.reference, size) for identity, size in found}
-
     def member_payloads(self, layer, identities):
-        """Stream (identity, exact bytes) for members of one entity layer in bounded batches."""
+        """Stream (identity, exact bytes) for members of one entity layer (a reference or admitted handle) in bounded batches."""
         for batch in self.records.lookup_batches(layer, sorted(identities)):
             yield from zip(batch.column("record_identity").to_pylist(), batch.column("record_json").to_pylist(), strict=True)
 
-    def _entity_layers(self, session):
-        """The distinct entity layers of available retained state representations, once per session."""
+    def entity_layers(self, session, *, exclude=()):
+        """Admitted entity layers of available retained representations, newest first.
+
+        Each layer is admitted once and, without ``exclude``, kept for the
+        session, whose content guard keeps its files. Removal planning passes
+        the states and representations in its scope to see what survives.
+        Commit time comes from each layer's digest-bound Iceberg metadata.
+        """
+        if not exclude and session.entity_layers is not None:
+            return session.entity_layers
+        excluded, layers = set(exclude), {}
+        with owned_iterator(session.ledger.retained_records(kind="state_representation")) as batches:
+            for batch in batches:
+                for row in batch:
+                    membership = row.value.membership if row.available else None
+                    if not isinstance(membership, core.ContentRef) or row.key in excluded or ("state", row.value.state_id) in excluded:
+                        continue
+                    manifest = session.ready_states.get(membership.digest) or session.read_json(membership, label="Core state manifest")
+                    reference = self._references(manifest)["entities"]
+                    if reference.layer_id not in layers:
+                        layers[reference.layer_id] = self.records.admitted(reference)
+        ordered = _newest_first(layers.values())
+        if not exclude:
+            session.entity_layers = ordered
+        return ordered
+
+    def add_entity_layer(self, session, membership):
+        """Add a newly published representation's entity layer to the session's search, admitting it once."""
         if session.entity_layers is None:
-            layers = {}
-            with owned_iterator(session.ledger.retained_records(kind="state_representation")) as batches:
-                for batch in batches:
-                    for row in batch:
-                        membership = row.value.membership if row.available else None
-                        if isinstance(membership, core.ContentRef):
-                            manifest = session.ready_states.get(membership.digest) or session.read_json(
-                                membership, label="Core state manifest")
-                            reference = self._references(manifest)["entities"]
-                            layers[reference.layer_id] = reference
-            session.entity_layers = tuple(layers.values())
-        return session.entity_layers
+            return
+        manifest = session.ready_states.get(membership["digest"]) or session.read_json(membership, label="Core state manifest")
+        reference = self._references(manifest)["entities"]
+        if all(layer.reference.layer_id != reference.layer_id for layer in session.entity_layers):
+            session.entity_layers = _newest_first((self.records.admitted(reference), *session.entity_layers))
+
+    def _check_ledger_copies(self, session, entities):
+        """Refuse a new member whose identity the ledger already holds with other bytes, or as a state.
+
+        A ledger row takes precedence over layers when read by identity, so a
+        differing bulk copy would never be compared later. Identities go to
+        the ledger in bounded batches; only matching members' bytes are hashed.
+        """
+        matches = {}
+        with self.records.relations({"entities": entities}) as relations, \
+                closing(relations["entities"].project("record_identity").to_arrow_reader(BATCH_ROWS)) as reader:
+            for batch in reader:
+                with owned_iterator(session.ledger.data_identities(batch.column(0).to_pylist())) as rows:
+                    for group in rows:
+                        for kind, identity, digest in group:
+                            if kind == "state":
+                                raise IntegrityError("data identity is ambiguous between an entity and a state")
+                            matches[identity] = digest
+        for identity, payload in self.member_payloads(entities.reference, matches) if matches else ():
+            if sha256_digest(payload) != matches[identity]:
+                raise IntegrityError("state member conflicts with an immutable retained record")
 
     def _references(self, manifest):
         if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership"}
@@ -604,9 +641,12 @@ class CoreStateStorage:
         # changed values were produced by the preceding value-edit operation.
         base = references["entities"]
         self._check_puts(edits, base, delta)
-        # Both layers already passed immutable entity admission in the ledger.
-        # Repeated IDs therefore mean the same bytes. Exclude them by ID alone;
-        # never scan or rewrite the base payloads to append new occurrences.
+        # The delta holds occurrences read by identity (revision puts) or newly
+        # minted (derive rows), so an ID repeated from the base is that same
+        # occurrence. Exclude it by ID alone; never scan or rewrite the base
+        # payloads to append new occurrences. A hand-built delta that reuses a
+        # base ID with other bytes keeps the base's bytes here, and a read by
+        # identity refuses the differing copies.
         entities = self.records.union_disjoint(base, delta, exclude_existing=True)
         # The admitted base is complete. Resolution keeps/removes its members
         # or inserts checked IDs; the union contains both sources. This proves

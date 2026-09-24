@@ -196,10 +196,16 @@ def test_document_runs_pin_sources_through_their_state_without_searching_layers(
         pipeline = workspace.documents(fetcher=LocalFileContentFetcher(inputs))
         pipeline.import_sources([SourceItem(f"document-{index}", "1", (CandidateFile("text", "file.txt", "text/plain"),))
                                  for index in range(3)], state_id="catalog")
-        def unexpected(*args, **kwargs):
-            raise AssertionError("a document run searched every retained layer for a source")
-        monkeypatch.setattr(workspace.states, "find_members", unexpected)
+        find, searched = workspace.states.find_members, set()
+        def recorded(session, identities, *, layers=None):
+            identities = set(identities)
+            if layers is None:
+                searched.update(identities)
+            return find(session, identities, layers=layers)
+        monkeypatch.setattr(workspace.states, "find_members", recorded)
         pipeline.run("catalog", run_id="processed")
+        # Only the run's own caller-named state is checked against every layer.
+        assert searched == {"processed"}
         with workspace.publisher.session() as session:
             layer = workspace.states.layers(session, "catalog")["entities"].reference
         sources = sorted(entity_id for _, entity_id, _ in pipeline.rows("catalog"))

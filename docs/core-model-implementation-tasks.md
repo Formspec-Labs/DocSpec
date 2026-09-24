@@ -1067,10 +1067,13 @@ of a bulk state. On 10,000 real prepared values that was 0.22–0.23 ms of a
 0.50–0.54 ms per-row derive, and 729 bytes of ledger per member. The retained
 Federal Register and Regulations.gov catalog ledgers are 698 MB and 1.54 GB;
 1,008,682 and 2,222,756 of their rows are these member rows, against 49 other
-records each. The [architecture](architecture.md) and [extension guide](extensions.md)
-already said the ledger creates no per-member SQLite graph, and the Core model
-requires no physical record per member ([§1](core-model.md#1-scope-and-conformance),
-[§3.2](core-model.md#32-complete-retained-states), [§8](core-model.md#8-logical-and-physical-representation)).
+records each. This change stops new states adding such rows; it does not shrink
+those existing ledgers, which keep their rows until they are removed or the
+catalogs are re-imported. The [architecture](architecture.md) and
+[extension guide](extensions.md) already said the ledger creates no per-member
+SQLite graph, and the Core model requires no physical record per member
+([§1](core-model.md#1-scope-and-conformance), [§3.2](core-model.md#32-complete-retained-states),
+[§8](core-model.md#8-logical-and-physical-representation)).
 
 **Change:** register a bulk state's members once per layer, through the manifest
 that already names its entity and membership layers and protects their files.
@@ -1078,59 +1081,78 @@ Give a member a ledger row only when a publication references it by identity.
 Existing workspaces are not migrated: their member rows keep working, and a row
 found in the ledger always takes precedence over the layers.
 
-**Delivered implementation:** `create` writes no member rows. It still checks
-the blobs of content-valued members with one native scan (`member_contents`),
-and a retry that finds its representation also refuses an occurrence whose bytes
-changed. `Publication.read_records` resolves an entity with no row through the
-entity layers of the available retained states (`CoreStateStorage.find_members`):
-one native query over all of them returns each identity's layer and size, refuses
-copies that differ, and prefers the newest layer so a pin never keeps a
-superseded one alive. Payloads then stream in byte-bounded groups, pass full
-admission, and stay in a session cache bounded like the record window. The
-publication check resolves referenced entity and data keys the same way and
-hands them to the ledger as `MetadataBatch.members`; `commit` inserts their rows
-and retention rows before the expected-version check, refuses a digest or
-entity/state conflict, and leaves them out of the unit receipt so a retried unit
-keeps its identity. An incoming occurrence record is compared with any retained
-copy; incoming states and artifacts cannot be bulk members and never search the
-layers, so state creation, derive and generated outputs stay flat. Revision puts
-copy their occurrences into the digest-scoped inputs state and pin nothing.
-Document runs resolve sources through the source state's own layer
-(`locate_in`). Cleanup finds member blobs by scanning each entity layer once.
-Exports stay read-only on the source and retain an unpinned member root in their
-own ledger. `stored_snapshot` and `_retain_entities` are removed.
+**Delivered implementation:** `create` writes no member rows. It checks the blobs
+of content-valued members with one native scan (`member_contents`), refuses a
+member whose identity the ledger already holds with other bytes or as a state
+(`_check_ledger_copies`, one bounded identity query), and on a retry refuses an
+occurrence whose bytes changed. `Publication.read_records` resolves an entity
+with no row through the entity layers of the available retained states
+(`CoreStateStorage.find_members`): one native query over all of them returns
+each identity's layer and size, refuses copies that differ, and prefers the
+newest layer by commit time, so a pin never keeps a superseded layer alive. The
+session admits each layer once, keeps the handles, found members and misses,
+and adds a newly published layer instead of starting over. Payloads stream in
+byte-bounded groups and pass full admission. The publication check resolves
+referenced entity and data keys the same way, plus the parent a new direct
+selection names, and hands them to the ledger as `MetadataBatch.members`;
+`commit` inserts their rows and retention rows before the expected-version
+check, refuses a digest or entity/state conflict, and leaves them out of the
+unit receipt so a retried unit keeps its identity. An incoming entity or state
+whose identity the caller chose is checked against the layers; identities
+DocSpec mints for its own outputs (generated entities, execution-scoped states,
+derive rows, revision inputs) are not, so derive, upsert and document stages
+stay flat. Revision puts copy their occurrences into the digest-scoped inputs
+state and pin nothing. Document runs resolve sources through the source state's
+own layer; their identities digest their values, so no other copy can differ.
+Cleanup reads member blobs from each physical data file once, refuses to remove
+the only state holding a member a recoverable operation binds by identity, and
+exports retain an unpinned member root in their own ledger without writing to
+the source. `stored_snapshot` and `_retain_entities` are removed.
 
-Two semantics changed. A removal policy names states and representations; an
+Semantics that changed: a removal policy names states and representations; an
 unpinned member is not a removal target, and after its state's removal it no
-longer resolves by identity. A caller-chosen occurrence ID reused with other
-bytes in another state is no longer refused when that state is written; every
-later read or pin of that ID refuses. DocSpec's own IDs cannot collide this way:
-they are scoped by state, batch, run, execution or value digest. A read by
-identity of an unpinned member admits every retained entity layer, about 6–10 ms
-per layer on the probe machine; a pinned member reads from its row as before.
+longer resolves by identity. A caller-chosen identity reused with other bytes is
+refused when written if the ledger holds it (a pin, an explicit record, a 0.9.1
+member row) or if an explicit record or caller-named state reuses a member's
+identity; two bulk copies without a row are refused on every search-backed read
+or pin, but a read narrowed to one state does not compare other layers, and a
+revision union keeps its base's bytes. Publishing a caller-chosen entity or
+state, or reading an unpinned member by identity, costs one native query over
+every retained entity layer, about 6–10 ms per layer on the probe machine; a
+pinned member reads from its row as before.
 
 **Done when:** creating a state writes no entity rows; by-identity reads, whole
-inputs, adopted and selected outputs, parents and export roots resolve unpinned
-members; the first reference pins once and later references and retries add
-nothing; differing copies refuse; cleanup protects member blobs and releases a
-removed state's layers; old member rows keep reading and protecting their layer
-until removed; derive output is byte-identical; the gate passes.
+inputs, adopted and selected outputs, parents, selection origins and export
+roots resolve unpinned members; the first reference pins once and later
+references and retries add nothing; differing copies and colliding identities
+refuse; cleanup protects member blobs and pending operations' members and
+releases a removed state's layers; a 0.9.1 workspace keeps reading and
+protecting through its member rows until they are removed; derive output is
+byte-identical; the gate passes.
 
-**Verified:** the [probe](history/probes/2026-09-23-layer-ledger.json) derives the
-first 10,000 PM01 Federal Register prepared values in 0.277–0.283 ms per row
-against 0.504–0.535 on the base, interleaved at load 5–12: `_retain_entities`'
-0.22–0.23 ms is replaced by a 0.006 ms content scan, ledger commits drop from 15
-to 4, and no layer search runs. `bench_derive` on 5,000 rows: 0.334 against 0.540
-ms per row, 6.01 against 7.01 encodes per row, with the fingerprint and rows-state
-identity of the earlier receipts. The bench ledger holds 8 records and 8
-retention rows in 102,400 bytes, against 5,008 and 5,008 in 3,645,440. The
-[state](../tests/test_core_states.py), [maintenance](../tests/test_core_maintenance.py),
-[document](../tests/test_core_documents.py) and [export](../tests/test_result_export.py)
-suites cover each behavior above, including a 1,000-member state that adds no
-entity rows (it fails on the base). The gate's full run passes except
-`test_source_catalog_workers.py::test_derivation_names_the_engine_that_produced_the_digests`,
-whose forced-timeout pool fallback hung under load on the base as well; alone,
-that file passes.
+**Verified:** the [first probe](history/probes/2026-09-23-layer-ledger.json) and the
+[review probe](history/probes/2026-09-23-layer-ledger-review.json) derive the
+first 10,000 PM01 Federal Register prepared values in 0.277–0.286 ms per row
+against 0.497–0.535 on the base, interleaved at load 5–21: `_retain_entities`'
+0.22–0.23 ms is replaced by a 0.006 ms content scan and a 0.002 ms identity
+check, ledger commits drop from 15 to 4, and no layer search runs.
+`bench_derive` on 5,000 rows: 0.36 against 0.57 ms per row, 6.01 against 7.01
+encodes per row, with the fingerprint and rows-state identity of the earlier
+receipts. The bench ledger holds 8 records and 8 retention rows in 102,400 bytes,
+against 5,008 and 5,008 in 3,645,440. Cleanup of an 8,000-member state after 20
+upserts reads 8,040 rows from 41 data files instead of 168,230 through per-layer
+scans. The probes time single and repeated reads, caller-named publications,
+one cleanup chain and one derive; they do not time recovery, collisions or
+workspaces with thousands of layers. The [state](../tests/test_core_states.py),
+[maintenance](../tests/test_core_maintenance.py), [document](../tests/test_core_documents.py),
+[export](../tests/test_result_export.py) and [0.9.1 workspace](../tests/test_core_older_workspace.py)
+suites cover each behavior above; the last opens a workspace the 0.9.1 source
+wrote. Twenty-one of 22 single-line mutations of the new checks fail a test; the
+survivor was a redundant check, since removed. The full gate passes (1,564 tests
+with one test deselected, the PDF extra skipped): its
+`test_source_catalog_workers.py::test_derivation_names_the_engine_that_produced_the_digests`
+hangs in this environment under load on the base as well, passes alone, and
+passed in an independent full run of the branch's previous commit.
 
 ## Coverage against the spec and plan
 

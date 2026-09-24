@@ -245,6 +245,14 @@
     "tests/test_core_states.py::test_retried_unit_that_pinned_members_keeps_its_identity",
     "tests/test_core_states.py::test_revision_put_of_a_member_copies_it_without_a_pin",
     "tests/test_core_states.py::test_existing_member_rows_take_precedence_over_layer_search",
+    "tests/test_core_states.py::test_caller_identities_cannot_collide_with_bulk_members",
+    "tests/test_core_states.py::test_a_new_state_cannot_reuse_a_ledger_identity_with_other_bytes",
+    "tests/test_core_states.py::test_ledger_refuses_member_pins_that_contradict_its_rows",
+    "tests/test_core_states.py::test_a_session_sees_a_differing_copy_published_after_it_read_a_member",
+    "tests/test_core_states.py::test_referenced_members_count_against_the_closure_before_their_bytes_are_read",
+    "tests/test_core_states.py::test_member_searches_are_admitted_once_skip_named_states_and_remember_misses",
+    "tests/test_core_states.py::test_minted_outputs_never_search_the_layers",
+    "tests/test_core_older_workspace.py::test_member_rows_from_0_9_1_read_pin_and_protect_until_removed",
     "tests/test_bounded_partitions.py::test_parquet_writer_streams_many_partitions_without_whole_python_member_reads",
     "tests/test_bounded_partitions.py::test_parquet_writer_shards_a_hot_partition_and_reuses_immutable_members",
     "tests/test_iceberg_snapshots.py::test_row_edits_keep_base_files_and_independent_branches",
@@ -443,7 +451,10 @@
     "tests/test_core_maintenance.py::test_staged_validation_is_read_only_and_rejects_conflicting_reclaimed_identity",
     "tests/test_core_maintenance.py::test_retained_state_protects_member_content_without_member_rows",
     "tests/test_core_maintenance.py::test_existing_member_rows_protect_their_layer_until_removed_explicitly",
-    "tests/test_core_maintenance.py::test_pinned_member_follows_its_newest_copy_so_superseded_layers_release"
+    "tests/test_core_maintenance.py::test_pinned_member_follows_its_newest_copy_so_superseded_layers_release",
+    "tests/test_core_maintenance.py::test_pending_publication_keeps_a_member_it_binds_by_identity_resolvable",
+    "tests/test_core_maintenance.py::test_direct_field_selection_keeps_its_parent_members_history",
+    "tests/test_core_maintenance.py::test_cleanup_reads_each_shared_data_file_once"
   ],
   "DOCUMENT-CORE-PIPELINE": [
     "tests/test_core_documents.py::test_capture_later_processing_metadata_reuse_reopen_and_alternatives",

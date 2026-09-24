@@ -461,6 +461,82 @@ def test_pending_publication_protects_adopted_inputs_and_generated_content(tmp_p
         assert operations.recover(pending.execution.execution_id) == pending.result
 
 
+def test_pending_publication_keeps_a_member_it_binds_by_identity_resolvable(tmp_path, monkeypatch):
+    """A journaled request binding an unpinned member refuses removal of the member's only state until recovered."""
+    from docspec.application.core_execution import CoreOperations
+    from tests.test_core_execution import definition, request
+    with ExitStack() as stack:
+        records, ledger, states, _, publisher = setup(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            import_root(states, session, [("key", "member", {"x": 1})])
+        def produce(context):
+            context.read_value("member")
+            context.generate(core.InlineValue(value="out"), label="generated")
+        pending = operations.prepare(definition(), request(inputs=(core.WholeInput(label="source", entity_id="member"),)), produce)
+        original = ledger.commit
+        def interrupted(batch):
+            if batch.unit_id.startswith("operations:"):
+                raise OSError("publication interrupted")
+            return original(batch)
+        monkeypatch.setattr(ledger, "commit", interrupted)
+        with pytest.raises(OSError, match="publication interrupted"):
+            operations.publish((pending,))
+        monkeypatch.setattr(ledger, "commit", original)
+        authorize(publisher, ROOT_KEYS)
+        maintenance = CoreMaintenance(publisher, records)
+        with pytest.raises(IntegrityError, match="recoverable operation"):
+            maintenance.remove_under_policy("remove", "policy", ROOT_KEYS)
+        assert ledger.removal("remove") is None
+        assert operations.recover(pending.execution.execution_id) == pending.result
+        # Recovery pinned the member, so the state can go and the member stays readable.
+        maintenance.remove_under_policy("after-recovery", "policy", ROOT_KEYS)
+        assert member(publisher, "member").value.value.value == {"x": 1}
+
+
+def test_direct_field_selection_keeps_its_parent_members_history(tmp_path):
+    """Selecting fields of a member by identity pins it, so it keeps identity and digest after its state is removed."""
+    from docspec.application.core_inspection import inspect_record
+    with ExitStack() as stack:
+        records, ledger, states, selections, publisher = setup(stack, tmp_path)
+        with publisher.session() as session:
+            import_root(states, session, [("key", "e", {"x": 1})])
+            select(selections, session, "field", fields("/x"), parent="e")
+        pinned = records_for(ledger, [("entity", "e")])[0]
+        assert pinned.retained and pinned.available
+        authorize(publisher, PINNED_KEYS)
+        CoreMaintenance(publisher, records).remove_under_policy("remove", "policy", PINNED_KEYS)
+        with publisher.session() as session:
+            report = inspect_record(session, ("entity", "e"))
+        assert report["retained"] and not report["available"]
+        assert records_for(ledger, [("entity", "e")])[0].row_digest == pinned.row_digest
+
+
+def test_cleanup_reads_each_shared_data_file_once(tmp_path, monkeypatch):
+    """Revision layers share their base's data files; cleanup reads member blobs from each file once, not per layer."""
+    from contextlib import closing
+    from docspec.application import core_maintenance
+    from docspec.runtime import CoreWorkspace
+    definition = core.OperationDefinition(format_version=1, definition_id="urn:test:cleanup", implementation_id="test.cleanup",
+                                          implementation_version="1", operation_kind="transformation", configuration={})
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        current = workspace.derive([(f"k{index:03}", {"index": index}) for index in range(200)], batch_id="seed",
+                                   definition=definition, inputs=())
+        for index in range(6):
+            current = workspace.upsert(current.state_id, [(f"new{index}", {"index": index})], batch_id=f"u{index}")
+        read, relation = [], workspace.records.file_relation
+        def recorded(locators):
+            read.extend(locators)
+            return relation(locators)
+        monkeypatch.setattr(workspace.records, "file_relation", recorded)
+        with workspace.ledger.content_guard(exclusive=True), closing(core_maintenance._PhysicalIndex()) as index:
+            workspace.maintenance._inventory(index)
+        with workspace.publisher.session() as session:
+            per_layer = sum(len(list(workspace.records.data_files(layer.reference)))
+                            for layer in workspace.states.entity_layers(session))
+        assert len(read) == len(set(read)) < per_layer
+
+
 def test_suspended_output_retention_requires_authorizing_the_attempt_too(tmp_path):
     from docspec.application.core_execution import CoreOperations
     from tests.test_core_execution import definition, request, progress

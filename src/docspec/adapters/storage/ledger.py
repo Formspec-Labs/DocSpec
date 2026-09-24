@@ -675,6 +675,18 @@ class LocalSqliteCoreLedger:
                 # External rows can be much larger than their SQLite pins.
                 yield tuple(resolved())
 
+    def data_identities(self, identities: Iterable[str]) -> Iterator[tuple[tuple[str, str, str], ...]]:
+        """Stream (kind, identity, row digest) for entity or state rows that already hold these identities."""
+
+        with self._transaction() as connection:
+            self._requests(connection, identities, names=("record_id",),
+                           normalize=lambda identity: (require_text(identity, "data identity"),))
+            cursor = connection.execute(
+                "SELECT r.kind,r.record_id,r.row_digest FROM wanted w JOIN records r "
+                "ON r.record_id=w.record_id AND r.kind IN ('entity','state') ORDER BY w.ordinal")
+            for rows in bounded_rows(cursor, size=_row_size):
+                yield tuple(rows)
+
     def find_candidates(self, requests: Iterable[tuple[str, str]]) -> Iterator[tuple[CandidateMatch, ...]]:
         """Find retained successful results matching candidate request/digest pairs."""
 

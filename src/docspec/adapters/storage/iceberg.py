@@ -12,6 +12,7 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
 from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.io.pyarrow import PyArrowFileIO
+from pyiceberg.manifest import DataFileContent
 from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataUtil
 
@@ -159,6 +160,20 @@ def snapshot_files(table):
         except OSError as error:
             raise IntegrityError('Iceberg recovery metadata is unavailable') from error
     yield Path(table.metadata_location)
+
+
+def snapshot_data_files(table):
+    """Enumerate this snapshot's data files, without its delete files or metadata."""
+    current = table.current_snapshot()
+    if current is None:
+        return
+    try:
+        for manifest in current.manifests(table.io):
+            for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
+                if entry.data_file.content == DataFileContent.DATA:
+                    yield table.io.path(entry.data_file.file_path)
+    except OSError as error:
+        raise IntegrityError('Iceberg recovery metadata is unavailable') from error
 
 
 def seal_snapshot(root, table):

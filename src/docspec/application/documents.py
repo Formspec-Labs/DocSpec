@@ -315,8 +315,11 @@ class DocumentPipeline:
                             with self.publisher.session() as active:
                                 # Sources are members of the source state; resolve them through its
                                 # layer once, rather than searching every retained layer per capture.
+                                # Their IDs digest their whole values, so no other layer can hold a
+                                # differing copy.
                                 sources = {source_id for _, source_id, _, _ in work}
-                                active.bulk_member_records(sources, active.states.locate_in(active, source_state_id, sources))
+                                layer = active.states.layers(active, source_state_id)["entities"]
+                                active.bulk_member_records(sources, active.states.find_members(active, sources, layers=(layer,)))
                                 calls = (self._capture_call(active, source_id, index, identity=prefix + ":capture", fresh=fresh,
                                     observe_source_bytes=source_bytes)
                                     for key, source_id, index, prefix in work)

@@ -17,7 +17,7 @@ from docspec.adapters.storage.records import IcebergRecordStorage
 from docspec.application.core_publication import CorePublisher
 from docspec.domain import core
 from docspec.domain.core_admission import admit_record
-from docspec.errors import IntegrityError
+from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.core_ledger import MetadataBatch
 from docspec.ports.record_storage import BATCH_BYTES
 
@@ -482,3 +482,146 @@ def test_existing_member_rows_take_precedence_over_layer_search(tmp_path, monkey
             assert [row.value for batch in session.read_records([("entity", "e0"), ("entity", "e1")]) for row in batch] == entities
             assert session.publish(MetadataBatch("reference", retained=(("entity", "e0"),))) is True
         assert [member_rows(ledger, identity) for identity in ("e0", "e1")] == before
+
+
+def searches(monkeypatch, states):
+    """Record the identities each all-layer member search looks for."""
+    calls, find = [], states.find_members
+    def recorded(session, identities, *, layers=None):
+        identities = set(identities)
+        if layers is None:
+            calls.append(identities)
+        return find(session, identities, layers=layers)
+    monkeypatch.setattr(states, "find_members", recorded)
+    return calls
+
+
+def test_caller_identities_cannot_collide_with_bulk_members(tmp_path):
+    """A caller-chosen entity or state identity is checked against the bulk layers; a new member against the ledger."""
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        members = [core.Membership(member_key="k", occurrence_id="member")]
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("member", 1)], members=members)
+            artifact = core.Entity(format_version=1, entity_id="member", entity_type="artifact", value=core.InlineValue(value=1))
+            with pytest.raises(IntegrityError, match="immutable"):
+                session.publish(MetadataBatch("artifact", records=(artifact,), retained=(("entity", "member"),)))
+            with pytest.raises(IntegrityError, match="ambiguous"):
+                states.create(session, state_id="member", representation_id="named-r", unit_id="named",
+                              entities=[occurrence("other", 2)], members=[core.Membership(member_key="k", occurrence_id="other")])
+            with pytest.raises(IntegrityError, match="ambiguous"):
+                states.create(session, state_id="reuse", representation_id="reuse-r", unit_id="reuse",
+                              entities=[occurrence("root", 3)], members=[core.Membership(member_key="k", occurrence_id="root")])
+        assert not any(ledger.is_committed(unit) for unit in ("artifact", "named", "reuse"))
+
+
+def test_a_new_state_cannot_reuse_a_ledger_identity_with_other_bytes(tmp_path):
+    """Rows take precedence over layers when read by identity, so a differing bulk copy is refused when written."""
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("pinned", 1)], members=[core.Membership(member_key="k", occurrence_id="pinned")])
+            session.publish(MetadataBatch("pin", retained=(("entity", "pinned"),)))
+            session.publish(MetadataBatch("explicit", records=(occurrence("explicit", 1),), retained=(("entity", "explicit"),)))
+            for identity in ("pinned", "explicit"):
+                with pytest.raises(IntegrityError, match="immutable"):
+                    states.create(session, state_id="copy-" + identity, representation_id="copy-" + identity, unit_id="copy-" + identity,
+                                  entities=[occurrence(identity, 2)], members=[core.Membership(member_key="k", occurrence_id=identity)])
+            # Identical copies are the same occurrence.
+            states.create(session, state_id="same", representation_id="same-r", unit_id="same",
+                          entities=[occurrence("pinned", 1), occurrence("explicit", 1)],
+                          members=[core.Membership(member_key="a", occurrence_id="pinned"), core.Membership(member_key="b", occurrence_id="explicit")])
+        assert not any(ledger.is_committed("copy-" + identity) for identity in ("pinned", "explicit"))
+
+
+def test_ledger_refuses_member_pins_that_contradict_its_rows(tmp_path):
+    """The ledger checks a pin's digest and data identity itself, whatever the caller resolved."""
+    from docspec.domain.core_admission import AdmittedRecord
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("a", 1), occurrence("b", 1)],
+                          members=[core.Membership(member_key="a", occurrence_id="a"), core.Membership(member_key="b", occurrence_id="b")])
+            layer = states.layers(session, "root")["entities"].reference
+        ledger.commit(MetadataBatch("pin-a", members=((AdmittedRecord(occurrence("a", 1)), layer),)))
+        with pytest.raises(IntegrityError, match="immutable"):
+            ledger.commit(MetadataBatch("changed-a", members=((AdmittedRecord(occurrence("a", 2)), layer),)))
+        with pytest.raises(IntegrityError, match="ambiguous"):
+            ledger.commit(MetadataBatch("state-named", members=((AdmittedRecord(occurrence("root", 1)), layer),)))
+        assert not ledger.is_committed("changed-a") and not ledger.is_committed("state-named")
+
+
+def test_a_session_sees_a_differing_copy_published_after_it_read_a_member(tmp_path):
+    """Publishing a bulk representation clears the session's member cache, so a later read compares every copy."""
+    with ExitStack() as stack:
+        _, _, states, publisher = open_core(stack, tmp_path)
+        members = [core.Membership(member_key="k", occurrence_id="shared")]
+        with publisher.session() as session:
+            states.create(session, state_id="first", representation_id="first-r", unit_id="first",
+                          entities=[occurrence("shared", 1)], members=members)
+            assert next(session.read_records([("entity", "shared")]))[0].value.value.value == 1
+            states.create(session, state_id="second", representation_id="second-r", unit_id="second",
+                          entities=[occurrence("shared", 2)], members=members)
+            with pytest.raises(IntegrityError, match="different values"):
+                next(session.read_records([("entity", "shared")]))
+
+
+def test_referenced_members_count_against_the_closure_before_their_bytes_are_read(tmp_path, monkeypatch):
+    body = "x" * (3 * 1024**2)
+    keys = tuple(("entity", str(index)) for index in range(3))
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=(occurrence(str(index), body) for index in range(3)),
+                          members=(core.Membership(member_key=str(index), occurrence_id=str(index)) for index in range(3)))
+        def unexpected(*args, **kwargs):
+            raise AssertionError("member bytes were read before the closure size was checked")
+        monkeypatch.setattr(states, "member_payloads", unexpected)
+        with publisher.session() as session, pytest.raises(LimitExceededError, match="closure"):
+            session.publish(MetadataBatch("too-large", retained=keys))
+        assert not ledger.is_committed("too-large")
+
+
+def test_member_searches_are_admitted_once_skip_named_states_and_remember_misses(tmp_path, monkeypatch):
+    with ExitStack() as stack:
+        records, _, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            for index in range(12):
+                states.create_keyed(session, state_id=f"s{index}", representation_id=f"r{index}", unit_id=f"u{index}",
+                                    rows=[("key", occurrence(f"e{index}", index))])
+        calls = searches(monkeypatch, states)
+        admissions, available = [], records.available
+        monkeypatch.setattr(records, "available", lambda reference: admissions.append(reference) or available(reference))
+        with publisher.session() as session:
+            for index in (0, 5, 11):
+                assert next(session.read_records([("entity", f"e{index}")]))[0].value.value.value == index
+            first = len(admissions)
+            assert next(session.read_records([("entity", "e3")]))[0].value.value.value == 3
+            # More layers than the thread's eight cached admissions, each admitted once.
+            assert first <= 12 and len(admissions) == first
+            for _ in range(2):
+                assert next(session.read_records([("entity", "absent")]))[0] is None
+            # A call naming both forms of an identity resolves it itself.
+            assert [row is not None for batch in session.read_records([("entity", "s1"), ("state", "s1")]) for row in batch] == [False, True]
+        assert calls == [{"e0"}, {"e5"}, {"e11"}, {"e3"}, {"absent"}]
+
+
+def test_minted_outputs_never_search_the_layers(tmp_path, monkeypatch):
+    """Derive, upsert and generated outputs carry identities DocSpec mints, so they stay flat as layers accumulate."""
+    from docspec.domain.identity import stable_urn
+    from docspec.runtime import CoreWorkspace
+    definition = core.OperationDefinition(format_version=1, definition_id=stable_urn("core-derive-definition", ["minted", {}]),
+                                          implementation_id="test.minted", implementation_version="1",
+                                          operation_kind="transformation", configuration={})
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        for index in range(3):
+            workspace.create(f"other{index}", [("k", index)])
+        calls = searches(monkeypatch, workspace.states)
+        base = workspace.derive([("a", 1), ("b", 2)], batch_id="seed", definition=definition, inputs=())
+        derived = workspace.derive([("a", 3)], batch_id="next", definition=definition, inputs=(), base_state_id=base.state_id)
+        workspace.upsert(derived.state_id, [("c", 4)], batch_id="upsert")
+        assert calls == []

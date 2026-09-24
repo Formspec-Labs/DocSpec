@@ -1,0 +1,426 @@
+{
+ "recorded": "2026-09-23",
+ "task": "C28 review fixes: identity collisions, recovery protection, origin pins, session layer cache, per-file cleanup",
+ "builds": {
+  "38043c4": "base, perf(derive): encode each value once",
+  "c28-review": "perf/layer-ledger after the review fixes"
+ },
+ "caveat": "Shared 14-CPU machine; base and branch ran interleaved, each run with its 1-minute load. Counts of searches, admissions, files, rows, encodes and the fingerprint are contention-immune. The probes time single and repeated reads, caller-named publications, one cleanup chain and one derive; they do not time recovery, collisions or workspaces with thousands of layers.",
+ "stage_times": {
+  "harness": "pm01 gate tools/stage_times.py, first 10,000 rows of compare/fr-10k.prepared-1.jsonl; the branch runs a copy timing _check_member_content, _check_ledger_copies and find_members in place of _retain_entities",
+  "rounds": [
+   {
+    "round": 1,
+    "build": "38043c4",
+    "load": [
+     11.36,
+     15.09,
+     21.1
+    ],
+    "stages": {
+     "ledger: per-entity receipts (_retain_entities)": {
+      "seconds": 2.24,
+      "ms_per_row": 0.224,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 1.11,
+      "ms_per_row": 0.111,
+      "calls": 15
+     },
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.81,
+      "ms_per_row": 0.081,
+      "calls": 2
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 4.97,
+    "derive_ms_per_row": 0.497
+   },
+   {
+    "round": 1,
+    "build": "c28-review",
+    "load": [
+     10.85,
+     14.86,
+     20.95
+    ],
+    "stages": {
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.85,
+      "ms_per_row": 0.085,
+      "calls": 2
+     },
+     "duckdb: member content check": {
+      "seconds": 0.06,
+      "ms_per_row": 0.006,
+      "calls": 1
+     },
+     "sqlite: member identities vs ledger rows": {
+      "seconds": 0.02,
+      "ms_per_row": 0.002,
+      "calls": 1
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 4
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 2.86,
+    "derive_ms_per_row": 0.286
+   },
+   {
+    "round": 2,
+    "build": "38043c4",
+    "load": [
+     11.9,
+     15.01,
+     20.96
+    ],
+    "stages": {
+     "ledger: per-entity receipts (_retain_entities)": {
+      "seconds": 2.28,
+      "ms_per_row": 0.228,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 1.12,
+      "ms_per_row": 0.112,
+      "calls": 15
+     },
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.81,
+      "ms_per_row": 0.081,
+      "calls": 2
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 5.03,
+    "derive_ms_per_row": 0.503
+   },
+   {
+    "round": 2,
+    "build": "c28-review",
+    "load": [
+     11.75,
+     14.93,
+     20.9
+    ],
+    "stages": {
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.84,
+      "ms_per_row": 0.084,
+      "calls": 2
+     },
+     "duckdb: member content check": {
+      "seconds": 0.06,
+      "ms_per_row": 0.006,
+      "calls": 1
+     },
+     "sqlite: member identities vs ledger rows": {
+      "seconds": 0.02,
+      "ms_per_row": 0.002,
+      "calls": 1
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 4
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 2.82,
+    "derive_ms_per_row": 0.282
+   }
+  ]
+ },
+ "bench_derive": {
+  "harness": "pm01 gate tools/bench_derive.py --rows compare/fr-10k.prepared-1.jsonl --limit 5000",
+  "base": {
+   "label": "c28-base",
+   "rows": 5000,
+   "read": 5000,
+   "state_id": "urn:docspec:execution:35942c26-7d59-4ff2-98a7-b18930ce046d:state",
+   "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+   "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+   "load": [
+    11.0390625,
+    14.55712890625,
+    20.62841796875
+   ],
+   "phases": [
+    {
+     "phase": "derive",
+     "wall_seconds": 2.856,
+     "cpu_seconds": 2.694,
+     "encodes": 35069,
+     "parses": 21,
+     "encoded_bytes": 46386855,
+     "encodes_per_row": 7.01,
+     "parses_per_row": 0.0,
+     "encoded_kb_per_row": 9.06,
+     "ms_per_row": 0.571
+    },
+    {
+     "phase": "read-values",
+     "wall_seconds": 0.142,
+     "cpu_seconds": 0.141,
+     "encodes": 17,
+     "parses": 29,
+     "encoded_bytes": 15313,
+     "encodes_per_row": 0.0,
+     "parses_per_row": 0.01,
+     "encoded_kb_per_row": 0.0,
+     "ms_per_row": 0.028
+    }
+   ]
+  },
+  "c28_review": {
+   "label": "c28",
+   "rows": 5000,
+   "read": 5000,
+   "state_id": "urn:docspec:execution:19f26af9-13fc-4b63-9c82-0f5cee06fa6c:state",
+   "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+   "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+   "load": [
+    11.0390625,
+    14.55712890625,
+    20.62841796875
+   ],
+   "phases": [
+    {
+     "phase": "derive",
+     "wall_seconds": 1.798,
+     "cpu_seconds": 1.667,
+     "encodes": 30057,
+     "parses": 21,
+     "encoded_bytes": 44333949,
+     "encodes_per_row": 6.01,
+     "parses_per_row": 0.0,
+     "encoded_kb_per_row": 8.66,
+     "ms_per_row": 0.36
+    },
+    {
+     "phase": "read-values",
+     "wall_seconds": 0.142,
+     "cpu_seconds": 0.142,
+     "encodes": 17,
+     "parses": 29,
+     "encoded_bytes": 15313,
+     "encodes_per_row": 0.0,
+     "parses_per_row": 0.01,
+     "encoded_kb_per_row": 0.0,
+     "ms_per_row": 0.028
+    }
+   ]
+  },
+  "identical_output": true
+ },
+ "bench_ledger": {
+  "method": "copy of bench/<label>/workspace/ledger.sqlite read with sqlite3 immutable=1",
+  "base": {
+   "bytes": 3645440,
+   "table_rows": {
+    "record_layers": 1,
+    "records": 5008,
+    "retention": 5008,
+    "units": 12
+   },
+   "records_by_kind": {
+    "entity": 5000,
+    "execution": 1,
+    "operation_definition": 1,
+    "request": 1,
+    "result": 1,
+    "state": 2,
+    "state_representation": 2
+   }
+  },
+  "c28_review": {
+   "bytes": 102400,
+   "table_rows": {
+    "record_layers": 0,
+    "records": 8,
+    "retention": 8,
+    "units": 6
+   },
+   "records_by_kind": {
+    "execution": 1,
+    "operation_definition": 1,
+    "request": 1,
+    "result": 1,
+    "state": 2,
+    "state_representation": 2
+   }
+  }
+ },
+ "layer_search_scaling": {
+  "harness": "workspace with N prior 200-member caller-named states; mean of 10 calls each: publish an artifact and an occurrence with caller-chosen IDs, create a caller-named one-member state, read one unpinned member by identity; then 4 sessions of 5 reads each. Admissions count IcebergRecordStorage.available calls.",
+  "rows": [
+   {
+    "build": "38043c4",
+    "prior_states": 1,
+    "entity_layers_at_reads": 11,
+    "load_1m": 10.58,
+    "artifact": {
+     "ms": 58.6,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "caller_named_entity": {
+     "ms": 55.5,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "create_caller_named_state": {
+     "ms": 113.1,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "read_unpinned": {
+     "ms": 5.3,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    },
+    "five_reads_one_session": {
+     "ms": 18.0,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    }
+   },
+   {
+    "build": "38043c4",
+    "prior_states": 32,
+    "entity_layers_at_reads": 42,
+    "load_1m": 10.86,
+    "artifact": {
+     "ms": 50.6,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "caller_named_entity": {
+     "ms": 53.1,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "create_caller_named_state": {
+     "ms": 108.3,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "read_unpinned": {
+     "ms": 5.2,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    },
+    "five_reads_one_session": {
+     "ms": 18.2,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    }
+   },
+   {
+    "build": "c28-review",
+    "prior_states": 1,
+    "entity_layers_at_reads": 11,
+    "load_1m": 10.86,
+    "artifact": {
+     "ms": 57.9,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 1.0
+    },
+    "caller_named_entity": {
+     "ms": 58.8,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 1.0
+    },
+    "create_caller_named_state": {
+     "ms": 136.8,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 5.9
+    },
+    "read_unpinned": {
+     "ms": 62.4,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 11.0
+    },
+    "five_reads_one_session": {
+     "ms": 226.2,
+     "all_layer_searches": 5.0,
+     "layer_admissions": 11.0
+    }
+   },
+   {
+    "build": "c28-review",
+    "prior_states": 32,
+    "entity_layers_at_reads": 42,
+    "load_1m": 10.55,
+    "artifact": {
+     "ms": 315.5,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 32.0
+    },
+    "caller_named_entity": {
+     "ms": 315.8,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 32.0
+    },
+    "create_caller_named_state": {
+     "ms": 446.0,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 37.5
+    },
+    "read_unpinned": {
+     "ms": 401.2,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 42.0
+    },
+    "five_reads_one_session": {
+     "ms": 1748.4,
+     "all_layer_searches": 5.0,
+     "layer_admissions": 42.0
+    }
+   }
+  ]
+ },
+ "cleanup_chain": {
+  "harness": "derive of 8,000 rows then 20 one-row upserts; CoreMaintenance._inventory over the workspace",
+  "members": 8020,
+  "revisions": 20,
+  "entity_layers": 41,
+  "data_files_read": 41,
+  "rows_read": 8040,
+  "rows_per_layer_scans_before": 168230,
+  "inventory_ms": 538,
+  "load_1m": 9.9
+ },
+ "mutations": {
+  "harness": "22 single-line mutations of the branch source, each run against 17 focused test files (271 tests).",
+  "killed": 21,
+  "survived": 1,
+  "survivor": "removing the explicit entity/state ambiguity check for incoming states: the located member is cached into the closure, whose validation already refuses the ambiguous identity with the same message, so the check was deleted as redundant"
+ }
+}

@@ -75,18 +75,13 @@ class _CopyBlobs:
 def _repack_entities(source, target, records, keys):
     """Keep the selected available entity values in one streamed physical layer.
 
-    A bulk state member named by identity has no source ledger row to copy;
-    the export retains it with its repacked value instead of writing a pin
-    into the source workspace.
+    Every repacked entity is retained with its copy: a bulk state member named
+    by identity has no source row to carry its retention, and for a copied
+    row an available retention row stays as it was.
     """
-    unpinned = set()
     def values():
         with owned_iterator(keys) as selected, owned_iterator(source.read_records(key for key in selected if key[0] == "entity")) as batches:
             for batch in batches:
-                found = [row.key for row in batch if row is not None]
-                with owned_iterator(source.ledger.read_records(found, include_values=False)) as statuses:
-                    unpinned.update(key for key, status in zip(found, (row for group in statuses for row in group), strict=True)
-                                    if status is None)
                 for row in batch:
                     if row is not None and row.available and row.value is not None:
                         yield row.value
@@ -100,15 +95,15 @@ def _repack_entities(source, target, records, keys):
             for batch in batches:
                 for payload in batch.column("record_json").to_pylist():
                     record = AdmittedRecord(payload)
-                    key = "entity", record.value["entity_id"]
+                    identity = record.value["entity_id"]
                     # The receipt repeats the identity per record and per retained key.
-                    size = min(BATCH_BYTES, len(payload) + (3 if key in unpinned else 2) * len(canonical_value_bytes(key[1])) + 160)
-                    yield record, size, key
+                    size = min(BATCH_BYTES, len(payload) + 3 * len(canonical_value_bytes(identity)) + 160)
+                    yield record, size, ("entity", identity)
     with owned_iterator(bounded_rows(stored(), size=lambda item: item[1])) as batches:
         for ordinal, batch in enumerate(batches):
             target.commit(MetadataBatch(f"export-entities:{admitted.reference.layer_id}:{ordinal}",
                 records=tuple(item[0] for item in batch), record_layer=admitted.reference,
-                retained=tuple(item[2] for item in batch if item[2] in unpinned)))
+                retained=tuple(item[2] for item in batch)))
 
 
 def export_result(publisher, records, state_id, destination, *, producer: Producer, max_output_bytes: int, additional_roots=()) -> ArtifactPin:
