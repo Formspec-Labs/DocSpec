@@ -76,6 +76,7 @@ def content_statistics_processor(*, max_segment_bytes=64 * 1024**2):
                         stats = content_statistics(payload.content, segment.segment_id, segment.evidence)
                     yield key, core.Entity(format_version=1, entity_id=output_id + ":" + key,
                         entity_type="occurrence", value=core.InlineValue(value=stats))
+        session.mint(output_id)
         result = session.states.create_keyed(session, state_id=output_id, representation_id=output_id + ":physical",
             unit_id=output_id + ":import", rows=rows())
         context.generate_record(result, label="statistics")

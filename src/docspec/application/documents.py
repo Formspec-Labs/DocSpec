@@ -177,6 +177,7 @@ class DocumentPipeline:
                         entity_type="occurrence", value=session.retain_bytes([item.content], media_type=item.segment.content.media_type))
                     yield prefix + ":metadata", core.Entity(format_version=1, entity_id=state_id + ":metadata:" + prefix,
                         entity_type="occurrence", value=core.InlineValue(value={"segment": item.segment.to_dict(), "contentEntityId": content_id}))
+            session.mint(state_id)
             state = self.publisher.states.create_keyed(session, state_id=state_id, representation_id=state_id + ":physical",
                 unit_id=state_id + ":import", rows=rows())
             context.generate_record(state, label="segments")
@@ -318,7 +319,7 @@ class DocumentPipeline:
                                 # Their IDs digest their whole values, so no other layer can hold a
                                 # differing copy.
                                 sources = {source_id for _, source_id, _, _ in work}
-                                layer = active.states.layers(active, source_state_id)["entities"]
+                                layer = active.states.layer_view(active, active.states.layers(active, source_state_id)["entities"].reference)
                                 active.bulk_member_records(sources, active.states.find_members(active, sources, layers=(layer,)))
                                 calls = (self._capture_call(active, source_id, index, identity=prefix + ":capture", fresh=fresh,
                                     observe_source_bytes=source_bytes)

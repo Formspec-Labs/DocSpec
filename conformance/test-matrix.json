@@ -253,6 +253,15 @@
     "tests/test_core_states.py::test_member_searches_are_admitted_once_skip_named_states_and_remember_misses",
     "tests/test_core_states.py::test_minted_outputs_never_search_the_layers",
     "tests/test_core_older_workspace.py::test_member_rows_from_0_9_1_read_pin_and_protect_until_removed",
+    "tests/test_core_older_workspace.py::test_removing_some_old_member_rows_keeps_the_rest_readable_and_protected",
+    "tests/test_core_states.py::test_a_concurrent_bulk_state_cannot_slip_past_a_callers_identity_check",
+    "tests/test_core_states.py::test_a_concurrent_record_cannot_slip_past_a_new_states_ledger_check",
+    "tests/test_core_states.py::test_ledger_refuses_an_identity_checked_unit_after_the_mark_moved",
+    "tests/test_core_states.py::test_forged_and_self_named_identities_are_checked",
+    "tests/test_core_states.py::test_a_removed_pinned_member_is_restored_by_an_identical_copy",
+    "tests/test_core_states.py::test_the_session_search_keeps_layer_views_not_iceberg_metadata",
+    "tests/test_core_states.py::test_many_identities_use_the_semi_join_path",
+    "tests/test_core_states.py::test_a_sessions_own_new_layers_join_its_search_in_commit_order",
     "tests/test_bounded_partitions.py::test_parquet_writer_streams_many_partitions_without_whole_python_member_reads",
     "tests/test_bounded_partitions.py::test_parquet_writer_shards_a_hot_partition_and_reuses_immutable_members",
     "tests/test_iceberg_snapshots.py::test_row_edits_keep_base_files_and_independent_branches",
@@ -454,7 +463,10 @@
     "tests/test_core_maintenance.py::test_pinned_member_follows_its_newest_copy_so_superseded_layers_release",
     "tests/test_core_maintenance.py::test_pending_publication_keeps_a_member_it_binds_by_identity_resolvable",
     "tests/test_core_maintenance.py::test_direct_field_selection_keeps_its_parent_members_history",
-    "tests/test_core_maintenance.py::test_cleanup_reads_each_shared_data_file_once"
+    "tests/test_core_maintenance.py::test_cleanup_reads_each_shared_data_file_once",
+    "tests/test_core_maintenance.py::test_a_pending_member_input_blocks_only_its_own_state_and_clears_with_its_execution",
+    "tests/test_core_maintenance.py::test_removal_checks_surviving_layers_once_for_all_pending_journals",
+    "tests/test_core_maintenance.py::test_a_member_blob_in_any_data_file_of_its_state_is_protected"
   ],
   "DOCUMENT-CORE-PIPELINE": [
     "tests/test_core_documents.py::test_capture_later_processing_metadata_reuse_reopen_and_alternatives",

@@ -168,7 +168,7 @@ class CoreMaintenance:
         entity_targets = {key[1] for key in excluded if key[0] == "entity"}
         execution_ids = None if execution_ids is None else set(execution_ids)
         with self.publisher.session() as session, owned_iterator(self.ledger.recovery_progress(exclude=excluded)) as batches:
-            seen = set()
+            seen, surviving = set(), []
             for batch in batches:
                 for kind, payload in batch:
                     progress = decode_canonical_json_value(payload, label="operation progress")
@@ -187,7 +187,7 @@ class CoreMaintenance:
                     if excluded.intersection(required):
                         raise IntegrityError("recoverable operation requires records in the removal scope")
                     if excluded:
-                        self._members_outside(session, required, excluded)
+                        self._members_outside(session, required, excluded, surviving, progress["execution_id"])
                     # Prepared records have no retention row until publication.
                     # Their entity values may already live in a shared physical
                     # layer, which remains necessary for exact recovery.
@@ -198,19 +198,24 @@ class CoreMaintenance:
                     for record in staged:
                         self.inventory_record(index, record, protected=True, scanned=scanned, entity_targets=entity_targets)
 
-    def _members_outside(self, session, required, excluded):
+    def _members_outside(self, session, required, excluded, surviving, execution_id):
         """Refuse a removal that would leave a recoverable operation's bulk member unresolvable.
 
         A member the journal binds by identity has no ledger row to protect; it
         must stay in the entity layer of some state outside the removal scope.
+        ``surviving`` holds those layers once computed for the inventory. The
+        refusal names the execution: recovering it pins the member, and
+        removing it with the state abandons the journal.
         """
         entities = [key for key in required if key[0] == "entity"]
         with owned_iterator(self.ledger.read_records(entities, include_values=False)) as batches:
             unpinned = {key[1] for key, row in zip(entities, (row for batch in batches for row in batch), strict=True) if row is None}
         if unpinned:
             states = self.publisher.states
-            if unpinned - states.find_members(session, unpinned, layers=states.entity_layers(session, exclude=excluded)).keys():
-                raise IntegrityError("recoverable operation requires records in the removal scope")
+            if not surviving:
+                surviving.append(states.entity_layers(session, exclude=excluded))
+            if unpinned - states.find_members(session, unpinned, layers=surviving[0]).keys():
+                raise IntegrityError(f"recoverable operation {execution_id} requires records in the removal scope")
 
     def remove_under_policy(self, update_id, policy_id, keys=(), *, orphan_content=()):
         """Authorize exact keys; retain shared bytes, journal each physical outcome.

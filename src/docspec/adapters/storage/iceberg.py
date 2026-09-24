@@ -163,15 +163,14 @@ def snapshot_files(table):
 
 
 def snapshot_data_files(table):
-    """Enumerate this snapshot's data files, without its delete files or metadata."""
+    """Enumerate this snapshot's data files as (path, is a delete file), without metadata."""
     current = table.current_snapshot()
     if current is None:
         return
     try:
         for manifest in current.manifests(table.io):
             for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
-                if entry.data_file.content == DataFileContent.DATA:
-                    yield table.io.path(entry.data_file.file_path)
+                yield table.io.path(entry.data_file.file_path), entry.data_file.content != DataFileContent.DATA
     except OSError as error:
         raise IntegrityError('Iceberg recovery metadata is unavailable') from error
 

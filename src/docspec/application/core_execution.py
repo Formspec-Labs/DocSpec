@@ -133,6 +133,8 @@ class OperationContext:
     def generate(self, value, *, label, role="derived", entity_type="artifact", entity_id=None, happened_at=None):
         """Generate one new entity output and record its generation event and binding."""
         entity = core.Entity(format_version=1, entity_id=entity_id or _identity("entity"), entity_type=entity_type, value=value)
+        if entity_id is None:
+            self.session.mint(entity.entity_id)
         return self.generate_record(entity, label=label, role=role, happened_at=happened_at)
 
     def generate_record(self, record, *, label, role="derived", happened_at=None):

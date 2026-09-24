@@ -77,10 +77,10 @@ A member can also be read by its occurrence ID, as `inspect("entity", id)`, a
 `WholeInput` or a value edit do. It has no ledger row until a publication
 references it by identity (a `WholeInput`, value edit, adopted or selected
 output, or a directly selected origin) and pins it; reads and inspection pin
-nothing. Until then each session's first read searches every retained state's
-entity layer, admitting each once per session, and each read costs one native
-query over those layers; a pinned member reads from its row. Read whole states
-through `rows`, `open_state` or `compare`, which never search by identity.
+nothing. Until then a read searches every retained state's entity layer: each is
+admitted once per session and one native query reads their distinct data files. A
+pinned member reads from its row. Read whole states through `rows`, `open_state`
+or `compare`, which never search by identity.
 
 Run the [two-field example](../examples/core_values.py) with
 `python -m examples.core_values /path/to/new-workspace`. It performs immutable

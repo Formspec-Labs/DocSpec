@@ -461,37 +461,117 @@ def test_pending_publication_protects_adopted_inputs_and_generated_content(tmp_p
         assert operations.recover(pending.execution.execution_id) == pending.result
 
 
-def test_pending_publication_keeps_a_member_it_binds_by_identity_resolvable(tmp_path, monkeypatch):
-    """A journaled request binding an unpinned member refuses removal of the member's only state until recovered."""
+def interrupted_member_input(stack, tmp_path, monkeypatch, *, identity="member", extra_state=None):
+    """Journal a publication whose request binds an unpinned member by identity, then interrupt its commit."""
     from docspec.application.core_execution import CoreOperations
     from tests.test_core_execution import definition, request
+    from tests.test_core_states import occurrence
+    records, ledger, states, _, publisher = setup(stack, tmp_path)
+    operations = CoreOperations(publisher)
+    with publisher.session() as session:
+        import_root(states, session, [("key", identity, {"x": 1})])
+        if extra_state:
+            states.create(session, state_id=extra_state, representation_id=extra_state + "-r", unit_id=extra_state,
+                          entities=[occurrence(extra_state + "-member", 5)],
+                          members=[core.Membership(member_key="k", occurrence_id=extra_state + "-member")])
+    def produce(context):
+        context.read_value(identity)
+        context.generate(core.InlineValue(value="out"), label="generated")
+    pending = operations.prepare(definition(), request(inputs=(core.WholeInput(label="source", entity_id=identity),)), produce)
+    original = ledger.commit
+    def interrupted(batch):
+        if batch.unit_id.startswith("operations:"):
+            raise OSError("publication interrupted")
+        return original(batch)
+    monkeypatch.setattr(ledger, "commit", interrupted)
+    with pytest.raises(OSError, match="publication interrupted"):
+        operations.publish((pending,))
+    monkeypatch.setattr(ledger, "commit", original)
+    return records, ledger, states, publisher, operations, pending
+
+
+def test_pending_publication_keeps_a_member_it_binds_by_identity_resolvable(tmp_path, monkeypatch):
+    """A journaled request binding an unpinned member refuses removal of the member's only state until recovered."""
     with ExitStack() as stack:
-        records, ledger, states, _, publisher = setup(stack, tmp_path)
-        operations = CoreOperations(publisher)
-        with publisher.session() as session:
-            import_root(states, session, [("key", "member", {"x": 1})])
-        def produce(context):
-            context.read_value("member")
-            context.generate(core.InlineValue(value="out"), label="generated")
-        pending = operations.prepare(definition(), request(inputs=(core.WholeInput(label="source", entity_id="member"),)), produce)
-        original = ledger.commit
-        def interrupted(batch):
-            if batch.unit_id.startswith("operations:"):
-                raise OSError("publication interrupted")
-            return original(batch)
-        monkeypatch.setattr(ledger, "commit", interrupted)
-        with pytest.raises(OSError, match="publication interrupted"):
-            operations.publish((pending,))
-        monkeypatch.setattr(ledger, "commit", original)
+        records, ledger, states, publisher, operations, pending = interrupted_member_input(stack, tmp_path, monkeypatch)
         authorize(publisher, ROOT_KEYS)
         maintenance = CoreMaintenance(publisher, records)
-        with pytest.raises(IntegrityError, match="recoverable operation"):
+        with pytest.raises(IntegrityError, match="recoverable operation " + pending.execution.execution_id):
             maintenance.remove_under_policy("remove", "policy", ROOT_KEYS)
         assert ledger.removal("remove") is None
         assert operations.recover(pending.execution.execution_id) == pending.result
         # Recovery pinned the member, so the state can go and the member stays readable.
         maintenance.remove_under_policy("after-recovery", "policy", ROOT_KEYS)
         assert member(publisher, "member").value.value.value == {"x": 1}
+
+
+def test_a_pending_member_input_blocks_only_its_own_state_and_clears_with_its_execution(tmp_path, monkeypatch):
+    with ExitStack() as stack:
+        records, ledger, states, publisher, operations, pending = interrupted_member_input(
+            stack, tmp_path, monkeypatch, extra_state="other")
+        maintenance = CoreMaintenance(publisher, records)
+        other = (("state", "other"), ("state_representation", "other-r"))
+        authorize(publisher, other, identity="other-policy")
+        assert maintenance.remove_under_policy("remove-other", "other-policy", other)["deleted"] > 0
+        # Removing the execution with the state abandons its journal instead.
+        abandon = ROOT_KEYS + (("execution", pending.execution.execution_id),)
+        authorize(publisher, abandon, identity="abandon-policy")
+        assert maintenance.remove_under_policy("abandon", "abandon-policy", abandon)["deleted"] > 0
+        assert member(publisher, "member") is None
+
+
+def test_removal_checks_surviving_layers_once_for_all_pending_journals(tmp_path, monkeypatch):
+    from tests.test_core_execution import definition, request
+    with ExitStack() as stack:
+        records, ledger, states, publisher, operations, _ = interrupted_member_input(stack, tmp_path, monkeypatch)
+        def copy(context):
+            context.generate(core.InlineValue(value=context.read_value("member")), label="copy")
+        second = operations.prepare(definition(), request("second", inputs=(core.WholeInput(label="source", entity_id="member"),)), copy)
+        original = ledger.commit
+        def interrupted(batch):
+            if batch.unit_id.startswith("operations:"):
+                raise OSError("publication interrupted")
+            return original(batch)
+        monkeypatch.setattr(ledger, "commit", interrupted)
+        with pytest.raises(OSError):
+            operations.publish((second,))
+        monkeypatch.setattr(ledger, "commit", original)
+        calls, layers = [], states.entity_layers
+        monkeypatch.setattr(states, "entity_layers", lambda session, **kwargs: calls.append(kwargs) or layers(session, **kwargs))
+        other_state = [("state", "other"), ("state_representation", "other-r")]
+        with publisher.session() as session:
+            states.create(session, state_id="other", representation_id="other-r", unit_id="other",
+                          entities=[], members=[])
+        authorize(publisher, other_state)
+        CoreMaintenance(publisher, records).remove_under_policy("remove-other", "policy", other_state)
+        assert [call for call in calls if call.get("exclude")] == [{"exclude": set(other_state)}]
+
+
+def test_a_member_blob_in_any_data_file_of_its_state_is_protected(tmp_path):
+    """Inventory of a revision's layer, which spans its base's file and its own, protects blobs in each."""
+    from contextlib import closing
+    from docspec.application import core_maintenance
+    from docspec.application.core_edits import prepare_revision
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        records, _, states, _, publisher = setup(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            blobs = {}
+            for name in ("a", "b"):
+                blobs[name] = session.retain_bytes([f"document {name}".encode()])
+                states.create(session, state_id=name, representation_id=name + "-r", unit_id=name,
+                              entities=[core.Entity(format_version=1, entity_id="doc-" + name, entity_type="occurrence", value=blobs[name])],
+                              members=[core.Membership(member_key=name, occurrence_id="doc-" + name)])
+            change = core.Revision(format_version=1, revision_id="revision", base_state_id="a", result_state_id="both",
+                                   edits=(core.Put(sequence=0, member_key="b", occurrence_id="doc-b"),))
+            operations.publish((prepare_revision(operations, change, session=session),), session=session)
+            representation = states.representation(session, "both")
+            assert len(records.data_files(states.layers(session, "both")["entities"].reference)) == 2
+        with closing(core_maintenance._PhysicalIndex()) as index:
+            CoreMaintenance(publisher, records).inventory_record(index, representation, protected=True, scanned=set(), entity_targets=set())
+            assert all(index.protected(RemovalContent("blobs", BlobRef(blob.locator, blob.digest, blob.byte_size, blob.media_type)))
+                       for blob in blobs.values())
 
 
 def test_direct_field_selection_keeps_its_parent_members_history(tmp_path):

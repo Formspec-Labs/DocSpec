@@ -41,6 +41,9 @@ class MetadataBatch:
     # Bulk state members get no ledger row when written; a publication that
     # references one by identity pins it here, each at its existing layer.
     members: tuple[tuple[AdmittedRecord, LayerRef], ...] = ()
+    # The ledger's identity mark when the publisher checked this unit's
+    # identities against bulk layers and rows; it commits only while unchanged.
+    identity_mark: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +89,8 @@ class CoreLedger(Protocol):
 
     def read_records(self, keys: Iterable[RecordKey], *, include_values: bool = True,
                      include_unavailable_values: bool = False) -> Iterator[tuple[StoredRecord | None, ...]]: ...
+
+    def identity_mark(self, since: int | None = None) -> tuple[int, bool]: ...
 
     def data_identities(self, identities: Iterable[str]) -> Iterator[tuple[tuple[str, str, str], ...]]: ...
 

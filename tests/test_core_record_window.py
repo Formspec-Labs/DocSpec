@@ -13,17 +13,17 @@ from docspec.application.core_reuse import CoreReuse, ReuseRequest
 from docspec.domain.core_admission import encode_record
 from tests.test_core_dependencies import definition, request, retain
 from tests.test_core_selections import import_root, setup
+from tests.test_core_states import occurrence
 
 
 def test_window_bulk_reads_detach_values_and_refresh_metadata(tmp_path, monkeypatch):
     with ExitStack() as stack:
         records, ledger, states, _, publisher = setup(stack, tmp_path)
         with publisher.session() as session:
-            import_root(states, session, [(str(i), f"e{i}", {"url": str(i)}) for i in range(4)])
+            # Explicit records: the window reads ledger rows and their external bytes.
             keys = [("entity", f"e{i}") for i in range(4)]
-            # Referencing the members pins them, so their retention metadata
-            # lives in the ledger like any other record the window reads.
-            session.publish(MetadataBatch("pin", retained=tuple(keys)))
+            session.publish(MetadataBatch("entities", records=tuple(occurrence(f"e{i}", {"url": str(i)}) for i in range(4)),
+                                          retained=tuple(keys)))
             lookups = []
             original = records.lookup_batches
             def lookup(*args, **kwargs):
@@ -57,11 +57,11 @@ def test_window_budget_falls_back_without_changing_valid_reads(tmp_path, monkeyp
         with publisher.session() as session:
             import_root(states, session, [("key", "e", {"url": "u"})])
             lookups = []
-            original = records.lookup_batches
+            original = states.member_payloads
             def lookup(*args, **kwargs):
                 lookups.append(True)
                 yield from original(*args, **kwargs)
-            monkeypatch.setattr(records, "lookup_batches", lookup)
+            monkeypatch.setattr(states, "member_payloads", lookup)
             monkeypatch.setattr(publication, "BATCH_BYTES", 1)
             with pytest.raises(RuntimeError, match="producer"):
                 with session.record_window([("entity", "e")]):

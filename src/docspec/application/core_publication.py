@@ -2,7 +2,6 @@
 
 from contextlib import contextmanager
 from dataclasses import replace
-import re
 
 from docspec.application.core_dependencies import CoreDependencies, corresponds
 from docspec.domain import core
@@ -11,20 +10,14 @@ from docspec.domain.identity import canonical_value_bytes, decode_canonical_json
 from docspec.domain.references import BlobRef
 from docspec.domain.selected_values import validate_fields_value
 from docspec.domain.streams import bounded_items, owned_iterator
-from docspec.errors import IntegrityError, LimitExceededError, StaleBaseError, StateTransitionError
+from docspec.errors import IdentitiesChangedError, IntegrityError, LimitExceededError, StaleBaseError, StateTransitionError
 from docspec.ports.blob_store import BlobStore
 from docspec.ports.core_ledger import CoreLedger, MetadataBatch, MetadataLink, StoredRecord
 from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS, bounded_rows
 
 
-_UUID = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
-# Identities DocSpec mints for its own outputs: fresh generated entities and
-# execution-scoped states (core_execution._identity), and digest-scoped derive
-# rows and revision inputs. Publishing one never searches the bulk layers for a
-# colliding caller identity, so document runs and derive stay flat as layers
-# accumulate; every other entity or state identity is checked.
-_MINTED = re.compile(rf"urn:docspec:(?:entity:{_UUID}|execution:{_UUID}:.+|core-(?:derive|upsert)-rows:v1:[0-9a-f]{{64}}"
-                     r"|revision-inputs:sha256:[0-9a-f]{64})")
+# A publication whose identity checks were overtaken by another commit checks again.
+_IDENTITY_ATTEMPTS = 5
 
 
 class CorePublisher:
@@ -61,9 +54,14 @@ class Publication:
         self.member_selections = {}
         self.membership_equivalence = set()
         # Bulk members read through their layers (identity -> admitted bytes and
-        # layer) and identities searched without a match, both bounded like the
-        # record window, and the admitted layers searched (newest first).
+        # location) and identities searched without a match, both bounded like
+        # the record window; the layer views searched (newest first), cached per
+        # representation and layer; and the ledger identity mark they reflect.
         self.bulk_members, self.bulk_member_bytes, self.bulk_misses, self.entity_layers = {}, 0, {}, None
+        self.representation_layers, self.layer_views, self.identity_seen = {}, {}, None
+        # Identities DocSpec minted for outputs this session has yet to publish;
+        # only these skip the search for a colliding bulk member.
+        self.minted = set()
         self._generated_row_observer = None
         self._record_window = None
 
@@ -109,8 +107,10 @@ class Publication:
         """Read ledger rows; an entity with no row resolves through its bulk layer as retained and available.
 
         Bulk state members have a ledger row only once a publication pins them.
-        A call that also names the same identity as a state resolves that
-        identity itself; the fallback would only repeat the layer search.
+        A pinned member removed with its state resolves again from a new copy
+        with the same digest. A call that also names the same identity as a
+        state resolves that identity itself; the fallback would only repeat the
+        layer search.
         """
         keys = list(keys)
         states, position = {identity for kind, identity in keys if kind == "state"}, 0
@@ -120,12 +120,14 @@ class Publication:
                 wanted = keys[position:position + len(rows)]
                 position += len(rows)
                 missing = [index for index, (key, row) in enumerate(zip(wanted, rows, strict=True))
-                           if row is None and key[0] == "entity" and key[1] not in states]
+                           if key[0] == "entity" and key[1] not in states and (row is None or _removed(row))]
                 if not missing:
                     yield rows
                     continue
                 located = self.locate_members(wanted[index][1] for index in missing)
                 members = {index for index in missing if wanted[index][1] in located}
+                for index in members:
+                    _same_digest(rows[index], located[wanted[index][1]])
                 # Members found through layers join the output in byte-bounded
                 # groups, as the ledger bounds the external rows it reads.
                 with owned_iterator(bounded_rows(range(len(rows)), size=lambda index: located[wanted[index][1]][1]
@@ -133,20 +135,31 @@ class Publication:
                     for group in groups:
                         part = [index for index in group if index in members]
                         found = self.bulk_member_records((wanted[index][1] for index in part), located)
-                        yield tuple(_member_row(wanted[index][1], found[wanted[index][1]][0])
+                        yield tuple(_member_row(wanted[index][1], found[wanted[index][1]][0], rows[index])
                                     if index in members and wanted[index][1] in found else rows[index] for index in group)
 
-    def locate_members(self, identities):
-        """Find members with no ledger row in the retained layers: identity -> (admitted layer, byte size).
+    def mint(self, identity):
+        """Record an identity DocSpec minted for an output this session will publish."""
+        self.minted.add(identity)
 
-        Found members and misses stay known until this session publishes
-        another bulk representation; the layers of other sessions' later
-        states are not seen.
+    def identity_view(self):
+        """Read the ledger's identity mark; forget layers, members and misses once another commit adds bulk layers."""
+        self._active()
+        mark, layers_changed = self.ledger.identity_mark(self.identity_seen)
+        if layers_changed:
+            self.entity_layers, self.bulk_members, self.bulk_member_bytes, self.bulk_misses = None, {}, 0, {}
+        self.identity_seen = mark
+        return mark
+
+    def locate_members(self, identities):
+        """Find members in the retained layers: identity -> (layer view, byte size, data file, sha256 hex).
+
+        Found members and misses stay known until a commit adds bulk layers.
         """
         self._active()
+        self.identity_view()
         wanted = set(identities)
-        located = {identity: (self.bulk_members[identity][1], len(self.bulk_members[identity][0].payload))
-                   for identity in wanted if identity in self.bulk_members}
+        located = {identity: self.bulk_members[identity][1] for identity in wanted if identity in self.bulk_members}
         search = wanted - located.keys() - self.bulk_misses.keys()
         if self.states is not None and search:
             found = self.states.find_members(self, search)
@@ -157,29 +170,25 @@ class Publication:
         return located
 
     def bulk_member_records(self, identities, located=None):
-        """Read located members through their layers: identity -> (admitted record, admitted layer).
+        """Read located members through their layers: identity -> (admitted record, location).
 
-        Locating searches every available retained entity layer, so it costs
-        one layer admission per layer; only by-identity reads of unpinned
-        members pay it. Found bytes pass full admission, as ledger reads of
-        external rows do, and stay cached within the record window's bounds.
+        Locating searches every available retained entity layer, one query over
+        their data files; only by-identity reads of unpinned members pay it.
+        Found bytes pass full admission, as ledger reads of external rows do,
+        and stay cached within the record window's bounds.
         """
         self._active()
         wanted = set(identities)
         located = self.locate_members(wanted) if located is None else located
         found = {identity: self.bulk_members[identity] for identity in wanted if identity in self.bulk_members}
-        layers = {}
-        for identity in wanted - found.keys():
-            if identity in located:
-                layers.setdefault(located[identity][0].reference.layer_id, (located[identity][0], []))[1].append(identity)
-        for layer, group in layers.values():
-            for identity, payload in self.states.member_payloads(layer, group):
-                record = AdmittedRecord(payload)
-                value = record.record
-                if not isinstance(value, core.Entity) or value.entity_id != identity or value.entity_type != "occurrence":
-                    raise IntegrityError("bulk member row differs from its occurrence identity")
-                found[identity] = self.bulk_members[identity] = record, layer
-                self.bulk_member_bytes += len(payload)
+        pending = {identity: located[identity] for identity in wanted - found.keys() if identity in located}
+        for identity, payload in self.states.member_payloads(pending) if pending else ():
+            record = AdmittedRecord(payload)
+            value = record.record
+            if not isinstance(value, core.Entity) or value.entity_id != identity or value.entity_type != "occurrence":
+                raise IntegrityError("bulk member row differs from its occurrence identity")
+            found[identity] = self.bulk_members[identity] = record, pending[identity]
+            self.bulk_member_bytes += len(payload)
         while self.bulk_members and (len(self.bulk_members) > BATCH_ROWS or self.bulk_member_bytes > BATCH_BYTES):
             self.bulk_member_bytes -= len(self.bulk_members.pop(next(iter(self.bulk_members)))[0].payload)
         return found
@@ -260,20 +269,37 @@ class Publication:
                 validate_json(decoded)
         admitted.add(value["codec"])
 
-    def publish(self, batch: MetadataBatch) -> bool:
+    def publish(self, batch: MetadataBatch, *, identity_check=None) -> bool:
         """Retain the requested roots and their exact binding-specific obligations.
 
         Result roots retain all bound inputs and outputs. Association roots
         retain their requested inputs, selected outputs and original provenance.
         The publisher derives links; callers cannot inject substitute obligations.
+        Identity checks run against the ledger's identity mark and commit only
+        while it holds, so a concurrent identity-bearing commit makes them run
+        again; ``identity_check`` is a caller's own check to repeat with them.
         """
         self._active()
         if batch.links:
             raise IntegrityError("the publisher owns retention relationship construction")
         if not isinstance(batch.records, (tuple, list)) or len(batch.records) > BATCH_ROWS:
             raise LimitExceededError("publication requires a bounded collection of at most 2048 records")
-        check = _PublicationCheck(self, batch)
-        result = check.publish()
+        for attempt in range(_IDENTITY_ATTEMPTS):
+            mark = self.identity_view()
+            if identity_check is not None:
+                identity_check()
+            check = _PublicationCheck(self, batch, mark)
+            try:
+                result = check.publish()
+            except IdentitiesChangedError:
+                if attempt + 1 == _IDENTITY_ATTEMPTS:
+                    raise
+                continue
+            break
+        if result and check.sent_mark is not None and self.identity_seen == mark:
+            # This commit advanced the mark by one; nothing else intervened.
+            self.identity_seen = mark + 1
+        self.minted.difference_update(identity for kind, identity in check.incoming if kind in {"entity", "state"})
         for key in check.incoming & check.required:
             self.computed_records.pop(key, None)
             if key[0] == "state_representation" and isinstance(check.values[key]["membership"], dict):
@@ -321,15 +347,30 @@ class _RecordWindow:
         return self.payloads[row.key, row.row_digest].record
 
 
-def _member_row(identity, record):
-    """A bulk member read through its layer: retained by its state, available, never versioned."""
-    return StoredRecord(("entity", identity), record.record, True, True, 0, sha256_digest(record.payload))
+def _removed(row):
+    """A pinned entity row whose layer was removed: retained history, no available value."""
+    return not row.available and row.value is None and row.retained
+
+
+def _same_digest(row, location):
+    """A layer copy of a removed row's identity must hold the bytes its digest names."""
+    if row is not None and row.row_digest != "sha256:" + location[3]:
+        raise IntegrityError("publication conflicts with an immutable retained record")
+
+
+def _member_row(identity, record, row=None):
+    """A bulk member read through its layer: retained by its state or its old row, and available."""
+    return StoredRecord(("entity", identity), record.record, True, True, 0 if row is None else row.evidence_version,
+                        sha256_digest(record.payload))
 
 
 class _PublicationCheck:
     """Compute one batch's exact retention closure before the ledger commits it."""
-    def __init__(self, session: Publication, batch: MetadataBatch):
+    def __init__(self, session: Publication, batch: MetadataBatch, identity_mark=None):
         self.session, self.ledger, self.batch = session, session.ledger, batch
+        # The ledger identity mark the session's view reflects; the unit commits
+        # against it only when its checks read bulk layers or identity rows.
+        self.mark, self.identity_read, self.sent_mark = identity_mark, False, None
         self.values, self.stored, self.representations = {}, {}, {}
         self.members = {}
         self.metadata_bytes = 0
@@ -364,10 +405,11 @@ class _PublicationCheck:
 
         A bulk state member has no ledger row until a publication pins it. A
         referenced entity or data key found in neither form resolves through its
-        retained layer and is pinned at commit. An incoming entity must match
-        any retained copy of its identity, and an incoming state cannot share a
-        member's identity; identities DocSpec mints for its own outputs are not
-        searched for.
+        retained layer and is pinned at commit; one removed with its state
+        resolves again from a copy with its digest. An incoming entity whose
+        identity the caller chose must match any retained copy, and such a state
+        cannot share a member's identity (the closure refuses the ambiguity);
+        identities this session minted for its own outputs are not searched for.
         """
         keys, wanted = list(keys), set()
         for kind, identity in keys:
@@ -399,20 +441,28 @@ class _PublicationCheck:
             self.loaded.update(missing)
             referenced = {identity for kind, identity in keys if kind in {"data", "entity"} and ("entity", identity) in missing
                           and not any((form, identity) in self.values or (form, identity) in self.stored for form in ("entity", "state"))}
+            restorable = {identity for kind, identity in keys if kind in {"data", "entity"} and ("entity", identity) in missing
+                          and ("entity", identity) not in self.incoming and ("entity", identity) in self.stored
+                          and _removed(self.stored[("entity", identity)])}
             chosen = {key[1] for key in missing & self.incoming if key[0] in {"entity", "state"} and key not in self.stored
-                      and _MINTED.fullmatch(key[1]) is None}
-            located = self.session.locate_members(referenced | chosen) if referenced or chosen else {}
-            if self.metadata_bytes + sum(located[identity][1] for identity in referenced & located.keys()) > BATCH_BYTES:
+                      and key[1] not in self.session.minted}
+            searched = referenced | restorable | chosen
+            self.identity_read |= bool(searched)
+            located = self.session.locate_members(searched) if searched else {}
+            pinned = (referenced | restorable) & located.keys()
+            if self.metadata_bytes + sum(located[identity][1] for identity in pinned) > BATCH_BYTES:
                 raise LimitExceededError("publication metadata closure exceeds the 8 MiB limit")
-            for identity, (record, layer) in self.session.bulk_member_records(located, located).items():
+            for identity in restorable & located.keys():
+                _same_digest(self.stored[("entity", identity)], located[identity])
+            for identity, (record, location) in self.session.bulk_member_records(located, located).items():
                 key = "entity", identity
                 if key in self.incoming:
                     if canonical_value_bytes(self.values[key]) != record.payload:
                         raise IntegrityError("publication conflicts with an immutable retained record")
                     continue
-                self.stored[key] = _member_row(identity, record)
+                self.stored[key] = _member_row(identity, record, self.stored.get(key))
                 self._cache(key, record.value, record.payload)
-                self.members[key] = record, layer
+                self.members[key] = record, location[0]
         states = {key for key in wanted if key[0] == "state" and key in self.values} - self.state_links_loaded
         if states:
             targets = set()
@@ -644,7 +694,10 @@ class _PublicationCheck:
         for key in self.required - self.incoming:
             if key not in self.stored or not self.stored[key].retained:
                 raise IntegrityError("required existing data or descriptions were not retained")
-            versions.setdefault(key, self.stored[key].evidence_version)
+            # A member pinned (or restored) by this unit is made available by the
+            # same transaction; its layer cannot be removed during the session.
+            if key not in self.members:
+                versions.setdefault(key, self.stored[key].evidence_version)
         # Only an actual owner computation can supply this session witness.
         # Supplied records cannot assert evaluator or resolver certificates.
         for key, (payload, link) in self.session.computed_records.items():
@@ -666,8 +719,11 @@ class _PublicationCheck:
         # the parents that new direct selections name.
         members = {key: self.members[key] for key in self.members.keys() & self.required}
         members.update(self._origin_members())
-        return self.ledger.commit(replace(prepared, members=tuple((members[key][0], members[key][1].reference)
-                                                                  for key in sorted(members))))
+        bulk = any(key[0] == "state_representation" and key in self.incoming and isinstance(self.values[key]["membership"], dict)
+                   for key in self.required)
+        self.sent_mark = self.mark if self.identity_read or members or bulk else None
+        return self.ledger.commit(replace(prepared, members=tuple((members[key][0], members[key][1].reference) for key in sorted(members)),
+                                          identity_mark=self.sent_mark))
 
     def _origin_members(self):
         """Resolve the unpinned bulk parents that new direct selections name, to pin with this unit.
@@ -685,7 +741,9 @@ class _PublicationCheck:
         with owned_iterator(self.session._read_records([(kind, identity) for identity in sorted(parents) for kind in ("entity", "state")],
                                                        include_values=False)) as batches:
             parents -= {row.key[1] for batch in batches for row in batch if row is not None}
-        return {("entity", identity): member for identity, member in self.session.bulk_member_records(parents).items()}
+        self.identity_read = True
+        return {("entity", identity): (record, location[0])
+                for identity, (record, location) in self.session.bulk_member_records(parents).items()}
 
 
 class _PublicationReadView:

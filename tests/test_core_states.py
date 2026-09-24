@@ -227,7 +227,9 @@ def test_bulk_state_registers_members_per_layer_not_per_row(tmp_path):
         expected = {"state": 1, "state_representation": 1}
         assert ledger_rows(ledger) == (expected, expected)
         with ledger._transaction() as connection:
-            assert connection.execute("SELECT unit_id FROM units").fetchall() == [("root",)]
+            # One unit for the import, and the identity mark it advanced.
+            assert connection.execute("SELECT unit_id FROM units ORDER BY unit_id").fetchall() == [
+                ("root",), ("urn:docspec:identity-sequence:0000000000000001",)]
         with publisher.session() as session:
             wanted = [("entity", "e0500"), ("entity", "e0999"), ("entity", "absent")]
             rows = [row for batch in session.read_records(wanted) for row in batch]
@@ -625,3 +627,162 @@ def test_minted_outputs_never_search_the_layers(tmp_path, monkeypatch):
         derived = workspace.derive([("a", 3)], batch_id="next", definition=definition, inputs=(), base_state_id=base.state_id)
         workspace.upsert(derived.state_id, [("c", 4)], batch_id="upsert")
         assert calls == []
+
+
+def test_a_concurrent_bulk_state_cannot_slip_past_a_callers_identity_check(tmp_path):
+    """Checks read the ledger's identity mark; a commit that moved it since makes the checks run again."""
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        members = [core.Membership(member_key="k", occurrence_id="X")]
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("e", 1)], members=[core.Membership(member_key="k", occurrence_id="e")])
+        with publisher.session() as first:
+            assert next(first.read_records([("entity", "X")]))[0] is None
+            with publisher.session() as second:
+                states.create(second, state_id="t", representation_id="t-r", unit_id="t", entities=[occurrence("X", 1)], members=members)
+            # The stale miss is searched again, not refused.
+            assert next(first.read_records([("entity", "X")]))[0].value.value.value == 1
+            artifact = core.Entity(format_version=1, entity_id="X", entity_type="artifact", value=core.InlineValue(value=2))
+            with pytest.raises(IntegrityError, match="immutable"):
+                first.publish(MetadataBatch("artifact", records=(artifact,), retained=(("entity", "X"),)))
+        assert not ledger.is_committed("artifact")
+
+
+def test_a_concurrent_record_cannot_slip_past_a_new_states_ledger_check(tmp_path, monkeypatch):
+    """A record committed between a new state's ledger check and its commit moves the mark; the state checks again."""
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        check, raced = states._check_ledger_copies, []
+        def racing(session, entities, state_id):
+            check(session, entities, state_id)
+            if not raced:
+                raced.append(True)
+                with publisher.session() as other:
+                    other.publish(MetadataBatch("record", records=(occurrence("X", 2),), retained=(("entity", "X"),)))
+        monkeypatch.setattr(states, "_check_ledger_copies", racing)
+        with publisher.session() as session, pytest.raises(IntegrityError, match="immutable"):
+            states.create(session, state_id="t", representation_id="t-r", unit_id="t", entities=[occurrence("X", 1)],
+                          members=[core.Membership(member_key="k", occurrence_id="X")])
+        assert raced and ledger.is_committed("record") and not ledger.is_committed("t")
+
+
+def test_ledger_refuses_an_identity_checked_unit_after_the_mark_moved(tmp_path):
+    from docspec.errors import IdentitiesChangedError
+    with ExitStack() as stack:
+        _, ledger, _, publisher = open_core(stack, tmp_path)
+        mark, _ = ledger.identity_mark()
+        with publisher.session() as session:
+            session.publish(MetadataBatch("first", records=(occurrence("a", 1),), retained=(("entity", "a"),)))
+        assert ledger.identity_mark(mark) == (mark + 1, False)
+        with pytest.raises(IdentitiesChangedError):
+            ledger.commit(MetadataBatch("stale", records=(occurrence("b", 1),), retained=(("entity", "b"),), identity_mark=mark))
+        with pytest.raises(IntegrityError, match="reserved"):
+            ledger.commit(MetadataBatch("urn:docspec:identity-sequence:9999999999999999", records=(occurrence("c", 1),)))
+        assert not ledger.is_committed("stale")
+
+
+def test_forged_and_self_named_identities_are_checked(tmp_path):
+    """Only identities this session minted skip the search; one that merely looks minted is checked."""
+    import uuid
+    entity_id, state_id = f"urn:docspec:entity:{uuid.uuid4()}", f"urn:docspec:execution:{uuid.uuid4()}:state"
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            with pytest.raises(IntegrityError, match="ambiguous"):
+                states.create(session, state_id="x", representation_id="x-r", unit_id="x",
+                              entities=[occurrence("x", 1)], members=[core.Membership(member_key="k", occurrence_id="x")])
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence(entity_id, 1), occurrence(state_id, 1)],
+                          members=[core.Membership(member_key="a", occurrence_id=entity_id), core.Membership(member_key="b", occurrence_id=state_id)])
+        with publisher.session() as session:
+            artifact = core.Entity(format_version=1, entity_id=entity_id, entity_type="artifact", value=core.InlineValue(value=2))
+            with pytest.raises(IntegrityError, match="immutable"):
+                session.publish(MetadataBatch("artifact", records=(artifact,), retained=(("entity", entity_id),)))
+            with pytest.raises(IntegrityError, match="ambiguous"):
+                states.create(session, state_id=state_id, representation_id="forged-r", unit_id="forged",
+                              entities=[occurrence("other", 2)], members=[core.Membership(member_key="k", occurrence_id="other")])
+        assert not any(ledger.is_committed(unit) for unit in ("x", "artifact", "forged"))
+
+
+def test_a_removed_pinned_member_is_restored_by_an_identical_copy(tmp_path):
+    from docspec.application.core_maintenance import CoreMaintenance
+    with ExitStack() as stack:
+        records, ledger, states, publisher = open_core(stack, tmp_path)
+        members = [core.Membership(member_key="k", occurrence_id="e")]
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root", entities=[occurrence("e", 1)], members=members)
+            session.publish(MetadataBatch("pin", retained=(("entity", "e"),)))
+            keys = (("state", "root"), ("state_representation", "root-r"), ("entity", "e"))
+            policy = core.RetentionPolicy(format_version=1, policy_id="policy", description={"remove": [list(key) for key in keys],
+                                                                                            "collect_unreferenced": False})
+            session.publish(MetadataBatch("policy", records=(policy,), retained=(("retention_policy", "policy"),)))
+        CoreMaintenance(publisher, records).remove_under_policy("remove", "policy", keys)
+        removed = next(ledger.read_records([("entity", "e")]))[0]
+        assert not removed.available
+        with publisher.session() as session:
+            with pytest.raises(IntegrityError, match="immutable"):
+                states.create(session, state_id="changed", representation_id="changed-r", unit_id="changed",
+                              entities=[occurrence("e", 2)], members=members)
+            states.create(session, state_id="again", representation_id="again-r", unit_id="again", entities=[occurrence("e", 1)], members=members)
+            row = next(session.read_records([("entity", "e")]))[0]
+            assert row.available and row.value.value.value == 1
+            session.publish(MetadataBatch("reference", retained=(("entity", "e"),)))
+        restored = next(ledger.read_records([("entity", "e")]))[0]
+        assert restored.available and restored.row_digest == removed.row_digest
+        assert restored.evidence_version == removed.evidence_version + 1
+
+
+def test_the_session_search_keeps_layer_views_not_iceberg_metadata(tmp_path):
+    from docspec.adapters.storage.records import LayerFiles
+    with ExitStack() as stack:
+        _, _, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            for index in range(3):
+                states.create_keyed(session, state_id=f"s{index}", representation_id=f"r{index}", unit_id=f"u{index}",
+                                    rows=[("key", occurrence(f"e{index}", index))])
+        with publisher.session() as session:
+            assert next(session.read_records([("entity", "e1")]))[0].value.value.value == 1
+            assert len(session.entity_layers) == 3 and all(type(layer) is LayerFiles for layer in session.entity_layers)
+
+
+def test_many_identities_use_the_semi_join_path(tmp_path):
+    """Above the literal-list size, identity filters join an Arrow table; checks and reads agree on both paths."""
+    identities = [f"member-{index:04}" for index in range(300)]
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        members = [core.Membership(member_key=identity, occurrence_id=identity) for identity in identities]
+        with publisher.session() as session:
+            states.create(session, state_id="a", representation_id="a-r", unit_id="a",
+                          entities=[occurrence(identity, index) for index, identity in enumerate(identities)], members=members)
+            session.publish(MetadataBatch("pin", retained=tuple(("entity", identity) for identity in identities)))
+            states.create(session, state_id="same", representation_id="same-r", unit_id="same",
+                          entities=[occurrence(identity, index) for index, identity in enumerate(identities)], members=members)
+            with pytest.raises(IntegrityError, match="immutable"):
+                states.create(session, state_id="changed", representation_id="changed-r", unit_id="changed",
+                              entities=[occurrence(identity, -1 if index == 299 else index) for index, identity in enumerate(identities)],
+                              members=members)
+        with publisher.session() as session:
+            rows = [row for batch in session.read_records(("entity", identity) for identity in identities) for row in batch]
+        assert [row.value.value.value for row in rows] == list(range(300))
+
+
+def test_a_sessions_own_new_layers_join_its_search_in_commit_order(tmp_path):
+    """A layer the session publishes is searched at once, newest first, and forgets earlier misses."""
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("e", 1), occurrence("f", 2)],
+                          members=[core.Membership(member_key="a", occurrence_id="e"), core.Membership(member_key="b", occurrence_id="f")])
+        with publisher.session() as session:
+            assert next(session.read_records([("entity", "e")]))[0] is not None
+            assert next(session.read_records([("entity", "absent")]))[0] is None
+            states.create(session, state_id="later", representation_id="later-r", unit_id="later",
+                          entities=[occurrence("absent", 3)], members=[core.Membership(member_key="k", occurrence_id="absent")])
+            assert next(session.read_records([("entity", "absent")]))[0].value.value.value == 3
+            states.checkpoint(session, "root", representation_id="z-checkpoint", unit_id="checkpoint")
+            compacted = states.layers(session, "root")["entities"].reference
+            session.publish(MetadataBatch("pin", retained=(("entity", "f"),)))
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT source_layer FROM records WHERE kind='entity' AND record_id='f'").fetchone() == (compacted.layer_id,)

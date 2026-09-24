@@ -42,8 +42,8 @@ def _entity_rows(entities, observe=None, *, encoded=False):
 
 
 def _newest_first(layers):
-    """Order admitted layers by commit time from their digest-bound Iceberg metadata, newest first."""
-    return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.table.metadata.last_updated_ms, layer.reference.layer_id)))
+    """Order layer views by commit time from their digest-bound Iceberg metadata, newest first."""
+    return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.committed_ms, layer.reference.layer_id)))
 
 
 def _existing_entities(session, identities):
@@ -131,9 +131,8 @@ class CoreStateStorage:
             content = self._state_content(session, entity_layer, member_layer)
             # Members are registered through this state's manifest, once per
             # layer; only their content references and any ledger rows that
-            # already name their identities need checking here.
+            # already name their identities need checking.
             self._check_member_content(session, entity_layer)
-            self._check_ledger_copies(session, entity_layer)
             state = core.State(format_version=1, state_id=state_id)
             representation = core.StateRepresentation(format_version=1, representation_id=representation_id,
                                                        state_id=state_id, membership=content)
@@ -147,7 +146,10 @@ class CoreStateStorage:
                 self._same_values(self._references(session.ready_states[existing.value.membership.digest])["entities"],
                                   entity_layer)
                 representation = existing.value
-            session.publish(MetadataBatch(unit_id, records=(state, representation), retained=(("state", state_id),)))
+            # Identities the ledger already holds are checked inside the publisher's
+            # attempt, so a concurrent identity-bearing commit makes it check again.
+            session.publish(MetadataBatch(unit_id, records=(state, representation), retained=(("state", state_id),)),
+                            identity_check=lambda: self._check_ledger_copies(session, entity_layer, state_id))
             return state
 
     def _state_content(self, session, entities, members):
@@ -197,44 +199,70 @@ class CoreStateStorage:
                 raise IntegrityError("retry conflicts with immutable retained occurrences")
 
     def find_members(self, session, identities, *, layers=None):
-        """Locate occurrences with no ledger row in retained entity layers: identity -> (admitted layer, size).
+        """Locate occurrences with no ledger row: identity -> (layer view, size, data file or None, sha256 hex).
 
         Bulk members are registered once per layer, by their state's manifest,
         not once per member. By default every available state's entity layer is
-        searched; ``layers`` (admitted, newest first) narrows the search to
-        states the caller names. Copies of one identity in the searched layers
-        must hold identical bytes: one native query compares them and only
-        identities and sizes reach Python. The newest layer holding a member is
-        chosen, so a pin never keeps a superseded layer alive.
+        searched; ``layers`` (views, newest first) narrows the search to states
+        the caller names. Layers built on one another share data files, so each
+        file is read once; a layer with delete files is read through its
+        snapshot instead. Copies of one identity must hold identical bytes. The
+        newest layer holding a member is chosen, so a pin never keeps a
+        superseded layer alive.
         """
         wanted = sorted(set(identities))
         layers = (self.entity_layers(session) if layers is None else tuple(layers)) if wanted else ()
-        if not layers:
-            return {}
-        names = {f"layer_{index}": layer for index, layer in enumerate(layers)}
-        with self.records.relations(names, identities={name: wanted for name in names}) as relations:
-            copies = None
-            for index, name in enumerate(names):
-                layer = relations[name].project(f"record_identity, record_json, {index} AS layer_index")
-                copies = layer if copies is None else copies.union(layer)
-            found = copies.aggregate("record_identity, min(layer_index), count(DISTINCT record_json), "
-                                     "max(octet_length(record_json))", "record_identity").fetchall()
-        if any(row[2] != 1 for row in found):
-            raise IntegrityError("occurrence identity holds different values in retained layers")
-        return {identity: (layers[index], size) for identity, index, _, size in found}
+        rank, owners, found = {layer.reference.layer_id: index for index, layer in enumerate(layers)}, {}, {}
+        for layer in layers:
+            for locator in () if layer.deletes else layer.files:
+                owners.setdefault(locator, layer)
 
-    def member_payloads(self, layer, identities):
-        """Stream (identity, exact bytes) for members of one entity layer (a reference or admitted handle) in bounded batches."""
-        for batch in self.records.lookup_batches(layer, sorted(identities)):
-            yield from zip(batch.column("record_identity").to_pylist(), batch.column("record_json").to_pylist(), strict=True)
+        def add(rows, layer_of):
+            with closing(rows.project("record_identity, sha256(record_json), octet_length(record_json), " + layer_of)
+                         .to_arrow_reader(BATCH_ROWS)) as reader:
+                for batch in reader:
+                    for identity, digest, size, where in zip(*(column.to_pylist() for column in batch.columns), strict=True):
+                        layer, locator = (owners[where], where) if where in owners else (layers[where], None)
+                        previous = found.get(identity)
+                        if previous is not None and previous[3] != digest:
+                            raise IntegrityError("occurrence identity holds different values in retained layers")
+                        if previous is None or rank[layer.reference.layer_id] < rank[previous[0].reference.layer_id]:
+                            found[identity] = layer, size, locator, digest
+        if owners:
+            with self.records.file_relation(owners, identities=wanted) as rows:
+                add(rows, "locator")
+        for index, layer in enumerate(layers):
+            if layer.deletes:
+                with self.records.relations({"layer": layer.reference}, identities={"layer": wanted}) as relations:
+                    add(relations["layer"], f"{index} AS layer_index")
+        return found
+
+    def member_payloads(self, located):
+        """Stream (identity, exact bytes) for located members, from their data files in bounded batches."""
+        files, layers = {}, {}
+        for identity, (layer, _, locator, _) in located.items():
+            if locator is None:
+                layers.setdefault(layer.reference.layer_id, (layer.reference, []))[1].append(identity)
+            else:
+                files.setdefault(locator, []).append(identity)
+        for locator, group in files.items():
+            with self.records.file_relation([locator], identities=group) as rows, \
+                    closing(bounded_batches(rows.project("record_identity, record_json").to_arrow_reader(256),
+                                            byte_column="record_json")) as batches:
+                for batch in batches:
+                    yield from zip(batch.column(0).to_pylist(), batch.column(1).to_pylist(), strict=True)
+        for reference, group in layers.values():
+            for batch in self.records.lookup_batches(reference, sorted(group)):
+                yield from zip(batch.column("record_identity").to_pylist(), batch.column("record_json").to_pylist(), strict=True)
 
     def entity_layers(self, session, *, exclude=()):
-        """Admitted entity layers of available retained representations, newest first.
+        """Views of the entity layers of available retained representations, newest first.
 
-        Each layer is admitted once and, without ``exclude``, kept for the
-        session, whose content guard keeps its files. Removal planning passes
-        the states and representations in its scope to see what survives.
-        Commit time comes from each layer's digest-bound Iceberg metadata.
+        A view keeps a layer's reference, commit time and data files, not its
+        Iceberg metadata; each is admitted once per session. Without
+        ``exclude`` the list is kept for the session until another commit adds
+        bulk layers. Removal planning passes the states and representations in
+        its scope to see what survives.
         """
         if not exclude and session.entity_layers is not None:
             return session.entity_layers
@@ -245,44 +273,55 @@ class CoreStateStorage:
                     membership = row.value.membership if row.available else None
                     if not isinstance(membership, core.ContentRef) or row.key in excluded or ("state", row.value.state_id) in excluded:
                         continue
-                    manifest = session.ready_states.get(membership.digest) or session.read_json(membership, label="Core state manifest")
-                    reference = self._references(manifest)["entities"]
-                    if reference.layer_id not in layers:
-                        layers[reference.layer_id] = self.records.admitted(reference)
+                    reference = session.representation_layers.get(row.key[1])
+                    if reference is None:
+                        manifest = session.ready_states.get(membership.digest) or session.read_json(membership, label="Core state manifest")
+                        reference = session.representation_layers[row.key[1]] = self._references(manifest)["entities"]
+                    layers[reference.layer_id] = self.layer_view(session, reference)
         ordered = _newest_first(layers.values())
         if not exclude:
             session.entity_layers = ordered
         return ordered
 
+    def layer_view(self, session, reference):
+        """One layer's search view, admitted once per session."""
+        view = session.layer_views.get(reference.layer_id)
+        if view is None:
+            view = session.layer_views[reference.layer_id] = self.records.layer_files(reference)
+        return view
+
     def add_entity_layer(self, session, membership):
-        """Add a newly published representation's entity layer to the session's search, admitting it once."""
+        """Add a newly published representation's entity layer to the session's search."""
         if session.entity_layers is None:
             return
         manifest = session.ready_states.get(membership["digest"]) or session.read_json(membership, label="Core state manifest")
         reference = self._references(manifest)["entities"]
         if all(layer.reference.layer_id != reference.layer_id for layer in session.entity_layers):
-            session.entity_layers = _newest_first((self.records.admitted(reference), *session.entity_layers))
+            session.entity_layers = _newest_first((self.layer_view(session, reference), *session.entity_layers))
 
-    def _check_ledger_copies(self, session, entities):
-        """Refuse a new member whose identity the ledger already holds with other bytes, or as a state.
+    def _check_ledger_copies(self, session, entities, state_id):
+        """Refuse a new member whose identity the ledger holds with other bytes, or as a state, or names this state.
 
         A ledger row takes precedence over layers when read by identity, so a
-        differing bulk copy would never be compared later. Identities go to
-        the ledger in bounded batches; only matching members' bytes are hashed.
+        differing bulk copy would never be compared later. Identities go to the
+        ledger in bounded batches; only members that match a row are hashed.
         """
-        matches = {}
-        with self.records.relations({"entities": entities}) as relations, \
-                closing(relations["entities"].project("record_identity").to_arrow_reader(BATCH_ROWS)) as reader:
+        with entities.relation() as rows, closing(rows.project("record_identity").to_arrow_reader(BATCH_ROWS)) as reader:
             for batch in reader:
-                with owned_iterator(session.ledger.data_identities(batch.column(0).to_pylist())) as rows:
-                    for group in rows:
+                identities, digests = batch.column(0).to_pylist(), {}
+                if state_id in identities:
+                    raise IntegrityError("data identity is ambiguous between an entity and a state")
+                with owned_iterator(session.ledger.data_identities(identities)) as matches:
+                    for group in matches:
                         for kind, identity, digest in group:
                             if kind == "state":
                                 raise IntegrityError("data identity is ambiguous between an entity and a state")
-                            matches[identity] = digest
-        for identity, payload in self.member_payloads(entities.reference, matches) if matches else ():
-            if sha256_digest(payload) != matches[identity]:
-                raise IntegrityError("state member conflicts with an immutable retained record")
+                            digests[identity] = digest
+                if digests:
+                    with self.records.relations({"entities": entities}, identities={"entities": list(digests)}) as relations:
+                        for identity, digest in relations["entities"].project("record_identity, sha256(record_json)").fetchall():
+                            if digests[identity] != "sha256:" + digest:
+                                raise IntegrityError("state member conflicts with an immutable retained record")
 
     def _references(self, manifest):
         if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership"}

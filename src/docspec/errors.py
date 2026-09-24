@@ -41,3 +41,7 @@ class LimitExceededError(DocSpecError):
 
 class StaleBaseError(DocSpecError):
     """A catalog commit no longer matches its expected base release."""
+
+
+class IdentitiesChangedError(StaleBaseError):
+    """Bulk identities changed between a publication's identity checks and its commit; checking again may succeed."""

@@ -19,16 +19,22 @@ and membership layers, and a member gets no SQLite row of its own. The first
 publication that references a member by identity (a whole-value input, an adopted
 or selected output, a parent or a directly selected origin) pins it with one row
 and one retention row at the newest layer that holds it; reads and inspection pin
-nothing. Until then a read by identity searches the entity layers of every
-available retained state, admitting each layer once per session, and refuses
-copies that differ. Callers that know the state resolve through its layer alone,
-as document runs do for their sources. Writing a state refuses a member whose
-identity the ledger already holds with other bytes or as a state, and publishing
-an entity or state whose identity the caller chose refuses one a bulk member
-already holds differently; identities DocSpec mints for its own outputs skip that
-search. Workspaces written by DocSpec 0.9.1 or earlier keep their row per member
-and read as before; they are not migrated, and releasing those rows is an
-explicit removal. See
+nothing. A pinned member removed with its state is restored by a later state that
+holds the same bytes. Until pinned, a read by identity searches the entity layers
+of every available retained state: the session keeps each layer's data-file list,
+admitted once, and one query reads the distinct files, refusing copies that
+differ. Callers that know the state resolve through its layer alone, as document
+runs do for their sources.
+
+Writing a state refuses a member whose identity the ledger already holds with
+other bytes, as a state, or as the new state's own name. Publishing an entity or
+state whose identity the caller chose refuses one a bulk member already holds
+differently; only identities the publishing session minted for its own outputs
+skip that search. These checks commit only while the ledger's identity mark is
+unchanged: each commit that carries them advances it, so a concurrent one makes
+the others check again. Workspaces written by DocSpec 0.9.1 or earlier keep their
+row per member and read as before; they are not migrated, and releasing those
+rows is an explicit removal. See
 [C28](core-model-implementation-tasks.md#c28--register-bulk-state-members-per-layer).
 
 New literal selected values use the existing content store. Existing inline

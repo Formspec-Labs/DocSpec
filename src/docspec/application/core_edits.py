@@ -93,6 +93,7 @@ def prepare_revision(operations, revision, *, session=None):
         # A state binds a potentially large set through two metadata records;
         # per-occurrence request bindings would exceed publication's row budget.
         inputs_id = "urn:docspec:revision-inputs:" + sha256_digest(canonical_value_bytes(identities))
+        active.mint(inputs_id)
         active.states.from_occurrences(active, occurrence_ids=identities, state_id=inputs_id,
                                        representation_id=inputs_id + ":representation", unit_id=inputs_id + ":import")
         configuration = record_value(revision)

@@ -1,0 +1,473 @@
+{
+ "recorded": "2026-09-24",
+ "task": "C28 re-review fixes: identity mark, minted identities, self-named states, restore, layer views, copy-check cost",
+ "builds": {
+  "38043c4": "base, perf(derive): encode each value once",
+  "c28-rereview": "perf/layer-ledger after the re-review fixes"
+ },
+ "caveat": "Shared 14-CPU machine; base and branch ran interleaved, each run with its 1-minute load. Counts of searches, admissions, files, rows, encodes and the fingerprint are contention-immune. The probes do not time concurrent sessions, recovery, or workspaces with thousands of layers; the race is covered by tests, not timed.",
+ "stage_times": {
+  "harness": "pm01 gate tools/stage_times.py, first 10,000 rows of compare/fr-10k.prepared-1.jsonl; the branch runs a copy timing _check_member_content, _check_ledger_copies and find_members in place of _retain_entities",
+  "rounds": [
+   {
+    "round": 1,
+    "build": "38043c4",
+    "load": [
+     9.19,
+     12.49,
+     13.58
+    ],
+    "stages": {
+     "ledger: per-entity receipts (_retain_entities)": {
+      "seconds": 2.21,
+      "ms_per_row": 0.221,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 1.11,
+      "ms_per_row": 0.111,
+      "calls": 15
+     },
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.77,
+      "ms_per_row": 0.077,
+      "calls": 2
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 4.76,
+    "derive_ms_per_row": 0.476
+   },
+   {
+    "round": 1,
+    "build": "c28-rereview",
+    "load": [
+     9.65,
+     12.53,
+     13.59
+    ],
+    "stages": {
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.8,
+      "ms_per_row": 0.08,
+      "calls": 2
+     },
+     "duckdb: member content check": {
+      "seconds": 0.06,
+      "ms_per_row": 0.006,
+      "calls": 1
+     },
+     "sqlite: member identities vs ledger rows": {
+      "seconds": 0.02,
+      "ms_per_row": 0.002,
+      "calls": 1
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 4
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 2.71,
+    "derive_ms_per_row": 0.271
+   },
+   {
+    "round": 2,
+    "build": "38043c4",
+    "load": [
+     9.52,
+     12.45,
+     13.55
+    ],
+    "stages": {
+     "ledger: per-entity receipts (_retain_entities)": {
+      "seconds": 2.23,
+      "ms_per_row": 0.223,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 1.11,
+      "ms_per_row": 0.111,
+      "calls": 15
+     },
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.77,
+      "ms_per_row": 0.077,
+      "calls": 2
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 4.78,
+    "derive_ms_per_row": 0.478
+   },
+   {
+    "round": 2,
+    "build": "c28-rereview",
+    "load": [
+     9.4,
+     12.38,
+     13.52
+    ],
+    "stages": {
+     "iceberg: write layers (retain_batches)": {
+      "seconds": 0.78,
+      "ms_per_row": 0.078,
+      "calls": 2
+     },
+     "duckdb: member content check": {
+      "seconds": 0.06,
+      "ms_per_row": 0.006,
+      "calls": 1
+     },
+     "sqlite: member identities vs ledger rows": {
+      "seconds": 0.02,
+      "ms_per_row": 0.002,
+      "calls": 1
+     },
+     "duckdb: membership check": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 1
+     },
+     "sqlite: ledger commits": {
+      "seconds": 0.01,
+      "ms_per_row": 0.001,
+      "calls": 4
+     }
+    },
+    "rows": 10000,
+    "derive_seconds": 2.66,
+    "derive_ms_per_row": 0.266
+   }
+  ]
+ },
+ "bench_derive": {
+  "harness": "pm01 gate tools/bench_derive.py --rows compare/fr-10k.prepared-1.jsonl --limit 5000",
+  "base": {
+   "label": "c28-base",
+   "rows": 5000,
+   "read": 5000,
+   "state_id": "urn:docspec:execution:50df6a20-7ff7-4a5b-ad3e-9f0b7cc2c95a:state",
+   "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+   "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+   "load": [
+    8.78857421875,
+    12.06982421875,
+    13.3837890625
+   ],
+   "phases": [
+    {
+     "phase": "derive",
+     "wall_seconds": 2.661,
+     "cpu_seconds": 2.527,
+     "encodes": 35069,
+     "parses": 21,
+     "encoded_bytes": 46386855,
+     "encodes_per_row": 7.01,
+     "parses_per_row": 0.0,
+     "encoded_kb_per_row": 9.06,
+     "ms_per_row": 0.532
+    },
+    {
+     "phase": "read-values",
+     "wall_seconds": 0.131,
+     "cpu_seconds": 0.131,
+     "encodes": 17,
+     "parses": 29,
+     "encoded_bytes": 15313,
+     "encodes_per_row": 0.0,
+     "parses_per_row": 0.01,
+     "encoded_kb_per_row": 0.0,
+     "ms_per_row": 0.026
+    }
+   ]
+  },
+  "c28_rereview": {
+   "label": "c28",
+   "rows": 5000,
+   "read": 5000,
+   "state_id": "urn:docspec:execution:a3311c51-187e-448e-8d17-0bc55b2bf516:state",
+   "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+   "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+   "load": [
+    8.78857421875,
+    12.06982421875,
+    13.3837890625
+   ],
+   "phases": [
+    {
+     "phase": "derive",
+     "wall_seconds": 1.654,
+     "cpu_seconds": 1.528,
+     "encodes": 30057,
+     "parses": 21,
+     "encoded_bytes": 44333951,
+     "encodes_per_row": 6.01,
+     "parses_per_row": 0.0,
+     "encoded_kb_per_row": 8.66,
+     "ms_per_row": 0.331
+    },
+    {
+     "phase": "read-values",
+     "wall_seconds": 0.137,
+     "cpu_seconds": 0.136,
+     "encodes": 17,
+     "parses": 29,
+     "encoded_bytes": 15313,
+     "encodes_per_row": 0.0,
+     "parses_per_row": 0.01,
+     "encoded_kb_per_row": 0.0,
+     "ms_per_row": 0.027
+    }
+   ]
+  },
+  "identical_output": true
+ },
+ "bench_ledger": {
+  "method": "copy of bench/<label>/workspace/ledger.sqlite read with sqlite3 immutable=1; the branch's two extra units are identity-sequence rows",
+  "base": {
+   "bytes": 3645440,
+   "table_rows": {
+    "record_layers": 1,
+    "records": 5008,
+    "retention": 5008,
+    "units": 12
+   },
+   "records_by_kind": {
+    "entity": 5000,
+    "execution": 1,
+    "operation_definition": 1,
+    "request": 1,
+    "result": 1,
+    "state": 2,
+    "state_representation": 2
+   }
+  },
+  "c28_rereview": {
+   "bytes": 102400,
+   "table_rows": {
+    "record_layers": 0,
+    "records": 8,
+    "retention": 8,
+    "units": 8
+   },
+   "records_by_kind": {
+    "execution": 1,
+    "operation_definition": 1,
+    "request": 1,
+    "result": 1,
+    "state": 2,
+    "state_representation": 2
+   }
+  }
+ },
+ "layer_search_scaling": {
+  "harness": "workspace with N prior 200-member caller-named states; mean of 10 calls each: publish an artifact and an occurrence with caller-chosen IDs, create a caller-named one-member state, read one unpinned member by identity; then 4 sessions of 5 reads each. Admissions count IcebergRecordStorage.available calls.",
+  "rows": [
+   {
+    "build": "38043c4",
+    "prior_states": 1,
+    "entity_layers_at_reads": 11,
+    "load_1m": 8.89,
+    "artifact": {
+     "ms": 51.4,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "caller_named_entity": {
+     "ms": 48.1,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "create_caller_named_state": {
+     "ms": 103.0,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "read_unpinned": {
+     "ms": 4.5,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    },
+    "five_reads_one_session": {
+     "ms": 17.7,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    }
+   },
+   {
+    "build": "38043c4",
+    "prior_states": 32,
+    "entity_layers_at_reads": 42,
+    "load_1m": 8.89,
+    "artifact": {
+     "ms": 41.5,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "caller_named_entity": {
+     "ms": 39.9,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "create_caller_named_state": {
+     "ms": 87.2,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 0.0
+    },
+    "read_unpinned": {
+     "ms": 4.0,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    },
+    "five_reads_one_session": {
+     "ms": 14.1,
+     "all_layer_searches": 0.0,
+     "layer_admissions": 1.0
+    }
+   },
+   {
+    "build": "c28-rereview",
+    "prior_states": 1,
+    "entity_layers_at_reads": 11,
+    "load_1m": 9.06,
+    "artifact": {
+     "ms": 46.9,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 1.0
+    },
+    "caller_named_entity": {
+     "ms": 46.6,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 1.0
+    },
+    "create_caller_named_state": {
+     "ms": 105.2,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 5.9
+    },
+    "read_unpinned": {
+     "ms": 29.6,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 11.0
+    },
+    "five_reads_one_session": {
+     "ms": 46.3,
+     "all_layer_searches": 5.0,
+     "layer_admissions": 11.0
+    }
+   },
+   {
+    "build": "c28-rereview",
+    "prior_states": 32,
+    "entity_layers_at_reads": 42,
+    "load_1m": 9.05,
+    "artifact": {
+     "ms": 124.6,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 32.0
+    },
+    "caller_named_entity": {
+     "ms": 125.8,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 32.0
+    },
+    "create_caller_named_state": {
+     "ms": 194.6,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 37.5
+    },
+    "read_unpinned": {
+     "ms": 99.9,
+     "all_layer_searches": 1.0,
+     "layer_admissions": 42.0
+    },
+    "five_reads_one_session": {
+     "ms": 143.8,
+     "all_layer_searches": 5.0,
+     "layer_admissions": 42.0
+    }
+   }
+  ]
+ },
+ "ledger_copy_check": {
+  "harness": "a state of N members is pinned, then a second state reuses all N identities with the same bytes; seconds spent in _check_ledger_copies",
+  "rows": [
+   {
+    "matches": 2048,
+    "check_seconds": 0.013,
+    "ms_per_match": 0.0065,
+    "attempts": 1,
+    "load_1m": 9.1
+   },
+   {
+    "matches": 32768,
+    "check_seconds": 0.209,
+    "ms_per_match": 0.0064,
+    "attempts": 1,
+    "load_1m": 8.7
+   }
+  ],
+  "before": "the re-review measured 2.63 s (0.08 ms per match) for 32,768 matches on 295e057"
+ },
+ "session_layer_memory": {
+  "harness": "tracemalloc retained across computing the session's layer search after a derive and R one-row upserts; includes the bounded thread admission cache and pyiceberg's own caches",
+  "rows": [
+   {
+    "revisions": 10,
+    "layers": 21,
+    "files_listed": 76,
+    "session_held_bytes": 456161,
+    "load_1m": 7.7
+   },
+   {
+    "revisions": 40,
+    "layers": 81,
+    "files_listed": 901,
+    "session_held_bytes": 1135968,
+    "load_1m": 8.4
+   },
+   {
+    "revisions": 80,
+    "layers": 161,
+    "files_listed": 3401,
+    "session_held_bytes": 4122840,
+    "load_1m": 7.8
+   }
+  ],
+  "before": "the re-review measured 0.7 / 7.3 / 19.4 MB at 10 / 40 / 80 revisions on 295e057",
+  "views_only_at_80": "about 60 KB of file-name tuples; the lists repeat shared files per layer"
+ },
+ "cleanup_chain": {
+  "members": 8020,
+  "revisions": 20,
+  "entity_layers": 41,
+  "data_files_read": 41,
+  "rows_read": 8040,
+  "rows_per_layer_scans_before": 168230,
+  "inventory_ms": 540,
+  "load_1m": 8.7
+ },
+ "mutations": {
+  "harness": "34 single-line mutations of the branch source, three at a time, each against 17 focused test files (283 tests)",
+  "killed": 33,
+  "survived": 1,
+  "survivor": "restoring retention in the pin insert: the unit's ordinary retention upsert already restores it, so the pin statement was reverted to insert-only"
+ }
+}

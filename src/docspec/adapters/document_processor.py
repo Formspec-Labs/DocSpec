@@ -90,6 +90,7 @@ def provider_processor(name, *, definition, process, data_use_policy: DataUsePol
                     for suffix, value in [("receipt", evidence), *((f"output:{i}", value) for i, value in enumerate(admitted))]:
                         yield key + ":" + suffix, core.Entity(format_version=1, entity_id=output_id + ":" + key + ":" + suffix,
                             entity_type="occurrence", value=core.InlineValue(value=value))
+        session.mint(output_id)
         state = session.states.create_keyed(session, state_id=output_id, representation_id=output_id + ":physical",
             unit_id=output_id + ":import", rows=rows())
         context.generate_record(state, label="records")

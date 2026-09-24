@@ -170,11 +170,13 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
             with owned_iterator(session.read_records([("state", rows_state_id)])) as batches:
                 existing = next(batches)[0]
             if existing is None:
+                session.mint(rows_state_id)
                 session.states.create_keyed(session, state_id=rows_state_id, representation_id=rows_state_id + ":physical",
                                             unit_id=rows_state_id + ":import", rows=entities(), encoded=True)
             elif not existing.available:
                 raise IntegrityError("derive rows state is unavailable")
             caller_usages = [context.use(binding_key(item)[1]) for item in inputs]
+            session.mint(context.execution.execution_id + ":state")
             if base_state_id is not None:
                 revision = core.Revision(format_version=1, revision_id=context.execution.execution_id + ":revision",
                     base_state_id=base_state_id, result_state_id=context.execution.execution_id + ":state",

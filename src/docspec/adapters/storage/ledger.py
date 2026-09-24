@@ -30,7 +30,7 @@ from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.streams import bounded_items
 from docspec.ports.record_storage import RecordStorage
 from docspec.domain.identity import decode_canonical_json_value, canonical_value_bytes, require_sha256, require_text, sha256_digest
-from docspec.errors import IntegrityError, LimitExceededError, StaleBaseError, StateTransitionError
+from docspec.errors import IdentitiesChangedError, IntegrityError, LimitExceededError, StaleBaseError, StateTransitionError
 from docspec.ports.core_ledger import CandidateMatch, MetadataBatch, MetadataLink, RecordKey, StoredRecord, RemovalContent, RemovalOutcome
 
 
@@ -94,6 +94,24 @@ _SCHEMA = (
         error TEXT, PRIMARY KEY(update_id,store,locator)
     ) WITHOUT ROWID""",
 ) + PROVENANCE_SCHEMA
+
+
+# Commits whose identity checks read bulk layers or rows each add one units row
+# under this prefix, zero-padded so the largest sorts last. The newest is the
+# identity mark: a publication checked against mark n commits only while it is
+# still n. No schema change is needed, so older ledgers start at zero.
+_IDENTITY_SEQUENCE = "urn:docspec:identity-sequence:"
+_IDENTITY_SEQUENCE_END = "urn:docspec:identity-sequence;"
+
+
+def _identity_unit(mark: int) -> str:
+    return f"{_IDENTITY_SEQUENCE}{mark:016d}"
+
+
+def _identity_mark(connection) -> int:
+    newest = connection.execute("SELECT max(unit_id) FROM units WHERE unit_id >= ? AND unit_id < ?",
+                                (_IDENTITY_SEQUENCE, _IDENTITY_SEQUENCE_END)).fetchone()[0]
+    return 0 if newest is None else int(newest.removeprefix(_IDENTITY_SEQUENCE))
 
 
 def _key(value: RecordKey) -> RecordKey:
@@ -371,6 +389,8 @@ class LocalSqliteCoreLedger:
     @staticmethod
     def _unit(connection, unit_id: str, operation: str, payload: bytes) -> bool:
         require_text(unit_id, "metadata update identity")
+        if unit_id.startswith(_IDENTITY_SEQUENCE):
+            raise IntegrityError("metadata update identity uses the reserved identity-sequence prefix")
         if len(payload) > BATCH_BYTES:
             raise LimitExceededError("metadata update exceeds the 8 MiB limit")
         digest = sha256_digest(payload)
@@ -453,11 +473,12 @@ class LocalSqliteCoreLedger:
         """Commit one bounded publication unit, returning False when its update identity was already committed."""
 
         records, evidence, results = {}, {}, {}
-        size = 0
+        size, bulk_layers = 0, False
         for record in _collect(batch.records):
             value, payload = record_parts(record)
             kind = value["kind"]
             key = kind, value[RECORD_ID_FIELDS[kind]]
+            bulk_layers |= kind == "state_representation" and isinstance(value["membership"], dict)
             size += len(payload)
             if size > BATCH_BYTES:
                 raise LimitExceededError("metadata publication unit exceeds the 8 MiB limit")
@@ -524,6 +545,14 @@ class LocalSqliteCoreLedger:
             with self._transaction(write=True) as connection:
                 if not self._unit(connection, batch.unit_id, "commit", receipt):
                     return False
+                if batch.identity_mark is not None:
+                    # The publisher checked identities against the bulk layers and
+                    # rows as of this mark; any identity-bearing commit since then
+                    # could collide, so the publisher checks again.
+                    if _identity_mark(connection) != batch.identity_mark:
+                        raise IdentitiesChangedError("bulk identities changed while this publication was checked; check again")
+                    connection.execute("INSERT INTO units VALUES (?,?,?)", (_identity_unit(batch.identity_mark + 1),
+                                       "identity-layers" if bulk_layers else "identity", sha256_digest(receipt)))
                 connection.execute("CREATE TEMP TABLE incoming AS SELECT * FROM records WHERE 0")
                 for layer_id, reference in layers.items():
                     existing = connection.execute("SELECT reference FROM record_layers WHERE layer_id=?", (layer_id,)).fetchone()
@@ -544,6 +573,14 @@ class LocalSqliteCoreLedger:
                     ).fetchone():
                         raise IntegrityError("data identity is ambiguous between an entity and a state")
                     connection.execute("INSERT INTO records SELECT * FROM pinned WHERE true ON CONFLICT DO NOTHING")
+                    # A member removed with its old layer is restored from the copy
+                    # the publisher found with the same digest.
+                    connection.execute(
+                        "UPDATE records SET source_layer=(SELECT p.source_layer FROM pinned p WHERE p.kind=records.kind AND p.record_id=records.record_id) "
+                        "WHERE (kind,record_id) IN (SELECT kind,record_id FROM pinned) AND payload IS NULL AND EXISTS("
+                        "SELECT 1 FROM retention t WHERE t.kind=records.kind AND t.record_id=records.record_id AND t.available=0)")
+                    # A restored member's retention becomes available again below,
+                    # with every other retained key of this unit.
                     connection.execute("INSERT INTO retention(kind,record_id,unit_id,available) SELECT kind,record_id,?,1 "
                                        "FROM pinned WHERE true ON CONFLICT DO NOTHING", (batch.unit_id,))
                 _bind(connection, "INSERT INTO incoming VALUES (?,?,?,?,?,?,?)", records.values())
@@ -674,6 +711,16 @@ class LocalSqliteCoreLedger:
                         yield StoredRecord((row[0], row[1]), value, row[3] is not None, bool(row[4]), row[5] or 0, row[6])
                 # External rows can be much larger than their SQLite pins.
                 yield tuple(resolved())
+
+    def identity_mark(self, since: int | None = None) -> tuple[int, bool]:
+        """Return the identity mark and whether a commit since ``since`` added bulk layers."""
+
+        with self._transaction() as connection:
+            mark = _identity_mark(connection)
+            layers = since is not None and mark != since and connection.execute(
+                "SELECT 1 FROM units WHERE unit_id > ? AND unit_id < ? AND operation='identity-layers' LIMIT 1",
+                (_identity_unit(since), _IDENTITY_SEQUENCE_END)).fetchone() is not None
+            return mark, layers
 
     def data_identities(self, identities: Iterable[str]) -> Iterator[tuple[tuple[str, str, str], ...]]:
         """Stream (kind, identity, row digest) for entity or state rows that already hold these identities."""

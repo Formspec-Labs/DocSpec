@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import ExitStack, closing, contextmanager, nullcontext
@@ -27,6 +28,30 @@ from docspec.errors import IntegrityError, LimitExceededError
 
 _PROFILE_ID = 'urn:docspec:profile:record-storage:iceberg:1'
 _ADMITTED_LAYER_LIMIT = 8
+# A literal list keeps row-group pruning for point lookups; beyond this many
+# identities a semi-join against an Arrow table is faster.
+_LITERAL_IDENTITIES = 256
+
+
+def _identity_filter(cursor, relation, identities):
+    """Keep only rows whose record_identity is one of ``identities``."""
+    identities = list(identities)
+    if not identities:
+        return relation.filter('false')
+    if len(identities) <= _LITERAL_IDENTITIES and not any('\x00' in identity for identity in identities):
+        return relation.filter('record_identity IN (' + ', '.join(literal(identity) for identity in identities) + ')')
+    wanted = cursor.from_arrow(pa.table({'wanted_identity': pa.array(identities, type=pa.string())}))
+    return relation.join(wanted, 'record_identity = wanted_identity', how='semi')
+
+
+@dataclass(frozen=True, slots=True)
+class LayerFiles:
+    """What a member search keeps of an admitted layer: its reference, commit time and data files."""
+
+    reference: LayerRef
+    committed_ms: int
+    files: tuple[str, ...]
+    deletes: bool
 
 
 def _physical_schema(schema):
@@ -343,7 +368,7 @@ class IcebergRecordStorage:
             if partitions is not None:
                 relation = relation.filter(duckdb.ColumnExpression('bucket').isin(*(duckdb.ConstantExpression(p) for p in partitions))) if partitions else relation.filter('false')
             if record_ids is not None:
-                relation = relation.filter(duckdb.ColumnExpression('record_identity').isin(*(duckdb.ConstantExpression(k) for k in record_ids))) if record_ids else relation.filter('false')
+                relation = _identity_filter(cursor, relation, record_ids)
             if identity_ranges is not None:
                 ranges = list(identity_ranges)
                 relation = relation.filter(' OR '.join(f'(record_identity BETWEEN {literal(lo)} AND {literal(hi)})' for lo, hi in ranges) or 'false')
@@ -422,17 +447,37 @@ class IcebergRecordStorage:
     def data_files(self, reference):
         """Locators of the data files in a layer's pinned snapshot; layers built on one another share them."""
 
-        for path in snapshot_data_files(self.admitted(reference).table):
-            yield path.relative_to(self.root).as_posix()
+        return self.layer_files(reference).files
+
+    def layer_files(self, reference):
+        """Admit a layer and keep only its commit time and data file locators, not its Iceberg metadata."""
+
+        table = self.admitted(reference).table
+        files, deletes = [], False
+        for path, delete in snapshot_data_files(table):
+            if delete:
+                deletes = True
+            else:
+                # Layers built on one another list the same files; share the names.
+                files.append(sys.intern(path.relative_to(self.root).as_posix()))
+        return LayerFiles(reference, table.metadata.last_updated_ms, tuple(files), deletes)
 
     @contextmanager
-    def file_relation(self, locators):
-        """Read whole data files by locator, including rows a sharing snapshot's delete files exclude."""
+    def file_relation(self, locators, *, identities=None):
+        """Read whole data files by locator, including rows a sharing snapshot's delete files exclude.
 
-        paths = [str(_contained(self.root, locator)) for locator in locators]
+        The relation names each row's file by locator; ``identities`` keeps
+        only those records.
+        """
+
+        paths = {str(_contained(self.root, locator)): locator for locator in locators}
         with self._cursor() as cursor:
-            yield cursor.sql("SELECT record_identity, partition_value, record_json FROM read_parquet(["
-                             + ", ".join(literal(path) for path in paths) + "])")
+            relation = cursor.sql("SELECT record_identity, partition_value, record_json, filename FROM read_parquet(["
+                                  + ", ".join(literal(path) for path in paths) + "], filename=true)")
+            if identities is not None:
+                relation = _identity_filter(cursor, relation, identities)
+            mapping = cursor.from_arrow(pa.table({'file_path': list(paths), 'locator': list(paths.values())}))
+            yield relation.join(mapping, 'filename = file_path').project('record_identity, partition_value, record_json, locator')
 
     def physical_references(self, reference):
         """Stream the layer's recovery files followed by its root reference."""

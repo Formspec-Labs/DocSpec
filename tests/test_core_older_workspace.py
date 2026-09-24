@@ -59,3 +59,19 @@ def test_member_rows_from_0_9_1_read_pin_and_protect_until_removed(tmp_path, mon
         assert not any((workspace.records.root / ref.locator).exists() for ref in files)
         removed = [row for batch in workspace.ledger.retained_records(kind="entity") for row in batch]
         assert len(removed) == MEMBERS and not any(row.available for row in removed)
+
+
+def test_removing_some_old_member_rows_keeps_the_rest_readable_and_protected(tmp_path):
+    path = tmp_path / "workspace"
+    shutil.copytree(FIXTURE, path)
+    with CoreWorkspace(path, create=False) as workspace:
+        with workspace.publisher.session() as session:
+            layer = workspace.states.layers(session, STATE_ID)["entities"].reference
+            files = list(workspace.records.physical_references(layer))
+        remove(workspace, "partial", STATE_KEYS + [("entity", occurrence(f"k{index}")) for index in range(4)])
+        assert all((workspace.records.root / ref.locator).exists() for ref in files)
+        with workspace.publisher.session() as session:
+            rows = [row for batch in session.read_records(("entity", occurrence(f"k{index}")) for index in range(MEMBERS))
+                    for row in batch]
+        assert [row.available for row in rows] == [False] * 4 + [True] * 4
+        assert [row.value.value.value["index"] for row in rows[4:]] == list(range(4, MEMBERS))
