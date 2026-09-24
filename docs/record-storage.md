@@ -27,8 +27,9 @@ differ. Callers that know the state resolve through its layer alone, as document
 runs do for their sources.
 
 Writing a state refuses a member whose identity the ledger already holds with
-other bytes, as a state, or as the new state's own name. Publishing an entity or
-state whose identity the caller chose refuses one a bulk member already holds
+other bytes, as a state, or as the new state's own name. Publishing or staging an
+entity or state whose identity the caller chose (including an operation's
+outputs, staged before publication) refuses one a bulk member already holds
 differently; only identities the publishing session minted for its own outputs
 skip that search. These checks commit only while the ledger's identity mark is
 unchanged: each commit that carries them advances it, so a concurrent one makes

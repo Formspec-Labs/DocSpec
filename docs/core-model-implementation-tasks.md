@@ -1099,13 +1099,17 @@ the expected-version check, refuses a digest or entity/state conflict, and
 leaves them out of the unit receipt so a retried unit keeps its identity. A
 pinned member removed with its state is restored when a later state holds the
 same bytes. An incoming entity or state whose identity the caller chose is
-checked against the layers; only identities the publishing session minted for
+checked against the layers, whether it is published or staged outside a
+closure (an operation's start inputs, prepared outputs and failed outputs pass
+through `Publication.stage`); only identities the publishing session minted for
 its own outputs (generated entities, execution-scoped states, derive rows,
 revision inputs) skip the search, so derive, upsert and document stages stay
-flat. Every commit whose checks read layers or identity rows carries the
-ledger's identity mark, a sequence kept in the `units` table without a schema
-change; `commit` refuses it with `IdentitiesChangedError` if another such
-commit moved the mark, and the publisher checks again. Revision puts copy their
+flat; the session forgets them if their publication fails, while a published one
+has a retained row, which is never searched.
+Every commit whose checks read layers or identity rows carries the ledger's
+identity mark, a sequence kept in the `units` table without a schema change;
+`commit` refuses it with `IdentitiesChangedError` if another such commit moved
+the mark, and the publisher checks again. Revision puts copy their
 occurrences into the digest-scoped inputs state and pin nothing. Document runs
 resolve sources through the source state's own layer; their identities digest
 their values, so no other copy can differ. Cleanup reads member blobs from each
@@ -1127,6 +1131,15 @@ caller-chosen entity or state, or reading an unpinned member by identity, costs
 one query over the data files of every retained entity layer after each layer's
 first admission in the session, about 2–3 ms per layer on the probe machine; a
 pinned member reads from its row as before.
+
+Known limits: every bulk state (so every derive and upsert) carries the mark,
+so two concurrent mark-carrying commits conflict even with disjoint
+identities, and each retry repeats the new state's identity check over all its
+members; under sustained contention a publication can exhaust its five attempts
+and raise `IdentitiesChangedError`, a `StaleBaseError` the caller may retry.
+Derive-row, revision-input and dependency-comparison identities are predictable
+digests that skip the search, so a caller who pre-creates a member under such an
+identity is not refused; the earlier regex allowed the same.
 
 **Done when:** creating a state writes no entity rows; by-identity reads, whole
 inputs, adopted and selected outputs, parents, selection origins and export

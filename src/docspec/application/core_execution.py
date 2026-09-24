@@ -308,8 +308,8 @@ class CoreOperations:
         inputs = bounded_items((record for item in upstream for record in item.records), limit=BATCH_ROWS) + bounded_items(input_records, limit=BATCH_ROWS)
         inputs = tuple(_snapshot(record) for record in bounded_items(inputs, limit=BATCH_ROWS))
         with self._session(session) as active:
-            self.ledger.commit(MetadataBatch(start_unit_id or execution.execution_id + ":start", records=(definition, request, execution, *inputs),
-                                             retained=(("operation_definition", definition.definition_id), ("request", request.request_id), ("execution", execution.execution_id))))
+            active.stage(MetadataBatch(start_unit_id or execution.execution_id + ":start", records=(definition, request, execution, *inputs),
+                                       retained=(("operation_definition", definition.definition_id), ("request", request.request_id), ("execution", execution.execution_id))))
             self.ledger.record_progress(execution.execution_id + ":started", execution.execution_id, "started", {})
             context = OperationContext(active, execution, inputs)
             context.selection = selection
@@ -343,10 +343,11 @@ class CoreOperations:
                 failure = context.result(core.Outcome(status=status, error=_diagnostic(error), outputs=tuple(context.outputs)),
                                          result_id=execution.execution_id + ":result")
                 try:
-                    self.ledger.commit(MetadataBatch(execution.execution_id + ":failure", records=(*context.records, failure)))
-                except LimitExceededError:
-                    # Output payloads are not a prerequisite for recording a
-                    # failed attempt. The Result retains every actual event.
+                    context.session.stage(MetadataBatch(execution.execution_id + ":failure", records=(*context.records, failure)), final=True)
+                except (LimitExceededError, IntegrityError):
+                    # Output payloads are not a prerequisite for recording a failed
+                    # attempt, and outputs refused for their identity are not kept.
+                    # The Result retains every actual event.
                     self.ledger.commit(MetadataBatch(execution.execution_id + ":failure", records=(failure,)))
                 self.ledger.record_progress(execution.execution_id + ":failed", execution.execution_id, status,
                                             {"result_id": failure.result_id, "error": failure.outcome.error})
@@ -466,7 +467,7 @@ class CoreOperations:
             try:
                 # Staging records does not claim successful retention. The same
                 # immutable records are checked and retained by the publisher.
-                self.ledger.commit(MetadataBatch("prepared:" + unit_id, records=tuple(records)))
+                active.stage(MetadataBatch("prepared:" + unit_id, records=tuple(records)))
                 content = active.retain_value(journal)
                 for identity in executions:
                     self.ledger.record_progress(unit_id + ":prepared:" + identity, identity, "progress", {"publication": record_value(content, core.ContentRef)})

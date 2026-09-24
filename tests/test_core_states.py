@@ -786,3 +786,107 @@ def test_a_sessions_own_new_layers_join_its_search_in_commit_order(tmp_path):
             session.publish(MetadataBatch("pin", retained=(("entity", "f"),)))
         with ledger._transaction() as connection:
             assert connection.execute("SELECT source_layer FROM records WHERE kind='entity' AND record_id='f'").fetchone() == (compacted.layer_id,)
+
+
+def operation(operations, name, producer):
+    """Run one caller operation with no inputs through the common lifecycle."""
+    definition = core.OperationDefinition(format_version=1, definition_id="urn:test:definition", implementation_id="test.operation",
+                                          implementation_version="1", operation_kind="transformation", configuration={})
+    request = core.Request(format_version=1, request_id="urn:test:request:" + name, definition_id=definition.definition_id,
+                           inputs=(), dependencies=())
+    return operations.run(definition, request, producer)
+
+
+def test_operation_outputs_with_caller_chosen_identities_are_checked_before_staging(tmp_path):
+    """Operation records are staged in the ledger before publication; staging checks their identities first."""
+    from docspec.application.core_edits import prepare_revision
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            for identity in ("X", "M"):
+                states.create(session, state_id="holds-" + identity, representation_id=identity + "-r", unit_id=identity,
+                              entities=[occurrence(identity, 1)], members=[core.Membership(member_key="k", occurrence_id=identity)])
+        def generate(context):
+            context.generate(core.InlineValue(value=2), label="out", entity_id="X")
+        with pytest.raises(IntegrityError, match="immutable"):
+            operation(operations, "generate", generate)
+        with publisher.session() as session:
+            assert next(session.read_records([("entity", "X")]))[0].value == occurrence("X", 1)
+            change = core.Revision(format_version=1, revision_id="revision", base_state_id="holds-X", result_state_id="M", edits=())
+            with pytest.raises(IntegrityError, match="ambiguous"):
+                operations.publish((prepare_revision(operations, change, session=session),), session=session)
+        # Nothing was staged under either identity.
+        assert [row for batch in ledger.read_records([("entity", "X"), ("state", "M")]) for row in batch] == [None, None]
+
+
+def test_a_concurrent_bulk_state_cannot_slip_past_a_staged_operations_check(tmp_path, monkeypatch):
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("e", 1)], members=[core.Membership(member_key="k", occurrence_id="e")])
+        raced = []
+        from docspec.application import core_publication
+        original = core_publication.Publication.check_identities
+        def racing(self, records):
+            searched = original(self, records)
+            if searched and not raced:
+                raced.append(True)
+                with publisher.session() as other:
+                    states.create(other, state_id="t", representation_id="t-r", unit_id="t",
+                                  entities=[occurrence("X", 1)], members=[core.Membership(member_key="k", occurrence_id="X")])
+            return searched
+        monkeypatch.setattr(core_publication.Publication, "check_identities", racing)
+        def generate(context):
+            context.generate(core.InlineValue(value=2), label="out", entity_id="X")
+        with pytest.raises(IntegrityError, match="immutable"):
+            operation(operations, "generate", generate)
+        assert raced and ledger.is_committed("t")
+        assert next(ledger.read_records([("entity", "X")]))[0] is None
+
+
+def test_minted_identities_are_forgotten_when_their_publication_fails(tmp_path):
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        _, _, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("taken", 1)], members=[core.Membership(member_key="k", occurrence_id="taken")])
+            session.mint("taken")
+            with pytest.raises(IntegrityError, match="membership representation"):
+                session.publish(MetadataBatch("named", records=(core.State(format_version=1, state_id="taken"),),
+                                              retained=(("state", "taken"),)))
+            assert "taken" not in session.minted
+            def failing(context):
+                context.generate(core.InlineValue(value=1), label="out")
+                raise RuntimeError("producer failed")
+            definition = core.OperationDefinition(format_version=1, definition_id="urn:test:failing", implementation_id="test.failing",
+                                                  implementation_version="1", operation_kind="transformation", configuration={})
+            request = core.Request(format_version=1, request_id="urn:test:failing", definition_id=definition.definition_id,
+                                   inputs=(), dependencies=())
+            with pytest.raises(RuntimeError, match="producer failed"):
+                operations.run(definition, request, failing, session=session)
+            assert session.minted == set()
+
+
+def test_a_failed_operations_colliding_outputs_are_dropped_and_its_failure_recorded(tmp_path):
+    from docspec.application.core_execution import CoreOperations
+    with ExitStack() as stack:
+        _, ledger, states, publisher = open_core(stack, tmp_path)
+        operations = CoreOperations(publisher)
+        with publisher.session() as session:
+            states.create(session, state_id="root", representation_id="root-r", unit_id="root",
+                          entities=[occurrence("X", 1)], members=[core.Membership(member_key="k", occurrence_id="X")])
+        def failing(context):
+            context.generate(core.InlineValue(value=2), label="out", entity_id="X")
+            raise RuntimeError("producer failed")
+        with pytest.raises(RuntimeError, match="producer failed"):
+            operation(operations, "failing", failing)
+        with ledger._transaction() as connection:
+            assert connection.execute("SELECT outcome FROM records WHERE kind='result'").fetchall() == [("failed",)]
+        assert next(ledger.read_records([("entity", "X")]))[0] is None

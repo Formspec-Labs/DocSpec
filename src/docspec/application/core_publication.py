@@ -142,6 +142,52 @@ class Publication:
         """Record an identity DocSpec minted for an output this session will publish."""
         self.minted.add(identity)
 
+    def check_identities(self, records):
+        """Refuse records whose caller-chosen entity or state identity a bulk member holds differently.
+
+        An entity must carry the digest of any retained copy of its identity; a
+        state cannot share a member's identity. Identities this session minted
+        are not searched. Returns whether the layers were searched.
+        """
+        chosen = {}
+        for record in records:
+            value = _plain_value(record)
+            if value["kind"] in {"entity", "state"} and value[core.RECORD_ID_FIELDS[value["kind"]]] not in self.minted:
+                chosen[value[core.RECORD_ID_FIELDS[value["kind"]]]] = value["kind"], record
+        for identity, location in self.locate_members(chosen).items() if chosen else ():
+            kind, record = chosen[identity]
+            _collision(kind, sha256_digest(record_parts(record)[1]), location)
+        return bool(chosen)
+
+    def stage(self, batch: MetadataBatch, *, final=False) -> bool:
+        """Commit records outside a publication closure: operation starts, failures and prepared outputs.
+
+        Later reads and checks take these rows as given, so their identities are
+        checked as a publication's are and the commit carries the identity mark,
+        checking again if another commit moved it. ``final`` records are never
+        published afterwards, so their minted identities are forgotten.
+        """
+        self._active()
+        try:
+            for attempt in range(_IDENTITY_ATTEMPTS):
+                mark = self.identity_view()
+                searched = self.check_identities(batch.records)
+                try:
+                    result = self.ledger.commit(replace(batch, identity_mark=mark if searched else None))
+                except IdentitiesChangedError:
+                    if attempt + 1 == _IDENTITY_ATTEMPTS:
+                        raise
+                    continue
+                if result and searched and self.identity_seen == mark:
+                    self.identity_seen = mark + 1
+                return result
+        except BaseException:
+            final = True
+            raise
+        finally:
+            if final:
+                self.minted.difference_update(_data_identities(batch.records))
+
     def identity_view(self):
         """Read the ledger's identity mark; forget layers, members and misses once another commit adds bulk layers."""
         self._active()
@@ -284,22 +330,27 @@ class Publication:
             raise IntegrityError("the publisher owns retention relationship construction")
         if not isinstance(batch.records, (tuple, list)) or len(batch.records) > BATCH_ROWS:
             raise LimitExceededError("publication requires a bounded collection of at most 2048 records")
-        for attempt in range(_IDENTITY_ATTEMPTS):
-            mark = self.identity_view()
-            if identity_check is not None:
-                identity_check()
-            check = _PublicationCheck(self, batch, mark)
-            try:
-                result = check.publish()
-            except IdentitiesChangedError:
-                if attempt + 1 == _IDENTITY_ATTEMPTS:
-                    raise
-                continue
-            break
+        try:
+            for attempt in range(_IDENTITY_ATTEMPTS):
+                mark = self.identity_view()
+                if identity_check is not None:
+                    identity_check()
+                check = _PublicationCheck(self, batch, mark)
+                try:
+                    result = check.publish()
+                except IdentitiesChangedError:
+                    if attempt + 1 == _IDENTITY_ATTEMPTS:
+                        raise
+                    continue
+                break
+        except BaseException:
+            # Refused outputs no longer await publication. Published ones keep
+            # their registration: a retained row already skips the search.
+            self.minted.difference_update(_data_identities(batch.records))
+            raise
         if result and check.sent_mark is not None and self.identity_seen == mark:
             # This commit advanced the mark by one; nothing else intervened.
             self.identity_seen = mark + 1
-        self.minted.difference_update(identity for kind, identity in check.incoming if kind in {"entity", "state"})
         for key in check.incoming & check.required:
             self.computed_records.pop(key, None)
             if key[0] == "state_representation" and isinstance(check.values[key]["membership"], dict):
@@ -345,6 +396,32 @@ class _RecordWindow:
     def value(self, row):
         # These bytes already passed ordinary Core admission; each read is detached.
         return self.payloads[row.key, row.row_digest].record
+
+
+def _plain_value(record):
+    """A record's plain value, without converting one that already is plain."""
+    return record.value if type(record) is AdmittedRecord else record if isinstance(record, dict) else record_value(record)
+
+
+def _data_identities(records):
+    """The entity and state identities among records, read without converting typed ones."""
+    for record in records:
+        if isinstance(record, core.Entity):
+            yield record.entity_id
+        elif isinstance(record, core.State):
+            yield record.state_id
+        elif not isinstance(record, core.Fixed):
+            value = _plain_value(record)
+            if value["kind"] in {"entity", "state"}:
+                yield value[core.RECORD_ID_FIELDS[value["kind"]]]
+
+
+def _collision(kind, digest, location):
+    """Refuse a caller-chosen record against the bulk member found under its identity."""
+    if kind == "state":
+        raise IntegrityError("data identity is ambiguous between an entity and a state")
+    if digest != "sha256:" + location[3]:
+        raise IntegrityError("publication conflicts with an immutable retained record")
 
 
 def _removed(row):
@@ -444,22 +521,24 @@ class _PublicationCheck:
             restorable = {identity for kind, identity in keys if kind in {"data", "entity"} and ("entity", identity) in missing
                           and ("entity", identity) not in self.incoming and ("entity", identity) in self.stored
                           and _removed(self.stored[("entity", identity)])}
-            chosen = {key[1] for key in missing & self.incoming if key[0] in {"entity", "state"} and key not in self.stored
-                      and key[1] not in self.session.minted}
-            searched = referenced | restorable | chosen
+            # A stored row is not searched again: rows an operation staged were
+            # checked by Publication.stage, and a later state's members are
+            # checked against every row, retained or staged.
+            chosen = {key for key in missing & self.incoming if key[0] in {"entity", "state"}
+                      and key not in self.stored and key[1] not in self.session.minted}
+            searched = referenced | restorable | {identity for _, identity in chosen}
             self.identity_read |= bool(searched)
             located = self.session.locate_members(searched) if searched else {}
-            pinned = (referenced | restorable) & located.keys()
-            if self.metadata_bytes + sum(located[identity][1] for identity in pinned) > BATCH_BYTES:
+            pinned = {identity: located[identity] for identity in (referenced | restorable) & located.keys()}
+            if self.metadata_bytes + sum(location[1] for location in pinned.values()) > BATCH_BYTES:
                 raise LimitExceededError("publication metadata closure exceeds the 8 MiB limit")
+            for kind, identity in chosen:
+                if identity in located:
+                    _collision(kind, sha256_digest(canonical_value_bytes(self.values[(kind, identity)])), located[identity])
             for identity in restorable & located.keys():
                 _same_digest(self.stored[("entity", identity)], located[identity])
-            for identity, (record, location) in self.session.bulk_member_records(located, located).items():
+            for identity, (record, location) in self.session.bulk_member_records(pinned, pinned).items():
                 key = "entity", identity
-                if key in self.incoming:
-                    if canonical_value_bytes(self.values[key]) != record.payload:
-                        raise IntegrityError("publication conflicts with an immutable retained record")
-                    continue
                 self.stored[key] = _member_row(identity, record, self.stored.get(key))
                 self._cache(key, record.value, record.payload)
                 self.members[key] = record, location[0]
