@@ -99,7 +99,10 @@
     records, small, nested or irregular values, per-occurrence results and
     reuse associations.
 
-## Open rulings
+## Rulings (owner, 2026-09-24)
+
+Each was put to the owner with the options below; the decision is recorded
+under its item. The design stays proposed until C27 is implemented.
 
 - **R1: provenance of a reappearing occurrence.** If a key goes A → B → A, the
   third generation's member is the first generation's occurrence. Comparing
@@ -115,6 +118,7 @@
     also serves C28's lookups (C27 step 9).
   - **Recommended: (b).** It is the only option that makes "generated once"
     checkable, and the index is needed for lookups anyway.
+  - **Decided: (b),** the append-only first-admission index.
 - **R2: sequencing (extends consolidation ruling 4).** Each of these forces a
   full derive and a full Engine republish of the affected source:
   - the first admission, because its values differ in shape from the row-copied
@@ -127,6 +131,10 @@
   D6 is a prerequisite: Search's `prepare` refuses generation rows today.
   Landing B2, then D6, then C27 with C29, then PM01's cutover costs one full
   republish. Each item that lands after the cutover adds one.
+  - **Decided:** PM01's cutover waits for B2 and then C27 with C29, so the
+    8091 index is replaced once, by a candidate built from admitted
+    generations. The row-copied catalogs are retired at that rebuild rather
+    than trimmed of their per-member rows now.
 - **R3: retention of superseded generations.** Proposed: keep the current and
   previous generation of each dataset, plus any generation a current result
   binds, and remove the rest under C18.
@@ -134,6 +142,14 @@
     (a spicyengine change), and the pin transfer and retired-occurrence layer
     in C27 step 11.
   - **Without it:** each FR generation keeps 156 MB forever.
+  - **Decided: keep the current generation only.** A superseded generation is
+    removed under C18 once the next one is admitted and every current result
+    that bound it has been re-derived. Consequences the implementation must
+    honour: the membership delta of C27 step 7 must carry what `changes`
+    needs without the previous generation's files; there is no rollback to
+    the prior generation inside DocSpec (the producer's sealed artifact
+    remains the recovery source); Engine resolves `retained_ref` through its
+    newest served state.
 - **R4: narrow, high-row tables.** A first admission pays membership at about
   46.5 B/row plus the index at about 35–50 B/row. For `court_citation_map`
   (77.5 M rows in 441 MB) that is about 6–7 GB, roughly 15 times the table
@@ -142,6 +158,8 @@
   - let the first generation's membership be a view over the index, paying one
     per-row cost;
   - admit such tables only when a consumer needs them (recommended).
+  - **Decided:** only when a consumer needs one; the identity pass gets a
+    streaming sorted writer before the first such admission.
 - **R5: tables whose rows carry observed- or fetched-time columns.** 17 tables
   match by name; whether they refresh on unchanged rows was not checked. If
   they do, every generation re-mints every row. The options:
@@ -149,12 +167,16 @@
   - have spicy-regs carry unchanged rows' prior values;
   - admit a declared projection without the volatile columns. A state then
     claims, and retains, only that projection (Core §3.2).
+  - **Decided:** the declared projection. Identity follows the meaningful
+    columns; the timestamps stay readable in the producer's file.
 - **R6: composite member keys.** 31 contracts have composite identities.
   - **Recommended:** wait for spicy-docs to declare their spellings, so no key
     flips later.
   - **Alternative:** DocSpec spells them provisionally as a canonical JSON
     array, pinned for each dataset at first admission. A later spicy-docs
     spelling then forces an explicit re-key.
+  - **Decided:** wait for spicy-docs. Those tables are not admitted until a
+    versioned key function exists for them (consolidation B19/B26).
 
 ## Why
 
