@@ -1066,6 +1066,14 @@ proposed (2026-09-23, revised after review the same day), under
 accepted. Open rulings R1–R6 are listed there. This is D3 of the consolidation
 path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`, Track D).
 
+**Progress (2026-09-25):** the storage foundation is in place: the table-layer
+profile of step 2 (`IcebergRecordStorage.write_table`, `append_table` and
+`register_parquet`), the row and member-key spellings of steps 3 and 4 with
+their spelling oracle, the identity pass of step 5 and the minted-occurrence
+index of step 7 with its lookup (`adapters/storage/table_occurrences.py`). See
+[record storage](record-storage.md#typed-table-layers). Admission, publication,
+readers and C28's resolver remain.
+
 **Why:** DocSpec holds spicy-regs rows as its own canonical-JSON occurrence
 records, one ledger-registered entity each. Importing its Federal Register
 catalog took 16 min 49 s at 8.80 GiB for 1,007,639 records and left a 1.310 GB

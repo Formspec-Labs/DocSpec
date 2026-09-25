@@ -71,6 +71,14 @@ types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
   data file's digest. File-level admission, physical references and deletion are
   shared with encoded layers; each profile's reads and writes refuse the other's.
 
+Row identity under `docspec-table-row/1` lives in
+`adapters/storage/table_occurrences.py`. One streamed pass per generation spills
+each row's member key, row digest and occurrence hash to scratch, after the
+native spelling is checked against the Python reference. The minted-occurrence
+index is an append-only table layer whose appended files are each sorted by
+occurrence hash, so a lookup reads one row group per file; reading an occurrence
+back returns its row's canonical bytes only when their digest matches the index.
+
 ## Configure writes
 
 Set `DOCSPEC_ICEBERG_URI` to a REST catalog endpoint and, when needed,

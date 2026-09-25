@@ -1,11 +1,63 @@
-"""Native SQL spelling of docspec-table-row/1; no Python row callbacks."""
+"""Native SQL for docspec-table-row/1 and declared member keys, beside spicy-docs' key references.
+
+No Python row callbacks. A direct column comparison between generations must
+compare DOUBLE through its spelling: SQL equates 0.0 with -0.0, whose
+canonical spellings differ.
+"""
+
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from spicy_docs.sources.federal_register.native import federal_register_source_record_id
 
 from docspec.adapters.storage.iceberg import identifier, literal
 from docspec.domain.identity import canonical_value_bytes, require_text
 from docspec.domain.table_rows import SAFE_INTEGER, table_columns
+from docspec.errors import IntegrityError
 
 
+OCCURRENCE_PREFIX = "urn:docspec:table-occurrence:v1:"
 _SHORT_ESCAPES = {8: "\\b", 9: "\\t", 10: "\\n", 12: "\\f", 13: "\\r"}
+
+
+@dataclass(frozen=True, slots=True)
+class _Spelling:
+    fields: tuple[str, ...] | None  # None: any one field
+    sql: Callable[[list[str]], str]
+    reference: Callable[[tuple[str, ...]], str]
+    components: Callable[[str], tuple[tuple[str, ...], ...]]
+
+
+_FEDERAL_REGISTER = ("document_number", "publication_date")
+# Each declared spelling compiles to SQL over VARCHAR components, next to
+# spicy-docs' reference and the component tuples that could spell a key.
+_SPELLINGS = {
+    ("value", "1"): _Spelling(None, lambda parts: parts[0], lambda values: values[0], lambda key: ((key,),)),
+    ("federal-register-source-record-id", "1"): _Spelling(
+        _FEDERAL_REGISTER, lambda parts: f"{parts[0]} || '@' || {parts[1]}",
+        lambda values: federal_register_source_record_id(dict(zip(_FEDERAL_REGISTER, values, strict=True))),
+        lambda key: tuple((key[:index], key[index + 1:]) for index, char in enumerate(key) if char == "@")),
+}
+
+
+def _declared(spelling):
+    declared = _SPELLINGS.get((spelling.spelling_id, spelling.version))
+    if declared is None or (len(spelling.fields) != 1 if declared.fields is None else spelling.fields != declared.fields):
+        raise IntegrityError("member-key spelling is not declared for these fields")
+    return declared
+
+
+def reference_member_key(spelling, row) -> str:
+    """spicy-docs' reference key of one row; a NULL, empty or non-text component refuses."""
+    values = tuple(row[field] for field in spelling.fields)
+    if any(type(value) is not str or not value for value in values):
+        raise ValueError("member key components must be nonempty strings")
+    return _declared(spelling).reference(values)
+
+
+def key_components(spelling, key: str) -> tuple[tuple[str, ...], ...]:
+    """Every component tuple that could spell ``key``; lookups push them into scans."""
+    return _declared(spelling).components(key)
 
 
 def _column(name, qualifier=None):
@@ -64,14 +116,44 @@ def row_digest_sql(columns, *, qualifier=None):
     return "'sha256:' || sha256(" + row_json_sql(columns, qualifier=qualifier) + ")"
 
 
-def occurrence_id_sql(family, table, *, member_key="member_key", row_digest="row_digest", qualifier=None):
-    """Hash the exact stable_urn input, using a sha256:-prefixed row digest."""
+def member_key_sql(spelling, *, qualifier=None):
+    """Spell a declared member key; a NULL or empty component raises while the pass runs."""
+    declared = _declared(spelling)
+    parts = [_column(field, qualifier) for field in spelling.fields]
+    invalid = " OR ".join(f"{part} IS NULL OR {part} = ''" for part in parts)
+    return (f"CASE WHEN {invalid} THEN error('table member key has a NULL or empty component') "
+            f"ELSE {declared.sql(parts)} END")
+
+
+def _occurrence_frame(family, table, key, digest_json):
+    """The exact canonical bytes stable_urn hashes: [family, table, key, "sha256:<row digest>"]."""
     require_text(family, "table family")
     require_text(table, "logical table")
     prefix = canonical_value_bytes([family, table]).decode()[:-1] + ","
+    return f"{literal(prefix)} || {json_string_sql(key)} || ',' || {digest_json} || ']'"
+
+
+def occurrence_id_sql(family, table, *, member_key="member_key", row_digest="row_digest", qualifier=None):
+    """Hash the exact stable_urn input, using a sha256:-prefixed row digest column."""
     key, digest = _column(member_key, qualifier), _column(row_digest, qualifier)
-    framed = f"{literal(prefix)} || {json_string_sql(key)} || ',' || {json_string_sql(digest)} || ']'"
-    return "'urn:docspec:table-occurrence:v1:' || sha256(" + framed + ")"
+    return f"'{OCCURRENCE_PREFIX}' || sha256({_occurrence_frame(family, table, key, json_string_sql(digest))})"
+
+
+def occurrence_urn_sql(occurrence_hash):
+    """Spell an occurrence URN from its 32-byte hash column."""
+    return f"'{OCCURRENCE_PREFIX}' || lower(hex({occurrence_hash}))"
+
+
+def identity_relation(rows, identity):
+    """Project member_key, row_digest BLOB(32) and occurrence_hash BLOB(32) over ``rows``.
+
+    The inner projection spells each row's canonical JSON once; the outer one
+    frames the occurrence from that digest, so no row is spelled or hashed twice.
+    """
+    inner = (f"{member_key_sql(identity.key)} AS member_key, "
+             f"sha256({row_json_sql(identity.columns)}) AS row_hex")
+    frame = _occurrence_frame(identity.family, identity.table, "member_key", "'\"sha256:' || row_hex || '\"'")
+    return rows.project(inner).project(f"member_key, unhex(row_hex) AS row_digest, unhex(sha256({frame})) AS occurrence_hash")
 
 
 def membership_json_sql(*, member_key="member_key", occurrence_id="occurrence_id", qualifier=None):
