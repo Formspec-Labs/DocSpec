@@ -64,7 +64,7 @@ def _column_list(schema):
 
 
 class IcebergRecordStorage:
-    """Local retained snapshots; only writes require a REST catalog.
+    """Local retained snapshots; only writes use a catalog, in this process unless one is configured.
 
     Catalog names are temporary write handles, never authoritative DocSpec heads.
     Each edit forks its base metadata, commits through DuckDB, then pins the result
@@ -88,6 +88,7 @@ class IcebergRecordStorage:
             raise ValueError("record storage limits must be positive")
         self.root = _storage_root(root, create=create)
         self.catalog = catalog if catalog is not None else IcebergCatalog.environment()
+        self._writer = None  # the attached catalog: the configured one, else an InProcessCatalog this store owns
         self._catalog_client = None
         self.max_member_bytes = max_member_bytes
         self.max_record_bytes = max_record_bytes
@@ -133,7 +134,9 @@ class IcebergRecordStorage:
             if self._connection is not None:
                 self._connection.close()
                 self._connection = None
-                self._catalog_client = None
+            if self._writer is not None and self._writer is not self.catalog:
+                self._writer.close()
+            self._writer = self._catalog_client = None
             if self._scratch is not None:
                 self._scratch.cleanup()
                 self._scratch = None
@@ -494,13 +497,18 @@ class IcebergRecordStorage:
         return delete_content(self.root, reference)
 
     def _client(self):
-        if self.catalog is None:
-            raise IntegrityError('Iceberg writes require DOCSPEC_ICEBERG_URI or an explicit IcebergCatalog')
         if self._catalog_client is None:
             with self._connection_lock:
                 if self._catalog_client is None:
-                    self._catalog_client = self.catalog.client()
-                    self.catalog.attach(self._connection)
+                    if self._writer is None:
+                        self._writer = self.catalog
+                    if self._writer is None:
+                        # Only a store that writes loads the HTTP server and SQL engine.
+                        from docspec.adapters.storage.in_process_catalog import InProcessCatalog
+                        self._writer = InProcessCatalog(self._scratch.name)
+                    client = self._writer.client()
+                    self._writer.attach(self._connection)
+                    self._catalog_client = client
         return self._catalog_client
 
     @contextmanager
@@ -509,7 +517,7 @@ class IcebergRecordStorage:
             raise IntegrityError('relocated snapshots support reads; writes require the original table directory')
         client = self._client()
         name = 'write_' + uuid4().hex
-        key = (self.catalog.namespace, name)
+        key = (self._writer.namespace, name)
         qualified = f'iceberg.{identifier(key[0])}.{identifier(name)}'
         registered = False
         try:
@@ -519,10 +527,12 @@ class IcebergRecordStorage:
                 (location / 'data').mkdir()
                 columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}' for field in _physical_schema(schema))
                 target = target_member_bytes or self.max_member_bytes // 2
+                # The codec is stated, not left to the catalog: Java REST catalogs default new
+                # tables to zstd, PyIceberg to none, and DuckDB then writes snappy.
                 cursor.execute(f"CREATE TABLE {qualified} ({columns}, bucket INTEGER) WITH ("
                     f"'location'={literal(location)}, 'format-version'='2', 'write.update.mode'='merge-on-read', "
                     f"'write.delete.mode'='merge-on-read', 'write.target-file-size-bytes'={literal(target)}, "
-                    "'write.parquet.row-group-size-bytes'='1048576')")
+                    "'write.parquet.row-group-size-bytes'='1048576', 'write.parquet.compression-codec'='zstd')")
             else:
                 if base._storage is not self:
                     raise IntegrityError('incremental base belongs to another record store')

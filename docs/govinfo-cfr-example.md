@@ -7,13 +7,12 @@ DocSpec selects the catalog item, retains the work, and processes it again.
 
 ## Run the offline example
 
-Use Docker for the local storage catalog and a new output directory inside this
-checkout. Publisher responses come from retained fixtures.
+Use a new output directory. Publisher responses come from retained fixtures.
 
 ```sh
 uv run --frozen \
   --find-links ./vendor --with './vendor/spicy_docs-0.15.0-py3-none-any.whl[acquisition]' \
-  python tools/with_iceberg.py python -m examples.govinfo_cfr \
+  python -m examples.govinfo_cfr \
   --year 2025 --title 1 --volume 1 --section 18.1 --output "$PWD/my-cfr-experiment"
 ```
 

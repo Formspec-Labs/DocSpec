@@ -1,0 +1,823 @@
+{
+  "recorded": "2026-09-25",
+  "question": "Can DocSpec's writes replace the per-run Docker Iceberg REST fixture with an in-process catalog without changing what they write?",
+  "harness": "PM01 gate tools/bench_derive.py, copied with only its output root moved out of the gate; output/bench/timed.py records each whole process (getrusage of children)",
+  "harness_sha256": "sha256:3aa0bf0e63a89c30e270894a1fe20c13e7e61b32c49cfb0d59a7e87b4dd7b3de",
+  "input": "first 5,000 rows of compare/fr-10k.prepared-1.jsonl",
+  "input_sha256": "sha256:29459a714cd04ccf0d7e80c0b34efe3dc25d581242dd44c03c2e48ae0799d8db",
+  "arms": {
+    "before": "DocSpec main 3133850 (exported source on PYTHONPATH) under its tools/with_iceberg.py: apache/iceberg-rest-fixture:1.10.1@sha256:f7d679d3...",
+    "after": "DocSpec at the commit adding this receipt (parent 3133850), DOCSPEC_ICEBERG_URI unset, no Docker"
+  },
+  "software": {
+    "duckdb": "1.5.5",
+    "duckdb_iceberg_extension": "45163a28",
+    "pyiceberg": "0.12.0",
+    "sqlalchemy": "2.0.51",
+    "pyarrow": "25.0.1",
+    "python": "3.12.9",
+    "docker_server": "28.4.0"
+  },
+  "caveat": "Shared 14-CPU machine while other lanes ran (each set records its 1-minute load range); arms were interleaved before, after, before, ... Fingerprints and rows-state identities are contention-immune. Before-arm CPU omits the Java catalog's CPU inside the Docker VM, so CPU favours the before arm.",
+  "fingerprint_identical": true,
+  "rows_state_id_identical": true,
+  "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+  "sets": [
+    {
+      "set": "A",
+      "after_code": "first adapter: polling close (50 ms), no listing routes; derive path identical",
+      "load_1min_range": [
+        16.22,
+        17.23
+      ],
+      "median_before": {
+        "derive_wall_seconds": 1.873,
+        "derive_cpu_seconds": 1.695,
+        "read_wall_seconds": 0.149,
+        "process_wall_seconds": 3.403,
+        "process_cpu_seconds": 2.559,
+        "process_peak_rss_bytes": 591380480
+      },
+      "median_after": {
+        "derive_wall_seconds": 1.677,
+        "derive_cpu_seconds": 1.837,
+        "read_wall_seconds": 0.151,
+        "process_wall_seconds": 2.542,
+        "process_cpu_seconds": 2.636,
+        "process_peak_rss_bytes": 621461504
+      },
+      "derive_wall_saved_seconds": 0.196,
+      "process_wall_saved_seconds": 0.861
+    },
+    {
+      "set": "B",
+      "after_code": "committed behaviour, adapter module still imported at startup (+~48 ms)",
+      "load_1min_range": [
+        44.47,
+        47.64
+      ],
+      "median_before": {
+        "derive_wall_seconds": 2.009,
+        "derive_cpu_seconds": 1.704,
+        "read_wall_seconds": 0.149,
+        "process_wall_seconds": 3.784,
+        "process_cpu_seconds": 2.504,
+        "process_peak_rss_bytes": 586809344
+      },
+      "median_after": {
+        "derive_wall_seconds": 1.717,
+        "derive_cpu_seconds": 1.814,
+        "read_wall_seconds": 0.155,
+        "process_wall_seconds": 2.503,
+        "process_cpu_seconds": 2.593,
+        "process_peak_rss_bytes": 616284160
+      },
+      "derive_wall_saved_seconds": 0.292,
+      "process_wall_saved_seconds": 1.281
+    },
+    {
+      "set": "C",
+      "after_code": "committed code",
+      "load_1min_range": [
+        32.77,
+        43.1
+      ],
+      "median_before": {
+        "derive_wall_seconds": 4.379,
+        "derive_cpu_seconds": 1.859,
+        "read_wall_seconds": 0.18,
+        "process_wall_seconds": 7.629,
+        "process_cpu_seconds": 2.869,
+        "process_peak_rss_bytes": 594427904
+      },
+      "median_after": {
+        "derive_wall_seconds": 2.868,
+        "derive_cpu_seconds": 2.038,
+        "read_wall_seconds": 0.198,
+        "process_wall_seconds": 4.616,
+        "process_cpu_seconds": 2.964,
+        "process_peak_rss_bytes": 660373504
+      },
+      "derive_wall_saved_seconds": 1.511,
+      "process_wall_saved_seconds": 3.013
+    }
+  ],
+  "fixture_lifecycle_seconds": {
+    "measured": "uv run python tools/with_iceberg.py true (docker run, readiness, docker rm)",
+    "runs": [
+      0.615,
+      0.845,
+      0.83
+    ],
+    "median": 0.83,
+    "load_1min_nearby": 7.92,
+    "load_note": "recorded by before-1, minutes apart"
+  },
+  "in_process_catalog_lifecycle": {
+    "load_1min": [
+      36.2,
+      34.3
+    ],
+    "adapter_import_seconds_median_of_5": 0.1336,
+    "first_seconds": {
+      "start": 0.0399,
+      "attach": 0.0165,
+      "close": 0.0003
+    },
+    "median_of_20_seconds": {
+      "start": 0.0068,
+      "attach": 0.0096,
+      "close": 0.0004
+    },
+    "measured": "importing the adapter after docspec.runtime and the storage package (fresh processes); then InProcessCatalog construction (SQLite catalog, loopback server), DuckDB ATTACH, close"
+  },
+  "startup_import": {
+    "load_1min_start": 35.3,
+    "command": "import docspec.runtime, docspec.adapters.storage (fresh process)",
+    "main_3133850": {
+      "median_seconds": 0.3183,
+      "loaded_at_startup": []
+    },
+    "branch": {
+      "median_seconds": 0.3235,
+      "loaded_at_startup": []
+    },
+    "load_1min_end": 31.4
+  },
+  "runs": {
+    "before-1": {
+      "label": "before-1",
+      "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+      "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+      "rows": 5000,
+      "read": 5000,
+      "load_1min": 7.92,
+      "derive_wall_seconds": 2.214,
+      "derive_cpu_seconds": 1.892,
+      "read_wall_seconds": 0.156,
+      "read_cpu_seconds": 0.155,
+      "encodes": 30057,
+      "parses": 21,
+      "process_wall_seconds": 4.155,
+      "process_cpu_seconds": 2.897,
+      "process_peak_rss_bytes": 586924032,
+      "note": "untouched main worktree, load 7.9, before any change"
+    },
+    "A": [
+      {
+        "label": "before-2",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 17.23,
+        "derive_wall_seconds": 1.875,
+        "derive_cpu_seconds": 1.687,
+        "read_wall_seconds": 0.151,
+        "read_cpu_seconds": 0.15,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.822,
+        "process_cpu_seconds": 2.582,
+        "process_peak_rss_bytes": 579141632
+      },
+      {
+        "label": "before-3",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 16.97,
+        "derive_wall_seconds": 1.873,
+        "derive_cpu_seconds": 1.7,
+        "read_wall_seconds": 0.149,
+        "read_cpu_seconds": 0.148,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.403,
+        "process_cpu_seconds": 2.559,
+        "process_peak_rss_bytes": 627752960
+      },
+      {
+        "label": "before-4",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 16.22,
+        "derive_wall_seconds": 1.829,
+        "derive_cpu_seconds": 1.695,
+        "read_wall_seconds": 0.143,
+        "read_cpu_seconds": 0.143,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.21,
+        "process_cpu_seconds": 2.499,
+        "process_peak_rss_bytes": 591380480
+      },
+      {
+        "label": "after-1",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 16.97,
+        "derive_wall_seconds": 1.755,
+        "derive_cpu_seconds": 1.839,
+        "read_wall_seconds": 0.151,
+        "read_cpu_seconds": 0.15,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.7,
+        "process_cpu_seconds": 2.666,
+        "process_peak_rss_bytes": 633503744
+      },
+      {
+        "label": "after-2",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 16.33,
+        "derive_wall_seconds": 1.677,
+        "derive_cpu_seconds": 1.837,
+        "read_wall_seconds": 0.155,
+        "read_cpu_seconds": 0.155,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.542,
+        "process_cpu_seconds": 2.636,
+        "process_peak_rss_bytes": 621461504
+      },
+      {
+        "label": "after-3",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 16.22,
+        "derive_wall_seconds": 1.649,
+        "derive_cpu_seconds": 1.766,
+        "read_wall_seconds": 0.147,
+        "read_cpu_seconds": 0.145,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.421,
+        "process_cpu_seconds": 2.526,
+        "process_peak_rss_bytes": 618086400
+      }
+    ],
+    "B": [
+      {
+        "label": "before-5",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 44.47,
+        "derive_wall_seconds": 2.158,
+        "derive_cpu_seconds": 1.769,
+        "read_wall_seconds": 0.157,
+        "read_cpu_seconds": 0.155,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 4.236,
+        "process_cpu_seconds": 2.727,
+        "process_peak_rss_bytes": 584351744
+      },
+      {
+        "label": "before-6",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 46.75,
+        "derive_wall_seconds": 1.988,
+        "derive_cpu_seconds": 1.7,
+        "read_wall_seconds": 0.143,
+        "read_cpu_seconds": 0.143,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.784,
+        "process_cpu_seconds": 2.504,
+        "process_peak_rss_bytes": 589873152
+      },
+      {
+        "label": "before-7",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 47.64,
+        "derive_wall_seconds": 2.009,
+        "derive_cpu_seconds": 1.704,
+        "read_wall_seconds": 0.149,
+        "read_cpu_seconds": 0.148,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.445,
+        "process_cpu_seconds": 2.501,
+        "process_peak_rss_bytes": 586809344
+      },
+      {
+        "label": "after-4",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 46.75,
+        "derive_wall_seconds": 2.021,
+        "derive_cpu_seconds": 1.917,
+        "read_wall_seconds": 0.155,
+        "read_cpu_seconds": 0.155,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.844,
+        "process_cpu_seconds": 2.719,
+        "process_peak_rss_bytes": 629276672
+      },
+      {
+        "label": "after-5",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 47.17,
+        "derive_wall_seconds": 1.717,
+        "derive_cpu_seconds": 1.814,
+        "read_wall_seconds": 0.157,
+        "read_cpu_seconds": 0.156,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.503,
+        "process_cpu_seconds": 2.593,
+        "process_peak_rss_bytes": 616284160
+      },
+      {
+        "label": "after-6",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 47.64,
+        "derive_wall_seconds": 1.597,
+        "derive_cpu_seconds": 1.762,
+        "read_wall_seconds": 0.154,
+        "read_cpu_seconds": 0.152,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.399,
+        "process_cpu_seconds": 2.555,
+        "process_peak_rss_bytes": 602669056
+      }
+    ],
+    "C": [
+      {
+        "label": "before-8",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 37.45,
+        "derive_wall_seconds": 4.928,
+        "derive_cpu_seconds": 1.859,
+        "read_wall_seconds": 0.18,
+        "read_cpu_seconds": 0.161,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 11.642,
+        "process_cpu_seconds": 2.948,
+        "process_peak_rss_bytes": 577896448
+      },
+      {
+        "label": "before-9",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 39.98,
+        "derive_wall_seconds": 4.379,
+        "derive_cpu_seconds": 1.859,
+        "read_wall_seconds": 0.184,
+        "read_cpu_seconds": 0.167,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 7.629,
+        "process_cpu_seconds": 2.869,
+        "process_peak_rss_bytes": 627638272
+      },
+      {
+        "label": "before-10",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 33.53,
+        "derive_wall_seconds": 2.416,
+        "derive_cpu_seconds": 1.807,
+        "read_wall_seconds": 0.163,
+        "read_cpu_seconds": 0.156,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 6.026,
+        "process_cpu_seconds": 2.837,
+        "process_peak_rss_bytes": 594427904
+      },
+      {
+        "label": "after-7",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 43.1,
+        "derive_wall_seconds": 2.946,
+        "derive_cpu_seconds": 2.113,
+        "read_wall_seconds": 0.294,
+        "read_cpu_seconds": 0.187,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 4.616,
+        "process_cpu_seconds": 3.101,
+        "process_peak_rss_bytes": 660373504
+      },
+      {
+        "label": "after-8",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 38.3,
+        "derive_wall_seconds": 2.868,
+        "derive_cpu_seconds": 1.972,
+        "read_wall_seconds": 0.198,
+        "read_cpu_seconds": 0.162,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 5.271,
+        "process_cpu_seconds": 2.881,
+        "process_peak_rss_bytes": 673316864
+      },
+      {
+        "label": "after-9",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 32.77,
+        "derive_wall_seconds": 2.347,
+        "derive_cpu_seconds": 2.038,
+        "read_wall_seconds": 0.167,
+        "read_cpu_seconds": 0.159,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.499,
+        "process_cpu_seconds": 2.964,
+        "process_peak_rss_bytes": 648216576
+      }
+    ]
+  },
+  "rest_calls_for_one_create_and_one_edit": [
+    {
+      "call": "GET /v1/config",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "GET /v1/namespaces/docspec/tables/write_<uuid>",
+      "refused": "NoSuchTableError"
+    },
+    {
+      "call": "GET /v1/namespaces/docspec",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "GET /v1/namespaces/docspec",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "POST /v1/namespaces/docspec/tables",
+      "status": 200,
+      "requirements": [],
+      "updates": [],
+      "stage-create": true
+    },
+    {
+      "call": "POST /v1/namespaces/docspec/tables/write_<uuid>",
+      "status": 200,
+      "requirements": [
+        "assert-create"
+      ],
+      "updates": [
+        "assign-uuid",
+        "upgrade-format-version",
+        "add-schema",
+        "add-spec",
+        "set-default-spec",
+        "add-sort-order",
+        "set-default-sort-order",
+        "set-location",
+        "set-properties",
+        "set-current-schema"
+      ]
+    },
+    {
+      "call": "GET /v1/namespaces/docspec/tables/write_<uuid>",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "POST /v1/transactions/commit",
+      "status": 204,
+      "requirements": [
+        "assert-table-uuid",
+        "assert-ref-snapshot-id"
+      ],
+      "updates": [
+        "add-snapshot",
+        "set-snapshot-ref"
+      ]
+    },
+    {
+      "call": "-- incremental edit of that base --"
+    },
+    {
+      "call": "GET /v1/namespaces/docspec/tables/write_<uuid>",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "GET /v1/namespaces/docspec/tables/write_<uuid>",
+      "status": 200,
+      "requirements": [],
+      "updates": []
+    },
+    {
+      "call": "POST /v1/transactions/commit",
+      "status": 204,
+      "requirements": [
+        "assert-table-uuid",
+        "assert-ref-snapshot-id"
+      ],
+      "updates": [
+        "add-snapshot",
+        "add-snapshot",
+        "set-snapshot-ref"
+      ]
+    }
+  ],
+  "metadata_authorship": {
+    "java_rest_fixture": {
+      "metadata_files": 4,
+      "top_level_fields": [
+        "current-schema-id",
+        "current-snapshot-id",
+        "default-sort-order-id",
+        "default-spec-id",
+        "format-version",
+        "last-column-id",
+        "last-partition-id",
+        "last-sequence-number",
+        "last-updated-ms",
+        "location",
+        "metadata-log",
+        "partition-specs",
+        "partition-statistics",
+        "properties",
+        "refs",
+        "schemas",
+        "snapshot-log",
+        "snapshots",
+        "sort-orders",
+        "statistics",
+        "table-uuid"
+      ],
+      "property_keys": [
+        "created-at",
+        "write.delete.mode",
+        "write.parquet.compression-codec",
+        "write.parquet.row-group-size-bytes",
+        "write.target-file-size-bytes",
+        "write.update.mode"
+      ],
+      "locations_are_plain_absolute_paths": true,
+      "data_file_codecs": {
+        "ZSTD": 2
+      }
+    },
+    "in_process": {
+      "metadata_files": 4,
+      "top_level_fields": [
+        "current-schema-id",
+        "current-snapshot-id",
+        "default-sort-order-id",
+        "default-spec-id",
+        "format-version",
+        "last-column-id",
+        "last-partition-id",
+        "last-sequence-number",
+        "last-updated-ms",
+        "location",
+        "metadata-log",
+        "partition-specs",
+        "partition-statistics",
+        "properties",
+        "refs",
+        "schemas",
+        "snapshot-log",
+        "snapshots",
+        "sort-orders",
+        "statistics",
+        "table-uuid"
+      ],
+      "property_keys": [
+        "write.delete.mode",
+        "write.parquet.compression-codec",
+        "write.parquet.row-group-size-bytes",
+        "write.target-file-size-bytes",
+        "write.update.mode"
+      ],
+      "locations_are_plain_absolute_paths": true,
+      "data_file_codecs": {
+        "ZSTD": 2
+      }
+    },
+    "fields_only_java": [],
+    "fields_only_in_process": [],
+    "properties_only_java": [
+      "created-at"
+    ],
+    "properties_only_in_process": []
+  },
+  "add_files_by_catalog": {
+    "rest": {
+      "compression_codec": "zstd",
+      "data_file_unchanged_by_registration": true,
+      "data_files": [
+        "producer.parquet"
+      ],
+      "metadata_location_under_table_dir": true,
+      "metadata_names_no_catalog": true,
+      "mode": "rest",
+      "name_mapping": [
+        {
+          "field-id": 1,
+          "names": [
+            "key"
+          ]
+        },
+        {
+          "field-id": 2,
+          "names": [
+            "value"
+          ]
+        },
+        {
+          "field-id": 3,
+          "names": [
+            "note"
+          ]
+        }
+      ],
+      "property_keys": [
+        "schema.name-mapping.default",
+        "write.parquet.compression-codec"
+      ],
+      "relocated_rows": 100,
+      "relocated_rows_sha256": "dbe5a2048c1fa7fec6de024ccdaed02558c119298684e7fd174fb5efba3abc58",
+      "rows": 100,
+      "rows_sha256": "dbe5a2048c1fa7fec6de024ccdaed02558c119298684e7fd174fb5efba3abc58",
+      "schema": {
+        "fields": [
+          {
+            "id": 1,
+            "name": "key",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 2,
+            "name": "value",
+            "required": false,
+            "type": "long"
+          },
+          {
+            "id": 3,
+            "name": "note",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "identifier-field-ids": [],
+        "schema-id": 0,
+        "type": "struct"
+      }
+    },
+    "in_process": {
+      "compression_codec": null,
+      "data_file_unchanged_by_registration": true,
+      "data_files": [
+        "producer.parquet"
+      ],
+      "metadata_location_under_table_dir": true,
+      "metadata_names_no_catalog": true,
+      "mode": "in-process",
+      "name_mapping": [
+        {
+          "field-id": 1,
+          "names": [
+            "key"
+          ]
+        },
+        {
+          "field-id": 2,
+          "names": [
+            "value"
+          ]
+        },
+        {
+          "field-id": 3,
+          "names": [
+            "note"
+          ]
+        }
+      ],
+      "property_keys": [
+        "schema.name-mapping.default"
+      ],
+      "relocated_rows": 100,
+      "relocated_rows_sha256": "dbe5a2048c1fa7fec6de024ccdaed02558c119298684e7fd174fb5efba3abc58",
+      "rows": 100,
+      "rows_sha256": "dbe5a2048c1fa7fec6de024ccdaed02558c119298684e7fd174fb5efba3abc58",
+      "schema": {
+        "fields": [
+          {
+            "id": 1,
+            "name": "key",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 2,
+            "name": "value",
+            "required": false,
+            "type": "long"
+          },
+          {
+            "id": 3,
+            "name": "note",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "identifier-field-ids": [],
+        "schema-id": 0,
+        "type": "struct"
+      }
+    }
+  },
+  "codec_without_stated_property": {
+    "catalog": "in-process",
+    "stated_codec": null,
+    "data_file_codecs": [
+      "SNAPPY"
+    ]
+  },
+  "java_authored_base_revised_in_process": {
+    "base_written_by": "main 3133850 under the Docker REST fixture",
+    "revised_by": "this branch, in process",
+    "rows_equal_expected": true,
+    "rows": 17,
+    "revised_tables_with_java_authored_parent": 2,
+    "revised_tables": 4
+  },
+  "rest_mode_focused_tests": {
+    "tests": 21,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "command": "uv run --frozen python <main>/tools/with_iceberg.py uv run --frozen pytest tests/test_iceberg_snapshots.py tests/test_storage_records_catalog.py tests/conformance/test_record_storage_contract.py"
+  },
+  "wheel_in_empty_environment": {
+    "environment": "empty venv: vendored wheels plus the built DocSpec wheel",
+    "sqlalchemy": "2.1.1",
+    "write_and_verify": true
+  },
+  "suite": {
+    "command": "env -u DOCSPEC_ICEBERG_URI PYTEST_ADDOPTS= uv run --frozen --extra dagster --extra s3 pytest --require-regression-map --junitxml=...",
+    "after": {
+      "tests": 1582,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "wall_seconds": 369.955,
+      "exit": 0
+    }
+  }
+}

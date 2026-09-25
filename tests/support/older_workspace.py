@@ -3,10 +3,11 @@
 DocSpec 0.9.1 (38043c4) published a records row and a retention row for every
 member of a bulk state; later versions register members per layer and must
 keep reading, pinning and protecting through those rows without a migration.
-Regenerate only to change the fixture, with the 0.9.1 source on the path:
+Regenerate only to change the fixture, with the 0.9.1 source on the path. That
+source predates the in-process catalog, so it runs under its own Docker REST helper:
 
-    git archive 38043c4 src | tar -x -C /tmp/docspec-0.9.1
-    PYTHONPATH=/tmp/docspec-0.9.1/src uv run --frozen python tools/with_iceberg.py \\
+    git archive 38043c4 src tools/with_iceberg.py | tar -x -C /tmp/docspec-0.9.1
+    PYTHONPATH=/tmp/docspec-0.9.1/src uv run --frozen python /tmp/docspec-0.9.1/tools/with_iceberg.py \\
         python tests/support/older_workspace.py fixtures/core-workspace-0.9.1
 """
 

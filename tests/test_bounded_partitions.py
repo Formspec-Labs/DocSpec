@@ -116,7 +116,7 @@ def _physical_layer(storage, schema, policy, partitions, *, physical_schema=None
         with storage._cursor() as cursor:
             client = storage._client()
             name = 'invalid_' + uuid4().hex
-            key = (storage.catalog.namespace, name)
+            key = (storage._writer.namespace, name)
             location = storage.root / 'iceberg' / name
             (location / 'metadata').mkdir(parents=True)
             (location / 'data').mkdir()

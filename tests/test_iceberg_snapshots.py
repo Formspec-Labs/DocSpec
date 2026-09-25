@@ -1,15 +1,19 @@
 """The production Iceberg writer retains independent snapshots and writes only changed partitions.
 
-An interrupted publication leaves no head behind; retained reads need no catalog, writes require
-DOCSPEC_ICEBERG_URI, a rewritten file plus matching checksum still fails verification, and a partition
-replacement must not duplicate an identity held elsewhere.
+An interrupted publication leaves no head behind; retained reads need no catalog, writes without
+DOCSPEC_ICEBERG_URI use an in-process catalog only their own store reaches, a rewritten file plus
+matching checksum still fails verification, and a partition replacement must not duplicate an
+identity held elsewhere.
 """
 
 from contextlib import closing
 from pathlib import Path
 import hashlib
 import shutil
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
+import pyarrow.parquet as pq
 import pytest
 
 from docspec.adapters.storage import IcebergCatalog, IcebergRecordStorage
@@ -39,6 +43,8 @@ def test_row_edits_keep_base_files_and_independent_branches(tmp_path, monkeypatc
         rows = [{"id": f"{index:04d}", "value": index} for index in range(256)]
         base = records.available(records.write_layer(rows, layer_kind="test", schema=SCHEMA, partition_policy=POLICY))
         original = {path: hashlib.sha256(Path(path).read_bytes()).digest() for path in data_files(base)}
+        # The writer states its codec, so data files do not depend on which catalog created the table.
+        assert {pq.ParquetFile(path).metadata.row_group(0).column(0).compression for path in original} == {"ZSTD"}
         left = records.apply_changes(base, changes([("0001", 999), ("0002", None), ("new", 7)]))
         right = records.apply_changes(base, changes([("0003", None)]))
         for layer in (left, right):
@@ -79,13 +85,13 @@ def test_failed_pin_leaves_no_catalog_head_or_changed_base(tmp_path, monkeypatch
     with closing(IcebergRecordStorage(tmp_path)) as records:
         base = records.available(records.write_layer([{"id": "a", "value": 1}], layer_kind="test", schema=SCHEMA, partition_policy=POLICY))
         client = records._catalog_client
-        before = set(client.list_tables(records.catalog.namespace))
+        before = set(client.list_tables(records._writer.namespace))
         def fail(*args, **kwargs):
             raise OSError("publication interrupted")
         monkeypatch.setattr(records, "_pin", fail)
         with pytest.raises(OSError, match="interrupted"):
             records.apply_changes(base, changes([("a", 2)]))
-        assert set(client.list_tables(records.catalog.namespace)) == before
+        assert set(client.list_tables(records._writer.namespace)) == before
         assert list(records.stream(base.reference)) == [{"id": "a", "value": 1}]
 
 
@@ -104,12 +110,27 @@ def test_logical_retry_reuses_publication_but_refuses_changed_input(tmp_path):
         assert len(list(workspace.rows("root"))) == 1
 
 
-def test_writes_require_a_catalog_but_constructing_storage_does_not(tmp_path, monkeypatch):
+def test_unconfigured_writes_use_an_in_process_catalog_only_their_store_reaches(tmp_path, monkeypatch):
     monkeypatch.delenv("DOCSPEC_ICEBERG_URI", raising=False)
     assert IcebergCatalog.environment() is None
     with closing(IcebergRecordStorage(tmp_path)) as records:
-        with pytest.raises(IntegrityError, match="DOCSPEC_ICEBERG_URI"):
-            records.write_layer([], layer_kind="test", schema=SCHEMA, partition_policy=POLICY)
+        assert records._writer is None
+        layer = records.write_layer([{"id": "a", "value": 1}], layer_kind="test", schema=SCHEMA, partition_policy=POLICY)
+        writer = records._writer
+        assert records._catalog_client.list_tables(writer.namespace) == []
+        config = f"http://127.0.0.1:{writer._server.server_port}/v1/config"
+        with pytest.raises(HTTPError) as refused:
+            urlopen(config, timeout=5)
+        assert refused.value.code == 401
+        register = Request(config.replace("config", "namespaces/docspec/register"), data=b"{}",
+                           headers={"Authorization": "Bearer " + writer._server.token})
+        with pytest.raises(HTTPError) as unsupported:
+            urlopen(register, timeout=5)
+        assert unsupported.value.code == 400 and b"unsupported" in unsupported.value.read()
+    with pytest.raises(URLError):
+        urlopen(config, timeout=5)
+    with closing(IcebergRecordStorage(tmp_path)) as reopened:
+        assert list(reopened.stream(layer)) == [{"id": "a", "value": 1}]
 
 
 def test_replacing_a_file_and_its_checksum_cannot_repin_a_snapshot(tmp_path):
