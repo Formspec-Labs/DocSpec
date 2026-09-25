@@ -46,17 +46,25 @@ _ORACLE_ROWS = (
      datetime(2026, 9, 25, 1, 2, 3, 1), datetime(2026, 9, 25, tzinfo=timezone.utc), []),
     ("x@y", "z", None, None, None, SAFE_INTEGER, float("inf"), None, None, None, None),
 )
-_ORACLE_IDENTITIES = (
-    TableIdentity("oracle\x1ffamily", 'oracle"table', KeySpelling(
-        "federal-register-source-record-id", "1", ("document_number", "publication_date")), _ORACLE_COLUMNS),
-    TableIdentity("oracle", "table", KeySpelling("value", "1", ("document_number",)), _ORACLE_COLUMNS),
+_FEDERAL_REGISTER_KEY = KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+# Dated keys: a producer may type publication_date as DATE, which must spell
+# the key its VARCHAR form had, at both year bounds.
+_DATED_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "DATE"), ("title", "VARCHAR"))
+_DATED_ROWS = (("2026-\x1f1", date(2026, 9, 25), "dated"), ("x@y", date(1, 1, 1), None), (" ", date(9999, 12, 31), ""))
+_ORACLE_CASES = (
+    (_ORACLE_COLUMNS, _ORACLE_ROWS, (
+        TableIdentity("oracle\x1ffamily", 'oracle"table', _FEDERAL_REGISTER_KEY, _ORACLE_COLUMNS),
+        TableIdentity("oracle", "table", KeySpelling("value", "1", ("document_number",)), _ORACLE_COLUMNS))),
+    (_DATED_COLUMNS, _DATED_ROWS, (
+        TableIdentity("oracle", "dated", _FEDERAL_REGISTER_KEY, _DATED_COLUMNS),
+        TableIdentity("oracle", "dates", KeySpelling("value", "1", ("publication_date",)), _DATED_COLUMNS))),
 )
 _ORACLE_PASSED = set()
 
 
 def reference_identity(identity: TableIdentity, row: Mapping) -> tuple[str, str, str]:
     """The Python reference for one row: its member key, row digest and occurrence URN."""
-    key = reference_member_key(identity.key, row)
+    key = reference_member_key(identity, row)
     digest = table_row_digest({name: row[name] for name, _ in identity.columns}, identity.columns)
     return key, digest, table_occurrence_id(identity.family, identity.table, key, digest)
 
@@ -69,15 +77,16 @@ def check_native_spelling(cursor) -> None:
     """
     if duckdb.__version__ in _ORACLE_PASSED:
         return
-    names = [name for name, _ in _ORACLE_COLUMNS]
-    rows = [dict(zip(names, row, strict=True)) for row in _ORACLE_ROWS]
-    for identity in _ORACLE_IDENTITIES:
-        source = cursor.from_arrow(pa.Table.from_pylist(rows, schema=table_arrow_schema(_ORACLE_COLUMNS)))
-        native = identity_relation(source, identity).fetchall()
-        expected = [(key, bytes.fromhex(digest[7:]), bytes.fromhex(occurrence[len(OCCURRENCE_PREFIX):]))
-                    for key, digest, occurrence in (reference_identity(identity, row) for row in rows)]
-        if sorted(native) != sorted(expected):
-            raise IntegrityError(f"DuckDB {duckdb.__version__} spells docspec-table-row/1 unlike its Python reference")
+    for columns, values, identities in _ORACLE_CASES:
+        names = [name for name, _ in columns]
+        rows = [dict(zip(names, row, strict=True)) for row in values]
+        for identity in identities:
+            source = cursor.from_arrow(pa.Table.from_pylist(rows, schema=table_arrow_schema(columns)))
+            native = identity_relation(source, identity).fetchall()
+            expected = [(key, bytes.fromhex(digest[7:]), bytes.fromhex(occurrence[len(OCCURRENCE_PREFIX):]))
+                        for key, digest, occurrence in (reference_identity(identity, row) for row in rows)]
+            if sorted(native) != sorted(expected):
+                raise IntegrityError(f"DuckDB {duckdb.__version__} spells docspec-table-row/1 unlike its Python reference")
     _ORACLE_PASSED.add(duckdb.__version__)
 
 
@@ -198,6 +207,37 @@ def lookup_occurrences(records, index, identity: TableIdentity, occurrence_ids: 
     return found
 
 
+def _component_value(text, kind):
+    """A candidate component as its column type holds it, or None when no such value spells ``text``."""
+    if kind != "DATE":
+        return text
+    try:
+        value = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return value if value.isoformat() == text else None
+
+
+def key_rows(rows, identity: TableIdentity, keys) -> "duckdb.DuckDBPyRelation":
+    """Keep the rows of ``rows`` whose member key is one of ``keys``, reading only candidate row groups.
+
+    Every component tuple that could spell a wanted key is pushed into the
+    scan as IN filters, which prune row groups by their statistics; the exact
+    spelled key then filters the superset. Callers bound ``keys``.
+    """
+    keys = set(keys)
+    candidates = {tuple(_component_value(part, kind) for part, kind in zip(parts, identity.key_kinds, strict=True))
+                  for key in keys for parts in key_components(identity.key, key) if all(parts)}
+    candidates = [parts for parts in candidates if all(part is not None for part in parts)]
+    if not candidates:
+        return rows.filter("false")
+    superset = reduce(lambda left, right: left & right, (
+        duckdb.ColumnExpression(field).isin(*(duckdb.ConstantExpression(value) for value in {parts[index] for parts in candidates}))
+        for index, field in enumerate(identity.key.fields)))
+    exact = duckdb.SQLExpression(member_key_sql(identity)).isin(*(duckdb.ConstantExpression(key) for key in keys))
+    return rows.filter(superset).filter(exact)
+
+
 def read_occurrences(records, table, identity: TableIdentity, occurrences: Mapping[str, IndexedOccurrence]) -> dict[str, bytes]:
     """Read the rows holding ``occurrences`` from ``table`` and return each one's canonical row bytes.
 
@@ -208,28 +248,20 @@ def read_occurrences(records, table, identity: TableIdentity, occurrences: Mappi
     occurrence. The bytes are the occurrence's inline value.
     """
     items, result = list(occurrences.items()), {}
-    fields = identity.key.fields
     with records._cursor() as cursor, records.relations({"table": table}, cursor=cursor) as relations:
         check_native_spelling(cursor)
         available = dict(native_columns(relations["table"]))
         if any(available.get(name) != kind for name, kind in identity.columns):
             raise IntegrityError("table rows differ from the declared identity projection")
-        spelled = f"{member_key_sql(identity.key)} AS member_key, {row_json_sql(identity.columns)} AS row_json"
+        spelled = f"{member_key_sql(identity)} AS member_key, {row_json_sql(identity.columns)} AS row_json"
         for start in range(0, len(items), _LOOKUP_CHUNK):
             chunk = items[start:start + _LOOKUP_CHUNK]
             keys = {entry.member_key for _, entry in chunk}
-            candidates = [parts for key in keys for parts in key_components(identity.key, key) if all(parts)]
             payloads = {}
-            if candidates:
-                superset = reduce(lambda left, right: left & right, (
-                    duckdb.ColumnExpression(field).isin(*(duckdb.ConstantExpression(value)
-                                                          for value in {parts[index] for parts in candidates}))
-                    for index, field in enumerate(fields)))
-                exact = duckdb.ColumnExpression("member_key").isin(*(duckdb.ConstantExpression(key) for key in keys))
-                for key, row_json in relations["table"].filter(superset).project(spelled).filter(exact).fetchall():
-                    if key in payloads:
-                        raise IntegrityError("table contains a duplicate member key")
-                    payloads[key] = row_json.encode()
+            for key, row_json in key_rows(relations["table"], identity, keys).project(spelled).fetchall():
+                if key in payloads:
+                    raise IntegrityError("table contains a duplicate member key")
+                payloads[key] = row_json.encode()
             for occurrence_id, entry in chunk:
                 payload = payloads.get(entry.member_key)
                 if payload is None or sha256_digest(payload) != entry.row_digest:

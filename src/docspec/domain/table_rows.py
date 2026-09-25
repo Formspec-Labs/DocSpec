@@ -118,9 +118,24 @@ def table_occurrence_id(family, table, member_key, row_digest):
     return stable_urn("table-occurrence", [family, table, member_key, row_digest])
 
 
+# A key component is nonempty text; a DATE spells ISO 8601, as ``str(date)``
+# does in spicy-docs' references, so a producer that types a date column keeps
+# every key its VARCHAR spelling had.
+KEY_TYPES = frozenset({"VARCHAR", "DATE"})
+
+
+def key_component(value, kind) -> str:
+    """One member-key component's text: nonempty VARCHAR text, or a DATE's ISO 8601 spelling."""
+    if kind == "VARCHAR" and type(value) is str and value:
+        return value
+    if kind == "DATE" and type(value) is date:
+        return value.isoformat()
+    raise ValueError("member key components must be nonempty text or dates")
+
+
 @dataclass(frozen=True, slots=True)
 class KeySpelling:
-    """A declared, versioned member-key spelling over nonempty VARCHAR components.
+    """A declared, versioned member-key spelling over nonempty VARCHAR or DATE components.
 
     spicy-docs owns each spelling's Python reference; the table SQL adapter
     compiles the declared ones and refuses any other. ``value/1`` is one
@@ -148,8 +163,8 @@ class TableIdentity:
     """How rows of one logical table get member keys and occurrences under docspec-table-row/1.
 
     ``columns`` is the declared projection the row digest covers (ruling R5),
-    kept in canonical order; the key fields are VARCHAR columns of it. The
-    table name is the logical name, never a file name.
+    kept in canonical order; the key fields are VARCHAR or DATE columns of it.
+    The table name is the logical name, never a file name.
     """
 
     family: str
@@ -162,9 +177,15 @@ class TableIdentity:
         require_text(self.table, "logical table")
         columns = table_columns(self.columns)
         kinds = dict(columns)
-        if any(kinds.get(field) != "VARCHAR" for field in self.key.fields):
-            raise ValueError("member-key fields must be VARCHAR columns of the declared projection")
+        if any(kinds.get(field) not in KEY_TYPES for field in self.key.fields):
+            raise ValueError("member-key fields must be VARCHAR or DATE columns of the declared projection")
         object.__setattr__(self, "columns", columns)
+
+    @property
+    def key_kinds(self) -> tuple[str, ...]:
+        """The declared type of each member-key field, in key order."""
+        kinds = dict(self.columns)
+        return tuple(kinds[field] for field in self.key.fields)
 
     def to_dict(self) -> dict:
         """Return the closed rules value a table state records and its identity covers."""

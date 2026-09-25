@@ -122,7 +122,7 @@ def test_identity_pass_refuses_undeclared_spellings_and_foreign_projections(tmp_
             with pytest.raises(IntegrityError, match=match):
                 with minted(records, layer, identity):
                     pytest.fail("an identity the rows cannot hold was minted")
-    with pytest.raises(ValueError, match="VARCHAR columns"):
+    with pytest.raises(ValueError, match="VARCHAR or DATE columns"):
         replace(IDENTITY, key=KeySpelling("value", "1", ("pages",)))
     assert TableIdentity.from_dict(IDENTITY.to_dict()) == IDENTITY
     for broken in ({**IDENTITY.to_dict(), "row": "docspec-table-row/2"}, {**IDENTITY.to_dict(), "extra": 1}):
