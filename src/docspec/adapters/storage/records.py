@@ -11,6 +11,7 @@ from pathlib import Path
 from threading import Lock, local
 from typing import Any
 from uuid import uuid4
+import weakref
 
 import duckdb
 import pyarrow as pa
@@ -20,7 +21,7 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
 from docspec.adapters.storage.files import _available_paths, _contained, _read_exact, _storage_root, _write_once, delete_content, sha256_file
-from docspec.adapters.storage.iceberg import IcebergCatalog, recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_data_files, snapshot_files
+from docspec.adapters.storage.iceberg import recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_data_files, snapshot_files
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_text, sha256_digest, stable_urn, thaw_json
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket, record_key
@@ -64,7 +65,7 @@ def _column_list(schema):
 
 
 class IcebergRecordStorage:
-    """Local retained snapshots; only writes require a REST catalog.
+    """Local retained snapshots; only writes use a catalog, which each store runs in this process.
 
     Catalog names are temporary write handles, never authoritative DocSpec heads.
     Each edit forks its base metadata, commits through DuckDB, then pins the result
@@ -82,13 +83,11 @@ class IcebergRecordStorage:
         engine_memory_bytes: int = ENGINE_MEMORY_BYTES,
         merge_scratch_root: Path | None = None,
         create: bool = True,
-        catalog: IcebergCatalog | None = None,
     ) -> None:
         if min(max_member_bytes, max_record_bytes, max_root_bytes, max_merge_scratch_bytes, engine_memory_bytes) <= 0:
             raise ValueError("record storage limits must be positive")
         self.root = _storage_root(root, create=create)
-        self.catalog = catalog if catalog is not None else IcebergCatalog.environment()
-        self._catalog_client = None
+        self._catalog = self._close_catalog = None  # this store's write catalog, started by its first write
         self.max_member_bytes = max_member_bytes
         self.max_record_bytes = max_record_bytes
         self.max_root_bytes = max_root_bytes
@@ -133,7 +132,9 @@ class IcebergRecordStorage:
             if self._connection is not None:
                 self._connection.close()
                 self._connection = None
-                self._catalog_client = None
+            if self._close_catalog is not None:
+                self._close_catalog()
+            self._catalog = self._close_catalog = None
             if self._scratch is not None:
                 self._scratch.cleanup()
                 self._scratch = None
@@ -494,14 +495,17 @@ class IcebergRecordStorage:
         return delete_content(self.root, reference)
 
     def _client(self):
-        if self.catalog is None:
-            raise IntegrityError('Iceberg writes require DOCSPEC_ICEBERG_URI or an explicit IcebergCatalog')
-        if self._catalog_client is None:
+        if self._catalog is None:
             with self._connection_lock:
-                if self._catalog_client is None:
-                    self._catalog_client = self.catalog.client()
-                    self.catalog.attach(self._connection)
-        return self._catalog_client
+                if self._catalog is None:
+                    # Only a store that writes loads the HTTP server and SQL engine.
+                    from docspec.adapters.storage.in_process_catalog import InProcessCatalog
+                    catalog = InProcessCatalog(self._scratch.name)
+                    # A store dropped without close() still stops the server thread and frees its port.
+                    self._close_catalog = weakref.finalize(self, catalog.close)
+                    catalog.attach(self._connection)
+                    self._catalog = catalog
+        return self._catalog.client()
 
     @contextmanager
     def _write_table(self, cursor, schema, base=None, target_member_bytes=None):
@@ -509,7 +513,7 @@ class IcebergRecordStorage:
             raise IntegrityError('relocated snapshots support reads; writes require the original table directory')
         client = self._client()
         name = 'write_' + uuid4().hex
-        key = (self.catalog.namespace, name)
+        key = (self._catalog.namespace, name)
         qualified = f'iceberg.{identifier(key[0])}.{identifier(name)}'
         registered = False
         try:
@@ -519,10 +523,12 @@ class IcebergRecordStorage:
                 (location / 'data').mkdir()
                 columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}' for field in _physical_schema(schema))
                 target = target_member_bytes or self.max_member_bytes // 2
+                # The codec is stated, not left to the catalog: Java REST catalogs default new
+                # tables to zstd, PyIceberg to none, and DuckDB then writes snappy.
                 cursor.execute(f"CREATE TABLE {qualified} ({columns}, bucket INTEGER) WITH ("
                     f"'location'={literal(location)}, 'format-version'='2', 'write.update.mode'='merge-on-read', "
                     f"'write.delete.mode'='merge-on-read', 'write.target-file-size-bytes'={literal(target)}, "
-                    "'write.parquet.row-group-size-bytes'='1048576')")
+                    "'write.parquet.row-group-size-bytes'='1048576', 'write.parquet.compression-codec'='zstd')")
             else:
                 if base._storage is not self:
                     raise IntegrityError('incremental base belongs to another record store')

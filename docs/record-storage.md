@@ -1,8 +1,9 @@
 # Retained records in Iceberg
 
 DocSpec uses `IcebergRecordStorage` behind the `RecordStorage` interface.
-DuckDB writes Parquet data and positional deletes through an Iceberg REST catalog.
-PyIceberg parses retained metadata and manages temporary catalog registrations.
+DuckDB writes Parquet data and positional deletes through an in-process Iceberg
+catalog. PyIceberg parses retained metadata and manages temporary catalog
+registrations.
 SQLite remains the authoritative ledger for provenance, publication, progress and
 retention. Opaque document bytes remain in the content-addressed blob store.
 
@@ -51,31 +52,22 @@ it does not copy the complete file inventory. The format is
 selected-member manifests remain version 3. Physical snapshot IDs are fresh;
 logical IDs and canonical comparison digests keep their existing meanings.
 
-## Configure writes
+## Write catalog
 
-Set `DOCSPEC_ICEBERG_URI` to a REST catalog endpoint and, when needed,
-`DOCSPEC_ICEBERG_TOKEN`. Python callers can instead pass
-`IcebergCatalog(uri, token=...)` from `docspec.adapters.storage` to `CoreWorkspace`.
-The catalog must support table registration, and its service must see the local
-workspace at the same absolute path as DuckDB. The implemented storage profile is
-local filesystem storage; a remote object-store profile is not implemented.
+Writes need no setup. DuckDB's Iceberg extension attaches only REST catalogs, so
+each record store runs PyIceberg's SQL catalog in its own process and serves
+DuckDB the calls it makes through a loopback adapter. The adapter admits only its
+store's connection, by a random token. The SQLite file sits in the store's
+scratch directory and goes with it: a handle lives only for one write. The writer
+states its Parquet codec (zstd) rather than inheriting a catalog default. The
+[measurement](history/probes/2026-09-25-inprocess-iceberg-catalog.md) compares it
+with the Docker REST fixture it replaced. The implemented storage profile is local
+filesystem storage; a remote object-store profile is not implemented.
 
-For development and tests, Docker can run Apache's pinned REST fixture:
-
-```sh
-uv run --frozen python tools/with_iceberg.py pytest tests/test_iceberg_snapshots.py
-uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
-```
-
-The helper shares the current directory and its temporary directory with the
-catalog, sets the endpoint for the command, then removes its own container.
-Output workspaces must be under the current directory. With an already configured
-endpoint it simply runs the command; configure shared paths yourself in that case.
-The fixture is for local development, not a deployed catalog recommendation.
-The wheel does not start Docker. Reads of retained states and exports need no
-catalog service. Subsequent writes register pinned metadata with a catalog at
-the original local table path. Relocated snapshots support reads; a writer
-refuses them before creating files at the former location.
+Reads of retained states and exports need no catalog. Subsequent writes register
+pinned metadata with a catalog at the original local table path. Relocated
+snapshots support reads; a writer refuses them before creating files at the
+former location.
 
 ## Snapshot publication and maintenance
 

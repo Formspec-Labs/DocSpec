@@ -231,7 +231,7 @@ dependencies = [
     { name = "jsonschema-rs" },
     { name = "msgspec" },
     { name = "pyarrow" },
-    { name = "pyiceberg" },
+    { name = "pyiceberg", extra = ["sql-sqlite"] },
     { name = "rulespec-artifacts" },
     { name = "spicy-docs" },
 ]
@@ -271,7 +271,7 @@ requires-dist = [
     { name = "jsonschema-rs", specifier = ">=0.52,<1" },
     { name = "msgspec", specifier = ">=0.21.1,<1" },
     { name = "pyarrow", specifier = ">=25,<26" },
-    { name = "pyiceberg", specifier = "==0.12.0" },
+    { name = "pyiceberg", extras = ["sql-sqlite"], specifier = "==0.12.0" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.1.1-py3-none-any.whl" },
     { name = "spicy-docs", path = "vendor/spicy_docs-0.26.6-py3-none-any.whl" },
     { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.26.6-py3-none-any.whl" },
@@ -841,6 +841,11 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/38/f8b0dc8cbc53459c6780a3ebf78382960c78fd80db54d0eeb3f7a63c9c7f/pyiceberg-0.12.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:5902178a7d46bc4b783a4026c474178a8cb4c9c413b47cdb2e520df4082ed255", size = 773096 },
     { url = "https://files.pythonhosted.org/packages/d9/4e/ef4265f3b7108d1591ff233edf3ef6ca50d2639026b4a1cb62ddda3398bd/pyiceberg-0.12.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:cbb9f060d170b1b072e2ba2e821f5c76302e5731452f37fa63e104334f3feba1", size = 778402 },
     { url = "https://files.pythonhosted.org/packages/f9/2c/858c329a4e93897568ab73e95892dde0bc32bf4a76a6133096ef6b660854/pyiceberg-0.12.0-cp312-cp312-win_amd64.whl", hash = "sha256:0fcce46f5633491b50ebf8ed94fbf5c8d3b6bed76902cf28361368e9169e16f2", size = 564568 },
+]
+
+[package.optional-dependencies]
+sql-sqlite = [
+    { name = "sqlalchemy" },
 ]
 
 [[package]]

@@ -26,7 +26,7 @@ channel. Rulespec verifies artifact membership and bytes. DocSpec checks Core
 records, selected membership, content references and required retained evidence.
 The version 2 export pins portable Iceberg snapshots. The consumer does not need
 the original workspace, a catalog service or producer implementations. Creating
-an export requires the configured catalog to materialize selected rows.
+an export materializes selected rows through its own in-process catalog.
 Selected membership is materialized into the export so unrelated values sharing
 an old physical source layer are not included accidentally.
 

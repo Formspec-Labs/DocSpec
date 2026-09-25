@@ -30,6 +30,7 @@ def remove(workspace, update_id, keys):
 def test_member_rows_from_0_9_1_read_pin_and_protect_until_removed(tmp_path, monkeypatch):
     path = tmp_path / "workspace"
     shutil.copytree(FIXTURE, path)
+    (path / "blobs" / ".staging").mkdir()  # 0.9.1 created it empty; git keeps no empty directory.
     with CoreWorkspace(path, create=False) as workspace:
         assert rows_by_kind(workspace) == {"entity": MEMBERS, "state": 1, "state_representation": 1}
         searched = []

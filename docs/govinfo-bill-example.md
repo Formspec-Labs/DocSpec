@@ -7,13 +7,12 @@ document capture, processing, evidence, and reuse.
 
 ## Run the offline example
 
-Use Docker for the local storage catalog and a new output directory inside this
-checkout. Publisher responses come from retained fixtures.
+Use a new output directory. Publisher responses come from retained fixtures.
 
 ```sh
 uv run --frozen \
   --find-links ./vendor --with './vendor/spicy_docs-0.15.0-py3-none-any.whl[acquisition]' \
-  python tools/with_iceberg.py python -m examples.govinfo_bills \
+  python -m examples.govinfo_bills \
   --package-id BILLS-119hr6028ih --output "$PWD/my-bill-experiment"
 ```
 
