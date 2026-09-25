@@ -22,7 +22,7 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from docspec.ports.record_storage import bounded_batches, bounded_rows
+from docspec.ports.record_storage import BATCH_BYTES, bounded_batches, bounded_rows
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, conform_table_batch, encoded_batches, table_arrow_schema
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
@@ -35,7 +35,7 @@ from docspec.domain.storage import PartitionPolicy, RecordSchema, TableSchema, p
 from docspec.errors import IntegrityError, LimitExceededError
 
 _PROFILE_ID = 'urn:docspec:profile:record-storage:iceberg:1'
-_TABLE_PROFILE_ID = 'urn:docspec:profile:table-storage:iceberg:1'
+TABLE_PROFILE_ID = 'urn:docspec:profile:table-storage:iceberg:1'
 _RECORD_ROOT = {'format', 'version', 'layerKind', 'schema', 'partitionPolicy', 'metadata', 'integrity', 'recordCount'}
 _TABLE_ROOT = {'format', 'version', 'layerKind', 'schema', 'memberDigest', 'metadata', 'integrity', 'recordCount'}
 _ADMITTED_LAYER_LIMIT = 8
@@ -361,7 +361,7 @@ class IcebergRecordStorage:
                 raise ValueError('metadata checksum does not match the retained file')
         except (KeyError, TypeError, ValueError) as error:
             raise IntegrityError('invalid record layer schema or metadata reference') from error
-        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, _TABLE_PROFILE_ID if typed else _PROFILE_ID,
+        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, TABLE_PROFILE_ID if typed else _PROFILE_ID,
                             f'record-layers/sha256/{reference.digest[7:9]}/{reference.digest[7:]}.json',
                             reference.digest, root['recordCount'])
         if reference != expected or not metadata.locator.startswith('iceberg/'):
@@ -656,7 +656,7 @@ class IcebergRecordStorage:
         locator = f'record-layers/sha256/{digest[7:9]}/{digest[7:]}.json'
         _write_once(self.root, locator, payload)
         ref = LayerRef(stable_urn('record-layer', root), layer_kind, schema.schema_id,
-                       _TABLE_PROFILE_ID if typed else _PROFILE_ID, locator, digest, record_count)
+                       TABLE_PROFILE_ID if typed else _PROFILE_ID, locator, digest, record_count)
         return self._remember_admitted(AdmittedTableLayer(self, ref, root, schema, table) if typed
                                        else AdmittedRecordLayer(self, ref, root, schema, partition_policy, table))
 
@@ -742,6 +742,45 @@ class IcebergRecordStorage:
                     cursor.execute('ROLLBACK')
                     raise
                 return self._pin(table(), schema=schema, partition_policy=partition_policy, layer_kind=layer_kind, record_count=count)
+
+    def retain_relation(self, rows, *, cursor, layer_kind: str, schema: RecordSchema,
+                        partition_policy: PartitionPolicy) -> AdmittedRecordLayer:
+        """Write a new encoded layer natively from ``rows``, a relation on ``cursor``.
+
+        ``rows`` holds record_identity and partition_value VARCHAR and
+        record_json BLOB, as ``retain_batches`` takes them, and callers own
+        payload admission as they do there. One native pass refuses nulls,
+        oversized records and repeated identities, and each bucket is derived
+        natively (``partition_bucket``'s SHA-256 prefix), so no row crosses
+        Python. The write sorts by identity and may spill to scratch; nothing
+        of ``rows`` is materialized first.
+        """
+        require_text(layer_kind, 'layer_kind')
+        if not isinstance(schema, RecordSchema) or schema.columns:
+            raise IntegrityError('native encoded writes take routing columns and one encoded payload')
+        if native_columns(rows) != (('record_identity', 'VARCHAR'), ('partition_value', 'VARCHAR'), ('record_json', 'BLOB')):
+            raise IntegrityError('record batch has an invalid physical schema')
+        bucket = ('0' if partition_policy.bucket_count == 1 else
+                  f"CAST(('0x' || substr(sha256(partition_value), 1, 16)) AS UBIGINT) % {partition_policy.bucket_count}")
+        view = 'native_records_' + uuid4().hex
+        rows.create_view(view)
+        try:
+            count, distinct, largest, nulls = cursor.execute(
+                f"SELECT count(*), count(DISTINCT record_identity), max(octet_length(record_json)), "
+                f"bool_or(record_identity IS NULL OR partition_value IS NULL OR record_json IS NULL) FROM {view}").fetchone()
+            if nulls:
+                raise IntegrityError('record batch columns must not contain nulls')
+            if (largest or 0) > min(self.max_record_bytes, BATCH_BYTES):
+                raise LimitExceededError('record exceeds the encoded value byte limit')
+            if distinct != count:
+                raise IntegrityError('record input contains duplicate logical identities')
+            with self._write_table(cursor, schema) as (target, table):
+                cursor.execute(f'INSERT INTO {target} SELECT record_identity, partition_value, record_json, {bucket} '
+                               f'FROM {view} ORDER BY record_identity')
+                return self._pin(table(), schema=schema, partition_policy=partition_policy, layer_kind=layer_kind,
+                                 record_count=count)
+        finally:
+            cursor.execute(f'DROP VIEW IF EXISTS {view}')
 
     def apply_changes(self, base, batches):
         """Upsert only changed keys; a null record_json means remove that key."""
