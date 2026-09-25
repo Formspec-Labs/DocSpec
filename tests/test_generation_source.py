@@ -1,6 +1,7 @@
 """Generation staging binds producer evidence without rewriting or trusting its pointer."""
 
 from dataclasses import replace
+from datetime import datetime, timezone
 import hashlib
 import json
 import shutil
@@ -14,6 +15,8 @@ from rulespec_artifacts import (ArtifactPin, LocalMemberSource, Producer, build_
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
 from docspec.adapters.generation_source import stage_generation
+from docspec.domain.storage import TableSchema
+from docspec.domain.table_rows import KeySpelling
 from docspec.errors import IntegrityError, LimitExceededError
 
 # Rulespec requires a producer pinned by a published digest or full Git object ID.
@@ -22,14 +25,14 @@ PRODUCER = Producer("spicy-regs", _IMPLEMENTATION, "urn:test:verifier", "1", _IM
 
 
 def generation(path, *, table="federal_register", family="federal-register", status="complete-family",
-               kind="spicy-regs-rollup-generation", columns=None, rows=None, identity=None):
+               kind="spicy-regs-rollup-generation", columns=None, rows=None, identity=None, data=None):
     path.mkdir(parents=True)
     values = {"document_number": ["2026-1"], "publication_date": ["2026-09-25"], "title": ["A rule"]}
     if table == "congress_bills":
         values = {"bill_id": ["119-hr-1"], "title": ["A bill"]}
     elif table == "bill_actions":
         values = {"bill_id": ["119-hr-1"], "action_index": ["1"]}
-    data = pa.table(values)
+    data = pa.table(values) if data is None else data
     pq.write_table(data, path / (table + ".parquet"))
     member = describe_member(LocalMemberSource(path), object_key=table + ".parquet", role="table",
                              media_type="application/vnd.apache.parquet", record_count=data.num_rows if rows is None else rows)
@@ -67,8 +70,7 @@ def test_local_generation_preserves_source_and_returns_exact_evidence(tmp_path):
         assert admitted.manifest_bytes == originals["members.json"]
         assert admitted.record_count == 1
         assert admitted.columns == (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("title", "VARCHAR"))
-        assert admitted.key_fields == ("document_number", "publication_date")
-        assert (admitted.key_spelling_id, admitted.key_spelling_version) == ("federal-register-source-record-id", "1")
+        assert admitted.key == KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
         staged = admitted.path
     assert not staged.exists() and not list(scratch.iterdir())
     assert {path.name: path.read_bytes() for path in source.iterdir()} == originals
@@ -119,12 +121,23 @@ def test_member_digest_and_pin_mismatch_refuse(tmp_path):
             pytest.fail("changed member admitted")
 
 
+def test_columns_carry_table_profile_types_while_the_descriptor_keeps_duckdb_names(tmp_path):
+    source = tmp_path / "source"
+    data = pa.table({"document_number": ["2026-1"], "publication_date": ["2026-09-25"],
+                     "signed_at": pa.array([datetime(2026, 9, 25, tzinfo=timezone.utc)], pa.timestamp("us", "UTC"))})
+    columns = [["document_number", "VARCHAR"], ["publication_date", "VARCHAR"], ["signed_at", "TIMESTAMP WITH TIME ZONE"]]
+    generation(source, data=data, columns=columns)
+    with stage_generation(source, family="federal-register", table="federal_register") as admitted:
+        assert admitted.columns == (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"),
+                                    ("signed_at", "TIMESTAMPTZ"))
+        TableSchema("federal-register:1", admitted.columns)
+
+
 def test_single_column_contract_and_unknown_composite_rule(tmp_path):
     source = tmp_path / "single"
     generation(source, family="bill-family", table="congress_bills")
     with stage_generation(source, family="bill-family", table="congress_bills") as admitted:
-        assert admitted.key_fields == ("bill_id",)
-        assert (admitted.key_spelling_id, admitted.key_spelling_version) == ("value", "1")
+        assert admitted.key == KeySpelling("value", "1", ("bill_id",))
     source = tmp_path / "composite"
     generation(source, family="bill-family", table="bill_actions")
     with pytest.raises(IntegrityError, match="versioned spicy-docs key spelling"):

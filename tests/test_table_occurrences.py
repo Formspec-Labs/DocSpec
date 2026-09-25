@@ -24,7 +24,7 @@ from docspec.adapters.storage.table_occurrences import (INDEX_KIND, OCCURRENCE_I
     lookup_occurrences, mint_identities, read_occurrences, reference_identity)
 from docspec.adapters.storage.table_sql import OCCURRENCE_PREFIX, occurrence_urn_sql
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import KeySpelling, TableIdentity, table_row_bytes
+from docspec.domain.table_rows import ROUND_TRIP_TRAPS, KeySpelling, TableIdentity, table_row_bytes
 from docspec.errors import IntegrityError
 
 COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("title", "VARCHAR"),
@@ -43,7 +43,7 @@ CORPUS = [
     {"document_number": " ", "publication_date": "\u2028", "title": "", "pages": -(2**63), "ratio": -0.0,
      "signed": date(9999, 12, 31), "seen": datetime(1, 1, 1), "zoned": None, "flag": False, "count": 2**31 - 1,
      "topics": []},
-    {"document_number": "x@y", "publication_date": "z", "title": None, "pages": None, "ratio": float("inf"),
+    {"document_number": "x@y", "publication_date": "z", "title": None, "pages": None, "ratio": 0.1,
      "signed": None, "seen": None, "zoned": datetime(2026, 1, 1, tzinfo=timezone.utc), "flag": None,
      "count": None, "topics": None},
 ]
@@ -55,8 +55,7 @@ def table_layer(records, rows, *, columns=COLUMNS, writer="native"):
     schema = TableSchema("corpus:1", columns)
     if writer == "native":
         return records.write_table(data.to_batches(), layer_kind="test-table", schema=schema)
-    staged = records.root / "staging" / (hashlib.sha256(repr(rows).encode()).hexdigest()[:16] + ".parquet")
-    staged.parent.mkdir(exist_ok=True)
+    staged = records.staging_directory / (hashlib.sha256(repr(rows).encode()).hexdigest()[:16] + ".parquet")
     pq.write_table(data, staged)
     digest = "sha256:" + hashlib.sha256(staged.read_bytes()).hexdigest()
     return records.register_parquet(staged, layer_kind="producer-table", schema=schema, member_digest=digest)
@@ -97,6 +96,15 @@ def test_identity_pass_refuses_null_or_empty_key_components(tmp_path, change):
         with pytest.raises(IntegrityError, match="NULL or empty component"):
             with minted(records, layer):
                 pytest.fail("a NULL or empty key component was minted")
+
+
+def test_identity_pass_refuses_a_double_without_a_round_trip_spelling(tmp_path):
+    with closing(IcebergRecordStorage(tmp_path)) as records:
+        # DuckDB 1.5.5 would spell 2^81 as 2^82, giving two values one digest.
+        layer = table_layer(records, [CORPUS[0], {**CORPUS[1], "ratio": ROUND_TRIP_TRAPS[0]}])
+        with pytest.raises(IntegrityError, match="no round-trip spelling"):
+            with minted(records, layer):
+                pytest.fail("a double without a round-trip spelling was minted")
 
 
 def test_identity_pass_refuses_duplicate_keys_including_spelling_collisions(tmp_path):
@@ -220,6 +228,22 @@ def test_lookups_prune_the_index_and_refuse_rows_whose_digest_changed(tmp_path):
         for other in (changed, unrelated):
             with pytest.raises(IntegrityError, match="differs from its minted occurrence"):
                 read_occurrences(records, table_layer(records, other, columns=columns).reference, identity, found)
+
+
+def test_lookups_beyond_the_literal_limit_use_one_semi_join(tmp_path):
+    columns = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("title", "VARCHAR"))
+    identity = TableIdentity("federal-register", "federal_register", FEDERAL_REGISTER, columns)
+    rows = [{"document_number": f"2026-{index:04d}", "publication_date": "2026-01-02", "title": f"t{index}"}
+            for index in range(400)]
+    urns = {reference_identity(identity, row)[2]: row for row in rows}
+    with closing(IcebergRecordStorage(tmp_path)) as records:
+        layer = table_layer(records, rows, columns=columns)
+        with minted(records, layer, identity) as (_, identities):
+            index, _ = append_occurrences(records, None, identities, first_state_id="state-1")
+        found = lookup_occurrences(records, index.reference, identity, list(urns))
+        assert set(found) == set(urns)
+        assert read_occurrences(records, layer.reference, identity, found) == {
+            urn: table_row_bytes(row, columns) for urn, row in urns.items()}
 
 
 def test_a_lookup_refuses_an_index_row_that_does_not_hash_to_its_occurrence(tmp_path):

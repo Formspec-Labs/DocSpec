@@ -55,9 +55,9 @@
    | Type | Spelling |
    | --- | --- |
    | BOOLEAN | `true` or `false` |
-   | INTEGER, SMALLINT | an integer |
+   | INTEGER | an integer (Iceberg holds no SMALLINT, so a SMALLINT column refuses) |
    | BIGINT | an integer when \|v\| ≤ 2^53−1, else a decimal string |
-   | DOUBLE | a string: `nan` for every NaN, else DuckDB's shortest round-trip cast, which equals Python `repr` |
+   | DOUBLE | a string: `nan` for every NaN, else the shortest round-trip decimal, as Python `repr` spells it; a value whose native cast does not read back as itself refuses (DuckDB 1.5.5 casts ±2^81, ±2^91 and ±2^807 to another value's spelling) |
    | DATE, TIMESTAMP | ISO 8601 strings, TIMESTAMP in UTC |
    | LIST<VARCHAR> (C29) | a canonical array |
    | anything else | refused |
