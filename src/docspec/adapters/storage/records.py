@@ -23,10 +23,11 @@ from docspec.adapters.storage.files import _available_paths, _contained, _read_e
 from docspec.adapters.storage.iceberg import IcebergCatalog, recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_data_files, snapshot_files
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_text, sha256_digest, stable_urn, thaw_json
 from docspec.domain.references import BlobRef, LayerRef
-from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket, record_key
+from docspec.domain.storage import PartitionPolicy, RecordSchema, TableSchema, partition_bucket, record_key
 from docspec.errors import IntegrityError, LimitExceededError
 
 _PROFILE_ID = 'urn:docspec:profile:record-storage:iceberg:1'
+_TABLE_PROFILE_ID = 'urn:docspec:profile:table-storage:iceberg:1'
 _ADMITTED_LAYER_LIMIT = 8
 # A literal list keeps row-group pruning for point lookups; beyond this many
 # identities a semi-join against an Arrow table is faster.
@@ -177,6 +178,8 @@ class IcebergRecordStorage:
 
     @staticmethod
     def _schema_dict(schema: RecordSchema) -> dict[str, Any]:
+        if isinstance(schema, TableSchema):
+            return {'schemaId': schema.schema_id, 'columns': [list(column) for column in schema.columns]}
         return {
             "schemaId": schema.schema_id, "fields": list(schema.fields),
             "identityField": schema.identity_field, "partitionField": schema.partition_field,
@@ -290,23 +293,30 @@ class IcebergRecordStorage:
         if sha256_digest(payload) != reference.digest:
             raise IntegrityError('record layer root differs from its reference')
         root = thaw_json(parse_canonical_json(payload, label='Iceberg record layer'))
-        fields = {'format', 'version', 'layerKind', 'schema', 'partitionPolicy', 'metadata', 'integrity', 'recordCount'}
-        if not isinstance(root, dict) or set(root) != fields or root['format'] != 'docspec-iceberg-records' or type(root['version']) is not int or root['version'] != 1 or type(root['recordCount']) is not int:
+        typed = isinstance(root, dict) and root.get('format') == 'docspec-iceberg-table'
+        fields = {'format', 'version', 'layerKind', 'schema', 'metadata', 'integrity', 'recordCount'} | (set() if typed else {'partitionPolicy'})
+        if not isinstance(root, dict) or set(root) != fields or root['format'] not in {'docspec-iceberg-records', 'docspec-iceberg-table'} or type(root['version']) is not int or root['version'] != 1 or type(root['recordCount']) is not int:
             raise IntegrityError('record layer root has an invalid format')
         try:
             value = root['schema']
-            if set(value) != {'schemaId', 'fields', 'identityField', 'partitionField', 'columns'} or set(root['partitionPolicy']) != {'policyId', 'bucketCount'}:
-                raise ValueError('invalid schema or partition policy shape')
-            schema = RecordSchema(value['schemaId'], tuple(value['fields']), value['identityField'], value['partitionField'],
-                                  tuple(tuple(column) for column in value['columns']))
-            policy = PartitionPolicy(root['partitionPolicy']['policyId'], root['partitionPolicy']['bucketCount'])
+            if typed:
+                if set(value) != {'schemaId', 'columns'}:
+                    raise ValueError('invalid table schema shape')
+                schema = TableSchema(value['schemaId'], tuple(tuple(column) for column in value['columns']))
+                policy = None
+            else:
+                if set(value) != {'schemaId', 'fields', 'identityField', 'partitionField', 'columns'} or set(root['partitionPolicy']) != {'policyId', 'bucketCount'}:
+                    raise ValueError('invalid schema or partition policy shape')
+                schema = RecordSchema(value['schemaId'], tuple(value['fields']), value['identityField'], value['partitionField'],
+                                      tuple(tuple(column) for column in value['columns']))
+                policy = PartitionPolicy(root['partitionPolicy']['policyId'], root['partitionPolicy']['bucketCount'])
             metadata = BlobRef.from_dict(root['metadata'])
             integrity = BlobRef.from_dict(root['integrity'])
             if integrity.locator != metadata.locator + '.sha256':
                 raise ValueError('metadata checksum does not match the retained file')
         except (KeyError, TypeError, ValueError) as error:
             raise IntegrityError('invalid record layer schema or metadata reference') from error
-        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, _PROFILE_ID,
+        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, _TABLE_PROFILE_ID if typed else _PROFILE_ID,
                             f'record-layers/sha256/{reference.digest[7:9]}/{reference.digest[7:]}.json',
                             reference.digest, root['recordCount'])
         if reference != expected or not metadata.locator.startswith('iceberg/'):
@@ -323,6 +333,10 @@ class IcebergRecordStorage:
         # all recovery files, including positional deletes and shared manifests.
         refs = recovery_references(self.root, BlobRef.from_dict(root['integrity']))
         _available_paths(self.root, ((ref.locator, ref.byte_size) for ref in refs))
+        if isinstance(schema, TableSchema):
+            from docspec.adapters.storage.table_storage import AdmittedTableLayer, check_table_schema
+            check_table_schema(table, schema)
+            return self._remember_admitted(AdmittedTableLayer(self, reference, root, schema, table))
         return self._remember_admitted(AdmittedRecordLayer(self, reference, root, schema, policy, table))
 
     def verify_members(self, reference):
@@ -343,6 +357,12 @@ class IcebergRecordStorage:
         """Verify member files and the declared record count."""
 
         self.verify_members(reference)
+        if isinstance(self.schema(reference), TableSchema):
+            with self.admitted(reference).relation() as relation:
+                count = relation.aggregate('count(*)').fetchone()[0]
+            if count != reference.record_count:
+                raise IntegrityError('table count differs from its description')
+            return
         if sum(1 for _ in self.stream(reference)) != reference.record_count:
             raise IntegrityError('record count differs from its description')
 
@@ -356,6 +376,9 @@ class IcebergRecordStorage:
     def _relation(self, layer, *, cursor=None, partitions=None, record_ids=None, identity_ranges=None, include_bucket=False):
         if layer._storage is not self:
             raise IntegrityError('admitted layer belongs to another record store')
+        typed = isinstance(layer.schema, TableSchema)
+        if typed and (partitions is not None or record_ids is not None or identity_ranges is not None or include_bucket):
+            raise ValueError('typed tables do not have record routing columns')
         if partitions is not None and any(p < 0 or p >= layer.partition_policy.bucket_count for p in partitions):
             raise ValueError('selected partition is outside the layer partition policy')
         path = Path(layer.table.metadata_location)
@@ -372,7 +395,11 @@ class IcebergRecordStorage:
             if identity_ranges is not None:
                 ranges = list(identity_ranges)
                 relation = relation.filter(' OR '.join(f'(record_identity BETWEEN {literal(lo)} AND {literal(hi)})' for lo, hi in ranges) or 'false')
-            yield relation.project(_column_list(layer.schema) + (', bucket' if include_bucket else ''))
+            if typed:
+                from docspec.adapters.storage.table_storage import table_projection
+                yield relation.project(table_projection(layer.schema))
+            else:
+                yield relation.project(_column_list(layer.schema) + (', bucket' if include_bucket else ''))
 
     @contextmanager
     def relations(self, references, *, partitions=None, tables=None, identities=None, identity_ranges=None, cursor=None):
@@ -381,7 +408,7 @@ class IcebergRecordStorage:
         with (self._cursor() if cursor is None else nullcontext(cursor)) as cursor, ExitStack() as stack:
             result = {}
             for name, reference in references.items():
-                layer = reference if isinstance(reference, AdmittedRecordLayer) else self.admitted(reference)
+                layer = self.admitted(reference) if isinstance(reference, LayerRef) else reference
                 result[name] = stack.enter_context(self._relation(layer, cursor=cursor,
                     partitions=None if partitions is None else partitions.get(name),
                     record_ids=None if identities is None else identities.get(name),
@@ -517,9 +544,13 @@ class IcebergRecordStorage:
                 location = self.root / 'iceberg' / uuid4().hex
                 (location / 'metadata').mkdir(parents=True)
                 (location / 'data').mkdir()
-                columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}' for field in _physical_schema(schema))
+                if isinstance(schema, TableSchema):
+                    from docspec.adapters.storage.table_storage import physical_type
+                    columns = ', '.join(f'{identifier(name)} {physical_type(kind)}' for name, kind in schema.columns)
+                else:
+                    columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}' for field in _physical_schema(schema)) + ', bucket INTEGER'
                 target = target_member_bytes or self.max_member_bytes // 2
-                cursor.execute(f"CREATE TABLE {qualified} ({columns}, bucket INTEGER) WITH ("
+                cursor.execute(f"CREATE TABLE {qualified} ({columns}) WITH ("
                     f"'location'={literal(location)}, 'format-version'='2', 'write.update.mode'='merge-on-read', "
                     f"'write.delete.mode'='merge-on-read', 'write.target-file-size-bytes'={literal(target)}, "
                     "'write.parquet.row-group-size-bytes'='1048576')")
@@ -536,7 +567,7 @@ class IcebergRecordStorage:
             if registered:
                 client.drop_table(key)
 
-    def _pin(self, table, *, schema, partition_policy, layer_kind, record_count):
+    def _pin(self, table, *, schema, partition_policy=None, layer_kind, record_count, referenced=False):
         location = Path(table.metadata_location)
         from docspec.adapters.storage.iceberg import SnapshotIO
         table.io = SnapshotIO(location.parent.parent, table.metadata.location)
@@ -545,21 +576,27 @@ class IcebergRecordStorage:
             for manifest in current.manifests(table.io):
                 if manifest.added_snapshot_id == current.snapshot_id:
                     for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
-                        if entry.data_file.file_size_in_bytes > self.max_member_bytes:
+                        if not referenced and entry.snapshot_id == current.snapshot_id and entry.data_file.file_size_in_bytes > self.max_member_bytes:
                             raise LimitExceededError('record member exceeds its byte limit')
         integrity = seal_snapshot(self.root, table)
         digest, size = sha256_file(location)
         metadata = BlobRef(location.relative_to(self.root).as_posix(), digest, size, 'application/octet-stream')
-        root = {'format': 'docspec-iceberg-records', 'version': 1, 'layerKind': layer_kind,
-                'schema': self._schema_dict(schema), 'partitionPolicy': self._policy_dict(partition_policy),
+        typed = isinstance(schema, TableSchema)
+        root = {'format': 'docspec-iceberg-table' if typed else 'docspec-iceberg-records', 'version': 1, 'layerKind': layer_kind,
+                'schema': self._schema_dict(schema),
                 'metadata': metadata.to_dict(), 'integrity': integrity.to_dict(), 'recordCount': record_count}
+        if not typed:
+            root['partitionPolicy'] = self._policy_dict(partition_policy)
         payload = canonical_json_file_bytes(root)
         if len(payload) > self.max_root_bytes:
             raise LimitExceededError('record layer root exceeds its byte limit')
         digest = sha256_digest(payload)
         locator = f'record-layers/sha256/{digest[7:9]}/{digest[7:]}.json'
         _write_once(self.root, locator, payload)
-        ref = LayerRef(stable_urn('record-layer', root), layer_kind, schema.schema_id, _PROFILE_ID, locator, digest, record_count)
+        ref = LayerRef(stable_urn('record-layer', root), layer_kind, schema.schema_id, _TABLE_PROFILE_ID if typed else _PROFILE_ID, locator, digest, record_count)
+        if typed:
+            from docspec.adapters.storage.table_storage import AdmittedTableLayer
+            return self._remember_admitted(AdmittedTableLayer(self, ref, root, schema, table))
         return self._remember_admitted(AdmittedRecordLayer(self, ref, root, schema, partition_policy, table))
 
     @contextmanager

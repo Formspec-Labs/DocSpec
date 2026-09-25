@@ -5,7 +5,35 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 
-from docspec.domain.identity import require_text
+from docspec.domain.identity import canonical_value_bytes, require_text
+from docspec.domain.table_rows import table_type
+
+
+@dataclass(frozen=True, slots=True)
+class TableSchema:
+    """A closed typed table, without imposed identity or routing columns."""
+
+    schema_id: str
+    columns: tuple[tuple[str, str], ...]
+
+    def __post_init__(self) -> None:
+        require_text(self.schema_id, "schema_id")
+        columns = []
+        for name, kind in self.columns:
+            require_text(name, "column name")
+            if "\0" in name:
+                raise ValueError("table column names must not contain NUL")
+            canonical_value_bytes(name)
+            normalized = "BLOB" if isinstance(kind, str) and kind.strip().upper() in {"BLOB", "BINARY"} else table_type(kind)
+            columns.append((name, normalized))
+        columns = tuple(columns)
+        if not columns or len({name.casefold() for name, _ in columns}) != len(columns):
+            raise ValueError("table columns must be non-empty and distinct")
+        object.__setattr__(self, "columns", columns)
+
+    @property
+    def fields(self) -> tuple[str, ...]:
+        return tuple(name for name, _ in self.columns)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,4 +90,4 @@ def partition_bucket(value: str, bucket_count: int) -> int:
     return int.from_bytes(digest[:8], "big") % bucket_count
 
 
-__all__ = ["PartitionPolicy", "RecordSchema", "partition_bucket"]
+__all__ = ["PartitionPolicy", "RecordSchema", "TableSchema", "partition_bucket"]
