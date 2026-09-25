@@ -82,6 +82,21 @@ class CoreWorkspace:
         return derive(self.operations, rows, batch_id=batch_id, definition=definition, inputs=inputs,
                       base_state_id=base_state_id, removals=removals, dataset=dataset)
 
+    def admit_generation(self, source, *, family, table, dataset=None):
+        """Admit one table of a producer's complete generation by reference, as a table-shaped state.
+
+        ``source`` is a local generation or publication directory, or an HTTPS
+        publication base (the ``http`` extra). Its ``publication.json`` is an
+        untrusted pointer: Rulespec admits the pinned family before its member
+        moves into the record store unrewritten. Re-admitting a pin returns its
+        state; ``dataset=`` makes the state current over the dataset's base,
+        whose unchanged rows keep their occurrences. See decision 0007.
+        """
+        from docspec.adapters.generation_source import stage_generation
+        from docspec.application.generation_admission import admit_generation
+        with stage_generation(source, family=family, table=table, directory=self.path) as generation:
+            return admit_generation(self.operations, generation, family=family, table=table, dataset=dataset)
+
     def generating_request(self, state_id):
         """Return the request whose successful execution generated a state, or None for an imported state.
 

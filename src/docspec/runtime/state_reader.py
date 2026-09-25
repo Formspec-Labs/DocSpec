@@ -41,7 +41,7 @@ class CoreStateReader:
         # natively (``stored_record``) rather than proving canonical form again.
         for layer in layers.values():
             states.records.verify_members(layer.reference)
-        self._layers = {name: states.records.admitted(layer.reference) for name, layer in layers.items()}
+        self._layers = states.admitted_layers(layers)
 
     @property
     def pin(self):
@@ -78,6 +78,17 @@ class CoreStateReader:
                 raise ValueError("member keys exceed the batch byte limit")
             member_keys = tuple(member_keys)
         with self._states.relation(self._session, self._state_id, scope=member_keys, layers=self._layers) as relation:
+            yield relation
+
+    @contextmanager
+    def table(self):
+        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the producer's own columns.
+
+        Typed consumers read the columns natively instead of decoding
+        occurrence records; a state that is not table-shaped refuses.
+        """
+        self._session._active()
+        with self._states.typed_relation(self._layers) as relation:
             yield relation
 
     def batches(self, *, member_keys=None):
