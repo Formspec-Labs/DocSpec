@@ -135,6 +135,12 @@ under its item. The design stays proposed until C27 is implemented.
     8091 index is replaced once, by a candidate built from admitted
     generations. The row-copied catalogs are retired at that rebuild rather
     than trimmed of their per-member rows now.
+  - **Amended (owner, 2026-09-25):** the cutover no longer waits. It ran on
+    the row-copied catalogs and the JSON derive on 2026-09-25 (spicyengine
+    `docs/history/2026-09-25-full-prepared-cutover/`), so users have the
+    finished search; C27 with C29 and B2 will cost one more full republish,
+    accepted because a republish is about two hours of compute and the wait
+    was days. The row-copied catalogs are still retired at that rebuild.
 - **R3: retention of superseded generations.** Proposed: keep the current and
   previous generation of each dataset, plus any generation a current result
   binds, and remove the rest under C18.
