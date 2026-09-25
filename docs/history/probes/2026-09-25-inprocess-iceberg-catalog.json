@@ -7,7 +7,7 @@
   "input_sha256": "sha256:29459a714cd04ccf0d7e80c0b34efe3dc25d581242dd44c03c2e48ae0799d8db",
   "arms": {
     "before": "DocSpec main 3133850 (exported source on PYTHONPATH) under its tools/with_iceberg.py: apache/iceberg-rest-fixture:1.10.1@sha256:f7d679d3...",
-    "after": "DocSpec at the commit adding this receipt (parent 3133850), DOCSPEC_ICEBERG_URI unset, no Docker"
+    "after": "branch lane/inprocess-catalog without Docker; each set names the code its after arm ran"
   },
   "software": {
     "duckdb": "1.5.5",
@@ -77,7 +77,7 @@
     },
     {
       "set": "C",
-      "after_code": "committed code",
+      "after_code": "commit 92e0496",
       "load_1min_range": [
         32.77,
         43.1
@@ -100,6 +100,32 @@
       },
       "derive_wall_saved_seconds": 1.511,
       "process_wall_saved_seconds": 3.013
+    },
+    {
+      "set": "D",
+      "after_code": "final code: REST option retired; SQLite URL, staged-create-only and finalizer fixes",
+      "load_1min_range": [
+        14.88,
+        17.66
+      ],
+      "median_before": {
+        "derive_wall_seconds": 1.877,
+        "derive_cpu_seconds": 1.695,
+        "read_wall_seconds": 0.145,
+        "process_wall_seconds": 3.421,
+        "process_cpu_seconds": 2.479,
+        "process_peak_rss_bytes": 590217216
+      },
+      "median_after": {
+        "derive_wall_seconds": 1.644,
+        "derive_cpu_seconds": 1.813,
+        "read_wall_seconds": 0.151,
+        "process_wall_seconds": 2.388,
+        "process_cpu_seconds": 2.532,
+        "process_peak_rss_bytes": 613744640
+      },
+      "derive_wall_saved_seconds": 0.233,
+      "process_wall_saved_seconds": 1.033
     }
   ],
   "fixture_lifecycle_seconds": {
@@ -115,34 +141,34 @@
   },
   "in_process_catalog_lifecycle": {
     "load_1min": [
-      36.2,
-      34.3
+      14.9,
+      14.9
     ],
-    "adapter_import_seconds_median_of_5": 0.1336,
+    "adapter_import_seconds_median_of_5": 0.1035,
     "first_seconds": {
-      "start": 0.0399,
-      "attach": 0.0165,
-      "close": 0.0003
+      "start": 0.013,
+      "attach": 0.0092,
+      "close": 0.0002
     },
     "median_of_20_seconds": {
-      "start": 0.0068,
-      "attach": 0.0096,
-      "close": 0.0004
+      "start": 0.0054,
+      "attach": 0.0066,
+      "close": 0.0002
     },
     "measured": "importing the adapter after docspec.runtime and the storage package (fresh processes); then InProcessCatalog construction (SQLite catalog, loopback server), DuckDB ATTACH, close"
   },
   "startup_import": {
-    "load_1min_start": 35.3,
+    "load_1min_start": 13.7,
     "command": "import docspec.runtime, docspec.adapters.storage (fresh process)",
     "main_3133850": {
-      "median_seconds": 0.3183,
+      "median_seconds": 0.2731,
       "loaded_at_startup": []
     },
     "branch": {
-      "median_seconds": 0.3235,
+      "median_seconds": 0.273,
       "loaded_at_startup": []
     },
-    "load_1min_end": 31.4
+    "load_1min_end": 13.9
   },
   "runs": {
     "before-1": {
@@ -474,6 +500,110 @@
         "process_cpu_seconds": 2.964,
         "process_peak_rss_bytes": 648216576
       }
+    ],
+    "D": [
+      {
+        "label": "before-11",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 14.88,
+        "derive_wall_seconds": 1.92,
+        "derive_cpu_seconds": 1.724,
+        "read_wall_seconds": 0.144,
+        "read_cpu_seconds": 0.143,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.583,
+        "process_cpu_seconds": 2.53,
+        "process_peak_rss_bytes": 542834688
+      },
+      {
+        "label": "before-12",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 15.45,
+        "derive_wall_seconds": 1.849,
+        "derive_cpu_seconds": 1.695,
+        "read_wall_seconds": 0.145,
+        "read_cpu_seconds": 0.144,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.404,
+        "process_cpu_seconds": 2.476,
+        "process_peak_rss_bytes": 590217216
+      },
+      {
+        "label": "before-13",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 17.66,
+        "derive_wall_seconds": 1.877,
+        "derive_cpu_seconds": 1.692,
+        "read_wall_seconds": 0.152,
+        "read_cpu_seconds": 0.149,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 3.421,
+        "process_cpu_seconds": 2.479,
+        "process_peak_rss_bytes": 603291648
+      },
+      {
+        "label": "after-10",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 14.88,
+        "derive_wall_seconds": 1.701,
+        "derive_cpu_seconds": 1.831,
+        "read_wall_seconds": 0.157,
+        "read_cpu_seconds": 0.156,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.487,
+        "process_cpu_seconds": 2.579,
+        "process_peak_rss_bytes": 636026880
+      },
+      {
+        "label": "after-11",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 17.66,
+        "derive_wall_seconds": 1.644,
+        "derive_cpu_seconds": 1.813,
+        "read_wall_seconds": 0.146,
+        "read_cpu_seconds": 0.146,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.388,
+        "process_cpu_seconds": 2.532,
+        "process_peak_rss_bytes": 579633152
+      },
+      {
+        "label": "after-12",
+        "fingerprint": "35708d0f51318c2f6d043b92ae1b04eeda3fa55bd295a70bb9b56158b6890f50",
+        "rows_state_id": "urn:docspec:core-derive-rows:v1:61cc453961913c73fdb52f068ede96dd45985e1a15f394bacfb92d6433f12f1d",
+        "rows": 5000,
+        "read": 5000,
+        "load_1min": 17.12,
+        "derive_wall_seconds": 1.625,
+        "derive_cpu_seconds": 1.788,
+        "read_wall_seconds": 0.151,
+        "read_cpu_seconds": 0.151,
+        "encodes": 30057,
+        "parses": 21,
+        "process_wall_seconds": 2.369,
+        "process_cpu_seconds": 2.523,
+        "process_peak_rss_bytes": 613744640
+      }
     ]
   },
   "rest_calls_for_one_create_and_one_edit": [
@@ -780,6 +910,50 @@
         "schema-id": 0,
         "type": "struct"
       }
+    },
+    "note": "REST arm ran at 92e0496 through the since-retired REST client; in-process arm reran at the final code"
+  },
+  "copy_format_iceberg_without_catalog": {
+    "duckdb": "1.5.5",
+    "steps": [
+      {
+        "copy": "SELECT 1",
+        "rows_in_new_metadata": [
+          1
+        ],
+        "snapshots": 1
+      },
+      {
+        "copy": "SELECT 2",
+        "rows_in_new_metadata": [
+          2
+        ],
+        "snapshots": 1
+      },
+      {
+        "copy": "SELECT 3 with APPEND",
+        "rows_in_new_metadata": [
+          3
+        ],
+        "snapshots": 1
+      },
+      {
+        "copy": "SELECT 4 with APPEND true",
+        "rows_in_new_metadata": [
+          4
+        ],
+        "snapshots": 1
+      }
+    ],
+    "data_file_codecs": [
+      "SNAPPY"
+    ],
+    "codecs_with_compression_zstd": [
+      "SNAPPY"
+    ],
+    "no_catalog_target": {
+      "DELETE": "ParserException",
+      "MERGE": "ParserException"
     }
   },
   "codec_without_stated_property": {
@@ -797,13 +971,6 @@
     "revised_tables_with_java_authored_parent": 2,
     "revised_tables": 4
   },
-  "rest_mode_focused_tests": {
-    "tests": 21,
-    "failures": 0,
-    "errors": 0,
-    "skipped": 0,
-    "command": "uv run --frozen python <main>/tools/with_iceberg.py uv run --frozen pytest tests/test_iceberg_snapshots.py tests/test_storage_records_catalog.py tests/conformance/test_record_storage_contract.py"
-  },
   "wheel_in_empty_environment": {
     "environment": "empty venv: vendored wheels plus the built DocSpec wheel",
     "sqlalchemy": "2.1.1",
@@ -816,7 +983,7 @@
       "failures": 0,
       "errors": 0,
       "skipped": 1,
-      "wall_seconds": 369.955,
+      "wall_seconds": 279.271,
       "exit": 0
     }
   }

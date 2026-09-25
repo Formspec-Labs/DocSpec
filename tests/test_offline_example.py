@@ -1,13 +1,13 @@
 """The public offline Core walkthrough repairs and compares without repeating upstream work.
 
-It keeps exact selections and clean outputs and refuses to overwrite its output on a rerun; network is
-restricted to the retained storage, and per-phase call counts pin that each stage reruns only what changed.
+It keeps exact selections and clean outputs and refuses to overwrite its output on a rerun; it opens no
+network connection, and per-phase call counts pin that each stage reruns only what changed.
 """
 
 import json
 import runpy
 import socket
-from tests.support.network import storage_only
+from tests.support.network import refuse
 import sys
 from collections import Counter
 
@@ -20,8 +20,8 @@ from examples.phrase_match_processor import PhraseMatcher
 
 
 def test_reference_experiment_repairs_and_compares_without_repeating_upstream_work(tmp_path, monkeypatch, capfd):
-    monkeypatch.setattr(socket.socket, "connect", storage_only(socket.socket.connect))
-    monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
     fetches, extractions, segmentations, invocations = [], [], [], []
     def observe(cls, method, calls):
         """Monkeypatch ``cls.method`` to append its first argument to ``calls`` before delegating."""

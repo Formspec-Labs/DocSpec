@@ -288,7 +288,7 @@
     "tests/test_record_workspace.py::test_sqlite_workspace_rejects_repeated_and_conflicting_logical_identities",
     "tests/test_record_workspace.py::test_sqlite_workspace_enforces_its_spooled_byte_limit",
     "tests/test_iceberg_snapshots.py::test_logical_retry_reuses_publication_but_refuses_changed_input",
-    "tests/test_iceberg_snapshots.py::test_unconfigured_writes_use_an_in_process_catalog_only_their_store_reaches",
+    "tests/test_iceberg_snapshots.py::test_writes_use_an_in_process_catalog_only_their_store_reaches",
     "tests/test_iceberg_snapshots.py::test_partition_replacement_refuses_an_identity_kept_elsewhere"
   ],
   "CORE-LEDGER-PUBLICATION": [

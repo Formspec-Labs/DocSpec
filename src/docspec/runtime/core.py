@@ -25,12 +25,12 @@ from docspec.ports.record_storage import BATCH_ROWS
 class CoreWorkspace:
     """One local Core assembly owning its record, ledger, blob, state, selection and operation components."""
 
-    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, catalog=None, create=True):
+    def __init__(self, path, *, blobs=None, engine_memory_bytes=ENGINE_MEMORY_BYTES, create=True):
         self.path = Path(path).resolve()
         self._resources = ExitStack()
         try:
             self.records = self._resources.enter_context(closing(IcebergRecordStorage(
-                self.path / "records", engine_memory_bytes=engine_memory_bytes, catalog=catalog, create=create)))
+                self.path / "records", engine_memory_bytes=engine_memory_bytes, create=create)))
             self.ledger = self._resources.enter_context(closing(LocalSqliteCoreLedger(
                 self.path / "ledger.sqlite", record_storage=self.records, create=create)))
             self.blobs = blobs if blobs is not None else LocalContentAddressedBlobStore(self.path / "blobs", create=create)

@@ -11,7 +11,7 @@ uv run --frozen python -m examples.offline_demo --output ./experiment
 
 The output directory must be new. The example uses local files and needs no
 provider network access during execution. Writes use DocSpec's in-process
-Iceberg catalog; see [storage setup](record-storage.md#configure-writes). It opens `CoreWorkspace` directly, imports source
+Iceberg catalog; see the [write catalog](record-storage.md#write-catalog). It opens `CoreWorkspace` directly, imports source
 items, and calls the same document operations used elsewhere.
 
 Initial capture records the missing input as an actual failure. Once its fixture

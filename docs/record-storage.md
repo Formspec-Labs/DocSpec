@@ -1,9 +1,9 @@
 # Retained records in Iceberg
 
 DocSpec uses `IcebergRecordStorage` behind the `RecordStorage` interface.
-DuckDB writes Parquet data and positional deletes through an Iceberg REST catalog,
-in this process unless one is configured. PyIceberg parses retained metadata and
-manages temporary catalog registrations.
+DuckDB writes Parquet data and positional deletes through an in-process Iceberg
+catalog. PyIceberg parses retained metadata and manages temporary catalog
+registrations.
 SQLite remains the authoritative ledger for provenance, publication, progress and
 retention. Opaque document bytes remain in the content-addressed blob store.
 
@@ -52,24 +52,17 @@ it does not copy the complete file inventory. The format is
 selected-member manifests remain version 3. Physical snapshot IDs are fresh;
 logical IDs and canonical comparison digests keep their existing meanings.
 
-## Configure writes
+## Write catalog
 
 Writes need no setup. DuckDB's Iceberg extension attaches only REST catalogs, so
-by default each record store runs PyIceberg's SQL catalog in its own process and
-serves DuckDB the calls it makes through a loopback adapter. The adapter admits
-only its store's connection, by a random token. The SQLite file sits in the
-store's scratch directory and goes with it: a handle lives only for one write.
-The writer states its Parquet codec (zstd) rather than inheriting a catalog default.
-The [measurement](history/probes/2026-09-25-inprocess-iceberg-catalog.md) compares
-it with the Docker REST fixture it replaced.
-
-To use a REST catalog service instead, set `DOCSPEC_ICEBERG_URI` and, when needed,
-`DOCSPEC_ICEBERG_TOKEN`. Python callers can instead pass
-`IcebergCatalog(uri, token=...)` from `docspec.adapters.storage` to `CoreWorkspace`.
-That catalog must support table registration, and its service must see the local
-workspace at the same absolute path as DuckDB, because it writes each commit's
-metadata file. The implemented storage profile is local filesystem storage; a
-remote object-store profile is not implemented.
+each record store runs PyIceberg's SQL catalog in its own process and serves
+DuckDB the calls it makes through a loopback adapter. The adapter admits only its
+store's connection, by a random token. The SQLite file sits in the store's
+scratch directory and goes with it: a handle lives only for one write. The writer
+states its Parquet codec (zstd) rather than inheriting a catalog default. The
+[measurement](history/probes/2026-09-25-inprocess-iceberg-catalog.md) compares it
+with the Docker REST fixture it replaced. The implemented storage profile is local
+filesystem storage; a remote object-store profile is not implemented.
 
 Reads of retained states and exports need no catalog. Subsequent writes register
 pinned metadata with a catalog at the original local table path. Relocated

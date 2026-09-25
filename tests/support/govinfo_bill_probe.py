@@ -8,7 +8,7 @@ its capture, evidence, budget and refusal receipts.
 import hashlib
 import json
 import socket
-from examples.storage_network import storage_only
+from examples.storage_network import refuse
 import sys
 import zipfile
 from dataclasses import asdict, replace
@@ -85,7 +85,7 @@ def main():
         completed.append(result)
         return result, documents
 
-    with patch.object(socket.socket, "connect", storage_only(socket.socket.connect)), patch.object(socket, "create_connection", storage_only(socket.create_connection)):
+    with patch.object(socket.socket, "connect", refuse), patch.object(socket, "create_connection", refuse):
         output = root / "experiment"
         with patch.object(BillAcquirer, "acquire_text", observed_text), patch.object(BillAcquirer, "close", observed_close), \
                 patch.object(example, "run_documents", inspected_finish):

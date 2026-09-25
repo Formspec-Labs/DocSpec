@@ -1,4 +1,4 @@
-"""The Iceberg write catalog a record store runs itself when DOCSPEC_ICEBERG_URI is unset.
+"""The Iceberg write catalog each record store runs for itself.
 
 DuckDB's Iceberg extension attaches only REST catalogs, so this module answers
 exactly the REST calls DuckDB makes, and PyIceberg's SQL catalog applies every
@@ -25,8 +25,9 @@ from pyiceberg.table import CommitTableRequest
 from pyiceberg.table.metadata import new_table_metadata
 from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 from pyiceberg.typedef import IcebergBaseModel
+from sqlalchemy.engine import URL
 
-from docspec.adapters.storage.iceberg import IcebergCatalog
+from docspec.adapters.storage.iceberg import literal
 
 
 class InProcessCatalog:
@@ -40,7 +41,9 @@ class InProcessCatalog:
     namespace = 'docspec'
 
     def __init__(self, directory):
-        self._catalog = SqlCatalog('docspec', uri=f'sqlite:///{Path(directory) / "iceberg-catalog.sqlite"}')
+        # A URL object, not a string: a "?" in the directory would start a URL query.
+        path = Path(directory) / 'iceberg-catalog.sqlite'
+        self._catalog = SqlCatalog('docspec', uri=URL.create('sqlite', database=str(path)))
         self._catalog.create_namespace(self.namespace)
         self._server = ThreadingHTTPServer(('127.0.0.1', 0), _Handler)
         self._server.catalog, self._server.token = self._catalog, secrets.token_urlsafe(32)
@@ -64,8 +67,8 @@ class InProcessCatalog:
     def attach(self, connection):
         """Attach DuckDB to the loopback adapter with this catalog's token."""
 
-        rest = IcebergCatalog(f'http://127.0.0.1:{self._server.server_port}', self._server.token, self.namespace)
-        rest.attach(connection)
+        endpoint, token = f'http://127.0.0.1:{self._server.server_port}', self._server.token
+        connection.execute(f"ATTACH '' AS iceberg (TYPE iceberg, ENDPOINT {literal(endpoint)}, TOKEN {literal(token)})")
 
     def close(self):
         """Stop serving and release the SQLite engine."""
@@ -108,8 +111,6 @@ class _Handler(BaseHTTPRequestHandler):
             status, kind = next(((code, kind) for kinds, code, kind in _ERRORS if isinstance(error, kinds)),
                                 (500, 'InternalServerError'))
             payload = {'error': {'message': str(error), 'type': kind, 'code': status}}
-        if self.command == 'HEAD' and status == 200:
-            status, payload = 204, None
         data = b'' if payload is None else (
             payload.model_dump_json() if isinstance(payload, IcebergBaseModel) else json.dumps(payload)).encode()
         self.send_response(status)
@@ -118,7 +119,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    do_GET = do_HEAD = do_POST = _serve
+    do_GET = do_POST = _serve
 
 
 def _route(catalog, method, path, body):
@@ -135,23 +136,21 @@ def _route(catalog, method, path, body):
         case 'GET', ['v1', 'namespaces', namespace, 'tables']:
             names = catalog.list_tables(namespace)
             return 200, {'identifiers': [{'namespace': list(name[:-1]), 'name': name[-1]} for name in names]}
-        case 'GET' | 'HEAD', ['v1', 'namespaces', namespace]:
+        case 'GET', ['v1', 'namespaces', namespace]:
             return 200, {'namespace': list(namespace), 'properties': catalog.load_namespace_properties(namespace)}
-        case 'GET' | 'HEAD', ['v1', 'namespaces', namespace, 'tables', table]:
+        case 'GET', ['v1', 'namespaces', namespace, 'tables', table]:
             loaded = catalog.load_table((*namespace, table))
             return 200, TableResponse(metadata_location=loaded.metadata_location, metadata=loaded.metadata, config={})
         case 'POST', ['v1', 'namespaces', namespace, 'tables']:
             request = CreateTableRequest.model_validate(body)
-            arguments = {'schema': request.table_schema, 'location': request.location,
-                         'partition_spec': request.partition_spec or UNPARTITIONED_PARTITION_SPEC,
-                         'sort_order': request.write_order or UNSORTED_SORT_ORDER,
-                         'properties': dict(request.properties)}
-            if not request.stage_create:
-                created = catalog.create_table((*namespace, request.name), **arguments)
-                return 200, TableResponse(metadata_location=created.metadata_location, metadata=created.metadata,
-                                          config={})
             # DuckDB stages creation in its transaction and commits it later with assert-create.
-            return 200, TableResponse(metadata=new_table_metadata(**arguments), config={})
+            if not request.stage_create:
+                raise ValueError('the in-process catalog creates only staged tables')
+            metadata = new_table_metadata(schema=request.table_schema, location=request.location,
+                                          partition_spec=request.partition_spec or UNPARTITIONED_PARTITION_SPEC,
+                                          sort_order=request.write_order or UNSORTED_SORT_ORDER,
+                                          properties=dict(request.properties))
+            return 200, TableResponse(metadata=metadata, config={})
         case 'POST', ['v1', 'namespaces', namespace, 'tables', table]:
             return 200, _commit(catalog, {**body, 'identifier': {'namespace': list(namespace), 'name': table}})
         case 'POST', ['v1', 'transactions', 'commit']:

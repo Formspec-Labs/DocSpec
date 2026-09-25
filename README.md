@@ -20,8 +20,7 @@ uv run --frozen python -m examples.offline_demo --output ./experiment
 See [contributor setup](CONTRIBUTING.md), the [offline walkthrough](docs/offline-walkthrough.md),
 and the [documentation index](docs/documentation.md). The example runs locally
 and exercises capture, processing, repair, and reuse with local fixtures. Writes
-use an in-process Iceberg catalog; `DOCSPEC_ICEBERG_URI` selects a REST catalog
-service instead. Retained reads need no catalog.
+use an in-process Iceberg catalog, and retained reads need none.
 
 ## Current entry points
 
