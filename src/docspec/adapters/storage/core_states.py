@@ -1,6 +1,6 @@
 """General Core roots over the existing record writer and metadata publisher."""
 
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from tempfile import TemporaryFile
 
 import msgspec
@@ -44,6 +44,14 @@ def _entity_rows(entities, observe=None, *, encoded=False):
 def _newest_first(layers):
     """Order layer views by commit time from their digest-bound Iceberg metadata, newest first."""
     return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.committed_ms, layer.reference.layer_id)))
+
+
+def _values(entities):
+    return entities.project("record_identity AS entity_id, record_json AS occurrence_record")
+
+
+def _keyed_rows(members, values):
+    return members.join(values, "occurrence_id = entity_id", how="left").project("member_key, occurrence_id, occurrence_record")
 
 
 def _existing_entities(session, identities):
@@ -469,6 +477,51 @@ class CoreStateStorage:
     @contextmanager
     def relation(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
         """Recover unordered keyed values within the caller's protection scope."""
+        with self._addressed(session, state_id, scope=scope, addresses=addresses, cursor=cursor, layers=layers) as (members, values):
+            yield _keyed_rows(members, values)
+
+    def ordered_batches(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
+        """Stream the relation's keyed rows in member_key order, as native batches of at most BATCH_ROWS rows.
+
+        Only compact addresses are ordered, once. Payloads then join one window
+        of that order at a time, and each window is ordered alone, so no
+        operator holds or sorts every payload. A window is a whole number of
+        BATCH_ROWS rows, so batch boundaries match one global order, sized from
+        the entity layer's Parquet footers to a quarter of the engine's memory
+        allowance. Each window scans the entity layer once: a state whose
+        payloads exceed that share is scanned again per window instead of
+        spilling them all (docs/history/probes/2026-09-25-read-keys-not-payloads.md).
+        """
+        references = self.layers(session, state_id) if layers is None else layers
+        with (self.records._cursor() if cursor is None else nullcontext(cursor)) as cursor, \
+                self._addressed(session, state_id, scope=scope, addresses=addresses, cursor=cursor,
+                                layers=references) as (members, values):
+            self.records.temp_table(cursor, members.project(
+                "member_key, occurrence_id, row_number() OVER (ORDER BY member_key) AS position"), "ordered_members")
+            try:
+                count = cursor.execute("SELECT count(*) FROM ordered_members").fetchone()[0]
+                window = self._window_rows(references["entities"]) if count > BATCH_ROWS else BATCH_ROWS
+                for start in range(0, count, window):
+                    # Exact window cardinality keeps the payload scan on the probe side.
+                    cursor.execute("CREATE TEMP TABLE member_window AS SELECT member_key, occurrence_id FROM ordered_members "
+                                   f"WHERE position > {start} AND position <= {start + window}")
+                    try:
+                        keyed = _keyed_rows(cursor.table("member_window"), values).order("member_key")
+                        with closing(keyed.to_arrow_reader(BATCH_ROWS)) as batches:
+                            yield from batches
+                    finally:
+                        cursor.execute("DROP TABLE member_window")
+            finally:
+                cursor.execute("DROP TABLE ordered_members")
+
+    def _window_rows(self, entities):
+        stored, rows = self.records.stored_payload(entities.reference)
+        window_bytes = self.records.engine_memory_bytes // 4
+        return max(1, int(window_bytes * rows // max(stored * BATCH_ROWS, 1))) * BATCH_ROWS
+
+    @contextmanager
+    def _addressed(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
+        """Yield compact (member_key, occurrence_id) addresses and the (entity_id, occurrence_record) values they name."""
         tables, partitions = {}, None
         if scope is not None:
             scope = tuple(scope)
@@ -482,13 +535,11 @@ class CoreStateStorage:
                 members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
                 members = addresses.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
                 # Materialize compact addresses once before the payload join.
-                members.create_view("selection_address_input")
-                cursor.execute("CREATE TEMP TABLE selection_addresses AS SELECT * FROM selection_address_input")
+                selected = self.records.temp_table(cursor, members, "selection_addresses")
                 try:
-                    yield self._keyed_rows(cursor.table("selection_addresses"), relations["entities"])
+                    yield selected, _values(relations["entities"])
                 finally:
                     cursor.execute("DROP TABLE selection_addresses")
-                    cursor.execute("DROP VIEW selection_address_input")
             return
         if scope is not None:
             bucket_count = references["membership"].partition_policy.bucket_count
@@ -497,7 +548,7 @@ class CoreStateStorage:
             # Recover only compact named addresses before selecting payload files.
             # The table also retains absent keys and aliases of one occurrence.
             with self.records.relations({"membership": references["membership"]}, partitions=partitions,
-                                        tables=tables, identities={"membership": list(scope)}) as relations:
+                                        tables=tables, identities={"membership": list(scope)}, cursor=cursor) as relations:
                 members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
                 members = relations["wanted"].join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
                 addresses = members.to_arrow_table()
@@ -505,27 +556,21 @@ class CoreStateStorage:
                 raise LimitExceededError("named membership addresses exceed the batch byte limit")
             identities = list({identity for identity in addresses.column("occurrence_id").to_pylist() if identity is not None})
             with self.records.relations({"entities": references["entities"]}, tables={"members": addresses},
-                                        identities={"entities": identities}) as relations:
-                yield self._keyed_rows(relations["members"], relations["entities"])
+                                        identities={"entities": identities}, cursor=cursor) as relations:
+                yield relations["members"], _values(relations["entities"])
             return
-        with self.records.relations(references, partitions=partitions, tables=tables) as relations:
+        with self.records.relations(references, partitions=partitions, tables=tables, cursor=cursor) as relations:
             members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
             if scope is not None:
                 members = relations["wanted"].join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
-            yield self._keyed_rows(members, relations["entities"])
-
-    @staticmethod
-    def _keyed_rows(members, entities):
-        values = entities.project("record_identity AS entity_id, record_json AS occurrence_record")
-        return members.join(values, "occurrence_id = entity_id", how="left").project("member_key, occurrence_id, occurrence_record")
+            yield members, _values(relations["entities"])
 
     def rows(self, session, state_id):
-        """The row convenience path shares native reads and byte-bounded decoding."""
-        with self.relation(session, state_id) as relation, closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
-            with closing(bounded_batches(batches, byte_column="occurrence_record")) as bounded:
-                for batch in bounded:
-                    for key, payload in zip(batch.column("member_key").to_pylist(), batch.column("occurrence_record").to_pylist(), strict=True):
-                        yield key, stored_record(payload)
+        """The row convenience path shares ordered native reads and byte-bounded decoding."""
+        with closing(bounded_batches(self.ordered_batches(session, state_id), byte_column="occurrence_record")) as bounded:
+            for batch in bounded:
+                for key, payload in zip(batch.column("member_key").to_pylist(), batch.column("occurrence_record").to_pylist(), strict=True):
+                    yield key, stored_record(payload)
 
     def compare(self, session, older, newer, *, sample_limit=20):
         """Compare complete keyed states natively; return only bounded samples."""
@@ -573,9 +618,8 @@ class CoreStateStorage:
             return {"older": older, "newer": newer, "counts": {name: counts.get(name, 0) for name in ("added", "removed", "changed")},
                     "sample": [dict(zip(("member_key", "older_occurrence", "newer_occurrence", "change", "value_changed"), row, strict=True)) for row in samples]}
 
-    @contextmanager
     def changes(self, session, older, newer, *, older_layers, newer_layers):
-        """Yield newer's keyed rows at every key whose address differs from older.
+        """Stream newer's keyed rows, as ``ordered_batches``, at every key whose address differs from older.
 
         Certified revision history narrows both memberships to edited keys;
         otherwise one native outer join compares the compact memberships, as
@@ -591,13 +635,9 @@ class CoreStateStorage:
                 if certified is not None:
                     old = old.join(certified, "old_key = changed_key", how="semi")
                     new = new.join(certified, "new_key = changed_key", how="semi")
-                old.join(new, "old_key = new_key", how="outer").filter("old_member IS DISTINCT FROM new_member").project(
-                    "coalesce(old_key, new_key) AS wanted_key").create_view("state_change_input")
-                cursor.execute("CREATE TEMP TABLE state_changes AS SELECT * FROM state_change_input")
-                cursor.execute("DROP VIEW state_change_input")
-            with self.relation(session, newer, addresses=cursor.table("state_changes"), cursor=cursor,
-                               layers=newer_layers) as relation:
-                yield relation
+                changed = self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
+                    "old_member IS DISTINCT FROM new_member").project("coalesce(old_key, new_key) AS wanted_key"), "state_changes")
+            yield from self.ordered_batches(session, newer, addresses=changed, cursor=cursor, layers=newer_layers)
 
     def resolve_membership(self, session, revision, *, full=False):
         """Validate every edit before reducing keys; write only the changed rows.

@@ -1,7 +1,8 @@
 """Reopening an existing state reads exact membership, occurrence and value rows while checking pinned bytes.
 
 Mismatched pins or damaged payloads refuse before delivery, published-state reuse must not repeat a full
-semantic admission, and a reader needs retained metadata rather than merely available rows.
+semantic admission, and a reader needs retained metadata rather than merely available rows. Ordered reads
+join payloads per window of compact addresses yet deliver exactly one global order.
 """
 
 from contextlib import closing, contextmanager
@@ -10,10 +11,12 @@ import json
 import subprocess
 import sys
 
+import pyarrow as pa
 import pytest
 
 from docspec.domain import core
 from docspec.errors import IntegrityError, StateTransitionError, StateValueRelationUnavailable
+from docspec.ports.record_storage import BATCH_ROWS, bounded_batches
 from docspec.runtime import CoreWorkspace
 
 
@@ -71,6 +74,47 @@ def test_reopened_reader_preserves_membership_pin_and_native_rows(tmp_path):
             assert reader.pin == pin and reader.read_value("update") == {"title": "Updated"}
 
 
+def test_windowed_payload_joins_deliver_one_global_order(tmp_path):
+    """A small engine allowance forces several payload windows over occurrence IDs unrelated to key order.
+
+    Rows, order, bytes and batch bounds equal one global sort of the whole join, read at the default
+    allowance; values and changes equal an independent Python diff; a closed session refuses the next batch.
+    """
+    count = 6000
+    values = {f"key-{index:05d}": {"n": index, "text": "x" * (index % 8191)} for index in range(count)}
+    edited = {key: {"n": -value["n"]} for key, value in values.items() if value["n"] % 2 == 0}
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("wide", values.items())
+        newer = workspace.upsert("wide", edited.items(), batch_id="edit").state_id
+        with workspace.open_state(newer) as reader, reader.relation() as relation, \
+                closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as ordered:
+            expected = list(bounded_batches(ordered, byte_column="occurrence_record"))
+    with CoreWorkspace(tmp_path, create=False, engine_memory_bytes=32 * 1024**2) as workspace:
+        with workspace.open_state("wide") as older, workspace.open_state(newer) as reader:
+            window = workspace.states._window_rows(reader._layers["entities"])
+            assert window % BATCH_ROWS == 0 and window < len(edited) < count
+            with closing(reader.batches()) as batches:
+                actual = list(batches)
+            assert [batch.num_rows for batch in actual] == [batch.num_rows for batch in expected]
+            assert pa.Table.from_batches(actual).equals(pa.Table.from_batches(expected))
+            assert [(key, value) for key, _, value in reader.values()] == sorted({**values, **edited}.items())
+            assert [(key, value) for key, _, value in reader.changes(older)] == sorted(edited.items())
+            batches = reader.batches()
+            next(batches)
+        with pytest.raises(StateTransitionError, match="closed"):
+            next(batches)
+
+
+def test_nested_ordered_reads_keep_their_own_addresses(tmp_path):
+    """A connection's cursors share relation views; an ordered read inside another's loop must not disturb it."""
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("outer", [(f"o{index}", index) for index in range(3)])
+        workspace.create("inner", [("i0", 0), ("i1", -1)])
+        nested = [(key, entity.value.value, [(inner, value.value.value) for inner, value in workspace.rows("inner")])
+                  for key, entity in workspace.rows("outer")]
+        assert nested == [(f"o{index}", index, [("i0", 0), ("i1", -1)]) for index in range(3)]
+
+
 def test_lookup_selects_one_membership_and_occurrence_without_readmission(tmp_path, monkeypatch):
     _fixture(tmp_path)
     with CoreWorkspace(tmp_path, create=False) as workspace, workspace.open_state("selected") as reader:
@@ -96,13 +140,11 @@ def test_scoped_values_use_one_bounded_address_group_and_preserve_pin(tmp_path, 
         pin = reader.pin
         full = {row[0]: row for row in reader.values()}
         scopes = []
-        original = workspace.states.relation
-        @contextmanager
+        original = workspace.states.ordered_batches
         def observe(*args, **kwargs):
             scopes.append(kwargs.get("scope"))
-            with original(*args, **kwargs) as relation:
-                yield relation
-        monkeypatch.setattr(workspace.states, "relation", observe)
+            return original(*args, **kwargs)
+        monkeypatch.setattr(workspace.states, "ordered_batches", observe)
         monkeypatch.setattr(workspace.records, "admit", lambda *args, **kwargs: pytest.fail("source readmitted"))
         assert list(reader.values(member_keys=["update"])) == [full["update"]]
         assert scopes == [("update",)] and reader.pin == pin
