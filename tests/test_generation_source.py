@@ -3,7 +3,6 @@
 from dataclasses import replace
 import hashlib
 import json
-from pathlib import Path
 import shutil
 
 import httpx
@@ -16,6 +15,10 @@ from rulespec_artifacts import (ArtifactPin, LocalMemberSource, Producer, build_
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
 from docspec.adapters.generation_source import stage_generation
 from docspec.errors import IntegrityError, LimitExceededError
+
+# Rulespec requires a producer pinned by a published digest or full Git object ID.
+_IMPLEMENTATION = "git+https://example.test/spicy-regs@" + "1" * 40
+PRODUCER = Producer("spicy-regs", _IMPLEMENTATION, "urn:test:verifier", "1", _IMPLEMENTATION)
 
 
 def generation(path, *, table="federal_register", family="federal-register", status="complete-family",
@@ -36,7 +39,7 @@ def generation(path, *, table="federal_register", family="federal-register", sta
     if identity is not None:
         description["identity"] = identity
     root = build_artifact_root(kind=kind, spec={"family": family, "publicationStatus": status, "tables": {member.object_key: description}},
-                              producer=Producer("spicy-regs", "test:producer", "test:verifier", "1", "test:verifier-code"), manifests=[manifest])
+                              producer=PRODUCER, manifests=[manifest])
     (path / "artifact.json").write_bytes(canonical_json_bytes(root))
     return ArtifactPin(root["logicalId"], root["artifactDigest"]), member, description
 
@@ -177,7 +180,7 @@ def test_https_uses_existing_transport_and_checks_same_pointer(tmp_path, monkeyp
     def respond(request):
         requests.append(str(request.url))
         path = base / request.url.path.removeprefix("/data/")
-        return httpx.Response(200, content=path.read_bytes())
+        return httpx.Response(200, stream=httpx.ByteStream(path.read_bytes()), request=request)
     clients = []
     def fetcher(config):
         client = httpx.Client(transport=httpx.MockTransport(respond))
