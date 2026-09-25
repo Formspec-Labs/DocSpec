@@ -1,9 +1,10 @@
-"""Format-neutral storage for partitioned logical record layers."""
+"""Format-neutral storage for partitioned logical record layers and typed table layers."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -13,7 +14,7 @@ if TYPE_CHECKING:
 from docspec.domain.references import BlobRef, LayerRef
 from docspec.domain.streams import owned_iterator
 from docspec.errors import IntegrityError, LimitExceededError
-from docspec.domain.storage import PartitionPolicy, RecordSchema
+from docspec.domain.storage import PartitionPolicy, RecordSchema, TableSchema
 
 
 BATCH_ROWS = 2048
@@ -32,8 +33,27 @@ class AdmittedRecordLayer(Protocol):
     def relation(self, *, partitions: frozenset[int] | None = None) -> AbstractContextManager[duckdb.DuckDBPyRelation]: ...
 
 
+class AdmittedTableLayer(Protocol):
+    """A checked immutable typed table: its own columns, with no routing columns or encoded payload."""
+
+    reference: LayerRef
+    schema: TableSchema
+
+    @property
+    def member_digest(self) -> str | None:
+        """The producer member a registered table holds unchanged; None for DocSpec's own writes."""
+        ...
+
+    def relation(self) -> AbstractContextManager[duckdb.DuckDBPyRelation]: ...
+
+
 class RecordStorage(Protocol):
-    """Write, verify, and stream immutable logical layers."""
+    """Write, verify, and stream immutable logical layers.
+
+    Encoded-record layers and typed table layers share admission, file-level
+    verification, physical references and deletion; each profile's own
+    reads and writes refuse the other's layers.
+    """
 
     def write_layer(
         self,
@@ -59,13 +79,33 @@ class RecordStorage(Protocol):
         """
         ...
 
-    def admit(self, reference: LayerRef) -> AdmittedRecordLayer: ...
+    def write_table(
+        self, batches: Iterable[pa.RecordBatch], *, layer_kind: str, schema: TableSchema,
+        sort_by: tuple[str, ...] = (),
+    ) -> AdmittedTableLayer:
+        """Write typed rows natively into a new table layer, each file sorted by ``sort_by``."""
+        ...
+
+    def append_table(
+        self, base: LayerRef | AdmittedTableLayer, batches: Iterable[pa.RecordBatch], *,
+        sort_by: tuple[str, ...] = (),
+    ) -> AdmittedTableLayer:
+        """Add rows as new files sharing every base file; a registered producer table refuses."""
+        ...
+
+    def register_parquet(
+        self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str,
+    ) -> AdmittedTableLayer:
+        """Retain a producer's Parquet file by reference, unrewritten, sealed under its member digest."""
+        ...
+
+    def admit(self, reference: LayerRef) -> AdmittedRecordLayer | AdmittedTableLayer: ...
 
     def admission_scope(self) -> AbstractContextManager[None]:
         """Bound admission reuse to a caller-owned scope preventing cleanup."""
         ...
 
-    def admitted(self, reference: LayerRef) -> AdmittedRecordLayer:
+    def admitted(self, reference: LayerRef) -> AdmittedRecordLayer | AdmittedTableLayer:
         """Reuse the protected scope's admission or freshly check availability."""
         ...
 
@@ -116,7 +156,7 @@ class RecordStorage(Protocol):
 
     def relations(self, references: Mapping[str, LayerRef], *, partitions=None, tables=None) -> AbstractContextManager[Mapping[str, duckdb.DuckDBPyRelation]]: ...
 
-    def available(self, reference: LayerRef) -> AdmittedRecordLayer: ...
+    def available(self, reference: LayerRef) -> AdmittedRecordLayer | AdmittedTableLayer: ...
 
     def physical_references(self, reference: LayerRef) -> Iterator[BlobRef]: ...
 
@@ -136,12 +176,12 @@ class RecordStorage(Protocol):
 
     def identity_field(self, reference: LayerRef) -> str: ...
 
-    def schema(self, reference: LayerRef) -> RecordSchema: ...
+    def schema(self, reference: LayerRef) -> RecordSchema | TableSchema: ...
 
     def partition_policy(self, reference: LayerRef) -> PartitionPolicy: ...
 
 
-__all__ = ["PartitionPolicy", "RecordSchema", "RecordStorage"]
+__all__ = ["PartitionPolicy", "RecordSchema", "RecordStorage", "TableSchema"]
 
 
 def bounded_batches(

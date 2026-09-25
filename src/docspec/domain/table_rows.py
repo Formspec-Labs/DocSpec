@@ -1,6 +1,6 @@
 """Python reference for the versioned canonical spelling of typed table rows."""
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timezone
 import math
 
@@ -28,24 +28,31 @@ def table_type(kind):
     return normalized
 
 
-def table_columns(columns):
-    """Validate declared native types and return columns in canonical UTF-16 order.
+def check_column_names(names: Iterable[str]) -> None:
+    """Refuse no columns, an empty or NUL-bearing name, invalid Unicode, or a case-folded duplicate.
 
-    Names may contain control characters except NUL, which SQL identifiers
-    cannot represent. Nanosecond timestamps are refused: the Python reference
-    and the supported Iceberg timestamp profile retain microseconds exactly.
+    SQL identifiers cannot carry NUL, and DuckDB folds identifier case.
     """
-    result, names = [], set()
-    for name, kind in columns:
+    folded = set()
+    for name in names:
         if not isinstance(name, str) or not name or "\0" in name:
             raise ValueError("table column names must be nonempty strings without NUL")
         canonical_value_bytes(name)  # Shared owner refuses invalid Unicode.
-        if name in names or name.casefold() in {value.casefold() for value in names}:
+        if name.casefold() in folded:
             raise ValueError("table column names must be distinct, including SQL case folding")
-        names.add(name)
-        result.append((name, table_type(kind)))
-    if not result:
+        folded.add(name.casefold())
+    if not folded:
         raise ValueError("table rows require at least one column")
+
+
+def table_columns(columns):
+    """Validate declared native types and return columns in canonical UTF-16 order.
+
+    Nanosecond timestamps are refused: the Python reference and the supported
+    Iceberg timestamp profile retain microseconds exactly.
+    """
+    result = tuple((name, table_type(kind)) for name, kind in columns)
+    check_column_names(name for name, _ in result)
     return tuple(sorted(result, key=lambda column: column[0].encode("utf-16-be")))
 
 

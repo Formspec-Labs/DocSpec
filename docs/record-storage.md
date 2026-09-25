@@ -51,6 +51,26 @@ it does not copy the complete file inventory. The format is
 selected-member manifests remain version 3. Physical snapshot IDs are fresh;
 logical IDs and canonical comparison digests keep their existing meanings.
 
+## Typed table layers
+
+A typed table layer (root format `docspec-iceberg-table`, version 1) holds a
+`TableSchema`'s own columns, with no routing columns or encoded payload, in the
+types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
+[decision 0007](decisions/0007-table-shaped-states-by-reference.md):
+
+- `write_table` writes Arrow batches natively. DuckDB's Parquet carries Iceberg
+  field IDs, row groups target 1 MiB and files half the member limit, and
+  `sort_by` sorts each file. `append_table` adds files and shares every base file.
+- `register_parquet` retains a producer's file by reference. Its footer must read
+  as the declared schema and carry no field IDs; the file then moves into the
+  store unrewritten, and its seal must equal the producer's member digest, which
+  the root records. It is exempt from `max_member_bytes`; a row group above that
+  limit refuses instead.
+- `available` checks the pinned Iceberg schema against the root. `verify` adds a
+  native `count(*)`, the scan's column types and, for a registered table, its one
+  data file's digest. File-level admission, physical references and deletion are
+  shared with encoded layers; each profile's reads and writes refuse the other's.
+
 ## Configure writes
 
 Set `DOCSPEC_ICEBERG_URI` to a REST catalog endpoint and, when needed,

@@ -15,11 +15,18 @@ from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFileContent
 from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataUtil
+from pyiceberg.types import (BinaryType, BooleanType, DateType, DoubleType, IntegerType, ListType, LongType,
+    StringType, TimestampType, TimestamptzType)
 
 from docspec.adapters.storage.files import _contained, _read_exact, _sync_file, _sync_parents, _write_once, sha256_file
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError
+
+# The table-profile type DuckDB's iceberg_scan yields for each Iceberg type.
+_TABLE_TYPES = {BooleanType: 'BOOLEAN', IntegerType: 'INTEGER', LongType: 'BIGINT', DoubleType: 'DOUBLE',
+                DateType: 'DATE', TimestampType: 'TIMESTAMP', TimestamptzType: 'TIMESTAMPTZ',
+                StringType: 'VARCHAR', BinaryType: 'BLOB'}
 
 
 def literal(value):
@@ -85,6 +92,19 @@ class SnapshotIO(PyArrowFileIO):
         """Open the mapped local path for reading."""
 
         return super().new_input(str(self.path(location)))
+
+
+def table_columns(schema):
+    """Name each top-level Iceberg field with its table-profile type, refusing any other type."""
+    columns = []
+    for field in schema.fields:
+        kind = field.field_type
+        name = ('VARCHAR[]' if isinstance(kind, ListType) and isinstance(kind.element_type, StringType)
+                else _TABLE_TYPES.get(type(kind)))
+        if name is None:
+            raise IntegrityError(f'Iceberg column type {kind} is outside the table profile')
+        columns.append((field.name, name))
+    return tuple(columns)
 
 
 def snapshot(root, reference):
