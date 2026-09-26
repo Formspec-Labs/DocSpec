@@ -77,12 +77,24 @@ types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
 Row identity under `docspec-table-row/1` lives in
 `adapters/storage/table_occurrences.py`. One streamed pass per generation spills
 each row's member key, row digest and occurrence hash to scratch, after the
-native spelling is checked against the Python reference. The minted-occurrence
-index is an append-only table layer whose appended files are each sorted by
-occurrence hash. A lookup of up to 256 occurrences reads at most one row group
-per occurrence in each file; a larger one is a single semi-join scan. Reading an
+native spelling is checked against the Python reference. A DATE key component
+spells ISO 8601, as spicy-docs' references do. The minted-occurrence index is an
+append-only table layer whose appended files are each sorted by occurrence
+hash. A lookup of up to 256 occurrences reads at most one row group per
+occurrence in each file; a larger one is a single semi-join scan. Reading an
 occurrence back returns its row's canonical bytes only when their digest matches
 the index.
+
+A table-shaped state (`adapters/storage/core_tables.py`) has a version-3
+manifest naming its registered `table`, a `core-membership:1` `membership`, its
+dataset's `occurrences` index snapshot and the identity `rules`. The first
+generation's membership is written natively from the spilled identities
+(`retain_relation`, which derives buckets and checks limits without a Python
+row loop); a later one applies its delta to the base's membership with
+`apply_changes`. Readers join membership to the table by spelled key and build
+each occurrence record natively. A member search sees such a state through its
+index, reads only the requested rows, and a pin of a table occurrence stores its
+exact bytes in the ledger rather than naming a layer.
 
 ## Configure writes
 

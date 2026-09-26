@@ -1061,18 +1061,50 @@ imported states. Release
 
 **Depends on:** C26, and C28 (register members per layer, owned by its own
 lane), which must accept the version-3 extension point in step 9. **Status:**
-proposed (2026-09-23, revised after review the same day), under
-[decision 0007](decisions/0007-table-shaped-states-by-reference.md), not yet
-accepted. Open rulings R1–R6 are listed there. This is D3 of the consolidation
-path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`, Track D).
+implemented (2026-09-25) under
+[decision 0007](decisions/0007-table-shaped-states-by-reference.md) and the
+owner's rulings R1–R6; the Federal Register gate passed
+([receipt](history/probes/2026-09-25-admit-generation-gate.md)). This is D3 of
+the consolidation path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`,
+Track D).
 
-**Progress (2026-09-25):** the storage foundation is in place: the table-layer
-profile of step 2 (`IcebergRecordStorage.write_table`, `append_table` and
-`register_parquet`), the row and member-key spellings of steps 3 and 4 with
-their spelling oracle, the identity pass of step 5 and the minted-occurrence
-index of step 7 with its lookup (`adapters/storage/table_occurrences.py`). See
-[record storage](record-storage.md#typed-table-layers). Admission, publication,
-readers and C28's resolver remain.
+**Delivered:** `CoreWorkspace.admit_generation(source, *, family, table,
+dataset=None)` returns a `GenerationAdmission(state_id, report)`, and
+`CoreStateReader.table()` yields the typed rows; see
+[Python runs](python-runs.md#admit-a-producer-generation-by-reference). The
+table-layer profile, spellings, identity pass and index of steps 2–5 and 7
+(`adapters/storage/table_occurrences.py`) carry table-shaped states in
+`adapters/storage/core_tables.py`:
+
+- Steps 1–8: a first admission mints every occurrence from the staged member
+  before registering it, writes membership natively (`retain_relation`) and
+  starts the index; a later one mints only the added and changed rows of one
+  all-column join and applies the delta with `apply_changes`. One unit
+  publishes the state, its representation, the admission's definition,
+  request, execution and result, the root and member manifest (bound as whole
+  inputs, retained as exact bytes) and a report whose counts separate
+  generated from adopted occurrences (R1(b)). The dataset's base is not bound
+  as an input, so it stays removable (R3). A DATE key component spells ISO
+  8601.
+- Step 9: `_references` dispatches on the manifest version; a table-shaped
+  state's search view is its pinned index, and `find_members` returns an
+  occurrence's exact bytes from its row. A pin of a table occurrence keeps
+  those bytes in the ledger instead of naming a layer.
+- Step 10: every reader spells occurrence records natively; `compare` reads
+  its sample through each state.
+- Step 11, reduced by R3: no pin transfer and no retired-occurrence layer. A
+  superseded generation's state, representation and admission result are
+  removed under a retention policy (C18) once the next generation is current
+  and no current result binds it; pinned occurrences keep their bytes, and
+  files the newer state shares stay. Re-admitting a pin whose state was
+  removed refuses; that recovery path is left for a later lane.
+- Step 12: `Put`, `Remove` and checkpoints on a table-shaped base refuse.
+
+Known limits: the index costs 72.6 B per occurrence (two stored hashes), not
+the 35–50 B estimated; a later admission's join holds the base table's rows
+(2.1 GiB for FR); the spilled identity file is not counted against
+`max_merge_scratch_bytes`; a pin admitted over one base cannot become current
+over another except by an explicit `select_current`.
 
 **Why:** DocSpec holds spicy-regs rows as its own canonical-JSON occurrence
 records, one ledger-registered entity each. Importing its Federal Register
@@ -1365,7 +1397,7 @@ corrections.
   - reads through every existing reader and `table()`;
   - C28 member resolution through the index;
   - relocation, and a flipped byte refused;
-  - removal of a superseded generation after pin transfer.
+  - removal of a superseded generation (without pin transfer, per R3).
 - The native spellings equal the Python reference on the corpus.
 - The gate passes, and [python-runs](python-runs.md) documents the API.
 - Follow-ups outside this task:

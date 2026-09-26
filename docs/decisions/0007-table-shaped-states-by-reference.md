@@ -4,10 +4,12 @@
 - Status: **proposed, not accepted.** The owner must rule on this record: it is
   ruling 1 of the consolidation path (spicy-docs
   `docs/research/consolidation-path-2026-09-22.md`, §5), plus open rulings
-  R1–R6 below. Nothing here is implemented.
+  R1–R6 below, now decided.
   [C27](../core-model-implementation-tasks.md#c27--admit-a-producer-generation-by-reference)
-  and [C29](../core-model-implementation-tasks.md#c29--typed-derived-layers)
-  are the proposed tasks.
+  implements it and passed its
+  [gate](../history/probes/2026-09-25-admit-generation-gate.md) on 2026-09-25;
+  [C29](../core-model-implementation-tasks.md#c29--typed-derived-layers)
+  remains proposed.
 - Evidence:
   - the [D2 spike](../history/probes/2026-09-23-admit-by-reference-spike.md),
     with its review corrections;
