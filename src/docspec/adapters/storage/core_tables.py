@@ -19,8 +19,10 @@ import pyarrow as pa
 
 from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY, MEMBERSHIP_SCHEMA
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.table_occurrences import (MintedIdentities, append_occurrences, candidate_rows,
-    check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spilled_identities)
+from docspec.adapters.storage.records import identity_filter
+from docspec.adapters.storage.table_occurrences import (IndexedOccurrence, MintedIdentities, append_occurrences,
+    candidate_rows, check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spilled_identities)
+from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_relation, member_key_sql, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql, rows_differ_sql)
 from docspec.domain.core_admission import inline_occurrence_payload
@@ -67,6 +69,14 @@ def _membership_rows(minted):
                              f"encode({membership_json_sql()}) AS record_json")
 
 
+# A delta applies through apply_changes, which admits each changed row in
+# Python and adds files; a larger delta, or a membership already spread over
+# this many data files, is rewritten natively instead, which also compacts it.
+DELTA_ROWS = 32 * BATCH_ROWS
+MEMBERSHIP_FILES = 16
+
+
+@contextmanager
 def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *, member_digest, state_id,
                  base=None, base_identity=None):
     """Mint a staged producer member's identities, register it, then retain its membership and index.
@@ -76,11 +86,13 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
     spelling. Without a base, one native pass mints every occurrence. With a
     base of the same columns, one direct all-column join finds the added,
     removed and changed keys; only those rows are spelled and minted,
-    unchanged keys keep their occurrence, and the membership applies the delta
-    to the base's, sharing its files. Other columns re-mint every row against
-    the base's index. Every key refusal precedes registration.
-    Returns the admitted layers and counts: ``generated`` occurrences are new
-    to the index and ``adopted`` ones it already held (ruling R1(b));
+    unchanged keys keep their occurrence, and the membership takes the delta
+    (``_apply_delta``). Other columns re-mint every row against the base's
+    index. Every key refusal precedes registration.
+
+    Yields the admitted layers, the counts and the minted identities, which
+    stay readable until the caller has published: ``generated`` occurrences
+    are new to the index and ``adopted`` ones it already held (ruling R1(b));
     ``added``, ``removed`` and ``changed`` compare memberships with the base,
     and ``carried`` keys kept their base occurrence.
     """
@@ -106,48 +118,102 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
                 table = records.register_parquet(path, layer_kind=TABLE_KIND, schema=schema, member_digest=member_digest)
                 counts = {"rows": table.reference.record_count}
                 if delta:
-                    membership = _apply_delta(records, cursor, table, identity, base, minted, views["old"], counts)
+                    membership = _apply_delta(records, cursor, table, identity, base, minted, counts)
                 else:
                     membership = records.retain_relation(_membership_rows(minted.relation(cursor)), cursor=cursor,
                                                          layer_kind="core-membership", schema=MEMBERSHIP_SCHEMA,
                                                          partition_policy=MEMBERSHIP_POLICY)
                 index, generated = append_occurrences(records, None if base is None else base["occurrences"], minted,
                                                       first_state_id=state_id)
+                if base is None:
+                    counts.update(added=counts["rows"], removed=0, changed=0)
+                elif not delta:
+                    with records.relations({"old": base["membership"], "new": membership}, cursor=cursor) as memberships:
+                        counts.update(_membership_counts(memberships["old"], memberships["new"]))
+                rows = counts["rows"]
+                counts.update(generated=generated, adopted=rows - generated, reminted=base is not None and not delta)
+                counts.setdefault("carried", rows - counts["added"] - counts["changed"])
+                yield {"table": table, "membership": membership, "occurrences": index}, counts, minted
         finally:
             for view in views.values():
                 cursor.execute(f"DROP VIEW IF EXISTS {view}")
-        if base is None:
-            counts.update(added=counts["rows"], removed=0, changed=0)
-        elif not delta:
-            with records.relations({"old": base["membership"], "new": membership}, cursor=cursor) as memberships:
-                counts.update(_membership_counts(memberships["old"], memberships["new"]))
-    rows = counts["rows"]
-    counts.update(generated=generated, adopted=rows - generated, reminted=base is not None and not delta)
-    counts.setdefault("carried", rows - counts["added"] - counts["changed"])
-    return {"table": table, "membership": membership, "occurrences": index}, counts
 
 
-def _apply_delta(records, cursor, table, identity, base, minted, old_view, counts):
-    """Apply minted rows and removed keys to the base membership; count them into ``counts``."""
-    new_view = f"admission_registered_{uuid4().hex}"
-    old_key, new_key = member_key_sql(identity, qualifier="o"), member_key_sql(identity, qualifier="n")
+def _apply_delta(records, cursor, table, identity, base, minted, counts):
+    """Give the base membership the minted rows and drop the removed keys; count them into ``counts``.
+
+    Up to ``DELTA_ROWS`` changes on a membership of fewer than
+    ``MEMBERSHIP_FILES`` data files go through ``apply_changes``, sharing
+    every base file. Anything larger is one native rewrite of the whole
+    membership (``retain_relation``), so no delta admits rows in Python beyond
+    that bound and the files a dataset's generations accumulate are compacted.
+    """
     fresh = minted.relation(cursor)
-    with records.relations({"new": table}, cursor=cursor) as relations:
-        relations["new"].create_view(new_view)
-        try:
-            removed = cursor.sql(f"SELECT {old_key} AS record_identity, {old_key} AS partition_value, "
-                                 f"NULL::BLOB AS record_json FROM {old_view} o ANTI JOIN {new_view} n ON {old_key} = {new_key}")
-            with closing(_membership_rows(fresh).union(removed).to_arrow_reader(BATCH_ROWS)) as delta:
+    with records.relations({"base": base["membership"], "new": table}, cursor=cursor) as relations:
+        base_rows = relations["base"].project("record_identity, partition_value, record_json")
+        changed = fresh.join(base_rows.project("record_identity AS base_key"), "member_key = base_key", how="semi") \
+            .aggregate("count(*)").fetchone()[0]
+        added = minted.row_count - changed
+        removed = base["membership"].reference.record_count + added - counts["rows"]
+        counts.update(added=added, changed=changed, carried=counts["rows"] - minted.row_count, removed=removed)
+        new_keys = relations["new"].project(f"{member_key_sql(identity)} AS new_key")
+        minted_keys = fresh.project("member_key AS minted_key")
+        if minted.row_count + removed <= DELTA_ROWS and len(records.data_files(base["membership"].reference)) < MEMBERSHIP_FILES:
+            gone = base_rows.join(new_keys, "record_identity = new_key", how="anti").project(
+                "record_identity, partition_value, NULL::BLOB AS record_json")
+            with closing(_membership_rows(fresh).union(gone).to_arrow_reader(BATCH_ROWS)) as delta:
                 membership = records.apply_changes(base["membership"], delta)
-        finally:
-            cursor.execute(f"DROP VIEW IF EXISTS {new_view}")
-    with records.relations({"base": base["membership"]}, cursor=cursor) as memberships:
-        existing = memberships["base"].project("record_identity AS base_key")
-        changed = fresh.join(existing, "member_key = base_key", how="semi").aggregate("count(*)").fetchone()[0]
-    added = minted.row_count - changed
-    counts.update(added=added, changed=changed, carried=counts["rows"] - minted.row_count,
-                  removed=base["membership"].reference.record_count + added - membership.reference.record_count)
+        else:
+            kept = base_rows.join(new_keys, "record_identity = new_key", how="semi").join(
+                minted_keys, "record_identity = minted_key", how="anti")
+            membership = records.retain_relation(kept.union(_membership_rows(fresh)), cursor=cursor,
+                                                 layer_kind="core-membership", schema=MEMBERSHIP_SCHEMA,
+                                                 partition_policy=MEMBERSHIP_POLICY)
+    if membership.reference.record_count != counts["rows"]:
+        raise IntegrityError("table-shaped membership differs from its table's rows")
     return membership
+
+
+def check_minted_copies(records, ledger, table, identity: TableIdentity, minted):
+    """Refuse an occurrence this admission minted whose identity the ledger holds with other bytes, or as a state.
+
+    A ledger row takes precedence over layers when read by identity, so only
+    minted identities can collide. The ledger's table-occurrence rows are read
+    by one range scan up to the minted count and matched to the minted
+    identities natively; when they outnumber the minted rows, the minted
+    identities are looked up instead (``data_identities``). Python work is
+    bounded by the smaller side, and only matches have their rows read.
+    """
+    pinned = []
+    with owned_iterator(ledger.data_identities_with_prefix(OCCURRENCE_PREFIX)) as batches:
+        for batch in batches:
+            pinned.extend(batch)
+            if len(pinned) > minted.row_count:
+                pinned = None
+                break
+    if pinned == []:
+        return
+    with records._cursor() as cursor:
+        identities = minted.relation(cursor).project(f"{occurrence_urn_sql('occurrence_hash')} AS occurrence_id")
+        if pinned is None:
+            with closing(identities.to_arrow_reader(BATCH_ROWS)) as reader, owned_iterator(ledger.data_identities(
+                    occurrence for batch in reader for occurrence in batch.column(0).to_pylist())) as groups:
+                matches = [row for group in groups for row in group]
+        else:
+            rows = cursor.from_arrow(pa.table(dict(zip(("ledger_kind", "ledger_id", "ledger_digest"), zip(*pinned)))))
+            matches = identities.join(rows, "occurrence_id = ledger_id").project(
+                "ledger_kind, ledger_id, ledger_digest").fetchall()
+        if any(kind == "state" for kind, _, _ in matches):
+            raise IntegrityError("data identity is ambiguous between an entity and a state")
+        held, found = {occurrence: digest for _, occurrence, digest in matches}, {}
+        for start in range(0, len(held), BATCH_ROWS):
+            hashes = [bytes.fromhex(occurrence[len(OCCURRENCE_PREFIX):]) for occurrence in list(held)[start:start + BATCH_ROWS]]
+            selected = identity_filter(cursor, minted.relation(cursor), hashes, column="occurrence_hash")
+            for member_key, row_digest, occurrence_hash in selected.project("member_key, row_digest, occurrence_hash").fetchall():
+                found[OCCURRENCE_PREFIX + occurrence_hash.hex()] = IndexedOccurrence(member_key, "sha256:" + row_digest.hex(), "")
+    for occurrence, row in read_occurrences(records, table, identity, found).items():
+        if held[occurrence] != sha256_digest(inline_occurrence_payload(occurrence, row)):
+            raise IntegrityError("state member conflicts with an immutable retained record")
 
 
 def _membership_counts(old, new):

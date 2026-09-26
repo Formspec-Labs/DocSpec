@@ -299,6 +299,14 @@ def _occurrence_map(workspace, state):
                 "record_identity, json_extract_string(decode(record_json), '/occurrence_id')").fetchall())
 
 
+def _rules(schema):
+    """FR's identity rules built from a pyarrow schema: decision 0003's key over every column's type."""
+    from docspec.domain.table_rows import KeySpelling, TableIdentity
+    return TableIdentity(FAMILY, TABLE, KeySpelling("federal-register-source-record-id", "1",
+                                                    ("document_number", "publication_date")),
+                         tuple((field.name, _KINDS[field.type]) for field in schema))
+
+
 _KINDS = {pa.string(): "VARCHAR", pa.date32(): "DATE", pa.float64(): "DOUBLE", pa.bool_(): "BOOLEAN", pa.int32(): "INTEGER",
           pa.int64(): "BIGINT", pa.timestamp("us"): "TIMESTAMP", pa.list_(pa.string()): "VARCHAR[]"}
 
@@ -307,7 +315,7 @@ def compare():
     from spicy_docs.schemas.federal_register import FEDERAL_REGISTER_COLUMNS
     from docspec.adapters.storage.table_occurrences import lookup_occurrences
     from docspec.domain.references import LayerRef
-    from docspec.domain.table_rows import KeySpelling, TableIdentity
+    from docspec.domain.table_rows import TableIdentity
     from docspec.runtime import CoreWorkspace
 
     started = time.perf_counter()
@@ -345,7 +353,8 @@ def compare():
             "changed_keys": direct["changed"], "report": admitted["current"]["report"]["counts"]}
         # 4. The synthetic FR generation: A->B->A resolves to the first occurrence (R1).
         g3 = _occurrence_map(workspace, states["fr-g3"])
-        identity = TableIdentity.from_dict(manifests["current"]["rules"])
+        # The rules are built here from the member's pyarrow schema, not read from the admission.
+        identity = _rules(pq.read_schema(FORK / "current" / MEMBER))
         restored = synthetic["fr-g3"]["restored_keys"]
         index = LayerRef.from_dict(manifests["fr-g3"]["occurrences"])
         found = lookup_occurrences(workspace.records, index, identity, [g3[key] for key in restored])
@@ -354,11 +363,10 @@ def compare():
             "differs_from_second": all(g3[key] != current_map[key] for key in restored),
             "first_state": {key: found[g3[key]].first_state_id for key in restored},
             "first_state_is_prior": all(found[g3[key]].first_state_id == states["prior"] for key in restored),
-            "control_key_present": synthetic["fr-g3"]["control_key"] in g3, "report": admitted["fr-g3"]["report"]["counts"]}
+            "control_key_present": synthetic["fr-g3"]["control_key"] in g3, "report": admitted["fr-g3"]["report"]["counts"],
+            "rules_match": all(TableIdentity.from_dict(manifests[name]["rules"]) == identity for name in ("prior", "current", "fr-g3"))}
         # 5. The typed dataset: A->B->A and every value spelled as the Python reference spells it.
-        # The rules are built here from the pyarrow schema, not read from the admission.
-        typed_identity = TableIdentity(FAMILY, TABLE, KeySpelling("federal-register-source-record-id", "1",
-            ("document_number", "publication_date")), tuple((field.name, _KINDS[field.type]) for field in TYPED_SCHEMA))
+        typed_identity = _rules(TYPED_SCHEMA)
         typed_maps = {name: _occurrence_map(workspace, states[name]) for name in ("typed-a", "typed-b", "typed-a2")}
         key = synthetic["typed_restored_key"]
         typed_index = LayerRef.from_dict(manifests["typed-a2"]["occurrences"])
@@ -395,6 +403,26 @@ def _canonical_json(path, target, columns):
                                                                 ensure_ascii=False) for text in table.column(name).to_pylist()]
                 table = table.set_column(table.column_names.index(name), name, pa.array(values, pa.string()))
             writer.write_table(table)
+
+
+def _stringified(value):
+    """A JSON value with every scalar spelled as text, so values differing only in type compare equal."""
+    if isinstance(value, dict):
+        return {key: _stringified(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_stringified(item) for item in value]
+    return None if value is None else str(value)
+
+
+def _exception_kinds(differing):
+    """Classify each exception: 'type-only' when its JSON values differ only in scalar types, else 'value'."""
+    kinds = {}
+    for key, columns in differing.items():
+        same = all(name in _JSON_COLUMNS and _stringified(json.loads(left)) == _stringified(json.loads(right))
+                   for name, (left, right) in columns.items())
+        kinds[key] = "type-only" if same else "value"
+    return {"type-only": sorted(key for key, kind in kinds.items() if kind == "type-only"),
+            "value": {key: differing[key] for key, kind in kinds.items() if kind == "value"}}
 
 
 def _catalogue(exported, shared):
@@ -440,6 +468,7 @@ def _catalogue(exported, shared):
         "generation_only_listed": [key for key, _ in generation_only],
         "generation_except_reference": len(gen_minus_ref), "reference_except_generation": len(ref_minus_gen),
         "exception_columns": sorted({name for difference in differing.values() for name in difference}),
+        "exception_kinds": _exception_kinds(differing),
         "exceptions_by_key": differing, "modify_date_non_null": {"generation": modify[0], "reference": modify[1]}}
 
 

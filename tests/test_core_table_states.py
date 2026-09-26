@@ -20,10 +20,12 @@ import pytest
 from rulespec_artifacts import canonical_json_bytes
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
+from docspec.adapters.storage import core_tables
 from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
 from docspec.domain import core
-from docspec.domain.core_admission import inline_occurrence_payload
+from docspec.domain.core_admission import inline_occurrence_payload, record_value
+from docspec.domain.identity import canonical_value_bytes
 from docspec.domain.references import LayerRef
 from docspec.domain.table_rows import KeySpelling, TableIdentity, table_row_bytes, table_row_value
 from docspec.errors import IntegrityError, StaleBaseError
@@ -253,11 +255,15 @@ def refused(path, name):
     elif name == "unsupported":
         schema, match = pa.schema([*SCHEMA, ("small", pa.int16())]), "unsupported"
         rows = [{**row, "small": 1} for row in ROWS]
+    elif name == "volatile":
+        schema, match = pa.schema([*SCHEMA, ("observed_at", pa.string())]), "ruling R5"
+        rows = [{**row, "observed_at": "2026-09-25T00:00:00Z"} for row in ROWS]
     write(path, rows, schema, **options)
     return match
 
 
-@pytest.mark.parametrize("name", ["local-partial", "footer", "descriptor", "duplicate", "null-key", "empty-key", "unsupported"])
+@pytest.mark.parametrize("name", ["local-partial", "footer", "descriptor", "duplicate", "null-key", "empty-key", "unsupported",
+                                  "volatile"])
 def test_an_inadmissible_generation_refuses_and_publishes_nothing(tmp_path, name):
     match = refused(tmp_path / "bad", name)
     with CoreWorkspace(tmp_path / "workspace") as workspace:
@@ -419,3 +425,115 @@ def test_the_dataset_pointer_advances_only_over_its_admission_base(tmp_path, mon
         with pytest.raises(StaleBaseError):
             workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
         assert workspace.ledger.current("fr") == ("state", elsewhere.state_id)
+
+
+def test_the_identity_check_accepts_a_pinned_copy(tmp_path):
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first = admit_all(workspace, tmp_path, [ROWS], dataset=None)[0]
+        pinned = occurrences(workspace, first.state_id)["2026-00001@2026-09-01"]
+        workspace.retain([], unit_id="pin", roots=[("entity", pinned)])
+        # A new lineage mints the pinned occurrence again, with the same bytes.
+        source = tmp_path / "wider"
+        write(source, [*ROWS, {**ROWS[2], "document_number": "2026-00009"}])
+        again = workspace.admit_generation(source, family=FAMILY, table=TABLE)
+        assert occurrences(workspace, again.state_id)["2026-00001@2026-09-01"] == pinned
+        assert again.report["counts"]["generated"] == 4
+
+
+@pytest.mark.parametrize("forged", ["entity", "state"])
+def test_the_identity_check_refuses_a_forged_occurrence(tmp_path, forged):
+    urn = expected(ROWS)["2026-00001@2026-09-01"][0]
+    record = (core.Entity(format_version=1, entity_id=urn, entity_type="occurrence", value=core.InlineValue(value="forged"))
+              if forged == "entity" else core.State(format_version=1, state_id=urn))
+    source = tmp_path / "g1"
+    write(source, ROWS)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        workspace.retain([record], unit_id="forge", roots=[("entity", urn)] if forged == "entity" else [])
+        counts = ledger_counts(workspace)
+        with pytest.raises(IntegrityError, match="immutable retained record" if forged == "entity" else "ambiguous"):
+            workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
+        assert ledger_counts(workspace) == counts and workspace.ledger.current("fr") is None
+
+
+def test_a_delta_refuses_a_forged_occurrence_among_more_pins_than_it_mints(tmp_path):
+    changed = {**ROWS[0], "title": "An amended rule"}
+    forged = [core.Entity(format_version=1, entity_id=urn, entity_type="occurrence", value=core.InlineValue(value="forged"))
+              for urn in (expected([changed])["2026-00001@2026-09-01"][0], "urn:docspec:table-occurrence:v1:" + "0" * 64)]
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first = admit_all(workspace, tmp_path, [ROWS])[0]
+        # Two table-occurrence rows against a delta that mints one: the minted side is looked up.
+        workspace.retain(forged, unit_id="forge", roots=[("entity", entity.entity_id) for entity in forged])
+        source = tmp_path / "g2"
+        write(source, [changed, *ROWS[1:]])
+        with pytest.raises(IntegrityError, match="immutable retained record"):
+            workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
+        assert workspace.ledger.current("fr") == ("state", first.state_id)
+
+
+def membership_bytes(workspace, state_id):
+    """A state's membership rows as (member key, canonical bytes), read natively."""
+    with workspace.records.relations({"members": layer(workspace, state_id, "membership")}) as relations:
+        return {key: bytes(payload) for key, payload in relations["members"].project("record_identity, record_json").fetchall()}
+
+
+def expected_membership(rows):
+    return {key: canonical_value_bytes(record_value(core.Membership(member_key=key, occurrence_id=urn), core.Membership))
+            for key, (urn, _) in expected(rows).items()}
+
+
+@pytest.mark.parametrize("bound", ["delta", "files"])
+def test_a_large_delta_or_a_fragmented_membership_is_rewritten_natively(tmp_path, monkeypatch, bound):
+    monkeypatch.setattr(core_tables, "DELTA_ROWS" if bound == "delta" else "MEMBERSHIP_FILES", 0 if bound == "delta" else 3)
+    generations = [ROWS, *([{**ROWS[0], "title": f"edit {index}"}, ROWS[1], {**ROWS[2], "document_number": f"2026-1000{index}"}]
+                           for index in range(4))]
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admissions = admit_all(workspace, tmp_path, generations)
+        for admitted, rows in zip(admissions, generations, strict=True):
+            assert membership_bytes(workspace, admitted.state_id) == expected_membership(rows)
+        files = [len(workspace.records.data_files(layer(workspace, admitted.state_id, "membership"))) for admitted in admissions]
+        # Every rewrite leaves one file; small deltas add files only up to the bound.
+        if bound == "delta":
+            assert files == [1] * 5
+        else:
+            assert max(files) <= 3 and files.count(1) >= 2
+        assert admissions[1].report["counts"] == {"rows": 3, "generated": 2, "adopted": 1, "added": 1, "removed": 1,
+                                                  "changed": 1, "carried": 1, "reminted": False}
+
+
+def test_a_superseded_generation_removed_then_restored_keeps_its_first_occurrence(tmp_path):
+    changed = {**ROWS[0], "ratio": 0.0}
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first, second = admit_all(workspace, tmp_path, [ROWS, [changed, *ROWS[1:]]])
+        original = occurrences(workspace, first.state_id)["2026-00001@2026-09-01"]
+        keys = admission_keys(first.state_id)
+        workspace.maintenance.remove_under_policy("remove-first", authorize(workspace, keys), keys)
+        with workspace.publisher.session() as session:
+            assert next(session.read_records([("entity", original)]))[0] is None
+        # Its exact pin cannot come back; a later generation restoring the row adopts the first occurrence.
+        with pytest.raises(IntegrityError, match="was removed"):
+            workspace.admit_generation(tmp_path / "generation-0", family=FAMILY, table=TABLE, dataset="fr")
+        source = tmp_path / "restored"
+        write(source, [ROWS[0], ROWS[1], {**ROWS[2], "flag": True}])
+        third = workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
+        assert occurrences(workspace, third.state_id)["2026-00001@2026-09-01"] == original
+        assert third.report["counts"]["generated"] == 1
+        found = lookup_occurrences(workspace.records, layer(workspace, third.state_id, "occurrences"), IDENTITY, [original])
+        assert found[original].first_state_id == first.state_id
+        with workspace.publisher.session() as session:
+            assert next(session.read_records([("entity", original)]))[0].value.entity_id == original
+
+
+def test_a_checkpoint_and_a_base_of_another_table_refuse(tmp_path):
+    source = tmp_path / "g1"
+    write(source, ROWS)
+    bills = tmp_path / "bills"
+    generation(bills, table="congress_bills", family="bill-family")
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admitted = workspace.admit_generation(bills, family="bill-family", table="congress_bills", dataset="other-table")
+        with workspace.publisher.session() as session, pytest.raises(IntegrityError, match="no values to repack"):
+            workspace.states.checkpoint(session, admitted.state_id, representation_id="repacked", unit_id="repack")
+        workspace.create("plain", [("key", {"value": 1})])
+        workspace.maintenance.select_current("plain", "plain-state", ("state", "plain"), None)
+        for dataset in ("other-table", "plain-state"):
+            with pytest.raises(IntegrityError, match="not a table-shaped state of this family and table"):
+                workspace.admit_generation(tmp_path / "g1", family=FAMILY, table=TABLE, dataset=dataset)

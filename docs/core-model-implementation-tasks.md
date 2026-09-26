@@ -1079,7 +1079,11 @@ table-layer profile, spellings, identity pass and index of steps 2–5 and 7
 - Steps 1–8: a first admission mints every occurrence from the staged member
   before registering it, writes membership natively (`retain_relation`) and
   starts the index; a later one mints only the added and changed rows of one
-  all-column join and applies the delta with `apply_changes`. One unit
+  all-column join and applies the delta with `apply_changes`, or rewrites the
+  membership natively beyond 65,536 changes or 16 data files, which also
+  compacts it. The unit's identity check matches only the minted occurrences
+  against the ledger. A table with an `*observed_at` or `*fetched_at` column
+  refuses until R5's declared projection exists. One unit
   publishes the state, its representation, the admission's definition,
   request, execution and result, the root and member manifest (bound as whole
   inputs, retained as exact bytes) and a report whose counts separate
@@ -1305,16 +1309,22 @@ through the existing HTTPS fetcher (the `http` extra).
 
 **Coverage.** With spicy-docs 0.26.6, 40 of the 74 tables on the 2026-09-23
 index have an identity source: 39 contracts, plus FR through decision 0003.
-- **Admissible now:** FR and 8 single-column contracts, about 1.44 M rows.
+- **Admissible now:** FR and 4 single-column contracts (`budget_volumes`,
+  `committees`, `congress_bills`, `house_activity_reports`), about 1.43 M rows.
+  The other 4 single-column contracts (`committee_reports`,
+  `hearing_transcripts`, `members`, `press_releases`, 12,936 rows) carry
+  `observed_at` and refuse until a declared projection exists (R5).
 - **After spicy-docs declares key spellings (R6):** 31 composite contracts,
   0.87 M rows.
 - **No identity source:** 34 tables holding 139.0 M of the 141.3 M rows,
   including every `court_*` and `fec_*` table. They wait for B26; separately,
   spicy-regs' own `table_metadata.json` declares no identity for 23 tables
   (B19).
-- **Churn:** 17 tables carry observed- or fetched-time columns (by name;
-  whether they refresh on unchanged rows was not checked). A refresh would
-  change every row digest in every generation (R5).
+- **Churn:** 17 tables carry observed- or fetched-time columns (by name:
+  `observed_at`, `uslm_observed_at`; whether they refresh on unchanged rows was
+  not checked). A refresh would change every row digest in every generation,
+  so admission refuses a table with a column named `*observed_at` or
+  `*fetched_at` until R5's declared projection exists.
 
 The design targets FR first, then the rulemaking tables Search reads.
 
@@ -1359,7 +1369,8 @@ corrections.
 - **Threshold:**
   - A two-way `EXCEPT` over the shared contract columns returns zero rows in
     both directions (`topics_json` is absent and `rin` extra, per B2).
-    Generation-only keys are counted, each post-dates 2026-09-14, and
+    Generation-only keys are counted, each post-dates the catalogue's
+    2026-09-02 supply (the reimport ran on 2026-09-14 over that supply), and
     exceptions are listed by key.
   - The admitted count equals `recordCount`, and the compared-key count equals
     the reference's.

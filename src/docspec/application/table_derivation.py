@@ -91,14 +91,14 @@ def derive_table(operations, batches, *, schema, batch_id, definition, inputs, b
             if stored_definition is not None and encode_record(stored_definition.value) != encode_record(definition):
                 raise IntegrityError("operation definition identity already names another definition")
             _check_inputs(session, inputs, operations, dataset, base_state_id)
-            content, counts = session.states.derive_table(session, staged, state_id=state_id,
-                                                          base_state_id=base_state_id, removals=removals)
+            content, counts, identity_check = session.states.derive_table(session, staged, state_id=state_id,
+                                                                          base_state_id=base_state_id, removals=removals)
             report = {"format": REPORT_FORMAT, "version": 1, "rules": identity.to_dict(), "base": base_state_id,
                       "dataset": dataset, "counts": counts}
             unit = table_state_unit(session, state_id=state_id, unit="derivation", definition=definition,
                                     inputs=request_inputs, report=report, content=content, evidence=(rows,),
                                     used=() if base_state_id is None else (("base", base_state_id),))
-            session.publish(unit, identity_check=lambda: session.states.table_identity_check(session, content))
+            session.publish(unit, identity_check=identity_check)
     advance(operations, dataset, state_id, base_state_id, kind="derive-table-current")
     return TableDerivation(state_id, report)
 

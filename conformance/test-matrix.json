@@ -582,6 +582,7 @@
     "tests/test_core_table_states.py::test_exact_retry_returns_the_state_without_writing",
     "tests/test_core_table_states.py::test_a_later_generation_carries_unchanged_occurrences_and_mints_only_its_delta",
     "tests/test_core_table_states.py::test_a_restored_row_resolves_to_its_first_occurrence",
+    "tests/test_core_table_states.py::test_a_large_table_state_reads_in_key_order_through_spilled_windows",
     "tests/test_core_table_states.py::test_a_schema_change_remints_every_row_and_reports_it",
     "tests/test_core_table_states.py::test_a_dated_key_component_spells_its_varchar_key",
     "tests/test_core_table_states.py::test_an_inadmissible_generation_refuses_and_publishes_nothing",
@@ -591,7 +592,13 @@
     "tests/test_core_table_states.py::test_members_resolve_through_the_index_and_a_superseded_generation_is_removable",
     "tests/test_core_table_states.py::test_a_relocated_workspace_reads_and_a_flipped_member_byte_refuses",
     "tests/test_core_table_states.py::test_put_and_remove_on_a_table_shaped_base_refuse",
-    "tests/test_core_table_states.py::test_the_dataset_pointer_advances_only_over_its_admission_base"
+    "tests/test_core_table_states.py::test_the_dataset_pointer_advances_only_over_its_admission_base",
+    "tests/test_core_table_states.py::test_the_identity_check_accepts_a_pinned_copy",
+    "tests/test_core_table_states.py::test_the_identity_check_refuses_a_forged_occurrence",
+    "tests/test_core_table_states.py::test_a_delta_refuses_a_forged_occurrence_among_more_pins_than_it_mints",
+    "tests/test_core_table_states.py::test_a_large_delta_or_a_fragmented_membership_is_rewritten_natively",
+    "tests/test_core_table_states.py::test_a_superseded_generation_removed_then_restored_keeps_its_first_occurrence",
+    "tests/test_core_table_states.py::test_a_checkpoint_and_a_base_of_another_table_refuse"
   ],
   "CORE-TYPED-DERIVE": [
     "tests/test_core_table_derivation.py::test_a_typed_derive_publishes_one_unit_and_every_reader_serves_the_reference",
