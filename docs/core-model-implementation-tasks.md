@@ -1180,10 +1180,15 @@ through the existing HTTPS fetcher (the `http` extra).
      (`stable_id(source_id, member_key)`) and every occurrence would otherwise
      change.
    - Identity sources, in order:
-     1. identity fields declared in the artifact (none today);
-     2. the `spicy_docs.schemas.TABLE_CONTRACTS` identity;
+     1. identity fields declared in the artifact (none today; one field spells
+        as `value/1`);
+     2. the `spicy_docs.schemas.TABLE_CONTRACTS` identity with the key
+        spelling the contract declares (`name/version`, an entry of
+        `KEY_SPELLINGS` whose function is the Python reference); a contract
+        declaring none refuses, single column or composite;
      3. [decision 0003](decisions/0003-federal-register-record-identity.md)
-        for FR;
+        for FR, only while spicy-docs has no FR contract; it spells exactly
+        the contract's `federal-register-source-record-id/1`;
      4. otherwise refuse.
    - Until spicy-docs declares spellings, admissible tables are FR
      (`federal_register_source_record_id`) and single-column contracts (the

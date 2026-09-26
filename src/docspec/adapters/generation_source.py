@@ -13,9 +13,11 @@ from rulespec_artifacts import (ArtifactPin, ArtifactVerificationError, LocalMem
     MemberDescriptor, MemberSourceError, admit_artifact, iter_member_descriptors,
     parse_canonical_json, validate_object_key)
 from spicy_docs.schemas import TABLE_CONTRACTS
+from spicy_docs.schemas.tables import KEY_SPELLINGS
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher, HttpsContentFetcherConfig
 from docspec.adapters.storage.records import native_columns
+from docspec.adapters.storage.table_sql import declared_spelling
 from docspec.domain.content import CandidateFile
 from docspec.domain.table_rows import KeySpelling
 from docspec.errors import IntegrityError, LimitExceededError
@@ -69,25 +71,50 @@ def _pointer(payload):
     return value
 
 
+# Decision 0003's spelling of a Federal Register record, the fallback while the
+# installed spicy-docs has no federal_register contract to declare it.
+_FEDERAL_REGISTER = ("federal-register", "federal_register")
+_FEDERAL_REGISTER_KEY = ("document_number", "publication_date"), "federal-register-source-record-id/1"
+
+
 def _key_rule(family, table, description, columns):
-    fields = description.get("identity")
-    if fields is None:
-        contract = TABLE_CONTRACTS.get(table)
-        fields = None if contract is None else contract.identity
-    if fields is None and (family, table) == ("federal-register", "federal_register"):
-        fields = ("document_number", "publication_date")
+    """The member-key spelling a table is admitted under, as its producer declares it.
+
+    Identity fields the artifact declares come first; one field spells as
+    ``value/1``. Otherwise the table's spicy-docs contract names the identity
+    and its ``name/version`` key spelling, an entry of ``KEY_SPELLINGS`` whose
+    function is the Python reference DocSpec's SQL is checked against; a
+    contract that declares none refuses, a composite (ruling R6) or a single
+    column. Decision 0003's ``number@date`` applies to Federal Register only
+    when spicy-docs has no contract for it, and is the spelling that contract
+    declares. ``columns`` are the member's, with table-profile types.
+    """
+    contract = TABLE_CONTRACTS.get(table)
+    artifact = fields = description.get("identity")
+    name = None
+    if contract is not None and (fields is None or fields == list(contract.identity)):
+        fields, name = list(contract.identity), getattr(contract, "key_spelling", None)
+    elif fields is None and (family, table) == _FEDERAL_REGISTER:
+        fields, name = list(_FEDERAL_REGISTER_KEY[0]), _FEDERAL_REGISTER_KEY[1]
     if not isinstance(fields, (list, tuple)) or not fields or any(not isinstance(field, str) or not field for field in fields):
         raise IntegrityError("table has no declared identity fields")
-    fields = tuple(fields)
-    if len(set(fields)) != len(fields) or not set(fields) <= {name for name, _ in columns}:
+    kinds = dict(columns)
+    if len(set(fields)) != len(fields) or not set(fields) <= kinds.keys():
         raise IntegrityError("table identity fields differ from its columns")
-    if (family, table, fields) == ("federal-register", "federal_register", ("document_number", "publication_date")):
-        return KeySpelling("federal-register-source-record-id", "1", fields)
-    if len(fields) == 1:
-        return KeySpelling("value", "1", fields)
-    # The installed provider has no versioned composite key declarations.
-    # A provisional join would silently change identity when one is introduced.
-    raise IntegrityError("composite table identity requires a versioned spicy-docs key spelling")
+    if name is None and artifact is not None and len(fields) == 1:
+        name = "value/1"  # an artifact's own one-field identity is spelled by its value
+    if name is None:
+        # A provisional spelling would silently change identity when spicy-docs declares one.
+        raise IntegrityError("composite table identity requires a versioned spicy-docs key spelling" if len(fields) > 1
+                             else "table contract declares no key spelling for its identity")
+    spelling_id, _, version = name.rpartition("/")
+    if not spelling_id or not version:
+        raise IntegrityError(f"key spelling {name!r} is not a name/version")
+    if name not in KEY_SPELLINGS and (fields, name) != (list(_FEDERAL_REGISTER_KEY[0]), _FEDERAL_REGISTER_KEY[1]):
+        raise IntegrityError(f"spicy-docs declares no key spelling {name}")
+    spelling = KeySpelling(spelling_id, version, tuple(fields))
+    declared_spelling(spelling, tuple(kinds[field] for field in fields))
+    return spelling
 
 
 @contextmanager
@@ -222,7 +249,7 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                         raise IntegrityError("Parquet footer schema differs from its descriptor")
                     if name == filename:
                         result.update(path=path, member=member, columns=canonical, record_count=description["rows"],
-                                      key=_key_rule(family, table, description, columns))
+                                      key=_key_rule(family, table, description, canonical))
             artifact = admit_artifact(LocalMemberSource(staging), expected_pin=pin, root_byte_limit=_DOCUMENT_BYTES,
                                       manifest_byte_limit=_DOCUMENT_BYTES, semantic_verifier=verify)
             yield AdmittedGeneration(pin=artifact.pin, root_bytes=root_bytes, manifest_bytes=manifest_bytes, **result)

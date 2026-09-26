@@ -239,10 +239,14 @@ publication base (the `http` extra). A `publication.json` is an untrusted
 pointer: Rulespec admits the pinned complete family, the table's footer must
 match its descriptor, and the member is then linked into the record store
 unrewritten, sealed under its producer digest. The member key is the table's
-declared spelling: identity fields the artifact declares, then spicy-docs'
-single-column table contracts, then `number@date` for Federal Register
+declared spelling: identity fields the artifact declares (one field spells as
+`value/1`), then the identity and `name/version` key spelling its spicy-docs
+table contract declares, an entry of `KEY_SPELLINGS` whose function is the
+reference DocSpec's SQL is checked against, then, only while the installed
+spicy-docs has no Federal Register contract, `number@date`
 ([decision 0003](decisions/0003-federal-register-record-identity.md)). A
-composite key without a versioned spelling, a NULL, empty or repeated key, an
+contract that declares no spelling, or one DocSpec does not compile, a NULL,
+empty or repeated key, an
 unsupported column type and a column recording when a row was observed or
 fetched (`*observed_at`, `*fetched_at`, ruling R5) refuse before anything is
 retained.

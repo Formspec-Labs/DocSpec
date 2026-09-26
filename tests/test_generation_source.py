@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
+from types import SimpleNamespace
 
 import httpx
 import pyarrow as pa
@@ -11,10 +12,15 @@ import pyarrow.parquet as pq
 import pytest
 from rulespec_artifacts import canonical_json_bytes, stamp_root
 
+from spicy_docs.schemas import TABLE_CONTRACTS
+from spicy_docs.schemas.tables import KEY_SPELLINGS
+
+from docspec.adapters import generation_source
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
 from docspec.adapters.generation_source import stage_generation
+from docspec.adapters.storage import table_sql
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import KeySpelling
+from docspec.domain.table_rows import KeySpelling, TableIdentity
 from docspec.errors import IntegrityError, LimitExceededError
 from tests.support.generations import generation, publication
 
@@ -165,3 +171,52 @@ def test_https_uses_existing_transport_and_checks_same_pointer(tmp_path, monkeyp
         assert admitted.pin == pin and pq.read_table(admitted.path).num_rows == 1
     assert all(client.is_closed for client in clients)
     assert len(requests) == 4 and all(url.startswith("https://example.test/data/") for url in requests)
+
+
+FEDERAL_REGISTER_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("title", "VARCHAR"))
+
+
+def contracts(monkeypatch, entries, spellings=None):
+    """Stand in for an installed spicy-docs whose contracts and key-spelling registry add ``entries`` and ``spellings``."""
+    monkeypatch.setattr(generation_source, "TABLE_CONTRACTS", {**TABLE_CONTRACTS, **entries})
+    registry = {**KEY_SPELLINGS, **(spellings or {})}
+    monkeypatch.setattr(generation_source, "KEY_SPELLINGS", registry)
+    monkeypatch.setattr(table_sql, "KEY_SPELLINGS", registry)
+
+
+def test_the_federal_register_contract_and_the_decision_0003_fallback_agree(monkeypatch):
+    row = {"document_number": "00-111", "publication_date": "2000-01-18", "title": "A notice"}
+    fallback = generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
+    fallback_key = table_sql.reference_member_key(
+        TableIdentity("federal-register", "federal_register", fallback, FEDERAL_REGISTER_COLUMNS), row)
+    spelled = []
+
+    def federal_register_record_key(parts):  # the reference spicy-docs registers for the contract
+        spelled.append(parts)
+        return f"{parts[0]}@{parts[1]}"
+    contracts(monkeypatch, {"federal_register": SimpleNamespace(
+        identity=("document_number", "publication_date"), key_spelling="federal-register-source-record-id/1")},
+        {"federal-register-source-record-id/1": federal_register_record_key})
+    declared = generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
+    declared_key = table_sql.reference_member_key(
+        TableIdentity("federal-register", "federal_register", declared, FEDERAL_REGISTER_COLUMNS), row)
+    assert declared == fallback == KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+    assert declared_key == fallback_key == "00-111@2000-01-18"
+    assert spelled == [("00-111", "2000-01-18")]  # the contract path spelled through spicy-docs' own reference
+
+
+def test_a_contract_must_declare_a_spelling_docspec_compiles(monkeypatch):
+    single, pair = (("bill_id", "VARCHAR"), ("title", "VARCHAR")), (("a", "VARCHAR"), ("b", "VARCHAR"))
+    contracts(monkeypatch, {
+        "undeclared": SimpleNamespace(identity=("bill_id",), key_spelling=None),
+        "composite": SimpleNamespace(identity=("a", "b"), key_spelling=None),
+        "unregistered": SimpleNamespace(identity=("bill_id",), key_spelling="value/9"),
+        "uncompiled": SimpleNamespace(identity=("bill_id",), key_spelling="padded/1")}, {"padded/1": lambda parts: parts[0]})
+    for table, columns, match in [("undeclared", single, "declares no key spelling for its identity"),
+                                  ("composite", pair, "versioned spicy-docs key spelling"),
+                                  ("unregistered", single, "declares no key spelling value/9"),
+                                  ("uncompiled", single, "not declared for these fields")]:
+        with pytest.raises(IntegrityError, match=match):
+            generation_source._key_rule("family", table, {}, columns)
+    # The artifact's own identity comes first, and one field spells as its value.
+    assert generation_source._key_rule("family", "undeclared", {"identity": ["title"]}, single) == KeySpelling("value", "1", ("title",))

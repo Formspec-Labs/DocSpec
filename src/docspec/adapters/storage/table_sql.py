@@ -1,4 +1,4 @@
-"""Native SQL for docspec-table-row/1 and declared member keys, beside the keys' Python references.
+"""Native SQL for docspec-table-row/1 and declared member keys, checked against the keys' Python references.
 
 No Python row callbacks. A direct column comparison between generations must
 compare DOUBLE through its spelling: SQL equates 0.0 with -0.0, whose
@@ -8,6 +8,7 @@ canonical spellings differ.
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from spicy_docs.schemas.tables import KEY_SPELLINGS
 from spicy_docs.sources.federal_register.native import federal_register_source_record_id
 
 from docspec.adapters.storage.iceberg import identifier, literal
@@ -43,16 +44,32 @@ def _segment_components(key):
     return ((head, tail),) if canonical and head else ()
 
 
+def _producer(name, fallback=None):
+    """A producer spelling's Python reference: its entry in spicy-docs' ``KEY_SPELLINGS``, read when called.
+
+    ``fallback`` serves only while the installed spicy-docs registers no such
+    entry: decision 0003's ``number@date`` before spicy-docs declared it.
+    """
+    def reference(values):
+        function = KEY_SPELLINGS.get(name, fallback)
+        if function is None:
+            raise IntegrityError(f"spicy-docs declares no key spelling {name}")
+        return function(tuple(values))
+    return reference
+
+
 # Each declared spelling compiles to SQL over its components' text, next to
 # its Python reference and the component tuples that could spell a key.
-# spicy-docs owns the producer spellings' references; DocSpec owns
-# member-segment/1, a one-to-many derived layer's key (C29), injective because
-# the segment index spells as a canonical integer after the last "#".
+# spicy-docs owns the producer spellings and their references (KEY_SPELLINGS),
+# which the spelling oracle holds this SQL to; DocSpec owns member-segment/1,
+# a one-to-many derived layer's key (C29), injective because the segment
+# index spells as a canonical integer after the last "#".
 _SPELLINGS = {
-    ("value", "1"): _Spelling(None, None, lambda parts: parts[0], lambda values: values[0], lambda key: ((key,),)),
+    ("value", "1"): _Spelling(None, None, lambda parts: parts[0], _producer("value/1"), lambda key: ((key,),)),
     ("federal-register-source-record-id", "1"): _Spelling(
         _FEDERAL_REGISTER, (_TEXT, _TEXT), lambda parts: f"{parts[0]} || '@' || {parts[1]}",
-        lambda values: federal_register_source_record_id(dict(zip(_FEDERAL_REGISTER, values, strict=True))),
+        _producer("federal-register-source-record-id/1", fallback=lambda values: federal_register_source_record_id(
+            dict(zip(_FEDERAL_REGISTER, values, strict=True)))),
         lambda key: tuple((key[:index], key[index + 1:]) for index, char in enumerate(key) if char == "@")),
     ("member-segment", "1"): _Spelling(
         ("member_key", "segment_index"), (frozenset({"VARCHAR"}), frozenset({"INTEGER", "BIGINT"})),
@@ -61,8 +78,8 @@ _SPELLINGS = {
 }
 
 
-def _declared(spelling, kinds=None):
-    """The declared spelling for these fields, refusing a component whose column type it does not take."""
+def declared_spelling(spelling, kinds=None):
+    """The spelling DocSpec compiles for these fields, refusing an unknown one or a column type it does not take."""
     declared = _SPELLINGS.get((spelling.spelling_id, spelling.version))
     if declared is None or (len(spelling.fields) != 1 if declared.fields is None else spelling.fields != declared.fields):
         raise IntegrityError("member-key spelling is not declared for these fields")
@@ -78,14 +95,14 @@ def reference_member_key(identity, row) -> str:
     A DATE component reaches the reference as its ISO 8601 text, an integer as
     its decimal text.
     """
-    declared = _declared(identity.key, identity.key_kinds)
+    declared = declared_spelling(identity.key, identity.key_kinds)
     return declared.reference(tuple(key_component(row[field], kind)
                                     for field, kind in zip(identity.key.fields, identity.key_kinds, strict=True)))
 
 
 def key_components(spelling, key: str) -> tuple[tuple[str, ...], ...]:
     """Every component tuple that could spell ``key``; lookups push them into scans."""
-    return _declared(spelling).components(key)
+    return declared_spelling(spelling).components(key)
 
 
 def _column(name, qualifier=None):
@@ -176,7 +193,7 @@ def member_key_sql(identity, *, qualifier=None):
     A DATE component spells ISO 8601, like the row rule, and refuses outside
     years 1 through 9999 as it does; an integer spells its decimal text.
     """
-    declared = _declared(identity.key, identity.key_kinds)
+    declared = declared_spelling(identity.key, identity.key_kinds)
     columns = [_column(field, qualifier) for field in identity.key.fields]
     invalid = " OR ".join(f"{column} IS NULL OR {column} = ''" if kind == "VARCHAR" else f"{column} IS NULL"
                           for column, kind in zip(columns, identity.key_kinds, strict=True))

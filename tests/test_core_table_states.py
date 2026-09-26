@@ -9,18 +9,23 @@ changed rows; an occurrence that reappears is adopted, never generated again
 by-identity reads resolve occurrences through the minted-occurrence index.
 """
 
+from dataclasses import replace
 from datetime import date
 import sqlite3
 import shutil
 import struct
+from types import SimpleNamespace
 
 import httpx
 import pyarrow as pa
 import pytest
 from rulespec_artifacts import canonical_json_bytes
+from spicy_docs.schemas import TABLE_CONTRACTS
+from spicy_docs.schemas.tables import KEY_SPELLINGS
 
+from docspec.adapters import generation_source
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
-from docspec.adapters.storage import core_tables
+from docspec.adapters.storage import core_tables, table_sql
 from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
 from docspec.domain import core
@@ -537,3 +542,30 @@ def test_a_checkpoint_and_a_base_of_another_table_refuse(tmp_path):
         for dataset in ("other-table", "plain-state"):
             with pytest.raises(IntegrityError, match="not a table-shaped state of this family and table"):
                 workspace.admit_generation(tmp_path / "g1", family=FAMILY, table=TABLE, dataset=dataset)
+
+
+def test_a_newly_declared_key_spelling_re_keys_explicitly(tmp_path, monkeypatch):
+    first, second = tmp_path / "bills-1", tmp_path / "bills-2"
+    generation(first, table="congress_bills", family="bill-family")
+    generation(second, pa.table({"bill_id": ["119-hr-1", "119-hr-2"], "title": ["A bill", "Another bill"]}),
+               table="congress_bills", family="bill-family")
+
+    def key(workspace, admitted):
+        with workspace.publisher.session() as session:
+            return workspace.states.manifest(session, admitted.state_id)["rules"]["key"]
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        original = workspace.admit_generation(first, family="bill-family", table="congress_bills", dataset="bills")
+        assert key(workspace, original) == {"id": "value", "version": "1", "fields": ["bill_id"]}
+        # spicy-docs now declares the table's key under another name, which DocSpec also compiles.
+        monkeypatch.setattr(generation_source, "TABLE_CONTRACTS", {**TABLE_CONTRACTS, "congress_bills": SimpleNamespace(
+            identity=("bill_id",), key_spelling="value/2")})
+        registry = {**KEY_SPELLINGS, "value/2": KEY_SPELLINGS["value/1"]}
+        monkeypatch.setattr(generation_source, "KEY_SPELLINGS", registry)
+        monkeypatch.setattr(table_sql, "KEY_SPELLINGS", registry)
+        monkeypatch.setitem(table_sql._SPELLINGS, ("value", "2"),
+                            replace(table_sql._SPELLINGS[("value", "1")], reference=table_sql._producer("value/2")))
+        with pytest.raises(IntegrityError, match="keep its dataset's member-key spelling"):
+            workspace.admit_generation(second, family="bill-family", table="congress_bills", dataset="bills")
+        renamed = workspace.admit_generation(second, family="bill-family", table="congress_bills", dataset="bills-renamed")
+        assert key(workspace, renamed) == {"id": "value", "version": "2", "fields": ["bill_id"]}
+        assert workspace.ledger.current("bills") == ("state", original.state_id)
