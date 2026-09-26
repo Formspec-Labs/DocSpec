@@ -1,8 +1,8 @@
 # C27 gate: admit Federal Register generations by reference
 
 **Passed.** `CoreWorkspace.admit_generation` admitted the fork-host prior
-generation (`sha256:6c215859…`, 1,008,903 rows) in **14.4 s at 0.95 GiB**, then
-the current one (`sha256:731984ca…`, 1,009,005 rows) over it in **3.2 s at
+generation (`sha256:6c215859…`, 1,008,903 rows) in **14.0 s at 0.99 GiB**, then
+the current one (`sha256:731984ca…`, 1,009,005 rows) over it in **2.7 s at
 2.1 GiB**. `changes` between the two states equals pyarrow's direct
 column-by-column comparison exactly: 102 added, 2 changed, 0 removed, and
 1,008,901 occurrences carried forward. A synthetic third generation that
@@ -14,12 +14,13 @@ producer and catalogue captures of the API differ. Neither falsifier fires.
 The [harness](2026-09-25-admit-generation-gate.py) and
 [receipt](2026-09-25-admit-generation-gate.json) record every number below;
 per-step receipts, logs and RSS samples are in
-`~/Work/corpora/c27-gate-20260925/receipts/`. Code: DocSpec `e61576b`
-(lane/admission, with the table-storage lane's 0188ff1 merged), DuckDB 1.5.5,
-PyArrow 25.0.1, Python 3.12.9, one DuckDB thread and a 6 GiB engine limit, on
-a 14-CPU arm64 Mac at load 7–10. Each step ran once, in its own process, under
-the PM01 watch wrapper with a 12 GiB cap; writes used the `tools/with_iceberg.py`
-REST fixture.
+`~/Work/corpora/c27-gate-20260925/receipts/`. Code: DocSpec `6ebe108`
+(lane/admission with main merged: the in-process catalog, the table-storage
+review fixes and one-pass ordered reads), DuckDB 1.5.5, PyArrow 25.0.1, Python
+3.12.9, one DuckDB thread and a 6 GiB engine limit, on a 14-CPU arm64 Mac at
+load 7–13. Each step ran once, in its own process, under the PM01 watch wrapper
+with a 12 GiB cap. An earlier run on `e61576b`, writing through the Docker REST
+fixture, gave the same counts at 14.35 s and 3.22 s (`receipts/e61576b/`).
 
 ## Fixture
 
@@ -39,12 +40,12 @@ typed dataset instead, admitted A→B→A through the same code path.
 
 | Generation | Seconds | Peak RSS | Member | Membership written | Index written | Ledger records | Ledger bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| prior (first) | 14.35 | 0.95 GiB | 155,941,795 | 46,197,668 | 73,211,062 | +9 | 110,592 (new file) |
-| current | 3.22 | 2.12 GiB | 155,941,204 | 28,743 | 17,856 | +8 | +32,768 |
-| fr-g3 (synthetic) | 3.37 | 2.09 GiB | 324,471,238 | 27,975 | 12,118 | +8 | +28,672 |
+| prior (first) | 13.97 | 0.99 GiB | 155,941,669 | 46,197,560 | 73,210,952 | +9 | 110,592 (new file) |
+| current | 2.71 | 2.11 GiB | 155,941,077 | 28,688 | 17,802 | +8 | +32,768 |
+| fr-g3 (synthetic) | 2.75 | 2.08 GiB | 324,471,111 | 27,904 | 12,057 | +8 | +28,672 |
 
 Seconds are the `admit_generation` call; each process, with interpreter
-start-up and the fixture, took 16.0, 5.1 and 5.1 s. Member bytes include its
+start-up, took 14.8, 3.3 and 3.4 s. Member bytes include its
 Iceberg metadata; fr-g3's member is larger because pyarrow wrote it. Bytes
 downloaded: none (local sources); each admission staged its root, manifest and
 member once. Every generation adds one admission unit, its identity mark and
@@ -54,8 +55,8 @@ same pattern (+9, +8, +8).
 
 Beside the baselines: the spike's first admission took 12.1 s at 1.09 GiB; the
 row-copy reimport of different content took 16 min 49 s at 8.80 GiB; the
-like-for-like C26 derive is estimated at about 9 min. Admission is 37× below
-the estimate on a first generation and 170× below it on a later one.
+like-for-like C26 derive is estimated at about 9 min. Admission is 39× below
+the estimate on a first generation and 200× below it on a later one.
 
 | Report counts | generated | adopted | added | changed | removed | carried |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -78,7 +79,7 @@ the estimate on a first generation and 170× below it on a later one.
 | `modify_date` | NULL on every row of both sides |
 
 The comparison read the current state through `CoreStateReader.table()`, took
-72 s and peaked at 10.5 GiB, mostly pyarrow holding both members and DuckDB's
+75 s and peaked at 8.2 GiB, mostly pyarrow holding both members and DuckDB's
 buffers; that is the check's cost, not admission's.
 
 ## Adjudications
@@ -127,7 +128,7 @@ buffers; that is the check's cost, not admission's.
   every key, digest and occurrence with pyarrow's values and Rulespec's
   encoder; the direct comparison used pyarrow compute, not DuckDB.
 - **A narrowed key set:** both key counts are asserted before the `EXCEPT`.
-- **One repetition** at load 7–10; timings are descriptive. The synthetic FR
+- **One repetition per code version** at load 7–13; timings are descriptive. The synthetic FR
   member was written by pyarrow, not the producer.
 - **Not measured here:** HTTPS transfer (the admission tests cover the HTTPS
   path with a mocked transport), tables above 1 M rows, concurrent admissions.
@@ -135,13 +136,14 @@ buffers; that is the check's cost, not admission's.
 ## Reproduce
 
 From `~/Work/corpora/c27-gate-20260925`, each under
-`pm01-gate-2026-09-23/tools/watch.sh LOG 12 --`:
+`pm01-gate-2026-09-23/tools/watch.sh LOG 12 --`; writes need no catalog
+service:
 
 ```sh
 WT=~/Work/spicy-stack-worktrees/docspec-admission; G=$WT/docs/history/probes/2026-09-25-admit-generation-gate.py
 uv run --frozen --project $WT python $G reference
 uv run --frozen --project $WT python $G synthesize
-uv run --frozen --project $WT python $WT/tools/with_iceberg.py $WT/.venv/bin/python $G admit prior ~/Work/corpora/fork-fr-generation-2026-09-23/prior federal-register
+uv run --frozen --project $WT python $G admit prior ~/Work/corpora/fork-fr-generation-2026-09-23/prior federal-register
 # ... current, then synthetic/fr-g3 into federal-register; synthetic/typed-a, typed-b, typed-a2 into typed
 uv run --frozen --project $WT python $G compare
 ```

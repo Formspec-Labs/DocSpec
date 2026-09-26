@@ -1,24 +1,24 @@
 {
  "admissions": {
   "current": {
-   "admission_seconds": 3.2161524170078337,
+   "admission_seconds": 2.714023292006459,
    "base": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04",
    "bytes_written": {
     "blobs": 52328,
     "layer_roots": 4037,
     "membership": {
-     "all_bytes": 28743,
+     "all_bytes": 28688,
      "data_bytes": 7473,
      "data_files_total": 3
     },
     "occurrences": {
-     "all_bytes": 17856,
+     "all_bytes": 17802,
      "data_bytes": 8482,
      "data_files_total": 2
     },
-    "records_total": 156005095,
+    "records_total": 156004758,
     "table": {
-     "all_bytes": 155941204,
+     "all_bytes": 155941077,
      "data_bytes": 155924250,
      "data_files_total": 1
     }
@@ -35,13 +35,13 @@
    },
    "dataset": "federal-register",
    "environment": {
-    "at": "2026-09-25T20:07:56",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:37:46",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     7.17724609375,
-     9.37646484375,
-     10.68505859375
+     9.791015625,
+     8.13671875,
+     8.3203125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -69,36 +69,36 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:07:52Z load { 7.28 9.43 10.71 }",
-     "end 2026-09-26T00:08:02Z load { 7.00 9.30 10.65 } exit 0 peak_tree_rss_kib 3376"
+     "start 2026-09-26T00:37:43Z load { 9.79 8.14 8.32 }",
+     "end 2026-09-26T00:37:48Z load { 9.41 8.08 8.30 } exit 0 peak_tree_rss_kib 1264"
     ],
-    "process_wall_seconds": 5.1,
-    "time_l_max_rss_bytes": 2276999168,
-    "watch_sampled_peak_bytes": 3457024
+    "process_wall_seconds": 3.31,
+    "time_l_max_rss_bytes": 2264662016,
+    "watch_sampled_peak_bytes": 1294336
    },
-   "process_peak_rss_bytes": 2276999168,
+   "process_peak_rss_bytes": 2264662016,
    "source": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/current",
    "state_id": "urn:docspec:generation-admission:v1:5459848727d6d31d6cdb15e6b2aea301b34b05290e7f1ef04d62a2617d17d57d"
   },
   "fr-g3": {
-   "admission_seconds": 3.3687917909992393,
+   "admission_seconds": 2.754864832997555,
    "base": "urn:docspec:generation-admission:v1:5459848727d6d31d6cdb15e6b2aea301b34b05290e7f1ef04d62a2617d17d57d",
    "bytes_written": {
     "blobs": 4499,
     "layer_roots": 4037,
     "membership": {
-     "all_bytes": 27975,
+     "all_bytes": 27904,
      "data_bytes": 3296,
      "data_files_total": 5
     },
     "occurrences": {
-     "all_bytes": 12118,
+     "all_bytes": 12057,
      "data_bytes": 1454,
      "data_files_total": 3
     },
-    "records_total": 324528613,
+    "records_total": 324528245,
     "table": {
-     "all_bytes": 324471238,
+     "all_bytes": 324471111,
      "data_bytes": 324454276,
      "data_files_total": 1
     }
@@ -115,13 +115,13 @@
    },
    "dataset": "federal-register",
    "environment": {
-    "at": "2026-09-25T20:08:07",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:37:51",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     8.763671875,
-     9.63037109375,
-     10.7587890625
+     9.4072265625,
+     8.08447265625,
+     8.30078125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -149,36 +149,36 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:08:02Z load { 7.00 9.30 10.65 }",
-     "end 2026-09-26T00:08:12Z load { 8.33 9.51 10.70 } exit 0 peak_tree_rss_kib 3376"
+     "start 2026-09-26T00:37:48Z load { 9.41 8.08 8.30 }",
+     "end 2026-09-26T00:37:53Z load { 8.89 8.00 8.27 } exit 0 peak_tree_rss_kib 5568"
     ],
-    "process_wall_seconds": 5.1,
-    "time_l_max_rss_bytes": 2245279744,
-    "watch_sampled_peak_bytes": 3457024
+    "process_wall_seconds": 3.38,
+    "time_l_max_rss_bytes": 2238152704,
+    "watch_sampled_peak_bytes": 5701632
    },
-   "process_peak_rss_bytes": 2245279744,
+   "process_peak_rss_bytes": 2238152704,
    "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/fr-g3",
    "state_id": "urn:docspec:generation-admission:v1:ef0ff1fbd5f16526f34b480173fb29799d16279b9f7cc197b8bca74f3e70defc"
   },
   "prior": {
-   "admission_seconds": 14.35204408300342,
+   "admission_seconds": 13.96813037499669,
    "base": null,
    "bytes_written": {
     "blobs": 7491,
     "layer_roots": 4037,
     "membership": {
-     "all_bytes": 46197668,
+     "all_bytes": 46197560,
      "data_bytes": 46188200,
      "data_files_total": 1
     },
     "occurrences": {
-     "all_bytes": 73211062,
+     "all_bytes": 73210952,
      "data_bytes": 73201804,
      "data_files_total": 1
     },
-    "records_total": 275367748,
+    "records_total": 275367310,
     "table": {
-     "all_bytes": 155941795,
+     "all_bytes": 155941669,
      "data_bytes": 155924847,
      "data_files_total": 1
     }
@@ -195,13 +195,13 @@
    },
    "dataset": "federal-register",
    "environment": {
-    "at": "2026-09-25T20:07:47",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:37:42",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     7.27978515625,
-     9.43359375,
-     10.712890625
+     10.12109375,
+     8.1728515625,
+     8.33447265625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -229,36 +229,36 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:07:31Z load { 7.26 9.58 10.80 }",
-     "end 2026-09-26T00:07:52Z load { 7.28 9.43 10.71 } exit 0 peak_tree_rss_kib 1057360"
+     "start 2026-09-26T00:37:28Z load { 11.23 8.32 8.39 }",
+     "end 2026-09-26T00:37:43Z load { 9.79 8.14 8.32 } exit 0 peak_tree_rss_kib 980592"
     ],
-    "process_wall_seconds": 15.97,
-    "time_l_max_rss_bytes": 1015562240,
-    "watch_sampled_peak_bytes": 1082736640
+    "process_wall_seconds": 14.78,
+    "time_l_max_rss_bytes": 1062502400,
+    "watch_sampled_peak_bytes": 1004126208
    },
-   "process_peak_rss_bytes": 1015562240,
+   "process_peak_rss_bytes": 1062502400,
    "source": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/prior",
    "state_id": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04"
   },
   "typed-a": {
-   "admission_seconds": 0.7931073330109939,
+   "admission_seconds": 0.4458977910107933,
    "base": null,
    "bytes_written": {
     "blobs": 3607,
     "layer_roots": 3602,
     "membership": {
-     "all_bytes": 107064,
+     "all_bytes": 106970,
      "data_bytes": 97614,
      "data_files_total": 1
     },
     "occurrences": {
-     "all_bytes": 151402,
+     "all_bytes": 151279,
      "data_bytes": 142156,
      "data_files_total": 1
     },
-    "records_total": 370969,
+    "records_total": 370530,
     "table": {
-     "all_bytes": 95708,
+     "all_bytes": 95596,
      "data_bytes": 82617,
      "data_files_total": 1
     }
@@ -275,13 +275,13 @@
    },
    "dataset": "typed",
    "environment": {
-    "at": "2026-09-25T20:08:14",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:37:54",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     8.3251953125,
-     9.509765625,
-     10.70263671875
+     8.89404296875,
+     8.0,
+     8.26953125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -309,36 +309,36 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:08:12Z load { 8.33 9.51 10.70 }",
-     "end 2026-09-26T00:08:17Z load { 7.98 9.42 10.66 } exit 0 peak_tree_rss_kib 3376"
+     "start 2026-09-26T00:37:53Z load { 8.89 8.00 8.27 }",
+     "end 2026-09-26T00:37:58Z load { 8.50 7.93 8.24 } exit 0 peak_tree_rss_kib 5568"
     ],
-    "process_wall_seconds": 2.18,
-    "time_l_max_rss_bytes": 275775488,
-    "watch_sampled_peak_bytes": 3457024
+    "process_wall_seconds": 1.0,
+    "time_l_max_rss_bytes": 284688384,
+    "watch_sampled_peak_bytes": 5701632
    },
-   "process_peak_rss_bytes": 275415040,
+   "process_peak_rss_bytes": 284360704,
    "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-a",
    "state_id": "urn:docspec:generation-admission:v1:a57c95b8ced1504074cbd95dd8dab42b720c580f62d0948530a2a946d816c4a6"
   },
   "typed-a2": {
-   "admission_seconds": 0.8434529999794904,
+   "admission_seconds": 0.4740910420077853,
    "base": "urn:docspec:generation-admission:v1:b7a4f3ae6433c628f5b617753e3b0c259dbf5b6ee0a3c73b58926603d4fc8c76",
    "bytes_written": {
     "blobs": 3607,
     "layer_roots": 3602,
     "membership": {
-     "all_bytes": 26640,
+     "all_bytes": 26582,
      "data_bytes": 3208,
      "data_files_total": 4
     },
     "occurrences": {
-     "all_bytes": 12093,
+     "all_bytes": 12025,
      "data_bytes": 1446,
      "data_files_total": 3
     },
-    "records_total": 151390,
+    "records_total": 151053,
     "table": {
-     "all_bytes": 95805,
+     "all_bytes": 95704,
      "data_bytes": 82714,
      "data_files_total": 1
     }
@@ -355,13 +355,13 @@
    },
    "dataset": "typed",
    "environment": {
-    "at": "2026-09-25T20:08:24",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:38:04",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     7.73974609375,
-     9.34423828125,
-     10.6298828125
+     8.06103515625,
+     7.8515625,
+     8.21337890625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -389,36 +389,36 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:08:22Z load { 7.74 9.34 10.63 }",
-     "end 2026-09-26T00:08:27Z load { 7.92 9.35 10.63 } exit 0 peak_tree_rss_kib 1264"
+     "start 2026-09-26T00:38:03Z load { 8.06 7.85 8.21 }",
+     "end 2026-09-26T00:38:08Z load { 7.74 7.79 8.19 } exit 0 peak_tree_rss_kib 3376"
     ],
-    "process_wall_seconds": 2.23,
-    "time_l_max_rss_bytes": 253558784,
-    "watch_sampled_peak_bytes": 1294336
+    "process_wall_seconds": 1.03,
+    "time_l_max_rss_bytes": 283525120,
+    "watch_sampled_peak_bytes": 3457024
    },
-   "process_peak_rss_bytes": 253214720,
+   "process_peak_rss_bytes": 283262976,
    "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-a2",
    "state_id": "urn:docspec:generation-admission:v1:e168fa518f5acc745cbc18454c8b18ff5fbc67be4f75b3c75a9b575e28466881"
   },
   "typed-b": {
-   "admission_seconds": 0.8244645830127411,
+   "admission_seconds": 0.4712197500048205,
    "base": "urn:docspec:generation-admission:v1:a57c95b8ced1504074cbd95dd8dab42b720c580f62d0948530a2a946d816c4a6",
    "bytes_written": {
     "blobs": 3607,
     "layer_roots": 3602,
     "membership": {
-     "all_bytes": 16310,
+     "all_bytes": 16260,
      "data_bytes": 1606,
      "data_files_total": 2
     },
     "occurrences": {
-     "all_bytes": 10818,
+     "all_bytes": 10759,
      "data_bytes": 1461,
      "data_files_total": 2
     },
-    "records_total": 139688,
+    "records_total": 139362,
     "table": {
-     "all_bytes": 95732,
+     "all_bytes": 95624,
      "data_bytes": 82638,
      "data_files_total": 1
     }
@@ -435,13 +435,13 @@
    },
    "dataset": "typed",
    "environment": {
-    "at": "2026-09-25T20:08:19",
-    "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+    "at": "2026-09-25T20:37:59",
+    "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
     "duckdb": "1.5.5",
     "load": [
-     7.978515625,
-     9.41796875,
-     10.6630859375
+     8.501953125,
+     7.93359375,
+     8.244140625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -469,14 +469,14 @@
    },
    "process": {
     "load": [
-     "start 2026-09-26T00:08:17Z load { 7.98 9.42 10.66 }",
-     "end 2026-09-26T00:08:22Z load { 7.74 9.34 10.63 } exit 0 peak_tree_rss_kib 3376"
+     "start 2026-09-26T00:37:58Z load { 8.50 7.93 8.24 }",
+     "end 2026-09-26T00:38:03Z load { 8.06 7.85 8.21 } exit 0 peak_tree_rss_kib 5584"
     ],
-    "process_wall_seconds": 2.21,
-    "time_l_max_rss_bytes": 253575168,
-    "watch_sampled_peak_bytes": 3457024
+    "process_wall_seconds": 1.03,
+    "time_l_max_rss_bytes": 281051136,
+    "watch_sampled_peak_bytes": 5718016
    },
-   "process_peak_rss_bytes": 253231104,
+   "process_peak_rss_bytes": 280739840,
    "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-b",
    "state_id": "urn:docspec:generation-admission:v1:b7a4f3ae6433c628f5b617753e3b0c259dbf5b6ee0a3c73b58926603d4fc8c76"
   }
@@ -2296,13 +2296,13 @@
    }
   },
   "environment": {
-   "at": "2026-09-25T20:11:51",
-   "commit": "e61576b9ef1e0309e258a623cb2c234ffc10ef71",
+   "at": "2026-09-25T20:38:20",
+   "commit": "6ebe1087acb61e50e0f75d9b77a6363bd12a27d2",
    "duckdb": "1.5.5",
    "load": [
-    8.2294921875,
-    8.95263671875,
-    10.1767578125
+    7.5673828125,
+    7.74560546875,
+    8.16845703125
    ],
    "pyarrow": "25.0.1",
    "python": "3.12.9"
@@ -2340,15 +2340,15 @@
   "fresh_process": true,
   "process": {
    "load": [
-    "start 2026-09-26T00:11:50Z load { 8.23 8.95 10.18 }",
-    "end 2026-09-26T00:13:06Z load { 7.24 8.41 9.86 } exit 0 peak_tree_rss_kib 10028624"
+    "start 2026-09-26T00:38:19Z load { 7.57 7.75 8.17 }",
+    "end 2026-09-26T00:39:35Z load { 6.34 7.43 8.02 } exit 0 peak_tree_rss_kib 8046016"
    ],
-   "process_wall_seconds": 72.67,
-   "time_l_max_rss_bytes": 11309776896,
-   "watch_sampled_peak_bytes": 10269310976
+   "process_wall_seconds": 75.56,
+   "time_l_max_rss_bytes": 8825077760,
+   "watch_sampled_peak_bytes": 8239120384
   },
-  "process_peak_rss_bytes": 11309776896,
-  "seconds": 71.66872466600034,
+  "process_peak_rss_bytes": 8825077760,
+  "seconds": 74.4609166669834,
   "typed": {
    "first_state_is_a": true,
    "oracle": {
@@ -2405,6 +2405,50 @@
    },
    "restored_same_as_first": true,
    "rules_match": true
+  }
+ },
+ "earlier_run_e61576b_rest_fixture": {
+  "current": {
+   "admission_seconds": 3.2161524170078337,
+   "counts": {
+    "added": 102,
+    "adopted": 1008901,
+    "carried": 1008901,
+    "changed": 2,
+    "generated": 104,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009005
+   },
+   "process_peak_rss_bytes": 2276999168
+  },
+  "fr-g3": {
+   "admission_seconds": 3.3687917909992393,
+   "counts": {
+    "added": 1,
+    "adopted": 1009005,
+    "carried": 1009003,
+    "changed": 2,
+    "generated": 1,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009006
+   },
+   "process_peak_rss_bytes": 2245279744
+  },
+  "prior": {
+   "admission_seconds": 14.35204408300342,
+   "counts": {
+    "added": 1008903,
+    "adopted": 0,
+    "carried": 0,
+    "changed": 0,
+    "generated": 1008903,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1008903
+   },
+   "process_peak_rss_bytes": 1015562240
   }
  },
  "receipts": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/receipts",
