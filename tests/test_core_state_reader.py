@@ -1,11 +1,13 @@
 """Reopening an existing state reads exact membership, occurrence and value rows while checking pinned bytes.
 
 Mismatched pins or damaged payloads refuse before delivery, published-state reuse must not repeat a full
-semantic admission, and a reader needs retained metadata rather than merely available rows.
+semantic admission, and a reader needs retained metadata rather than merely available rows. Ordered reads
+join payloads per window of compact addresses yet deliver exactly one global order.
 """
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
+import hashlib
 import json
 import subprocess
 import sys
@@ -14,6 +16,7 @@ import pytest
 
 from docspec.domain import core
 from docspec.errors import IntegrityError, StateTransitionError, StateValueRelationUnavailable
+from docspec.ports.record_storage import BATCH_ROWS
 from docspec.runtime import CoreWorkspace
 
 
@@ -71,6 +74,71 @@ def test_reopened_reader_preserves_membership_pin_and_native_rows(tmp_path):
             assert reader.pin == pin and reader.read_value("update") == {"title": "Updated"}
 
 
+def _read_digest(batches):
+    """SHA-256 over batch row counts and every length-prefixed (member key, occurrence, record) in delivered order."""
+    digest, count = hashlib.sha256(), 0
+    for batch in batches:
+        count += 1
+        digest.update(batch.num_rows.to_bytes(8, "big"))
+        for row in zip(*(batch.column(name).to_pylist() for name in ("member_key", "occurrence_id", "occurrence_record"))):
+            for value in row:
+                data = value.encode() if isinstance(value, str) else value
+                digest.update(len(data).to_bytes(8, "big") + data)
+    return digest.hexdigest(), count
+
+
+def _wide(path):
+    """6,000 members with occurrence IDs unrelated to key order, then every second one edited."""
+    values = {f"key-{index:05d}": {"n": index, "text": "x" * (index % 8191)} for index in range(6000)}
+    edited = {key: {"n": -value["n"]} for key, value in values.items() if value["n"] % 2 == 0}
+    with CoreWorkspace(path) as workspace:
+        workspace.create("wide", values.items())
+        return values, edited, workspace.upsert("wide", edited.items(), batch_id="edit").state_id
+
+
+def test_spilled_payload_windows_deliver_the_pinned_global_order(tmp_path):
+    """A small engine allowance spills payloads into several windows; the read still equals main's global sort.
+
+    The digest was taken from DocSpec 3133850, which sorted the whole join at once, so a change in rows,
+    order, bytes or batch bounds shows up as a different number. Values and changes equal a Python diff.
+    """
+    values, edited, newer = _wide(tmp_path)
+    with CoreWorkspace(tmp_path, create=False, engine_memory_bytes=32 * 1024**2) as workspace:
+        with workspace.open_state("wide") as older, workspace.open_state(newer) as reader:
+            window = workspace.states._window_rows(reader._layers["entities"], reader.record_count)
+            assert window % BATCH_ROWS == 0 and window < len(edited) < reader.record_count
+            with closing(reader.batches()) as batches:
+                assert _read_digest(batches) == ("296637f16f9cc629c5de88030807dd177b297c5ddeec46c5b3d81b157e99e79d", 3)
+            assert [(key, value) for key, _, value in reader.values()] == sorted({**values, **edited}.items())
+            assert [(key, value) for key, _, value in reader.changes(older)] == sorted(edited.items())
+            batches = reader.batches()
+            next(batches)
+        with pytest.raises(StateTransitionError, match="closed"):
+            next(batches)
+
+
+@pytest.mark.parametrize("member_keys", [None, ["key-00001", "key-00002"]], ids=["spilled", "one-window"])
+def test_paused_ordered_stream_closes_after_its_workspace(tmp_path, member_keys):
+    """Closing a paused stream after the workspace closed needs no SQL on the closed connection."""
+    _wide(tmp_path)
+    workspace = CoreWorkspace(tmp_path, create=False, engine_memory_bytes=32 * 1024**2)
+    with workspace.open_state("wide") as reader:
+        batches = reader.batches(member_keys=member_keys)
+        next(batches)
+    workspace.close()
+    batches.close()
+
+
+def test_nested_ordered_reads_keep_their_own_addresses(tmp_path):
+    """A connection's cursors share relation views; an ordered read inside another's loop must not disturb it."""
+    with CoreWorkspace(tmp_path) as workspace:
+        workspace.create("outer", [(f"o{index}", index) for index in range(3)])
+        workspace.create("inner", [("i0", 0), ("i1", -1)])
+        nested = [(key, entity.value.value, [(inner, value.value.value) for inner, value in workspace.rows("inner")])
+                  for key, entity in workspace.rows("outer")]
+        assert nested == [(f"o{index}", index, [("i0", 0), ("i1", -1)]) for index in range(3)]
+
+
 def test_lookup_selects_one_membership_and_occurrence_without_readmission(tmp_path, monkeypatch):
     _fixture(tmp_path)
     with CoreWorkspace(tmp_path, create=False) as workspace, workspace.open_state("selected") as reader:
@@ -96,13 +164,11 @@ def test_scoped_values_use_one_bounded_address_group_and_preserve_pin(tmp_path, 
         pin = reader.pin
         full = {row[0]: row for row in reader.values()}
         scopes = []
-        original = workspace.states.relation
-        @contextmanager
+        original = workspace.states.ordered_batches
         def observe(*args, **kwargs):
             scopes.append(kwargs.get("scope"))
-            with original(*args, **kwargs) as relation:
-                yield relation
-        monkeypatch.setattr(workspace.states, "relation", observe)
+            return original(*args, **kwargs)
+        monkeypatch.setattr(workspace.states, "ordered_batches", observe)
         monkeypatch.setattr(workspace.records, "admit", lambda *args, **kwargs: pytest.fail("source readmitted"))
         assert list(reader.values(member_keys=["update"])) == [full["update"]]
         assert scopes == [("update",)] and reader.pin == pin

@@ -1,0 +1,603 @@
+{
+ "probe": "2026-09-25-read-keys-not-payloads",
+ "question": "Can CoreStateReader.batches() and CoreStateStorage.rows() read the full Federal Register catalogue at the default 6 GiB allowance by ordering compact addresses instead of payloads, with identical output; and should the engine default to more than one thread?",
+ "harness": "docs/history/probes/2026-09-25-read-keys-not-payloads.py",
+ "workspace": "/Users/mikewolfd/Work/corpora/docspec-iceberg-reimport-2173b92-20260914/federal-register/workspace",
+ "workspace_access": "CoreWorkspace(create=False); open_state at the expected pin; nothing derived, admitted or written",
+ "state": "catalogue",
+ "pin": "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61",
+ "entity_layer": {
+  "stored_record_json_bytes": 7855642895,
+  "rows": 1007639,
+  "average_bytes": 7796,
+  "compressed_record_json_bytes": 490589017,
+  "row_groups": 1984
+ },
+ "windows": {
+  "committed, 6 GiB (a sixteenth of the allowance)": {
+   "window_rows": 51200,
+   "windows": 20
+  },
+  "review round, 6 GiB (a quarter)": {
+   "window_rows": 204800,
+   "windows": 5
+  },
+  "review round, 14 GiB (a quarter)": {
+   "window_rows": 481280,
+   "windows": 3
+  }
+ },
+ "software": {
+  "duckdb": "1.5.5",
+  "pyarrow": "25.0.1",
+  "python": "3.12.9",
+  "runner": "uv run --frozen"
+ },
+ "host": {
+  "machine": "arm64",
+  "cpus": 14,
+  "memory_gb": 48,
+  "shared": "yes; other lanes ran throughout (see load averages)"
+ },
+ "code": {
+  "before": {
+   "source": "git archive 3133850 src (DocSpec main), imported through PYTHONPATH",
+   "docspec_source_sha256": "c52ab8ba83d1d2ac4024bc66317c2409a20525ed87f6752ced6de574ce395e46"
+  },
+  "committed": {
+   "source": "lane/read-efficiency HEAD src; final-6g-default and final-6g-t4 measured it",
+   "docspec_source_sha256": "47d6e371e940e1c5d6ee6b0c7ef232bb5ae2761b62436388f5e26e3c9a6c7dc5"
+  },
+  "rewrite_path": "IcebergRecordStorage write path is unchanged by this change; the rewrite runs measure thread effect only"
+ },
+ "failure_cited": {
+  "log": "/Users/mikewolfd/Work/spicy-stack/output/cutover-20260925/attempt2-fr/derive-fr.log",
+  "summary": "main at the default 6 GiB: LimitExceededError 'record query exceeds its native memory allowance' after 12.30 s real, from DuckDB 'failed to pin block of size 256.0 KiB (5.9 GiB/6.0 GiB used)' under CoreStateReader.batches() relation.order('member_key')"
+ },
+ "equal_across_reads": {
+  "rows": [
+   1007639
+  ],
+  "fingerprint": [
+   "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50"
+  ],
+  "batch_boundaries": [
+   "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672"
+  ],
+  "batches": [
+   985
+  ]
+ },
+ "memory_gate_rule": "vm_stat free+inactive+speculative+purgeable >= 20 GB before each run; before-14g-t1 started at 19.9 GB (checked at 24.2 GB a minute earlier, but not gated at launch); every later run was gated",
+ "decisions": {
+  "cut_1": "Sort compact addresses once; join every payload once on the compact (occurrence_id, position) side; spill joined rows into LZ4 Arrow IPC files per window of a sixteenth of the allowance; sort each window in memory and rejoin member keys. Same rows, order, bytes and batch boundaries; one entity scan; O(P).",
+  "review_round_design": "Per-window rescans (11b29e1) were O(P^2/A): one entity scan per window of a quarter allowance.",
+  "cut_6": "Keep ENGINE_THREADS = 1. At four threads the gate fails test_parquet_arrow_stream (both cases) and the bulk revision test: DuckDB pulls Python-fed Arrow streams on worker threads and lazy SQLite sources refuse. The one-pass read gains nothing from threads (16.04 s vs 16.34 s); the rewrite gains 2.7x.",
+  "next_step": "Pull registered Python streams on the caller thread in bounded batches: records.py:627 (_incoming), core_selections.py:257 and :335, core_states.py:792 (changed_keys); then raise the default for DuckDB-bound work. The ordered read would also need its Arrow routing parallelized.",
+  "gate_at_four_threads": "10 failed, 1572 passed, 1 skipped (3 from thread affinity, 1 from 32 MiB at four threads, 5 from the shared relation view name since fixed, 1 pre-existing on main)"
+ },
+ "runs": {
+  "before-14g-t1": {
+   "design": "main 3133850: global ORDER BY over the membership/entities join",
+   "engine_memory_bytes": 15032385536,
+   "engine_threads": 1,
+   "docspec_source_sha256": "c52ab8ba83d1d2ac4024bc66317c2409a20525ed87f6752ced6de574ce395e46",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3608207500074059,
+   "read_seconds": 19.988531584007433,
+   "first_batch_seconds": 11.829676875000587,
+   "process_seconds": 20.649754750018474,
+   "peak_rss_bytes": 15411249152,
+   "peak_spill_bytes": 2645032960,
+   "load_average_start": [
+    13.81298828125,
+    10.3837890625,
+    8.5078125
+   ],
+   "load_average_end": [
+    12.0888671875,
+    10.25439453125,
+    8.5146484375
+   ],
+   "wall_seconds_time_l": 21.8,
+   "max_rss_bytes_time_l": 15411249152,
+   "peak_tree_rss_kib_watch": 14435040,
+   "watch_meta": [
+    "start 2026-09-25T20:07:57Z load { 13.81 10.38 8.51 }",
+    "end 2026-09-25T20:08:22Z load { 12.09 10.25 8.51 } exit 0 peak_tree_rss_kib 14435040"
+   ],
+   "memory_gate": null,
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/before-14g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/before-14g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/before-14g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/before-14g-t1.log.rss"
+   ]
+  },
+  "after-6g-t1": {
+   "design": "review round (11b29e1 tree): per-window rescans, windows of a quarter allowance",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "5452fb55c11595d0f52fc0d380b7ac35be714caf1fd8936f4f4322cf8c12091f",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3038108329928946,
+   "read_seconds": 17.768281416996615,
+   "first_batch_seconds": 2.4757776249898598,
+   "process_seconds": 18.155852541996865,
+   "peak_rss_bytes": 3143909376,
+   "peak_spill_bytes": 0,
+   "load_average_start": [
+    13.5146484375,
+    10.82421875,
+    8.80810546875
+   ],
+   "load_average_end": [
+    13.6162109375,
+    11.0146484375,
+    8.92236328125
+   ],
+   "wall_seconds_time_l": 18.9,
+   "max_rss_bytes_time_l": 3143909376,
+   "peak_tree_rss_kib_watch": 2932096,
+   "watch_meta": [
+    "start 2026-09-25T20:09:06Z load { 13.51 10.82 8.81 }",
+    "end 2026-09-25T20:09:27Z load { 13.62 11.01 8.92 } exit 0 peak_tree_rss_kib 2932096"
+   ],
+   "memory_gate": "2026-09-25T20:09:06Z free=16.0 inactive=8.8 spec=0.5 purge=0.4 avail=25.6 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t1.log.rss"
+   ]
+  },
+  "after-6g-t4": {
+   "design": "review round: per-window rescans, four threads",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 4,
+   "docspec_source_sha256": "5452fb55c11595d0f52fc0d380b7ac35be714caf1fd8936f4f4322cf8c12091f",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3085913750110194,
+   "read_seconds": 8.333003375009866,
+   "first_batch_seconds": 0.7135270419821609,
+   "process_seconds": 8.722782875003759,
+   "peak_rss_bytes": 3433185280,
+   "peak_spill_bytes": 0,
+   "load_average_start": [
+    14.78125,
+    11.48193359375,
+    9.14990234375
+   ],
+   "load_average_end": [
+    14.19287109375,
+    11.46533203125,
+    9.17138671875
+   ],
+   "wall_seconds_time_l": 9.58,
+   "max_rss_bytes_time_l": 3433185280,
+   "peak_tree_rss_kib_watch": 2883744,
+   "watch_meta": [
+    "start 2026-09-25T20:09:50Z load { 14.78 11.48 9.15 }",
+    "end 2026-09-25T20:10:00Z load { 14.19 11.47 9.17 } exit 0 peak_tree_rss_kib 2883744"
+   ],
+   "memory_gate": "2026-09-25T20:09:50Z free=10.1 inactive=11.8 spec=0.6 purge=0.3 avail=22.8 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t4.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t4.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t4.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t4.log.rss"
+   ]
+  },
+  "after-6g-t8": {
+   "design": "review round: per-window rescans, eight threads",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 8,
+   "docspec_source_sha256": "5452fb55c11595d0f52fc0d380b7ac35be714caf1fd8936f4f4322cf8c12091f",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3099045420240145,
+   "read_seconds": 7.375751040992327,
+   "first_batch_seconds": 0.48310208300244994,
+   "process_seconds": 7.7716426250117365,
+   "peak_rss_bytes": 3409543168,
+   "peak_spill_bytes": 0,
+   "load_average_start": [
+    12.7900390625,
+    11.29345703125,
+    9.1494140625
+   ],
+   "load_average_end": [
+    12.24609375,
+    11.20556640625,
+    9.130859375
+   ],
+   "wall_seconds_time_l": 8.96,
+   "max_rss_bytes_time_l": 3409543168,
+   "peak_tree_rss_kib_watch": 3132016,
+   "watch_meta": [
+    "start 2026-09-25T20:10:12Z load { 13.38 11.38 9.17 }",
+    "end 2026-09-25T20:10:22Z load { 12.25 11.21 9.13 } exit 0 peak_tree_rss_kib 3132016"
+   ],
+   "memory_gate": "2026-09-25T20:10:12Z free=4.5 inactive=13.8 spec=2.2 purge=0.4 avail=20.8 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t8.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t8.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t8.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-t8.log.rss"
+   ]
+  },
+  "after-6g-default": {
+   "design": "review round committed tree 11b29e1: per-window rescans",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "fbf9e7e6415cbfff9ca9fbcfa1c8dfec34b2c24cefe1f8f595cb4b784314af37",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.36522554099792615,
+   "read_seconds": 16.329191083001206,
+   "first_batch_seconds": 2.418361082993215,
+   "process_seconds": 16.786721250013215,
+   "peak_rss_bytes": 3333718016,
+   "peak_spill_bytes": 0,
+   "load_average_start": [
+    31.26318359375,
+    31.2978515625,
+    23.56494140625
+   ],
+   "load_average_end": [
+    28.98193359375,
+    30.80517578125,
+    23.52490234375
+   ],
+   "wall_seconds_time_l": 17.8,
+   "max_rss_bytes_time_l": 3333718016,
+   "peak_tree_rss_kib_watch": 3118880,
+   "watch_meta": [
+    "start 2026-09-25T20:35:49Z load { 31.26 31.30 23.56 }",
+    "end 2026-09-25T20:36:10Z load { 27.70 30.51 23.46 } exit 0 peak_tree_rss_kib 3118880"
+   ],
+   "memory_gate": "2026-09-25T20:35:49Z free=15.4 inactive=8.4 spec=1.1 purge=0.0 avail=24.9 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-default.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-default.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-default.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/after-6g-default.log.rss"
+   ]
+  },
+  "rewrite-6g-t1": {
+   "design": "entity-layer rewrite through the unchanged write path, one thread",
+   "mode": "rewrite",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "5452fb55c11595d0f52fc0d380b7ac35be714caf1fd8936f4f4322cf8c12091f",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "open_seconds": 0.3411673330119811,
+   "rewrite_seconds": 32.47928120900178,
+   "process_seconds": 32.900430666981265,
+   "peak_rss_bytes": 7095762944,
+   "peak_spill_bytes": 8502870016,
+   "load_average_start": [
+    30.7392578125,
+    17.98046875,
+    12.2421875
+   ],
+   "load_average_end": [
+    24.47998046875,
+    17.76123046875,
+    12.388671875
+   ],
+   "wall_seconds_time_l": 34.72,
+   "max_rss_bytes_time_l": 7128514560,
+   "peak_tree_rss_kib_watch": 6953536,
+   "watch_meta": [
+    "start 2026-09-25T20:13:51Z load { 30.74 17.98 12.24 }",
+    "end 2026-09-25T20:14:27Z load { 24.48 17.76 12.39 } exit 0 peak_tree_rss_kib 6953536"
+   ],
+   "memory_gate": "2026-09-25T20:13:51Z free=8.9 inactive=11.7 spec=0.4 purge=0.2 avail=21.2 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t1.log.rss"
+   ]
+  },
+  "rewrite-6g-t4": {
+   "design": "entity-layer rewrite through the unchanged write path, four threads",
+   "mode": "rewrite",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 4,
+   "docspec_source_sha256": "5452fb55c11595d0f52fc0d380b7ac35be714caf1fd8936f4f4322cf8c12091f",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "open_seconds": 0.304833417001646,
+   "rewrite_seconds": 12.213087459007511,
+   "process_seconds": 12.602572709001834,
+   "peak_rss_bytes": 7720173568,
+   "peak_spill_bytes": 7901151232,
+   "load_average_start": [
+    22.45751953125,
+    17.6552734375,
+    12.4453125
+   ],
+   "load_average_end": [
+    22.5341796875,
+    17.9013671875,
+    12.623046875
+   ],
+   "wall_seconds_time_l": 14.27,
+   "max_rss_bytes_time_l": 7720173568,
+   "peak_tree_rss_kib_watch": 7201840,
+   "watch_meta": [
+    "start 2026-09-25T20:14:41Z load { 22.46 17.66 12.45 }",
+    "end 2026-09-25T20:14:56Z load { 22.53 17.90 12.62 } exit 0 peak_tree_rss_kib 7201840"
+   ],
+   "memory_gate": "2026-09-25T20:14:41Z free=12.5 inactive=7.8 spec=0.3 purge=0.1 avail=20.6 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t4.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t4.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t4.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/rewrite-6g-t4.log.rss"
+   ]
+  },
+  "onepass-6g-t1": {
+   "design": "trial: one pass, windows of a quarter allowance, uncompressed IPC, memory-mapped windows",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "a70f6125a75e4b6ee592ac3d8a2f32f3f02b0c13df3a8c15aa72305cd271ebc0",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.36476983298780397,
+   "read_seconds": 17.42037654100568,
+   "first_batch_seconds": 8.576618958002655,
+   "process_seconds": 17.837143749988172,
+   "peak_rss_bytes": 6240600064,
+   "peak_spill_bytes": 7864341986,
+   "load_average_start": [
+    13.90185546875,
+    12.75634765625,
+    8.94775390625
+   ],
+   "load_average_end": [
+    16.87060546875,
+    13.47607421875,
+    9.2919921875
+   ],
+   "wall_seconds_time_l": 18.74,
+   "max_rss_bytes_time_l": 6240600064,
+   "peak_tree_rss_kib_watch": 5489984,
+   "watch_meta": [
+    "start 2026-09-25T23:49:55Z load { 13.90 12.76 8.95 }",
+    "end 2026-09-25T23:50:15Z load { 16.87 13.48 9.29 } exit 0 peak_tree_rss_kib 5489984"
+   ],
+   "memory_gate": "2026-09-25T23:49:55Z free=5.4 inactive=13.9 spec=0.5 purge=0.2 avail=20.0 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass-6g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass-6g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass-6g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass-6g-t1.log.rss"
+   ]
+  },
+  "onepass16-6g-t1": {
+   "design": "trial: one pass, windows of a sixteenth allowance, uncompressed IPC, pool released per window",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "05bd30fe38ba7db10815bbadb115d1b619f65aa9f78fb48dfab327ad2ca6f0a3",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3526187909883447,
+   "read_seconds": 16.109927749988856,
+   "first_batch_seconds": 8.148036957980366,
+   "process_seconds": 16.500058709003497,
+   "peak_rss_bytes": 2089828352,
+   "peak_spill_bytes": 7866341720,
+   "load_average_start": [
+    20.2177734375,
+    15.25537109375,
+    10.51708984375
+   ],
+   "load_average_end": [
+    17.03369140625,
+    14.849609375,
+    10.48095703125
+   ],
+   "wall_seconds_time_l": 17.01,
+   "max_rss_bytes_time_l": 2089828352,
+   "peak_tree_rss_kib_watch": 1784928,
+   "watch_meta": [
+    "start 2026-09-25T23:52:15Z load { 20.22 15.26 10.52 }",
+    "end 2026-09-25T23:52:36Z load { 17.03 14.85 10.48 } exit 0 peak_tree_rss_kib 1784928"
+   ],
+   "memory_gate": "2026-09-25T23:52:15Z free=8.5 inactive=13.1 spec=0.4 purge=0.0 avail=22.0 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-6g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-6g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-6g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-6g-t1.log.rss"
+   ]
+  },
+  "onepass16-lz4-6g-t1": {
+   "design": "trial: as onepass16 with LZ4 IPC buffers set by a wrapper patching pa.ipc.new_file",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "05bd30fe38ba7db10815bbadb115d1b619f65aa9f78fb48dfab327ad2ca6f0a3",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.3003528339904733,
+   "read_seconds": 16.64352162499563,
+   "first_batch_seconds": 10.043709208985092,
+   "process_seconds": 16.979793707985664,
+   "peak_rss_bytes": 2576285696,
+   "peak_spill_bytes": 1012844904,
+   "load_average_start": [
+    14.3603515625,
+    14.38720703125,
+    10.41650390625
+   ],
+   "load_average_end": [
+    13.51025390625,
+    14.189453125,
+    10.4150390625
+   ],
+   "wall_seconds_time_l": 17.57,
+   "max_rss_bytes_time_l": 2576285696,
+   "peak_tree_rss_kib_watch": 2472896,
+   "watch_meta": [
+    "start 2026-09-25T23:52:52Z load { 14.36 14.39 10.42 }",
+    "end 2026-09-25T23:53:12Z load { 12.75 14.02 10.38 } exit 0 peak_tree_rss_kib 2472896"
+   ],
+   "memory_gate": "2026-09-25T23:52:52Z free=10.9 inactive=12.3 spec=0.1 purge=0.0 avail=23.3 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-lz4-6g-t1.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-lz4-6g-t1.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-lz4-6g-t1.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/onepass16-lz4-6g-t1.log.rss"
+   ]
+  },
+  "final-6g-default": {
+   "design": "committed: one pass, sixteenth windows, LZ4 IPC, engine defaults",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 1,
+   "docspec_source_sha256": "47d6e371e940e1c5d6ee6b0c7ef232bb5ae2761b62436388f5e26e3c9a6c7dc5",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.34131374998833053,
+   "read_seconds": 16.338301542011322,
+   "first_batch_seconds": 9.980820834025508,
+   "process_seconds": 16.725986542005558,
+   "peak_rss_bytes": 2545221632,
+   "peak_spill_bytes": 1012844904,
+   "load_average_start": [
+    8.271484375,
+    12.41650390625,
+    11.982421875
+   ],
+   "load_average_end": [
+    8.53759765625,
+    12.265625,
+    11.935546875
+   ],
+   "wall_seconds_time_l": 17.53,
+   "max_rss_bytes_time_l": 2545336320,
+   "peak_tree_rss_kib_watch": 2469440,
+   "watch_meta": [
+    "start 2026-09-26T00:02:51Z load { 8.64 12.56 12.03 }",
+    "end 2026-09-26T00:03:11Z load { 8.54 12.27 11.94 } exit 0 peak_tree_rss_kib 2469440"
+   ],
+   "memory_gate": "2026-09-26T00:02:51Z free=10.7 inactive=12.6 spec=0.1 purge=0.3 avail=23.7 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-default.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-default.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-default.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-default.log.rss"
+   ]
+  },
+  "final-6g-t4": {
+   "design": "committed: one pass, sixteenth windows, LZ4 IPC, four threads",
+   "mode": "read",
+   "engine_memory_bytes": 6442450944,
+   "engine_threads": 4,
+   "docspec_source_sha256": "47d6e371e940e1c5d6ee6b0c7ef232bb5ae2761b62436388f5e26e3c9a6c7dc5",
+   "rows": 1007639,
+   "record_count": 1007639,
+   "payload_bytes": 7851597552,
+   "batches": 985,
+   "max_batch_rows": 1245,
+   "max_batch_payload_bytes": 8388606,
+   "fingerprint": "sha256:da9dc9c6968c323dfdc9e85a5db408f500c5c0dfe7f15fbb397833f4eeb91c50",
+   "batch_boundaries": "sha256:52be1069f541ffb42e72a666b8b561d338994e8a3981db44ee259834dcf0f672",
+   "open_seconds": 0.30625162497744896,
+   "read_seconds": 16.044860750000225,
+   "first_batch_seconds": 9.612717124982737,
+   "process_seconds": 16.3925113750156,
+   "peak_rss_bytes": 2561261568,
+   "peak_spill_bytes": 1012844904,
+   "load_average_start": [
+    8.173828125,
+    12.1279296875,
+    11.888671875
+   ],
+   "load_average_end": [
+    7.55615234375,
+    11.794921875,
+    11.7734375
+   ],
+   "wall_seconds_time_l": 17.1,
+   "max_rss_bytes_time_l": 2561261568,
+   "peak_tree_rss_kib_watch": 2492336,
+   "watch_meta": [
+    "start 2026-09-26T00:03:11Z load { 8.54 12.27 11.94 }",
+    "end 2026-09-26T00:03:32Z load { 7.43 11.70 11.74 } exit 0 peak_tree_rss_kib 2492336"
+   ],
+   "memory_gate": "2026-09-26T00:03:11Z free=10.1 inactive=12.6 spec=0.2 purge=0.5 avail=23.4 GB",
+   "logs": [
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-t4.json",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-t4.log",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-t4.log.meta",
+    "/Users/mikewolfd/Work/spicy-stack/output/read-efficiency-20260925/final-6g-t4.log.rss"
+   ]
+  }
+ }
+}

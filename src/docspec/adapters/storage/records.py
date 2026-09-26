@@ -545,6 +545,38 @@ class IcebergRecordStorage:
 
         return self.layer_files(reference).files
 
+    @staticmethod
+    def temp_table(cursor, relation, name):
+        """Materialize a relation from ``cursor`` into a temporary table that only ``cursor`` sees.
+
+        DuckDB shares relation views among every cursor of one connection, so
+        the staging view gets a unique name and lives for this statement only.
+        The table replaces an earlier one of that name and closes with its
+        cursor, so no stream needs SQL on a connection that may already be closed.
+        """
+
+        view = f"{name}_input_{uuid4().hex}"
+        relation.create_view(view)
+        try:
+            cursor.execute(f"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {view}")
+        finally:
+            cursor.execute(f"DROP VIEW {view}")
+        return cursor.table(name)
+
+    def stored_payload(self, reference):
+        """(uncompressed record_json bytes, rows) across a layer's data files, from their Parquet footers alone.
+
+        Rows that delete files remove still count, so this sizes bulk work; it never counts records.
+        """
+
+        paths = [str(_contained(self.root, locator)) for locator in self.data_files(reference)]
+        if not paths:
+            return 0, 0
+        with self._cursor() as cursor:
+            return cursor.execute("SELECT coalesce(sum(total_uncompressed_size), 0), coalesce(sum(row_group_num_rows), 0) "
+                                  "FROM parquet_metadata([" + ", ".join(literal(path) for path in paths) + "]) "
+                                  "WHERE path_in_schema = 'record_json'").fetchone()
+
     def layer_files(self, reference):
         """Admit a layer and keep only its commit time and data file locators, not its Iceberg metadata."""
 

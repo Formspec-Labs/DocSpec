@@ -258,6 +258,17 @@ ceiling. Scratch, record, root and member limits still apply. Measure actual
 process memory and temporary files for the intended workload; do not treat the
 engine setting as evidence of a complexity bound.
 
+Key-ordered state reads (`rows`, `values`, `batches` and `changes`) sort only
+compact member addresses. Payloads join them once, in a single scan of the
+entity layer. When the payloads exceed one window (a sixteenth of the memory
+allowance, sized from the entity layer's Parquet footers), each joined row goes
+to an LZ4-compressed Arrow IPC file for its window of the order, and each window
+is then sorted alone. No query holds or sorts every payload. At the default
+allowance the 7.86 GB Federal Register catalogue reads with a 1.0 GB spill at
+2.5 GB peak memory, in less time than one global sort needed at 15 GB
+([probe](history/probes/2026-09-25-read-keys-not-payloads.md)). Scratch spills
+count against `max_merge_scratch_bytes`.
+
 DuckDB, PyArrow and PyIceberg are core dependencies. SQLite is the authoritative Core
 metadata ledger and also supports source-build recovery and disposable record
 spools. Raw bytes remain in the blob store; Dagster owns its execution state.
