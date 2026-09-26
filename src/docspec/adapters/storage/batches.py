@@ -11,7 +11,6 @@ import pyarrow.compute as pc
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.record_storage import bounded_rows
 from docspec.adapters.streams import BATCH_BYTES as BATCH_BYTES, BATCH_ROWS as BATCH_ROWS, owned_iterator
-from docspec.errors import IntegrityError
 
 
 ENCODED_RECORD_SCHEMA = pa.schema([
