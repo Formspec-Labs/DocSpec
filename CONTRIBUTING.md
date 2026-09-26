@@ -168,7 +168,7 @@ For a built wheel and an empty verification environment:
 
 ```sh
 uv pip install --python "$wheel_check/venv/bin/python" \
-  --find-links dist --find-links vendor 'docspec==0.11.1.dev0'
+  --find-links dist --find-links vendor 'docspec==0.11.1'
 ```
 
 Outside the checkout, supply the DocSpec, Rulespec Artifacts and SpicyDocs wheels
