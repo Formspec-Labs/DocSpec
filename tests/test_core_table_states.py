@@ -255,11 +255,15 @@ def refused(path, name):
     elif name == "unsupported":
         schema, match = pa.schema([*SCHEMA, ("small", pa.int16())]), "unsupported"
         rows = [{**row, "small": 1} for row in ROWS]
+    elif name == "volatile":
+        schema, match = pa.schema([*SCHEMA, ("observed_at", pa.string())]), "ruling R5"
+        rows = [{**row, "observed_at": "2026-09-25T00:00:00Z"} for row in ROWS]
     write(path, rows, schema, **options)
     return match
 
 
-@pytest.mark.parametrize("name", ["local-partial", "footer", "descriptor", "duplicate", "null-key", "empty-key", "unsupported"])
+@pytest.mark.parametrize("name", ["local-partial", "footer", "descriptor", "duplicate", "null-key", "empty-key", "unsupported",
+                                  "volatile"])
 def test_an_inadmissible_generation_refuses_and_publishes_nothing(tmp_path, name):
     match = refused(tmp_path / "bad", name)
     with CoreWorkspace(tmp_path / "workspace") as workspace:

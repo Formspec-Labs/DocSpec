@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from docspec.domain import core
 from docspec.domain.identity import require_text, stable_urn
-from docspec.domain.table_rows import TableIdentity
+from docspec.domain.table_rows import TableIdentity, volatile_columns
 from docspec.errors import IntegrityError
 from docspec.ports.core_ledger import MetadataBatch
 
@@ -38,6 +38,10 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
         require_text(value, label)
     if dataset is not None:
         require_text(dataset, "dataset")
+    volatile = volatile_columns(name for name, _ in generation.columns)
+    if volatile:
+        raise IntegrityError(f"table carries observation-time columns {list(volatile)}: ruling R5 admits it only "
+                             "through a declared projection without them, which does not exist yet")
     try:
         identity = TableIdentity(family, table, generation.key, generation.columns)
     except ValueError as error:

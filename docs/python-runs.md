@@ -242,8 +242,10 @@ unrewritten, sealed under its producer digest. The member key is the table's
 declared spelling: identity fields the artifact declares, then spicy-docs'
 single-column table contracts, then `number@date` for Federal Register
 ([decision 0003](decisions/0003-federal-register-record-identity.md)). A
-composite key without a versioned spelling, a NULL, empty or repeated key and
-an unsupported column type refuse before anything is retained.
+composite key without a versioned spelling, a NULL, empty or repeated key, an
+unsupported column type and a column recording when a row was observed or
+fetched (`*observed_at`, `*fetched_at`, ruling R5) refuse before anything is
+retained.
 
 Each admission publishes one metadata unit, whatever the row count: the state,
 its representation, and a result that binds the generation's root and member

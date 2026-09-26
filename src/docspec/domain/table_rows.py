@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import math
+import re
 import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
@@ -99,6 +100,18 @@ def table_occurrence_id(family, table, member_key, row_digest):
         raise ValueError("member key must be a nonempty string")
     require_sha256(row_digest, "table row digest")
     return stable_urn("table-occurrence", [family, table, member_key, row_digest])
+
+
+# Ruling R5: a column recording when a row was observed or fetched can change
+# on an unchanged row and re-mint it every generation. Such a table is
+# admitted only through a declared projection without those columns, and no
+# table declares one yet. The 17 fork-host tables R5 counted match by name.
+_VOLATILE_COLUMN = re.compile(r"(?:^|_)(?:observed|fetched)_at$", re.IGNORECASE)
+
+
+def volatile_columns(names) -> tuple[str, ...]:
+    """The columns among ``names`` that record when a row was observed or fetched (ruling R5)."""
+    return tuple(name for name in names if _VOLATILE_COLUMN.search(name))
 
 
 # A key component is nonempty text; a DATE spells ISO 8601, as ``str(date)``
