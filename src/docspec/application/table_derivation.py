@@ -3,15 +3,15 @@
 from dataclasses import dataclass
 
 from docspec.application.core_dependencies import binding_key
+from docspec.application.core_ingestion import derivation_bindings
 from docspec.application.table_units import advance, state_request, table_state_unit
 from docspec.domain import core
-from docspec.domain.core_admission import admit_record, encode_record
+from docspec.domain.core_admission import encode_record
 from docspec.domain.identity import canonical_value_bytes, require_text, sha256_digest, stable_urn
 from docspec.domain.storage import TableSchema
-from docspec.domain.streams import bounded_items, owned_iterator
+from docspec.domain.streams import owned_iterator
 from docspec.domain.table_rows import TableIdentity
 from docspec.errors import IntegrityError, StaleBaseError
-from docspec.ports.record_storage import BATCH_ROWS
 
 
 REPORT_FORMAT = "docspec-table-derivation"
@@ -54,17 +54,9 @@ def derive_table(operations, batches, *, schema, batch_id, definition, inputs, b
         raise IntegrityError("derive removals must be distinct member keys")
     if removals and base_state_id is None:
         raise IntegrityError("derive removals require a base state")
-    definition = admit_record(encode_record(definition))
-    if not isinstance(definition, core.OperationDefinition):
-        raise IntegrityError("derive requires an operation definition")
+    definition, inputs = derivation_bindings(definition, inputs)
     if not isinstance(schema, TableSchema):
         raise IntegrityError("a typed derive declares its TableSchema")
-    inputs = tuple(bounded_items(inputs, limit=BATCH_ROWS))
-    if any(not isinstance(item, (core.StateInput, core.WholeInput)) for item in inputs):
-        raise IntegrityError("derive inputs must be state or whole-input bindings")
-    labels = {item.label for item in inputs}
-    if len(labels) != len(inputs) or labels & {"base", "rows"}:
-        raise IntegrityError("derive input labels must be distinct and avoid base and rows")
     try:
         identity = TableIdentity.derived(definition.definition_id, schema)
     except ValueError as error:

@@ -58,6 +58,24 @@ def upsert(operations, base_state_id, rows, *, batch_id, dataset=None):
                       base_state_id=base_state_id, dataset=dataset, identity_kind="core-upsert")
 
 
+def derivation_bindings(definition, inputs):
+    """Admit a derive's caller definition and input bindings, as ``derive`` and ``derive_table`` take them.
+
+    Sources bind as StateInputs and retained lookups as WholeInputs; their
+    labels are distinct and leave ``base`` and ``rows`` to the derive.
+    """
+    definition = admit_record(encode_record(definition))
+    if not isinstance(definition, core.OperationDefinition):
+        raise IntegrityError("derive requires an operation definition")
+    inputs = tuple(bounded_items(inputs, limit=BATCH_ROWS))
+    if any(not isinstance(item, (core.StateInput, core.WholeInput)) for item in inputs):
+        raise IntegrityError("derive inputs must be state or whole-input bindings")
+    labels = {item.label for item in inputs}
+    if len(labels) != len(inputs) or labels & {"base", "rows"}:
+        raise IntegrityError("derive input labels must be distinct and avoid base and rows")
+    return definition, inputs
+
+
 def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None, removals=(), dataset=None,
            identity_kind="core-derive"):
     """Publish one keyed state derived from source states and retained lookups.
@@ -78,15 +96,7 @@ def derive(operations, rows, *, batch_id, definition, inputs, base_state_id=None
         require_text(base_state_id, "base state identity")
     elif dataset is not None or removals:
         raise IntegrityError("derive dataset promotion and removals require a base state")
-    definition = admit_record(encode_record(definition))
-    if not isinstance(definition, core.OperationDefinition):
-        raise IntegrityError("derive requires an operation definition")
-    inputs = tuple(bounded_items(inputs, limit=BATCH_ROWS))
-    if any(not isinstance(item, (core.StateInput, core.WholeInput)) for item in inputs):
-        raise IntegrityError("derive inputs must be state or whole-input bindings")
-    labels = {item.label for item in inputs}
-    if len(labels) != len(inputs) or labels & {"base", "rows"}:
-        raise IntegrityError("derive input labels must be distinct and avoid base and rows")
+    definition, inputs = derivation_bindings(definition, inputs)
     identity = stable_urn(identity_kind, batch_id)
 
     def occurrence(key):
