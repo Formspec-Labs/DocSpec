@@ -71,8 +71,10 @@ def derive_table(operations, batches, *, schema, batch_id, definition, inputs, b
         raise IntegrityError(f"derived rows cannot take table-row identity: {error}") from error
     state_id = stable_urn("core-derive-table", batch_id)
     request_id = state_id + ":request"
-    with operations.ledger.request_guard(request_id), operations.publisher.session() as session, \
-            session.states.stage_rows(batches, schema, identity) as staged:
+    # The caller's batches are consumed into scratch before any guard is taken,
+    # so preparing them never holds off cleanup or a retry of the same batch.
+    with operations.publisher.states.stage_rows(batches, schema, identity) as staged, \
+            operations.ledger.request_guard(request_id), operations.publisher.session() as session:
         if not staged.count and not removals:
             raise IntegrityError("derive batch must contain at least one row or removal")
         rows = _rows_entity(batch_id, identity, staged, base_state_id, removals)
