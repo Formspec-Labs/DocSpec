@@ -603,6 +603,7 @@
   "CORE-TYPED-DERIVE": [
     "tests/test_core_table_derivation.py::test_a_typed_derive_publishes_one_unit_and_every_reader_serves_the_reference",
     "tests/test_core_table_derivation.py::test_a_point_read_refuses_a_row_its_membership_does_not_name",
+    "tests/test_core_table_derivation.py::test_a_table_reference_names_the_pinned_metadata_an_in_place_scan_reads",
     "tests/test_core_table_derivation.py::test_an_incremental_derive_writes_only_changed_rows_and_shares_base_files",
     "tests/test_core_table_derivation.py::test_a_large_delta_or_a_fragmented_membership_is_rewritten_natively",
     "tests/test_core_table_derivation.py::test_a_batch_id_retries_exactly_and_refuses_changed_input",

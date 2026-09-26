@@ -11,6 +11,8 @@ older derived state is removable while a newer one shares its files.
 """
 
 from datetime import date, datetime, timedelta, timezone
+import json
+from pathlib import Path
 import sqlite3
 
 import pyarrow as pa
@@ -235,6 +237,43 @@ def test_a_point_read_refuses_a_row_its_membership_does_not_name(tmp_path):
             with pytest.raises(IntegrityError, match="differs from its minted occurrence"):
                 with workspace.states.relation(session, first.state_id, scope=("a", "c"), layers=mixed) as relation:
                     relation.fetchall()
+
+
+def test_a_table_reference_names_the_pinned_metadata_an_in_place_scan_reads(tmp_path):
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        occurrences = source_state(workspace)
+        rows = {key: prepared(key, occurrence) for key, occurrence in occurrences.items()}
+        first = derive(workspace, list(rows.values()), "first")
+        second = derive(workspace, [{**rows["a"], "title": "Amended"}], "second", base_state_id=first.state_id,
+                        removals=("e",))
+        def files():
+            return sorted((path, path.stat().st_mtime_ns) for path in workspace.path.rglob("*") if path.is_file())
+
+        with workspace.open_state(first.state_id) as older, workspace.open_state(second.state_id) as newer:
+            before = files()
+            base, revision = older.table_reference(), newer.table_reference()
+            # Naming the table is read-only: no file in the workspace is written.
+            assert files() == before
+            expected = [(row["member_key"], row["title"]) for row in typed_rows(newer)]
+            with workspace.open_state("source") as source, pytest.raises(IntegrityError, match="not table-shaped"):
+                source.table_reference()
+        metadata = {}
+        for reference in (base, revision):
+            path = Path(reference.metadata_location)
+            assert path.is_absolute() and path.is_relative_to(workspace.path / "records" / "iceberg")
+            metadata[reference] = json.loads(path.read_text())
+            assert metadata[reference]["current-snapshot-id"] == reference.snapshot_id
+        # The revision descends from its base: its delete and append snapshots follow the base's snapshot.
+        parents = {item["snapshot-id"]: item.get("parent-snapshot-id") for item in metadata[revision]["snapshots"]}
+        ancestors = [revision.snapshot_id]
+        while parents.get(ancestors[-1]) is not None:
+            ancestors.append(parents[ancestors[-1]])
+        assert ancestors[-1] == base.snapshot_id != revision.snapshot_id and len(ancestors) == 3
+        # An in-place scan of the named file reads the state's own rows, positional deletes applied.
+        with workspace.records._cursor() as cursor:
+            scanned = cursor.sql(f"SELECT member_key, title FROM iceberg_scan('{revision.metadata_location}') "
+                                 "ORDER BY member_key").fetchall()
+        assert scanned == expected and "e" not in dict(scanned) and dict(scanned)["a"] == "Amended"
 
 
 @pytest.mark.parametrize("change", ["rows", "base", "input", "removals", "definition", "schema"])

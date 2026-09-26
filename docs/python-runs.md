@@ -348,6 +348,15 @@ existing row, so a row it would newly join, such as a document whose docket
 now exists, is not found: match the added members from `changes` against the
 layer's own join columns.
 
+A consumer that scans the table in place, such as a search index over
+`iceberg_scan`, names it with `reader.table_reference()`: the absolute path of
+the pinned metadata file and the snapshot it pins. An incremental derive's
+metadata keeps its base's snapshot in its history, so such a reader can refresh
+by the difference, but the base's own files, its manifest list among them, stay
+only while the base state is retained. The consumer keeps the state it last read
+retained until it has read a newer one. The data files are named at the location
+they were written, so a relocated workspace needs DocSpec's own readers.
+
 ## Execute and reuse work
 
 Use `workspace.operations.run(definition, request, producer)` for a fresh

@@ -1,6 +1,8 @@
 """Protected reads of one exact existing Core state, without new data files."""
 
 from contextlib import closing, contextmanager
+from dataclasses import dataclass
+from pathlib import Path
 
 from docspec.domain import core
 from docspec.domain.core_admission import record_value, stored_record
@@ -22,6 +24,14 @@ def _scope(member_keys):
     if sum(map(len, member_keys)) > BATCH_BYTES or len(canonical_value_bytes(member_keys)) > BATCH_BYTES:
         raise ValueError("member keys exceed the batch byte limit")
     return tuple(member_keys)
+
+
+@dataclass(frozen=True, slots=True)
+class TableReference:
+    """A table-shaped state's pinned Iceberg metadata file and the snapshot it pins."""
+
+    metadata_location: str
+    snapshot_id: int
 
 
 class CoreStateReader:
@@ -97,6 +107,23 @@ class CoreStateReader:
         self._session._active()
         with self._states.typed_relation(self._layers) as relation:
             yield relation
+
+    def table_reference(self):
+        """Name a table-shaped state's pinned Iceberg table for a reader that scans it in place.
+
+        Returns the absolute path of the pinned metadata file, the file
+        ``iceberg_scan`` reads, and the snapshot it pins. An incremental
+        derive's metadata lists its base's snapshot in its history, but the
+        base's own files (its manifest list among them) stay only while the
+        base state is retained. Reading the table outside DocSpec needs it at
+        the location it was written; a relocated copy records the old paths.
+        A state that is not table-shaped refuses.
+        """
+        self._session._active()
+        if self._layers.identity is None:
+            raise IntegrityError("state is not table-shaped")
+        table = self._layers["table"].table
+        return TableReference(str(Path(table.metadata_location)), table.current_snapshot().snapshot_id)
 
     @contextmanager
     def affected(self, older, newer):
