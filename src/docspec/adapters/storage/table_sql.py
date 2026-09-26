@@ -109,6 +109,14 @@ def json_string_sql(expression):
             f"'\"' || {escaped} || '\"' ELSE CAST(to_json(({expression})) AS VARCHAR) END")
 
 
+def json_array_sql(*expressions):
+    """Spell a canonical JSON array of trusted VARCHAR SQL expressions; a NULL element makes the whole array NULL.
+
+    Engine's prepared-row id is the sha256 of one: [source_id, member_key].
+    """
+    return "'[' || " + " || ',' || ".join(json_string_sql(expression) for expression in expressions) + " || ']'"
+
+
 def _cell(expression, kind):
     if kind == "VARCHAR":
         value = json_string_sql(expression)

@@ -7,6 +7,7 @@ refuse, never as another value.
 """
 
 from datetime import datetime, timezone
+import hashlib
 import math
 import random
 import struct
@@ -16,8 +17,8 @@ import pytest
 
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.table_occurrences import reference_identity
-from docspec.adapters.storage.table_sql import (identity_relation, json_string_sql, key_components, membership_json_sql,
-    occurrence_json_sql, occurrence_urn_sql, row_json_sql)
+from docspec.adapters.storage.table_sql import (identity_relation, json_array_sql, json_string_sql, key_components,
+    membership_json_sql, occurrence_json_sql, occurrence_urn_sql, row_json_sql)
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
@@ -91,6 +92,28 @@ def test_all_controls_and_literal_escapes_have_exact_string_bytes():
         connection.executemany("INSERT INTO strings VALUES (?)", [(value,) for value in values])
         actual = connection.execute("SELECT " + json_string_sql('"value"') + " FROM strings").fetchall()
     assert [row[0].encode() for row in actual] == [canonical_value_bytes(value) for value in values]
+
+
+# Engine's prepared-row IDs, from its own stable_id (spicyengine 71a325b, indexing/prepared_table.py): the sha256 of
+# json.dumps([source_id, member_key], ensure_ascii=False, sort_keys=True, separators=(",", ":")).
+ENGINE_IDS = (
+    ("federal-register", "2015-03474@2015-02-19", "4a80f235e44ce487fef32cfab8db4c0f51331841f185f6148497d974be774c8b"),
+    ("regulations-gov", "EPA-HQ-OAR-2021-0317-0001", "d69afe458a9c3ea2f2c1d5796d54c2ccfc92fb5de637e6f2c089eea1f796fa35"),
+    ("federal-register", "quote\"back\\slash\x00\x1f\n\u2028é😀",
+     "2666cb3c3530d68974b6c3f86bdd85e1564e902722fd19f65b226eddc8143d8c"),
+    ("federal-register", "doc#1#12", "24b9b5cd82fe4a3e1204ecddf6d904443101d4888efd00526ebbb8577997ef08"),
+)
+
+
+def test_engine_prepared_ids_are_the_sha256_of_a_canonical_json_array():
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE ids (source_id VARCHAR, member_key VARCHAR)")
+        connection.executemany("INSERT INTO ids VALUES (?, ?)", [(source, key) for source, key, _ in ENGINE_IDS])
+        native = dict(connection.execute("SELECT member_key, sha256(" + json_array_sql("source_id", "member_key")
+                                         + ") FROM ids").fetchall())
+    for source, key, expected in ENGINE_IDS:
+        assert native[key] == expected
+        assert hashlib.sha256(canonical_value_bytes([source, key])).hexdigest() == expected
 
 
 def test_keys_use_utf16_order_and_safe_sql_quoting():

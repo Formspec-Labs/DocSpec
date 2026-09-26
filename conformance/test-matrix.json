@@ -614,6 +614,7 @@
     "tests/test_core_table_derivation.py::test_a_layer_over_admitted_generations_finds_the_rows_the_next_generation_changed",
     "tests/test_core_table_derivation.py::test_removing_an_older_derived_state_frees_only_files_no_retained_layer_references",
     "tests/test_table_layers.py::test_typed_changes_replace_rows_by_key_in_one_snapshot_sharing_base_files",
-    "tests/test_table_rows.py::test_segment_keys_spell_the_reference_and_split_back_into_their_components"
+    "tests/test_table_rows.py::test_segment_keys_spell_the_reference_and_split_back_into_their_components",
+    "tests/test_table_rows.py::test_engine_prepared_ids_are_the_sha256_of_a_canonical_json_array"
   ]
 }
