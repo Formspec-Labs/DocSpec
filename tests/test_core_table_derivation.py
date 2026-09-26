@@ -18,7 +18,7 @@ import pytest
 
 from docspec.adapters.storage import core_tables
 from docspec.adapters.storage.batches import table_arrow_schema
-from docspec.adapters.storage.core_states import StateLayers
+from docspec.adapters.storage.core_states import CoreStateStorage, StateLayers
 from docspec.adapters.storage.table_occurrences import reference_identity
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload
@@ -28,6 +28,7 @@ from docspec.domain.storage import TableSchema
 from docspec.domain.table_rows import TableIdentity, table_row_bytes, table_row_value
 from docspec.errors import IntegrityError, StaleBaseError
 from docspec.runtime import CoreWorkspace
+from tests.support.generations import generation
 
 COLUMNS = (("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR"), ("title", "VARCHAR"),
            ("identifiers", "VARCHAR[]"), ("published_on", "DATE"), ("signed_at", "TIMESTAMPTZ"), ("pages", "BIGINT"),
@@ -381,26 +382,42 @@ def test_a_one_to_many_layer_replaces_every_row_of_a_changed_source_member(tmp_p
 
 FUSION = (("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR[]"), ("docket", "VARCHAR"), ("title", "VARCHAR"))
 FUSION_SCHEMA = TableSchema("fusion-test:1", FUSION)
-DOCUMENTS = {"d1": {"docket": "k1"}, "d2": {"docket": "k1"}, "d3": {"docket": "k2"}, "d4": {"docket": None}}
+DOCUMENTS = {"d1": {"docket": "k1"}, "d2": {"docket": "k1"}, "d3": {"docket": "k2"}, "d4": {"docket": None},
+             "d5": {"docket": "k3"}}
 DOCKETS = {"k1": {"title": "First docket"}, "k2": {"title": "Second docket"}}
 
 
 def fused(documents, dockets):
-    """Join each document to its docket, carrying the occurrence of every row joined."""
+    """Join each document to its docket where it exists, carrying the occurrence of every row joined."""
     rows = []
     for key, occurrence in sorted(documents.items()):
         docket = DOCUMENTS[key]["docket"]
-        rows.append({"member_key": key, "source_occurrence_id": [occurrence, *([dockets[docket]] if docket else [])],
-                     "docket": docket, "title": None if docket is None else f"{key} in {docket}"})
+        joined = docket in dockets
+        rows.append({"member_key": key, "source_occurrence_id": [occurrence, *([dockets[docket]] if joined else [])],
+                     "docket": docket, "title": f"{key} in {docket}" if joined else None})
     return rows
 
 
-def test_a_fusion_layer_finds_the_rows_a_change_in_either_input_affects(tmp_path):
+def certified_diffs(monkeypatch):
+    """Record, for each diff of two states, whether certified revision history narrowed it."""
+    certified, original = [], CoreStateStorage.changed_keys
+
+    def spy(self, *args, **kwargs):
+        keys = original(self, *args, **kwargs)
+        certified.append(keys is not None)
+        return keys
+    monkeypatch.setattr(CoreStateStorage, "changed_keys", spy)
+    return certified
+
+
+def test_a_fusion_layer_finds_the_rows_a_change_in_either_input_affects(tmp_path, monkeypatch):
+    certified = certified_diffs(monkeypatch)
     with CoreWorkspace(tmp_path / "workspace") as workspace:
         documents, dockets = source_state(workspace, "documents", DOCUMENTS), source_state(workspace, "dockets", DOCKETS)
         inputs = (core.StateInput(label="documents", state_id="documents"), core.StateInput(label="dockets", state_id="dockets"))
         first = derive(workspace, fused(documents, dockets), "first", columns=FUSION, schema=FUSION_SCHEMA, inputs=inputs)
-        new_dockets, docket_occurrences = revise(workspace, "dockets", {"k1": {"title": "Renamed"}})
+        # k1 is renamed and k3 added; d3 changes. Revisions certify their edited keys, so the diff reads only those.
+        new_dockets, docket_occurrences = revise(workspace, "dockets", {"k1": {"title": "Renamed"}, "k3": {"title": "Third"}})
         new_documents, document_occurrences = revise(workspace, "documents", {"d3": {"docket": "k2", "note": 1}})
         with workspace.open_state(first.state_id) as derived:
             for older, newer, keys in (("dockets", new_dockets, ["d1", "d2"]), ("documents", new_documents, ["d3"]),
@@ -408,16 +425,71 @@ def test_a_fusion_layer_finds_the_rows_a_change_in_either_input_affects(tmp_path
                 with workspace.open_state(older) as before, workspace.open_state(newer) as after, \
                         derived.affected(before, after) as affected:
                     assert [key for (key,) in affected.project("member_key").order("member_key").fetchall()] == keys
-        # Re-derive only the affected rows over the new inputs.
+            assert certified == [True, True, True]
+            # d5 names no occurrence of the added docket k3, so lineage cannot find it: the caller's join column does.
+            with workspace.open_state("dockets") as before, workspace.open_state(new_dockets) as after:
+                added = [key for key, occurrence, _ in after.changes(before) if key not in DOCKETS]
+            with derived.table() as rows:
+                newly_joined = [key for (key,) in rows.filter(f"docket IN ({', '.join(repr(key) for key in added)})")
+                                .project("member_key").fetchall()]
+            assert added == ["k3"] and newly_joined == ["d5"]
+        # Re-derive the affected and newly joined rows over the new inputs.
         refreshed = fused(document_occurrences, docket_occurrences)
-        second = derive(workspace, [row for row in refreshed if row["member_key"] in {"d1", "d2", "d3"}], "second",
+        second = derive(workspace, [row for row in refreshed if row["member_key"] in {"d1", "d2", "d3", "d5"}], "second",
                         columns=FUSION, schema=FUSION_SCHEMA, base_state_id=first.state_id,
                         inputs=(core.StateInput(label="documents", state_id=new_documents),
                                 core.StateInput(label="dockets", state_id=new_dockets)))
-        assert (second.report["counts"]["changed"], second.report["counts"]["unchanged"]) == (3, 0)
+        assert (second.report["counts"]["changed"], second.report["counts"]["unchanged"]) == (4, 0)
         with workspace.open_state(second.state_id) as reader:
             assert {row["member_key"]: row["source_occurrence_id"] for row in typed_rows(reader)} == {
                 row["member_key"]: row["source_occurrence_id"] for row in refreshed}
+
+
+GENERATION = pa.schema([("document_number", pa.string()), ("publication_date", pa.string()), ("title", pa.string())])
+TITLES = (("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR"), ("title", "VARCHAR"))
+
+
+def titles(workspace, state_id, keys=None):
+    """A derived title row for each row of an admitted generation, its lineage the admitted occurrence."""
+    with workspace.open_state(state_id) as reader, reader.table() as relation:
+        relation = relation.project("member_key, occurrence_id AS source_occurrence_id, title")
+        if keys is not None:
+            relation = relation.filter(f"member_key IN ({', '.join(repr(key) for key in keys)})")
+        return relation.order("member_key").to_arrow_table().to_pylist()
+
+
+def test_a_layer_over_admitted_generations_finds_the_rows_the_next_generation_changed(tmp_path, monkeypatch):
+    certified = certified_diffs(monkeypatch)
+    rows = [{"document_number": f"2026-{index}", "publication_date": "2026-09-25", "title": f"Rule {index}"}
+            for index in range(4)]
+    later = [{**rows[0], "title": "Amended rule"}, rows[1], rows[2],
+             {"document_number": "2026-9", "publication_date": "2026-09-26", "title": "New rule"}]
+    for name, values in (("g1", rows), ("g2", later)):
+        generation(tmp_path / name, pa.Table.from_pylist(values, schema=GENERATION))
+    schema = TableSchema("titles-test:1", TITLES)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first = workspace.admit_generation(tmp_path / "g1", family="federal-register", table="federal_register", dataset="fr")
+        derived = derive(workspace, titles(workspace, first.state_id), "titles", columns=TITLES, schema=schema,
+                         source=first.state_id)
+        second = workspace.admit_generation(tmp_path / "g2", family="federal-register", table="federal_register", dataset="fr")
+        with workspace.open_state(first.state_id) as older, workspace.open_state(second.state_id) as newer:
+            changes = {key: occurrence for key, occurrence, _ in newer.changes(older)}
+            with workspace.open_state(derived.state_id) as layer, layer.affected(older, newer) as affected:
+                found = sorted(affected.project("member_key, source_occurrence_id").fetchall())
+        # Table-shaped inputs record no revisions: one pass over both memberships finds the changed and removed rows.
+        assert certified == [False, False]
+        assert changes.keys() == {"2026-0@2026-09-25", "2026-3@2026-09-25", "2026-9@2026-09-26"}
+        assert found == [(row["member_key"], row["source_occurrence_id"]) for row in titles(workspace, first.state_id)
+                         if row["member_key"] in {"2026-0@2026-09-25", "2026-3@2026-09-25"}]
+        revised = derive(workspace, titles(workspace, second.state_id, [key for key, occurrence in changes.items() if occurrence]),
+                         "titles-2", columns=TITLES, schema=schema, source=second.state_id, base_state_id=derived.state_id,
+                         removals=tuple(key for key, occurrence in changes.items() if occurrence is None))
+        assert revised.report["counts"] == {"rows": 4, "added": 1, "changed": 1, "removed": 1, "unchanged": 0,
+                                            "generated": 2, "adopted": 0}
+        with workspace.open_state(revised.state_id) as reader:
+            # Unchanged rows kept the admitted occurrences the next generation carried forward.
+            assert [{name: row[name] for name, _ in TITLES} for row in typed_rows(reader)] == titles(workspace, second.state_id)
+        assert [item.state_id for item in workspace.generating_request(revised.state_id).inputs[:1]] == [second.state_id]
 
 
 def test_removing_an_older_derived_state_frees_only_files_no_retained_layer_references(tmp_path):

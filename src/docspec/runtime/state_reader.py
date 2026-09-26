@@ -100,20 +100,27 @@ class CoreStateReader:
 
     @contextmanager
     def affected(self, older, newer):
-        """Yield this derived state's typed rows, as ``table()`` does, derived from a row ``newer`` no longer holds.
+        """Yield this derived state's typed rows, as ``table()`` does, derived from a member ``newer`` changed or removed.
 
         ``older`` and ``newer`` are open readers of two states of one input in
         this workspace, such as a source before and after an update. A row is
         affected when its source_occurrence_id, or any element of it for a
-        fusion, names an occurrence ``older`` holds at a key where ``newer``
-        differs: a changed or removed member. One native anti-join and one
-        semi-join find them; added members affect no existing row.
+        fusion, names the occurrence ``older`` held at a key where ``newer``
+        differs. The differing keys are found as ``changes`` finds them: by
+        certified revision history when ``newer`` descends from ``older``
+        through recorded revisions, otherwise by one native pass over both
+        memberships. Their occurrences are semi-joined with this layer's
+        lineage columns before any row is read. A member ``newer`` added names
+        no existing row, so rows it would newly join, such as a document whose
+        docket now exists, are not found: match the added members, from
+        ``newer.changes(older)``, against the layer's own join columns.
         """
         if not isinstance(older, CoreStateReader) or not isinstance(newer, CoreStateReader):
             raise TypeError("affected rows require two open state readers of one input")
         for reader in (self, older, newer):
             reader._session._active()
-        with self._states.affected_rows(self._layers, older._layers, newer._layers) as relation:
+        with self._states.affected_rows(self._session, self._layers, older.state_id, newer.state_id,
+                                        older_layers=older._layers, newer_layers=newer._layers) as relation:
             yield relation
 
     def batches(self, *, member_keys=None):

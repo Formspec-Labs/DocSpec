@@ -249,12 +249,21 @@ class CoreStateStorage:
         return content
 
     @contextmanager
-    def affected_rows(self, layers, older, newer):
-        """Yield a derived state's typed rows derived from a row the ``newer`` input state no longer holds."""
+    def affected_rows(self, session, layers, older, newer, *, older_layers, newer_layers):
+        """Yield a derived state's typed rows derived from a member the ``newer`` input state changed or removed.
+
+        The input's differing keys come from ``_differing``, as ``changes``
+        finds them; their earlier occurrences are semi-joined with the layer's
+        lineage before any derived row is read.
+        """
         if layers.identity is None:
             raise IntegrityError("state is not table-shaped")
-        with affected_rows(self.records, layers, layers.identity, older["membership"], newer["membership"]) as relation:
-            yield relation
+        with self.records._cursor() as cursor:
+            differing = self._differing(session, older, newer, older_layers=older_layers, newer_layers=newer_layers,
+                                        cursor=cursor)
+            changed = differing.filter("old_occurrence IS NOT NULL").project("old_occurrence AS changed_occurrence")
+            with affected_rows(self.records, layers, layers.identity, changed, cursor=cursor) as relation:
+                yield relation
 
     @contextmanager
     def typed_relation(self, layers):
@@ -816,23 +825,35 @@ class CoreStateStorage:
     def changes(self, session, older, newer, *, older_layers, newer_layers):
         """Stream newer's keyed rows, as ``ordered_batches``, at every key whose address differs from older.
 
-        Certified revision history narrows both memberships to edited keys;
-        otherwise one native outer join compares the compact memberships, as
-        ``compare`` does. Only differing addresses reach the payload join. A
-        removed key has a null occurrence.
+        Only the differing addresses ``_differing`` finds reach the payload
+        join. A removed key has a null occurrence.
         """
         with self.records._cursor() as cursor:
-            certified = self.changed_keys(session, newer, older, cursor)
-            memberships = {"old": older_layers["membership"], "new": newer_layers["membership"]}
-            with self.records.relations(memberships, cursor=cursor) as relations:
-                old = relations["old"].project("record_identity AS old_key, record_json AS old_member")
-                new = relations["new"].project("record_identity AS new_key, record_json AS new_member")
-                if certified is not None:
-                    old = old.join(certified, "old_key = changed_key", how="semi")
-                    new = new.join(certified, "new_key = changed_key", how="semi")
-                changed = self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
-                    "old_member IS DISTINCT FROM new_member").project("coalesce(old_key, new_key) AS wanted_key"), "state_changes")
-            yield from self.ordered_batches(session, newer, addresses=changed, cursor=cursor, layers=newer_layers)
+            changed = self._differing(session, older, newer, older_layers=older_layers, newer_layers=newer_layers,
+                                      cursor=cursor)
+            yield from self.ordered_batches(session, newer, addresses=changed.project("wanted_key"), cursor=cursor,
+                                            layers=newer_layers)
+
+    def _differing(self, session, older, newer, *, older_layers, newer_layers, cursor):
+        """Materialize, on ``cursor``, the keys whose address differs between two states, with older's occurrence.
+
+        Columns are wanted_key and old_occurrence, NULL for a key older lacks.
+        Certified revision history narrows both memberships to edited keys;
+        otherwise one native outer join compares the compact memberships, as
+        ``compare`` does.
+        """
+        certified = self.changed_keys(session, newer, older, cursor)
+        memberships = {"old": older_layers["membership"], "new": newer_layers["membership"]}
+        with self.records.relations(memberships, cursor=cursor) as relations:
+            old = relations["old"].project("record_identity AS old_key, record_json AS old_member")
+            new = relations["new"].project("record_identity AS new_key, record_json AS new_member")
+            if certified is not None:
+                old = old.join(certified, "old_key = changed_key", how="semi")
+                new = new.join(certified, "new_key = changed_key", how="semi")
+            return self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
+                "old_member IS DISTINCT FROM new_member").project(
+                "coalesce(old_key, new_key) AS wanted_key, "
+                "json_extract_string(decode(old_member), '/occurrence_id') AS old_occurrence"), "state_changes")
 
     def resolve_membership(self, session, revision, *, full=False):
         """Validate every edit before reducing keys; write only the changed rows.

@@ -19,9 +19,10 @@ import pyarrow as pa
 
 from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY, MEMBERSHIP_SCHEMA
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.records import identity_filter
+from docspec.adapters.storage.records import LITERAL_IDENTITIES, identity_filter
 from docspec.adapters.storage.table_occurrences import (IndexedOccurrence, MintedIdentities, append_occurrences,
-    check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spell_rows, spilled_identities)
+    candidate_rows, check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spell_rows,
+    spilled_identities)
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_relation, member_key_sql, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql, rows_differ_sql)
@@ -446,53 +447,60 @@ def _spelled_values(cursor, table, identity: TableIdentity, held):
 
 
 @contextmanager
-def typed_relation(records, layers, identity: TableIdentity, *, cursor=None):
+def typed_relation(records, layers, identity: TableIdentity, *, cursor=None, keys=None):
     """Yield (member_key, occurrence_id, <the table's columns>) for a table-shaped state, without JSON.
 
     A key spelled from a member_key column, as every derived layer's is, keeps
     that column as member_key: the state's key for a one-to-one layer, the
     source member's for a one-to-many one, keyed member_key#segment_index.
+    ``keys``, a relation of the key fields on ``cursor``, narrows the rows to
+    those keys before any row is addressed: up to 256 push their components
+    into the table scan and their identities into the membership's.
     """
     fields = layers["table"].schema.fields
     own = identity.key.fields[0] == DERIVED_MEMBER
     if {name.casefold() for name in fields} & (_READER_COLUMNS - {DERIVED_MEMBER} if own else _READER_COLUMNS):
         raise IntegrityError("table columns clash with the reader's member_key or occurrence_id")
-    with records.relations({"membership": layers["membership"], "table": layers["table"]}, cursor=cursor) as relations:
-        joined, key, occurrence = _keyed(relations["table"], identity, relations["membership"].project(MEMBERSHIP_ADDRESSES))
+    with (records._cursor() if cursor is None else nullcontext(cursor)) as cursor, records.relations(
+            {"membership": layers["membership"], "table": layers["table"]}, cursor=cursor) as relations:
+        table, membership = relations["table"], relations["membership"]
+        if keys is not None:
+            spelled = keys.project(f"{member_key_sql(identity)} AS narrowed_key")
+            if spelled.aggregate("count(*)").fetchone()[0] <= LITERAL_IDENTITIES:
+                wanted = [key for (key,) in spelled.fetchall()]
+                table, membership = candidate_rows(table, identity, wanted), identity_filter(cursor, membership, wanted)
+            else:
+                membership = membership.join(spelled, "record_identity = narrowed_key", how="semi")
+        joined, key, occurrence = _keyed(table, identity, membership.project(MEMBERSHIP_ADDRESSES))
         head = identifier(DERIVED_MEMBER) if own else f"{identifier(key)} AS member_key"
         yield joined.project(", ".join([head, f"{identifier(occurrence)} AS occurrence_id",
                                         *(identifier(name) for name in fields if not (own and name == DERIVED_MEMBER))]))
 
 
 @contextmanager
-def affected_rows(records, layers, identity: TableIdentity, older, newer):
-    """Yield a derived state's typed rows, as ``typed_relation`` does, that were derived from a row ``newer`` no longer holds.
+def affected_rows(records, layers, identity: TableIdentity, changed, *, cursor):
+    """Yield a derived state's typed rows, as ``typed_relation`` does, whose lineage names one of ``changed``'s occurrences.
 
-    ``older`` and ``newer`` are the membership layers of two states of one input,
-    in this store. Every earlier occurrence of a changed or removed member comes
-    out of one anti-join of their canonical membership bytes; the rows whose
-    source_occurrence_id, or any element of it for a fusion, names one come out
-    of one semi-join. C16's affected-result query, natively and per row.
+    ``changed`` is a relation of changed_occurrence on ``cursor``: an input's
+    earlier occurrences of the members it changed or removed. One scan of the
+    table's key and lineage columns semi-joins them first, a fusion's list
+    unnested; only the rows found are then read and addressed. C16's
+    affected-result query, natively and per row. A row that an added input
+    member would newly join names no occurrence of it, so it is not found.
     """
-    if dict(layers["table"].schema.columns).get(SOURCE_OCCURRENCE) not in {"VARCHAR", "VARCHAR[]"} \
-            or identity.key.fields[0] != DERIVED_MEMBER:
+    kinds = dict(layers["table"].schema.columns)
+    if kinds.get(SOURCE_OCCURRENCE) not in {"VARCHAR", "VARCHAR[]"} or identity.key.fields[0] != DERIVED_MEMBER:
         raise IntegrityError("only a derived layer names the rows it was derived from")
-    listed = dict(layers["table"].schema.columns)[SOURCE_OCCURRENCE] == "VARCHAR[]"
-    taken = {name.casefold() for name in layers["table"].schema.fields}
-    hits = {field: _fresh(taken, "docspec_hit_" + field) for field in identity.key.fields}
-    with records._cursor() as cursor, records.relations({"old": older, "new": newer, "table": layers["table"]},
-                                                        cursor=cursor) as inputs, \
-            typed_relation(records, layers, identity, cursor=cursor) as rows:
-        changed = inputs["old"].project("record_json AS old_member").join(
-            inputs["new"].project("record_json AS new_member"), "old_member = new_member", how="anti").project(
-            "json_extract_string(decode(old_member), '/occurrence_id') AS changed_occurrence")
-        source = identifier(SOURCE_OCCURRENCE)
-        references = inputs["table"].project(", ".join(f"{identifier(field)} AS {identifier(hit)}" for field, hit in hits.items())
-                                             + f", {f'unnest({source})' if listed else source} AS docspec_reference")
-        found = references.join(changed, "docspec_reference = changed_occurrence", how="semi").project(
-            ", ".join(identifier(hit) for hit in hits.values())).distinct()
-        yield rows.join(found, " AND ".join(f"{identifier(field)} = {identifier(hit)}" for field, hit in hits.items()),
-                        how="semi")
+    source = identifier(SOURCE_OCCURRENCE)
+    reference = identifier(_fresh({name.casefold() for name in kinds}, "docspec_reference"))
+    names = ", ".join(identifier(field) for field in identity.key.fields)
+    with records.relations({"table": layers["table"]}, cursor=cursor) as relations:
+        references = relations["table"].project(
+            f"{names}, {f'unnest({source})' if kinds[SOURCE_OCCURRENCE] == 'VARCHAR[]' else source} AS {reference}")
+        found = records.temp_table(cursor, references.join(changed, f"{reference} = changed_occurrence", how="semi")
+                                   .project(names).distinct(), "affected_keys")
+    with typed_relation(records, layers, identity, cursor=cursor, keys=found) as rows:
+        yield rows
 
 
 def _held(records, membership, keys):
