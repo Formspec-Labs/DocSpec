@@ -87,13 +87,33 @@ class CoreStateReader:
 
     @contextmanager
     def table(self):
-        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the producer's own columns.
+        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the table's own columns.
 
         Typed consumers read the columns natively instead of decoding
-        occurrence records; a state that is not table-shaped refuses.
+        occurrence records; a state that is not table-shaped refuses. A
+        derived layer's member_key is its own column: the state's key, or for
+        a one-to-many layer the source member's, keyed member_key#segment_index.
         """
         self._session._active()
         with self._states.typed_relation(self._layers) as relation:
+            yield relation
+
+    @contextmanager
+    def affected(self, older, newer):
+        """Yield this derived state's typed rows, as ``table()`` does, derived from a row ``newer`` no longer holds.
+
+        ``older`` and ``newer`` are open readers of two states of one input in
+        this workspace, such as a source before and after an update. A row is
+        affected when its source_occurrence_id, or any element of it for a
+        fusion, names an occurrence ``older`` holds at a key where ``newer``
+        differs: a changed or removed member. One native anti-join and one
+        semi-join find them; added members affect no existing row.
+        """
+        if not isinstance(older, CoreStateReader) or not isinstance(newer, CoreStateReader):
+            raise TypeError("affected rows require two open state readers of one input")
+        for reader in (self, older, newer):
+            reader._session._active()
+        with self._states.affected_rows(self._layers, older._layers, newer._layers) as relation:
             yield relation
 
     def batches(self, *, member_keys=None):

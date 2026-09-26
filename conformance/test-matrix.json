@@ -592,5 +592,18 @@
     "tests/test_core_table_states.py::test_a_relocated_workspace_reads_and_a_flipped_member_byte_refuses",
     "tests/test_core_table_states.py::test_put_and_remove_on_a_table_shaped_base_refuse",
     "tests/test_core_table_states.py::test_the_dataset_pointer_advances_only_over_its_admission_base"
+  ],
+  "CORE-TYPED-DERIVE": [
+    "tests/test_core_table_derivation.py::test_a_typed_derive_publishes_one_unit_and_every_reader_serves_the_reference",
+    "tests/test_core_table_derivation.py::test_an_incremental_derive_writes_only_changed_rows_and_shares_base_files",
+    "tests/test_core_table_derivation.py::test_a_batch_id_retries_exactly_and_refuses_changed_input",
+    "tests/test_core_table_derivation.py::test_an_incremental_derive_refuses_another_definition_or_schema",
+    "tests/test_core_table_derivation.py::test_a_stale_dataset_base_refuses_before_writing",
+    "tests/test_core_table_derivation.py::test_a_refused_derive_writes_nothing",
+    "tests/test_core_table_derivation.py::test_a_one_to_many_layer_replaces_every_row_of_a_changed_source_member",
+    "tests/test_core_table_derivation.py::test_a_fusion_layer_finds_the_rows_a_change_in_either_input_affects",
+    "tests/test_core_table_derivation.py::test_removing_an_older_derived_state_frees_only_files_no_retained_layer_references",
+    "tests/test_table_layers.py::test_typed_changes_replace_rows_by_key_in_one_snapshot_sharing_base_files",
+    "tests/test_table_rows.py::test_segment_keys_spell_the_reference_and_split_back_into_their_components"
   ]
 }

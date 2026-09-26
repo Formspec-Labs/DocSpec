@@ -12,7 +12,8 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.storage.core_entities import (ENTITY_POLICY, ENTITY_SCHEMA, MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY,
     MEMBERSHIP_SCHEMA)
 from docspec.adapters.storage.core_tables import (TABLE_KIND, TABLE_SCHEMA_ID, TableStateView, admit_layers,
-    check_table_membership, find_table_members, occurrence_addressed, spelled_payload, table_schema, typed_relation)
+    affected_rows, check_table_membership, derive_layers, find_table_members, occurrence_addressed, spelled_payload,
+    staged_rows, table_schema, typed_relation)
 from docspec.adapters.storage.records import AdmittedTableLayer
 from docspec.adapters.storage.table_occurrences import INDEX_KIND, OCCURRENCE_INDEX
 from docspec.adapters.storage.table_sql import OCCURRENCE_PREFIX
@@ -209,11 +210,46 @@ class CoreStateStorage:
                                      "a new spelling is an explicit re-key")
         layers, counts = admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
                                       state_id=state_id, base=base, base_identity=None if base is None else base.identity)
+        return self._table_content(session, identity, layers), counts
+
+    @contextmanager
+    def stage_rows(self, batches, schema, identity):
+        """Spill a derive's typed batches and mint their identities; nothing reaches the store (C29)."""
+        with staged_rows(self.records, batches, schema, identity) as staged:
+            yield staged
+
+    def derive_table(self, session, staged, *, state_id, base_state_id=None, removals=()):
+        """Retain staged rows as a derived table-shaped state's layers; return its manifest content and counts.
+
+        A base must be a derived state of the same definition, schema and key:
+        its unchanged rows are shared, never recomputed, so a new definition
+        derives in full. The caller publishes the version-3 manifest in one unit.
+        """
+        session._active()
+        base = None
+        if base_state_id is not None:
+            base = self.layers(session, base_state_id)
+            if base.identity != staged.identity or base["table"].schema != staged.schema:
+                raise IntegrityError("an incremental derive keeps its base's definition, schema and key; "
+                                     "derive in full without a base")
+        layers, counts = derive_layers(self.records, staged, state_id=state_id, base=base, removals=removals)
+        return self._table_content(session, staged.identity, layers), counts
+
+    def _table_content(self, session, identity, layers):
+        """Retain a table-shaped state's version-3 manifest: its layers and identity rules."""
         manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
                     **{name: layer.reference.to_dict() for name, layer in layers.items()}}
         content = session.retain_value(manifest)
         self._remember(session, content.digest, manifest)
-        return content, counts
+        return content
+
+    @contextmanager
+    def affected_rows(self, layers, older, newer):
+        """Yield a derived state's typed rows derived from a row the ``newer`` input state no longer holds."""
+        if layers.identity is None:
+            raise IntegrityError("state is not table-shaped")
+        with affected_rows(self.records, layers, layers.identity, older["membership"], newer["membership"]) as relation:
+            yield relation
 
     def table_identity_check(self, session, content):
         """Refuse a table occurrence whose identity the ledger holds with other bytes, or as a state.

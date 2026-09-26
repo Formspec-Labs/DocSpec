@@ -123,13 +123,21 @@ def mint_identities(records, rows, identity: TableIdentity, *, cursor):
     available = dict(native_columns(rows))
     if any(available.get(name) != kind for name, kind in identity.columns):
         raise IntegrityError("table rows differ from the declared identity projection")
+    with spilled_identities(records, identity_relation(rows, identity), cursor=cursor) as minted:
+        if minted.relation(cursor).aggregate("member_key, count(*) AS copies", "member_key").filter("copies > 1").limit(1).fetchone():
+            raise IntegrityError("table contains a duplicate member key")
+        yield minted
+
+
+@contextmanager
+def spilled_identities(records, identities, *, cursor):
+    """Spill a relation of (member_key, row_digest, occurrence_hash) on ``cursor`` to scratch Parquet, removed on exit."""
+    if tuple(identities.columns) != ("member_key", "row_digest", "occurrence_hash"):
+        raise IntegrityError("spilled identities hold member_key, row_digest and occurrence_hash")
     with TemporaryDirectory(prefix="docspec-table-identities-", dir=records.merge_scratch_root) as scratch:
         path = Path(scratch) / "identities.parquet"
-        identity_relation(rows, identity).write_parquet(str(path))
-        spilled = cursor.read_parquet(str(path))
-        if spilled.aggregate("member_key, count(*) AS copies", "member_key").filter("copies > 1").limit(1).fetchone():
-            raise IntegrityError("table contains a duplicate member key")
-        yield MintedIdentities(path, spilled.aggregate("count(*)").fetchone()[0])
+        identities.write_parquet(str(path))
+        yield MintedIdentities(path, cursor.read_parquet(str(path)).aggregate("count(*)").fetchone()[0])
 
 
 def _index(records, index):

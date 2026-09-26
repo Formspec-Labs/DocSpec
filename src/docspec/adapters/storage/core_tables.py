@@ -1,30 +1,33 @@
-"""Table-shaped Core states: a producer's registered table, its membership and the dataset's minted-occurrence index.
+"""Table-shaped Core states: a registered producer table or a derived one, its membership and the minted-occurrence index.
 
-Decision 0007. A version-3 state manifest names the producer member registered
-by reference (``table``), ``core-membership:1`` rows as every keyed state has
-(``membership``), the dataset's append-only minted-occurrence index as of the
-admission (``occurrences``) and the identity ``rules``. Occurrence records are
-spelled natively from the table's rows when read and never stored; the index
-resolves an occurrence to its key without a scan.
+Decision 0007. A version-3 state manifest names the table (a producer member
+registered by reference, or a derived layer DocSpec writes natively, C29),
+``core-membership:1`` rows as every keyed state has (``membership``), the
+dataset's append-only minted-occurrence index as of the state (``occurrences``)
+and the identity ``rules``. Occurrence records are spelled natively from the
+table's rows when read and never stored; the index resolves an occurrence to
+its key without a scan.
 """
 
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
+import hashlib
+from pathlib import Path
 from uuid import uuid4
 
 import pyarrow as pa
 
 from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY, MEMBERSHIP_SCHEMA
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.table_occurrences import (append_occurrences, candidate_rows, check_native_spelling,
-    lookup_occurrences, mint_identities, read_occurrences)
+from docspec.adapters.storage.table_occurrences import (MintedIdentities, append_occurrences, candidate_rows,
+    check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spilled_identities)
 from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_relation, member_key_sql, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql, rows_differ_sql)
 from docspec.domain.core_admission import inline_occurrence_payload
 from docspec.domain.identity import sha256_digest
 from docspec.domain.references import LayerRef
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import TableIdentity, table_type
+from docspec.domain.table_rows import DERIVED_MEMBER, SOURCE_OCCURRENCE, TableIdentity, table_type
 from docspec.errors import IntegrityError
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -167,6 +170,128 @@ def _fresh(taken, base):
     return name
 
 
+@dataclass(frozen=True, slots=True)
+class StagedRows:
+    """A derive's rows spilled once to scratch with their minted identities, valid while ``staged_rows`` is open.
+
+    ``digest`` covers the rows as a set: the sha256 of their occurrence hashes
+    in hash order, each of which binds the definition, schema, key and row.
+    """
+
+    identity: TableIdentity
+    schema: TableSchema
+    path: Path
+    minted: MintedIdentities
+    digest: str
+
+    @property
+    def count(self) -> int:
+        return self.minted.row_count
+
+    def rows(self, cursor):
+        """Read the staged rows on any cursor of the record store."""
+        return cursor.read_parquet(str(self.path))
+
+
+@contextmanager
+def staged_rows(records, batches, schema: TableSchema, identity: TableIdentity):
+    """Spill a derive's typed batches once and mint every row natively; nothing reaches the store.
+
+    ``schema`` holds the columns in the caller's order. A NULL, empty or
+    repeated key refuses here, before any layer is written.
+    """
+    stored = table_schema(schema.columns)
+    with records.staged_table(batches, schema=stored) as (path, _), records._cursor() as cursor, \
+            mint_identities(records, cursor.read_parquet(str(path)), identity, cursor=cursor) as minted:
+        yield StagedRows(identity, stored, path, minted, _set_digest(minted.relation(cursor)))
+
+
+def _set_digest(minted):
+    """The sha256 of the occurrence hashes in hash order, streamed in Arrow batches: the same rows in any order digest alike."""
+    digest = hashlib.sha256()
+    with closing(minted.project("occurrence_hash").order("occurrence_hash").to_arrow_reader(BATCH_ROWS)) as reader:
+        for batch in reader:
+            hashes = batch.column(0).cast(pa.binary(32))
+            digest.update(hashes.buffers()[1][hashes.offset * 32:(hashes.offset + len(hashes)) * 32])
+    return "sha256:" + digest.hexdigest()
+
+
+def derive_layers(records, staged: StagedRows, *, state_id, base=None, removals=()):
+    """Write a derived layer's table, membership and index from staged rows; over a base, only the changed rows.
+
+    Without a base the rows become a new table sorted by key, the membership is
+    written from their identities and a new index starts. With one, every source
+    member the rows or ``removals`` name is touched: a staged row whose key
+    already holds its occurrence is unchanged and not written, and a base row of
+    a touched member that no staged row keys is removed. The table and the
+    membership take that delta through ``apply_changes``, sharing the base's
+    files, and only written rows reach the index. Returns the layers and counts:
+    ``unchanged`` staged rows were not written; ``generated`` occurrences are new
+    to the index and ``adopted`` ones it already held.
+    """
+    with records._cursor() as cursor:
+        if base is None:
+            table = records.write_table_relation(staged.rows(cursor), cursor=cursor, layer_kind=TABLE_KIND,
+                                                 schema=staged.schema, sort_by=staged.identity.key.fields)
+            membership = records.retain_relation(_membership_rows(staged.minted.relation(cursor)), cursor=cursor,
+                                                 layer_kind="core-membership", schema=MEMBERSHIP_SCHEMA,
+                                                 partition_policy=MEMBERSHIP_POLICY)
+            index, generated = append_occurrences(records, None, staged.minted, first_state_id=state_id)
+            counts = {"rows": staged.count, "added": staged.count, "changed": 0, "removed": 0, "unchanged": 0}
+        else:
+            table, membership, index, generated, counts = _apply_derivation(records, cursor, staged, base, removals,
+                                                                            state_id)
+    if not table.reference.record_count == membership.reference.record_count == counts["rows"]:
+        raise IntegrityError("derived table and membership disagree about their rows")
+    counts.update(generated=generated, adopted=counts["added"] + counts["changed"] - generated)
+    return {"table": table, "membership": membership, "occurrences": index}, counts
+
+
+def _apply_derivation(records, cursor, staged, base, removals, state_id):
+    """Replace the base's rows of every touched source member, writing only the rows whose occurrence changed.
+
+    One native scan of the base's key columns finds the touched members'
+    rows; they, the staged rows whose (key, occurrence) the base does not
+    hold, and the base keys no staged row holds are materialized once, each
+    as small as the change.
+    """
+    fields, key, member = staged.identity.key.fields, member_key_sql(staged.identity), identifier(DERIVED_MEMBER)
+    names = ", ".join(identifier(field) for field in fields)
+    row_key = identifier(_fresh({name.casefold() for name in staged.schema.fields}, "docspec_row_key"))
+    rows, minted = staged.rows(cursor), staged.minted.relation(cursor)
+    tables = {"removals": pa.table({"removed_member": pa.array(sorted(removals), type=pa.string())})}
+    with records.relations({"table": base["table"], "membership": base["membership"]}, tables=tables,
+                           cursor=cursor) as relations:
+        if rows.join(relations["removals"], f"{member} = removed_member", how="semi").limit(1).fetchone():
+            raise IntegrityError("derive removal repeats a member key its rows hold")
+        touched = rows.project(f"{member} AS touched").union(relations["removals"].project("removed_member")).distinct()
+        old = records.temp_table(cursor, relations["table"].join(touched, f"{member} = touched", how="semi").project(
+            f"{names}, {key} AS old_key"), "derived_old")
+        held = relations["membership"].join(old.project("old_key"), "record_identity = old_key", how="semi").project(
+            MEMBERSHIP_ADDRESSES).project("member_key AS held_key, occurrence_id AS held_occurrence")
+        changed = records.temp_table(cursor, minted.join(
+            held, f"member_key = held_key AND {occurrence_urn_sql('occurrence_hash')} = held_occurrence", how="anti"),
+            "derived_changed")
+        removed = records.temp_table(cursor, old.join(minted.project("member_key AS new_key"), "old_key = new_key",
+                                                      how="anti"), "derived_removed")
+        rewritten = rows.project(f"*, {key} AS {row_key}").join(changed.project("member_key AS changed_key"),
+                                                                 f"{row_key} = changed_key", how="semi")
+        table = records.apply_changes(base["table"], rewritten.project(", ".join(map(identifier, staged.schema.fields))),
+                                      key=fields, removed=removed.project(names), cursor=cursor)
+        delta = _membership_rows(changed).union(removed.project(
+            "old_key AS record_identity, old_key AS partition_value, NULL::BLOB AS record_json"))
+        with closing(delta.to_arrow_reader(BATCH_ROWS)) as batches:
+            membership = records.apply_changes(base["membership"], batches)
+        with spilled_identities(records, changed, cursor=cursor) as fresh:
+            index, generated = append_occurrences(records, base["occurrences"], fresh, first_state_id=state_id)
+        written, replaced = changed.join(old.project("old_key"), "member_key = old_key", how="left").aggregate(
+            "count(*), count(old_key)").fetchone()
+        dropped = removed.aggregate("count(*)").fetchone()[0]
+    counts = {"rows": base["table"].reference.record_count + written - replaced - dropped, "added": written - replaced,
+              "changed": replaced, "removed": dropped, "unchanged": staged.count - written}
+    return table, membership, index, generated, counts
+
+
 def _keyed(table, identity, members):
     """Join table rows to their (member_key, occurrence_id) addresses by spelled key, under names no column takes.
 
@@ -229,14 +354,52 @@ def occurrence_addressed(records, layers, identity: TableIdentity, *, cursor=Non
 
 @contextmanager
 def typed_relation(records, layers, identity: TableIdentity, *, cursor=None):
-    """Yield (member_key, occurrence_id, <the producer's columns>) for a table-shaped state, without JSON."""
+    """Yield (member_key, occurrence_id, <the table's columns>) for a table-shaped state, without JSON.
+
+    A key spelled from a member_key column, as every derived layer's is, keeps
+    that column as member_key: the state's key for a one-to-one layer, the
+    source member's for a one-to-many one, keyed member_key#segment_index.
+    """
     fields = layers["table"].schema.fields
-    if {name.casefold() for name in fields} & _READER_COLUMNS:
+    own = identity.key.fields[0] == DERIVED_MEMBER
+    if {name.casefold() for name in fields} & (_READER_COLUMNS - {DERIVED_MEMBER} if own else _READER_COLUMNS):
         raise IntegrityError("table columns clash with the reader's member_key or occurrence_id")
     with records.relations({"membership": layers["membership"], "table": layers["table"]}, cursor=cursor) as relations:
         joined, key, occurrence = _keyed(relations["table"], identity, relations["membership"].project(MEMBERSHIP_ADDRESSES))
-        yield joined.project(f"{identifier(key)} AS member_key, {identifier(occurrence)} AS occurrence_id, "
-                             + ", ".join(identifier(name) for name in fields))
+        head = identifier(DERIVED_MEMBER) if own else f"{identifier(key)} AS member_key"
+        yield joined.project(", ".join([head, f"{identifier(occurrence)} AS occurrence_id",
+                                        *(identifier(name) for name in fields if not (own and name == DERIVED_MEMBER))]))
+
+
+@contextmanager
+def affected_rows(records, layers, identity: TableIdentity, older, newer):
+    """Yield a derived state's typed rows, as ``typed_relation`` does, that were derived from a row ``newer`` no longer holds.
+
+    ``older`` and ``newer`` are the membership layers of two states of one input,
+    in this store. Every earlier occurrence of a changed or removed member comes
+    out of one anti-join of their canonical membership bytes; the rows whose
+    source_occurrence_id, or any element of it for a fusion, names one come out
+    of one semi-join. C16's affected-result query, natively and per row.
+    """
+    if dict(layers["table"].schema.columns).get(SOURCE_OCCURRENCE) not in {"VARCHAR", "VARCHAR[]"} \
+            or identity.key.fields[0] != DERIVED_MEMBER:
+        raise IntegrityError("only a derived layer names the rows it was derived from")
+    listed = dict(layers["table"].schema.columns)[SOURCE_OCCURRENCE] == "VARCHAR[]"
+    taken = {name.casefold() for name in layers["table"].schema.fields}
+    hits = {field: _fresh(taken, "docspec_hit_" + field) for field in identity.key.fields}
+    with records._cursor() as cursor, records.relations({"old": older, "new": newer, "table": layers["table"]},
+                                                        cursor=cursor) as inputs, \
+            typed_relation(records, layers, identity, cursor=cursor) as rows:
+        changed = inputs["old"].project("record_json AS old_member").join(
+            inputs["new"].project("record_json AS new_member"), "old_member = new_member", how="anti").project(
+            "json_extract_string(decode(old_member), '/occurrence_id') AS changed_occurrence")
+        source = identifier(SOURCE_OCCURRENCE)
+        references = inputs["table"].project(", ".join(f"{identifier(field)} AS {identifier(hit)}" for field, hit in hits.items())
+                                             + f", {f'unnest({source})' if listed else source} AS docspec_reference")
+        found = references.join(changed, "docspec_reference = changed_occurrence", how="semi").project(
+            ", ".join(identifier(hit) for hit in hits.values())).distinct()
+        yield rows.join(found, " AND ".join(f"{identifier(field)} = {identifier(hit)}" for field, hit in hits.items()),
+                        how="semi")
 
 
 def _held(records, membership, keys):

@@ -7,10 +7,13 @@ import math
 import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
-from docspec.domain.storage import TABLE_TYPES, check_column_names
+from docspec.domain.storage import TABLE_TYPES, TableSchema, check_column_names
 
 
 ROW_RULE = "docspec-table-row/1"
+# A derived layer's reserved columns (C29): the source member's key, the
+# occurrence(s) each row was derived from, and a one-to-many row's position.
+DERIVED_MEMBER, SOURCE_OCCURRENCE, SEGMENT_INDEX = "member_key", "source_occurrence_id", "segment_index"
 SAFE_INTEGER = 2**53 - 1
 _INTEGER_BITS = {"INTEGER": 32, "BIGINT": 64}
 # Every type a table layer holds, except BLOB, which no digest spells.
@@ -182,6 +185,27 @@ class TableIdentity:
         return {"row": ROW_RULE, "family": self.family, "table": self.table,
                 "key": {"id": self.key.spelling_id, "version": self.key.version, "fields": list(self.key.fields)},
                 "columns": [list(column) for column in self.columns]}
+
+    @classmethod
+    def derived(cls, definition_id, schema: TableSchema) -> "TableIdentity":
+        """A derived layer's rules (C29): its definition scopes the occurrences and its schema ID names the table.
+
+        The schema declares member_key VARCHAR and source_occurrence_id VARCHAR
+        (the source row) or VARCHAR[] (every row a fusion joined); a
+        one-to-many layer adds segment_index INTEGER or BIGINT and is keyed by
+        member-segment/1, any other by value/1 over member_key. No column may
+        take the reader's occurrence_id.
+        """
+        kinds = dict(schema.columns)
+        if kinds.get(DERIVED_MEMBER) != "VARCHAR" or kinds.get(SOURCE_OCCURRENCE) not in {"VARCHAR", "VARCHAR[]"}:
+            raise ValueError("a derived layer declares member_key VARCHAR and source_occurrence_id VARCHAR or VARCHAR[]")
+        if kinds.get(SEGMENT_INDEX, "INTEGER") not in _INTEGER_BITS:
+            raise ValueError("a one-to-many layer's segment_index is INTEGER or BIGINT")
+        if any(name.casefold() == "occurrence_id" for name in kinds):
+            raise ValueError("a derived layer's columns must not take the reader's occurrence_id")
+        key = (KeySpelling("member-segment", "1", (DERIVED_MEMBER, SEGMENT_INDEX)) if SEGMENT_INDEX in kinds
+               else KeySpelling("value", "1", (DERIVED_MEMBER,)))
+        return cls(definition_id, schema.schema_id, key, schema.columns)
 
     @classmethod
     def from_dict(cls, value) -> "TableIdentity":
