@@ -16,14 +16,14 @@ import pytest
 
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.table_occurrences import reference_identity
-from docspec.adapters.storage.table_sql import (identity_relation, json_string_sql, membership_json_sql,
+from docspec.adapters.storage.table_sql import (identity_relation, json_string_sql, key_components, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql)
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
-from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SPELLING_COLUMNS,
-    SPELLING_ROWS, KeySpelling, TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest,
-    table_row_value, table_type)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SEGMENT_KEY_COLUMNS,
+    SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling,
+    TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest, table_row_value, table_type)
 
 
 def native_rows(columns, rows, *, session_timezone="UTC"):
@@ -59,6 +59,28 @@ def test_dated_key_components_spell_the_reference_key():
     assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
                                     for key, digest, urn in references)
     assert {key for key, _, _ in references} == {"2026-\x1f1@2026-09-25", "x@y@0001-01-01", " @9999-12-31"}
+
+
+@pytest.mark.parametrize("columns,rows", [(SEGMENT_KEY_COLUMNS, SEGMENT_KEY_ROWS),
+                                          (WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS)])
+def test_segment_keys_spell_the_reference_and_split_back_into_their_components(columns, rows):
+    spelling = KeySpelling("member-segment", "1", ("member_key", "segment_index"))
+    identity = TableIdentity("urn:definition", "segments", spelling, columns)
+    with duckdb.connect() as connection:
+        declarations = ", ".join(f"{identifier(name)} {kind}" for name, kind in columns)
+        connection.execute(f"CREATE TABLE source ({declarations})")
+        connection.executemany(f"INSERT INTO source VALUES ({', '.join('?' for _ in columns)})",
+                               [[row[name] for name, _ in columns] for row in rows])
+        native = identity_relation(connection.table("source"), identity).fetchall()
+    references = [reference_identity(identity, row) for row in rows]
+    assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
+                                    for key, digest, urn in references)
+    # The index after the last "#" is a canonical integer, so each key splits back into its one pair.
+    assert [key_components(spelling, key) for key, _, _ in references] == [
+        ((row["member_key"], str(row["segment_index"])),) for row in rows]
+    assert len({key for key, _, _ in references}) == len(rows)
+    for key in ("a", "a#", "#3", "a#03", "a#-0", "a#+3", "a# 3", "a#3.0"):
+        assert key_components(spelling, key) == ()
 
 
 def test_all_controls_and_literal_escapes_have_exact_string_bytes():

@@ -126,12 +126,14 @@ def test_identity_pass_refuses_undeclared_spellings_and_foreign_projections(tmp_
             (replace(IDENTITY, key=KeySpelling("value", "2", ("document_number",))), "not declared"),
             (replace(IDENTITY, key=KeySpelling("federal-register-source-record-id", "1", ("title", "document_number"))),
              "not declared"),
+            # An integer key component belongs to member-segment/1 alone.
+            (replace(IDENTITY, key=KeySpelling("value", "1", ("pages",))), "not declared for these fields' types"),
         ]:
             with pytest.raises(IntegrityError, match=match):
                 with minted(records, layer, identity):
                     pytest.fail("an identity the rows cannot hold was minted")
-    with pytest.raises(ValueError, match="VARCHAR or DATE columns"):
-        replace(IDENTITY, key=KeySpelling("value", "1", ("pages",)))
+    with pytest.raises(ValueError, match="VARCHAR, DATE or integer columns"):
+        replace(IDENTITY, key=KeySpelling("value", "1", ("ratio",)))
     assert TableIdentity.from_dict(IDENTITY.to_dict()) == IDENTITY
     for broken in ({**IDENTITY.to_dict(), "row": "docspec-table-row/2"}, {**IDENTITY.to_dict(), "extra": 1}):
         with pytest.raises(ValueError, match="closed shape"):
