@@ -6,7 +6,9 @@ the [decision index](docs/decisions/README.md) identifies the rules that govern 
 
 ## Set up a checkout
 
-Use Python 3.12 and `uv`. The checked-in lock and vendored
+Use Python 3.12 and uv 0.11, the version CI pins (`0.11.x`): `uv --version` must
+say 0.11, since an older uv first on `PATH` reads the lock but rewrites it in an
+older format. The checked-in lock and vendored
 `rulespec-artifacts` wheel make development independent of sibling checkouts.
 DocSpec requires the pinned SpicyDocs core wheel. Source integration tests run
 in the default suite.
