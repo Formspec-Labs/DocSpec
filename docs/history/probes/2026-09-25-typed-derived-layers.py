@@ -18,6 +18,7 @@ here writes outside the gate directory, and retained workspaces are read only.
   scale-json         the baseline at scale: C26's JSON derive of the same values, cut to the typed fields
   scale-layers       bytes, files and rows of each full-scale state's layers
   scale-lookups      point reads on the full-scale typed state
+  scale-affected     a typed layer over an admitted FR generation, the next admitted, and the rows its changes affect
 
 The typing step stands in for Search's future typed preparer. It is native
 (DuckDB's JSON functions), and the reference is plain Python over ``json``, so
@@ -169,8 +170,8 @@ def _engine_functions():
 def _id_sql(key, source_id=SOURCE_ID):
     """Engine's stable_id natively: sha256 of the compact JSON array [source_id, member_key]."""
     from docspec.adapters.storage.iceberg import literal
-    from docspec.adapters.storage.table_sql import json_string_sql
-    return f"sha256('[' || {json_string_sql(literal(source_id))} || ',' || {json_string_sql(key)} || ']')"
+    from docspec.adapters.storage.table_sql import json_array_sql
+    return f"sha256({json_array_sql(literal(source_id), key)})"
 
 
 def engine_id():
@@ -676,6 +677,118 @@ def scale_lookups():
                              "values_256_ms": round(1000 * grouped.wall, 1), "values_256_rows": count})
 
 
+FORK = Path("/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23")
+TITLES = (("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR"), ("title", "VARCHAR"),
+          ("document_type", "VARCHAR"), ("publication_date", "VARCHAR"))
+
+
+def _titles_definition():
+    from docspec.domain import core
+    from docspec.domain.identity import stable_urn
+    configuration = {"columns": [name for name, _ in TITLES], "source": "the admitted federal_register table"}
+    return core.OperationDefinition(format_version=1, definition_id=stable_urn("c29-gate-fr-titles", configuration),
+                                    implementation_id="c29-gate.fr-titles", implementation_version="1",
+                                    operation_kind="transformation", configuration=configuration)
+
+
+def _affected_before(workspace, derived, older, newer):
+    """affected() as 5988213 ran it, for the before timing: a full anti-join of both memberships, then the
+    layer's whole typed relation, then the semi-join."""
+    from docspec.adapters.storage.core_tables import typed_relation
+    records = workspace.records
+    with workspace.publisher.session() as session:
+        layers = workspace.states.layers(session, derived)
+        old, new = (workspace.states.layers(session, state)["membership"] for state in (older, newer))
+        with records._cursor() as cursor, records.relations({"old": old, "new": new, "table": layers["table"]},
+                                                            cursor=cursor) as inputs, \
+                typed_relation(records, layers, layers.identity, cursor=cursor) as rows:
+            changed = inputs["old"].project("record_json AS old_member").join(
+                inputs["new"].project("record_json AS new_member"), "old_member = new_member", how="anti").project(
+                "json_extract_string(decode(old_member), '/occurrence_id') AS changed_occurrence")
+            found = inputs["table"].project("member_key AS hit_key, source_occurrence_id AS reference").join(
+                changed, "reference = changed_occurrence", how="semi").project("hit_key").distinct()
+            return rows.join(found, "member_key = hit_key", how="semi").project("member_key, source_occurrence_id").fetchall()
+
+
+def _point_reads(workspace, state_id, count=50):
+    """Mean read_value milliseconds over ``count`` random keys of a state, after one warm read."""
+    import random
+    with workspace.open_state(state_id) as reader:
+        with reader.relation() as relation:
+            keys = [key for (key,) in relation.project("member_key").fetchall()]
+        random.seed(29)
+        sample = random.sample(keys, count)
+        reader.read_value(sample[0])
+        with Clock() as clock:
+            for key in sample:
+                reader.read_value(key)
+    return {"keys": count, "read_value_ms": round(1000 * clock.wall / count, 1)}
+
+
+def scale_affected(name="affected"):
+    """A typed layer over an admitted FR generation, the next generation admitted, then the rows its changes affect.
+
+    The inputs are table-shaped states, as a producer's generations will be.
+    The fork-host generations differ in 102 added and 2 changed rows. The
+    affected rows must be exactly the derived rows of the members the
+    source's ``changes`` report changed or removed; they are re-derived with
+    the added members in one incremental derive.
+    """
+    from docspec.domain import core
+    from docspec.domain.storage import TableSchema
+    from docspec.runtime import CoreWorkspace
+    target = WORKSPACES / f"fr-1m-{name}"
+    if target.exists():
+        raise SystemExit("use a fresh gate workspace")
+    schema, receipt = TableSchema("c29-gate-fr-titles:1", TITLES), {}
+    columns = "member_key, occurrence_id AS source_occurrence_id, title, document_type, publication_date"
+    with CoreWorkspace(target) as workspace:
+        with Clock() as clock:
+            prior = workspace.admit_generation(FORK / "prior", family="federal-register", table="federal_register", dataset="fr")
+        receipt["admit_prior"] = clock.receipt()
+        with workspace.open_state(prior.state_id) as reader, reader.table() as relation:
+            rows = relation.project(columns).to_arrow_table()
+        with Clock() as clock:
+            derived = workspace.derive_table(rows.to_batches(max_chunksize=2048), schema=schema, batch_id="titles-prior",
+                                             definition=_titles_definition(), dataset="fr-titles",
+                                             inputs=(core.StateInput(label="source", state_id=prior.state_id),))
+        receipt["derive"] = {"rows": rows.num_rows, **clock.receipt(rows.num_rows)}
+        del rows
+        with Clock() as clock:
+            current = workspace.admit_generation(FORK / "current", family="federal-register", table="federal_register", dataset="fr")
+        receipt["admit_current"] = {"counts": current.report["counts"], **clock.receipt()}
+        with workspace.open_state(prior.state_id) as older, workspace.open_state(current.state_id) as newer:
+            with Clock() as clock:
+                source_changes = [(key, occurrence) for key, occurrence, _ in newer.changes(older)]
+            receipt["source_changes"] = {"count": len(source_changes), **clock.receipt()}
+            with workspace.open_state(prior.state_id) as older_again:
+                with Clock() as clock:
+                    earlier = {key: occurrence for key, occurrence, _ in older_again.changes(newer)}
+            with workspace.open_state(derived.state_id) as layer, Clock() as clock, layer.affected(older, newer) as affected:
+                found = affected.project("member_key, source_occurrence_id").fetchall()
+            receipt["affected"] = {"rows": len(found), **clock.receipt()}
+        with Clock() as clock:
+            before = _affected_before(workspace, derived.state_id, prior.state_id, current.state_id)
+        receipt["affected_before"] = {"rows": len(before), "same_rows": sorted(before) == sorted(found), **clock.receipt()}
+        expected = sorted((key, occurrence) for key, occurrence in earlier.items() if occurrence is not None)
+        receipt["affected"]["equals_the_source_changes"] = sorted(found) == expected
+        receipt["affected"]["expected"] = len(expected)
+        receipt["admitted_point_reads"] = _point_reads(workspace, prior.state_id)
+        # Re-derive the affected rows and the added members over the new generation.
+        wanted = sorted(key for key, _ in source_changes)
+        with workspace.open_state(current.state_id) as reader, reader.table() as relation:
+            refreshed = relation.project(columns).filter(
+                "member_key IN (" + ", ".join("'" + key.replace("'", "''") + "'" for key in wanted) + ")").to_arrow_table()
+        removed = tuple(key for key, occurrence in source_changes if occurrence is None)
+        with Clock() as clock:
+            revised = workspace.derive_table(refreshed.to_batches(), schema=schema, batch_id="titles-current",
+                                             definition=_titles_definition(), base_state_id=derived.state_id,
+                                             removals=removed, dataset="fr-titles",
+                                             inputs=(core.StateInput(label="source", state_id=current.state_id),))
+        receipt["revise"] = {"counts": revised.report["counts"], **clock.receipt()}
+    _write(f"scale-{name}", receipt)
+
+
 def main():
     command, *arguments = sys.argv[1:]
     if command == "engine-id":
@@ -690,6 +803,8 @@ def main():
         revision = int(arguments[0])
         compare(workspace_10k(), _read("derive-10k" if revision == 1 else "revise-10k")["state_id"], PREPARED[revision],
                 INPUTS / f"fr-10k-{revision}.source-occurrences.parquet", f"10k-{revision}")
+    elif command == "scale-affected":
+        scale_affected(*arguments)
     elif command in {"derive", "revise", "coverage", "json-derive", "scale-type", "scale-derive", "scale-revise",
                      "scale-check", "scale-json", "scale-layers", "scale-lookups"}:
         globals()[command.replace("-", "_")]()
