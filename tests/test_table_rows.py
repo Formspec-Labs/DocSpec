@@ -7,6 +7,7 @@ refuse, never as another value.
 """
 
 from datetime import datetime, timezone
+import hashlib
 import math
 import random
 import struct
@@ -16,14 +17,14 @@ import pytest
 
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.table_occurrences import reference_identity
-from docspec.adapters.storage.table_sql import (identity_relation, json_string_sql, membership_json_sql,
-    occurrence_json_sql, occurrence_urn_sql, row_json_sql)
+from docspec.adapters.storage.table_sql import (identity_relation, json_array_sql, json_string_sql, key_components,
+    membership_json_sql, occurrence_json_sql, occurrence_urn_sql, row_json_sql)
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
-from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SPELLING_COLUMNS,
-    SPELLING_ROWS, KeySpelling, TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest,
-    table_row_value, table_type)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SEGMENT_KEY_COLUMNS,
+    SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling,
+    TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest, table_row_value, table_type)
 
 
 def native_rows(columns, rows, *, session_timezone="UTC"):
@@ -61,6 +62,28 @@ def test_dated_key_components_spell_the_reference_key():
     assert {key for key, _, _ in references} == {"2026-\x1f1@2026-09-25", "x@y@0001-01-01", " @9999-12-31"}
 
 
+@pytest.mark.parametrize("columns,rows", [(SEGMENT_KEY_COLUMNS, SEGMENT_KEY_ROWS),
+                                          (WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS)])
+def test_segment_keys_spell_the_reference_and_split_back_into_their_components(columns, rows):
+    spelling = KeySpelling("member-segment", "1", ("member_key", "segment_index"))
+    identity = TableIdentity("urn:definition", "segments", spelling, columns)
+    with duckdb.connect() as connection:
+        declarations = ", ".join(f"{identifier(name)} {kind}" for name, kind in columns)
+        connection.execute(f"CREATE TABLE source ({declarations})")
+        connection.executemany(f"INSERT INTO source VALUES ({', '.join('?' for _ in columns)})",
+                               [[row[name] for name, _ in columns] for row in rows])
+        native = identity_relation(connection.table("source"), identity).fetchall()
+    references = [reference_identity(identity, row) for row in rows]
+    assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
+                                    for key, digest, urn in references)
+    # The index after the last "#" is a canonical integer, so each key splits back into its one pair.
+    assert [key_components(spelling, key) for key, _, _ in references] == [
+        ((row["member_key"], str(row["segment_index"])),) for row in rows]
+    assert len({key for key, _, _ in references}) == len(rows)
+    for key in ("a", "a#", "#3", "a#03", "a#-0", "a#+3", "a# 3", "a#3.0"):
+        assert key_components(spelling, key) == ()
+
+
 def test_all_controls_and_literal_escapes_have_exact_string_bytes():
     values = [chr(code) for code in range(32)] + ["\\u001F", "\\n", "\"\\/", "é😀", "\u2028\u2029", ""]
     values += ["prefix" + value + "suffix" for value in values]
@@ -69,6 +92,28 @@ def test_all_controls_and_literal_escapes_have_exact_string_bytes():
         connection.executemany("INSERT INTO strings VALUES (?)", [(value,) for value in values])
         actual = connection.execute("SELECT " + json_string_sql('"value"') + " FROM strings").fetchall()
     assert [row[0].encode() for row in actual] == [canonical_value_bytes(value) for value in values]
+
+
+# Engine's prepared-row IDs, from its own stable_id (spicyengine 71a325b, indexing/prepared_table.py): the sha256 of
+# json.dumps([source_id, member_key], ensure_ascii=False, sort_keys=True, separators=(",", ":")).
+ENGINE_IDS = (
+    ("federal-register", "2015-03474@2015-02-19", "4a80f235e44ce487fef32cfab8db4c0f51331841f185f6148497d974be774c8b"),
+    ("regulations-gov", "EPA-HQ-OAR-2021-0317-0001", "d69afe458a9c3ea2f2c1d5796d54c2ccfc92fb5de637e6f2c089eea1f796fa35"),
+    ("federal-register", "quote\"back\\slash\x00\x1f\n\u2028é😀",
+     "2666cb3c3530d68974b6c3f86bdd85e1564e902722fd19f65b226eddc8143d8c"),
+    ("federal-register", "doc#1#12", "24b9b5cd82fe4a3e1204ecddf6d904443101d4888efd00526ebbb8577997ef08"),
+)
+
+
+def test_engine_prepared_ids_are_the_sha256_of_a_canonical_json_array():
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE ids (source_id VARCHAR, member_key VARCHAR)")
+        connection.executemany("INSERT INTO ids VALUES (?, ?)", [(source, key) for source, key, _ in ENGINE_IDS])
+        native = dict(connection.execute("SELECT member_key, sha256(" + json_array_sql("source_id", "member_key")
+                                         + ") FROM ids").fetchall())
+    for source, key, expected in ENGINE_IDS:
+        assert native[key] == expected
+        assert hashlib.sha256(canonical_value_bytes([source, key])).hexdigest() == expected
 
 
 def test_keys_use_utf16_order_and_safe_sql_quoting():

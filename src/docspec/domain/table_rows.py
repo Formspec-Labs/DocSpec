@@ -8,10 +8,13 @@ import re
 import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
-from docspec.domain.storage import TABLE_TYPES, check_column_names
+from docspec.domain.storage import TABLE_TYPES, TableSchema, check_column_names
 
 
 ROW_RULE = "docspec-table-row/1"
+# A derived layer's reserved columns (C29): the source member's key, the
+# occurrence(s) each row was derived from, and a one-to-many row's position.
+DERIVED_MEMBER, SOURCE_OCCURRENCE, SEGMENT_INDEX = "member_key", "source_occurrence_id", "segment_index"
 SAFE_INTEGER = 2**53 - 1
 _INTEGER_BITS = {"INTEGER": 32, "BIGINT": 64}
 # Every type a table layer holds, except BLOB, which no digest spells.
@@ -73,7 +76,10 @@ def _value(value, kind):
 
 def table_row_value(row, columns):
     """Convert one complete typed row to the JSON value covered by the rule."""
-    columns = table_columns(columns)
+    return _row_value(row, table_columns(columns))
+
+
+def _row_value(row, columns):
     if not isinstance(row, Mapping) or set(row) != {name for name, _ in columns}:
         raise ValueError("table row must contain exactly its declared columns")
     return {name: _value(row[name], kind) for name, kind in columns}
@@ -82,6 +88,13 @@ def table_row_value(row, columns):
 def table_row_bytes(row, columns):
     """Emit the independent Rulespec canonical bytes used by the native oracle."""
     return canonical_value_bytes(table_row_value(row, columns))
+
+
+def table_rows_bytes(rows, columns):
+    """Emit each complete typed row's canonical bytes, as ``table_row_bytes`` does, validating ``columns`` once."""
+    columns = table_columns(columns)
+    for row in rows:
+        yield canonical_value_bytes(_row_value(row, columns))
 
 
 def table_row_digest(row, columns):
@@ -116,28 +129,33 @@ def volatile_columns(names) -> tuple[str, ...]:
 
 # A key component is nonempty text; a DATE spells ISO 8601, as ``str(date)``
 # does in spicy-docs' references, so a producer that types a date column keeps
-# every key its VARCHAR spelling had.
-KEY_TYPES = frozenset({"VARCHAR", "DATE"})
+# every key its VARCHAR spelling had. An integer spells its decimal text; only
+# a derived layer's segment index is one (C29).
+KEY_TYPES = frozenset({"VARCHAR", "DATE", "INTEGER", "BIGINT"})
 
 
 def key_component(value, kind) -> str:
-    """One member-key component's text: nonempty VARCHAR text, or a DATE's ISO 8601 spelling."""
+    """One member-key component's text: nonempty VARCHAR text, a DATE's ISO 8601 spelling or an integer's decimal."""
     if kind == "VARCHAR" and type(value) is str and value:
         return value
     if kind == "DATE" and type(value) is date:
         return value.isoformat()
-    raise ValueError("member key components must be nonempty text or dates")
+    if kind in _INTEGER_BITS and type(value) is int:
+        return str(value)
+    raise ValueError("member key components must be nonempty text, dates or integers")
 
 
 @dataclass(frozen=True, slots=True)
 class KeySpelling:
-    """A declared, versioned member-key spelling over nonempty VARCHAR or DATE components.
+    """A declared, versioned member-key spelling over nonempty VARCHAR, DATE or integer components.
 
-    spicy-docs owns each spelling's Python reference; the table SQL adapter
-    compiles the declared ones and refuses any other. ``value/1`` is one
-    field's own text; ``federal-register-source-record-id/1`` is ``number@date``
-    over document_number and publication_date. The ID and version enter the
-    state identity, so a new spelling is an explicit re-key; composite
+    The table SQL adapter compiles the declared spellings, each beside its
+    Python reference and the component types it takes, and refuses any other.
+    ``value/1`` is one VARCHAR or DATE field's own text;
+    ``federal-register-source-record-id/1`` is spicy-docs' ``number@date`` over
+    document_number and publication_date; DocSpec's ``member-segment/1`` is a
+    derived layer's ``member_key#segment_index``. The ID and version enter the
+    state identity, so a new spelling is an explicit re-key; composite producer
     spellings wait for spicy-docs to declare them (ruling R6).
     """
 
@@ -159,8 +177,10 @@ class TableIdentity:
     """How rows of one logical table get member keys and occurrences under docspec-table-row/1.
 
     ``columns`` is the declared projection the row digest covers (ruling R5),
-    kept in canonical order; the key fields are VARCHAR or DATE columns of it.
-    The table name is the logical name, never a file name.
+    kept in canonical order; the key fields are VARCHAR, DATE or integer
+    columns of it, as their spelling declares. The table name is the logical
+    name, never a file name. A derived layer's family is its definition ID and
+    its table the caller's schema ID (C29).
     """
 
     family: str
@@ -174,7 +194,7 @@ class TableIdentity:
         columns = table_columns(self.columns)
         kinds = dict(columns)
         if any(kinds.get(field) not in KEY_TYPES for field in self.key.fields):
-            raise ValueError("member-key fields must be VARCHAR or DATE columns of the declared projection")
+            raise ValueError("member-key fields must be VARCHAR, DATE or integer columns of the declared projection")
         object.__setattr__(self, "columns", columns)
 
     @property
@@ -188,6 +208,27 @@ class TableIdentity:
         return {"row": ROW_RULE, "family": self.family, "table": self.table,
                 "key": {"id": self.key.spelling_id, "version": self.key.version, "fields": list(self.key.fields)},
                 "columns": [list(column) for column in self.columns]}
+
+    @classmethod
+    def derived(cls, definition_id, schema: TableSchema) -> "TableIdentity":
+        """A derived layer's rules (C29): its definition scopes the occurrences and its schema ID names the table.
+
+        The schema declares member_key VARCHAR and source_occurrence_id VARCHAR
+        (the source row) or VARCHAR[] (every row a fusion joined); a
+        one-to-many layer adds segment_index INTEGER or BIGINT and is keyed by
+        member-segment/1, any other by value/1 over member_key. No column may
+        take the reader's occurrence_id.
+        """
+        kinds = dict(schema.columns)
+        if kinds.get(DERIVED_MEMBER) != "VARCHAR" or kinds.get(SOURCE_OCCURRENCE) not in {"VARCHAR", "VARCHAR[]"}:
+            raise ValueError("a derived layer declares member_key VARCHAR and source_occurrence_id VARCHAR or VARCHAR[]")
+        if kinds.get(SEGMENT_INDEX, "INTEGER") not in _INTEGER_BITS:
+            raise ValueError("a one-to-many layer's segment_index is INTEGER or BIGINT")
+        if any(name.casefold() == "occurrence_id" for name in kinds):
+            raise ValueError("a derived layer's columns must not take the reader's occurrence_id")
+        key = (KeySpelling("member-segment", "1", (DERIVED_MEMBER, SEGMENT_INDEX)) if SEGMENT_INDEX in kinds
+               else KeySpelling("value", "1", (DERIVED_MEMBER,)))
+        return cls(definition_id, schema.schema_id, key, schema.columns)
 
     @classmethod
     def from_dict(cls, value) -> "TableIdentity":
@@ -234,6 +275,17 @@ SPELLING_ROWS = tuple(dict(zip((name for name, _ in SPELLING_COLUMNS), values, s
 DATED_KEY_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "DATE"), ("title", "VARCHAR"))
 DATED_KEY_ROWS = tuple(dict(zip((name for name, _ in DATED_KEY_COLUMNS), values, strict=True)) for values in (
     ("2026-\x1f1", date(2026, 9, 25), "dated"), ("x@y", date(1, 1, 1), None), (" ", date(9999, 12, 31), "")))
+# Derived one-to-many keys (member-segment/1): a source member key holding
+# "#", a control character or a digit run, with INTEGER and then BIGINT
+# segment indexes at their bounds and below zero. ("a#1", 2) and ("a", 12)
+# must spell distinct keys.
+SEGMENT_KEY_COLUMNS = (("member_key", "VARCHAR"), ("segment_index", "INTEGER"), ("text", "VARCHAR"))
+SEGMENT_KEY_ROWS = tuple(dict(zip((name for name, _ in SEGMENT_KEY_COLUMNS), values, strict=True)) for values in (
+    ("a#1", 2, "segment"), ("a", 12, None), ("2026-\x1f1@2026-09-25", -(2**31), ""), ("#", 2**31 - 1, "hash"),
+    (" ", 0, "space")))
+WIDE_SEGMENT_KEY_COLUMNS = (("member_key", "VARCHAR"), ("segment_index", "BIGINT"), ("text", "VARCHAR"))
+WIDE_SEGMENT_KEY_ROWS = tuple(dict(zip((name for name, _ in WIDE_SEGMENT_KEY_COLUMNS), values, strict=True))
+                              for values in (("a#1", 2**63 - 1, "wide"), ("a", -(2**63), None), ("b", SAFE_INTEGER + 1, "")))
 # Doubles DuckDB 1.5.5 casts to another double's spelling: 2^81 prints as
 # 2^82's shortest decimal, and 2^807 with a hexadecimal digit. A native spelling
 # must refuse them or match the reference, never spell them otherwise.

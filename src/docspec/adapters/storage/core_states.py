@@ -11,8 +11,8 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.storage.core_entities import (ENTITY_POLICY, ENTITY_SCHEMA, MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY,
     MEMBERSHIP_SCHEMA)
 from docspec.adapters.storage.core_tables import (TABLE_KIND, TABLE_SCHEMA_ID, TableStateView, admit_layers,
-    check_minted_copies, check_table_membership, find_table_members, occurrence_addressed, spelled_payload, table_schema,
-    typed_relation)
+    affected_rows, check_minted_copies, check_table_membership, derive_layers, find_table_members, occurrence_addressed,
+    spelled_payload, staged_rows, table_schema, typed_relation)
 from docspec.adapters.storage.records import AdmittedTableLayer
 from docspec.adapters.storage.table_occurrences import INDEX_KIND, OCCURRENCE_INDEX
 from docspec.adapters.streams import owned_iterator
@@ -211,11 +211,59 @@ class CoreStateStorage:
         with admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
                           state_id=state_id, base=base, base_identity=None if base is None else base.identity) \
                 as (layers, counts, minted):
-            manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
-                        **{name: layer.reference.to_dict() for name, layer in layers.items()}}
-            content = session.retain_value(manifest)
-            self._remember(session, content.digest, manifest)
-            yield content, counts, lambda: check_minted_copies(self.records, session.ledger, layers["table"], identity, minted)
+            yield self._table_content(session, identity, layers), counts, \
+                lambda: check_minted_copies(self.records, session.ledger, layers["table"], identity, minted)
+
+    @contextmanager
+    def stage_rows(self, batches, schema, identity):
+        """Spill a derive's typed batches and mint their identities; nothing reaches the store (C29)."""
+        with staged_rows(self.records, batches, schema, identity) as staged:
+            yield staged
+
+    def derive_table(self, session, staged, *, state_id, base_state_id=None, removals=()):
+        """Retain staged rows as a derived table-shaped state's layers; return its manifest, counts and identity check.
+
+        A base must be a derived state of the same definition, schema and key:
+        its unchanged rows are shared, never recomputed, so a new definition
+        derives in full. The caller publishes the version-3 manifest in one
+        unit, running the check while ``staged`` is open: it looks up only the
+        staged rows' occurrences.
+        """
+        session._active()
+        base = None
+        if base_state_id is not None:
+            base = self.layers(session, base_state_id)
+            if base.identity != staged.identity or base["table"].schema != staged.schema:
+                raise IntegrityError("an incremental derive keeps its base's definition, schema and key; "
+                                     "derive in full without a base")
+        layers, counts = derive_layers(self.records, staged, state_id=state_id, base=base, removals=removals)
+        return self._table_content(session, staged.identity, layers), counts, \
+            lambda: check_minted_copies(self.records, session.ledger, layers["table"], staged.identity, staged.minted)
+
+    def _table_content(self, session, identity, layers):
+        """Retain a table-shaped state's version-3 manifest: its layers and identity rules."""
+        manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
+                    **{name: layer.reference.to_dict() for name, layer in layers.items()}}
+        content = session.retain_value(manifest)
+        self._remember(session, content.digest, manifest)
+        return content
+
+    @contextmanager
+    def affected_rows(self, session, layers, older, newer, *, older_layers, newer_layers):
+        """Yield a derived state's typed rows derived from a member the ``newer`` input state changed or removed.
+
+        The input's differing keys come from ``_differing``, as ``changes``
+        finds them; their earlier occurrences are semi-joined with the layer's
+        lineage before any derived row is read.
+        """
+        if layers.identity is None:
+            raise IntegrityError("state is not table-shaped")
+        with self.records._cursor() as cursor:
+            differing = self._differing(session, older, newer, older_layers=older_layers, newer_layers=newer_layers,
+                                        cursor=cursor)
+            changed = differing.filter("old_occurrence IS NOT NULL").project("old_occurrence AS changed_occurrence")
+            with affected_rows(self.records, layers, layers.identity, changed, cursor=cursor) as relation:
+                yield relation
 
     @contextmanager
     def typed_relation(self, layers):
@@ -777,23 +825,35 @@ class CoreStateStorage:
     def changes(self, session, older, newer, *, older_layers, newer_layers):
         """Stream newer's keyed rows, as ``ordered_batches``, at every key whose address differs from older.
 
-        Certified revision history narrows both memberships to edited keys;
-        otherwise one native outer join compares the compact memberships, as
-        ``compare`` does. Only differing addresses reach the payload join. A
-        removed key has a null occurrence.
+        Only the differing addresses ``_differing`` finds reach the payload
+        join. A removed key has a null occurrence.
         """
         with self.records._cursor() as cursor:
-            certified = self.changed_keys(session, newer, older, cursor)
-            memberships = {"old": older_layers["membership"], "new": newer_layers["membership"]}
-            with self.records.relations(memberships, cursor=cursor) as relations:
-                old = relations["old"].project("record_identity AS old_key, record_json AS old_member")
-                new = relations["new"].project("record_identity AS new_key, record_json AS new_member")
-                if certified is not None:
-                    old = old.join(certified, "old_key = changed_key", how="semi")
-                    new = new.join(certified, "new_key = changed_key", how="semi")
-                changed = self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
-                    "old_member IS DISTINCT FROM new_member").project("coalesce(old_key, new_key) AS wanted_key"), "state_changes")
-            yield from self.ordered_batches(session, newer, addresses=changed, cursor=cursor, layers=newer_layers)
+            changed = self._differing(session, older, newer, older_layers=older_layers, newer_layers=newer_layers,
+                                      cursor=cursor)
+            yield from self.ordered_batches(session, newer, addresses=changed.project("wanted_key"), cursor=cursor,
+                                            layers=newer_layers)
+
+    def _differing(self, session, older, newer, *, older_layers, newer_layers, cursor):
+        """Materialize, on ``cursor``, the keys whose address differs between two states, with older's occurrence.
+
+        Columns are wanted_key and old_occurrence, NULL for a key older lacks.
+        Certified revision history narrows both memberships to edited keys;
+        otherwise one native outer join compares the compact memberships, as
+        ``compare`` does.
+        """
+        certified = self.changed_keys(session, newer, older, cursor)
+        memberships = {"old": older_layers["membership"], "new": newer_layers["membership"]}
+        with self.records.relations(memberships, cursor=cursor) as relations:
+            old = relations["old"].project("record_identity AS old_key, record_json AS old_member")
+            new = relations["new"].project("record_identity AS new_key, record_json AS new_member")
+            if certified is not None:
+                old = old.join(certified, "old_key = changed_key", how="semi")
+                new = new.join(certified, "new_key = changed_key", how="semi")
+            return self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
+                "old_member IS DISTINCT FROM new_member").project(
+                "coalesce(old_key, new_key) AS wanted_key, "
+                "json_extract_string(decode(old_member), '/occurrence_id') AS old_occurrence"), "state_changes")
 
     def resolve_membership(self, session, revision, *, full=False):
         """Validate every edit before reducing keys; write only the changed rows.

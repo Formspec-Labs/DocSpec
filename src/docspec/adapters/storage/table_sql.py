@@ -1,4 +1,4 @@
-"""Native SQL for docspec-table-row/1 and declared member keys, beside spicy-docs' key references.
+"""Native SQL for docspec-table-row/1 and declared member keys, beside the keys' Python references.
 
 No Python row callbacks. A direct column comparison between generations must
 compare DOUBLE through its spelling: SQL equates 0.0 with -0.0, whose
@@ -23,36 +23,62 @@ _SHORT_ESCAPES = {8: "\\b", 9: "\\t", 10: "\\n", 12: "\\f", 13: "\\r"}
 @dataclass(frozen=True, slots=True)
 class _Spelling:
     fields: tuple[str, ...] | None  # None: any one field
+    kinds: tuple[frozenset[str], ...] | None  # each component's column types; None: one text or date field
     sql: Callable[[list[str]], str]
     reference: Callable[[tuple[str, ...]], str]
     components: Callable[[str], tuple[tuple[str, ...], ...]]
 
 
+_TEXT = frozenset({"VARCHAR", "DATE"})
 _FEDERAL_REGISTER = ("document_number", "publication_date")
-# Each declared spelling compiles to SQL over VARCHAR components, next to
-# spicy-docs' reference and the component tuples that could spell a key.
+
+
+def _segment_components(key):
+    """A derived key splits at its last "#": the suffix is a canonical decimal integer, which holds no "#"."""
+    head, mark, tail = key.rpartition("#")
+    try:
+        canonical = mark and str(int(tail)) == tail
+    except ValueError:
+        canonical = False
+    return ((head, tail),) if canonical and head else ()
+
+
+# Each declared spelling compiles to SQL over its components' text, next to
+# its Python reference and the component tuples that could spell a key.
+# spicy-docs owns the producer spellings' references; DocSpec owns
+# member-segment/1, a one-to-many derived layer's key (C29), injective because
+# the segment index spells as a canonical integer after the last "#".
 _SPELLINGS = {
-    ("value", "1"): _Spelling(None, lambda parts: parts[0], lambda values: values[0], lambda key: ((key,),)),
+    ("value", "1"): _Spelling(None, None, lambda parts: parts[0], lambda values: values[0], lambda key: ((key,),)),
     ("federal-register-source-record-id", "1"): _Spelling(
-        _FEDERAL_REGISTER, lambda parts: f"{parts[0]} || '@' || {parts[1]}",
+        _FEDERAL_REGISTER, (_TEXT, _TEXT), lambda parts: f"{parts[0]} || '@' || {parts[1]}",
         lambda values: federal_register_source_record_id(dict(zip(_FEDERAL_REGISTER, values, strict=True))),
         lambda key: tuple((key[:index], key[index + 1:]) for index, char in enumerate(key) if char == "@")),
+    ("member-segment", "1"): _Spelling(
+        ("member_key", "segment_index"), (frozenset({"VARCHAR"}), frozenset({"INTEGER", "BIGINT"})),
+        lambda parts: f"{parts[0]} || '#' || {parts[1]}", lambda values: values[0] + "#" + values[1],
+        _segment_components),
 }
 
 
-def _declared(spelling):
+def _declared(spelling, kinds=None):
+    """The declared spelling for these fields, refusing a component whose column type it does not take."""
     declared = _SPELLINGS.get((spelling.spelling_id, spelling.version))
     if declared is None or (len(spelling.fields) != 1 if declared.fields is None else spelling.fields != declared.fields):
         raise IntegrityError("member-key spelling is not declared for these fields")
+    allowed = (_TEXT,) * len(spelling.fields) if declared.kinds is None else declared.kinds
+    if kinds is not None and any(kind not in types for kind, types in zip(kinds, allowed, strict=True)):
+        raise IntegrityError("member-key spelling is not declared for these fields' types")
     return declared
 
 
 def reference_member_key(identity, row) -> str:
-    """spicy-docs' reference key of one row; a NULL, empty or mistyped component refuses.
+    """The reference key of one row; a NULL, empty or mistyped component refuses.
 
-    A DATE component reaches the reference as its ISO 8601 text.
+    A DATE component reaches the reference as its ISO 8601 text, an integer as
+    its decimal text.
     """
-    declared = _declared(identity.key)
+    declared = _declared(identity.key, identity.key_kinds)
     return declared.reference(tuple(key_component(row[field], kind)
                                     for field, kind in zip(identity.key.fields, identity.key_kinds, strict=True)))
 
@@ -81,6 +107,14 @@ def json_string_sql(expression):
         escaped = f"replace({escaped}, chr({code}), {literal(_SHORT_ESCAPES.get(code, f'\\u{code:04x}'))})"
     return (f"CASE WHEN regexp_matches(({expression}), '[\\x00-\\x1f]') THEN "
             f"'\"' || {escaped} || '\"' ELSE CAST(to_json(({expression})) AS VARCHAR) END")
+
+
+def json_array_sql(*expressions):
+    """Spell a canonical JSON array of trusted VARCHAR SQL expressions; a NULL element makes the whole array NULL.
+
+    Engine's prepared-row id is the sha256 of one: [source_id, member_key].
+    """
+    return "'[' || " + " || ',' || ".join(json_string_sql(expression) for expression in expressions) + " || ']'"
 
 
 def _cell(expression, kind):
@@ -140,16 +174,16 @@ def member_key_sql(identity, *, qualifier=None):
     """Spell a declared member key; a NULL or empty component raises while the pass runs.
 
     A DATE component spells ISO 8601, like the row rule, and refuses outside
-    years 1 through 9999 as it does.
+    years 1 through 9999 as it does; an integer spells its decimal text.
     """
-    declared = _declared(identity.key)
+    declared = _declared(identity.key, identity.key_kinds)
     columns = [_column(field, qualifier) for field in identity.key.fields]
-    invalid = " OR ".join(f"{column} IS NULL" if kind == "DATE" else f"{column} IS NULL OR {column} = ''"
+    invalid = " OR ".join(f"{column} IS NULL OR {column} = ''" if kind == "VARCHAR" else f"{column} IS NULL"
                           for column, kind in zip(columns, identity.key_kinds, strict=True))
     dates = " OR ".join(f"NOT isfinite({column}) OR year({column}) NOT BETWEEN 1 AND 9999"
                         for column, kind in zip(columns, identity.key_kinds, strict=True) if kind == "DATE")
-    parts = [f"strftime({column}, '%Y-%m-%d')" if kind == "DATE" else column
-             for column, kind in zip(columns, identity.key_kinds, strict=True)]
+    parts = [f"strftime({column}, '%Y-%m-%d')" if kind == "DATE" else column if kind == "VARCHAR"
+             else f"CAST({column} AS VARCHAR)" for column, kind in zip(columns, identity.key_kinds, strict=True)]
     return (f"CASE WHEN {invalid} THEN error('table member key has a NULL or empty component') "
             + (f"WHEN {dates} THEN error('table date is outside years 1 through 9999') " if dates else "")
             + f"ELSE {declared.sql(parts)} END")

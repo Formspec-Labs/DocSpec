@@ -20,8 +20,9 @@ from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_rela
 from docspec.domain.identity import require_text, sha256_digest
 from docspec.domain.references import LayerRef
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, SPELLING_COLUMNS, SPELLING_ROWS,
-    KeySpelling, TableIdentity, table_occurrence_id, table_row_bytes, table_row_digest)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, SEGMENT_KEY_COLUMNS,
+    SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling,
+    TableIdentity, table_occurrence_id, table_row_bytes, table_row_digest, table_rows_bytes)
 from docspec.errors import IntegrityError
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -31,6 +32,7 @@ OCCURRENCE_INDEX = TableSchema("core-table-occurrences:1", (
 INDEX_KIND = "core-table-occurrences"
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _FEDERAL_REGISTER_KEY = KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+_SEGMENT_KEY = KeySpelling("member-segment", "1", ("member_key", "segment_index"))
 # Each shared corpus with the identities it must mint exactly as the reference.
 _ORACLE_CASES = (
     (SPELLING_COLUMNS, SPELLING_ROWS, (
@@ -39,6 +41,11 @@ _ORACLE_CASES = (
     (DATED_KEY_COLUMNS, DATED_KEY_ROWS, (
         TableIdentity("oracle", "dated", _FEDERAL_REGISTER_KEY, DATED_KEY_COLUMNS),
         TableIdentity("oracle", "dates", KeySpelling("value", "1", ("publication_date",)), DATED_KEY_COLUMNS))),
+    (SEGMENT_KEY_COLUMNS, SEGMENT_KEY_ROWS, (
+        TableIdentity("urn:oracle:definition", "segments", _SEGMENT_KEY, SEGMENT_KEY_COLUMNS),
+        TableIdentity("urn:oracle:definition", "texts", KeySpelling("value", "1", ("member_key",)), SEGMENT_KEY_COLUMNS))),
+    (WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, (
+        TableIdentity("urn:oracle:definition", "wide", _SEGMENT_KEY, WIDE_SEGMENT_KEY_COLUMNS),)),
 )
 _ORACLE_PASSED = set()
 
@@ -116,13 +123,21 @@ def mint_identities(records, rows, identity: TableIdentity, *, cursor):
     available = dict(native_columns(rows))
     if any(available.get(name) != kind for name, kind in identity.columns):
         raise IntegrityError("table rows differ from the declared identity projection")
+    with spilled_identities(records, identity_relation(rows, identity), cursor=cursor) as minted:
+        if minted.relation(cursor).aggregate("member_key, count(*) AS copies", "member_key").filter("copies > 1").limit(1).fetchone():
+            raise IntegrityError("table contains a duplicate member key")
+        yield minted
+
+
+@contextmanager
+def spilled_identities(records, identities, *, cursor):
+    """Spill a relation of (member_key, row_digest, occurrence_hash) on ``cursor`` to scratch Parquet, removed on exit."""
+    if tuple(identities.columns) != ("member_key", "row_digest", "occurrence_hash"):
+        raise IntegrityError("spilled identities hold member_key, row_digest and occurrence_hash")
     with TemporaryDirectory(prefix="docspec-table-identities-", dir=records.merge_scratch_root) as scratch:
         path = Path(scratch) / "identities.parquet"
-        identity_relation(rows, identity).write_parquet(str(path))
-        spilled = cursor.read_parquet(str(path))
-        if spilled.aggregate("member_key, count(*) AS copies", "member_key").filter("copies > 1").limit(1).fetchone():
-            raise IntegrityError("table contains a duplicate member key")
-        yield MintedIdentities(path, spilled.aggregate("count(*)").fetchone()[0])
+        identities.write_parquet(str(path))
+        yield MintedIdentities(path, cursor.read_parquet(str(path)).aggregate("count(*)").fetchone()[0])
 
 
 def _index(records, index):
@@ -196,13 +211,13 @@ def lookup_occurrences(records, index, identity: TableIdentity, occurrence_ids: 
 
 def _component_value(text, kind):
     """A candidate component as its column holds it, or None when no such value spells ``text``."""
-    if kind != "DATE":
+    if kind == "VARCHAR":
         return text
     try:
-        value = date.fromisoformat(text)
+        value = date.fromisoformat(text) if kind == "DATE" else int(text)
     except ValueError:
         return None
-    return value if value.isoformat() == text else None
+    return value if (value.isoformat() if kind == "DATE" else str(value)) == text else None
 
 
 def candidate_rows(rows, identity: TableIdentity, keys):
@@ -226,31 +241,49 @@ def candidate_rows(rows, identity: TableIdentity, keys):
         for index, field in enumerate(identity.key.fields))))
 
 
+def row_bytes(records, table, identity: TableIdentity, keys) -> dict[str, bytes]:
+    """The canonical bytes of ``table``'s rows keyed ``keys``, read as ``spell_rows`` reads them: key -> row bytes."""
+    with records._cursor() as cursor, records.relations({"table": table}, cursor=cursor) as relations:
+        return spell_rows(cursor, relations["table"], identity, keys)
+
+
+def spell_rows(cursor, rows, identity: TableIdentity, keys) -> dict[str, bytes]:
+    """The canonical bytes of the rows of ``rows``, a table relation on ``cursor``, keyed ``keys``, for bounded reads.
+
+    One native query selects the rows, pushing up to 256 keys' components
+    into the scan (more are one semi-join), and fetches only their typed
+    columns through Arrow; the Python reference spells them. Binding the
+    native spelling costs about 0.2 s per query on a 50-column layer however
+    few rows it reads, and the oracle holds the two spellings equal, so a
+    bounded read never binds it. Callers check each row against its minted
+    occurrence; an absent key is absent from the result.
+    """
+    keys = set(keys)
+    if not keys:
+        return {}
+    check_native_spelling()
+    available = dict(native_columns(rows))
+    if any(available.get(name) != kind for name, kind in identity.columns):
+        raise IntegrityError("table rows differ from the declared identity projection")
+    keyed = candidate_rows(rows, identity, keys).project(f"{member_key_sql(identity)} AS __docspec_key, "
+                         + ", ".join(identifier(name) for name, _ in identity.columns))
+    selected = identity_filter(cursor, keyed, keys, column="__docspec_key").to_arrow_table()
+    found = selected.column("__docspec_key").to_pylist()
+    if len(set(found)) != len(found):
+        raise IntegrityError("table contains a duplicate member key")
+    return dict(zip(found, table_rows_bytes(selected.drop_columns(["__docspec_key"]).to_pylist(), identity.columns),
+                    strict=True))
+
+
 def read_occurrences(records, table, identity: TableIdentity, occurrences: Mapping[str, IndexedOccurrence]) -> dict[str, bytes]:
     """Read the rows holding ``occurrences`` from ``table`` and return each one's canonical row bytes.
 
-    One query: up to 256 keys push their key columns' candidate values into
-    the scan, more become one semi-join, and only the matching rows are
-    spelled. A missing row, or one whose digest differs from the index,
-    refuses: the caller named a table whose membership does not hold that
-    occurrence. The bytes are the occurrence's inline value.
+    The rows are read as ``spell_rows`` reads them. A missing row, or one
+    whose digest differs from the index, refuses: the caller named a table
+    whose membership does not hold that occurrence. The bytes are the
+    occurrence's inline value.
     """
-    keys = {entry.member_key for entry in occurrences.values()}
-    payloads = {}
-    with records._cursor() as cursor, records.relations({"table": table}, cursor=cursor) as relations:
-        check_native_spelling()
-        rows = relations["table"]
-        available = dict(native_columns(rows))
-        if any(available.get(name) != kind for name, kind in identity.columns):
-            raise IntegrityError("table rows differ from the declared identity projection")
-        keyed = candidate_rows(rows, identity, keys).project(f"{member_key_sql(identity)} AS __docspec_key, "
-                             + ", ".join(identifier(name) for name, _ in identity.columns))
-        selected = identity_filter(cursor, keyed, keys, column="__docspec_key").project(
-            f"__docspec_key, {row_json_sql(identity.columns)} AS __docspec_row")
-        for key, row_json in selected.fetchall():
-            if key in payloads:
-                raise IntegrityError("table contains a duplicate member key")
-            payloads[key] = row_json.encode()
+    payloads = row_bytes(records, table, identity, {entry.member_key for entry in occurrences.values()})
     result = {}
     for occurrence_id, entry in occurrences.items():
         payload = payloads.get(entry.member_key)

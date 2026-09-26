@@ -62,6 +62,14 @@ types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
 - `write_table` writes Arrow batches natively. DuckDB's Parquet carries Iceberg
   field IDs, row groups target 1 MiB and files half the member limit, and
   `sort_by` sorts each file. `append_table` adds files and shares every base file.
+  `write_table_relation` writes a native relation the same way, and
+  `staged_table` spills checked batches once to a scratch Parquet file, so a
+  caller can read them more than once before anything reaches the store.
+- `apply_changes` on a table layer takes whole replacement rows and removed
+  keys as relations: one merge-on-read commit deletes every row holding an
+  incoming or removed key and inserts the incoming rows, so the
+  table keeps one row per key, shares every untouched base file and descends
+  from its base's snapshot. A registered producer table refuses.
 - `register_parquet` retains a producer's file by reference. The file must be
   staged in the store's `staging_directory`; its footer must read as the declared
   schema and carry no field IDs. It is then hard-linked, unrewritten, to
@@ -87,14 +95,21 @@ occurrence back returns its row's canonical bytes only when their digest matches
 the index.
 
 A table-shaped state (`adapters/storage/core_tables.py`) has a version-3
-manifest naming its registered `table`, a `core-membership:1` `membership`, its
-dataset's `occurrences` index snapshot and the identity `rules`. The first
+manifest naming its `table` (a registered producer member, or a derived layer
+DocSpec writes itself), a `core-membership:1` `membership`, its dataset's
+`occurrences` index snapshot and the identity `rules`. The first
 generation's membership is written natively from the spilled identities
 (`retain_relation`, which derives buckets and checks limits without a Python
 row loop); a later one applies its delta to the base's membership with
 `apply_changes`, or, beyond 65,536 changes or 16 data files, rewrites the
-membership natively in one file. Readers join membership to the table by spelled key and build
-each occurrence record natively. A member search sees such a state through its
+membership natively in one file. A derived layer
+(C29) is written natively from staged rows, its occurrences scoped by its
+definition; an incremental one replaces its touched source members' rows
+through `apply_changes` on the table and the same bounded membership delta.
+Readers join membership to the table by spelled key and build
+each occurrence record natively; a read of named members instead fetches their
+typed rows and spells them with the Python reference, which the oracle holds
+equal, checking each against its occurrence. A member search sees such a state through its
 index, reads only the requested rows, and a pin of a table occurrence stores its
 exact bytes in the ledger rather than naming a layer.
 

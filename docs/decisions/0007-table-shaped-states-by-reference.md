@@ -9,7 +9,9 @@
   implements it and passed its
   [gate](../history/probes/2026-09-25-admit-generation-gate.md) on 2026-09-25;
   [C29](../core-model-implementation-tasks.md#c29--typed-derived-layers)
-  remains proposed.
+  implements item 9 and passed its
+  [gate](../history/probes/2026-09-25-typed-derived-layers.md), for DocSpec's
+  part, the same day.
 - Evidence:
   - the [D2 spike](../history/probes/2026-09-23-admit-by-reference-spike.md),
     with its review corrections;

@@ -82,6 +82,22 @@ class CoreWorkspace:
         return derive(self.operations, rows, batch_id=batch_id, definition=definition, inputs=inputs,
                       base_state_id=base_state_id, removals=removals, dataset=dataset)
 
+    def derive_table(self, batches, *, schema, batch_id, definition, inputs, base_state_id=None, removals=(),
+                     dataset=None):
+        """Publish a typed table-shaped state derived from source states and retained lookups, as one unit.
+
+        ``batches`` are Arrow record batches in the declared ``TableSchema``:
+        member_key, the source_occurrence_id each row derives from, and for a
+        one-to-many layer segment_index. Rows are written natively with their
+        occurrences scoped by the definition. With ``base_state_id`` the rows
+        replace every row of the source members they name and ``removals``
+        drop theirs, sharing the base's files; only changed rows are written.
+        Returns a ``TableDerivation(state_id, report)``; see decision 0007.
+        """
+        from docspec.application.table_derivation import derive_table
+        return derive_table(self.operations, batches, schema=schema, batch_id=batch_id, definition=definition,
+                            inputs=inputs, base_state_id=base_state_id, removals=removals, dataset=dataset)
+
     def admit_generation(self, source, *, family, table, dataset=None):
         """Admit one table of a producer's complete generation by reference, as a table-shaped state.
 

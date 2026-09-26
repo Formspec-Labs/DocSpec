@@ -149,6 +149,39 @@ def test_appends_share_base_files_and_leave_the_base_unchanged(tmp_path):
         assert records.append_table(grown, arrow([]).to_batches()) is grown
 
 
+def test_typed_changes_replace_rows_by_key_in_one_snapshot_sharing_base_files(tmp_path):
+    columns = (("key", "VARCHAR"), ("part", "INTEGER"), ("text", "VARCHAR"))
+    schema, arrow_schema = TableSchema("parts:1", columns), table_arrow_schema(columns)
+    rows = [{"key": key, "part": part, "text": f"{key}{part}"} for key in "ab" for part in range(2)]
+    keys = pa.schema([("key", pa.string()), ("part", pa.int32())])
+    with closing(IcebergRecordStorage(tmp_path)) as records:
+        base = records.write_table(pa.Table.from_pylist(rows, schema=arrow_schema).to_batches(), layer_kind="parts",
+                                   schema=schema, sort_by=("key", "part"))
+        with records._cursor() as cursor:
+            def changes(values):
+                return cursor.from_arrow(pa.Table.from_pylist(values, schema=arrow_schema))
+
+            def removed(values):
+                return cursor.from_arrow(pa.Table.from_pylist(values, schema=keys))
+            revised = records.apply_changes(base, changes([{"key": "a", "part": 1, "text": "new"},
+                                                           {"key": "c", "part": 0, "text": "added"}]),
+                                            key=("key", "part"), removed=removed([{"key": "b", "part": 0}]), cursor=cursor)
+            assert records.apply_changes(revised, changes([]), key=("key", "part"), removed=removed([]),
+                                         cursor=cursor) is revised
+            with pytest.raises(IntegrityError, match="repeat a key"):
+                records.apply_changes(revised, changes([rows[0], {**rows[0], "text": "again"}]), key=("key", "part"),
+                                      removed=removed([]), cursor=cursor)
+            with pytest.raises(IntegrityError, match="table and key columns"):
+                records.apply_changes(revised, changes([]), key=("key",), removed=removed([]), cursor=cursor)
+        assert set(records.data_files(base.reference)) < set(records.data_files(revised.reference))
+        assert revised.reference.record_count == 4
+        with revised.relation() as relation:
+            assert relation.order("key, part").fetchall() == [("a", 0, "a0"), ("a", 1, "new"), ("b", 1, "b1"),
+                                                              ("c", 0, "added")]
+        records.verify(revised.reference)
+        assert sorted(row["text"] for row in rows_of(records.available(base.reference))) == ["a0", "a1", "b0", "b1"]
+
+
 def test_encoded_and_table_profiles_refuse_each_other(tmp_path):
     with closing(IcebergRecordStorage(tmp_path)) as records:
         table = records.write_table(arrow(ROWS).to_batches(), layer_kind="test-table", schema=SCHEMA)
@@ -158,7 +191,6 @@ def test_encoded_and_table_profiles_refuse_each_other(tmp_path):
             lambda: list(records.stream(table.reference)),
             lambda: records.lookup(table.reference, "a"),
             lambda: list(records.lookup_batches(table.reference, ["a"])),
-            lambda: records.apply_changes(table, iter(())),
             lambda: records.union_disjoint(table, table),
             lambda: records.compact(table),
             lambda: records.partition_policy(table.reference),
@@ -169,6 +201,11 @@ def test_encoded_and_table_profiles_refuse_each_other(tmp_path):
         for call in encoded_only:
             with pytest.raises(IntegrityError, match="encoded-record profile refuses"):
                 call()
+        # A typed table takes whole rows and removed keys, never routing batches.
+        with pytest.raises(ValueError, match="typed changes require"):
+            records.apply_changes(table, iter(()))
+        with pytest.raises(ValueError, match="only a typed table"):
+            records.apply_changes(encoded, iter(()), key=("id",))
         with pytest.raises(IntegrityError, match="encoded-record profile refuses"):
             with records.relations({"table": table.reference}, identities={"table": ["a"]}):
                 pytest.fail("record routing applied to a typed table")
@@ -308,6 +345,9 @@ def test_forged_table_roots_and_appends_to_sealed_tables_refuse(tmp_path, monkey
                                          member_digest=producer_file(staged, table))
         with pytest.raises(IntegrityError, match="sealed and refuses appended rows"):
             records.append_table(layer, pa.table(table.to_pydict(), schema=table_arrow_schema(columns)).to_batches())
+        with records._cursor() as cursor, pytest.raises(IntegrityError, match="sealed and refuses changed rows"):
+            records.apply_changes(layer, cursor.from_arrow(table), key=("key",), removed=cursor.from_arrow(table.select(["key"])),
+                                  cursor=cursor)
         narrowed = {"schemaId": "values:1", "columns": [["key", "VARCHAR"], ["value", "INTEGER"]]}
         with pytest.raises(IntegrityError, match="pinned Iceberg metadata"):
             records.available(forged(records, layer, schema=narrowed))
