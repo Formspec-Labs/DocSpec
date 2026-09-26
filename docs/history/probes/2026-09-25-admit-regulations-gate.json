@@ -1,0 +1,3488 @@
+{
+ "admissions": {
+  "dockets": {
+   "admission_seconds": 3.8562803749809973,
+   "bytes_written": {
+    "layer_roots": 3574,
+    "membership": {
+     "all_bytes": 12285643,
+     "data_bytes": 12276213,
+     "data_files_total": 1
+    },
+    "occurrences": {
+     "all_bytes": 19712955,
+     "data_bytes": 19703717,
+     "data_files_total": 1
+    },
+    "records_total": 43648112,
+    "table": {
+     "all_bytes": 11632733,
+     "data_bytes": 11620269,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 279380,
+    "adopted": 0,
+    "carried": 0,
+    "changed": 0,
+    "generated": 279380,
+    "reminted": false,
+    "removed": 0,
+    "rows": 279380
+   },
+   "dataset": "regulations-gov-dockets",
+   "downloaded_bytes": 11744952,
+   "environment": {
+    "at": "2026-09-25T21:56:00",
+    "commit": "0068bf7ec09b33adcaee2b67a8b8ad868c33d1fd",
+    "duckdb": "1.5.5",
+    "load": [
+     8.31884765625,
+     7.43310546875,
+     7.13525390625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9",
+    "spicy_docs": "0.34.1"
+   },
+   "ledger": {
+    "added": {
+     "heads": 1,
+     "links": 9,
+     "records": 9,
+     "retention": 9,
+     "units": 3
+    },
+    "bytes": 114688,
+    "bytes_added": 114688
+   },
+   "member": {
+    "byteSize": 11620269,
+    "objectKey": "dockets.parquet",
+    "recordCount": 279380,
+    "sha256": "sha256:308b35c66f8f3694c8048f166dcdf4e3282256c6aeed4974d21e799c3c4580df"
+   },
+   "pin": {
+    "artifactDigest": "sha256:69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:88aa23fc820957166386aecbc31a65c2832fe57de7f6ddb4d5f8a54e50338d83"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:55:55Z load { 8.87 7.52 7.17 }",
+     "end 2026-09-26T01:56:00Z load { 8.32 7.43 7.14 } exit 0 peak_tree_rss_kib 5584"
+    ],
+    "process_wall_seconds": 4.87,
+    "time_l_max_rss_bytes": 498106368,
+    "watch_sampled_peak_bytes": 5718016
+   },
+   "process_peak_rss_bytes": 497975296,
+   "state_id": "urn:docspec:generation-admission:v1:315a796b7032d655c2b4405429f289860be4081f30edd201ea461ba089ab1886"
+  },
+  "documents": {
+   "admission_seconds": 19.70467504102271,
+   "bytes_written": {
+    "layer_roots": 3924,
+    "membership": {
+     "all_bytes": 86984016,
+     "data_bytes": 86974561,
+     "data_files_total": 1
+    },
+    "occurrences": {
+     "all_bytes": 143774937,
+     "data_bytes": 143764753,
+     "data_files_total": 2
+    },
+    "records_total": 307716155,
+    "table": {
+     "all_bytes": 76940085,
+     "data_bytes": 76924355,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 2002831,
+    "adopted": 0,
+    "carried": 0,
+    "changed": 0,
+    "generated": 2002831,
+    "reminted": false,
+    "removed": 0,
+    "rows": 2002831
+   },
+   "dataset": "regulations-gov-documents",
+   "downloaded_bytes": 77049404,
+   "environment": {
+    "at": "2026-09-25T21:56:27",
+    "commit": "0068bf7ec09b33adcaee2b67a8b8ad868c33d1fd",
+    "duckdb": "1.5.5",
+    "load": [
+     8.00390625,
+     7.4296875,
+     7.14208984375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9",
+    "spicy_docs": "0.34.1"
+   },
+   "ledger": {
+    "added": {
+     "heads": 1,
+     "links": 9,
+     "records": 9,
+     "retention": 9,
+     "units": 3
+    },
+    "bytes": 155648,
+    "bytes_added": 40960
+   },
+   "member": {
+    "byteSize": 76924355,
+    "objectKey": "documents.parquet",
+    "recordCount": 2002831,
+    "sha256": "sha256:d7487819971c84ba184853ed09be6bb1df7490eaecc3054487dcd467a4303801"
+   },
+   "pin": {
+    "artifactDigest": "sha256:f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:228bb84bc269eb50d28d4136e16a4e857627bfeb1d604ab7f6919a76469d4728"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:56:07Z load { 8.21 7.43 7.13 }",
+     "end 2026-09-26T01:56:32Z load { 8.56 7.56 7.19 } exit 0 peak_tree_rss_kib 1002176"
+    ],
+    "process_wall_seconds": 20.55,
+    "time_l_max_rss_bytes": 1174683648,
+    "watch_sampled_peak_bytes": 1026228224
+   },
+   "process_peak_rss_bytes": 1174683648,
+   "state_id": "urn:docspec:generation-admission:v1:a65473eeee00a65e484a43ad38e05577efe573fa76b9787fe646a15d483a11fc"
+  }
+ },
+ "blocked_before_spicy_docs_0_34_1": {
+  "dockets": {
+   "refused": "IntegrityError: table has no declared identity fields",
+   "seconds": 1.3320042499981355,
+   "spicy_docs": "0.26.6"
+  },
+  "documents": {
+   "refused": "IntegrityError: table has no declared identity fields",
+   "seconds": 5.431926250021206,
+   "spicy_docs": "0.26.6"
+  }
+ },
+ "claim": "C27 admits the live Regulations.gov dockets and documents families over HTTPS; the admitted rows equal the retained catalogue on every shared key beyond publisher updates",
+ "comparison": {
+  "environment": {
+   "at": "2026-09-25T22:02:57",
+   "commit": "0068bf7ec09b33adcaee2b67a8b8ad868c33d1fd",
+   "duckdb": "1.5.5",
+   "load": [
+    8.78369140625,
+    8.29296875,
+    7.68212890625
+   ],
+   "pyarrow": "25.0.1",
+   "python": "3.12.9",
+   "spicy_docs": "0.34.1"
+  },
+  "fresh_process": true,
+  "process": {
+   "load": [
+    "start 2026-09-26T02:02:56Z load { 8.78 8.29 7.68 }",
+    "end 2026-09-26T02:04:12Z load { 6.98 7.89 7.58 } exit 0 peak_tree_rss_kib 3555712"
+   ],
+   "process_wall_seconds": 72.45,
+   "time_l_max_rss_bytes": 3615932416,
+   "watch_sampled_peak_bytes": 3641049088
+  },
+  "process_peak_rss_bytes": 3615932416,
+  "seconds": 71.35137570797815,
+  "tables": {
+   "dockets": {
+    "admitted": 279380,
+    "catalogue": {
+     "catalogue_only_keys": 0,
+     "catalogue_only_listed": [],
+     "compared_keys": 278607,
+     "difference_kinds": {
+      "json-order": 0,
+      "type-only": 0,
+      "value": 2155
+     },
+     "differences_by_column": {
+      "abstract": 77,
+      "docket_type": 1,
+      "modify_date": 1785,
+      "rin": 2,
+      "title": 290
+     },
+     "exceptions_otherwise": 0,
+     "exceptions_otherwise_listed": {},
+     "exceptions_with_later_modify_date": 1785,
+     "generation_except_reference": 1785,
+     "generation_only_date_range": [
+      "2026-09-02T14:43:12Z",
+      "2026-09-25T16:24:19Z"
+     ],
+     "generation_only_dated_by": "modify_date",
+     "generation_only_keys": 773,
+     "generation_only_on_or_after_snapshot": 773,
+     "generation_only_sample": [
+      "ACF-2026-0661",
+      "AMS-AMS-26-0991",
+      "AMS-CN-26-0166",
+      "AMS-NOP-26-1024",
+      "AMS-SC-25-0551",
+      "APHIS-2022-0072",
+      "APHIS-2023-0069",
+      "APHIS-2025-0736",
+      "APHIS-2026-0435",
+      "APHIS-2026-0859",
+      "APHIS-2026-1223",
+      "APHIS-2026-1387",
+      "ASC-2026-0100",
+      "ATF-2026-0364",
+      "ATF-2026-0365",
+      "BLM-2026-0133",
+      "BOEM-2026-1057",
+      "BSC-FFM-2026-0166",
+      "CDC-2026-1486",
+      "CDC-2026-1519",
+      "CFTC-2026-1981",
+      "CFTC-2026-2014",
+      "CFTC-2026-2080",
+      "CFTC-2026-2113",
+      "CISA-2026-0199",
+      "CMS-2026-3004",
+      "CMS-2026-3070",
+      "CMS-2026-3103",
+      "CMS-2026-3136",
+      "CMS-2026-3169",
+      "CMS-2026-3202",
+      "CMS-2026-3301",
+      "CMS-2026-3334",
+      "CMS-2026-3335",
+      "CMS-2026-3336",
+      "CMS-2026-3337",
+      "CMS-2026-3338",
+      "CPSC-2026-0463",
+      "DEA-2026-1552",
+      "DEA-2026-1553",
+      "DEA-2026-1554",
+      "DEA-2026-1555",
+      "DEA-2026-1556",
+      "DEA-2026-1585",
+      "DEA-2026-1618",
+      "DEA-2026-1619",
+      "DEA-2026-1620",
+      "DEA-2026-1621",
+      "DEA-2026-1622",
+      "DHS-2026-0562"
+     ],
+     "generation_rows": 279380,
+     "reference_except_generation": 1785,
+     "reference_rows": 278607,
+     "shared_columns": [
+      "docket_id",
+      "agency_code",
+      "title",
+      "docket_type",
+      "modify_date",
+      "abstract",
+      "rin"
+     ],
+     "value_differences_listed": {
+      "ACF-2026-0595": {
+       "modify_date": [
+        "2026-09-25T16:16:04Z",
+        "2026-09-02T00:50:53Z"
+       ]
+      },
+      "ACF_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-04T12:25:16Z",
+        "2026-08-12T12:25:50Z"
+       ]
+      },
+      "AMS-LP-25-0485": {
+       "modify_date": [
+        "2026-09-15T16:19:07Z",
+        "2026-07-14T13:26:13Z"
+       ]
+      },
+      "AMS-NOP-26-0892": {
+       "modify_date": [
+        "2026-09-24T13:23:19Z",
+        "2026-08-31T14:23:15Z"
+       ]
+      },
+      "AMS-SC-25-0002": {
+       "modify_date": [
+        "2026-09-03T12:51:56Z",
+        "2026-04-08T15:26:25Z"
+       ]
+      },
+      "AMS-SC-26-0496": {
+       "modify_date": [
+        "2026-09-08T18:39:35Z",
+        "2026-08-27T15:13:48Z"
+       ]
+      },
+      "AMS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:25:29Z",
+        "2026-08-31T11:37:05Z"
+       ]
+      },
+      "APHIS-2023-0073": {
+       "modify_date": [
+        "2026-09-22T14:12:08Z",
+        "2026-08-18T12:41:18Z"
+       ]
+      },
+      "APHIS-2024-0040": {
+       "modify_date": [
+        "2026-09-15T20:13:17Z",
+        "2026-09-02T17:51:05Z"
+       ]
+      },
+      "APHIS-2025-0004": {
+       "modify_date": [
+        "2026-09-14T19:12:41Z",
+        "2026-09-02T12:42:06Z"
+       ]
+      },
+      "APHIS-2025-0033": {
+       "modify_date": [
+        "2026-09-21T13:10:55Z",
+        "2026-08-06T16:03:04Z"
+       ]
+      },
+      "APHIS-2026-0434": {
+       "modify_date": [
+        "2026-09-21T13:10:24Z",
+        "2026-07-24T13:22:31Z"
+       ]
+      },
+      "APHIS-2026-0727": {
+       "modify_date": [
+        "2026-09-15T16:11:57Z",
+        "2026-07-14T13:10:39Z"
+       ]
+      },
+      "APHIS-2026-0728": {
+       "modify_date": [
+        "2026-09-14T12:57:35Z",
+        "2026-07-14T13:12:03Z"
+       ]
+      },
+      "APHIS-2026-0793": {
+       "modify_date": [
+        "2026-09-14T12:53:14Z",
+        "2026-07-24T13:20:19Z"
+       ]
+      },
+      "APHIS-2026-0991": {
+       "modify_date": [
+        "2026-09-09T12:36:19Z",
+        "2026-07-10T13:11:31Z"
+       ]
+      },
+      "APHIS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-24T12:25:50Z",
+        "2026-08-28T11:29:54Z"
+       ]
+      },
+      "ASC_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-04T12:25:35Z",
+        "2026-06-11T12:26:20Z"
+       ]
+      },
+      "ATBCB-2026-0004": {
+       "modify_date": [
+        "2026-09-04T13:29:51Z",
+        "2026-09-02T19:03:20Z"
+       ]
+      },
+      "ATBCB_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-23T12:25:27Z",
+        "2026-08-18T12:26:01Z"
+       ]
+      },
+      "ATF-2026-0008": {
+       "modify_date": [
+        "2026-09-14T21:16:06Z",
+        "2026-08-06T15:57:47Z"
+       ]
+      },
+      "ATF-2026-0069": {
+       "modify_date": [
+        "2026-09-24T20:36:05Z",
+        "2026-08-07T17:50:45Z"
+       ]
+      },
+      "ATF-2026-0266": {
+       "modify_date": [
+        "2026-09-03T14:55:01Z",
+        "2026-08-09T17:33:17Z"
+       ]
+      },
+      "ATF-2026-0298": {
+       "modify_date": [
+        "2026-09-11T14:31:43Z",
+        "2026-08-18T16:57:33Z"
+       ]
+      },
+      "ATF-2026-0397": {
+       "modify_date": [
+        "2026-09-24T12:33:39Z",
+        "2026-08-24T14:33:20Z"
+       ]
+      },
+      "ATF_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:26:07Z",
+        "2026-08-20T12:27:32Z"
+       ]
+      },
+      "ATSDR-2026-0034": {
+       "modify_date": [
+        "2026-09-03T14:42:11Z",
+        "2026-07-23T12:57:30Z"
+       ]
+      },
+      "BIS-2025-0010": {
+       "abstract": [
+        "The Secretary of Commerce has initiated an investigation to determine the effects on the national security of imports of copper in all forms, including but not limited to: raw mined copper; copper concentrates; refined copper; copper alloys; scrap copper; and derivative products. This investigation has been initiated under section 232 of the Trade Expansion Act of 1962, as amended. Interested parties are invited to submit written comments, data, analyses, or other information pertinent to the investigation to the Department of Commerce’s Bureau of Industry and Security. This notice identifies issues on which the Department is especially interested in obtaining the public’s views.",
+        "The Secretary of Commerce has initiated an investigation to determine the effects on the national security of imports of copper in all forms, including but not limited to: raw mined copper; copper concentrates; refined copper; copper alloys; scrap copper; and derivative products. This investigation has been initiated under section 232 of the Trade Expansion Act of 1962, as amended. Interested parties are invited to submit written comments, data, analyses, or other information pertinent to the investigation to the Department of Commerce’s Bureau of Industry and Security. This notice identifies issues on which the Department is especially interested in obtaining the public’s views. "
+       ],
+       "modify_date": [
+        "2026-09-18T13:58:20Z",
+        "2025-03-14T13:45:01Z"
+       ]
+      },
+      "BIS-2026-0298": {
+       "modify_date": [
+        "2026-09-15T18:47:02Z",
+        "2026-07-31T13:16:14Z"
+       ]
+      },
+      "BIS-2026-0364": {
+       "modify_date": [
+        "2026-09-16T16:54:18Z",
+        "2026-08-24T16:41:57Z"
+       ]
+      },
+      "BIS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-24T12:25:48Z",
+        "2026-08-28T11:29:33Z"
+       ]
+      },
+      "BLM-2026-0067": {
+       "modify_date": [
+        "2026-09-03T20:23:34Z",
+        "2026-08-17T15:25:20Z"
+       ]
+      },
+      "BLM_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-08T12:25:25Z",
+        "2026-06-24T12:26:32Z"
+       ]
+      },
+      "BOEM-2026-0100": {
+       "modify_date": [
+        "2026-09-08T19:26:46Z",
+        "2026-09-01T21:41:57Z"
+       ]
+      },
+      "BOEM-2026-0562": {
+       "modify_date": [
+        "2026-09-22T15:39:32Z",
+        "2026-07-24T13:47:03Z"
+       ]
+      },
+      "BOP-2026-0001": {
+       "modify_date": [
+        "2026-09-25T11:41:49Z",
+        "2026-09-01T14:23:57Z"
+       ]
+      },
+      "BPA_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-17T12:26:01Z",
+        "2024-11-13T08:38:30Z"
+       ]
+      },
+      "BSEE-2025-0233": {
+       "modify_date": [
+        "2026-09-22T15:13:18Z",
+        "2025-09-25T12:28:41Z"
+       ]
+      },
+      "BSEE-2025-0266": {
+       "modify_date": [
+        "2026-09-22T15:12:25Z",
+        "2026-05-18T13:49:37Z"
+       ]
+      },
+      "BSEE-2025-0332": {
+       "modify_date": [
+        "2026-09-18T12:31:32Z",
+        "2026-06-18T11:14:06Z"
+       ]
+      },
+      "BSEE_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-22T12:25:57Z",
+        "2026-08-17T12:25:25Z"
+       ]
+      },
+      "CDC-2026-0892": {
+       "modify_date": [
+        "2026-09-16T12:12:51Z",
+        "2026-09-02T12:10:04Z"
+       ]
+      },
+      "CDC-2026-1156": {
+       "modify_date": [
+        "2026-09-08T10:35:17Z",
+        "2026-07-06T11:44:31Z"
+       ]
+      },
+      "CDC-2026-1189": {
+       "modify_date": [
+        "2026-09-08T10:34:20Z",
+        "2026-07-06T11:47:56Z"
+       ]
+      },
+      "CDC-2026-1190": {
+       "modify_date": [
+        "2026-09-08T10:33:50Z",
+        "2026-08-28T14:59:42Z"
+       ]
+      },
+      "CDC-2026-1255": {
+       "modify_date": [
+        "2026-09-15T13:57:32Z",
+        "2026-08-28T14:58:59Z"
+       ]
+      },
+      "CDC-2026-1354": {
+       "modify_date": [
+        "2026-09-24T14:19:36Z",
+        "2026-08-17T12:29:49Z"
+       ]
+      },
+      "CDC-2026-1387": {
+       "modify_date": [
+        "2026-09-24T10:25:25Z",
+        "2026-09-02T11:51:35Z"
+       ]
+      },
+      "CDC-2026-1420": {
+       "modify_date": [
+        "2026-09-24T14:19:11Z",
+        "2026-08-20T10:41:43Z"
+       ]
+      },
+      "CFPB-2026-0018": {
+       "modify_date": [
+        "2026-09-08T12:41:54Z",
+        "2026-08-11T13:25:50Z"
+       ]
+      },
+      "CFTC-2026-0893": {
+       "modify_date": [
+        "2026-09-22T20:43:58Z",
+        "2026-07-08T14:40:14Z"
+       ]
+      },
+      "CFTC-2026-1189": {
+       "modify_date": [
+        "2026-09-16T13:18:31Z",
+        "2026-08-07T11:54:08Z"
+       ]
+      },
+      "CFTC-2026-1354": {
+       "modify_date": [
+        "2026-09-14T11:57:21Z",
+        "2026-08-26T14:24:49Z"
+       ]
+      },
+      "CFTC-2026-1355": {
+       "modify_date": [
+        "2026-09-14T14:43:56Z",
+        "2026-08-31T17:53:27Z"
+       ]
+      },
+      "CFTC-2026-1420": {
+       "modify_date": [
+        "2026-09-10T11:50:48Z",
+        "2026-06-30T14:54:37Z"
+       ]
+      },
+      "CFTC-2026-1686": {
+       "modify_date": [
+        "2026-09-25T15:43:54Z",
+        "2026-08-13T17:47:23Z"
+       ]
+      },
+      "CFTC-2026-1849": {
+       "modify_date": [
+        "2026-09-14T13:01:49Z",
+        "2026-08-24T18:06:15Z"
+       ]
+      },
+      "CFTC-2026-1850": {
+       "modify_date": [
+        "2026-09-25T15:42:35Z",
+        "2026-08-24T18:05:06Z"
+       ]
+      },
+      "CFTC-2026-1882": {
+       "modify_date": [
+        "2026-09-25T15:39:56Z",
+        "2026-08-26T12:44:13Z"
+       ]
+      },
+      "CFTC_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-22T12:25:56Z",
+        "2026-09-01T12:26:10Z"
+       ]
+      },
+      "CISA-2026-0133": {
+       "modify_date": [
+        "2026-09-11T11:59:11Z",
+        "2026-08-17T11:57:43Z"
+       ]
+      },
+      "CMS-2026-1288": {
+       "abstract": [
+        "n/a",
+        null
+       ],
+       "modify_date": [
+        "2026-09-23T15:04:32Z",
+        "2026-04-15T14:20:15Z"
+       ]
+      },
+      "CMS-2026-2047": {
+       "modify_date": [
+        "2026-09-08T15:07:39Z",
+        "2026-09-01T14:26:27Z"
+       ]
+      },
+      "CMS-2026-2080": {
+       "modify_date": [
+        "2026-09-08T14:17:15Z",
+        "2026-09-02T15:15:35Z"
+       ]
+      },
+      "CMS-2026-2179": {
+       "modify_date": [
+        "2026-09-11T12:56:55Z",
+        "2026-08-10T11:43:19Z"
+       ]
+      },
+      "CMS-2026-2245": {
+       "modify_date": [
+        "2026-09-03T18:02:32Z",
+        "2026-08-25T15:06:10Z"
+       ]
+      },
+      "CMS-2026-2311": {
+       "modify_date": [
+        "2026-09-16T14:16:01Z",
+        "2026-09-02T16:09:22Z"
+       ]
+      },
+      "CMS-2026-2344": {
+       "modify_date": [
+        "2026-09-08T14:57:42Z",
+        "2026-09-02T18:17:42Z"
+       ]
+      },
+      "CMS-2026-2345": {
+       "modify_date": [
+        "2026-09-15T14:27:35Z",
+        "2026-08-31T19:52:21Z"
+       ]
+      },
+      "CMS-2026-2377": {
+       "modify_date": [
+        "2026-09-23T11:32:42Z",
+        "2026-08-31T16:07:22Z"
+       ]
+      },
+      "CMS-2026-2476": {
+       "modify_date": [
+        "2026-09-22T15:35:16Z",
+        "2026-08-27T15:10:17Z"
+       ]
+      },
+      "CMS-2026-2544": {
+       "modify_date": [
+        "2026-09-16T13:24:24Z",
+        "2026-07-21T13:57:45Z"
+       ]
+      },
+      "CMS-2026-2674": {
+       "modify_date": [
+        "2026-09-24T13:37:04Z",
+        "2026-08-26T18:33:24Z"
+       ]
+      },
+      "CMS-2026-2774": {
+       "modify_date": [
+        "2026-09-16T13:18:17Z",
+        "2026-09-01T13:11:11Z"
+       ]
+      },
+      "CMS-2026-2971": {
+       "modify_date": [
+        "2026-09-16T13:16:30Z",
+        "2026-09-01T13:04:40Z"
+       ]
+      },
+      "CMS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:26:17Z",
+        "2026-09-02T12:25:51Z"
+       ]
+      },
+      "CNCS-2026-0167": {
+       "modify_date": [
+        "2026-09-14T14:09:22Z",
+        "2026-05-14T18:38:54Z"
+       ]
+      },
+      "CNCS-2026-0199": {
+       "modify_date": [
+        "2026-09-14T14:07:14Z",
+        "2026-07-21T16:19:11Z"
+       ]
+      },
+      "CNCS-2026-0265": {
+       "modify_date": [
+        "2026-09-17T15:54:03Z",
+        "2026-07-15T17:43:58Z"
+       ]
+      },
+      "CNCS-2026-0298": {
+       "modify_date": [
+        "2026-09-21T14:54:49Z",
+        "2026-08-21T19:17:37Z"
+       ]
+      },
+      "CNCS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:26:08Z",
+        "2026-08-27T12:25:22Z"
+       ]
+      },
+      "COE-2026-0001": {
+       "modify_date": [
+        "2026-09-16T11:43:42Z",
+        "2026-05-18T20:10:13Z"
+       ]
+      },
+      "COE-2026-0067": {
+       "modify_date": [
+        "2026-09-11T19:17:30Z",
+        "2026-08-11T19:22:53Z"
+       ]
+      },
+      "COE_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-10T12:34:43Z",
+        "2026-08-11T18:55:38Z"
+       ]
+      },
+      "COLC-2026-0100": {
+       "modify_date": [
+        "2026-09-24T20:04:27Z",
+        "2026-08-26T20:09:53Z"
+       ]
+      },
+      "CPPBSD_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-24T12:25:53Z",
+        "2026-08-27T12:25:59Z"
+       ]
+      },
+      "CPSC-2023-0004": {
+       "modify_date": [
+        "2026-09-18T12:25:56Z",
+        "2026-08-17T11:56:16Z"
+       ]
+      },
+      "CPSC-2026-0298": {
+       "modify_date": [
+        "2026-09-17T13:02:04Z",
+        "2026-08-24T10:56:29Z"
+       ]
+      },
+      "CPSC_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-24T12:25:32Z",
+        "2026-08-14T12:58:35Z"
+       ]
+      },
+      "DEA-2026-0892": {
+       "modify_date": [
+        "2026-09-21T20:31:49Z",
+        "2026-06-29T15:57:01Z"
+       ]
+      },
+      "DEA-2026-1224": {
+       "modify_date": [
+        "2026-09-15T10:31:31Z",
+        "2026-07-16T11:35:24Z"
+       ]
+      },
+      "DEA-2026-1255": {
+       "modify_date": [
+        "2026-09-22T10:50:05Z",
+        "2026-08-07T13:12:37Z"
+       ]
+      },
+      "DEA-2026-1288": {
+       "modify_date": [
+        "2026-09-08T11:18:32Z",
+        "2026-09-02T10:22:18Z"
+       ]
+      },
+      "DEA-2026-1321": {
+       "modify_date": [
+        "2026-09-11T20:37:18Z",
+        "2026-08-21T18:28:44Z"
+       ]
+      },
+      "DEA-2026-1357": {
+       "modify_date": [
+        "2026-09-25T10:50:07Z",
+        "2026-08-25T11:50:00Z"
+       ]
+      },
+      "DEA-2026-1358": {
+       "modify_date": [
+        "2026-09-25T10:41:50Z",
+        "2026-08-25T11:59:44Z"
+       ]
+      },
+      "DEA-2026-1388": {
+       "modify_date": [
+        "2026-09-25T12:08:36Z",
+        "2026-08-25T15:20:05Z"
+       ]
+      },
+      "DEA-2026-1420": {
+       "modify_date": [
+        "2026-09-25T12:10:05Z",
+        "2026-08-25T16:46:00Z"
+       ]
+      },
+      "DEA-2026-1455": {
+       "modify_date": [
+        "2026-09-25T10:48:39Z",
+        "2026-08-25T17:47:34Z"
+       ]
+      },
+      "DEA-2026-1519": {
+       "modify_date": [
+        "2026-09-25T10:32:13Z",
+        "2026-08-28T19:07:02Z"
+       ]
+      },
+      "DEA_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-23T12:25:37Z",
+        "2026-08-27T12:25:37Z"
+       ]
+      },
+      "DHS-2024-0020": {
+       "abstract": [
+        "DHS is issuing a final rule to amend the Homeland Security Acquisition Regulation (HSAR) codifying how DHS complies with the requirements of the Make Personal Protective Equipment (PPE) in America Act. These changes are intended to ensure the sustainment and expansion of domestic manufacturing for certain types of PPE critical to the United States’ national response to a public health crisis. \n",
+        "DHS is proposing to amend the Homeland Security Acquisition Regulation (HSAR) to add a new subpart, clause, and provision that would codify how DHS complies with the requirements of the Make Personal Protective Equipment (PPE) in America Act. DHS believes these proposed changes would help to ensure the sustainment and expansion of domestic manufacturing for certain types of PPE critical to the United States’ national response to a public health crisis, such as the COVID–19 pandemic. \n"
+       ],
+       "modify_date": [
+        "2026-09-18T12:33:53Z",
+        "2024-12-03T08:09:08Z"
+       ]
+      },
+      "DHS-2025-0008": {
+       "modify_date": [
+        "2026-09-21T12:48:14Z",
+        "2026-03-26T12:59:42Z"
+       ]
+      },
+      "DHS-2026-0298": {
+       "modify_date": [
+        "2026-09-22T12:18:58Z",
+        "2026-08-20T02:31:59Z"
+       ]
+      },
+      "DHS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-21T12:25:51Z",
+        "2026-08-26T12:26:45Z"
+       ]
+      },
+      "DOD-2026-HA-1816": {
+       "modify_date": [
+        "2026-09-25T12:58:05Z",
+        "2026-08-25T13:43:03Z"
+       ]
+      },
+      "DOD-2026-OS-0001": {
+       "modify_date": [
+        "2026-09-22T18:01:18Z",
+        "2026-08-31T14:58:35Z"
+       ]
+      },
+      "DOD-2026-OS-1222": {
+       "modify_date": [
+        "2026-09-04T14:14:56Z",
+        "2026-06-03T17:52:01Z"
+       ]
+      },
+      "DOD-2026-OS-1750": {
+       "modify_date": [
+        "2026-09-25T12:55:42Z",
+        "2026-08-25T13:42:11Z"
+       ]
+      },
+      "DOD-2026-OS-1783": {
+       "modify_date": [
+        "2026-09-15T13:30:37Z",
+        "2026-08-24T12:35:03Z"
+       ]
+      },
+      "DOD_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:26:11Z",
+        "2026-09-02T12:25:57Z"
+       ]
+      },
+      "DOE-HQ-2026-0001": {
+       "modify_date": [
+        "2026-09-25T13:09:50Z",
+        "2026-09-01T16:28:12Z"
+       ]
+      },
+      "DOE-HQ-2026-0892": {
+       "modify_date": [
+        "2026-09-09T15:24:52Z",
+        "2026-07-09T14:21:18Z"
+       ]
+      },
+      "DOE-HQ-2026-1090": {
+       "modify_date": [
+        "2026-09-14T13:31:34Z",
+        "2026-08-31T13:17:30Z"
+       ]
+      },
+      "DOE_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-22T12:25:45Z",
+        "2026-09-02T12:25:35Z"
+       ]
+      },
+      "DOJ-OLP-2026-0166": {
+       "modify_date": [
+        "2026-09-24T21:28:20Z",
+        "2026-08-24T14:04:33Z"
+       ]
+      },
+      "DOJ_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-25T12:25:35Z",
+        "2026-09-01T12:26:44Z"
+       ]
+      },
+      "DOL_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-21T12:26:07Z",
+        "2026-09-01T12:26:43Z"
+       ]
+      },
+      "DOS-2026-0760": {
+       "modify_date": [
+        "2026-09-16T19:25:14Z",
+        "2026-07-29T15:20:40Z"
+       ]
+      },
+      "DOS-2026-0859": {
+       "modify_date": [
+        "2026-09-23T15:07:20Z",
+        "2026-08-12T15:10:42Z"
+       ]
+      },
+      "DOS-2026-0925": {
+       "modify_date": [
+        "2026-09-23T00:45:33Z",
+        "2026-08-28T16:20:24Z"
+       ]
+      },
+      "DOS_FRDOC_0001": {
+       "modify_date": [
+        "2026-09-24T12:25:48Z",
+        "2026-09-02T12:26:09Z"
+       ]
+      },
+      "DOT-OST-1996-1600": {
+       "modify_date": [
+        "2026-09-23T18:42:30Z",
+        "2026-06-04T18:32:44Z"
+       ]
+      },
+      "DOT-OST-1996-1915": {
+       "modify_date": [
+        "2026-09-11T15:30:01Z",
+        "2025-09-17T18:21:26Z"
+       ]
+      },
+      "DOT-OST-1997-2784": {
+       "modify_date": [
+        "2026-09-22T20:38:38Z",
+        "2026-09-01T12:41:57Z"
+       ]
+      },
+      "DOT-OST-1997-2827": {
+       "modify_date": [
+        "2026-09-24T15:19:24Z",
+        "2026-06-12T19:24:46Z"
+       ]
+      },
+      "DOT-OST-1998-20": {
+       "modify_date": [
+        "2026-09-02T17:25:12Z",
+        "2026-07-17T18:57:38Z"
+       ]
+      },
+      "DOT-OST-1998-3304": {
+       "modify_date": [
+        "2026-09-11T18:22:19Z",
+        "2026-08-28T14:41:12Z"
+       ]
+      },
+      "DOT-OST-1998-3305": {
+       "modify_date": [
+        "2026-09-09T18:01:30Z",
+        "2026-07-10T13:31:48Z"
+       ]
+      },
+      "DOT-OST-1999-5035": {
+       "modify_date": [
+        "2026-09-23T18:42:56Z",
+        "2026-06-04T18:33:36Z"
+       ]
+      },
+      "DOT-OST-1999-5173": {
+       "modify_date": [
+        "2026-09-10T20:41:06Z",
+        "2026-08-18T17:05:46Z"
+       ]
+      },
+      "DOT-OST-1999-6323": {
+       "modify_date": [
+        "2026-09-11T15:04:24Z",
+        "2026-08-28T20:45:41Z"
+       ]
+      },
+      "DOT-OST-2000-8322": {
+       "modify_date": [
+        "2026-09-22T18:22:12Z",
+        "2026-06-26T20:10:28Z"
+       ]
+      },
+      "DOT-OST-2001-10685": {
+       "modify_date": [
+        "2026-09-18T17:09:11Z",
+        "2025-11-17T17:19:54Z"
+       ]
+      },
+      "DOT-OST-2001-9849": {
+       "modify_date": [
+        "2026-09-09T14:14:07Z",
+        "2026-08-26T17:47:11Z"
+       ]
+      },
+      "DOT-OST-2002-11376": {
+       "modify_date": [
+        "2026-09-14T20:30:38Z",
+        "2026-07-16T18:57:50Z"
+       ]
+      },
+      "DOT-OST-2002-12556": {
+       "modify_date": [
+        "2026-09-18T17:14:18Z",
+        "2026-07-29T20:51:06Z"
+       ]
+      },
+      "DOT-OST-2002-13320": {
+       "modify_date": [
+        "2026-09-24T12:14:14Z",
+        "2015-05-26T10:30:41Z"
+       ]
+      },
+      "DOT-OST-2003-14535": {
+       "modify_date": [
+        "2026-09-10T19:35:30Z",
+        "2026-08-04T20:55:29Z"
+       ]
+      },
+      "DOT-OST-2003-14626": {
+       "modify_date": [
+        "2026-09-03T18:31:03Z",
+        "2025-11-17T17:29:23Z"
+       ]
+      },
+      "DOT-OST-2003-14694": {
+       "modify_date": [
+        "2026-09-24T20:47:50Z",
+        "2026-06-18T21:11:13Z"
+       ]
+      },
+      "DOT-OST-2003-14695": {
+       "modify_date": [
+        "2026-09-25T12:34:50Z",
+        "2025-06-03T19:58:42Z"
+       ]
+      },
+      "DOT-OST-2003-15204": {
+       "abstract": [
+        "Subject: Codeshare for Asiana Airlines",
+        "Subject: Codeshare for Asiana Airlines "
+       ],
+       "modify_date": [
+        "2026-09-24T12:13:45Z",
+        "2015-05-26T10:43:02Z"
+       ],
+       "title": [
+        "SkyWest Airlines, Inc. - Statement of Authorization - Codeshare for Asiana Airlines",
+        "SkyWest Airlines, Inc. - Statement of Authorization - Codeshare for Asiana Airlines "
+       ]
+      },
+      "DOT-OST-2004-17563": {
+       "modify_date": [
+        "2026-09-25T12:38:38Z",
+        "2026-07-15T18:23:01Z"
+       ]
+      },
+      "DOT-OST-2004-18469": {
+       "modify_date": [
+        "2026-09-11T15:30:33Z",
+        "2026-08-31T17:35:18Z"
+       ]
+      },
+      "DOT-OST-2004-18704": {
+       "modify_date": [
+        "2026-09-09T12:38:56Z",
+        "2024-10-09T16:52:54Z"
+       ]
+      },
+      "DOT-OST-2004-19077": {
+       "modify_date": [
+        "2026-09-11T15:31:12Z",
+        "2025-09-17T18:22:19Z"
+       ]
+      },
+      "DOT-OST-2005-20454": {
+       "modify_date": [
+        "2026-09-23T13:13:04Z",
+        "2026-08-03T18:48:16Z"
+       ]
+      },
+      "DOT-OST-2005-23194": {
+       "modify_date": [
+        "2026-09-09T14:13:54Z",
+        "2026-08-26T17:43:19Z"
+       ]
+      },
+      "DOT-OST-2006-23932": {
+       "modify_date": [
+        "2026-09-24T18:54:56Z",
+        "2025-11-17T17:58:02Z"
+       ]
+      },
+      "DOT-OST-2006-24269": {
+       "modify_date": [
+        "2026-09-23T15:40:34Z",
+        "2026-08-26T17:43:01Z"
+       ]
+      },
+      "DOT-OST-2006-25275": {
+       "modify_date": [
+        "2026-09-11T15:31:47Z",
+        "2026-08-31T17:35:44Z"
+       ]
+      },
+      "DOT-OST-2007-28567": {
+       "modify_date": [
+        "2026-09-11T15:32:34Z",
+        "2026-08-31T17:36:08Z"
+       ]
+      },
+      "DOT-OST-2008-0112": {
+       "modify_date": [
+        "2026-09-18T17:10:55Z",
+        "2025-11-17T17:59:59Z"
+       ]
+      },
+      "DOT-OST-2008-0234": {
+       "modify_date": [
+        "2026-09-09T14:13:41Z",
+        "2026-08-26T17:42:00Z"
+       ]
+      },
+      "DOT-OST-2008-0237": {
+       "modify_date": [
+        "2026-09-03T18:43:31Z",
+        "2026-08-06T12:31:51Z"
+       ]
+      },
+      "DOT-OST-2008-0252": {
+       "modify_date": [
+        "2026-09-09T14:13:26Z",
+        "2026-08-26T17:42:38Z"
+       ]
+      },
+      "DOT-OST-2008-0273": {
+       "modify_date": [
+        "2026-09-09T21:09:08Z",
+        "2026-08-10T17:26:18Z"
+       ]
+      },
+      "DOT-OST-2008-0299": {
+       "modify_date": [
+        "2026-09-23T14:34:17Z",
+        "2026-09-01T12:17:42Z"
+       ]
+      },
+      "DOT-OST-2009-0092": {
+       "modify_date": [
+        "2026-09-11T12:51:38Z",
+        "2026-08-25T12:41:58Z"
+       ]
+      },
+      "DOT-OST-2010-0200": {
+       "modify_date": [
+        "2026-09-23T18:42:08Z",
+        "2026-06-04T18:32:18Z"
+       ]
+      },
+      "DOT-OST-2010-0245": {
+       "modify_date": [
+        "2026-09-11T15:19:41Z",
+        "2026-08-21T15:06:27Z"
+       ]
+      },
+      "DOT-OST-2010-0256": {
+       "modify_date": [
+        "2026-09-11T15:33:16Z",
+        "2026-08-31T17:36:33Z"
+       ]
+      },
+      "DOT-OST-2010-0285": {
+       "modify_date": [
+        "2026-09-11T15:05:56Z",
+        "2026-08-28T20:47:07Z"
+       ]
+      },
+      "DOT-OST-2011-0131": {
+       "modify_date": [
+        "2026-09-24T12:43:59Z",
+        "2026-08-04T13:15:55Z"
+       ]
+      },
+      "DOT-OST-2012-0167": {
+       "modify_date": [
+        "2026-09-11T15:06:21Z",
+        "2026-08-28T20:47:39Z"
+       ]
+      },
+      "DOT-OST-2012-0193": {
+       "modify_date": [
+        "2026-09-24T12:14:45Z",
+        "2015-05-26T10:35:01Z"
+       ]
+      },
+      "DOT-OST-2013-0059": {
+       "modify_date": [
+        "2026-09-25T14:26:06Z",
+        "2024-10-10T14:44:05Z"
+       ]
+      },
+      "DOT-OST-2013-0068": {
+       "modify_date": [
+        "2026-09-09T14:13:15Z",
+        "2026-08-26T17:49:50Z"
+       ]
+      },
+      "DOT-OST-2013-0164": {
+       "modify_date": [
+        "2026-09-11T15:33:43Z",
+        "2026-08-31T17:37:05Z"
+       ]
+      },
+      "DOT-OST-2013-0187": {
+       "modify_date": [
+        "2026-09-11T15:18:51Z",
+        "2026-08-21T15:03:12Z"
+       ]
+      },
+      "DOT-OST-2013-0203": {
+       "modify_date": [
+        "2026-09-24T12:13:04Z",
+        "2015-05-26T10:51:49Z"
+       ]
+      },
+      "DOT-OST-2014-0053": {
+       "modify_date": [
+        "2026-09-24T12:11:41Z",
+        "2014-04-18T15:20:34Z"
+       ]
+      },
+      "DOT-OST-2014-0169": {
+       "modify_date": [
+        "2026-09-11T15:19:15Z",
+        "2026-08-21T15:04:28Z"
+       ]
+      },
+      "DOT-OST-2014-0196": {
+       "modify_date": [
+        "2026-09-11T15:34:07Z",
+        "2026-08-31T17:37:29Z"
+       ]
+      },
+      "DOT-OST-2015-0005": {
+       "modify_date": [
+        "2026-09-11T15:06:43Z",
+        "2026-08-28T20:48:05Z"
+       ]
+      },
+      "DOT-OST-2015-0059": {
+       "modify_date": [
+        "2026-09-25T12:45:33Z",
+        "2026-08-05T15:00:42Z"
+       ]
+      },
+      "DOT-OST-2015-0070": {
+       "modify_date": [
+        "2026-09-09T14:20:42Z",
+        "2026-08-26T17:49:33Z"
+       ]
+      },
+      "DOT-OST-2015-0175": {
+       "modify_date": [
+        "2026-09-03T19:01:34Z",
+        "2025-11-17T18:25:52Z"
+       ]
+      },
+      "DOT-OST-2015-0242": {
+       "modify_date": [
+        "2026-09-14T14:03:16Z",
+        "2025-11-17T18:28:22Z"
+       ]
+      },
+      "DOT-OST-2016-0021": {
+       "modify_date": [
+        "2026-09-17T12:13:16Z",
+        "2026-09-01T20:50:18Z"
+       ]
+      },
+      "DOT-OST-2016-0068": {
+       "modify_date": [
+        "2026-09-24T12:10:49Z",
+        "2017-10-31T16:25:05Z"
+       ]
+      },
+      "DOT-OST-2016-0115": {
+       "modify_date": [
+        "2026-09-24T12:12:13Z",
+        "2016-07-12T16:13:24Z"
+       ]
+      },
+      "DOT-OST-2017-0044": {
+       "modify_date": [
+        "2026-09-21T16:23:39Z",
+        "2026-08-31T18:21:55Z"
+       ]
+      },
+      "DOT-OST-2017-0045": {
+       "modify_date": [
+        "2026-09-18T19:20:01Z",
+        "2026-08-21T19:31:01Z"
+       ]
+      },
+      "DOT-OST-2018-0190": {
+       "modify_date": [
+        "2026-09-02T14:42:12Z",
+        "2026-05-27T14:11:11Z"
+       ]
+      },
+      "DOT-OST-2020-0035": {
+       "modify_date": [
+        "2026-09-17T12:13:48Z",
+        "2026-09-01T20:51:09Z"
+       ]
+      },
+      "DOT-OST-2020-0052": {
+       "modify_date": [
+        "2026-09-24T19:52:51Z",
+        "2026-07-09T21:02:15Z"
+       ]
+      },
+      "DOT-OST-2020-0104": {
+       "modify_date": [
+        "2026-09-09T14:09:14Z",
+        "2024-10-09T16:32:12Z"
+       ]
+      },
+      "DOT-OST-2021-0165": {
+       "modify_date": [
+        "2026-09-23T16:15:59Z",
+        "2026-06-26T17:04:53Z"
+       ]
+      },
+      "DOT-OST-2022-0063": {
+       "modify_date": [
+        "2026-09-09T14:04:22Z",
+        "2024-10-09T15:49:54Z"
+       ]
+      },
+      "DOT-OST-2022-0073": {
+       "modify_date": [
+        "2026-09-11T15:14:00Z",
+        "2026-08-21T15:12:27Z"
+       ]
+      },
+      "DOT-OST-2023-0186": {
+       "modify_date": [
+        "2026-09-11T19:03:29Z",
+        "2026-08-05T12:26:56Z"
+       ]
+      },
+      "DOT-OST-2024-0065": {
+       "modify_date": [
+        "2026-09-09T14:12:50Z",
+        "2026-08-26T18:29:14Z"
+       ]
+      },
+      "DOT-OST-2025-0138": {
+       "modify_date": [
+        "2026-09-09T14:12:34Z",
+        "2026-08-26T18:29:00Z"
+       ]
+      },
+      "DOT-OST-2025-0436": {
+       "modify_date": [
+        "2026-09-23T18:39:03Z",
+        "2026-09-01T12:19:00Z"
+       ]
+      },
+      "DOT-OST-2025-0897": {
+       "modify_date": [
+        "2026-09-25T12:33:08Z",
+        "2026-09-01T19:26:36Z"
+       ]
+      },
+      "DOT-OST-2025-2316": {
+       "modify_date": [
+        "2026-09-22T13:12:29Z",
+        "2026-08-31T19:57:25Z"
+       ]
+      },
+      "DOT-OST-2026-0067": {
+       "modify_date": [
+        "2026-09-18T20:09:51Z",
+        "2026-08-26T18:28:50Z"
+       ]
+      },
+      "DOT-OST-2026-1785": {
+       "modify_date": [
+        "2026-09-18T16:01:16Z",
+        "2026-06-11T13:22:35Z"
+       ]
+      }
+     }
+    },
+    "enriched_non_null": {},
+    "oracle": {
+     "mismatches": 0,
+     "native_rows": 279380,
+     "rows": 279380,
+     "sample": []
+    },
+    "recordCount": 279380,
+    "rules_match": true,
+    "state_id": "urn:docspec:generation-admission:v1:315a796b7032d655c2b4405429f289860be4081f30edd201ea461ba089ab1886"
+   },
+   "documents": {
+    "admitted": 2002831,
+    "catalogue": {
+     "catalogue_only_keys": 0,
+     "catalogue_only_listed": [],
+     "compared_keys": 1943106,
+     "difference_kinds": {
+      "json-order": 0,
+      "type-only": 0,
+      "value": 1424
+     },
+     "differences_by_column": {
+      "agency_code": 2,
+      "attachments_json": 112,
+      "comment_end_date": 21,
+      "comment_start_date": 20,
+      "docket_id": 1,
+      "document_type": 1,
+      "file_url": 93,
+      "fr_doc_num": 23,
+      "modify_date": 1059,
+      "posted_date": 13,
+      "reason_withdrawn": 8,
+      "title": 62,
+      "withdrawn": 9
+     },
+     "exceptions_otherwise": 0,
+     "exceptions_otherwise_listed": {},
+     "exceptions_with_later_modify_date": 1059,
+     "generation_except_reference": 1059,
+     "generation_only_date_range": [
+      "0000-12-30T00:00:00Z",
+      "2026-12-13T05:00:00Z"
+     ],
+     "generation_only_dated_by": "posted_date",
+     "generation_only_keys": 59725,
+     "generation_only_on_or_after_snapshot": 4951,
+     "generation_only_sample": [
+      "ACF-2026-0661-0001",
+      "ACF-2026-0661-0002",
+      "AMS-AMS-26-0991-0001",
+      "AMS-CN-26-0166-0001",
+      "AMS-LP-25-0485-0002",
+      "AMS-NOP-26-1024-0001",
+      "AMS-NOP-26-1024-0002",
+      "AMS-SC-25-0002-0003",
+      "AMS-SC-25-0551-0001",
+      "AMS-SC-26-0496-0001",
+      "AMS_FRDOC_0001-2749",
+      "AMS_FRDOC_0001-2751",
+      "AMS_FRDOC_0001-2752",
+      "AMS_FRDOC_0001-2753",
+      "AMS_FRDOC_0001-2754",
+      "AMS_FRDOC_0001-2755",
+      "AMS_FRDOC_0001-2756",
+      "AMS_FRDOC_0001-2757",
+      "AMS_FRDOC_0001-2758",
+      "AMS_FRDOC_0001-2759",
+      "AMS_FRDOC_0001-2760",
+      "APHIS-2004-0012-0001",
+      "APHIS-2022-0072-0001",
+      "APHIS-2022-0072-0002",
+      "APHIS-2022-0072-0003",
+      "APHIS-2022-0072-0004",
+      "APHIS-2023-0069-0001",
+      "APHIS-2023-0069-0002",
+      "APHIS-2024-0040-0006",
+      "APHIS-2024-0040-0007",
+      "APHIS-2024-0040-0008",
+      "APHIS-2025-0736-0001",
+      "APHIS-2026-0435-0001",
+      "APHIS-2026-0859-0001",
+      "APHIS-2026-0859-0002",
+      "APHIS-2026-0859-0003",
+      "APHIS-2026-1223-0001",
+      "APHIS-2026-1387-0001",
+      "APHIS-2026-1387-0002",
+      "APHIS-2026-1387-0003",
+      "ASC-2026-0100-0001",
+      "ASC_FRDOC_0001-0197",
+      "ATBCB_FRDOC_0001-0163",
+      "ATF-2026-0364-0001",
+      "ATF-2026-0365-0001",
+      "ATF_FRDOC_0001-0096",
+      "ATF_FRDOC_0001-0098",
+      "BIS_FRDOC_0001-0723",
+      "BLM-2026-0133-0001",
+      "BLM-2026-0133-0002"
+     ],
+     "generation_rows": 2002831,
+     "reference_except_generation": 1059,
+     "reference_rows": 1943106,
+     "shared_columns": [
+      "document_id",
+      "docket_id",
+      "agency_code",
+      "title",
+      "document_type",
+      "posted_date",
+      "modify_date",
+      "comment_start_date",
+      "comment_end_date",
+      "file_url",
+      "attachments_json",
+      "fr_doc_num",
+      "withdrawn",
+      "reason_withdrawn",
+      "additional_rins"
+     ],
+     "value_differences_listed": {
+      "ACF-2026-0595-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:18Z",
+        "2026-09-01T09:00:37Z"
+       ]
+      },
+      "ACF-2026-0595-0002": {
+       "modify_date": [
+        "2026-09-25T09:00:18Z",
+        "2026-09-01T09:00:37Z"
+       ]
+      },
+      "AMS-LP-25-0485-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:20Z",
+        "2026-08-10T09:00:41Z"
+       ]
+      },
+      "AMS-NOP-25-0034-0001": {
+       "modify_date": [
+        "2026-09-03T09:00:10Z",
+        "2025-10-09T09:00:17Z"
+       ]
+      },
+      "AMS-NOP-26-0892-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:19Z",
+        "2026-08-25T17:12:09Z"
+       ]
+      },
+      "AMS_FRDOC_0001-2742": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.html\", \"format\": \"html\", \"size\": 26452}, {\"url\": \"https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.pdf\", \"format\": \"pdf\", \"size\": 247313}]",
+        "[{\"url\": \"https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.pdf\", \"format\": \"pdf\", \"size\": 247313}, {\"url\": \"https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.html\", \"format\": \"html\", \"size\": 26452}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.html",
+        "https://downloads.regulations.gov/AMS_FRDOC_0001-2742/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:30Z",
+        "2026-08-26T09:01:01Z"
+       ]
+      },
+      "APHIS-2023-0073-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:31Z",
+        "2026-08-13T09:01:02Z"
+       ]
+      },
+      "APHIS-2025-0004-0124": {
+       "modify_date": [
+        "2026-09-15T09:00:30Z",
+        "2026-08-31T09:00:20Z"
+       ]
+      },
+      "APHIS-2025-0033-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:18Z",
+        "2026-08-06T09:00:48Z"
+       ]
+      },
+      "APHIS-2026-0434-0001": {
+       "modify_date": [
+        "2026-09-19T09:00:56Z",
+        "2026-07-24T17:22:32Z"
+       ]
+      },
+      "APHIS-2026-0727-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/APHIS-2026-0727-0001/content.html\", \"format\": \"html\", \"size\": 9797}, {\"url\": \"https://downloads.regulations.gov/APHIS-2026-0727-0001/content.pdf\", \"format\": \"pdf\", \"size\": 210275}]",
+        "[{\"url\": \"https://downloads.regulations.gov/APHIS-2026-0727-0001/content.pdf\", \"format\": \"pdf\", \"size\": 210275}, {\"url\": \"https://downloads.regulations.gov/APHIS-2026-0727-0001/content.html\", \"format\": \"html\", \"size\": 9797}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/APHIS-2026-0727-0001/content.html",
+        "https://downloads.regulations.gov/APHIS-2026-0727-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-15T09:00:26Z",
+        "2026-07-14T17:10:39Z"
+       ]
+      },
+      "APHIS-2026-0728-0001": {
+       "modify_date": [
+        "2026-09-12T11:38:46Z",
+        "2026-07-14T17:12:03Z"
+       ]
+      },
+      "APHIS-2026-0793-0001": {
+       "modify_date": [
+        "2026-09-14T09:00:11Z",
+        "2026-07-24T17:20:19Z"
+       ]
+      },
+      "APHIS-2026-0826-0001": {
+       "modify_date": [
+        "2026-09-14T09:00:11Z",
+        "2026-07-16T16:49:20Z"
+       ]
+      },
+      "APHIS-2026-0991-0001": {
+       "modify_date": [
+        "2026-09-07T09:00:12Z",
+        "2026-07-10T17:11:31Z"
+       ]
+      },
+      "APHIS-2026-1090-0001": {
+       "modify_date": [
+        "2026-09-05T09:00:18Z",
+        "2026-08-26T09:00:58Z"
+       ]
+      },
+      "ATBCB-2026-0003-0002": {
+       "modify_date": [
+        "2026-09-18T09:01:00Z",
+        "2026-08-19T19:02:19Z"
+       ]
+      },
+      "ATBCB-2026-0004-0001": {
+       "modify_date": [
+        "2026-09-04T09:00:32Z",
+        "2026-09-02T09:00:23Z"
+       ]
+      },
+      "ATF-2026-0013-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0013-0001/content.html\", \"format\": \"html\", \"size\": 41734}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0013-0001/content.pdf\", \"format\": \"pdf\", \"size\": 261186}]",
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0013-0001/content.pdf\", \"format\": \"pdf\", \"size\": 261186}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0013-0001/content.html\", \"format\": \"html\", \"size\": 41734}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/ATF-2026-0013-0001/content.html",
+        "https://downloads.regulations.gov/ATF-2026-0013-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-15T09:00:25Z",
+        "2026-08-05T09:00:51Z"
+       ]
+      },
+      "ATF-2026-0070-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0070-0001/content.html\", \"format\": \"html\", \"size\": 68661}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0070-0001/content.pdf\", \"format\": \"pdf\", \"size\": 275898}]",
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0070-0001/content.pdf\", \"format\": \"pdf\", \"size\": 275898}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0070-0001/content.html\", \"format\": \"html\", \"size\": 68661}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/ATF-2026-0070-0001/content.html",
+        "https://downloads.regulations.gov/ATF-2026-0070-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-15T09:00:25Z",
+        "2026-08-07T09:01:28Z"
+       ]
+      },
+      "ATF-2026-0133-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0133-0001/content.html\", \"format\": \"html\", \"size\": 50230}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0133-0001/content.pdf\", \"format\": \"pdf\", \"size\": 272329}]",
+        "[{\"url\": \"https://downloads.regulations.gov/ATF-2026-0133-0001/content.pdf\", \"format\": \"pdf\", \"size\": 272329}, {\"url\": \"https://downloads.regulations.gov/ATF-2026-0133-0001/content.html\", \"format\": \"html\", \"size\": 50230}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/ATF-2026-0133-0001/content.html",
+        "https://downloads.regulations.gov/ATF-2026-0133-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-15T09:00:25Z",
+        "2026-08-25T09:01:30Z"
+       ]
+      },
+      "ATF-2026-0266-0001": {
+       "modify_date": [
+        "2026-09-04T09:00:28Z",
+        "2026-08-07T09:01:28Z"
+       ]
+      },
+      "ATF-2026-0298-0001": {
+       "modify_date": [
+        "2026-09-05T09:00:15Z",
+        "2026-09-02T09:00:19Z"
+       ]
+      },
+      "ATF-2026-0335-0001": {
+       "modify_date": [
+        "2026-09-04T09:00:28Z",
+        "2026-08-05T09:00:55Z"
+       ]
+      },
+      "ATF-2026-0337-0001": {
+       "modify_date": [
+        "2026-09-15T09:00:25Z",
+        "2026-08-07T09:01:25Z"
+       ]
+      },
+      "ATF-2026-0397-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:20Z",
+        "2026-08-30T09:00:15Z"
+       ]
+      },
+      "ATSDR-2026-0034-0001": {
+       "modify_date": [
+        "2026-09-03T09:00:11Z",
+        "2026-07-30T09:00:37Z"
+       ]
+      },
+      "BIA-2022-0005-0005": {
+       "modify_date": [
+        "2026-09-21T21:38:39Z",
+        "2024-06-21T15:16:00Z"
+       ]
+      },
+      "BLM-2026-0067-0001": {
+       "modify_date": [
+        "2026-09-04T09:00:28Z",
+        "2026-08-15T09:01:28Z"
+       ]
+      },
+      "BOEM-2026-0100-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/BOEM-2026-0100-0001/content.html\", \"format\": \"html\", \"size\": 29980}, {\"url\": \"https://downloads.regulations.gov/BOEM-2026-0100-0001/content.pdf\", \"format\": \"pdf\", \"size\": 372750}]",
+        "[{\"url\": \"https://downloads.regulations.gov/BOEM-2026-0100-0001/content.pdf\", \"format\": \"pdf\", \"size\": 372750}, {\"url\": \"https://downloads.regulations.gov/BOEM-2026-0100-0001/content.html\", \"format\": \"html\", \"size\": 29980}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/BOEM-2026-0100-0001/content.html",
+        "https://downloads.regulations.gov/BOEM-2026-0100-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-16T09:00:26Z",
+        "2026-09-02T09:00:18Z"
+       ]
+      },
+      "BOEM-2026-0100-0840": {
+       "modify_date": [
+        "2026-09-05T11:45:19Z",
+        "2026-07-28T09:01:20Z"
+       ]
+      },
+      "BOEM-2026-0232-0001": {
+       "modify_date": [
+        "2026-09-04T09:00:30Z",
+        "2026-08-08T09:00:47Z"
+       ]
+      },
+      "BOEM-2026-0562-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:30Z",
+        "2026-07-24T17:47:17Z"
+       ]
+      },
+      "BOEM-2026-1024-0001": {
+       "modify_date": [
+        "2026-09-06T09:00:29Z",
+        "2026-08-27T23:42:37Z"
+       ]
+      },
+      "BOEM_FRDOC_0001-0797": {
+       "modify_date": [
+        "2026-09-18T09:00:59Z",
+        "2026-08-27T09:00:21Z"
+       ]
+      },
+      "BOP-2026-0001-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:29Z",
+        "2026-09-02T09:00:27Z"
+       ]
+      },
+      "BSEE-2026-0133-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:31Z",
+        "2026-08-25T09:01:41Z"
+       ]
+      },
+      "CDC-2026-1057-0001": {
+       "fr_doc_num": [
+        "2026-11584",
+        null
+       ],
+       "modify_date": [
+        "2026-09-24T17:22:15Z",
+        "2026-08-11T09:00:47Z"
+       ]
+      },
+      "CDC-2026-1156-0001": {
+       "fr_doc_num": [
+        "2026-13559",
+        null
+       ],
+       "modify_date": [
+        "2026-09-24T17:18:29Z",
+        "2026-07-06T15:44:31Z"
+       ]
+      },
+      "CDC-2026-1189-0001": {
+       "modify_date": [
+        "2026-09-07T09:00:10Z",
+        "2026-07-06T15:47:56Z"
+       ]
+      },
+      "CDC-2026-1190-0001": {
+       "modify_date": [
+        "2026-09-07T09:00:10Z",
+        "2026-08-28T09:00:15Z"
+       ]
+      },
+      "CDC-2026-1255-0001": {
+       "fr_doc_num": [
+        "2026-14042",
+        null
+       ],
+       "modify_date": [
+        "2026-09-24T17:13:53Z",
+        "2026-08-22T09:02:29Z"
+       ]
+      },
+      "CDC-2026-1288-0001": {
+       "fr_doc_num": [
+        "2026-15078",
+        null
+       ],
+       "modify_date": [
+        "2026-09-24T17:12:24Z",
+        "2026-07-27T15:30:50Z"
+       ]
+      },
+      "CDC-2026-1321-0001": {
+       "fr_doc_num": [
+        "2026-15983",
+        null
+       ],
+       "modify_date": [
+        "2026-09-24T15:59:18Z",
+        "2026-08-07T17:09:23Z"
+       ]
+      },
+      "CDC-2026-1354-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:19Z",
+        "2026-08-15T13:04:58Z"
+       ]
+      },
+      "CDC-2026-1387-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:22Z",
+        "2026-09-01T09:00:39Z"
+       ]
+      },
+      "CDC-2026-1420-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:20Z",
+        "2026-08-20T14:41:43Z"
+       ]
+      },
+      "CFPB-2026-0018-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:20Z",
+        "2026-08-12T09:00:34Z"
+       ]
+      },
+      "CFTC-2026-1189-0001": {
+       "modify_date": [
+        "2026-09-17T09:01:30Z",
+        "2026-08-07T09:01:26Z"
+       ]
+      },
+      "CFTC-2026-1354-0001": {
+       "modify_date": [
+        "2026-09-12T09:00:25Z",
+        "2026-08-25T09:01:33Z"
+       ]
+      },
+      "CFTC-2026-1355-0001": {
+       "modify_date": [
+        "2026-09-15T09:00:25Z",
+        "2026-09-02T09:00:18Z"
+       ]
+      },
+      "CFTC-2026-1686-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:21Z",
+        "2026-08-14T09:01:02Z"
+       ]
+      },
+      "CFTC-2026-1849-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/CFTC-2026-1849-0001/content.html\", \"format\": \"html\", \"size\": 137836}, {\"url\": \"https://downloads.regulations.gov/CFTC-2026-1849-0001/content.pdf\", \"format\": \"pdf\", \"size\": 318326}]",
+        "[{\"url\": \"https://downloads.regulations.gov/CFTC-2026-1849-0001/content.pdf\", \"format\": \"pdf\", \"size\": 318326}, {\"url\": \"https://downloads.regulations.gov/CFTC-2026-1849-0001/content.html\", \"format\": \"html\", \"size\": 137836}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/CFTC-2026-1849-0001/content.html",
+        "https://downloads.regulations.gov/CFTC-2026-1849-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:27Z",
+        "2026-08-23T09:01:36Z"
+       ]
+      },
+      "CFTC-2026-1850-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:23Z",
+        "2026-09-02T09:00:26Z"
+       ]
+      },
+      "CFTC-2026-1882-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:24Z",
+        "2026-08-28T09:00:23Z"
+       ]
+      },
+      "CISA-2026-0133-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/CISA-2026-0133-0001/content.html\", \"format\": \"html\", \"size\": 12635}, {\"url\": \"https://downloads.regulations.gov/CISA-2026-0133-0001/content.pdf\", \"format\": \"pdf\", \"size\": 200122}]",
+        "[{\"url\": \"https://downloads.regulations.gov/CISA-2026-0133-0001/content.pdf\", \"format\": \"pdf\", \"size\": 200122}, {\"url\": \"https://downloads.regulations.gov/CISA-2026-0133-0001/content.html\", \"format\": \"html\", \"size\": 12635}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/CISA-2026-0133-0001/content.html",
+        "https://downloads.regulations.gov/CISA-2026-0133-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:20Z",
+        "2026-08-16T09:00:48Z"
+       ]
+      },
+      "CMS-2026-1916-0001": {
+       "comment_end_date": [
+        "2026-07-22T03:59:59Z",
+        null
+       ],
+       "comment_start_date": [
+        "2026-05-22T04:00:00Z",
+        null
+       ],
+       "fr_doc_num": [
+        "2026-10292",
+        null
+       ],
+       "modify_date": [
+        "2026-09-04T00:17:00Z",
+        "2026-09-02T16:02:57Z"
+       ],
+       "reason_withdrawn": [
+        null,
+        "Replaced by CMS-2026-1916-0834"
+       ],
+       "withdrawn": [
+        "false",
+        "true"
+       ]
+      },
+      "CMS-2026-2245-0002": {
+       "modify_date": [
+        "2026-09-04T09:00:29Z",
+        "2026-08-26T09:00:50Z"
+       ]
+      },
+      "CMS-2026-2344-0002": {
+       "modify_date": [
+        "2026-09-09T09:00:20Z",
+        "2026-09-02T09:00:20Z"
+       ]
+      },
+      "CMS-2026-2345-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/CMS-2026-2345-0001/content.html\", \"format\": \"html\", \"size\": 42089}, {\"url\": \"https://downloads.regulations.gov/CMS-2026-2345-0001/content.pdf\", \"format\": \"pdf\", \"size\": 234072}]",
+        "[{\"url\": \"https://downloads.regulations.gov/CMS-2026-2345-0001/content.pdf\", \"format\": \"pdf\", \"size\": 234072}, {\"url\": \"https://downloads.regulations.gov/CMS-2026-2345-0001/content.html\", \"format\": \"html\", \"size\": 42089}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/CMS-2026-2345-0001/content.html",
+        "https://downloads.regulations.gov/CMS-2026-2345-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-16T09:00:27Z",
+        "2026-09-02T09:00:21Z"
+       ]
+      },
+      "CMS-2026-2377-0002": {
+       "modify_date": [
+        "2026-09-24T09:00:20Z",
+        "2026-09-02T09:00:21Z"
+       ]
+      },
+      "CMS-2026-2411-0001": {
+       "fr_doc_num": [
+        "2026-13603",
+        "2026–13603"
+       ],
+       "modify_date": [
+        "2026-09-18T23:13:40Z",
+        "2026-07-06T22:53:20Z"
+       ]
+      },
+      "CMS-2026-2476-0001": {
+       "modify_date": [
+        "2026-09-23T09:01:30Z",
+        "2026-09-01T09:00:35Z"
+       ]
+      },
+      "CMS-2026-2544-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:29Z",
+        "2026-07-21T17:57:45Z"
+       ]
+      },
+      "CMS-2026-2608-0001": {
+       "modify_date": [
+        "2026-09-23T09:01:32Z",
+        "2026-08-27T09:00:20Z"
+       ]
+      },
+      "CMS-2026-2609-0001": {
+       "modify_date": [
+        "2026-09-23T09:01:30Z",
+        "2026-07-25T09:00:54Z"
+       ]
+      },
+      "CMS-2026-2674-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:21Z",
+        "2026-08-26T09:00:57Z"
+       ]
+      },
+      "CMS-2026-2774-0001": {
+       "modify_date": [
+        "2026-09-23T09:01:34Z",
+        "2026-09-01T09:00:38Z"
+       ]
+      },
+      "CMS-2026-2971-0001": {
+       "modify_date": [
+        "2026-09-03T09:00:21Z",
+        "2026-09-01T17:04:50Z"
+       ]
+      },
+      "CMS_FRDOC_0001-4437": {
+       "modify_date": [
+        "2026-09-22T09:00:38Z",
+        "2026-08-21T09:01:14Z"
+       ]
+      },
+      "CMS_FRDOC_0001-4442": {
+       "modify_date": [
+        "2026-09-03T09:00:21Z",
+        "2026-09-02T16:25:52Z"
+       ]
+      },
+      "CNCS-2026-0166-0005": {
+       "modify_date": [
+        "2026-09-25T09:00:28Z",
+        "2026-08-25T17:50:28Z"
+       ]
+      },
+      "CNCS-2026-0265-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/CNCS-2026-0265-0001/content.html\", \"format\": \"html\", \"size\": 6648}, {\"url\": \"https://downloads.regulations.gov/CNCS-2026-0265-0001/content.pdf\", \"format\": \"pdf\", \"size\": 192756}]",
+        "[{\"url\": \"https://downloads.regulations.gov/CNCS-2026-0265-0001/content.pdf\", \"format\": \"pdf\", \"size\": 192756}, {\"url\": \"https://downloads.regulations.gov/CNCS-2026-0265-0001/content.html\", \"format\": \"html\", \"size\": 6648}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/CNCS-2026-0265-0001/content.html",
+        "https://downloads.regulations.gov/CNCS-2026-0265-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-15T09:00:26Z",
+        "2026-07-15T21:41:54Z"
+       ]
+      },
+      "CNCS-2026-0298-0001": {
+       "modify_date": [
+        "2026-09-19T09:00:54Z",
+        "2026-08-20T09:01:22Z"
+       ]
+      },
+      "COE-2026-0067-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/COE-2026-0067-0001/content.html\", \"format\": \"html\", \"size\": 14055}, {\"url\": \"https://downloads.regulations.gov/COE-2026-0067-0001/content.pdf\", \"format\": \"pdf\", \"size\": 262421}]",
+        "[{\"url\": \"https://downloads.regulations.gov/COE-2026-0067-0001/content.pdf\", \"format\": \"pdf\", \"size\": 262421}, {\"url\": \"https://downloads.regulations.gov/COE-2026-0067-0001/content.html\", \"format\": \"html\", \"size\": 14055}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/COE-2026-0067-0001/content.html",
+        "https://downloads.regulations.gov/COE-2026-0067-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:20Z",
+        "2026-08-11T23:22:54Z"
+       ]
+      },
+      "COLC-2026-0100-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:16Z",
+        "2026-08-31T09:00:07Z"
+       ]
+      },
+      "CPPBSD_FRDOC_0001-0484": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.html\", \"format\": \"html\", \"size\": 3712}, {\"url\": \"https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.pdf\", \"format\": \"pdf\", \"size\": 209630}]",
+        "[{\"url\": \"https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.pdf\", \"format\": \"pdf\", \"size\": 209630}, {\"url\": \"https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.html\", \"format\": \"html\", \"size\": 3712}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.html",
+        "https://downloads.regulations.gov/CPPBSD_FRDOC_0001-0484/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-12T09:00:35Z",
+        "2026-08-13T16:26:21Z"
+       ]
+      },
+      "CPPBSD_FRDOC_0001-0485": {
+       "modify_date": [
+        "2026-09-20T09:00:19Z",
+        "2026-08-29T09:00:34Z"
+       ]
+      },
+      "DARS-2026-0200-0002": {
+       "modify_date": [
+        "2026-09-05T11:45:37Z",
+        "2026-09-01T09:00:36Z"
+       ]
+      },
+      "DEA-2026-1288-0001": {
+       "modify_date": [
+        "2026-09-03T09:00:15Z",
+        "2026-09-02T09:00:23Z"
+       ]
+      },
+      "DEA-2026-1321-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DEA-2026-1321-0001/content.html\", \"format\": \"html\", \"size\": 43745}, {\"url\": \"https://downloads.regulations.gov/DEA-2026-1321-0001/content.pdf\", \"format\": \"pdf\", \"size\": 265006}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DEA-2026-1321-0001/content.pdf\", \"format\": \"pdf\", \"size\": 265006}, {\"url\": \"https://downloads.regulations.gov/DEA-2026-1321-0001/content.html\", \"format\": \"html\", \"size\": 43745}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DEA-2026-1321-0001/content.html",
+        "https://downloads.regulations.gov/DEA-2026-1321-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:20Z",
+        "2026-08-20T09:01:25Z"
+       ]
+      },
+      "DEA-2026-1358-0001": {
+       "modify_date": [
+        "2026-09-11T09:00:30Z",
+        "2026-08-25T15:59:44Z"
+       ]
+      },
+      "DEA-2026-1420-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:28Z",
+        "2026-08-25T20:46:00Z"
+       ]
+      },
+      "DEA-2026-1519-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:28Z",
+        "2026-08-28T23:04:59Z"
+       ]
+      },
+      "DHS-2026-0298-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:30Z",
+        "2026-08-20T09:01:22Z"
+       ]
+      },
+      "DHS_FRDOC_0001-2737": {
+       "agency_code": [
+        "CISA",
+        "DHS"
+       ],
+       "comment_start_date": [
+        "2026-01-08T05:00:00Z",
+        null
+       ],
+       "modify_date": [
+        "2026-01-09T01:44:47Z",
+        "2025-12-22T18:10:49Z"
+       ],
+       "posted_date": [
+        "2026-01-08T05:00:00Z",
+        "2025-12-22T05:00:00Z"
+       ]
+      },
+      "DHS_FRDOC_0001-2740": {
+       "agency_code": [
+        "USCIS",
+        "DHS"
+       ],
+       "comment_start_date": [
+        null,
+        "2025-12-29T05:00:00Z"
+       ],
+       "docket_id": [
+        "USCIS-2025-0040",
+        "DHS_FRDOC_0001"
+       ],
+       "modify_date": [
+        "2026-01-08T18:04:53Z",
+        "2025-12-29T17:44:29Z"
+       ],
+       "title": [
+        "Weighted Selection Process for Registrants and Petitioners Seeking To File Cap-Subject H–1B Petitions",
+        "Weighted Selection Process for Registrants and Petitioners Seeking to File Cap-Subject H-1B Petitions"
+       ]
+      },
+      "DHS_FRDOC_0001-2784": {
+       "modify_date": [
+        "2026-09-08T20:43:01Z",
+        "2026-08-21T21:11:47Z"
+       ]
+      },
+      "DOD-2026-HA-1816-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:27Z",
+        "2026-08-25T17:43:04Z"
+       ]
+      },
+      "DOD-2026-OS-1750-0001": {
+       "modify_date": [
+        "2026-09-25T09:00:28Z",
+        "2026-08-25T17:42:14Z"
+       ]
+      },
+      "DOD-2026-OS-1783-0001": {
+       "modify_date": [
+        "2026-09-15T09:00:35Z",
+        "2026-08-24T16:35:03Z"
+       ]
+      },
+      "DOE-HQ-2026-0892-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.html\", \"format\": \"html\", \"size\": 4750}, {\"url\": \"https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.pdf\", \"format\": \"pdf\", \"size\": 188545}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.pdf\", \"format\": \"pdf\", \"size\": 188545}, {\"url\": \"https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.html\", \"format\": \"html\", \"size\": 4750}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.html",
+        "https://downloads.regulations.gov/DOE-HQ-2026-0892-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-10T09:00:12Z",
+        "2026-08-11T09:00:40Z"
+       ]
+      },
+      "DOE_FRDOC_0001-5428": {
+       "comment_end_date": [
+        "2026-09-22T03:59:59Z",
+        null
+       ],
+       "modify_date": [
+        "2026-09-17T22:56:51Z",
+        "2026-07-21T16:25:29Z"
+       ]
+      },
+      "DOE_FRDOC_0001-5441": {
+       "modify_date": [
+        "2026-09-12T09:00:35Z",
+        "2026-08-12T16:26:00Z"
+       ]
+      },
+      "DOE_FRDOC_0001-5450": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.html\", \"format\": \"html\", \"size\": 25078}, {\"url\": \"https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.pdf\", \"format\": \"pdf\", \"size\": 249087}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.pdf\", \"format\": \"pdf\", \"size\": 249087}, {\"url\": \"https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.html\", \"format\": \"html\", \"size\": 25078}]"
+       ],
+       "comment_start_date": [
+        null,
+        "2026-09-01T04:00:00Z"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.html",
+        "https://downloads.regulations.gov/DOE_FRDOC_0001-5450/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T17:12:12Z",
+        "2026-09-01T16:26:29Z"
+       ],
+       "title": [
+        "2026-09-01  Rescission of Production Incentives for Cellulosic Biofuels; Final rule",
+        "Production Incentives for Cellulosic Biofuels; Recission"
+       ]
+      },
+      "DOJ-OLP-2026-0166-0002": {
+       "modify_date": [
+        "2026-09-25T09:00:18Z",
+        "2026-08-19T09:01:12Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2691": {
+       "modify_date": [
+        "2026-09-03T09:00:15Z",
+        "2026-08-03T16:26:21Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2692": {
+       "modify_date": [
+        "2026-09-03T09:00:15Z",
+        "2026-09-01T09:00:37Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2695": {
+       "modify_date": [
+        "2026-09-19T09:00:57Z",
+        "2026-08-19T16:39:48Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2696": {
+       "modify_date": [
+        "2026-09-19T09:00:57Z",
+        "2026-08-19T16:39:51Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2699": {
+       "modify_date": [
+        "2026-09-19T09:00:58Z",
+        "2026-08-19T16:40:08Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2700": {
+       "modify_date": [
+        "2026-09-19T09:00:58Z",
+        "2026-08-29T09:00:34Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2701": {
+       "modify_date": [
+        "2026-09-19T09:00:58Z",
+        "2026-08-19T16:40:10Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2703": {
+       "modify_date": [
+        "2026-09-19T09:00:58Z",
+        "2026-08-19T16:40:25Z"
+       ]
+      },
+      "DOL_FRDOC_0001-2704": {
+       "modify_date": [
+        "2026-09-19T09:00:58Z",
+        "2026-08-19T16:40:55Z"
+       ]
+      },
+      "DOS-2026-0859-0001": {
+       "modify_date": [
+        "2026-09-08T09:00:12Z",
+        "2026-08-30T09:00:18Z"
+       ]
+      },
+      "DOS-2026-0925-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOS-2026-0925-0001/content.html\", \"format\": \"html\", \"size\": 30504}, {\"url\": \"https://downloads.regulations.gov/DOS-2026-0925-0001/content.pdf\", \"format\": \"pdf\", \"size\": 257009}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOS-2026-0925-0001/content.pdf\", \"format\": \"pdf\", \"size\": 257009}, {\"url\": \"https://downloads.regulations.gov/DOS-2026-0925-0001/content.html\", \"format\": \"html\", \"size\": 30504}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DOS-2026-0925-0001/content.html",
+        "https://downloads.regulations.gov/DOS-2026-0925-0001/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-12T09:00:46Z",
+        "2026-08-29T09:00:36Z"
+       ]
+      },
+      "DOS_FRDOC_0001-7229": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.html\", \"format\": \"html\", \"size\": 17925}, {\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.pdf\", \"format\": \"pdf\", \"size\": 197102}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.pdf\", \"format\": \"pdf\", \"size\": 197102}, {\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.html\", \"format\": \"html\", \"size\": 17925}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.html",
+        "https://downloads.regulations.gov/DOS_FRDOC_0001-7229/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-10T09:00:16Z",
+        "2026-08-10T16:25:53Z"
+       ]
+      },
+      "DOS_FRDOC_0001-7231": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.html\", \"format\": \"html\", \"size\": 6395}, {\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.pdf\", \"format\": \"pdf\", \"size\": 210858}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.pdf\", \"format\": \"pdf\", \"size\": 210858}, {\"url\": \"https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.html\", \"format\": \"html\", \"size\": 6395}]"
+       ],
+       "file_url": [
+        "https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.html",
+        "https://downloads.regulations.gov/DOS_FRDOC_0001-7231/content.pdf"
+       ],
+       "modify_date": [
+        "2026-09-11T09:00:20Z",
+        "2026-08-11T16:26:48Z"
+       ]
+      },
+      "DOS_FRDOC_0001-7242": {
+       "modify_date": [
+        "2026-09-07T09:00:24Z",
+        "2026-08-31T16:25:21Z"
+       ]
+      },
+      "DOT-OST-1997-2784-0224": {
+       "modify_date": [
+        "2026-09-22T09:00:25Z",
+        "2026-05-09T12:19:36Z"
+       ]
+      },
+      "DOT-OST-1997-2784-0234": {
+       "modify_date": [
+        "2026-09-12T11:37:29Z",
+        "2026-08-31T09:00:07Z"
+       ]
+      },
+      "DOT-OST-1998-3304-1365": {
+       "modify_date": [
+        "2026-09-12T11:40:39Z",
+        "2026-08-28T18:41:12Z"
+       ]
+      },
+      "DOT-OST-1998-3305-0801": {
+       "modify_date": [
+        "2026-09-12T11:38:39Z",
+        "2026-07-10T17:31:48Z"
+       ]
+      },
+      "DOT-OST-1999-5173-0186": {
+       "modify_date": [
+        "2026-09-11T00:28:09Z",
+        "2026-08-18T21:05:46Z"
+       ],
+       "title": [
+        "Honorable Deb Fischer (Correspondence)",
+        "Honorable Deb Fischer (Community Comment)"
+       ]
+      },
+      "DOT-OST-2000-8012-0365": {
+       "modify_date": [
+        "2026-09-11T09:00:15Z",
+        "2026-07-11T12:40:21Z"
+       ]
+      },
+      "DOT-OST-2001-9849-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:12Z",
+        "2026-08-27T09:00:10Z"
+       ]
+      },
+      "DOT-OST-2002-12555-0190-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:12Z",
+        "2024-11-11T22:35:26Z"
+       ]
+      },
+      "DOT-OST-2002-12802-0161": {
+       "modify_date": [
+        "2026-09-11T09:00:14Z",
+        "2024-11-07T01:14:42Z"
+       ]
+      },
+      "DOT-OST-2003-15204-0008": {
+       "modify_date": [
+        "2026-09-24T09:00:16Z",
+        "2024-11-12T04:41:03Z"
+       ]
+      },
+      "DOT-OST-2004-18704-0034": {
+       "modify_date": [
+        "2026-09-12T11:10:52Z",
+        "2024-11-12T22:48:24Z"
+       ]
+      },
+      "DOT-OST-2005-23194-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:12Z",
+        "2026-08-27T09:00:10Z"
+       ]
+      },
+      "DOT-OST-2006-24269-0001": {
+       "modify_date": [
+        "2026-09-09T09:00:12Z",
+        "2026-08-27T09:00:10Z"
+       ]
+      },
+      "DOT-OST-2006-24269-1016": {
+       "modify_date": [
+        "2026-09-12T11:25:43Z",
+        "2025-09-18T19:29:22Z"
+       ]
+      },
+      "DOT-OST-2006-24269-1051": {
+       "modify_date": [
+        "2026-09-18T21:27:06Z",
+        "2026-04-02T20:04:37Z"
+       ],
+       "title": [
+        "Authority for Transport in Malta (Statement of Reciprocity)",
+        "Malta  (Statement of Reciprocity)"
+       ]
+      },
+      "DOT-OST-2006-24269-1054": {
+       "modify_date": [
+        "2026-09-09T16:25:28Z",
+        "2026-04-08T16:08:58Z"
+       ],
+       "title": [
+        "Grand-Duchy of Luxembourg Government (Statement of Reciprocity)",
+        "Luxembourg Government (Statement of Reciprocity)"
+       ]
+      },
+      "DOT-OST-2007-0001-0001": {
+       "modify_date": [
+        "2026-09-22T09:00:24Z",
+        "2026-08-29T06:33:22Z"
+       ]
+      },
+      "DOT-OST-2008-0234-0342": {
+       "modify_date": [
+        "2026-09-09T09:00:14Z",
+        "2026-08-26T22:46:02Z"
+       ]
+      },
+      "DOT-OST-2008-0252-3456": {
+       "modify_date": [
+        "2026-09-09T09:00:13Z",
+        "2026-08-27T09:00:11Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0159": {
+       "modify_date": [
+        "2026-09-18T18:56:33Z",
+        "2024-11-12T05:18:37Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0172": {
+       "modify_date": [
+        "2026-09-18T18:58:46Z",
+        "2024-11-12T05:48:55Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0174": {
+       "modify_date": [
+        "2026-09-18T18:58:18Z",
+        "2016-12-31T21:02:21Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0175": {
+       "modify_date": [
+        "2026-09-18T18:57:44Z",
+        "2023-08-12T20:19:22Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0178": {
+       "modify_date": [
+        "2026-09-18T19:08:32Z",
+        "2024-11-11T21:33:50Z"
+       ],
+       "title": [
+        "DOT Response to Equivalent Alternative Determination of Volaris April 22, 2016 (382.67)",
+        "DOT Response to Equivalent Alternative Determination of Volaris April 22, 20167 (382.67)"
+       ]
+      },
+      "DOT-OST-2008-0273-0213": {
+       "modify_date": [
+        "2026-09-18T18:57:34Z",
+        "2024-11-07T01:17:54Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0224": {
+       "modify_date": [
+        "2026-09-18T18:56:25Z",
+        "2024-11-07T01:38:11Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0225": {
+       "modify_date": [
+        "2026-09-18T18:56:18Z",
+        "2024-11-12T06:18:53Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0226": {
+       "modify_date": [
+        "2026-09-18T18:56:09Z",
+        "2024-11-12T06:18:53Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0228": {
+       "modify_date": [
+        "2026-09-18T18:55:58Z",
+        "2024-11-12T06:18:35Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0229": {
+       "modify_date": [
+        "2026-09-18T18:55:50Z",
+        "2024-11-12T06:18:35Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0230": {
+       "modify_date": [
+        "2026-09-18T18:55:42Z",
+        "2024-11-12T22:50:39Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0233": {
+       "modify_date": [
+        "2026-09-18T18:55:29Z",
+        "2024-11-12T23:03:28Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0234": {
+       "modify_date": [
+        "2026-09-18T18:55:21Z",
+        "2024-11-12T23:02:59Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0238": {
+       "modify_date": [
+        "2026-09-18T18:55:13Z",
+        "2024-11-12T23:09:58Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0239": {
+       "modify_date": [
+        "2026-09-18T18:55:05Z",
+        "2024-11-12T23:10:52Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0242": {
+       "modify_date": [
+        "2026-09-18T18:54:57Z",
+        "2019-12-16T19:08:42Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0245": {
+       "modify_date": [
+        "2026-09-18T18:54:41Z",
+        "2024-11-07T00:33:55Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0248": {
+       "modify_date": [
+        "2026-09-18T18:53:18Z",
+        "2024-11-12T23:34:40Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0249": {
+       "modify_date": [
+        "2026-09-18T18:53:07Z",
+        "2024-11-12T23:34:23Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0271": {
+       "modify_date": [
+        "2026-09-18T18:52:31Z",
+        "2024-11-12T22:51:03Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0272": {
+       "modify_date": [
+        "2026-09-18T18:52:21Z",
+        "2024-11-12T22:51:03Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0273": {
+       "modify_date": [
+        "2026-09-18T18:51:53Z",
+        "2024-11-06T23:45:37Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0284": {
+       "modify_date": [
+        "2026-09-18T18:54:20Z",
+        "2025-02-20T15:34:43Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0295": {
+       "modify_date": [
+        "2026-09-18T18:50:09Z",
+        "2026-03-04T00:04:38Z"
+       ]
+      },
+      "DOT-OST-2008-0273-0297": {
+       "modify_date": [
+        "2026-09-18T18:57:17Z",
+        "2026-05-11T17:09:25Z"
+       ]
+      },
+      "DOT-OST-2008-0299-0223": {
+       "modify_date": [
+        "2026-09-05T11:45:01Z",
+        "2026-09-01T09:00:35Z"
+       ]
+      },
+      "DOT-OST-2013-0068-0084": {
+       "modify_date": [
+        "2026-09-09T09:00:13Z",
+        "2026-08-27T09:00:10Z"
+       ]
+      },
+      "DOT-OST-2013-0203-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:17Z",
+        "2024-11-12T05:23:56Z"
+       ]
+      },
+      "DOT-OST-2014-0053-0001": {
+       "modify_date": [
+        "2026-09-24T09:00:17Z",
+        "2024-11-11T20:50:16Z"
+       ]
+      },
+      "DOT-OST-2015-0070-0251": {
+       "modify_date": [
+        "2026-09-09T09:00:13Z",
+        "2024-11-12T22:23:00Z"
+       ]
+      },
+      "DOT-OST-2015-0070-0354": {
+       "modify_date": [
+        "2026-09-09T09:00:14Z",
+        "2026-08-26T22:44:48Z"
+       ]
+      },
+      "DOT-OST-2016-0021-1473": {
+       "modify_date": [
+        "2026-09-12T11:11:22Z",
+        "2026-02-28T13:02:39Z"
+       ]
+      },
+      "DOT-OST-2016-0068-0006": {
+       "modify_date": [
+        "2026-09-24T09:00:17Z",
+        "2024-11-07T01:09:22Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0001": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0001/content.pdf\", \"format\": \"pdf\", \"size\": 176646}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0001/content.html\", \"format\": \"html\", \"size\": 9381}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0001/content.pdf\", \"format\": \"pdf\", \"size\": 176646}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0001/content.htm\", \"format\": \"htm\", \"size\": 9381}]"
+       ],
+       "comment_end_date": [
+        "2018-11-24T04:59:59Z",
+        null
+       ],
+       "modify_date": [
+        "2026-09-25T20:29:32Z",
+        "2024-11-12T22:50:08Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0020": {
+       "modify_date": [
+        "2026-09-25T20:15:36Z",
+        "2020-03-16T18:54:20Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0027": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0027/content.pdf\", \"format\": \"pdf\", \"size\": 203802}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0027/content.html\", \"format\": \"html\", \"size\": 11785}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0027/content.pdf\", \"format\": \"pdf\", \"size\": 203802}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0027/content.htm\", \"format\": \"htm\", \"size\": 11785}]"
+       ],
+       "modify_date": [
+        "2026-09-25T20:15:48Z",
+        "2021-08-19T11:56:54Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0029": {
+       "modify_date": [
+        "2026-09-25T20:15:55Z",
+        "2021-12-08T18:56:21Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0030": {
+       "modify_date": [
+        "2026-09-25T20:15:59Z",
+        "2021-12-08T18:59:31Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0031": {
+       "modify_date": [
+        "2026-09-25T20:16:04Z",
+        "2021-12-08T19:02:01Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0032": {
+       "modify_date": [
+        "2026-09-25T20:16:07Z",
+        "2021-12-08T19:04:30Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0033": {
+       "modify_date": [
+        "2026-09-25T20:16:12Z",
+        "2021-12-08T19:07:43Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0034": {
+       "modify_date": [
+        "2026-09-25T20:16:17Z",
+        "2021-12-08T19:10:44Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0035": {
+       "modify_date": [
+        "2026-09-25T20:16:22Z",
+        "2021-12-08T19:14:40Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0036": {
+       "modify_date": [
+        "2026-09-25T20:16:25Z",
+        "2021-12-08T19:17:24Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0037": {
+       "modify_date": [
+        "2026-09-25T20:16:29Z",
+        "2021-12-08T19:22:36Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0038": {
+       "modify_date": [
+        "2026-09-25T20:16:34Z",
+        "2021-12-08T19:26:09Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0039": {
+       "modify_date": [
+        "2026-09-25T20:16:38Z",
+        "2021-12-08T19:29:02Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0040": {
+       "modify_date": [
+        "2026-09-25T20:16:42Z",
+        "2021-12-08T19:32:12Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0041": {
+       "modify_date": [
+        "2026-09-25T20:16:46Z",
+        "2021-12-08T19:32:59Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0042": {
+       "attachments_json": [
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0042/content.pdf\", \"format\": \"pdf\", \"size\": 198686}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0042/content.html\", \"format\": \"html\", \"size\": 8618}]",
+        "[{\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0042/content.pdf\", \"format\": \"pdf\", \"size\": 198686}, {\"url\": \"https://downloads.regulations.gov/DOT-OST-2018-0190-0042/content.htm\", \"format\": \"htm\", \"size\": 8618}]"
+       ],
+       "modify_date": [
+        "2026-09-25T20:16:49Z",
+        "2022-06-01T12:15:24Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0043": {
+       "modify_date": [
+        "2026-09-25T20:16:53Z",
+        "2022-07-01T14:37:05Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0044": {
+       "modify_date": [
+        "2026-09-25T20:16:57Z",
+        "2022-07-01T14:42:05Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0045": {
+       "modify_date": [
+        "2026-09-25T20:14:52Z",
+        "2022-07-01T14:45:26Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0046": {
+       "modify_date": [
+        "2026-09-25T20:14:48Z",
+        "2022-07-01T14:48:14Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0047": {
+       "modify_date": [
+        "2026-09-25T20:14:44Z",
+        "2022-07-01T14:52:08Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0048": {
+       "modify_date": [
+        "2026-09-25T20:14:37Z",
+        "2022-07-01T14:55:05Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0049": {
+       "modify_date": [
+        "2026-09-25T20:17:12Z",
+        "2022-07-01T15:00:29Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0050": {
+       "modify_date": [
+        "2026-09-25T20:17:16Z",
+        "2022-07-01T15:04:02Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0051": {
+       "modify_date": [
+        "2026-09-25T20:17:20Z",
+        "2022-07-01T15:07:48Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0052": {
+       "modify_date": [
+        "2026-09-25T20:17:24Z",
+        "2022-07-01T15:13:14Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0053": {
+       "modify_date": [
+        "2026-09-25T20:17:28Z",
+        "2022-07-01T15:16:32Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0054": {
+       "modify_date": [
+        "2026-09-25T20:17:32Z",
+        "2022-07-01T15:20:37Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0055": {
+       "modify_date": [
+        "2026-09-25T20:17:35Z",
+        "2022-07-01T15:22:34Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0056": {
+       "modify_date": [
+        "2026-09-25T20:17:39Z",
+        "2022-07-01T15:25:56Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0057": {
+       "modify_date": [
+        "2026-09-25T20:17:44Z",
+        "2022-07-01T15:28:09Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0058": {
+       "modify_date": [
+        "2026-09-25T20:17:48Z",
+        "2022-07-01T15:31:35Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0059": {
+       "modify_date": [
+        "2026-09-25T20:17:52Z",
+        "2022-07-06T12:43:44Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0060": {
+       "modify_date": [
+        "2026-09-25T20:17:56Z",
+        "2024-05-28T14:00:31Z"
+       ],
+       "posted_date": [
+        "2022-07-05T04:00:00Z",
+        "2022-07-05T00:00:00Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0061": {
+       "modify_date": [
+        "2026-09-25T20:17:59Z",
+        "2022-07-06T12:43:31Z"
+       ]
+      },
+      "DOT-OST-2018-0190-0067": {
+       "modify_date": [
+        "2026-09-25T20:18:06Z",
+        "2022-12-09T13:30:29Z"
+       ]
+      }
+     }
+    },
+    "enriched_non_null": {
+     "text_content": 0,
+     "text_extraction_status": 0
+    },
+    "oracle": {
+     "mismatches": 0,
+     "native_rows": 2002831,
+     "rows": 2002831,
+     "sample": []
+    },
+    "recordCount": 2002831,
+    "rules_match": true,
+    "state_id": "urn:docspec:generation-admission:v1:a65473eeee00a65e484a43ad38e05577efe573fa76b9787fe646a15d483a11fc"
+   }
+  }
+ },
+ "fr_gate_for_comparison": {
+  "first_admission": {
+   "index_bytes": 73210953,
+   "member_bytes": 155941669,
+   "membership_bytes": 46197560,
+   "peak_gib": 0.95,
+   "rows": 1008903,
+   "seconds": 14.75
+  }
+ },
+ "next_generation": "none: publication.json named the same pins at 2026-09-26T02:04:55+00:00",
+ "pointers": {
+  "after": {
+   "families": {
+    "dockets": {
+     "artifactDigest": "sha256:69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:88aa23fc820957166386aecbc31a65c2832fe57de7f6ddb4d5f8a54e50338d83",
+     "prefix": "generations/dockets/69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+     "tables": {
+      "dockets.parquet": {
+       "byteSize": 11620269,
+       "columns": [
+        [
+         "docket_id",
+         "VARCHAR"
+        ],
+        [
+         "agency_code",
+         "VARCHAR"
+        ],
+        [
+         "title",
+         "VARCHAR"
+        ],
+        [
+         "docket_type",
+         "VARCHAR"
+        ],
+        [
+         "modify_date",
+         "VARCHAR"
+        ],
+        [
+         "abstract",
+         "VARCHAR"
+        ],
+        [
+         "rin",
+         "VARCHAR"
+        ]
+       ],
+       "rows": 279380,
+       "sha256": "sha256:308b35c66f8f3694c8048f166dcdf4e3282256c6aeed4974d21e799c3c4580df"
+      }
+     }
+    },
+    "documents": {
+     "artifactDigest": "sha256:f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:228bb84bc269eb50d28d4136e16a4e857627bfeb1d604ab7f6919a76469d4728",
+     "prefix": "generations/documents/f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+     "tables": {
+      "documents.parquet": {
+       "byteSize": 76924355,
+       "columns": [
+        [
+         "document_id",
+         "VARCHAR"
+        ],
+        [
+         "docket_id",
+         "VARCHAR"
+        ],
+        [
+         "agency_code",
+         "VARCHAR"
+        ],
+        [
+         "title",
+         "VARCHAR"
+        ],
+        [
+         "document_type",
+         "VARCHAR"
+        ],
+        [
+         "posted_date",
+         "VARCHAR"
+        ],
+        [
+         "modify_date",
+         "VARCHAR"
+        ],
+        [
+         "comment_start_date",
+         "VARCHAR"
+        ],
+        [
+         "comment_end_date",
+         "VARCHAR"
+        ],
+        [
+         "file_url",
+         "VARCHAR"
+        ],
+        [
+         "attachments_json",
+         "VARCHAR"
+        ],
+        [
+         "fr_doc_num",
+         "VARCHAR"
+        ],
+        [
+         "withdrawn",
+         "VARCHAR"
+        ],
+        [
+         "reason_withdrawn",
+         "VARCHAR"
+        ],
+        [
+         "additional_rins",
+         "VARCHAR"
+        ],
+        [
+         "text_content",
+         "VARCHAR"
+        ],
+        [
+         "text_extraction_status",
+         "VARCHAR"
+        ],
+        [
+         "pdf_extraction_results_json",
+         "VARCHAR"
+        ]
+       ],
+       "rows": 2002831,
+       "sha256": "sha256:d7487819971c84ba184853ed09be6bb1df7490eaecc3054487dcd467a4303801"
+      }
+     }
+    }
+   },
+   "publication_json_bytes": 62210,
+   "read_at": "2026-09-26T02:04:55+00:00"
+  },
+  "first": {
+   "families": {
+    "dockets": {
+     "artifactDigest": "sha256:69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:88aa23fc820957166386aecbc31a65c2832fe57de7f6ddb4d5f8a54e50338d83",
+     "prefix": "generations/dockets/69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+     "tables": {
+      "dockets.parquet": {
+       "byteSize": 11620269,
+       "columns": [
+        [
+         "docket_id",
+         "VARCHAR"
+        ],
+        [
+         "agency_code",
+         "VARCHAR"
+        ],
+        [
+         "title",
+         "VARCHAR"
+        ],
+        [
+         "docket_type",
+         "VARCHAR"
+        ],
+        [
+         "modify_date",
+         "VARCHAR"
+        ],
+        [
+         "abstract",
+         "VARCHAR"
+        ],
+        [
+         "rin",
+         "VARCHAR"
+        ]
+       ],
+       "rows": 279380,
+       "sha256": "sha256:308b35c66f8f3694c8048f166dcdf4e3282256c6aeed4974d21e799c3c4580df"
+      }
+     }
+    },
+    "documents": {
+     "artifactDigest": "sha256:f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:228bb84bc269eb50d28d4136e16a4e857627bfeb1d604ab7f6919a76469d4728",
+     "prefix": "generations/documents/f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+     "tables": {
+      "documents.parquet": {
+       "byteSize": 76924355,
+       "columns": [
+        [
+         "document_id",
+         "VARCHAR"
+        ],
+        [
+         "docket_id",
+         "VARCHAR"
+        ],
+        [
+         "agency_code",
+         "VARCHAR"
+        ],
+        [
+         "title",
+         "VARCHAR"
+        ],
+        [
+         "document_type",
+         "VARCHAR"
+        ],
+        [
+         "posted_date",
+         "VARCHAR"
+        ],
+        [
+         "modify_date",
+         "VARCHAR"
+        ],
+        [
+         "comment_start_date",
+         "VARCHAR"
+        ],
+        [
+         "comment_end_date",
+         "VARCHAR"
+        ],
+        [
+         "file_url",
+         "VARCHAR"
+        ],
+        [
+         "attachments_json",
+         "VARCHAR"
+        ],
+        [
+         "fr_doc_num",
+         "VARCHAR"
+        ],
+        [
+         "withdrawn",
+         "VARCHAR"
+        ],
+        [
+         "reason_withdrawn",
+         "VARCHAR"
+        ],
+        [
+         "additional_rins",
+         "VARCHAR"
+        ],
+        [
+         "text_content",
+         "VARCHAR"
+        ],
+        [
+         "text_extraction_status",
+         "VARCHAR"
+        ],
+        [
+         "pdf_extraction_results_json",
+         "VARCHAR"
+        ]
+       ],
+       "rows": 2002831,
+       "sha256": "sha256:d7487819971c84ba184853ed09be6bb1df7490eaecc3054487dcd467a4303801"
+      }
+     }
+    }
+   },
+   "publication_json_bytes": 62210,
+   "read_at": "2026-09-26T01:55:55Z"
+  }
+ },
+ "publication": "https://pub-72e95c0c20a84508b42b03a6ff6d55f8.r2.dev/publication.json",
+ "reference": {
+  "members": 2221713,
+  "peak_rss_bytes": 1977712640,
+  "pin": "sha256:2200b5e68601decb8ac664d824d025c4e2031663c10bae900dcfcd20cbd74643",
+  "projected": {
+   "dockets": 278607,
+   "documents": 1943106
+  },
+  "seconds": 80.51995120901847,
+  "state": "catalogue",
+  "unprojected": 0
+ },
+ "retry": {
+  "environment": {
+   "at": "2026-09-25T22:04:51",
+   "commit": "0068bf7ec09b33adcaee2b67a8b8ad868c33d1fd",
+   "duckdb": "1.5.5",
+   "load": [
+    6.958984375,
+    7.74658203125,
+    7.5400390625
+   ],
+   "pyarrow": "25.0.1",
+   "python": "3.12.9",
+   "spicy_docs": "0.34.1"
+  },
+  "ledger_bytes_unchanged": true,
+  "ledger_unchanged": true,
+  "peak_rss_bytes": 167526400,
+  "records_unchanged": true,
+  "tables": {
+   "dockets": {
+    "current": [
+     "state",
+     "urn:docspec:generation-admission:v1:315a796b7032d655c2b4405429f289860be4081f30edd201ea461ba089ab1886"
+    ],
+    "same_report": true,
+    "same_state": true,
+    "seconds": 1.0918387919955421
+   },
+   "documents": {
+    "current": [
+     "state",
+     "urn:docspec:generation-admission:v1:a65473eeee00a65e484a43ad38e05577efe573fa76b9787fe646a15d483a11fc"
+    ],
+    "same_report": true,
+    "same_state": true,
+    "seconds": 4.829818791011348
+   }
+  }
+ },
+ "thresholds": {
+  "dockets": {
+   "admitted_equals_recordCount": true,
+   "catalogue_only_keys": 0,
+   "compared_keys": 278607,
+   "except_both_ways": [
+    1785,
+    1785
+   ],
+   "exceptions_unexplained": 0,
+   "exceptions_with_later_modify_date": 1785,
+   "generation_only_keys": 773,
+   "oracle_mismatches": 0,
+   "reference_rows": 278607,
+   "rules_match_schema": true
+  },
+  "documents": {
+   "admitted_equals_recordCount": true,
+   "catalogue_only_keys": 0,
+   "compared_keys": 1943106,
+   "except_both_ways": [
+    1059,
+    1059
+   ],
+   "exceptions_unexplained": 0,
+   "exceptions_with_later_modify_date": 1059,
+   "generation_only_keys": 59725,
+   "oracle_mismatches": 0,
+   "reference_rows": 1943106,
+   "rules_match_schema": true
+  },
+  "retry_ledger_and_records_unchanged": true,
+  "retry_same_states": true
+ }
+}
