@@ -18,6 +18,7 @@ from pathlib import Path
 from threading import Lock, local
 from typing import Any
 from uuid import uuid4
+import weakref
 
 import duckdb
 import pyarrow as pa
@@ -29,7 +30,7 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, conform_tabl
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
 from docspec.adapters.storage.files import _available_paths, _contained, _read_exact, _storage_root, _write_once, delete_content, sha256_file
-from docspec.adapters.storage.iceberg import (IcebergCatalog, SnapshotIO, recovery_references, identifier, literal, seal,
+from docspec.adapters.storage.iceberg import (SnapshotIO, recovery_references, identifier, literal, seal,
     seal_snapshot, snapshot, snapshot_data_files, snapshot_files, table_columns)
 from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_sha256, require_text, sha256_digest, stable_urn, thaw_json
 from docspec.domain.references import BlobRef, LayerRef
@@ -109,7 +110,7 @@ def _has_field_id(field):
 
 
 class IcebergRecordStorage:
-    """Local retained snapshots; only writes require a REST catalog.
+    """Local retained snapshots; only writes use a catalog, which each store runs in this process.
 
     Catalog names are temporary write handles, never authoritative DocSpec heads.
     Each edit forks its base metadata, commits through DuckDB, then pins the result
@@ -127,13 +128,11 @@ class IcebergRecordStorage:
         engine_memory_bytes: int = ENGINE_MEMORY_BYTES,
         merge_scratch_root: Path | None = None,
         create: bool = True,
-        catalog: IcebergCatalog | None = None,
     ) -> None:
         if min(max_member_bytes, max_record_bytes, max_root_bytes, max_merge_scratch_bytes, engine_memory_bytes) <= 0:
             raise ValueError("record storage limits must be positive")
         self.root = _storage_root(root, create=create)
-        self.catalog = catalog if catalog is not None else IcebergCatalog.environment()
-        self._catalog_client = None
+        self._catalog = self._close_catalog = None  # this store's write catalog, started by its first write
         self.max_member_bytes = max_member_bytes
         self.max_record_bytes = max_record_bytes
         self.max_root_bytes = max_root_bytes
@@ -180,7 +179,9 @@ class IcebergRecordStorage:
             if self._connection is not None:
                 self._connection.close()
                 self._connection = None
-                self._catalog_client = None
+            if self._close_catalog is not None:
+                self._close_catalog()
+            self._catalog = self._close_catalog = None
             if self._scratch is not None:
                 self._scratch.cleanup()
                 self._scratch = None
@@ -544,6 +545,38 @@ class IcebergRecordStorage:
 
         return self.layer_files(reference).files
 
+    @staticmethod
+    def temp_table(cursor, relation, name):
+        """Materialize a relation from ``cursor`` into a temporary table that only ``cursor`` sees.
+
+        DuckDB shares relation views among every cursor of one connection, so
+        the staging view gets a unique name and lives for this statement only.
+        The table replaces an earlier one of that name and closes with its
+        cursor, so no stream needs SQL on a connection that may already be closed.
+        """
+
+        view = f"{name}_input_{uuid4().hex}"
+        relation.create_view(view)
+        try:
+            cursor.execute(f"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {view}")
+        finally:
+            cursor.execute(f"DROP VIEW {view}")
+        return cursor.table(name)
+
+    def stored_payload(self, reference):
+        """(uncompressed record_json bytes, rows) across a layer's data files, from their Parquet footers alone.
+
+        Rows that delete files remove still count, so this sizes bulk work; it never counts records.
+        """
+
+        paths = [str(_contained(self.root, locator)) for locator in self.data_files(reference)]
+        if not paths:
+            return 0, 0
+        with self._cursor() as cursor:
+            return cursor.execute("SELECT coalesce(sum(total_uncompressed_size), 0), coalesce(sum(row_group_num_rows), 0) "
+                                  "FROM parquet_metadata([" + ", ".join(literal(path) for path in paths) + "]) "
+                                  "WHERE path_in_schema = 'record_json'").fetchone()
+
     def layer_files(self, reference):
         """Admit a layer and keep only its commit time and data file locators, not its Iceberg metadata."""
 
@@ -589,14 +622,17 @@ class IcebergRecordStorage:
         return delete_content(self.root, reference)
 
     def _client(self):
-        if self.catalog is None:
-            raise IntegrityError('Iceberg writes require DOCSPEC_ICEBERG_URI or an explicit IcebergCatalog')
-        if self._catalog_client is None:
+        if self._catalog is None:
             with self._connection_lock:
-                if self._catalog_client is None:
-                    self._catalog_client = self.catalog.client()
-                    self.catalog.attach(self._connection)
-        return self._catalog_client
+                if self._catalog is None:
+                    # Only a store that writes loads the HTTP server and SQL engine.
+                    from docspec.adapters.storage.in_process_catalog import InProcessCatalog
+                    catalog = InProcessCatalog(self._scratch.name)
+                    # A store dropped without close() still stops the server thread and frees its port.
+                    self._close_catalog = weakref.finalize(self, catalog.close)
+                    catalog.attach(self._connection)
+                    self._catalog = catalog
+        return self._catalog.client()
 
     @contextmanager
     def _write_table(self, cursor, schema, base=None, target_member_bytes=None):
@@ -604,7 +640,7 @@ class IcebergRecordStorage:
             raise IntegrityError('relocated snapshots support reads; writes require the original table directory')
         client = self._client()
         name = 'write_' + uuid4().hex
-        key = (self.catalog.namespace, name)
+        key = (self._catalog.namespace, name)
         qualified = f'iceberg.{identifier(key[0])}.{identifier(name)}'
         registered = False
         try:
@@ -618,10 +654,12 @@ class IcebergRecordStorage:
                     columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}'
                                         for field in _physical_schema(schema)) + ', bucket INTEGER'
                 target = target_member_bytes or self.max_member_bytes // 2
+                # The codec is stated, not left to the catalog: Java REST catalogs default new
+                # tables to zstd, PyIceberg to none, and DuckDB then writes snappy.
                 cursor.execute(f"CREATE TABLE {qualified} ({columns}) WITH ("
                     f"'location'={literal(location)}, 'format-version'='2', 'write.update.mode'='merge-on-read', "
                     f"'write.delete.mode'='merge-on-read', 'write.target-file-size-bytes'={literal(target)}, "
-                    "'write.parquet.row-group-size-bytes'='1048576')")
+                    "'write.parquet.row-group-size-bytes'='1048576', 'write.parquet.compression-codec'='zstd')")
             else:
                 if base._storage is not self:
                     raise IntegrityError('incremental base belongs to another record store')
@@ -955,7 +993,7 @@ class IcebergRecordStorage:
                 raise IntegrityError('registered Parquet differs from its member digest')
             with self._cursor():  # the catalog attaches to the native connection a cursor opens
                 client = self._client()
-            key, handle = (self.catalog.namespace, 'register_' + uuid4().hex), None
+            key, handle = (self._catalog.namespace, 'register_' + uuid4().hex), None
             try:
                 handle = client.create_table(key, schema=arrow_schema, location=str(self.root / directory))
                 handle.add_files([str(placed)])

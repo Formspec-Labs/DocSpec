@@ -20,6 +20,7 @@ import pytest
 from rulespec_artifacts import canonical_json_bytes
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
+from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload
@@ -177,6 +178,33 @@ def test_a_restored_row_resolves_to_its_first_occurrence(tmp_path):
         found = lookup_occurrences(workspace.records, layer(workspace, third.state_id, "occurrences"), IDENTITY,
                                    [states[2][key]])
         assert found[states[2][key]].first_state_id == first.state_id
+
+
+def test_a_large_table_state_reads_in_key_order_through_spilled_windows(tmp_path):
+    columns = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("text", "VARCHAR"))
+    schema = pa.schema([(name, pa.string()) for name, _ in columns])
+    identity = TableIdentity(FAMILY, TABLE, IDENTITY.key, columns)
+    # Rows are spelled natively when read, so each is kept narrow enough for
+    # a 2,048-row vector of spellings to fit the small allowance below.
+    rows = [{"document_number": f"2026-{index:05d}", "publication_date": "2026-09-25", "text": "x" * (index % 509)}
+            for index in reversed(range(20_000))]
+    edited = [{**row, "text": "edited"} if int(row["document_number"][5:]) % 2 == 0 else row for row in rows]
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        states = []
+        for name, values in (("first", rows), ("second", edited)):
+            write(tmp_path / name, values, schema)
+            states.append(workspace.admit_generation(tmp_path / name, family=FAMILY, table=TABLE, dataset="fr").state_id)
+    # A small engine allowance spills the occurrence records into several key-ordered windows.
+    with CoreWorkspace(tmp_path / "workspace", create=False, engine_memory_bytes=32 * 1024**2) as workspace:
+        with workspace.open_state(states[0]) as older, workspace.open_state(states[1]) as reader:
+            layers = reader._layers
+            assert workspace.states._window(*spelled_payload(workspace.records, layers["table"], layers.identity), 20_000) < 20_000 // 2
+            spelled = {reference_identity(identity, row)[0]: (reference_identity(identity, row)[2], table_row_value(row, columns))
+                       for row in edited}
+            assert [(key, urn, value) for key, urn, value in reader.values()] == [
+                (key, *spelled[key]) for key in sorted(spelled)]
+            assert [(key, value) for key, _, value in reader.changes(older)] == [
+                (key, spelled[key][1]) for key in sorted(spelled) if spelled[key][1]["text"] == "edited"]
 
 
 def test_a_schema_change_remints_every_row_and_reports_it(tmp_path):

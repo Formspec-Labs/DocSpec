@@ -49,7 +49,7 @@ second document planner, cache, or publication lifecycle.
 | Owner | Data and responsibility |
 | --- | --- |
 | SQLite Core ledger | Identity, provenance links, retention, availability, actual progress, current selections and removal intents |
-| Iceberg record/state storage | Pinned occurrence, membership and selected-value snapshots; DuckDB writes changed rows and positional deletes through a REST catalog |
+| Iceberg record/state storage | Pinned occurrence, membership and selected-value snapshots; DuckDB writes changed rows and positional deletes through an in-process Iceberg catalog |
 | DuckDB | Relational joins, sorting, state resolution, comparison and bulk selection |
 | Content-addressed blob store | Retained opaque values, capture bytes and recovery documents |
 | Shared encoder and admission | Exact value types, canonical bytes, SHA-256, typed metadata and supplied JSON Schemas |

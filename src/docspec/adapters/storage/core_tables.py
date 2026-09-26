@@ -167,37 +167,48 @@ def _fresh(taken, base):
     return name
 
 
-def _keyed(table, identity, members, *, how):
-    """Join addresses (member_key, occurrence_id) to table rows by spelled key, under names no column takes.
+def _keyed(table, identity, members):
+    """Join table rows to their (member_key, occurrence_id) addresses by spelled key, under names no column takes.
 
-    Returns the joined relation and the reserved names of its key, occurrence
-    and row-match columns.
+    The rows are the probe side and the compact addresses the build side, so
+    the join holds addresses, never rows. Returns the joined relation and the
+    reserved names of its key and occurrence columns.
     """
     taken = {name.casefold() for name, _ in identity.columns}
     key, occurrence, matched = (_fresh(taken, base) for base in ("docspec_member_key", "docspec_occurrence_id", "docspec_row_key"))
-    left = members.project(f"member_key AS {identifier(key)}, occurrence_id AS {identifier(occurrence)}")
-    right = table.project(f"*, {member_key_sql(identity)} AS {identifier(matched)}")
-    return left.join(right, f"{identifier(key)} = {identifier(matched)}", how=how), key, occurrence, matched
+    rows = table.project(f"*, {member_key_sql(identity)} AS {identifier(matched)}")
+    addresses = members.project(f"member_key AS {identifier(key)}, occurrence_id AS {identifier(occurrence)}")
+    return rows.join(addresses, f"{identifier(matched)} = {identifier(key)}", how="inner"), key, occurrence
 
 
-def _occurrences(members, table, identity):
-    """Spell each address's inline occurrence record from its table row; an absent row or address yields NULL."""
-    joined, key, occurrence, matched = _keyed(table, identity, members, how="left")
-    record = occurrence_json_sql(row_json_sql(identity.columns), occurrence_id=occurrence)
-    return joined.project(f"{identifier(key)} AS member_key, {identifier(occurrence)} AS occurrence_id, "
-                          f"CASE WHEN {identifier(matched)} IS NULL OR {identifier(occurrence)} IS NULL THEN NULL "
-                          f"ELSE encode({record}) END AS occurrence_record")
+# An occurrence record frames its row's spelling with a fixed-length URN.
+_FRAMING_BYTES = len(inline_occurrence_payload(OCCURRENCE_PREFIX + "0" * 64, b""))
+
+
+def spelled_payload(records, table, identity: TableIdentity):
+    """(estimated occurrence-record bytes, rows) of a table-shaped state's table, for sizing ordered reads.
+
+    Footers size encoded columns, which dictionaries shrink far below the
+    JSON readers spell, so the mean spelling of one batch of rows sizes the
+    records instead.
+    """
+    rows = table.reference.record_count
+    with records.relations({"table": table}) as relations:
+        mean = relations["table"].limit(BATCH_ROWS).aggregate(
+            f"avg(strlen({row_json_sql(identity.columns)}))").fetchone()[0]
+    return int(((mean or 0) + _FRAMING_BYTES) * rows), rows
 
 
 @contextmanager
-def occurrence_relation(records, layers, identity: TableIdentity, *, cursor=None, scope=None, addresses=None):
-    """Yield (member_key, occurrence_id, occurrence_record) for a table-shaped state.
+def occurrence_addressed(records, layers, identity: TableIdentity, *, cursor=None, scope=None, addresses=None):
+    """Yield a table-shaped state's (member_key, occurrence_id) addresses and the values they name.
 
-    Records are the exact inline occurrence entities ``inline_occurrence_payload``
-    spells around each row's canonical bytes, built natively from the rows.
-    ``scope`` names bounded keys, absent ones yielding NULLs, and reads only the
-    table's candidate row groups; ``addresses`` is a relation of wanted_key on
-    ``cursor``.
+    Values are (entity_id, occurrence_record): the exact inline occurrence
+    entities ``inline_occurrence_payload`` spells around each addressed row's
+    canonical bytes, built natively from the rows. ``scope`` names bounded
+    keys, absent ones addressing nothing, and reads only the table's
+    candidate row groups; ``addresses`` is a relation of wanted_key on
+    ``cursor``, materialized once as compact addresses.
     """
     tables = {} if scope is None else {"wanted": pa.table({"wanted_key": pa.array(scope, type=pa.string())})}
     identities = None if scope is None else {"membership": list(scope)}
@@ -207,9 +218,13 @@ def occurrence_relation(records, layers, identity: TableIdentity, *, cursor=None
         wanted = relations["wanted"] if scope is not None else addresses
         if wanted is not None:
             members = wanted.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
+        if addresses is not None:
+            members = records.temp_table(cursor, members, "selection_addresses")
         if scope is not None:
             table = candidate_rows(table, identity, scope)
-        yield _occurrences(members, table, identity)
+        joined, _, occurrence = _keyed(table, identity, members.filter("occurrence_id IS NOT NULL"))
+        record = occurrence_json_sql(row_json_sql(identity.columns), occurrence_id=occurrence)
+        yield members, joined.project(f"{identifier(occurrence)} AS entity_id, encode({record}) AS occurrence_record")
 
 
 @contextmanager
@@ -219,8 +234,7 @@ def typed_relation(records, layers, identity: TableIdentity, *, cursor=None):
     if {name.casefold() for name in fields} & _READER_COLUMNS:
         raise IntegrityError("table columns clash with the reader's member_key or occurrence_id")
     with records.relations({"membership": layers["membership"], "table": layers["table"]}, cursor=cursor) as relations:
-        joined, key, occurrence, _ = _keyed(relations["table"], identity,
-                                            relations["membership"].project(MEMBERSHIP_ADDRESSES), how="inner")
+        joined, key, occurrence = _keyed(relations["table"], identity, relations["membership"].project(MEMBERSHIP_ADDRESSES))
         yield joined.project(f"{identifier(key)} AS member_key, {identifier(occurrence)} AS occurrence_id, "
                              + ", ".join(identifier(name) for name in fields))
 

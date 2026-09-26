@@ -171,7 +171,7 @@ def export_result(publisher, records, state_id, destination, *, producer: Produc
             if destination.exists():
                 return existing_export()
             publisher.ledger.export_snapshot(working / "ledger.sqlite", metadata_keys(), full=keys("full"), preserve_external=True)
-            target_records = stack.enter_context(closing(IcebergRecordStorage(working / "records", catalog=records.catalog)))
+            target_records = stack.enter_context(closing(IcebergRecordStorage(working / "records")))
             ledger = stack.enter_context(closing(LocalSqliteCoreLedger(working / "ledger.sqlite", record_storage=target_records)))
             total = 0
             def charge(size):

@@ -14,14 +14,13 @@ both document processing and general dataset operations.
 ```sh
 uv sync --frozen --python 3.12
 uv run --frozen docspec --help
-uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
+uv run --frozen python -m examples.offline_demo --output ./experiment
 ```
 
 See [contributor setup](CONTRIBUTING.md), the [offline walkthrough](docs/offline-walkthrough.md),
 and the [documentation index](docs/documentation.md). The example runs locally
-and exercises capture, processing, repair, and reuse with local fixtures. The
-helper requires Docker for the local Iceberg catalog; an existing catalog can
-instead be configured through `DOCSPEC_ICEBERG_URI`. Retained reads need no catalog.
+and exercises capture, processing, repair, and reuse with local fixtures. Writes
+use an in-process Iceberg catalog, and retained reads need none.
 
 ## Current entry points
 

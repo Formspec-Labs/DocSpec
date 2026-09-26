@@ -1,8 +1,9 @@
 # Retained records in Iceberg
 
 DocSpec uses `IcebergRecordStorage` behind the `RecordStorage` interface.
-DuckDB writes Parquet data and positional deletes through an Iceberg REST catalog.
-PyIceberg parses retained metadata and manages temporary catalog registrations.
+DuckDB writes Parquet data and positional deletes through an in-process Iceberg
+catalog. PyIceberg parses retained metadata and manages temporary catalog
+registrations.
 SQLite remains the authoritative ledger for provenance, publication, progress and
 retention. Opaque document bytes remain in the content-addressed blob store.
 
@@ -96,31 +97,22 @@ each occurrence record natively. A member search sees such a state through its
 index, reads only the requested rows, and a pin of a table occurrence stores its
 exact bytes in the ledger rather than naming a layer.
 
-## Configure writes
+## Write catalog
 
-Set `DOCSPEC_ICEBERG_URI` to a REST catalog endpoint and, when needed,
-`DOCSPEC_ICEBERG_TOKEN`. Python callers can instead pass
-`IcebergCatalog(uri, token=...)` from `docspec.adapters.storage` to `CoreWorkspace`.
-The catalog must support table registration, and its service must see the local
-workspace at the same absolute path as DuckDB. The implemented storage profile is
-local filesystem storage; a remote object-store profile is not implemented.
+Writes need no setup. DuckDB's Iceberg extension attaches only REST catalogs, so
+each record store runs PyIceberg's SQL catalog in its own process and serves
+DuckDB the calls it makes through a loopback adapter. The adapter admits only its
+store's connection, by a random token. The SQLite file sits in the store's
+scratch directory and goes with it: a handle lives only for one write. The writer
+states its Parquet codec (zstd) rather than inheriting a catalog default. The
+[measurement](history/probes/2026-09-25-inprocess-iceberg-catalog.md) compares it
+with the Docker REST fixture it replaced. The implemented storage profile is local
+filesystem storage; a remote object-store profile is not implemented.
 
-For development and tests, Docker can run Apache's pinned REST fixture:
-
-```sh
-uv run --frozen python tools/with_iceberg.py pytest tests/test_iceberg_snapshots.py
-uv run --frozen python tools/with_iceberg.py python -m examples.offline_demo --output ./experiment
-```
-
-The helper shares the current directory and its temporary directory with the
-catalog, sets the endpoint for the command, then removes its own container.
-Output workspaces must be under the current directory. With an already configured
-endpoint it simply runs the command; configure shared paths yourself in that case.
-The fixture is for local development, not a deployed catalog recommendation.
-The wheel does not start Docker. Reads of retained states and exports need no
-catalog service. Subsequent writes register pinned metadata with a catalog at
-the original local table path. Relocated snapshots support reads; a writer
-refuses them before creating files at the former location.
+Reads of retained states and exports need no catalog. Subsequent writes register
+pinned metadata with a catalog at the original local table path. Relocated
+snapshots support reads; a writer refuses them before creating files at the
+former location.
 
 ## Snapshot publication and maintenance
 
@@ -277,6 +269,17 @@ The shared default memory allowance is 6 GiB, configurable through
 ceiling. Scratch, record, root and member limits still apply. Measure actual
 process memory and temporary files for the intended workload; do not treat the
 engine setting as evidence of a complexity bound.
+
+Key-ordered state reads (`rows`, `values`, `batches` and `changes`) sort only
+compact member addresses. Payloads join them once, in a single scan of the
+entity layer. When the payloads exceed one window (a sixteenth of the memory
+allowance, sized from the entity layer's Parquet footers), each joined row goes
+to an LZ4-compressed Arrow IPC file for its window of the order, and each window
+is then sorted alone. No query holds or sorts every payload. At the default
+allowance the 7.86 GB Federal Register catalogue reads with a 1.0 GB spill at
+2.5 GB peak memory, in less time than one global sort needed at 15 GB
+([probe](history/probes/2026-09-25-read-keys-not-payloads.md)). Scratch spills
+count against `max_merge_scratch_bytes`.
 
 DuckDB, PyArrow and PyIceberg are core dependencies. SQLite is the authoritative Core
 metadata ledger and also supports source-build recovery and disposable record

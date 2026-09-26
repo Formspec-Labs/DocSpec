@@ -7,7 +7,7 @@ is never replaced.
 
 import json
 import socket
-from tests.support.network import storage_only
+from tests.support.network import refuse
 from dataclasses import asdict, replace
 from contextlib import closing
 
@@ -32,9 +32,9 @@ from tests.support.processing import _captured
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
-    """Route sockets through ``storage_only`` so only the retained fixture store may be reached."""
-    monkeypatch.setattr(socket.socket, "connect", storage_only(socket.socket.connect))
-    monkeypatch.setattr(socket, "create_connection", storage_only(socket.create_connection))
+    """Refuse every socket connection; retained fixtures and the in-process catalog need none."""
+    monkeypatch.setattr(socket.socket, "connect", refuse)
+    monkeypatch.setattr(socket, "create_connection", refuse)
 
 
 def _responses(monkeypatch, *, metadata=None, body=None, status=200, content_type="application/xml"):

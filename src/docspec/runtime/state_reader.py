@@ -11,6 +11,19 @@ from docspec.errors import IntegrityError, StateValueRelationUnavailable
 from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS, bounded_batches
 
 
+def _scope(member_keys):
+    """Admit a bounded group of distinct named members, or None for the whole state."""
+    if member_keys is None:
+        return None
+    if (not isinstance(member_keys, (tuple, list)) or len(member_keys) > BATCH_ROWS
+            or any(not isinstance(key, str) or not key for key in member_keys)
+            or len(set(member_keys)) != len(member_keys)):
+        raise ValueError("member keys require a bounded sequence of distinct nonempty names")
+    if sum(map(len, member_keys)) > BATCH_BYTES or len(canonical_value_bytes(member_keys)) > BATCH_BYTES:
+        raise ValueError("member keys exceed the batch byte limit")
+    return tuple(member_keys)
+
+
 class CoreStateReader:
     """Use through ``CoreWorkspace.open_state`` and close child streams first.
 
@@ -69,15 +82,7 @@ class CoreStateReader:
         generated SQL is meaningful only while its input protection is held.
         """
         self._session._active()
-        if member_keys is not None:
-            if (not isinstance(member_keys, (tuple, list)) or len(member_keys) > BATCH_ROWS
-                    or any(not isinstance(key, str) or not key for key in member_keys)
-                    or len(set(member_keys)) != len(member_keys)):
-                raise ValueError("member keys require a bounded sequence of distinct nonempty names")
-            if sum(map(len, member_keys)) > BATCH_BYTES or len(canonical_value_bytes(member_keys)) > BATCH_BYTES:
-                raise ValueError("member keys exceed the batch byte limit")
-            member_keys = tuple(member_keys)
-        with self._states.relation(self._session, self._state_id, scope=member_keys, layers=self._layers) as relation:
+        with self._states.relation(self._session, self._state_id, scope=_scope(member_keys), layers=self._layers) as relation:
             yield relation
 
     @contextmanager
@@ -93,8 +98,17 @@ class CoreStateReader:
 
     def batches(self, *, member_keys=None):
         """Stream the same columns in deterministic order within shared bounds."""
-        with self.relation(member_keys=member_keys) as relation, closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
-            yield from bounded_batches(batches, byte_column="occurrence_record", allow_null=member_keys is not None)
+        self._session._active()
+        member_keys = _scope(member_keys)
+        yield from self._checked(self._states.ordered_batches(self._session, self._state_id, scope=member_keys,
+                                                              layers=self._layers), allow_null=member_keys is not None)
+
+    def _checked(self, ordered, *, allow_null):
+        """Bound ordered batches; after a batch, refuse to fetch another once the session has closed."""
+        with closing(bounded_batches(ordered, byte_column="occurrence_record", allow_null=allow_null)) as batches:
+            for batch in batches:
+                yield batch
+                self._session._active()
 
     @contextmanager
     def value_relation(self):
@@ -118,7 +132,6 @@ class CoreStateReader:
                 for key, identity, payload in zip(batch.column("member_key").to_pylist(),
                                         batch.column("occurrence_id").to_pylist(),
                                         batch.column("occurrence_record").to_pylist(), strict=True):
-                    self._session._active()
                     if payload is None:
                         if identity is not None:
                             raise IntegrityError("state member occurrence payload is unavailable")
@@ -148,14 +161,13 @@ class CoreStateReader:
             raise TypeError("changes require another open state reader")
         self._session._active()
         older._session._active()
-        with self._states.changes(self._session, older.state_id, self._state_id, older_layers=older._layers,
-                                  newer_layers=self._layers) as relation, \
-                closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
-            for batch in bounded_batches(batches, byte_column="occurrence_record", allow_null=True):
+        changed = self._states.changes(self._session, older.state_id, self._state_id, older_layers=older._layers,
+                                       newer_layers=self._layers)
+        with closing(self._checked(changed, allow_null=True)) as batches:
+            for batch in batches:
                 for key, identity, payload in zip(batch.column("member_key").to_pylist(),
                                                   batch.column("occurrence_id").to_pylist(),
                                                   batch.column("occurrence_record").to_pylist(), strict=True):
-                    self._session._active()
                     if identity is None:
                         yield key, None, None
                     elif payload is None:
@@ -187,10 +199,11 @@ class CoreStateReader:
         return self._read_value(entity)
 
     def _read_value(self, entity):
-        self._session._active()
         value = entity.value
         if isinstance(value, core.InlineValue):
             return value.value
+        # Only retained content needs the session; inline values are already in hand.
+        self._session._active()
         if value.codec == "json-v1":
             return self._session.read_json(value, label="state member JSON value")
         reference = BlobRef(value.locator, value.digest, value.byte_size, value.media_type)

@@ -244,9 +244,8 @@ class CoreSelectionStorage:
                     current_rows = current_rows.join(certified_keys, "current_key = changed_key", how="semi")
                     prior = prior.join(certified_keys, "prior_key = changed_key", how="semi")
                 delta = prior.join(current_rows, "prior_key = current_key", how="outer").filter("prior_id IS DISTINCT FROM current_id")
-                delta.project("coalesce(prior_key, current_key) AS wanted_key").create_view("selection_delta_input")
-                cursor.execute("CREATE TEMP TABLE selection_delta AS SELECT * FROM selection_delta_input")
-            addresses = cursor.table("selection_delta")
+                addresses = self.records.temp_table(cursor, delta.project("coalesce(prior_key, current_key) AS wanted_key"),
+                                                    "selection_delta")
             def rows():
                 with closing(self._computed_rows(session, parent_id, definition, addresses=addresses, cursor=cursor)) as values:
                     for row in values:
@@ -258,7 +257,6 @@ class CoreSelectionStorage:
                 output_cursor.register("selection_updates", source.__arrow_c_stream__())
                 output_cursor.execute("CREATE TEMP TABLE selection_changes AS SELECT * FROM selection_updates")
                 output_cursor.unregister("selection_updates")
-            cursor.execute("DROP VIEW selection_delta_input")
             cursor.execute("DROP TABLE selection_delta")
             cursor.close()
             result = _Members(plan.selected, plan.layer, plan.evidence, owner, output_cursor, output_cursor.table("selection_changes"))

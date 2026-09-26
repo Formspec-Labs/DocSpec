@@ -32,7 +32,9 @@ the existing codec readers and 8 MiB bound. A missing member raises `LookupError
 JSON null remains a value. `values()` streams decoded triples without per-row lookups.
 
 For native consumers, `relation()` exposes the existing membership/occurrence join
-and `batches()` streams its canonical occurrence records in bounded Arrow batches.
+and `batches()` streams its canonical occurrence records in key order, in bounded
+Arrow batches; only compact member addresses are sorted
+([record storage](record-storage.md#who-owns-the-working-resources)).
 `value_relation()` exposes `member_key`, `occurrence_id` and JSON `value` when every
 value is inline. It raises `StateValueRelationUnavailable` from `docspec.errors`
 for retained content, which callers can consume through `values()` instead.

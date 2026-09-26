@@ -36,7 +36,7 @@ records 1,293 passing tests for that earlier revision. The subsequent Iceberg
 cutover replaces bucket rewrites and flat file inventories with DuckDB row-level
 writes and pinned snapshots. SQLite still owns logical publication and retention.
 See the [Iceberg measurement](history/probes/2026-09-14-iceberg-core-writer.json)
-and [catalog setup](record-storage.md#configure-writes). The
+and the [write catalog](record-storage.md#write-catalog). The
 [Iceberg regression report](history/probes/2026-09-14-iceberg-regression.xml.gz)
 records 1,293 passing tests; historical performance
 receipts remain tied to the implementation they measured.

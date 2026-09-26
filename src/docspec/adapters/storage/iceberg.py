@@ -1,16 +1,13 @@
-"""Iceberg catalog access and contained, relocatable local snapshot files.
+"""Contained, relocatable local Iceberg snapshot files.
 
-DuckDB writes data; PyIceberg owns metadata parsing and REST catalog operations.
-The catalog holds disposable write handles. Published states pin immutable metadata.
+DuckDB writes data through each store's in-process catalog, whose names are
+disposable write handles; PyIceberg parses metadata. Published states pin
+immutable metadata files by path, so reads need no catalog.
 """
 
-from dataclasses import dataclass
-import os
 from pathlib import Path
 
-from pyiceberg.catalog import load_catalog
 from pyiceberg.catalog.noop import NoopCatalog
-from pyiceberg.exceptions import NamespaceAlreadyExistsError
 from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFileContent
 from pyiceberg.table import StaticTable
@@ -39,39 +36,6 @@ def identifier(value):
     """Render a name as a double-quoted SQL identifier."""
 
     return '"' + value.replace('"', '""') + '"'
-
-
-@dataclass(frozen=True)
-class IcebergCatalog:
-    """Settings for a REST Iceberg catalog that supplies disposable write handles."""
-
-    uri: str
-    token: str | None = None
-    namespace: str = 'docspec'
-
-    @classmethod
-    def environment(cls):
-        """Build settings from DOCSPEC_ICEBERG_URI and DOCSPEC_ICEBERG_TOKEN, or None when the URI is unset."""
-
-        uri = os.environ.get('DOCSPEC_ICEBERG_URI')
-        return None if not uri else cls(uri, os.environ.get('DOCSPEC_ICEBERG_TOKEN'))
-
-    def client(self):
-        """Load the REST catalog and ensure its namespace exists."""
-
-        options = {'token': self.token} if self.token else {}
-        cat = load_catalog('docspec', type='rest', uri=self.uri, **options)
-        try:
-            cat.create_namespace(self.namespace)
-        except NamespaceAlreadyExistsError:
-            pass
-        return cat
-
-    def attach(self, connection):
-        """Attach the catalog to a DuckDB connection for writing."""
-
-        auth = f'TOKEN {literal(self.token)}' if self.token else "AUTHORIZATION_TYPE 'none'"
-        connection.execute(f"ATTACH '' AS iceberg (TYPE iceberg, ENDPOINT {literal(self.uri)}, {auth})")
 
 
 class SnapshotIO(PyArrowFileIO):
