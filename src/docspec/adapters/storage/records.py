@@ -829,8 +829,20 @@ class IcebergRecordStorage:
         finally:
             cursor.execute(f'DROP VIEW IF EXISTS {view}')
 
-    def apply_changes(self, base, batches):
-        """Upsert only changed keys; a null record_json means remove that key."""
+    def apply_changes(self, base, batches, *, key=None, removed=None, cursor=None):
+        """Apply a delta as one merge-on-read snapshot on ``base`` that shares every untouched base file.
+
+        An encoded layer takes routing batches and upserts only their keys; a
+        null record_json removes that key. A typed table takes ``batches``, a
+        native relation of whole rows on ``cursor``, and ``removed``, a relation
+        of ``key`` columns to delete: an incoming row replaces the row holding
+        its key, so the table keeps one row per key.
+        """
+        base = self.admitted(base) if isinstance(base, LayerRef) else base
+        if isinstance(base, AdmittedTableLayer):
+            return self._apply_table_changes(base, batches, key=key, removed=removed, cursor=cursor)
+        if (key, removed, cursor) != (None, None, None):
+            raise ValueError('only a typed table takes key columns, removed keys and a cursor')
         with self._cursor() as cursor, self._incoming(cursor, batches, _encoded(base).schema, base.partition_policy,
                                                     ordered=False, allow_deletes=True):
             if not cursor.execute('SELECT 1 FROM incoming LIMIT 1').fetchone():
@@ -858,6 +870,49 @@ class IcebergRecordStorage:
                     raise
                 return self._pin(table(), schema=base.schema, partition_policy=base.partition_policy,
                                  layer_kind=base.reference.layer_kind, record_count=base.reference.record_count + inserted - removed)
+
+    def _apply_table_changes(self, base, rows, *, key, removed, cursor):
+        """Delete the rows holding an incoming or removed key, then insert the incoming rows sorted by key, in one commit."""
+        if base._storage is not self:
+            raise IntegrityError('incremental base belongs to another record store')
+        if base.member_digest is not None:
+            raise IntegrityError('a registered producer table is sealed and refuses changed rows')
+        key = tuple(key or ())
+        kinds = dict(base.schema.columns)
+        if not key or len(set(key)) != len(key) or not set(key) <= kinds.keys() or cursor is None:
+            raise ValueError('typed changes require distinct key columns of the table and their cursor')
+        if native_columns(rows) != base.schema.columns or native_columns(removed) != tuple((name, kinds[name]) for name in key):
+            raise IntegrityError('table changes differ from the table and key columns')
+        names = ', '.join(identifier(name) for name in key)
+        views = {name: f'table_{name}_{uuid4().hex}' for name in ('rows', 'removed')}
+        rows.create_view(views['rows'])
+        removed.create_view(views['removed'])
+        try:
+            if cursor.execute(f'SELECT 1 FROM {views["rows"]} GROUP BY {names} HAVING count(*) > 1 LIMIT 1').fetchone():
+                raise IntegrityError('table changes repeat a key')
+            keys = f'SELECT {names} FROM {views["rows"]} UNION SELECT {names} FROM {views["removed"]}'
+            matches = ' AND '.join(f't.{identifier(name)} = s.{identifier(name)}' for name in key)
+            inserted = cursor.execute(f'SELECT count(*) FROM {views["rows"]}').fetchone()[0]
+            with self._write_table(cursor, base.schema, base) as (target, table):
+                deleted = cursor.execute(f'SELECT count(*) FROM {target} t SEMI JOIN ({keys}) s ON {matches}').fetchone()[0]
+                if not inserted and not deleted:
+                    return base
+                cursor.execute('BEGIN')
+                try:
+                    # Both statements commit as one Iceberg transaction.
+                    if deleted:
+                        cursor.execute(f'MERGE INTO {target} t USING ({keys}) s ON {matches} WHEN MATCHED THEN DELETE')
+                    if inserted:
+                        cursor.execute(f'INSERT INTO {target} SELECT * FROM {views["rows"]} ORDER BY {names}')
+                    cursor.execute('COMMIT')
+                except BaseException:
+                    cursor.execute('ROLLBACK')
+                    raise
+                return self._pin(table(), schema=base.schema, layer_kind=base.reference.layer_kind,
+                                 record_count=base.reference.record_count + inserted - deleted)
+        finally:
+            for view in views.values():
+                cursor.execute(f'DROP VIEW IF EXISTS {view}')
 
     def union_disjoint(self, base, changes, *, exclude_existing=False):
         """Union compatible admitted layers, refusing overlapping identities unless they are excluded."""
@@ -901,9 +956,45 @@ class IcebergRecordStorage:
             raise IntegrityError('a registered producer table is sealed and refuses appended rows')
         return self._write_rows(batches, schema=base.schema, layer_kind=base.reference.layer_kind, sort_by=sort_by, base=base)
 
-    def _write_rows(self, batches, *, schema, layer_kind, sort_by, base=None):
-        if len(set(sort_by)) != len(sort_by) or not set(sort_by) <= set(schema.fields):
-            raise ValueError('sort columns must be distinct table columns')
+    def write_table_relation(self, rows, *, cursor, layer_kind: str, schema: TableSchema,
+                             sort_by: tuple[str, ...] = ()) -> AdmittedTableLayer:
+        """Write a new table layer natively from ``rows``, a relation on ``cursor`` holding exactly ``schema``'s columns.
+
+        As ``write_table`` writes batches, with no row crossing Python; the
+        sorted write may spill to scratch.
+        """
+        require_text(layer_kind, 'layer_kind')
+        if not isinstance(schema, TableSchema):
+            raise IntegrityError('encoded records are written with write_batches, not the table writer')
+        if native_columns(rows) != schema.columns:
+            raise IntegrityError('table rows differ from their declared schema')
+        view = 'native_table_rows_' + uuid4().hex
+        rows.create_view(view)
+        try:
+            return self._insert(cursor, view, schema=schema, layer_kind=layer_kind, sort_by=sort_by)
+        finally:
+            cursor.execute(f'DROP VIEW IF EXISTS {view}')
+
+    @contextmanager
+    def staged_table(self, batches: Iterable[pa.RecordBatch], *, schema: TableSchema):
+        """Spill typed Arrow batches once to a scratch Parquet file; yield its path and row count.
+
+        Batches are checked as ``write_table`` checks them. The file lives
+        under the store's scratch root and is removed on exit, so a caller can
+        read the rows natively more than once before anything reaches the store.
+        """
+        with tempfile.TemporaryDirectory(prefix='docspec-table-rows-', dir=self.merge_scratch_root) as scratch, \
+                self._cursor() as cursor, self._table_stream(cursor, batches, schema) as count:
+            path = Path(scratch) / 'rows.parquet'
+            cursor.execute(f"COPY (SELECT * FROM table_rows) TO {literal(path)} (FORMAT parquet)")
+            yield path, count()
+
+    @contextmanager
+    def _table_stream(self, cursor, batches, schema):
+        """Register typed batches, conformed to ``schema``, as ``table_rows`` on ``cursor``; yield a row counter.
+
+        A batch source's own error surfaces in place of DuckDB's wrapper.
+        """
         expected = table_arrow_schema(schema.columns)
         count, error = 0, None
         def checked():
@@ -918,23 +1009,32 @@ class IcebergRecordStorage:
                 if not isinstance(exc, GeneratorExit):
                     error = exc
                 raise
-        order = ' ORDER BY ' + ', '.join(identifier(name) for name in sort_by) if sort_by else ''
-        with self._cursor() as cursor, closing(checked()) as source, \
-                closing(pa.RecordBatchReader.from_batches(expected, source)) as reader:
+        with closing(checked()) as source, closing(pa.RecordBatchReader.from_batches(expected, source)) as reader:
             cursor.register('table_rows', reader.__arrow_c_stream__())
             try:
-                with self._write_table(cursor, schema, base) as (target, table):
-                    cursor.execute(f'INSERT INTO {target} SELECT * FROM table_rows{order}')
-                    if base is not None and not count:
-                        return base
-                    return self._pin(table(), schema=schema, layer_kind=layer_kind,
-                                     record_count=count + (0 if base is None else base.reference.record_count))
+                yield lambda: count
             except BaseException:
                 if error is not None:
                     raise error
                 raise
             finally:
                 cursor.unregister('table_rows')
+
+    def _insert(self, cursor, source, *, schema, layer_kind, sort_by, base=None):
+        """Insert every row of the view ``source`` into a new snapshot of ``base``, or a new table; no rows returns ``base``."""
+        if len(set(sort_by)) != len(sort_by) or not set(sort_by) <= set(schema.fields):
+            raise ValueError('sort columns must be distinct table columns')
+        order = ' ORDER BY ' + ', '.join(identifier(name) for name in sort_by) if sort_by else ''
+        with self._write_table(cursor, schema, base) as (target, table):
+            count = cursor.execute(f'INSERT INTO {target} SELECT * FROM {source}{order}').fetchone()[0]
+            if base is not None and not count:
+                return base
+            return self._pin(table(), schema=schema, layer_kind=layer_kind,
+                             record_count=count + (0 if base is None else base.reference.record_count))
+
+    def _write_rows(self, batches, *, schema, layer_kind, sort_by, base=None):
+        with self._cursor() as cursor, self._table_stream(cursor, batches, schema):
+            return self._insert(cursor, 'table_rows', schema=schema, layer_kind=layer_kind, sort_by=sort_by, base=base)
 
     def register_parquet(self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str) -> AdmittedTableLayer:
         """Register a producer's Parquet file, staged in ``staging_directory``, as a table layer without rewriting it.
