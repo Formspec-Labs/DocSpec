@@ -76,7 +76,10 @@ def _value(value, kind):
 
 def table_row_value(row, columns):
     """Convert one complete typed row to the JSON value covered by the rule."""
-    columns = table_columns(columns)
+    return _row_value(row, table_columns(columns))
+
+
+def _row_value(row, columns):
     if not isinstance(row, Mapping) or set(row) != {name for name, _ in columns}:
         raise ValueError("table row must contain exactly its declared columns")
     return {name: _value(row[name], kind) for name, kind in columns}
@@ -85,6 +88,13 @@ def table_row_value(row, columns):
 def table_row_bytes(row, columns):
     """Emit the independent Rulespec canonical bytes used by the native oracle."""
     return canonical_value_bytes(table_row_value(row, columns))
+
+
+def table_rows_bytes(rows, columns):
+    """Emit each complete typed row's canonical bytes, as ``table_row_bytes`` does, validating ``columns`` once."""
+    columns = table_columns(columns)
+    for row in rows:
+        yield canonical_value_bytes(_row_value(row, columns))
 
 
 def table_row_digest(row, columns):

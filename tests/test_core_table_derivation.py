@@ -18,6 +18,7 @@ import pytest
 
 from docspec.adapters.storage import core_tables
 from docspec.adapters.storage.batches import table_arrow_schema
+from docspec.adapters.storage.core_states import StateLayers
 from docspec.adapters.storage.table_occurrences import reference_identity
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload
@@ -131,9 +132,11 @@ def test_a_typed_derive_publishes_one_unit_and_every_reader_serves_the_reference
             key: core.Entity(format_version=1, entity_id=urn, entity_type="occurrence", value=core.InlineValue(value=value))
             for key, (urn, _, value) in reference.items()}
         with workspace.open_state(derived.state_id) as reader:
-            with reader.relation() as relation:
-                assert {key: (urn, bytes(record)) for key, urn, record in relation.fetchall()} == {
-                    key: (urn, payload) for key, (urn, payload, _) in reference.items()}
+            # A whole state is spelled natively, named keys by the Python reference: the bytes are the same.
+            for scope in (None, list(reference)):
+                with reader.relation(member_keys=scope) as relation:
+                    assert {key: (urn, bytes(record)) for key, urn, record in relation.fetchall()} == {
+                        key: (urn, payload) for key, (urn, payload, _) in reference.items()}
             key = "b\x1f\"quoted\""
             assert reader.read_value(key, occurrence_id=reference[key][0]) == reference[key][2]
             assert reader.lookup("absent") is None
@@ -214,6 +217,23 @@ def test_a_large_delta_or_a_fragmented_membership_is_rewritten_natively(tmp_path
         files = [len(workspace.records.data_files(layer(workspace, state, "membership"))) for state in states]
         # Every rewrite leaves one file; small deltas add files only up to the bound.
         assert files == [1] * 5 if bound == "delta" else (max(files) <= 3 and files.count(1) >= 2)
+
+
+def test_a_point_read_refuses_a_row_its_membership_does_not_name(tmp_path):
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        occurrences = source_state(workspace)
+        rows = [prepared(key, occurrence) for key, occurrence in occurrences.items()]
+        first = derive(workspace, rows, "first")
+        second = derive(workspace, [{**rows[0], "title": "Amended"}], "second", base_state_id=first.state_id)
+        with workspace.publisher.session() as session:
+            old, new = (workspace.states.layers(session, state) for state in (first.state_id, second.state_id))
+            # The first state's membership over the second's table: row "a" no longer hashes to its occurrence.
+            mixed = StateLayers({**old, "table": new["table"]}, old.identity)
+            with workspace.states.relation(session, first.state_id, scope=("c",), layers=mixed) as relation:
+                assert [key for key, _, _ in relation.fetchall()] == ["c"]
+            with pytest.raises(IntegrityError, match="differs from its minted occurrence"):
+                with workspace.states.relation(session, first.state_id, scope=("a", "c"), layers=mixed) as relation:
+                    relation.fetchall()
 
 
 @pytest.mark.parametrize("change", ["rows", "base", "input", "removals", "definition", "schema"])

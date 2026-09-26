@@ -9,7 +9,7 @@ table's rows when read and never stored; the index resolves an occurrence to
 its key without a scan.
 """
 
-from contextlib import closing, contextmanager
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -21,7 +21,7 @@ from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES, MEMBERS
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.records import identity_filter
 from docspec.adapters.storage.table_occurrences import (IndexedOccurrence, MintedIdentities, append_occurrences,
-    candidate_rows, check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spilled_identities)
+    check_native_spelling, lookup_occurrences, mint_identities, read_occurrences, spell_rows, spilled_identities)
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_relation, member_key_sql, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql, rows_differ_sql)
@@ -29,7 +29,7 @@ from docspec.domain.core_admission import inline_occurrence_payload
 from docspec.domain.identity import sha256_digest
 from docspec.domain.references import LayerRef
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import DERIVED_MEMBER, SOURCE_OCCURRENCE, TableIdentity, table_type
+from docspec.domain.table_rows import DERIVED_MEMBER, SOURCE_OCCURRENCE, TableIdentity, table_occurrence_id, table_type
 from docspec.errors import IntegrityError
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -400,26 +400,49 @@ def occurrence_addressed(records, layers, identity: TableIdentity, *, cursor=Non
 
     Values are (entity_id, occurrence_record): the exact inline occurrence
     entities ``inline_occurrence_payload`` spells around each addressed row's
-    canonical bytes, built natively from the rows. ``scope`` names bounded
-    keys, absent ones addressing nothing, and reads only the table's
-    candidate row groups; ``addresses`` is a relation of wanted_key on
-    ``cursor``, materialized once as compact addresses.
+    canonical bytes. ``scope`` names bounded keys, absent ones addressing
+    nothing: their rows are read as ``spell_rows`` reads them, spelled by the
+    Python reference and each checked against its occurrence, so a point read
+    binds no row expression. A whole state, or ``addresses`` (a relation of
+    wanted_key on ``cursor``, materialized once as compact addresses), is
+    spelled natively.
     """
     tables = {} if scope is None else {"wanted": pa.table({"wanted_key": pa.array(scope, type=pa.string())})}
     identities = None if scope is None else {"membership": list(scope)}
-    with records.relations({"membership": layers["membership"], "table": layers["table"]}, tables=tables,
-                           identities=identities, cursor=cursor) as relations:
+    with (records._cursor() if cursor is None else nullcontext(cursor)) as cursor, records.relations(
+            {"membership": layers["membership"], "table": layers["table"]}, tables=tables, identities=identities,
+            cursor=cursor) as relations:
         members, table = relations["membership"].project(MEMBERSHIP_ADDRESSES), relations["table"]
         wanted = relations["wanted"] if scope is not None else addresses
         if wanted is not None:
             members = wanted.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
+        if scope is not None:
+            held = dict(members.filter("occurrence_id IS NOT NULL").fetchall())
+            yield members, cursor.from_arrow(_spelled_values(cursor, table, identity, held))
+            return
         if addresses is not None:
             members = records.temp_table(cursor, members, "selection_addresses")
-        if scope is not None:
-            table = candidate_rows(table, identity, scope)
         joined, _, occurrence = _keyed(table, identity, members.filter("occurrence_id IS NOT NULL"))
         record = occurrence_json_sql(row_json_sql(identity.columns), occurrence_id=occurrence)
         yield members, joined.project(f"{identifier(occurrence)} AS entity_id, encode({record}) AS occurrence_record")
+
+
+def _spelled_values(cursor, table, identity: TableIdentity, held):
+    """The (entity_id, occurrence_record) values of the occurrences ``held`` maps keys to, spelled in Python.
+
+    ``table`` is the state's table relation on ``cursor``. Each row must hash
+    back to the occurrence its membership names: a missing or changed row
+    refuses, as an index lookup's digest check does.
+    """
+    rows = spell_rows(cursor, table, identity, held)
+    records_ = []
+    for key, occurrence in held.items():
+        payload = rows.get(key)
+        if payload is None or table_occurrence_id(identity.family, identity.table, key, sha256_digest(payload)) != occurrence:
+            raise IntegrityError("table row differs from its minted occurrence")
+        records_.append(inline_occurrence_payload(occurrence, payload))
+    return pa.table({"entity_id": pa.array(list(held.values()), type=pa.string()),
+                     "occurrence_record": pa.array(records_, type=pa.binary())})
 
 
 @contextmanager
