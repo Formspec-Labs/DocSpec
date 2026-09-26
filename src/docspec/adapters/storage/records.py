@@ -1,7 +1,14 @@
-"""Immutable Iceberg snapshots, with DuckDB owning all bulk data writes."""
+"""Immutable Iceberg snapshots of encoded records or typed tables, with DuckDB owning bulk data writes.
+
+Both root formats share one connection, admission cache, catalog write
+handle, pin and seal, so both profiles live in this one store; each refuses
+the other's layers.
+"""
 
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 import tempfile
 from collections.abc import Iterable, Iterator, Mapping
@@ -15,34 +22,45 @@ import weakref
 
 import duckdb
 import pyarrow as pa
+import pyarrow.parquet as pq
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException
 
 from docspec.ports.record_storage import bounded_batches, bounded_rows
-from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
+from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, conform_table_batch, encoded_batches, table_arrow_schema
 from docspec.adapters.streams import owned_iterator
 from docspec.adapters.storage.engine import ENGINE_MEMORY_BYTES, connect
 from docspec.adapters.storage.files import _available_paths, _contained, _read_exact, _storage_root, _write_once, delete_content, sha256_file
-from docspec.adapters.storage.iceberg import recovery_references, identifier, literal, seal_snapshot, snapshot, snapshot_data_files, snapshot_files
-from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_text, sha256_digest, stable_urn, thaw_json
+from docspec.adapters.storage.iceberg import (SnapshotIO, recovery_references, identifier, literal, seal,
+    seal_snapshot, snapshot, snapshot_data_files, snapshot_files, table_columns)
+from docspec.domain.identity import canonical_json_bytes, canonical_json_file_bytes, parse_canonical_json, require_sha256, require_text, sha256_digest, stable_urn, thaw_json
 from docspec.domain.references import BlobRef, LayerRef
-from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket, record_key
+from docspec.domain.storage import PartitionPolicy, RecordSchema, TableSchema, partition_bucket, record_key
 from docspec.errors import IntegrityError, LimitExceededError
 
 _PROFILE_ID = 'urn:docspec:profile:record-storage:iceberg:1'
+_TABLE_PROFILE_ID = 'urn:docspec:profile:table-storage:iceberg:1'
+_RECORD_ROOT = {'format', 'version', 'layerKind', 'schema', 'partitionPolicy', 'metadata', 'integrity', 'recordCount'}
+_TABLE_ROOT = {'format', 'version', 'layerKind', 'schema', 'memberDigest', 'metadata', 'integrity', 'recordCount'}
 _ADMITTED_LAYER_LIMIT = 8
-# A literal list keeps row-group pruning for point lookups; beyond this many
-# identities a semi-join against an Arrow table is faster.
-_LITERAL_IDENTITIES = 256
+# DuckDB prunes row groups for each value of an IN list, so point lookups stay
+# bounded. A semi-join holding more than 50 values prunes only by their overall
+# range; past this many values, one scan is the cheaper plan.
+LITERAL_IDENTITIES = 256
 
 
-def _identity_filter(cursor, relation, identities):
-    """Keep only rows whose record_identity is one of ``identities``."""
-    identities = list(identities)
-    if not identities:
+def identity_filter(cursor, relation, values, column='record_identity'):
+    """Keep only rows whose ``column`` is one of ``values``: strings or bytes, NUL included.
+
+    Up to ``LITERAL_IDENTITIES`` values are one IN filter of constants; more
+    are one semi-join against an Arrow table, never a query per chunk.
+    """
+    values = list(values)
+    if not values:
         return relation.filter('false')
-    if len(identities) <= _LITERAL_IDENTITIES and not any('\x00' in identity for identity in identities):
-        return relation.filter('record_identity IN (' + ', '.join(literal(identity) for identity in identities) + ')')
-    wanted = cursor.from_arrow(pa.table({'wanted_identity': pa.array(identities, type=pa.string())}))
-    return relation.join(wanted, 'record_identity = wanted_identity', how='semi')
+    if len(values) <= LITERAL_IDENTITIES:
+        return relation.filter(duckdb.ColumnExpression(column).isin(*map(duckdb.ConstantExpression, values)))
+    wanted = cursor.from_arrow(pa.table({'wanted_identity': pa.array(values)}))
+    return relation.join(wanted, f'{identifier(column)} = wanted_identity', how='semi')
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +80,33 @@ def _physical_schema(schema):
 
 def _column_list(schema):
     return ', '.join(identifier(name) for name in _physical_schema(schema).names)
+
+
+_ENCODED_ONLY = 'layer is a typed table; the encoded-record profile refuses it'
+
+
+def _encoded(layer):
+    if not isinstance(layer, AdmittedRecordLayer):
+        raise IntegrityError(_ENCODED_ONLY)
+    return layer
+
+
+def _typed(layer):
+    if not isinstance(layer, AdmittedTableLayer):
+        raise IntegrityError('layer holds encoded records; the table profile refuses it')
+    return layer
+
+
+def native_columns(relation):
+    """Name each column of a native relation with its table-profile type, or DuckDB's name for any other."""
+    return tuple((name, 'TIMESTAMPTZ' if str(kind) == 'TIMESTAMP WITH TIME ZONE' else str(kind))
+                 for name, kind in zip(relation.columns, relation.types, strict=True))
+
+
+def _has_field_id(field):
+    """Whether an Arrow field read from a Parquet footer, or a field nested in it, carries an ID."""
+    return (b'PARQUET:field_id' in (field.metadata or {})
+            or any(_has_field_id(field.type.field(index)) for index in range(field.type.num_fields)))
 
 
 class IcebergRecordStorage:
@@ -96,6 +141,8 @@ class IcebergRecordStorage:
         self.merge_scratch_root = (
             None if merge_scratch_root is None else _storage_root(merge_scratch_root, create=create)
         )
+        # Producer files are staged here, on the store's own filesystem, for registration.
+        self.staging_directory = _contained(self.root, '.staging/member', create_parents=create).parent
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._scratch: tempfile.TemporaryDirectory[str] | None = None
         self._connection_lock = Lock()
@@ -169,7 +216,7 @@ class IcebergRecordStorage:
         if layers is not None:
             layers.pop(reference, None)
 
-    def admitted(self, reference: LayerRef) -> AdmittedRecordLayer:
+    def admitted(self, reference: LayerRef) -> AdmittedRecordLayer | AdmittedTableLayer:
         """Use this protection scope's handle, or freshly check availability."""
         layers = getattr(self._admissions, "layers", None)
         if layers is not None and reference in layers:
@@ -177,7 +224,9 @@ class IcebergRecordStorage:
         return self.available(reference)
 
     @staticmethod
-    def _schema_dict(schema: RecordSchema) -> dict[str, Any]:
+    def _schema_dict(schema: RecordSchema | TableSchema) -> dict[str, Any]:
+        if isinstance(schema, TableSchema):
+            return {"schemaId": schema.schema_id, "columns": [list(column) for column in schema.columns]}
         return {
             "schemaId": schema.schema_id, "fields": list(schema.fields),
             "identityField": schema.identity_field, "partitionField": schema.partition_field,
@@ -191,11 +240,11 @@ class IcebergRecordStorage:
     def identity_field(self, reference: LayerRef) -> str:
         """Return the verified layer's logical identity field name."""
 
-        return self.schema(reference).identity_field
+        return self._record_root(reference)[0].identity_field
 
     def compact(self, base: AdmittedRecordLayer) -> AdmittedRecordLayer:
         """Repack admitted canonical bytes and check exact row equivalence."""
-        if base._storage is not self:
+        if _encoded(base)._storage is not self:
             raise IntegrityError("compaction base belongs to another record store")
         with closing(base.batches()) as batches:
             compacted = self.retain_batches(batches, layer_kind=base.reference.layer_kind, schema=base.schema,
@@ -213,15 +262,21 @@ class IcebergRecordStorage:
                 raise IntegrityError("compaction changed logical records")
         return compacted
 
-    def schema(self, reference: LayerRef) -> RecordSchema:
-        """Return the verified layer's logical schema."""
+    def schema(self, reference: LayerRef) -> RecordSchema | TableSchema:
+        """Return the verified layer's logical schema, a TableSchema for a typed table."""
 
         return self._verified_root(reference)[1]
 
-    def partition_policy(self, reference: LayerRef) -> PartitionPolicy:
-        """Return the verified layer's partition policy."""
+    def _record_root(self, reference):
+        _, schema, policy = self._verified_root(reference)
+        if isinstance(schema, TableSchema):
+            raise IntegrityError(_ENCODED_ONLY)
+        return schema, policy
 
-        return self._verified_root(reference)[2]
+    def partition_policy(self, reference: LayerRef) -> PartitionPolicy:
+        """Return the verified encoded layer's partition policy; typed tables have none."""
+
+        return self._record_root(reference)[1]
 
     def write_layer(
         self, records: Iterable[Mapping[str, Any]], *, layer_kind: str, schema: RecordSchema,
@@ -291,23 +346,32 @@ class IcebergRecordStorage:
         if sha256_digest(payload) != reference.digest:
             raise IntegrityError('record layer root differs from its reference')
         root = thaw_json(parse_canonical_json(payload, label='Iceberg record layer'))
-        fields = {'format', 'version', 'layerKind', 'schema', 'partitionPolicy', 'metadata', 'integrity', 'recordCount'}
-        if not isinstance(root, dict) or set(root) != fields or root['format'] != 'docspec-iceberg-records' or type(root['version']) is not int or root['version'] != 1 or type(root['recordCount']) is not int:
+        typed = isinstance(root, dict) and root.get('format') == 'docspec-iceberg-table'
+        if (not isinstance(root, dict) or set(root) != (_TABLE_ROOT if typed else _RECORD_ROOT)
+                or root['format'] not in {'docspec-iceberg-records', 'docspec-iceberg-table'}
+                or type(root['version']) is not int or root['version'] != 1 or type(root['recordCount']) is not int):
             raise IntegrityError('record layer root has an invalid format')
         try:
             value = root['schema']
-            if set(value) != {'schemaId', 'fields', 'identityField', 'partitionField', 'columns'} or set(root['partitionPolicy']) != {'policyId', 'bucketCount'}:
-                raise ValueError('invalid schema or partition policy shape')
-            schema = RecordSchema(value['schemaId'], tuple(value['fields']), value['identityField'], value['partitionField'],
-                                  tuple(tuple(column) for column in value['columns']))
-            policy = PartitionPolicy(root['partitionPolicy']['policyId'], root['partitionPolicy']['bucketCount'])
+            if typed:
+                if set(value) != {'schemaId', 'columns'}:
+                    raise ValueError('invalid table schema shape')
+                schema, policy = TableSchema(value['schemaId'], tuple(tuple(column) for column in value['columns'])), None
+                if root['memberDigest'] is not None:
+                    require_sha256(root['memberDigest'], 'table member digest')
+            else:
+                if set(value) != {'schemaId', 'fields', 'identityField', 'partitionField', 'columns'} or set(root['partitionPolicy']) != {'policyId', 'bucketCount'}:
+                    raise ValueError('invalid schema or partition policy shape')
+                schema = RecordSchema(value['schemaId'], tuple(value['fields']), value['identityField'], value['partitionField'],
+                                      tuple(tuple(column) for column in value['columns']))
+                policy = PartitionPolicy(root['partitionPolicy']['policyId'], root['partitionPolicy']['bucketCount'])
             metadata = BlobRef.from_dict(root['metadata'])
             integrity = BlobRef.from_dict(root['integrity'])
             if integrity.locator != metadata.locator + '.sha256':
                 raise ValueError('metadata checksum does not match the retained file')
         except (KeyError, TypeError, ValueError) as error:
             raise IntegrityError('invalid record layer schema or metadata reference') from error
-        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, _PROFILE_ID,
+        expected = LayerRef(stable_urn('record-layer', root), root['layerKind'], schema.schema_id, _TABLE_PROFILE_ID if typed else _PROFILE_ID,
                             f'record-layers/sha256/{reference.digest[7:9]}/{reference.digest[7:]}.json',
                             reference.digest, root['recordCount'])
         if reference != expected or not metadata.locator.startswith('iceberg/'):
@@ -324,6 +388,10 @@ class IcebergRecordStorage:
         # all recovery files, including positional deletes and shared manifests.
         refs = recovery_references(self.root, BlobRef.from_dict(root['integrity']))
         _available_paths(self.root, ((ref.locator, ref.byte_size) for ref in refs))
+        if isinstance(schema, TableSchema):
+            if table_columns(table.schema()) != schema.columns:
+                raise IntegrityError('table layer schema differs from its pinned Iceberg metadata')
+            return self._remember_admitted(AdmittedTableLayer(self, reference, root, schema, table))
         return self._remember_admitted(AdmittedRecordLayer(self, reference, root, schema, policy, table))
 
     def verify_members(self, reference):
@@ -341,11 +409,29 @@ class IcebergRecordStorage:
             raise IntegrityError('Iceberg checksums differ from the snapshot recovery files')
 
     def verify(self, reference):
-        """Verify member files and the declared record count."""
+        """Verify member files and the declared record count.
+
+        A typed table also compares a native count(*) and the scan's column
+        types with its description, and a registered table checks that its one
+        data file is the producer member its root names.
+        """
 
         self.verify_members(reference)
-        if sum(1 for _ in self.stream(reference)) != reference.record_count:
-            raise IntegrityError('record count differs from its description')
+        layer = self.available(reference)
+        if isinstance(layer, AdmittedRecordLayer):
+            if sum(1 for _ in self.stream(reference)) != reference.record_count:
+                raise IntegrityError('record count differs from its description')
+            return
+        with self._relation(layer) as relation:
+            if native_columns(relation) != layer.schema.columns:
+                raise IntegrityError('table scan columns differ from the layer schema')
+            if relation.aggregate('count(*)').fetchone()[0] != reference.record_count:
+                raise IntegrityError('table row count differs from its description')
+        if layer.member_digest is not None:
+            digests = {ref.locator: ref.digest for ref in self.physical_references(reference)}
+            files = [digests.get(path.relative_to(self.root).as_posix()) for path, _ in snapshot_data_files(layer.table)]
+            if files != [layer.member_digest]:
+                raise IntegrityError('registered table differs from its producer member')
 
     def admit(self, reference):
         """Fully verify a layer and return it admitted."""
@@ -357,6 +443,8 @@ class IcebergRecordStorage:
     def _relation(self, layer, *, cursor=None, partitions=None, record_ids=None, identity_ranges=None, include_bucket=False):
         if layer._storage is not self:
             raise IntegrityError('admitted layer belongs to another record store')
+        if partitions is not None or record_ids is not None or identity_ranges is not None or include_bucket:
+            _encoded(layer)
         if partitions is not None and any(p < 0 or p >= layer.partition_policy.bucket_count for p in partitions):
             raise ValueError('selected partition is outside the layer partition policy')
         path = Path(layer.table.metadata_location)
@@ -366,10 +454,13 @@ class IcebergRecordStorage:
             relation = cursor.sql(f"SELECT * FROM iceberg_scan({literal(path.parent.parent)}, "
                 f"version={literal(path.name.removesuffix('.metadata.json'))}, "
                 "version_name_format='%s%s.metadata.json', allow_moved_paths=true)")
+            if isinstance(layer, AdmittedTableLayer):
+                yield relation.project(', '.join(identifier(name) for name in layer.schema.fields))
+                return
             if partitions is not None:
                 relation = relation.filter(duckdb.ColumnExpression('bucket').isin(*(duckdb.ConstantExpression(p) for p in partitions))) if partitions else relation.filter('false')
             if record_ids is not None:
-                relation = _identity_filter(cursor, relation, record_ids)
+                relation = identity_filter(cursor, relation, record_ids)
             if identity_ranges is not None:
                 ranges = list(identity_ranges)
                 relation = relation.filter(' OR '.join(f'(record_identity BETWEEN {literal(lo)} AND {literal(hi)})' for lo, hi in ranges) or 'false')
@@ -377,12 +468,16 @@ class IcebergRecordStorage:
 
     @contextmanager
     def relations(self, references, *, partitions=None, tables=None, identities=None, identity_ranges=None, cursor=None):
-        """Open named native relations over admitted layers and caller-supplied tables."""
+        """Open named native relations over admitted layers and caller-supplied tables.
+
+        A typed table's relation holds its own columns in schema order; the
+        encoded-record routing options (partitions, identities, ranges) refuse it.
+        """
 
         with (self._cursor() if cursor is None else nullcontext(cursor)) as cursor, ExitStack() as stack:
             result = {}
             for name, reference in references.items():
-                layer = reference if isinstance(reference, AdmittedRecordLayer) else self.admitted(reference)
+                layer = self.admitted(reference) if isinstance(reference, LayerRef) else reference
                 result[name] = stack.enter_context(self._relation(layer, cursor=cursor,
                     partitions=None if partitions is None else partitions.get(name),
                     record_ids=None if identities is None else identities.get(name),
@@ -394,7 +489,7 @@ class IcebergRecordStorage:
             yield result
 
     def _rows(self, layer, *, partitions=None, record_id=None, partition_value=None):
-        with self._relation(layer, partitions=partitions, record_ids=None if record_id is None else [record_id], include_bucket=True) as relation:
+        with self._relation(_encoded(layer), partitions=partitions, record_ids=None if record_id is None else [record_id], include_bucket=True) as relation:
             if partition_value is not None:
                 relation = relation.filter(duckdb.ColumnExpression('partition_value') == duckdb.ConstantExpression(partition_value))
             previous = None
@@ -439,7 +534,7 @@ class IcebergRecordStorage:
     def lookup_batches(self, reference, record_ids):
         """Stream bounded batches of records for the requested identities."""
 
-        layer = reference if isinstance(reference, AdmittedRecordLayer) else self.admitted(reference)
+        layer = _encoded(self.admitted(reference) if isinstance(reference, LayerRef) else reference)
         with owned_iterator(bounded_rows(record_ids, size=lambda key: len(record_key(key, 'record_id').encode()))) as chunks:
             for keys in chunks:
                 with self._relation(layer, record_ids=list(keys)) as relation, closing(relation.order('record_identity').to_arrow_reader(256)) as reader:
@@ -476,7 +571,7 @@ class IcebergRecordStorage:
             relation = cursor.sql("SELECT record_identity, partition_value, record_json, filename FROM read_parquet(["
                                   + ", ".join(literal(path) for path in paths) + "], filename=true)")
             if identities is not None:
-                relation = _identity_filter(cursor, relation, identities)
+                relation = identity_filter(cursor, relation, identities)
             mapping = cursor.from_arrow(pa.table({'file_path': list(paths), 'locator': list(paths.values())}))
             yield relation.join(mapping, 'filename = file_path').project('record_identity, partition_value, record_json, locator')
 
@@ -521,11 +616,15 @@ class IcebergRecordStorage:
                 location = self.root / 'iceberg' / uuid4().hex
                 (location / 'metadata').mkdir(parents=True)
                 (location / 'data').mkdir()
-                columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}' for field in _physical_schema(schema))
+                if isinstance(schema, TableSchema):
+                    columns = ', '.join(f'{identifier(name)} {kind}' for name, kind in schema.columns)
+                else:
+                    columns = ', '.join(f'{identifier(field.name)} {"VARCHAR" if pa.types.is_string(field.type) else "BLOB"}'
+                                        for field in _physical_schema(schema)) + ', bucket INTEGER'
                 target = target_member_bytes or self.max_member_bytes // 2
                 # The codec is stated, not left to the catalog: Java REST catalogs default new
                 # tables to zstd, PyIceberg to none, and DuckDB then writes snappy.
-                cursor.execute(f"CREATE TABLE {qualified} ({columns}, bucket INTEGER) WITH ("
+                cursor.execute(f"CREATE TABLE {qualified} ({columns}) WITH ("
                     f"'location'={literal(location)}, 'format-version'='2', 'write.update.mode'='merge-on-read', "
                     f"'write.delete.mode'='merge-on-read', 'write.target-file-size-bytes'={literal(target)}, "
                     "'write.parquet.row-group-size-bytes'='1048576', 'write.parquet.compression-codec'='zstd')")
@@ -542,12 +641,13 @@ class IcebergRecordStorage:
             if registered:
                 client.drop_table(key)
 
-    def _pin(self, table, *, schema, partition_policy, layer_kind, record_count):
+    def _pin(self, table, *, schema, layer_kind, record_count, partition_policy=None, member_digest=None):
         location = Path(table.metadata_location)
-        from docspec.adapters.storage.iceberg import SnapshotIO
         table.io = SnapshotIO(location.parent.parent, table.metadata.location)
         current = table.current_snapshot()
-        if current is not None:
+        # The member limit sizes DocSpec's own writes. A registered producer
+        # file is exempt; registration bounded its row groups instead.
+        if current is not None and member_digest is None:
             for manifest in current.manifests(table.io):
                 if manifest.added_snapshot_id == current.snapshot_id:
                     for entry in manifest.fetch_manifest_entry(table.io, discard_deleted=True):
@@ -556,17 +656,24 @@ class IcebergRecordStorage:
         integrity = seal_snapshot(self.root, table)
         digest, size = sha256_file(location)
         metadata = BlobRef(location.relative_to(self.root).as_posix(), digest, size, 'application/octet-stream')
-        root = {'format': 'docspec-iceberg-records', 'version': 1, 'layerKind': layer_kind,
-                'schema': self._schema_dict(schema), 'partitionPolicy': self._policy_dict(partition_policy),
+        typed = isinstance(schema, TableSchema)
+        root = {'format': 'docspec-iceberg-table' if typed else 'docspec-iceberg-records', 'version': 1,
+                'layerKind': layer_kind, 'schema': self._schema_dict(schema),
                 'metadata': metadata.to_dict(), 'integrity': integrity.to_dict(), 'recordCount': record_count}
+        if typed:
+            root['memberDigest'] = member_digest
+        else:
+            root['partitionPolicy'] = self._policy_dict(partition_policy)
         payload = canonical_json_file_bytes(root)
         if len(payload) > self.max_root_bytes:
             raise LimitExceededError('record layer root exceeds its byte limit')
         digest = sha256_digest(payload)
         locator = f'record-layers/sha256/{digest[7:9]}/{digest[7:]}.json'
         _write_once(self.root, locator, payload)
-        ref = LayerRef(stable_urn('record-layer', root), layer_kind, schema.schema_id, _PROFILE_ID, locator, digest, record_count)
-        return self._remember_admitted(AdmittedRecordLayer(self, ref, root, schema, partition_policy, table))
+        ref = LayerRef(stable_urn('record-layer', root), layer_kind, schema.schema_id,
+                       _TABLE_PROFILE_ID if typed else _PROFILE_ID, locator, digest, record_count)
+        return self._remember_admitted(AdmittedTableLayer(self, ref, root, schema, table) if typed
+                                       else AdmittedRecordLayer(self, ref, root, schema, partition_policy, table))
 
     @contextmanager
     def _incoming(self, cursor, batches, schema, policy, *, ordered=True, allow_deletes=False):
@@ -615,11 +722,13 @@ class IcebergRecordStorage:
     def _write_batches(self, batches, *, layer_kind, schema, partition_policy, base=None, replace_partitions=None,
                        ordered=True, target_member_bytes=None):
         require_text(layer_kind, 'layer_kind')
+        if not isinstance(schema, RecordSchema):
+            raise IntegrityError('typed tables are written with write_table, not the encoded-record writer')
         if (base is None) != (replace_partitions is None):
             raise ValueError('incremental layers require a base and replacement partitions together')
         if isinstance(base, LayerRef):
             base = self.admitted(base)
-        if base is not None and (base.schema != schema or base.partition_policy != partition_policy or base.reference.layer_kind != layer_kind):
+        if base is not None and (_encoded(base).schema != schema or base.partition_policy != partition_policy or base.reference.layer_kind != layer_kind):
             raise IntegrityError('incremental layer is incompatible with its base')
         if target_member_bytes is not None and not 0 < target_member_bytes <= self.max_member_bytes:
             raise ValueError('target member bytes must fit the member byte limit')
@@ -651,7 +760,7 @@ class IcebergRecordStorage:
 
     def apply_changes(self, base, batches):
         """Upsert only changed keys; a null record_json means remove that key."""
-        with self._cursor() as cursor, self._incoming(cursor, batches, base.schema, base.partition_policy,
+        with self._cursor() as cursor, self._incoming(cursor, batches, _encoded(base).schema, base.partition_policy,
                                                     ordered=False, allow_deletes=True):
             if not cursor.execute('SELECT 1 FROM incoming LIMIT 1').fetchone():
                 return base
@@ -682,7 +791,7 @@ class IcebergRecordStorage:
     def union_disjoint(self, base, changes, *, exclude_existing=False):
         """Union compatible admitted layers, refusing overlapping identities unless they are excluded."""
 
-        if base._storage is not self or changes._storage is not self or base.schema != changes.schema or base.partition_policy != changes.partition_policy or base.reference.layer_kind != changes.reference.layer_kind:
+        if _encoded(base)._storage is not self or _encoded(changes)._storage is not self or base.schema != changes.schema or base.partition_policy != changes.partition_policy or base.reference.layer_kind != changes.reference.layer_kind:
             raise IntegrityError('record union requires compatible admitted layers')
         if not changes.reference.record_count:
             return base
@@ -694,6 +803,149 @@ class IcebergRecordStorage:
             added = incoming.join(existing, 'record_identity=existing_key', how='anti').order('record_identity')
             with closing(added.to_arrow_reader(256)) as batches:
                 return self.apply_changes(base, batches)
+
+    def write_table(self, batches: Iterable[pa.RecordBatch], *, layer_kind: str, schema: TableSchema,
+                    sort_by: tuple[str, ...] = ()) -> AdmittedTableLayer:
+        """Write typed Arrow batches natively into a new table layer.
+
+        Batches match ``schema`` as ``table_arrow_schema`` spells it; only a
+        TIMESTAMPTZ zone name may differ, so a nanosecond timestamp refuses.
+        DuckDB writes Parquet carrying Iceberg field IDs, in the store's bounded
+        row groups and member-sized files. ``sort_by`` orders the whole write,
+        so each new file is sorted and its row groups prune on those columns.
+        """
+        require_text(layer_kind, 'layer_kind')
+        if not isinstance(schema, TableSchema):
+            raise IntegrityError('encoded records are written with write_batches, not the table writer')
+        return self._write_rows(batches, schema=schema, layer_kind=layer_kind, sort_by=sort_by)
+
+    def append_table(self, base, batches: Iterable[pa.RecordBatch], *, sort_by: tuple[str, ...] = ()) -> AdmittedTableLayer:
+        """Add typed rows to a natively written table as new files, sharing every base file.
+
+        Rows are only added, never replaced or removed. A registered producer
+        table is a sealed generation and refuses. No rows returns ``base``.
+        """
+        base = _typed(self.admitted(base) if isinstance(base, LayerRef) else base)
+        if base.member_digest is not None:
+            raise IntegrityError('a registered producer table is sealed and refuses appended rows')
+        return self._write_rows(batches, schema=base.schema, layer_kind=base.reference.layer_kind, sort_by=sort_by, base=base)
+
+    def _write_rows(self, batches, *, schema, layer_kind, sort_by, base=None):
+        if len(set(sort_by)) != len(sort_by) or not set(sort_by) <= set(schema.fields):
+            raise ValueError('sort columns must be distinct table columns')
+        expected = table_arrow_schema(schema.columns)
+        count, error = 0, None
+        def checked():
+            nonlocal count, error
+            try:
+                with owned_iterator(batches) as source:
+                    for batch in source:
+                        batch = conform_table_batch(batch, expected)
+                        count += batch.num_rows
+                        yield batch
+            except BaseException as exc:
+                if not isinstance(exc, GeneratorExit):
+                    error = exc
+                raise
+        order = ' ORDER BY ' + ', '.join(identifier(name) for name in sort_by) if sort_by else ''
+        with self._cursor() as cursor, closing(checked()) as source, \
+                closing(pa.RecordBatchReader.from_batches(expected, source)) as reader:
+            cursor.register('table_rows', reader.__arrow_c_stream__())
+            try:
+                with self._write_table(cursor, schema, base) as (target, table):
+                    cursor.execute(f'INSERT INTO {target} SELECT * FROM table_rows{order}')
+                    if base is not None and not count:
+                        return base
+                    return self._pin(table(), schema=schema, layer_kind=layer_kind,
+                                     record_count=count + (0 if base is None else base.reference.record_count))
+            except BaseException:
+                if error is not None:
+                    raise error
+                raise
+            finally:
+                cursor.unregister('table_rows')
+
+    def register_parquet(self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str) -> AdmittedTableLayer:
+        """Register a producer's Parquet file, staged in ``staging_directory``, as a table layer without rewriting it.
+
+        The footer is checked first, and nothing is placed if it refuses: its
+        columns must read as ``schema`` declares them, and a file already
+        carrying field IDs refuses, since Iceberg ``add_files`` reads through a
+        name mapping. The file is exempt from ``max_member_bytes``, which sizes
+        DocSpec's own writes; a row group whose uncompressed data exceeds it
+        refuses instead. The file is then hard-linked, never copied or
+        replaced, to ``iceberg/member-<digest>/data/member.parquet``, and its
+        seal must equal ``member_digest``. A refusal removes only what this call
+        placed and keeps the stage; success unlinks the stage. An interrupted
+        registration leaves that directory where cleanup can name it, and a
+        retry reuses a placed file holding the member's bytes. Register one
+        member at a time.
+        """
+        require_text(layer_kind, 'layer_kind')
+        require_sha256(member_digest, 'member digest')
+        if not isinstance(schema, TableSchema):
+            raise IntegrityError('a registered producer file needs a declared table schema')
+        source = Path(path)
+        try:
+            staged = source.parent.resolve(strict=True).is_relative_to(self.staging_directory.resolve(strict=True))
+        except OSError:
+            staged = False
+        if not staged or source.is_symlink() or not source.is_file():
+            raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
+        with pq.ParquetFile(source) as parquet:
+            footer = parquet.metadata
+        arrow_schema = footer.schema.to_arrow_schema()
+        if any(_has_field_id(field) for field in arrow_schema):
+            raise IntegrityError('registered Parquet already carries field IDs')
+        if any(footer.row_group(index).total_byte_size > self.max_member_bytes for index in range(footer.num_row_groups)):
+            raise LimitExceededError('registered Parquet row group exceeds the member byte limit')
+        with self._cursor() as cursor:
+            if native_columns(cursor.read_parquet(str(source))) != schema.columns:
+                raise IntegrityError('registered Parquet footer differs from its declared schema')
+        directory = f'iceberg/member-{member_digest[7:]}'
+        created, fresh = not (self.root / directory).exists(), False
+        placed = self.root / directory / 'data' / 'member.parquet'
+        receipt = placed.with_name(placed.name + '.sha256')
+        try:
+            _contained(self.root, f'{directory}/metadata/placeholder', create_parents=True)
+            _contained(self.root, f'{directory}/data/member.parquet', create_parents=True)
+            if not placed.exists():
+                receipt.unlink(missing_ok=True)  # it describes no file, so seal must hash the new one
+            try:
+                os.link(source, placed)
+                fresh = True
+            except FileExistsError:
+                pass  # an interrupted registration placed it; its bytes are checked below
+            sealed = next(recovery_references(self.root, seal(self.root, placed))).digest
+            # An interrupted attempt's receipt says nothing of the bytes placed now.
+            if sealed != member_digest or (not fresh and sha256_file(placed)[0] != member_digest):
+                raise IntegrityError('registered Parquet differs from its member digest')
+            with self._cursor():  # the catalog attaches to the native connection a cursor opens
+                client = self._client()
+            key, handle = (self._catalog.namespace, 'register_' + uuid4().hex), None
+            try:
+                handle = client.create_table(key, schema=arrow_schema, location=str(self.root / directory))
+                handle.add_files([str(placed)])
+                table = client.load_table(key)
+            except (NotImplementedError, TypeError, ValueError, UnsupportedPyArrowTypeException) as error:
+                raise IntegrityError(f'Iceberg refused the registered Parquet: {error}') from error
+            finally:
+                # No purge, as for every write handle: the files stay ours.
+                if handle is not None:
+                    client.drop_table(key)
+            if table_columns(table.schema()) != schema.columns:
+                raise IntegrityError('registered Iceberg schema differs from its declared schema')
+            layer = self._pin(table, schema=schema, layer_kind=layer_kind, record_count=footer.num_rows,
+                              member_digest=member_digest)
+        except BaseException:
+            if created:
+                shutil.rmtree(self.root / directory, ignore_errors=True)
+            elif fresh:
+                placed.unlink(missing_ok=True)
+                receipt.unlink(missing_ok=True)
+            raise
+        source.unlink()
+        return layer
 
 
 @dataclass(frozen=True, slots=True)
@@ -719,3 +971,26 @@ class AdmittedRecordLayer:
 
         with self.relation(partitions=partitions) as relation, closing(relation.order('record_identity').to_arrow_reader(256)) as reader:
             yield from bounded_batches(reader, byte_column=tuple(_physical_schema(self.schema).names) if self.schema.columns else 'record_json', max_value_bytes=self._storage.max_record_bytes)
+
+
+@dataclass(frozen=True, slots=True)
+class AdmittedTableLayer:
+    """An admitted typed table: its reference, closed schema, pinned table and any producer member digest."""
+
+    _storage: IcebergRecordStorage
+    reference: LayerRef
+    _root: Mapping[str, Any]
+    schema: TableSchema
+    table: Any
+
+    @property
+    def member_digest(self) -> str | None:
+        """The producer member a registered table holds unchanged; None for DocSpec's own writes."""
+        return self._root['memberDigest']
+
+    @contextmanager
+    def relation(self):
+        """Open this table's native relation: its own columns, in schema order."""
+
+        with self._storage._relation(self) as relation:
+            yield relation

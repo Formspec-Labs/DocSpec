@@ -1066,6 +1066,14 @@ proposed (2026-09-23, revised after review the same day), under
 accepted. Open rulings R1–R6 are listed there. This is D3 of the consolidation
 path (spicy-docs `docs/research/consolidation-path-2026-09-22.md`, Track D).
 
+**Progress (2026-09-25):** the storage foundation is in place: the table-layer
+profile of step 2 (`IcebergRecordStorage.write_table`, `append_table` and
+`register_parquet`), the row and member-key spellings of steps 3 and 4 with
+their spelling oracle, the identity pass of step 5 and the minted-occurrence
+index of step 7 with its lookup (`adapters/storage/table_occurrences.py`). See
+[record storage](record-storage.md#typed-table-layers). Admission, publication,
+readers and C28's resolver remain.
+
 **Why:** DocSpec holds spicy-regs rows as its own canonical-JSON occurrence
 records, one ledger-registered entity each. Importing its Federal Register
 catalog took 16 min 49 s at 8.80 GiB for 1,007,639 records and left a 1.310 GB
@@ -1102,13 +1110,16 @@ through the existing HTTPS fetcher (the `http` extra).
    - Parquet footer columns and row count equal to `spec.tables[table]`.
 
    Retain the root and the manifest as blobs.
-2. **Register without rewriting.** Rename the member into
-   `iceberg/<table>/data/`, then create the table from its Arrow schema and call
-   `add_files`, which writes `schema.name-mapping.default`. Drop the catalog
-   handle and pin. The sealed checksum of the data file must equal the member
-   digest. A new table-layer profile (root format `docspec-iceberg-table`)
-   records the columns, source pin, member digest and rule versions, and its
-   native relation yields the table's own columns.
+2. **Register without rewriting.** Stage the member in the record store's
+   staging directory, then hard-link it to
+   `iceberg/member-<digest>/data/member.parquet`, create the table from its
+   Arrow schema and call `add_files`, which writes `schema.name-mapping.default`.
+   Drop the catalog handle and pin. The sealed checksum of the data file must
+   equal the member digest. A refusal keeps the stage; a retry reuses a placed
+   file holding the member's bytes. A new table-layer profile (root format
+   `docspec-iceberg-table`) records the columns and the member digest, and its
+   native relation yields the table's own columns; the source pin and rule
+   versions enter the state's identity and rules (steps 3, 4 and 8).
    - The encoded-record profile refuses such a table ("Referenced column
      record_identity not found").
    - File-level admission (`verify_members`, `available`,
@@ -1116,8 +1127,10 @@ through the existing HTTPS fetcher (the `http` extra).
      `count(*)` with `recordCount`.
    - Referenced files are exempt from `max_member_bytes`, which sizes DocSpec's
      own writes; a row group above it refuses instead.
-   - `add_files` refuses Parquet that already carries field IDs. If a producer
-     starts writing them, registration checks them against the schema instead.
+   - Registration refuses Parquet that already carries field IDs: PyIceberg
+     0.12's `add_files` would read those IDs instead of the name mapping. If a
+     producer starts writing them, registration must check them against the
+     schema instead.
 3. **Member key: a per-table spelling owned by spicy-docs.** The spelling is a
    versioned, declared function. spicy-docs owns its Python reference, for
    example `federal_register_source_record_id`, which gives `number@date`.
@@ -1156,9 +1169,9 @@ through the existing HTTPS fetcher (the `http` extra).
      | Type | Spelling |
      | --- | --- |
      | BOOLEAN | `true` or `false` |
-     | INTEGER, SMALLINT | an integer |
+     | INTEGER | an integer (Iceberg holds no SMALLINT, so a SMALLINT column refuses) |
      | BIGINT | an integer when \|v\| ≤ 2^53−1, else a decimal string |
-     | DOUBLE | `CASE WHEN isnan(v) THEN 'nan' ELSE CAST(v AS VARCHAR) END`, as a string; DuckDB spells a NaN with its sign bit set as `-nan`, Python as `nan` |
+     | DOUBLE | `nan` for every NaN (DuckDB spells one with its sign bit set as `-nan`, Python as `nan`), else `CAST(v AS VARCHAR)`, as a string, when it reads back as `v`; otherwise the row refuses, since DuckDB 1.5.5 casts ±2^81, ±2^91 and ±2^807 to another value's spelling |
      | DATE, TIMESTAMP | ISO 8601 strings, TIMESTAMP in UTC |
      | anything else | refused |
    - **Oracle.** Every spelling, including keys with control characters, NaN,
