@@ -88,7 +88,7 @@ class CoreWorkspace:
         ``source`` is a local generation or publication directory, or an HTTPS
         publication base (the ``http`` extra). Its ``publication.json`` is an
         untrusted pointer: Rulespec admits the pinned family before its member
-        moves into the record store unrewritten. Re-admitting a pin returns its
+        is linked into the record store unrewritten. Re-admitting a pin returns its
         state; ``dataset=`` makes the state current over the dataset's base,
         whose unchanged rows keep their occurrences. See decision 0007.
         """
