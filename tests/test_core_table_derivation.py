@@ -16,6 +16,7 @@ import sqlite3
 import pyarrow as pa
 import pytest
 
+from docspec.adapters.storage import core_tables
 from docspec.adapters.storage.batches import table_arrow_schema
 from docspec.adapters.storage.table_occurrences import reference_identity
 from docspec.domain import core
@@ -196,6 +197,23 @@ def test_an_incremental_derive_writes_only_changed_rows_and_shares_base_files(tm
             assert cursor.read_parquet(new_files).project("member_key").order("member_key").fetchall() == [
                 ("a",), ("d",), ("f",)]
         assert workspace.compare(first.state_id, second.state_id)["counts"] == {"added": 1, "removed": 1, "changed": 2}
+
+
+@pytest.mark.parametrize("bound", ["delta", "files"])
+def test_a_large_delta_or_a_fragmented_membership_is_rewritten_natively(tmp_path, monkeypatch, bound):
+    monkeypatch.setattr(core_tables, "DELTA_ROWS" if bound == "delta" else "MEMBERSHIP_FILES", 0 if bound == "delta" else 3)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        occurrences = source_state(workspace)
+        rows = {key: prepared(key, occurrence) for key, occurrence in occurrences.items()}
+        states = [derive(workspace, list(rows.values()), "first").state_id]
+        for index in range(4):
+            rows["a"] = {**rows["a"], "title": f"edit {index}"}
+            states.append(derive(workspace, [rows["a"]], f"edit-{index}", base_state_id=states[-1]).state_id)
+            assert {key: entity.entity_id for key, entity in workspace.rows(states[-1])} == {
+                key: urn for key, (urn, _, _) in expected(rows.values()).items()}
+        files = [len(workspace.records.data_files(layer(workspace, state, "membership"))) for state in states]
+        # Every rewrite leaves one file; small deltas add files only up to the bound.
+        assert files == [1] * 5 if bound == "delta" else (max(files) <= 3 and files.count(1) >= 2)
 
 
 @pytest.mark.parametrize("change", ["rows", "base", "input", "removals", "definition", "schema"])

@@ -140,38 +140,42 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
 
 
 def _apply_delta(records, cursor, table, identity, base, minted, counts):
-    """Give the base membership the minted rows and drop the removed keys; count them into ``counts``.
+    """Give the base membership the minted rows and drop the removed keys; count them into ``counts``."""
+    fresh = minted.relation(cursor)
+    with records.relations({"base": base["membership"], "new": table}, cursor=cursor) as relations:
+        changed = fresh.join(relations["base"].project("record_identity AS base_key"), "member_key = base_key",
+                             how="semi").aggregate("count(*)").fetchone()[0]
+        added = minted.row_count - changed
+        removed = base["membership"].reference.record_count + added - counts["rows"]
+        counts.update(added=added, changed=changed, carried=counts["rows"] - minted.row_count, removed=removed)
+        gone = relations["base"].project("record_identity AS gone_key").join(
+            relations["new"].project(f"{member_key_sql(identity)} AS new_key"), "gone_key = new_key", how="anti")
+        membership = _revise_membership(records, cursor, base["membership"], fresh, gone,
+                                        changes=minted.row_count + removed)
+    if membership.reference.record_count != counts["rows"]:
+        raise IntegrityError("table-shaped membership differs from its table's rows")
+    return membership
+
+
+def _revise_membership(records, cursor, base, fresh, gone, *, changes):
+    """Give the membership ``base`` the minted ``fresh`` rows and drop the keys ``gone`` names (``gone_key``).
 
     Up to ``DELTA_ROWS`` changes on a membership of fewer than
     ``MEMBERSHIP_FILES`` data files go through ``apply_changes``, sharing
     every base file. Anything larger is one native rewrite of the whole
     membership (``retain_relation``), so no delta admits rows in Python beyond
-    that bound and the files a dataset's generations accumulate are compacted.
+    that bound and the files a dataset's states accumulate are compacted.
     """
-    fresh = minted.relation(cursor)
-    with records.relations({"base": base["membership"], "new": table}, cursor=cursor) as relations:
-        base_rows = relations["base"].project("record_identity, partition_value, record_json")
-        changed = fresh.join(base_rows.project("record_identity AS base_key"), "member_key = base_key", how="semi") \
-            .aggregate("count(*)").fetchone()[0]
-        added = minted.row_count - changed
-        removed = base["membership"].reference.record_count + added - counts["rows"]
-        counts.update(added=added, changed=changed, carried=counts["rows"] - minted.row_count, removed=removed)
-        new_keys = relations["new"].project(f"{member_key_sql(identity)} AS new_key")
-        minted_keys = fresh.project("member_key AS minted_key")
-        if minted.row_count + removed <= DELTA_ROWS and len(records.data_files(base["membership"].reference)) < MEMBERSHIP_FILES:
-            gone = base_rows.join(new_keys, "record_identity = new_key", how="anti").project(
-                "record_identity, partition_value, NULL::BLOB AS record_json")
-            with closing(_membership_rows(fresh).union(gone).to_arrow_reader(BATCH_ROWS)) as delta:
-                membership = records.apply_changes(base["membership"], delta)
-        else:
-            kept = base_rows.join(new_keys, "record_identity = new_key", how="semi").join(
-                minted_keys, "record_identity = minted_key", how="anti")
-            membership = records.retain_relation(kept.union(_membership_rows(fresh)), cursor=cursor,
-                                                 layer_kind="core-membership", schema=MEMBERSHIP_SCHEMA,
-                                                 partition_policy=MEMBERSHIP_POLICY)
-    if membership.reference.record_count != counts["rows"]:
-        raise IntegrityError("table-shaped membership differs from its table's rows")
-    return membership
+    if changes <= DELTA_ROWS and len(records.data_files(base.reference)) < MEMBERSHIP_FILES:
+        removals = gone.project("gone_key AS record_identity, gone_key AS partition_value, NULL::BLOB AS record_json")
+        with closing(_membership_rows(fresh).union(removals).to_arrow_reader(BATCH_ROWS)) as delta:
+            return records.apply_changes(base, delta)
+    with records.relations({"base": base}, cursor=cursor) as relations:
+        kept = relations["base"].project("record_identity, partition_value, record_json").join(
+            gone, "record_identity = gone_key", how="anti").join(
+            fresh.project("member_key AS minted_key"), "record_identity = minted_key", how="anti")
+        return records.retain_relation(kept.union(_membership_rows(fresh)), cursor=cursor, layer_kind="core-membership",
+                                       schema=MEMBERSHIP_SCHEMA, partition_policy=MEMBERSHIP_POLICY)
 
 
 def check_minted_copies(records, ledger, table, identity: TableIdentity, minted):
@@ -344,15 +348,13 @@ def _apply_derivation(records, cursor, staged, base, removals, state_id):
                                                                  f"{row_key} = changed_key", how="semi")
         table = records.apply_changes(base["table"], rewritten.project(", ".join(map(identifier, staged.schema.fields))),
                                       key=fields, removed=removed.project(names), cursor=cursor)
-        delta = _membership_rows(changed).union(removed.project(
-            "old_key AS record_identity, old_key AS partition_value, NULL::BLOB AS record_json"))
-        with closing(delta.to_arrow_reader(BATCH_ROWS)) as batches:
-            membership = records.apply_changes(base["membership"], batches)
-        with spilled_identities(records, changed, cursor=cursor) as fresh:
-            index, generated = append_occurrences(records, base["occurrences"], fresh, first_state_id=state_id)
         written, replaced = changed.join(old.project("old_key"), "member_key = old_key", how="left").aggregate(
             "count(*), count(old_key)").fetchone()
         dropped = removed.aggregate("count(*)").fetchone()[0]
+        membership = _revise_membership(records, cursor, base["membership"], changed,
+                                        removed.project("old_key AS gone_key"), changes=written + dropped)
+        with spilled_identities(records, changed, cursor=cursor) as fresh:
+            index, generated = append_occurrences(records, base["occurrences"], fresh, first_state_id=state_id)
     counts = {"rows": base["table"].reference.record_count + written - replaced - dropped, "added": written - replaced,
               "changed": replaced, "removed": dropped, "unchanged": staged.count - written}
     return table, membership, index, generated, counts
