@@ -1,26 +1,27 @@
 # C27 gate: admit Federal Register generations by reference
 
 **Passed.** `CoreWorkspace.admit_generation` admitted the fork-host prior
-generation (`sha256:6c215859…`, 1,008,903 rows) in **14.0 s at 0.99 GiB**, then
-the current one (`sha256:731984ca…`, 1,009,005 rows) over it in **2.7 s at
+generation (`sha256:6c215859…`, 1,008,903 rows) in **14.8 s at 0.95 GiB**, then
+the current one (`sha256:731984ca…`, 1,009,005 rows) over it in **3.0 s at
 2.1 GiB**. `changes` between the two states equals pyarrow's direct
 column-by-column comparison exactly: 102 added, 2 changed, 0 removed, and
 1,008,901 occurrences carried forward. A synthetic third generation that
 restores the two changed rows resolves them to their **first** occurrences,
 recorded by the prior state (ruling R1(b)). The contract columns equal the
 retained catalogue on all 1,007,639 of its keys, beyond 54 listed keys whose
-producer and catalogue captures of the API differ. Neither falsifier fires.
+producer and catalogue captures of the API differ: 53 only in a scalar's type
+and one in a catalogue-side value. Neither falsifier fires.
 
 The [harness](2026-09-25-admit-generation-gate.py) and
 [receipt](2026-09-25-admit-generation-gate.json) record every number below;
 per-step receipts, logs and RSS samples are in
-`~/Work/corpora/c27-gate-20260925/receipts/`. Code: DocSpec `6ebe108`
-(lane/admission with main merged: the in-process catalog, the table-storage
-review fixes and one-pass ordered reads), DuckDB 1.5.5, PyArrow 25.0.1, Python
-3.12.9, one DuckDB thread and a 6 GiB engine limit, on a 14-CPU arm64 Mac at
-load 7–13. Each step ran once, in its own process, under the PM01 watch wrapper
-with a 12 GiB cap. An earlier run on `e61576b`, writing through the Docker REST
-fixture, gave the same counts at 14.35 s and 3.22 s (`receipts/e61576b/`).
+`~/Work/corpora/c27-gate-20260925/receipts/`. Code: DocSpec `214b063`
+(lane/admission with main merged and the review's fixes), DuckDB 1.5.5, PyArrow
+25.0.1, Python 3.12.9, one DuckDB thread and a 6 GiB engine limit, on a 14-CPU
+arm64 Mac at load 5–13. Each step ran once, in its own process, under the PM01
+watch wrapper with a 12 GiB cap. Earlier runs on `e61576b` (Docker REST
+fixture) and `6ebe108` gave the same counts at 14.4/3.2 s and 14.0/2.7 s
+(`receipts/e61576b/`, `receipts/6ebe108/`).
 
 ## Fixture
 
@@ -40,12 +41,12 @@ typed dataset instead, admitted A→B→A through the same code path.
 
 | Generation | Seconds | Peak RSS | Member | Membership written | Index written | Ledger records | Ledger bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| prior (first) | 13.97 | 0.99 GiB | 155,941,669 | 46,197,560 | 73,210,952 | +9 | 110,592 (new file) |
-| current | 2.71 | 2.11 GiB | 155,941,077 | 28,688 | 17,802 | +8 | +32,768 |
-| fr-g3 (synthetic) | 2.75 | 2.08 GiB | 324,471,111 | 27,904 | 12,057 | +8 | +28,672 |
+| prior (first) | 14.75 | 0.95 GiB | 155,941,669 | 46,197,560 | 73,210,953 | +9 | 110,592 (new file) |
+| current | 3.04 | 2.11 GiB | 155,941,068 | 28,689 | 17,803 | +8 | +32,768 |
+| fr-g3 (synthetic) | 3.04 | 2.09 GiB | 324,471,111 | 27,902 | 12,058 | +8 | +28,672 |
 
 Seconds are the `admit_generation` call; each process, with interpreter
-start-up, took 14.8, 3.3 and 3.4 s. Member bytes include its
+start-up, took 15.6, 4.0 and 3.7 s. Member bytes include its
 Iceberg metadata; fr-g3's member is larger because pyarrow wrote it. Bytes
 downloaded: none (local sources); each admission staged its root, manifest and
 member once. Every generation adds one admission unit, its identity mark and
@@ -55,8 +56,8 @@ same pattern (+9, +8, +8).
 
 Beside the baselines: the spike's first admission took 12.1 s at 1.09 GiB; the
 row-copy reimport of different content took 16 min 49 s at 8.80 GiB; the
-like-for-like C26 derive is estimated at about 9 min. Admission is 39× below
-the estimate on a first generation and 200× below it on a later one.
+like-for-like C26 derive is estimated at about 9 min. Admission is 37× below
+the estimate on a first generation and 180× below it on a later one.
 
 | Report counts | generated | adopted | added | changed | removed | carried |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -72,14 +73,15 @@ the estimate on a first generation and 200× below it on a later one.
 | `changes` (reader) against pyarrow's direct comparison of the two members | equal key sets: 102 added, 2 changed (`2026-19240@2026-09-21`, `2026-19258@2026-09-21`), 0 removed; `compare` counts equal |
 | Carried forward: same occurrence at the same key in both states | 1,008,901 |
 | fr-g3's restored rows | both equal the prior state's occurrences, differ from the current's, and the index names the prior state as their first; only the control-character row was generated |
-| Typed A→B→A | row 7 in A′ is A's occurrence, first admitted by A; rules equal those built from the pyarrow schema |
+| Typed A→B→A | row 7 in A′ is A's occurrence, first admitted by A |
+| Identity rules | every admission's rules equal those built from its member's pyarrow schema, independently of the admission |
 | Python reference, every row | 0 mismatches in key and occurrence over 1,009,005 current rows; 0 in key, occurrence and full occurrence record over 6,001 typed rows |
 | Catalogue keys | 1,007,639 compared, equal to the reference; 0 catalogue-only keys; 1,366 generation-only keys, listed |
-| Two-way `EXCEPT` over the 22 shared contract columns (`topics_json` absent, `rin` extra) | 54 rows each way, all in `cfr_references_json`, listed by key; 0 in the other 21 columns |
+| Two-way `EXCEPT` over the 22 shared contract columns (`topics_json` absent, `rin` extra) | 54 rows each way, all in `cfr_references_json`, listed by key and classified: 53 type-only, 1 value; 0 in the other 21 columns |
 | `modify_date` | NULL on every row of both sides |
 
 The comparison read the current state through `CoreStateReader.table()`, took
-75 s and peaked at 8.2 GiB, mostly pyarrow holding both members and DuckDB's
+72 s and peaked at 9.3 GiB, mostly pyarrow holding both members and DuckDB's
 buffers; that is the check's cost, not admission's.
 
 ## Adjudications
@@ -90,13 +92,15 @@ buffers; that is the check's cost, not admission's.
   1,001,753 rows differ as text and 0 as JSON. The four `*_json` columns are
   compared after both sides are re-encoded with sorted keys by `json.dumps`,
   an encoder independent of DocSpec's.
-- **54 `cfr_references_json` exceptions are two captures of the API.** In 53,
-  the producer's `part` is a string (`"17"`) where the catalogue's capture holds
-  an integer (`17`); in one (`2017-27683@2017-12-26`) `chapter` is `"I"`
-  against `0`. All are 2001–2019 documents. The admitted rows equal the
-  producer's member byte for byte (sealed digest) and row for row (Python
-  oracle), so these are producer-versus-catalogue source differences, not
-  admission's.
+- **54 `cfr_references_json` exceptions are two captures of the API, and
+  none is lost data.** 53 are type-only: the producer's `part` is a string
+  (`"17"`) where the catalogue's capture holds an integer (`17`), and the values
+  agree once every scalar is spelled as text. One (`2017-27683@2017-12-26`) is
+  a catalogue-side value difference: `chapter` is `"I"` in the producer's
+  member against `0` in the catalogue's capture. All are 2001–2019 documents.
+  The admitted rows equal the producer's member byte for byte (sealed digest)
+  and row for row (Python oracle), so these are differences between the two
+  sources, not admission's.
 - **Generation-only keys post-date the catalogue's supply, not its reimport.**
   All 1,366 are dated 2026-09-03 through 2026-09-22, after the catalogue's
   2026-09-02 supply; 777 fall on or before 2026-09-14, the reimport date that
@@ -113,10 +117,19 @@ buffers; that is the check's cost, not admission's.
 - **A later admission peaks at about 2.1 GiB,** twice the first: the direct
   all-column join holds the base table's rows in its hash table. It spills
   under the engine limit, but its memory grows with the table, not the delta.
+- **The identity check follows the minted rows, not the pins.** It matches
+  only the occurrences an admission minted against the ledger, bounded by the
+  smaller side. On 400K minted rows it took 0.0006, 0.10 and 0.17 s at 0,
+  2,048 and 8,192 pinned table occurrences, where the check before the review
+  rescanned the membership per 2,048 pins (0, 0.28 and 1.09 s)
+  (`~/Work/corpora/c27-gate-20260925/probe-identity-check/`).
+- **A delta stays bounded.** Up to 65,536 changes on a membership of fewer
+  than 16 data files apply through `apply_changes`; anything larger is one
+  native rewrite that also compacts the membership.
 - **Scaling.** The first admission is one pass over the rows plus a sorted
   membership write and a sorted index write, O(n log n) in DuckDB's spillable
   sorts. A later one is two key passes and one join over both tables, O(n),
-  plus O(changes) minting. Resolving an occurrence by identity is one index
+  plus O(changes) minting and ledger checks. Resolving an occurrence by identity is one index
   lookup, one membership lookup and one pruned table read per table-shaped
   state searched, newest first; with R3 there is one per dataset.
 
