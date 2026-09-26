@@ -21,9 +21,9 @@ from pathlib import Path
 import docspec
 
 ROOT = Path(__file__).resolve().parents[1]
-RULESPEC_VERSION = "1.1.1"
+RULESPEC_VERSION = "1.1.2"
 RULESPEC_WHEEL = ROOT / "vendor" / f"rulespec_artifacts-{RULESPEC_VERSION}-py3-none-any.whl"
-RULESPEC_WHEEL_SHA256 = "63ad763f5e5f13ddba571225503c6ad7a4aa2bd7ea5d818e209fbf832285c8c8"
+RULESPEC_WHEEL_SHA256 = "7d547cd432b1d533b93dcfd3802e4a0e179de6e89301fd6faa8bb917b99830ef"
 PROVIDER = json.loads((ROOT / "vendor/spicy_docs.json").read_text(encoding="utf-8"))
 SPICY_DOCS_WHEEL = ROOT / "vendor" / PROVIDER["filename"]
 SPICY_DOCS_VERSION = PROVIDER["version"]
