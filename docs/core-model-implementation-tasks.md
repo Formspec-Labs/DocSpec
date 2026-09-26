@@ -1544,9 +1544,78 @@ passed in an independent full run of the branch.
 ### C29 · Typed derived layers
 
 **Depends on:** C27, and D6 (Search can read generation rows). **Status:**
-proposed (2026-09-23, revised after review the same day), under
-[decision 0007](decisions/0007-table-shaped-states-by-reference.md), not yet
-accepted.
+implemented (2026-09-25) under
+[decision 0007](decisions/0007-table-shaped-states-by-reference.md), item 9;
+the gate passed for DocSpec's part
+([receipt](history/probes/2026-09-25-typed-derived-layers.md)). Search's typed
+preparer and Engine's reading of the layer remain with their own plans.
+
+**Delivered:** `CoreWorkspace.derive_table(batches, *, schema, batch_id,
+definition, inputs, base_state_id=None, removals=(), dataset=None)` returns a
+`TableDerivation(state_id, report)`, and `CoreStateReader.affected(older,
+newer)` finds the rows a changed input affects; see
+[Python runs](python-runs.md#derive-a-typed-table-layer).
+
+- Rows and identity: the batches are spilled once to scratch
+  (`staged_table`), before any guard is taken, and minted natively under C27's
+  row rule. The definition ID is the identity scope and the schema ID the
+  table (`TableIdentity.derived`). The table is written natively in the
+  caller's order (`write_table_relation`), the membership from the minted
+  identities (`retain_relation`), and a new minted-occurrence index is started.
+  Every refusal, and an exact retry, writes nothing to the store.
+- One unit, shared with C27's admission (`application/table_units.py`): the
+  caller's definition, a `rows` entity bound as a whole input (the rows' set
+  digest, the removals and the base), the request, execution, result, report,
+  state and version-3 representation. `generating_request` names the sources
+  (`StateInput`s) and lookups (`WholeInput`s). The unit's identity check looks
+  up only the staged rows' occurrences (`check_minted_copies`).
+- Types: C27's spellings, `VARCHAR[]` already among them in the shared oracle
+  corpus. `member-segment/1` adds integer key components, oracle-checked.
+- Incremental: the rows replace every row of the source members they name,
+  and `removals` drop theirs. A row whose occurrence the base already holds is
+  not written. The table takes the delta through `apply_changes` (typed:
+  whole rows and removed keys, one merge-on-read commit that shares every
+  untouched file and descends from the base's snapshot); the membership takes
+  C27's bounded delta (`_revise_membership`); only written rows reach the
+  index. No edit bound. A base of another definition, schema or key refuses.
+- Retry and refusal as C26: the same batch ID with the same definition,
+  inputs, base, removals and rows, in any order, returns the published state;
+  any change refuses.
+- One-to-many: `segment_index` keys rows `member_key#segment_index`.
+- Fusion: `source_occurrence_id VARCHAR[]` holds every joined row's
+  occurrence; `affected` is one anti-join of the input's two memberships and
+  one semi-join over the table.
+- Retention: the base is recorded as used, never bound, so an older derived
+  state is removable while a newer one shares its files; removal frees only
+  files no retained layer names.
+- Readers: every reader and `table()`, whose `member_key` is a derived layer's
+  own column.
+
+Known limits: a point read costs about 0.2 s of native spelling compilation
+per query on a 50-column layer (540 ms per `read_value` at 1 M rows), a
+property of C27's readers. `changes` between two 1 M-row derived states takes
+3.9 s, since table-shaped states record no revision certificates. A changed
+source member always rewrites its derived row, whose source occurrence
+changed. `source_occurrence_id` is the caller's claim; DocSpec does not match
+it against the bound inputs. Each incremental derive adds a data and a delete
+file to the table, with no table compaction yet. The index costs 72.6 B per
+occurrence, as C27's.
+
+**Verified:** the [derivation suite](../tests/test_core_table_derivation.py)
+(regression requirement `CORE-TYPED-DERIVE`) covers a typed initial derive read
+back through every reader against the Python reference; an incremental derive
+writing only changed rows over shared files; exact retry in any row order, and
+refusal of changed rows, base, inputs, removals, definition or schema under one
+batch ID; refusal of another definition or schema as a base; a stale dataset;
+a one-to-many layer; a two-input fusion layer finding the rows each input's
+change affects; the native membership rewrite beyond both bounds; and removal
+of an older derived state sharing files with a newer one. The gate derived
+PM01's 10,000 FR prepared values with 0 of 490,000 (member key, field) values
+differing from Python's reading of the JSON. The incremental derive wrote
+exactly the source revision's 50 rewrites, with `changes` equal to the
+source's 51. Each derive added 7–9 ledger records. The full 1,007,639-row
+layer took 49.9 s at 3.6 GiB: 0.0495 ms per record beside PM01's 0.81, and
+0.173 for C26's JSON derive of the same values.
 
 **Why:** Search's prepared metadata is one JSON value per member, stored as
 canonical JSON inside a canonical-JSON occurrence record. Engine decodes every

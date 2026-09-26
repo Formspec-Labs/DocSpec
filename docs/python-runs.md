@@ -274,6 +274,69 @@ current result binds the superseded one, remove its state, representation and
 admission result under a retention policy (below); its member file goes with
 them, while files and index entries the newer state shares stay.
 
+## Derive a typed table layer
+
+When derived rows share one declared schema and arrive in bulk, such as a
+consumer's prepared fields, `derive_table` writes them as a table-shaped state
+rather than one JSON value per member
+([decision 0007](decisions/0007-table-shaped-states-by-reference.md), item 9).
+It is `derive` with typed rows: Arrow record batches in a `TableSchema` that
+declares `member_key` and `source_occurrence_id`, the occurrence of the source
+row each row derives from:
+
+```python
+schema = TableSchema("search-prepared:1", (
+    ("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR"), ("title", "VARCHAR"),
+    ("identifiers", "VARCHAR[]"), ("date_publication_date", "DATE")))
+with CoreWorkspace(workspace_path) as workspace:
+    derived = workspace.derive_table(
+        batches, schema=schema, batch_id="prepared-2026-09-25", definition=definition,
+        inputs=(core.StateInput(label="source", state_id=source_id), lookups), dataset="prepared")
+    print(derived.state_id, derived.report["counts"])
+    with workspace.open_state(derived.state_id) as reader, reader.table() as rows:
+        rows.limit(5).fetchall()  # member_key, occurrence_id and the declared columns, typed
+```
+
+Rows are spilled once to scratch and written natively; nothing about them
+crosses Python row by row. Each row's occurrence follows `docspec-table-row/1`,
+scoped by the definition ID and the schema ID, so the same rows under another
+definition are other occurrences and the row digest covers every declared
+column, its source occurrence included. `VARCHAR[]` holds lists, so keywords
+need no JSON. A schema with `segment_index` (INTEGER or BIGINT) is a
+one-to-many layer keyed `member_key#segment_index` (`member-segment/1`); its
+typed rows keep the source member's `member_key`.
+
+With `base_state_id=`, pass the rows of the source members that changed, from
+the source's `changes`, and their removed keys as `removals=`; a changed member
+that now derives no rows is a removal too. Every row of a named member is
+replaced, and a row whose occurrence the base already holds is not written.
+The table takes the difference as one delta that shares the base's files, so
+each table snapshot descends from its base's; the membership does too, up to
+the admission's bound (65,536 changes or 16 files), beyond which it is
+rewritten natively in one file. Rows keep the order the caller streams them in.
+There is no edit bound, and the derived `changes` are at most the source's: a
+row records its source occurrence, so a changed source member rewrites its row
+even when the other fields are unchanged. The base must be a derived state of
+the same definition and schema; derive a new definition in full, without a
+base.
+
+One unit publishes the definition, a `rows` entity (the rows' digest, the
+removals and the base, bound as a whole input beside the caller's inputs), the
+request, execution, result, report, state and representation, whatever the row
+count. `generating_request` names the sources and lookups. The base is recorded
+as used but never bound, so an older derived state can be removed while a newer
+one shares its files; removal frees only the files no retained layer names.
+Repeat the same batch ID with the same definition, inputs, base, removals and
+rows, in any order, to get the published `TableDerivation(state_id, report)`
+back without writing; a change under that ID refuses. `dataset=` advances a
+current pointer from the base, or from none, with the stale-base check.
+
+For a layer joining several inputs, declare `source_occurrence_id` as
+`VARCHAR[]` holding every joined row's occurrence. `reader.affected(older,
+newer)`, given two open readers of one input, yields the typed rows derived
+from a row that `newer` changed or removed: one native anti-join of the two
+memberships and one semi-join, so the caller re-derives only those rows.
+
 ## Execute and reuse work
 
 Use `workspace.operations.run(definition, request, producer)` for a fresh

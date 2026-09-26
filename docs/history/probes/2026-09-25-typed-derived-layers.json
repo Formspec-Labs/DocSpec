@@ -1,0 +1,2144 @@
+{
+ "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+ "gate": "C29 typed derived layers",
+ "harness": "docs/history/probes/2026-09-25-typed-derived-layers.py",
+ "receipts": {
+  "compare-10k-1": {
+   "compare": {
+    "cpu_seconds": 0.302,
+    "load_end": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "load_start": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "peak_rss_bytes_process": 755679232,
+    "wall_seconds": 0.149
+   },
+   "differing": [],
+   "differing_count": 0,
+   "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.66845703125,
+     6.79443359375,
+     7.4365234375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "fields_compared": 490000,
+   "members": 10000,
+   "metadata_not_engine_bytes": 0,
+   "occurrence_differs": [],
+   "populated_filters_and_dates": {
+    "date_author_at": 0,
+    "date_author_on": 0,
+    "date_comment_closes_at": 0,
+    "date_comment_closes_on": 2698,
+    "date_comment_opens_at": 0,
+    "date_comment_opens_on": 0,
+    "date_effective_at": 0,
+    "date_effective_on": 1589,
+    "date_implementation_at": 0,
+    "date_implementation_on": 0,
+    "date_posted_at": 0,
+    "date_posted_on": 0,
+    "date_publication_date": 10000,
+    "date_published_at": 0,
+    "date_published_on": 10000,
+    "date_received_at": 0,
+    "date_received_on": 0,
+    "date_signing_at": 0,
+    "date_signing_on": 81,
+    "date_updated_at": 0,
+    "date_updated_on": 0,
+    "filter_agency": 9941,
+    "filter_author": 0,
+    "filter_body_indexed": 10000,
+    "filter_cfr": 2023,
+    "filter_cfr_title": 2064,
+    "filter_docket_id": 6011,
+    "filter_docket_type": 0,
+    "filter_document_id": 10000,
+    "filter_document_type": 10000,
+    "filter_file_format": 10000,
+    "filter_organization": 0,
+    "filter_parent_agency": 5196,
+    "filter_program": 0,
+    "filter_record_kind": 10000,
+    "filter_regulation_identifier_number": 1190,
+    "filter_subtype": 79,
+    "filter_topic": 1147,
+    "filter_withdrawn": 0
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-1.jsonl",
+   "record_count": 10000,
+   "recorded_at": "2026-09-25T22:17:17",
+   "state_id": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188",
+   "stored": 10000
+  },
+  "compare-10k-2": {
+   "compare": {
+    "cpu_seconds": 0.32,
+    "load_end": [
+     4.61,
+     6.75,
+     7.42
+    ],
+    "load_start": [
+     4.61,
+     6.75,
+     7.42
+    ],
+    "peak_rss_bytes_process": 759889920,
+    "wall_seconds": 0.17
+   },
+   "differing": [],
+   "differing_count": 0,
+   "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.61474609375,
+     6.74755859375,
+     7.416015625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "fields_compared": 489951,
+   "members": 9999,
+   "metadata_not_engine_bytes": 0,
+   "occurrence_differs": [],
+   "populated_filters_and_dates": {
+    "date_author_at": 0,
+    "date_author_on": 0,
+    "date_comment_closes_at": 0,
+    "date_comment_closes_on": 2698,
+    "date_comment_opens_at": 0,
+    "date_comment_opens_on": 0,
+    "date_effective_at": 0,
+    "date_effective_on": 1589,
+    "date_implementation_at": 0,
+    "date_implementation_on": 0,
+    "date_posted_at": 0,
+    "date_posted_on": 0,
+    "date_publication_date": 9999,
+    "date_published_at": 0,
+    "date_published_on": 9999,
+    "date_received_at": 0,
+    "date_received_on": 0,
+    "date_signing_at": 0,
+    "date_signing_on": 81,
+    "date_updated_at": 0,
+    "date_updated_on": 0,
+    "filter_agency": 9940,
+    "filter_author": 0,
+    "filter_body_indexed": 9999,
+    "filter_cfr": 2023,
+    "filter_cfr_title": 2064,
+    "filter_docket_id": 6011,
+    "filter_docket_type": 0,
+    "filter_document_id": 9999,
+    "filter_document_type": 9999,
+    "filter_file_format": 9999,
+    "filter_organization": 0,
+    "filter_parent_agency": 5195,
+    "filter_program": 0,
+    "filter_record_kind": 9999,
+    "filter_regulation_identifier_number": 1190,
+    "filter_subtype": 79,
+    "filter_topic": 1147,
+    "filter_withdrawn": 0
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-2.jsonl",
+   "record_count": 9999,
+   "recorded_at": "2026-09-25T22:17:24",
+   "state_id": "urn:docspec:core-derive-table:v1:99ac59d4b7fb6a8e6627de5784972dccdf95aa4bf9d1755a88500903c38f5b16",
+   "stored": 9999
+  },
+  "compare-coverage": {
+   "compare": {
+    "cpu_seconds": 0.352,
+    "load_end": [
+     4.57,
+     6.7,
+     7.4
+    ],
+    "load_start": [
+     4.57,
+     6.7,
+     7.4
+    ],
+    "peak_rss_bytes_process": 787824640,
+    "wall_seconds": 0.202
+   },
+   "differing": [],
+   "differing_count": 0,
+   "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.5654296875,
+     6.70166015625,
+     7.39599609375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "fields_compared": 490049,
+   "members": 10001,
+   "metadata_not_engine_bytes": 1,
+   "occurrence_differs": [],
+   "populated_filters_and_dates": {
+    "date_author_at": 3018,
+    "date_author_on": 1,
+    "date_comment_closes_at": 2374,
+    "date_comment_closes_on": 1,
+    "date_comment_opens_at": 5465,
+    "date_comment_opens_on": 1,
+    "date_effective_at": 471,
+    "date_effective_on": 1,
+    "date_implementation_at": 883,
+    "date_implementation_on": 1,
+    "date_posted_at": 8769,
+    "date_posted_on": 1,
+    "date_publication_date": 8769,
+    "date_published_at": 1,
+    "date_published_on": 1,
+    "date_received_at": 8681,
+    "date_received_on": 1,
+    "date_signing_at": 1,
+    "date_signing_on": 1,
+    "date_updated_at": 10001,
+    "date_updated_on": 1,
+    "filter_agency": 10001,
+    "filter_author": 927,
+    "filter_body_indexed": 10001,
+    "filter_cfr": 483,
+    "filter_cfr_title": 498,
+    "filter_docket_id": 9334,
+    "filter_docket_type": 1233,
+    "filter_document_id": 10001,
+    "filter_document_type": 8769,
+    "filter_file_format": 4764,
+    "filter_organization": 1326,
+    "filter_parent_agency": 5505,
+    "filter_program": 312,
+    "filter_record_kind": 10001,
+    "filter_regulation_identifier_number": 1429,
+    "filter_subtype": 6487,
+    "filter_topic": 388,
+    "filter_withdrawn": 8769
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.jsonl",
+   "record_count": 10001,
+   "recorded_at": "2026-09-25T22:17:30",
+   "state_id": "urn:docspec:core-derive-table:v1:1bed675b849cb9da39e180855b875750c23e183a69aed233199c5b0297672d05",
+   "stored": 10001
+  },
+  "derive-10k": {
+   "bytes": {
+    "blobs": 3243,
+    "files": 42,
+    "other": 0,
+    "parquet": 7186340,
+    "record_metadata": 56492,
+    "sqlite": 24576,
+    "total": 7270651
+   },
+   "derive": {
+    "cpu_seconds": 1.785,
+    "load_end": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "load_start": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "ms_per_record": 0.1506,
+    "peak_rss_bytes_process": 1039843328,
+    "wall_seconds": 1.506
+   },
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.90087890625,
+     6.87548828125,
+     7.46875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "links": 9,
+    "records": 8,
+    "retention": 8,
+    "units": 3
+   },
+   "pm01_json_derive_ms_per_record": 0.81,
+   "recorded_at": "2026-09-25T22:17:15",
+   "report": {
+    "base": null,
+    "counts": {
+     "added": 10000,
+     "adopted": 0,
+     "changed": 0,
+     "generated": 10000,
+     "removed": 0,
+     "rows": 10000,
+     "unchanged": 0
+    },
+    "dataset": "fr-prepared-typed",
+    "format": "docspec-table-derivation",
+    "rules": {
+     "columns": [
+      [
+       "date_author_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_author_on",
+       "DATE"
+      ],
+      [
+       "date_comment_closes_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_closes_on",
+       "DATE"
+      ],
+      [
+       "date_comment_opens_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_opens_on",
+       "DATE"
+      ],
+      [
+       "date_effective_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_effective_on",
+       "DATE"
+      ],
+      [
+       "date_implementation_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_implementation_on",
+       "DATE"
+      ],
+      [
+       "date_posted_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_posted_on",
+       "DATE"
+      ],
+      [
+       "date_publication_date",
+       "DATE"
+      ],
+      [
+       "date_published_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_published_on",
+       "DATE"
+      ],
+      [
+       "date_received_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_received_on",
+       "DATE"
+      ],
+      [
+       "date_signing_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_signing_on",
+       "DATE"
+      ],
+      [
+       "date_updated_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_updated_on",
+       "DATE"
+      ],
+      [
+       "filter_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_agency_scope",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_author",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_body_indexed",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr_title",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_file_format",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_organization",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_parent_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_program",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_record_kind",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_regulation_identifier_number",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_subtype",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_topic",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_withdrawn",
+       "VARCHAR[]"
+      ],
+      [
+       "id",
+       "VARCHAR"
+      ],
+      [
+       "identifiers",
+       "VARCHAR[]"
+      ],
+      [
+       "member_key",
+       "VARCHAR"
+      ],
+      [
+       "metadata",
+       "VARCHAR"
+      ],
+      [
+       "primary_text",
+       "VARCHAR"
+      ],
+      [
+       "related_text",
+       "VARCHAR"
+      ],
+      [
+       "source_id",
+       "VARCHAR"
+      ],
+      [
+       "source_occurrence_id",
+       "VARCHAR"
+      ],
+      [
+       "source_url",
+       "VARCHAR"
+      ],
+      [
+       "title",
+       "VARCHAR"
+      ]
+     ],
+     "family": "urn:docspec:c29-gate-typed-prepared:v1:1d476ef409cbbc0c6f340caaa8fabc41edf69bb09944e3f150ef1479ef0a9886",
+     "key": {
+      "fields": [
+       "member_key"
+      ],
+      "id": "value",
+      "version": "1"
+     },
+     "row": "docspec-table-row/1",
+     "table": "c29-gate-prepared-fields:1"
+    },
+    "version": 1
+   },
+   "rows": 10000,
+   "state_id": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188"
+  },
+  "derive-coverage": {
+   "derive": {
+    "cpu_seconds": 1.871,
+    "load_end": [
+     4.57,
+     6.7,
+     7.4
+    ],
+    "load_start": [
+     4.61,
+     6.75,
+     7.42
+    ],
+    "ms_per_record": 0.1706,
+    "peak_rss_bytes_process": 1314144256,
+    "wall_seconds": 1.706
+   },
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.5654296875,
+     6.70166015625,
+     7.39599609375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "recorded_at": "2026-09-25T22:17:27",
+   "report": {
+    "base": null,
+    "counts": {
+     "added": 10001,
+     "adopted": 0,
+     "changed": 0,
+     "generated": 10001,
+     "removed": 0,
+     "rows": 10001,
+     "unchanged": 0
+    },
+    "dataset": null,
+    "format": "docspec-table-derivation",
+    "rules": {
+     "columns": [
+      [
+       "date_author_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_author_on",
+       "DATE"
+      ],
+      [
+       "date_comment_closes_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_closes_on",
+       "DATE"
+      ],
+      [
+       "date_comment_opens_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_opens_on",
+       "DATE"
+      ],
+      [
+       "date_effective_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_effective_on",
+       "DATE"
+      ],
+      [
+       "date_implementation_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_implementation_on",
+       "DATE"
+      ],
+      [
+       "date_posted_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_posted_on",
+       "DATE"
+      ],
+      [
+       "date_publication_date",
+       "DATE"
+      ],
+      [
+       "date_published_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_published_on",
+       "DATE"
+      ],
+      [
+       "date_received_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_received_on",
+       "DATE"
+      ],
+      [
+       "date_signing_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_signing_on",
+       "DATE"
+      ],
+      [
+       "date_updated_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_updated_on",
+       "DATE"
+      ],
+      [
+       "filter_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_agency_scope",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_author",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_body_indexed",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr_title",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_file_format",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_organization",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_parent_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_program",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_record_kind",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_regulation_identifier_number",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_subtype",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_topic",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_withdrawn",
+       "VARCHAR[]"
+      ],
+      [
+       "id",
+       "VARCHAR"
+      ],
+      [
+       "identifiers",
+       "VARCHAR[]"
+      ],
+      [
+       "member_key",
+       "VARCHAR"
+      ],
+      [
+       "metadata",
+       "VARCHAR"
+      ],
+      [
+       "primary_text",
+       "VARCHAR"
+      ],
+      [
+       "related_text",
+       "VARCHAR"
+      ],
+      [
+       "source_id",
+       "VARCHAR"
+      ],
+      [
+       "source_occurrence_id",
+       "VARCHAR"
+      ],
+      [
+       "source_url",
+       "VARCHAR"
+      ],
+      [
+       "title",
+       "VARCHAR"
+      ]
+     ],
+     "family": "urn:docspec:c29-gate-typed-prepared:v1:9243b34858ae0e1644a6c1db099ad9090228f67300c037457d281db519944cbf",
+     "key": {
+      "fields": [
+       "member_key"
+      ],
+      "id": "value",
+      "version": "1"
+     },
+     "row": "docspec-table-row/1",
+     "table": "c29-gate-prepared-fields:1"
+    },
+    "version": 1
+   },
+   "rows": 10001,
+   "state_id": "urn:docspec:core-derive-table:v1:1bed675b849cb9da39e180855b875750c23e183a69aed233199c5b0297672d05"
+  },
+  "engine-id": {
+   "adversarial": 42,
+   "differing": [],
+   "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
+   "engine_function": "def stable_id(source_id, member_key):\n    \"\"\"Stable search ID over source_id and member_key; an empty part refuses.\"\"\"\n    if not isinstance(source_id, str) or not source_id or not isinstance(member_key, str) or not member_key:\n        raise ValueError(\"A stable source namespace and complete member key are required\")\n    return digest([source_id, member_key])",
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.90087890625,
+     6.87548828125,
+     7.46875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "keys": 10042,
+   "recorded_at": "2026-09-25T22:17:11"
+  },
+  "json-derive-10k": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.27978515625,
+     6.60693359375,
+     7.3583984375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "recorded_at": "2026-09-25T22:17:35",
+   "typed-fields": {
+    "bytes": {
+     "blobs": 1524,
+     "files": 23,
+     "other": 0,
+     "parquet": 5736053,
+     "record_metadata": 20935,
+     "sqlite": 28672,
+     "total": 5787184
+    },
+    "derive": {
+     "cpu_seconds": 1.869,
+     "load_end": [
+      4.28,
+      6.61,
+      7.36
+     ],
+     "load_start": [
+      4.28,
+      6.61,
+      7.36
+     ],
+     "ms_per_record": 0.1732,
+     "peak_rss_bytes_process": 1078738944,
+     "wall_seconds": 1.732
+    },
+    "ledger": {
+     "links": 10,
+     "records": 8,
+     "retention": 8,
+     "units": 8
+    },
+    "rows": 10000,
+    "state_id": "urn:docspec:execution:0fdc5df6-efe8-4c1f-91a7-ec7169ba55e2:state"
+   },
+   "whole": {
+    "bytes": {
+     "blobs": 1524,
+     "files": 23,
+     "other": 0,
+     "parquet": 7824741,
+     "record_metadata": 20844,
+     "sqlite": 28672,
+     "total": 7875781
+    },
+    "derive": {
+     "cpu_seconds": 2.624,
+     "load_end": [
+      4.28,
+      6.61,
+      7.36
+     ],
+     "load_start": [
+      4.28,
+      6.61,
+      7.36
+     ],
+     "ms_per_record": 0.2468,
+     "peak_rss_bytes_process": 1020952576,
+     "wall_seconds": 2.468
+    },
+    "ledger": {
+     "links": 10,
+     "records": 8,
+     "retention": 8,
+     "units": 8
+    },
+    "rows": 10000,
+    "state_id": "urn:docspec:execution:24fc7432-bc35-4ec2-a238-6b06ea3b090e:state"
+   }
+  },
+  "revise-10k": {
+   "base": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188",
+   "bytes": {
+    "blobs": 3241,
+    "files": 53,
+    "other": 0,
+    "parquet": 71999,
+    "record_metadata": 73689,
+    "sqlite": 20480,
+    "total": 169409
+   },
+   "derive": {
+    "cpu_seconds": 1.289,
+    "load_end": [
+     4.67,
+     6.79,
+     7.44
+    ],
+    "load_start": [
+     4.67,
+     6.79,
+     7.44
+    ],
+    "ms_per_record": 17.1598,
+    "peak_rss_bytes_process": 1193148416,
+    "wall_seconds": 0.944
+   },
+   "derived_changes": 51,
+   "derived_equals_value_changes": true,
+   "derived_removed": 1,
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.61474609375,
+     6.74755859375,
+     7.416015625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "links": 9,
+    "records": 7,
+    "retention": 7,
+    "units": 3
+   },
+   "new_table_files": 1,
+   "recorded_at": "2026-09-25T22:17:21",
+   "report": {
+    "base": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188",
+    "counts": {
+     "added": 0,
+     "adopted": 0,
+     "changed": 50,
+     "generated": 50,
+     "removed": 1,
+     "rows": 9999,
+     "unchanged": 5
+    },
+    "dataset": "fr-prepared-typed",
+    "format": "docspec-table-derivation",
+    "rules": {
+     "columns": [
+      [
+       "date_author_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_author_on",
+       "DATE"
+      ],
+      [
+       "date_comment_closes_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_closes_on",
+       "DATE"
+      ],
+      [
+       "date_comment_opens_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_opens_on",
+       "DATE"
+      ],
+      [
+       "date_effective_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_effective_on",
+       "DATE"
+      ],
+      [
+       "date_implementation_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_implementation_on",
+       "DATE"
+      ],
+      [
+       "date_posted_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_posted_on",
+       "DATE"
+      ],
+      [
+       "date_publication_date",
+       "DATE"
+      ],
+      [
+       "date_published_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_published_on",
+       "DATE"
+      ],
+      [
+       "date_received_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_received_on",
+       "DATE"
+      ],
+      [
+       "date_signing_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_signing_on",
+       "DATE"
+      ],
+      [
+       "date_updated_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_updated_on",
+       "DATE"
+      ],
+      [
+       "filter_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_agency_scope",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_author",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_body_indexed",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr_title",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_file_format",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_organization",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_parent_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_program",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_record_kind",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_regulation_identifier_number",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_subtype",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_topic",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_withdrawn",
+       "VARCHAR[]"
+      ],
+      [
+       "id",
+       "VARCHAR"
+      ],
+      [
+       "identifiers",
+       "VARCHAR[]"
+      ],
+      [
+       "member_key",
+       "VARCHAR"
+      ],
+      [
+       "metadata",
+       "VARCHAR"
+      ],
+      [
+       "primary_text",
+       "VARCHAR"
+      ],
+      [
+       "related_text",
+       "VARCHAR"
+      ],
+      [
+       "source_id",
+       "VARCHAR"
+      ],
+      [
+       "source_occurrence_id",
+       "VARCHAR"
+      ],
+      [
+       "source_url",
+       "VARCHAR"
+      ],
+      [
+       "title",
+       "VARCHAR"
+      ]
+     ],
+     "family": "urn:docspec:c29-gate-typed-prepared:v1:1d476ef409cbbc0c6f340caaa8fabc41edf69bb09944e3f150ef1479ef0a9886",
+     "key": {
+      "fields": [
+       "member_key"
+      ],
+      "id": "value",
+      "version": "1"
+     },
+     "row": "docspec-table-row/1",
+     "table": "c29-gate-prepared-fields:1"
+    },
+    "version": 1
+   },
+   "source_changes": 51,
+   "source_removed": 1,
+   "state_id": "urn:docspec:core-derive-table:v1:99ac59d4b7fb6a8e6627de5784972dccdf95aa4bf9d1755a88500903c38f5b16",
+   "supplied_rows": 55,
+   "value_changed": 51,
+   "written_are_the_rewrites": true,
+   "written_rows_in_new_table_files": 50
+  },
+  "scale-check": {
+   "check": {
+    "cpu_seconds": 54.256,
+    "load_end": [
+     5.53,
+     6.08,
+     7.01
+    ],
+    "load_start": [
+     5.14,
+     6.21,
+     7.12
+    ],
+    "peak_rss_bytes_process": 8745091072,
+    "wall_seconds": 55.24
+   },
+   "distinct_occurrences": 1007639,
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     5.5263671875,
+     6.0830078125,
+     7.00634765625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "layer_rows_not_typed": 0,
+   "recorded_at": "2026-09-25T22:20:08",
+   "rows": 1007639,
+   "state_id": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a",
+   "typed_rows_missing_from_layer": 0
+  },
+  "scale-derive": {
+   "bytes": {
+    "blobs": 3249,
+    "files": 48,
+    "other": 0,
+    "parquet": 633964365,
+    "record_metadata": 61087,
+    "sqlite": 16384,
+    "total": 634045085
+   },
+   "cutover_json_derive": {
+    "minutes": 19.4,
+    "ms_per_record": 1.155,
+    "peak_gb": 12.5
+   },
+   "derive": {
+    "cpu_seconds": 51.35,
+    "load_end": [
+     5.37,
+     6.31,
+     7.17
+    ],
+    "load_start": [
+     4.28,
+     6.34,
+     7.23
+    ],
+    "ms_per_record": 0.0495,
+    "peak_rss_bytes_process": 3872718848,
+    "wall_seconds": 49.912
+   },
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     5.36962890625,
+     6.3125,
+     7.1669921875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "links": 9,
+    "records": 9,
+    "retention": 9,
+    "units": 3
+   },
+   "recorded_at": "2026-09-25T22:18:57",
+   "report": {
+    "base": null,
+    "counts": {
+     "added": 1007639,
+     "adopted": 0,
+     "changed": 0,
+     "generated": 1007639,
+     "removed": 0,
+     "rows": 1007639,
+     "unchanged": 0
+    },
+    "dataset": "fr-prepared-typed",
+    "format": "docspec-table-derivation",
+    "rules": {
+     "columns": [
+      [
+       "date_author_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_author_on",
+       "DATE"
+      ],
+      [
+       "date_comment_closes_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_closes_on",
+       "DATE"
+      ],
+      [
+       "date_comment_opens_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_opens_on",
+       "DATE"
+      ],
+      [
+       "date_effective_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_effective_on",
+       "DATE"
+      ],
+      [
+       "date_implementation_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_implementation_on",
+       "DATE"
+      ],
+      [
+       "date_posted_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_posted_on",
+       "DATE"
+      ],
+      [
+       "date_publication_date",
+       "DATE"
+      ],
+      [
+       "date_published_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_published_on",
+       "DATE"
+      ],
+      [
+       "date_received_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_received_on",
+       "DATE"
+      ],
+      [
+       "date_signing_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_signing_on",
+       "DATE"
+      ],
+      [
+       "date_updated_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_updated_on",
+       "DATE"
+      ],
+      [
+       "filter_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_agency_scope",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_author",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_body_indexed",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr_title",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_file_format",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_organization",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_parent_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_program",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_record_kind",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_regulation_identifier_number",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_subtype",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_topic",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_withdrawn",
+       "VARCHAR[]"
+      ],
+      [
+       "id",
+       "VARCHAR"
+      ],
+      [
+       "identifiers",
+       "VARCHAR[]"
+      ],
+      [
+       "member_key",
+       "VARCHAR"
+      ],
+      [
+       "metadata",
+       "VARCHAR"
+      ],
+      [
+       "primary_text",
+       "VARCHAR"
+      ],
+      [
+       "related_text",
+       "VARCHAR"
+      ],
+      [
+       "source_id",
+       "VARCHAR"
+      ],
+      [
+       "source_occurrence_id",
+       "VARCHAR"
+      ],
+      [
+       "source_url",
+       "VARCHAR"
+      ],
+      [
+       "title",
+       "VARCHAR"
+      ]
+     ],
+     "family": "urn:docspec:c29-gate-typed-prepared:v1:1d476ef409cbbc0c6f340caaa8fabc41edf69bb09944e3f150ef1479ef0a9886",
+     "key": {
+      "fields": [
+       "member_key"
+      ],
+      "id": "value",
+      "version": "1"
+     },
+     "row": "docspec-table-row/1",
+     "table": "c29-gate-prepared-fields:1"
+    },
+    "version": 1
+   },
+   "rows": 1007639,
+   "state_id": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a"
+  },
+  "scale-json": {
+   "bytes": {
+    "blobs": 1528,
+    "files": 29,
+    "other": 0,
+    "parquet": 564982956,
+    "record_metadata": 24772,
+    "sqlite": 16384,
+    "total": 565025640
+   },
+   "derive_including_values": {
+    "cpu_seconds": 182.661,
+    "load_end": [
+     9.5,
+     7.33,
+     7.26
+    ],
+    "load_start": [
+     6.44,
+     6.17,
+     6.98
+    ],
+    "ms_per_record": 0.183,
+    "peak_rss_bytes_process": 6923337728,
+    "wall_seconds": 184.437
+   },
+   "derive_ms_per_record_without_values": 0.1728,
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     9.49853515625,
+     7.33349609375,
+     7.25830078125
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "links": 10,
+    "records": 9,
+    "retention": 9,
+    "units": 8
+   },
+   "recorded_at": "2026-09-25T22:24:04",
+   "rows": 1007639,
+   "state_id": "urn:docspec:execution:7f357885-453c-453a-ba49-98c1b92fd600:state",
+   "values_only": {
+    "cpu_seconds": 11.003,
+    "load_end": [
+     6.44,
+     6.17,
+     6.98
+    ],
+    "load_start": [
+     5.46,
+     5.97,
+     6.92
+    ],
+    "ms_per_record": 0.0102,
+    "peak_rss_bytes_process": 6923337728,
+    "wall_seconds": 10.327
+   }
+  },
+  "scale-layers": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     8.89794921875,
+     7.24462890625,
+     7.22705078125
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "json": {
+    "entities": {
+     "bytes": 518696083,
+     "files": 4,
+     "rows": 1007639
+    },
+    "membership": {
+     "bytes": 46286873,
+     "files": 1,
+     "rows": 1007639
+    }
+   },
+   "recorded_at": "2026-09-25T22:24:07",
+   "typed": {
+    "membership": {
+     "bytes": 46135063,
+     "files": 1,
+     "rows": 1007639
+    },
+    "occurrences": {
+     "bytes": 73110011,
+     "files": 1,
+     "rows": 1007639
+    },
+    "table": {
+     "bytes": 514715579,
+     "files": 4,
+     "rows": 1007639
+    }
+   },
+   "typed-revised": {
+    "membership": {
+     "bytes": 46139915,
+     "files": 2,
+     "rows": 1007638
+    },
+    "occurrences": {
+     "bytes": 73115300,
+     "files": 2,
+     "rows": 1007689
+    },
+    "table": {
+     "bytes": 514769937,
+     "files": 5,
+     "rows": 1007638
+    }
+   }
+  },
+  "scale-lookups": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     5.412109375,
+     5.96728515625,
+     6.92431640625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "keys": 50,
+   "read_value_ms": 539.6,
+   "recorded_at": "2026-09-25T22:20:44",
+   "values_256_ms": 2605.6,
+   "values_256_rows": 256
+  },
+  "scale-revise": {
+   "base": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a",
+   "bytes": {
+    "blobs": 3249,
+    "files": 57,
+    "other": 0,
+    "parquet": 76096,
+    "record_metadata": 76863,
+    "sqlite": -8192,
+    "total": 148016
+   },
+   "changes": 51,
+   "changes_read": {
+    "cpu_seconds": 4.025,
+    "load_end": [
+     5.15,
+     6.24,
+     7.13
+    ],
+    "load_start": [
+     5.34,
+     6.29,
+     7.15
+    ],
+    "peak_rss_bytes_process": 3379970048,
+    "wall_seconds": 3.888
+   },
+   "derive": {
+    "cpu_seconds": 1.682,
+    "load_end": [
+     5.34,
+     6.29,
+     7.15
+    ],
+    "load_start": [
+     5.34,
+     6.29,
+     7.15
+    ],
+    "peak_rss_bytes_process": 3379970048,
+    "wall_seconds": 1.639
+   },
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     5.15234375,
+     6.23583984375,
+     7.12939453125
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "links": 9,
+    "records": 7,
+    "retention": 7,
+    "units": 3
+   },
+   "recorded_at": "2026-09-25T22:19:08",
+   "removed": 1,
+   "report": {
+    "base": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a",
+    "counts": {
+     "added": 0,
+     "adopted": 0,
+     "changed": 50,
+     "generated": 50,
+     "removed": 1,
+     "rows": 1007638,
+     "unchanged": 0
+    },
+    "dataset": "fr-prepared-typed",
+    "format": "docspec-table-derivation",
+    "rules": {
+     "columns": [
+      [
+       "date_author_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_author_on",
+       "DATE"
+      ],
+      [
+       "date_comment_closes_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_closes_on",
+       "DATE"
+      ],
+      [
+       "date_comment_opens_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_comment_opens_on",
+       "DATE"
+      ],
+      [
+       "date_effective_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_effective_on",
+       "DATE"
+      ],
+      [
+       "date_implementation_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_implementation_on",
+       "DATE"
+      ],
+      [
+       "date_posted_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_posted_on",
+       "DATE"
+      ],
+      [
+       "date_publication_date",
+       "DATE"
+      ],
+      [
+       "date_published_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_published_on",
+       "DATE"
+      ],
+      [
+       "date_received_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_received_on",
+       "DATE"
+      ],
+      [
+       "date_signing_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_signing_on",
+       "DATE"
+      ],
+      [
+       "date_updated_at",
+       "TIMESTAMPTZ"
+      ],
+      [
+       "date_updated_on",
+       "DATE"
+      ],
+      [
+       "filter_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_agency_scope",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_author",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_body_indexed",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_cfr_title",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_docket_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_id",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_document_type",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_file_format",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_organization",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_parent_agency",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_program",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_record_kind",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_regulation_identifier_number",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_subtype",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_topic",
+       "VARCHAR[]"
+      ],
+      [
+       "filter_withdrawn",
+       "VARCHAR[]"
+      ],
+      [
+       "id",
+       "VARCHAR"
+      ],
+      [
+       "identifiers",
+       "VARCHAR[]"
+      ],
+      [
+       "member_key",
+       "VARCHAR"
+      ],
+      [
+       "metadata",
+       "VARCHAR"
+      ],
+      [
+       "primary_text",
+       "VARCHAR"
+      ],
+      [
+       "related_text",
+       "VARCHAR"
+      ],
+      [
+       "source_id",
+       "VARCHAR"
+      ],
+      [
+       "source_occurrence_id",
+       "VARCHAR"
+      ],
+      [
+       "source_url",
+       "VARCHAR"
+      ],
+      [
+       "title",
+       "VARCHAR"
+      ]
+     ],
+     "family": "urn:docspec:c29-gate-typed-prepared:v1:1d476ef409cbbc0c6f340caaa8fabc41edf69bb09944e3f150ef1479ef0a9886",
+     "key": {
+      "fields": [
+       "member_key"
+      ],
+      "id": "value",
+      "version": "1"
+     },
+     "row": "docspec-table-row/1",
+     "table": "c29-gate-prepared-fields:1"
+    },
+    "version": 1
+   },
+   "state_id": "urn:docspec:core-derive-table:v1:13f117bc64bbf483b8f2fc9e7e0e3834287f5d213a43db2ecc861e0b34122c90"
+  },
+  "scale-type": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.220703125,
+     6.359375,
+     7.24072265625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "join": {
+    "cpu_seconds": 8.347,
+    "load_end": [
+     4.22,
+     6.36,
+     7.24
+    ],
+    "load_start": [
+     4.08,
+     6.41,
+     7.27
+    ],
+    "ms_per_record": 0.0082,
+    "peak_rss_bytes_process": 6957252608,
+    "wall_seconds": 8.236
+   },
+   "misaligned_keys": 0,
+   "pins_checked": {
+    "catalogue": "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61",
+    "urn:docspec:execution:13e28a19-e7b0-48a8-9946-8d4a207f7337:state": "sha256:445789ab6f5cee7dc7afec33f4325f6a2cee58f8ec92b8c397fe5096b77f25c3"
+   },
+   "prepared": [
+    "urn:docspec:execution:13e28a19-e7b0-48a8-9946-8d4a207f7337:state",
+    "sha256:445789ab6f5cee7dc7afec33f4325f6a2cee58f8ec92b8c397fe5096b77f25c3"
+   ],
+   "prepared_members": 1007639,
+   "recorded_at": "2026-09-25T22:18:01",
+   "rows": 1007639,
+   "source": [
+    "catalogue",
+    "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61"
+   ],
+   "type": {
+    "cpu_seconds": 27.655,
+    "load_end": [
+     4.08,
+     6.41,
+     7.27
+    ],
+    "load_start": [
+     4.02,
+     6.51,
+     7.32
+    ],
+    "ms_per_record": 0.0166,
+    "peak_rss_bytes_process": 6957252608,
+    "wall_seconds": 16.728
+   },
+   "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-1m.typed.parquet",
+   "typed_bytes": 471828254
+  },
+  "type-coverage": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.61474609375,
+     6.74755859375,
+     7.416015625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.jsonl",
+   "recorded_at": "2026-09-25T22:17:25",
+   "rows": 10001,
+   "source_state": "source",
+   "type": {
+    "cpu_seconds": 0.558,
+    "load_end": [
+     4.61,
+     6.75,
+     7.42
+    ],
+    "load_start": [
+     4.61,
+     6.75,
+     7.42
+    ],
+    "ms_per_record": 0.0332,
+    "peak_rss_bytes_process": 954155008,
+    "wall_seconds": 0.332
+   },
+   "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.typed.parquet",
+   "unmatched_keys": 0
+  },
+  "type-fr-10k-1": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.90087890625,
+     6.87548828125,
+     7.46875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-1.jsonl",
+   "recorded_at": "2026-09-25T22:17:12",
+   "rows": 10000,
+   "source_state": "source",
+   "type": {
+    "cpu_seconds": 0.649,
+    "load_end": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "load_start": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "ms_per_record": 0.0383,
+    "peak_rss_bytes_process": 705871872,
+    "wall_seconds": 0.383
+   },
+   "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-10k-1.typed.parquet",
+   "unmatched_keys": 0
+  },
+  "type-fr-10k-2": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     4.90087890625,
+     6.87548828125,
+     7.46875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-2.jsonl",
+   "recorded_at": "2026-09-25T22:17:13",
+   "rows": 9999,
+   "source_state": "urn:docspec:execution:743fbd0a-d981-4919-8b54-8e46a9a4634d:state",
+   "type": {
+    "cpu_seconds": 0.648,
+    "load_end": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "load_start": [
+     4.9,
+     6.88,
+     7.47
+    ],
+    "ms_per_record": 0.0374,
+    "peak_rss_bytes_process": 707067904,
+    "wall_seconds": 0.373
+   },
+   "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-10k-2.typed.parquet",
+   "unmatched_keys": 0
+  }
+ },
+ "sort_comparison": {
+  "commit": "42e9a81d9ea190ffef73dc2cffc95fe93d74d54a",
+  "note": "first run: the table sorted by member_key (42e9a81), then the same derive with the sort removed; point reads on both",
+  "point_reads": {
+   "sorted": {
+    "read_value_ms": 569.1,
+    "rows": 256,
+    "values_256_ms": 2937.6
+   },
+   "unsorted": {
+    "read_value_ms": 577.6,
+    "rows": 256,
+    "values_256_ms": 2846.8
+   }
+  },
+  "sorted_derive": {
+   "peak_rss_bytes_process": 8405516288,
+   "wall_seconds": 53.556
+  },
+  "unsorted_derive": {
+   "peak_rss_bytes_process": 3660840960,
+   "wall_seconds": 49.91
+  }
+ },
+ "watch": {
+  "scale-check": [
+   "start 2026-09-26T02:19:12Z load { 5.14 6.21 7.12 }",
+   "end 2026-09-26T02:20:13Z load { 5.32 6.03 6.98 } exit 0 peak_tree_rss_kib 8569616"
+  ],
+  "scale-derive": [
+   "start 2026-09-26T02:18:06Z load { 4.28 6.34 7.23 }",
+   "end 2026-09-26T02:19:02Z load { 5.34 6.29 7.15 } exit 0 peak_tree_rss_kib 3812416"
+  ],
+  "scale-json": [
+   "start 2026-09-26T02:20:48Z load { 5.46 5.97 6.92 }",
+   "end 2026-09-26T02:24:07Z load { 8.90 7.24 7.23 } exit 0 peak_tree_rss_kib 6778848"
+  ],
+  "scale-lookups": [
+   "start 2026-09-26T02:20:13Z load { 5.32 6.03 6.98 }",
+   "end 2026-09-26T02:20:48Z load { 5.46 5.97 6.92 } exit 0 peak_tree_rss_kib 511856"
+  ],
+  "scale-revise": [
+   "start 2026-09-26T02:19:02Z load { 5.34 6.29 7.15 }",
+   "end 2026-09-26T02:19:12Z load { 5.14 6.21 7.12 } exit 0 peak_tree_rss_kib 859088"
+  ],
+  "scale-type": [
+   "start 2026-09-26T02:17:35Z load { 4.28 6.61 7.36 }",
+   "end 2026-09-26T02:18:06Z load { 4.28 6.34 7.23 } exit 0 peak_tree_rss_kib 6821792"
+  ]
+ }
+}
