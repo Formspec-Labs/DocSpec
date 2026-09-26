@@ -1,0 +1,55 @@
+{
+  "format": "docspec-fork-generation-pins",
+  "version": 1,
+  "note": "Fork generations DocSpec workspaces have admitted by reference. The spicy-regs retention job (decision 36) keeps every listed pin. Update at each production move; keep a digest as evidence while a receipt cites it.",
+  "pins": [
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:40dfab8ea2cab01c89375780764806ce0ea96735b83a1109bec94d45712c8f84",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (port 8091; receipts/admit-b.json)"
+    },
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:4a40a635e5af3f12bdebb630cd8f0e5472474fc6ff69d1c7612b4c4dc3b0568d",
+      "role": "evidence",
+      "cites": "~/Work/corpora/fr-contract-check-20260926 (B2; becomes production at the next refresh)"
+    },
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:731984ca92583f93350fa0c029d7bfa32809c0240b41b5607cd05967996bed28",
+      "role": "evidence",
+      "cites": "docs/history/probes/2026-09-25-admit-generation-gate.json"
+    },
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:6c2158592129788de7fb5601251e9386b150934496efff4a7155a1ef95df5aed",
+      "role": "evidence",
+      "cites": "docs/history/probes/2026-09-25-admit-generation-gate.json"
+    },
+    {
+      "family": "dockets",
+      "artifactDigest": "sha256:69afafdc90e788dbbfd94e1d00ca70780326acd18ba3d025fa638650d7de08e1",
+      "role": "evidence",
+      "cites": "docs/history/probes/2026-09-25-admit-regulations-gate.json"
+    },
+    {
+      "family": "documents",
+      "artifactDigest": "sha256:f0796ed94650bc8351e5b453431bed05d13dd31345a77a83d5411cce84b716ce",
+      "role": "evidence",
+      "cites": "docs/history/probes/2026-09-25-admit-regulations-gate.json"
+    },
+    {
+      "family": "documents",
+      "artifactDigest": "sha256:7c98ef8c9e90a9071e0b6517808b52c2a743d1e536189d216a74596b8e18f2aa",
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace (candidate A; receipts/admit.json)"
+    },
+    {
+      "family": "dockets",
+      "artifactDigest": "sha256:e601dbf6ac0bc4fbd9856b0b6b5cbc2e0d0ece726543cef5b2c52463c89c8f4e",
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace (candidate A; receipts/admit.json)"
+    }
+  ]
+}
