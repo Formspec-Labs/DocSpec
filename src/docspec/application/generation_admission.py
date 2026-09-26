@@ -58,16 +58,15 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
         if current is not None and current[0] != "state":
             raise IntegrityError("the dataset's current target is not a state")
         base = None if current is None else current[1]
-        content, counts = session.states.admit_table(session, generation.path, identity, generation.columns,
-                                                     member_digest=generation.member.sha256, state_id=state_id,
-                                                     base_state_id=base)
-        report = {"format": REPORT_FORMAT, "version": 1,
-                  "pin": {"logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest},
-                  "member": {"objectKey": generation.member.object_key, "sha256": generation.member.sha256,
-                             "byteSize": generation.member.byte_size, "recordCount": generation.record_count},
-                  "dataset": dataset, "base": base, "counts": counts}
-        session.publish(_unit(session, identity, generation, state_id, report, content),
-                        identity_check=lambda: session.states.table_identity_check(session, content))
+        with session.states.admit_table(session, generation.path, identity, generation.columns,
+                                        member_digest=generation.member.sha256, state_id=state_id,
+                                        base_state_id=base) as (content, counts, identity_check):
+            report = {"format": REPORT_FORMAT, "version": 1,
+                      "pin": {"logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest},
+                      "member": {"objectKey": generation.member.object_key, "sha256": generation.member.sha256,
+                                 "byteSize": generation.member.byte_size, "recordCount": generation.record_count},
+                      "dataset": dataset, "base": base, "counts": counts}
+            session.publish(_unit(session, identity, generation, state_id, report, content), identity_check=identity_check)
     _advance(operations, dataset, state_id, base)
     return GenerationAdmission(state_id, report)
 

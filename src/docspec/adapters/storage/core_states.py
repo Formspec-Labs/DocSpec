@@ -3,7 +3,6 @@
 from contextlib import closing, contextmanager, nullcontext
 from tempfile import TemporaryFile
 
-import duckdb
 import msgspec
 import pyarrow as pa
 
@@ -12,10 +11,10 @@ from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batc
 from docspec.adapters.storage.core_entities import (ENTITY_POLICY, ENTITY_SCHEMA, MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY,
     MEMBERSHIP_SCHEMA)
 from docspec.adapters.storage.core_tables import (TABLE_KIND, TABLE_SCHEMA_ID, TableStateView, admit_layers,
-    check_table_membership, find_table_members, occurrence_addressed, spelled_payload, table_schema, typed_relation)
+    check_minted_copies, check_table_membership, find_table_members, occurrence_addressed, spelled_payload, table_schema,
+    typed_relation)
 from docspec.adapters.storage.records import AdmittedTableLayer
 from docspec.adapters.storage.table_occurrences import INDEX_KIND, OCCURRENCE_INDEX
-from docspec.adapters.storage.table_sql import OCCURRENCE_PREFIX
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
 from docspec.domain.core_admission import admit_record, encode_record, record_value, stored_record
@@ -189,14 +188,16 @@ class CoreStateStorage:
                             identity_check=lambda: self._check_ledger_copies(session, entity_layer, state_id))
             return state
 
+    @contextmanager
     def admit_table(self, session, path, identity, columns, *, member_digest, state_id, base_state_id=None):
-        """Retain a producer's admitted Parquet as a table-shaped state's layers; return its manifest content and counts.
+        """Retain a producer's admitted Parquet as a table-shaped state's layers until its caller publishes them.
 
         ``columns`` are the member's in physical order. A base is the dataset's
         current state: it must be table-shaped, of the same family and table,
         and keep its member-key spelling, since a new spelling is an explicit
-        re-key. The caller publishes the returned version-3 manifest in one
-        metadata unit; ``table_identity_check`` is that unit's identity check.
+        re-key. Yields the version-3 manifest's content, the admission counts
+        and the identity check the caller's one metadata unit must run: it
+        looks up only the occurrences this admission minted.
         """
         session._active()
         base = None
@@ -207,37 +208,14 @@ class CoreStateStorage:
             if base.identity.key != identity.key:
                 raise IntegrityError("a later generation must keep its dataset's member-key spelling; "
                                      "a new spelling is an explicit re-key")
-        layers, counts = admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
-                                      state_id=state_id, base=base, base_identity=None if base is None else base.identity)
-        manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
-                    **{name: layer.reference.to_dict() for name, layer in layers.items()}}
-        content = session.retain_value(manifest)
-        self._remember(session, content.digest, manifest)
-        return content, counts
-
-    def table_identity_check(self, session, content):
-        """Refuse a table occurrence whose identity the ledger holds with other bytes, or as a state.
-
-        A ledger row takes precedence over layers when read by identity, as for
-        ``_check_ledger_copies``. Only identities under the table-occurrence
-        prefix can collide, so one range read of the ledger bounds the work:
-        each bounded group of such rows costs one membership scan.
-        """
-        manifest = session.ready_states.get(content.digest) or session.read_json(content, label="Core state manifest")
-        layers = self._layers(manifest)
-        with owned_iterator(session.ledger.data_identities_with_prefix(OCCURRENCE_PREFIX)) as batches:
-            for batch in batches:
-                if any(kind == "state" for kind, _, _ in batch):
-                    raise IntegrityError("data identity is ambiguous between an entity and a state")
-                digests = {identity: digest for _, identity, digest in batch}
-                with self.records.relations({"membership": layers["membership"]}) as relations:
-                    keys = [key for key, _ in relations["membership"].project(MEMBERSHIP_ADDRESSES).filter(
-                        duckdb.ColumnExpression("occurrence_id").isin(*map(duckdb.ConstantExpression, digests))).fetchall()]
-                for start in range(0, len(keys), BATCH_ROWS):
-                    with self.relation(session, None, scope=keys[start:start + BATCH_ROWS], layers=layers) as rows:
-                        for occurrence, digest in rows.project("occurrence_id, sha256(occurrence_record)").fetchall():
-                            if digests[occurrence] != "sha256:" + digest:
-                                raise IntegrityError("state member conflicts with an immutable retained record")
+        with admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
+                          state_id=state_id, base=base, base_identity=None if base is None else base.identity) \
+                as (layers, counts, minted):
+            manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
+                        **{name: layer.reference.to_dict() for name, layer in layers.items()}}
+            content = session.retain_value(manifest)
+            self._remember(session, content.digest, manifest)
+            yield content, counts, lambda: check_minted_copies(self.records, session.ledger, layers["table"], identity, minted)
 
     @contextmanager
     def typed_relation(self, layers):
@@ -274,11 +252,8 @@ class CoreStateStorage:
 
         Cleanup passes ``files`` instead: whole data files, which layers built
         on one another share. A row a sharing snapshot deleted still counts,
-        which can only protect more. A table layer yields nothing: its values
-        are inline.
+        which can only protect more.
         """
-        if isinstance(entities, AdmittedTableLayer):
-            return
         with (entities.relation() if files is None else self.records.file_relation(files)) as rows:
             contents = rows.filter(
                 "json_extract_string(decode(record_json), '/value/kind') = 'content'"
