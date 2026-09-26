@@ -1591,134 +1591,53 @@ newer)` finds the rows a changed input affects; see
 - Readers: every reader and `table()`, whose `member_key` is a derived layer's
   own column.
 
-Known limits: a point read costs about 0.2 s of native spelling compilation
-per query on a 50-column layer (540 ms per `read_value` at 1 M rows), a
-property of C27's readers. `changes` between two 1 M-row derived states takes
-3.9 s, since table-shaped states record no revision certificates. A changed
-source member always rewrites its derived row, whose source occurrence
-changed. `source_occurrence_id` is the caller's claim; DocSpec does not match
-it against the bound inputs. Each incremental derive adds a data and a delete
-file to the table, with no table compaction yet. The index costs 72.6 B per
-occurrence, as C27's.
+Known limits:
+
+- Point reads fetch their rows natively and spell them with the Python
+  reference, checked against their occurrence: `read_value` takes 26 ms on the
+  1 M-row layer (540 ms while it bound the native spelling), 19 ms of it
+  fetching one row from an unsorted table, and 36 ms on the admitted FR
+  generation; a named group of 256 scattered keys takes 1.1 s.
+- `affected` takes the input's diff as `changes` does. Table-shaped inputs
+  (admissions, typed derives) record no revisions, so their diff is one pass
+  over both memberships: 0.42–0.51 s at 1 M rows, no faster than the earlier
+  formulation's 0.41–0.46 s. A certified input's diff reads only its edited
+  keys: 0.24 s against 0.48 s for 50 edits. A row that an added input member
+  would newly join names no occurrence of it and is not found; the caller
+  matches the added members against the layer's own join columns.
+- `changes` between two 1 M-row derived states takes 3.8 s, for the same reason.
+- Lineage is part of the row digest (decided in review): a changed source
+  member rewrites its derived row even when the prepared value is unchanged.
+  `source_occurrence_id` is the caller's claim; DocSpec does not match it
+  against the bound inputs.
+- Each incremental derive adds a data and a delete file to the table, with no
+  compaction yet.
+- The base is not bound, so nothing retains the snapshot Engine last indexed:
+  Engine needs a retention root for it, or its next refresh rebuilds.
+- The gate harness's typing keeps empty keywords, which Engine's
+  `exact_values` refuses; Search's typed emitter must drop them.
+- The index costs 72.6 B per occurrence, as C27's.
 
 **Verified:** the [derivation suite](../tests/test_core_table_derivation.py)
 (regression requirement `CORE-TYPED-DERIVE`) covers a typed initial derive read
-back through every reader against the Python reference; an incremental derive
-writing only changed rows over shared files; exact retry in any row order, and
+back through every reader against the Python reference, with named and whole
+reads byte-identical; a point read refusing a row its membership does not name;
+an incremental derive writing only changed rows over shared files; the native
+membership rewrite beyond both bounds; exact retry in any row order, and
 refusal of changed rows, base, inputs, removals, definition or schema under one
 batch ID; refusal of another definition or schema as a base; a stale dataset;
 a one-to-many layer; a two-input fusion layer finding the rows each input's
-change affects; the native membership rewrite beyond both bounds; and removal
-of an older derived state sharing files with a newer one. The gate derived
-PM01's 10,000 FR prepared values with 0 of 490,000 (member key, field) values
-differing from Python's reading of the JSON. The incremental derive wrote
-exactly the source revision's 50 rewrites, with `changes` equal to the
-source's 51. Each derive added 7–9 ledger records. The full 1,007,639-row
-layer took 49.9 s at 3.6 GiB: 0.0495 ms per record beside PM01's 0.81, and
-0.173 for C26's JSON derive of the same values.
-
-**Why:** Search's prepared metadata is one JSON value per member, stored as
-canonical JSON inside a canonical-JSON occurrence record. Engine decodes every
-value and builds its typed row with `row()`
-(`spicyengine/src/spicyengine/indexing/prepared_table.py`). PM01 measured
-712–784 B/record of prepared Parquet, a derive at 0.81 ms/record after the
-encode-once fix (pure `prepare()` costs 0.157), and an Engine first publish at
-0.33 ms/record. Body and segment extraction and fusion joins would repeat the
-JSON layer.
-
-**Change:** add `CoreWorkspace.derive_table(batches, *, schema, batch_id,
-definition, inputs, base_state_id=None, removals=(), dataset=None)`, C26's
-`derive` with typed rows:
-
-- **Rows and identity.** Arrow batches in a declared schema that includes
-  `member_key` and `source_occurrence_id`. DocSpec writes them natively into a
-  table layer of its own, with field IDs. It applies C27's rules (dataset scope
-  is the definition ID, plus C27's row rule and minted-occurrence index), and
-  publishes one metadata unit. Each source binds as a `StateInput` and each
-  lookup as a `WholeInput`, and `generating_request` is unchanged.
-- **Types.** C27's `docspec-table-row/1`, plus LIST<VARCHAR> spelled as a
-  canonical array, each tested against the Python reference before first use.
-- **Incremental derive.** With `base_state_id`, the caller supplies changed rows
-  and removals taken from the source's `changes`. They go through the record
-  store's `apply_changes` on both the table and the membership, so unchanged
-  files are shared. Edits are rows in a layer, so C26's 8 MiB edit bound does
-  not apply. Derived changes are at most the source's: a source change can
-  leave a prepared value unchanged.
-- **One-to-many layers.** Bodies and segments use a declared composite key
-  (`member_key`, `segment_index`), spelled by a declared function. When a
-  source member changes, every row derived from it is replaced. Captured body
-  bytes stay content-addressed blobs in the document pipeline, and the segment
-  layer carries their digest.
-- **Fusion.** A join over several states is written as a typed layer whose rows
-  carry the `source_occurrence_id` of every row they joined. A change in any
-  input finds its affected rows by semi-join, C16's affected-result query done
-  natively.
-- **Search.** The preparer emits the typed prepared fields: title, source URL,
-  primary and related text, identifiers, filters, dates and display fields. It
-  also emits the display `metadata` JSON Engine keeps as one string column. The
-  JSON value per member disappears, and preparation stays in Python, once per
-  changed member.
-- **Engine keeps its own table contract.** `PreparedTable` refuses any schema
-  but `iceberg_schema()` and partitions by `bucket(id)`. `row()` enforces sorted
-  unique lists, UTC timestamps, a 64 KiB display bound and a 16 MiB row bound.
-  It derives `id`, `expanded_*`, `publication_date`, `retained_ref` and
-  `content_sha256`. C29 does not let Engine serve DocSpec's layer as is.
-  Engine reads the typed columns through `table()` instead of parsing JSON,
-  applies `row()`'s invariants in bulk, and writes its own table: a native
-  copy, with no JSON flattening.
-  - **Cutover cost.** `content_sha256` covers `(source_id, member_key,
-    occurrence_id, metadata)`, and C29 mints new derived occurrence IDs, so
-    cutover means one full Engine republish. It counts toward ruling R2.
-  - **Update cost.** Engine updates by copy-on-write and rewrites every file
-    holding a changed row (PM01 finding 2). "Only changed rows" bounds rows,
-    not bytes.
-- **Retention.** Retention and removal act per layer, as in C28. An incremental
-  derived layer shares its base's files; removing an older derived state frees
-  only files that no retained layer references. Removing a source generation
-  follows C27's retention rule.
-- **The JSON entity path remains** for documents and captured artifacts,
-  evidence, supplied records, small, nested or irregular values, per-occurrence
-  results and reuse associations. A layer is typed only when its rows share one
-  declared schema and arrive in bulk.
-
-**Gate:**
-
-- **Claim:** Search's prepared fields, written as a typed derived layer over the
-  admitted FR generation, equal the JSON-derived values member by member. Over
-  the next generation, an incremental derive writes only the members whose
-  prepared value changed, and Engine republishes only those.
-- **Population:** PM01's 10,000-record FR sample in md5 order, then all
-  1,009,005 rows.
-- **Reference:** Search's JSON derive over the same admitted state, decoded
-  with Python `json`, not through Engine's `row()`.
-- **Threshold:**
-  - Zero differing (member key, field) values.
-  - Derived `changes` at most the source's `changes` (104 for the spike's
-    pair), and exactly the members whose prepared value differs.
-  - Engine publishes exactly those rows. Record the bytes it rewrites.
-  - The ledger grows by a constant number of records per derive.
-  - Record milliseconds per record beside PM01's 0.81.
-- **What would make a clean result wrong:**
-  - Both sides share `prepare()`, so equality shows the storage round trip, not
-    that preparation is correct (PM01 noted this).
-  - A typing step shared by both sides would hide its bugs.
-  - A sample with empty date or list fields: include members with every
-    `DATE_FIELDS` and `FILTER_FIELDS` entry populated.
-  - Row counts alone would hide copy-on-write amplification.
-- **Falsifier:** a typed derive not materially cheaper than 0.81 ms per record,
-  or Engine still needing a JSON parse. The JSON path then stays.
-- **Receipt:** `history/probes/<date>-typed-derived-layers.{md,json}`.
-
-**Done when:**
-
-- Tests cover:
-  - a typed initial and incremental derive;
-  - retry and refusal as for C26;
-  - a one-to-many layer;
-  - a two-input fusion layer finding the rows a change affects;
-  - removal of an older derived state that shares files with a newer one.
-- The gate passes.
-- Search and Engine adopt it through their own plans.
+change affects, and the added docket it cannot; a layer over admitted
+generations finding what the next generation changed; and removal of an older
+derived state sharing files with a newer one. Engine's `id` is pinned to its
+own function's digests. The gate derived PM01's 10,000 FR prepared values with
+0 of 490,000 (member key, field) values differing from Python's reading of the
+JSON. Over the source revision the incremental derive wrote exactly the 50
+rewrites, and derived `changes` equal the source's 51. Those are the rows whose
+source occurrence or prepared value changed: PM01's revision cannot tell the
+two apart, since every rewrite changes the title. Each derive added 7–9 ledger
+records. The full 1,007,639-row layer took 48.6 s at 3.6 GiB: 0.048 ms per
+record beside PM01's 0.81, and 0.154 for C26's JSON derive of the same values.
 
 ## Coverage against the spec and plan
 

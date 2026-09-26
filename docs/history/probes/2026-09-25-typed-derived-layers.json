@@ -1,34 +1,56 @@
 {
- "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+ "before_review": {
+  "commit": "7843812",
+  "scale_derive_wall_seconds": 49.912,
+  "scale_lookups": {
+   "environment": {
+    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "duckdb": "1.5.5",
+    "load": [
+     5.412109375,
+     5.96728515625,
+     6.92431640625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "keys": 50,
+   "read_value_ms": 539.6,
+   "recorded_at": "2026-09-25T22:20:44",
+   "values_256_ms": 2605.6,
+   "values_256_rows": 256
+  }
+ },
+ "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
  "gate": "C29 typed derived layers",
  "harness": "docs/history/probes/2026-09-25-typed-derived-layers.py",
  "receipts": {
   "compare-10k-1": {
    "compare": {
-    "cpu_seconds": 0.302,
+    "cpu_seconds": 0.307,
     "load_end": [
-     4.9,
-     6.88,
-     7.47
+     3.72,
+     4.06,
+     4.36
     ],
     "load_start": [
-     4.9,
-     6.88,
-     7.47
+     3.72,
+     4.06,
+     4.36
     ],
-    "peak_rss_bytes_process": 755679232,
-    "wall_seconds": 0.149
+    "peak_rss_bytes_process": 755941376,
+    "wall_seconds": 0.151
    },
    "differing": [],
    "differing_count": 0,
    "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.66845703125,
-     6.79443359375,
-     7.4365234375
+     3.7197265625,
+     4.05810546875,
+     4.359375
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -80,36 +102,36 @@
    },
    "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-1.jsonl",
    "record_count": 10000,
-   "recorded_at": "2026-09-25T22:17:17",
+   "recorded_at": "2026-09-26T00:39:25",
    "state_id": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188",
    "stored": 10000
   },
   "compare-10k-2": {
    "compare": {
-    "cpu_seconds": 0.32,
+    "cpu_seconds": 0.324,
     "load_end": [
-     4.61,
-     6.75,
-     7.42
+     3.98,
+     4.11,
+     4.37
     ],
     "load_start": [
-     4.61,
-     6.75,
-     7.42
+     3.98,
+     4.11,
+     4.37
     ],
-    "peak_rss_bytes_process": 759889920,
-    "wall_seconds": 0.17
+    "peak_rss_bytes_process": 760414208,
+    "wall_seconds": 0.172
    },
    "differing": [],
    "differing_count": 0,
    "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.61474609375,
-     6.74755859375,
-     7.416015625
+     4.14306640625,
+     4.13818359375,
+     4.3837890625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -161,36 +183,36 @@
    },
    "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-2.jsonl",
    "record_count": 9999,
-   "recorded_at": "2026-09-25T22:17:24",
+   "recorded_at": "2026-09-26T00:39:32",
    "state_id": "urn:docspec:core-derive-table:v1:99ac59d4b7fb6a8e6627de5784972dccdf95aa4bf9d1755a88500903c38f5b16",
    "stored": 9999
   },
   "compare-coverage": {
    "compare": {
-    "cpu_seconds": 0.352,
+    "cpu_seconds": 0.36,
     "load_end": [
-     4.57,
-     6.7,
-     7.4
+     4.14,
+     4.14,
+     4.38
     ],
     "load_start": [
-     4.57,
-     6.7,
-     7.4
+     4.14,
+     4.14,
+     4.38
     ],
-    "peak_rss_bytes_process": 787824640,
-    "wall_seconds": 0.202
+    "peak_rss_bytes_process": 782204928,
+    "wall_seconds": 0.208
    },
    "differing": [],
    "differing_count": 0,
    "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.5654296875,
-     6.70166015625,
-     7.39599609375
+     4.69189453125,
+     4.251953125,
+     4.42236328125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -242,7 +264,7 @@
    },
    "prepared": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.jsonl",
    "record_count": 10001,
-   "recorded_at": "2026-09-25T22:17:30",
+   "recorded_at": "2026-09-26T00:39:38",
    "state_id": "urn:docspec:core-derive-table:v1:1bed675b849cb9da39e180855b875750c23e183a69aed233199c5b0297672d05",
    "stored": 10001
   },
@@ -252,33 +274,33 @@
     "files": 42,
     "other": 0,
     "parquet": 7186340,
-    "record_metadata": 56492,
+    "record_metadata": 56491,
     "sqlite": 24576,
-    "total": 7270651
+    "total": 7270650
    },
    "derive": {
-    "cpu_seconds": 1.785,
+    "cpu_seconds": 1.811,
     "load_end": [
-     4.9,
-     6.88,
-     7.47
+     3.72,
+     4.06,
+     4.36
     ],
     "load_start": [
-     4.9,
-     6.88,
-     7.47
+     3.61,
+     4.04,
+     4.36
     ],
-    "ms_per_record": 0.1506,
-    "peak_rss_bytes_process": 1039843328,
-    "wall_seconds": 1.506
+    "ms_per_record": 0.1488,
+    "peak_rss_bytes_process": 1096351744,
+    "wall_seconds": 1.488
    },
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.90087890625,
-     6.87548828125,
-     7.46875
+     3.7197265625,
+     4.05810546875,
+     4.359375
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -290,7 +312,7 @@
     "units": 3
    },
    "pm01_json_derive_ms_per_record": 0.81,
-   "recorded_at": "2026-09-25T22:17:15",
+   "recorded_at": "2026-09-26T00:39:23",
    "report": {
     "base": null,
     "counts": {
@@ -525,33 +547,33 @@
   },
   "derive-coverage": {
    "derive": {
-    "cpu_seconds": 1.871,
+    "cpu_seconds": 1.884,
     "load_end": [
-     4.57,
-     6.7,
-     7.4
+     4.14,
+     4.14,
+     4.38
     ],
     "load_start": [
-     4.61,
-     6.75,
-     7.42
+     4.14,
+     4.14,
+     4.38
     ],
-    "ms_per_record": 0.1706,
-    "peak_rss_bytes_process": 1314144256,
-    "wall_seconds": 1.706
+    "ms_per_record": 0.1715,
+    "peak_rss_bytes_process": 1298530304,
+    "wall_seconds": 1.715
    },
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.5654296875,
-     6.70166015625,
-     7.39599609375
+     4.14306640625,
+     4.13818359375,
+     4.3837890625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
-   "recorded_at": "2026-09-25T22:17:27",
+   "recorded_at": "2026-09-26T00:39:35",
    "report": {
     "base": null,
     "counts": {
@@ -790,32 +812,32 @@
    "engine_commit": "71a325bdebf5c2089a90584d850a440e32a7d2ae",
    "engine_function": "def stable_id(source_id, member_key):\n    \"\"\"Stable search ID over source_id and member_key; an empty part refuses.\"\"\"\n    if not isinstance(source_id, str) or not source_id or not isinstance(member_key, str) or not member_key:\n        raise ValueError(\"A stable source namespace and complete member key are required\")\n    return digest([source_id, member_key])",
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.90087890625,
-     6.87548828125,
-     7.46875
+     3.6083984375,
+     4.04248046875,
+     4.35595703125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "keys": 10042,
-   "recorded_at": "2026-09-25T22:17:11"
+   "recorded_at": "2026-09-26T00:39:19"
   },
   "json-derive-10k": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.27978515625,
-     6.60693359375,
-     7.3583984375
+     4.55615234375,
+     4.23095703125,
+     4.41357421875
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
-   "recorded_at": "2026-09-25T22:17:35",
+   "recorded_at": "2026-09-26T00:39:43",
    "typed-fields": {
     "bytes": {
      "blobs": 1524,
@@ -827,20 +849,20 @@
      "total": 5787184
     },
     "derive": {
-     "cpu_seconds": 1.869,
+     "cpu_seconds": 1.695,
      "load_end": [
-      4.28,
-      6.61,
-      7.36
+      4.56,
+      4.23,
+      4.41
      ],
      "load_start": [
-      4.28,
-      6.61,
-      7.36
+      4.69,
+      4.25,
+      4.42
      ],
-     "ms_per_record": 0.1732,
-     "peak_rss_bytes_process": 1078738944,
-     "wall_seconds": 1.732
+     "ms_per_record": 0.1607,
+     "peak_rss_bytes_process": 1051574272,
+     "wall_seconds": 1.607
     },
     "ledger": {
      "links": 10,
@@ -849,7 +871,7 @@
      "units": 8
     },
     "rows": 10000,
-    "state_id": "urn:docspec:execution:0fdc5df6-efe8-4c1f-91a7-ec7169ba55e2:state"
+    "state_id": "urn:docspec:execution:42f061b8-ee59-4c04-a6de-1993cfc141a8:state"
    },
    "whole": {
     "bytes": {
@@ -857,25 +879,25 @@
      "files": 23,
      "other": 0,
      "parquet": 7824741,
-     "record_metadata": 20844,
+     "record_metadata": 20852,
      "sqlite": 28672,
-     "total": 7875781
+     "total": 7875789
     },
     "derive": {
-     "cpu_seconds": 2.624,
+     "cpu_seconds": 2.583,
      "load_end": [
-      4.28,
-      6.61,
-      7.36
+      4.69,
+      4.25,
+      4.42
      ],
      "load_start": [
-      4.28,
-      6.61,
-      7.36
+      4.69,
+      4.25,
+      4.42
      ],
-     "ms_per_record": 0.2468,
-     "peak_rss_bytes_process": 1020952576,
-     "wall_seconds": 2.468
+     "ms_per_record": 0.242,
+     "peak_rss_bytes_process": 1000620032,
+     "wall_seconds": 2.42
     },
     "ledger": {
      "links": 10,
@@ -884,7 +906,7 @@
      "units": 8
     },
     "rows": 10000,
-    "state_id": "urn:docspec:execution:24fc7432-bc35-4ec2-a238-6b06ea3b090e:state"
+    "state_id": "urn:docspec:execution:3806a917-f5b6-4107-89ad-3f67b3c24fb2:state"
    }
   },
   "revise-10k": {
@@ -899,31 +921,31 @@
     "total": 169409
    },
    "derive": {
-    "cpu_seconds": 1.289,
+    "cpu_seconds": 1.337,
     "load_end": [
-     4.67,
-     6.79,
-     7.44
+     3.98,
+     4.11,
+     4.37
     ],
     "load_start": [
-     4.67,
-     6.79,
-     7.44
+     3.72,
+     4.06,
+     4.36
     ],
-    "ms_per_record": 17.1598,
-    "peak_rss_bytes_process": 1193148416,
-    "wall_seconds": 0.944
+    "ms_per_record": 19.0579,
+    "peak_rss_bytes_process": 1185775616,
+    "wall_seconds": 1.048
    },
    "derived_changes": 51,
    "derived_equals_value_changes": true,
    "derived_removed": 1,
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.61474609375,
-     6.74755859375,
-     7.416015625
+     3.98193359375,
+     4.10693359375,
+     4.37451171875
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -935,7 +957,7 @@
     "units": 3
    },
    "new_table_files": 1,
-   "recorded_at": "2026-09-25T22:17:21",
+   "recorded_at": "2026-09-26T00:39:29",
    "report": {
     "base": "urn:docspec:core-derive-table:v1:5b0625f289d25288e5097c662930979f5937a781c7efaad9c396c8d90020f188",
     "counts": {
@@ -1173,36 +1195,333 @@
    "written_are_the_rewrites": true,
    "written_rows_in_new_table_files": 50
   },
-  "scale-check": {
-   "check": {
-    "cpu_seconds": 54.256,
+  "scale-affected": {
+   "admit_current": {
+    "counts": {
+     "added": 102,
+     "adopted": 1008901,
+     "carried": 1008901,
+     "changed": 2,
+     "generated": 104,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1009005
+    },
+    "cpu_seconds": 2.244,
     "load_end": [
-     5.53,
-     6.08,
-     7.01
+     5.82,
+     5.21,
+     4.8
     ],
     "load_start": [
-     5.14,
-     6.21,
-     7.12
+     5.82,
+     5.21,
+     4.8
     ],
-    "peak_rss_bytes_process": 8745091072,
-    "wall_seconds": 55.24
+    "peak_rss_bytes_process": 2849488896,
+    "wall_seconds": 2.277
+   },
+   "admit_prior": {
+    "cpu_seconds": 14.042,
+    "load_end": [
+     5.76,
+     5.18,
+     4.79
+    ],
+    "load_start": [
+     5.42,
+     5.09,
+     4.75
+    ],
+    "peak_rss_bytes_process": 1065009152,
+    "wall_seconds": 13.762
+   },
+   "admitted_point_reads": {
+    "keys": 50,
+    "read_value_ms": 35.5
+   },
+   "affected": {
+    "cpu_seconds": 0.419,
+    "equals_the_source_changes": true,
+    "expected": 2,
+    "load_end": [
+     6.0,
+     5.25,
+     4.82
+    ],
+    "load_start": [
+     5.82,
+     5.21,
+     4.8
+    ],
+    "peak_rss_bytes_process": 2862678016,
+    "rows": 2,
+    "wall_seconds": 0.42
+   },
+   "affected_before": {
+    "cpu_seconds": 0.407,
+    "load_end": [
+     6.0,
+     5.25,
+     4.82
+    ],
+    "load_start": [
+     6.0,
+     5.25,
+     4.82
+    ],
+    "peak_rss_bytes_process": 2864447488,
+    "rows": 2,
+    "same_rows": true,
+    "wall_seconds": 0.407
+   },
+   "derive": {
+    "cpu_seconds": 6.725,
+    "load_end": [
+     5.82,
+     5.21,
+     4.8
+    ],
+    "load_start": [
+     5.76,
+     5.18,
+     4.79
+    ],
+    "ms_per_record": 0.0067,
+    "peak_rss_bytes_process": 1401798656,
+    "rows": 1008903,
+    "wall_seconds": 6.756
+   },
+   "environment": {
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
+    "duckdb": "1.5.5",
+    "load": [
+     5.99609375,
+     5.251953125,
+     4.82080078125
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "recorded_at": "2026-09-26T01:43:44",
+   "revise": {
+    "counts": {
+     "added": 102,
+     "adopted": 0,
+     "changed": 2,
+     "generated": 104,
+     "removed": 0,
+     "rows": 1009005,
+     "unchanged": 0
+    },
+    "cpu_seconds": 0.213,
+    "load_end": [
+     6.0,
+     5.25,
+     4.82
+    ],
+    "load_start": [
+     6.0,
+     5.25,
+     4.82
+    ],
+    "peak_rss_bytes_process": 2979987456,
+    "wall_seconds": 0.216
+   },
+   "source_changes": {
+    "count": 104,
+    "cpu_seconds": 0.987,
+    "load_end": [
+     5.82,
+     5.21,
+     4.8
+    ],
+    "load_start": [
+     5.82,
+     5.21,
+     4.8
+    ],
+    "peak_rss_bytes_process": 2859696128,
+    "wall_seconds": 0.987
+   }
+  },
+  "scale-affected-certified": {
+   "affected": {
+    "cpu_seconds": 0.239,
+    "equals_the_rewrites": true,
+    "load_end": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "load_start": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "peak_rss_bytes_process": 4789305344,
+    "rows": 50,
+    "wall_seconds": 0.239
+   },
+   "affected_before": {
+    "cpu_seconds": 0.476,
+    "load_end": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "load_start": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "peak_rss_bytes_process": 4789305344,
+    "rows": 50,
+    "same_rows": true,
+    "wall_seconds": 0.476
+   },
+   "derive": {
+    "cpu_seconds": 49.044,
+    "load_end": [
+     5.09,
+     5.18,
+     4.88
+    ],
+    "load_start": [
+     5.43,
+     5.23,
+     4.89
+    ],
+    "ms_per_record": 0.0475,
+    "peak_rss_bytes_process": 4789305344,
+    "rows": 1007639,
+    "wall_seconds": 47.882
+   },
+   "environment": {
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
+    "duckdb": "1.5.5",
+    "load": [
+     5.404296875,
+     5.24072265625,
+     4.90771484375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "recorded_at": "2026-09-26T01:47:43",
+   "revise_source": {
+    "cpu_seconds": 0.473,
+    "load_end": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "load_start": [
+     5.4,
+     5.24,
+     4.91
+    ],
+    "peak_rss_bytes_process": 4789305344,
+    "rows": 50,
+    "wall_seconds": 0.478
+   }
+  },
+  "scale-affected-wide": {
+   "affected": {
+    "cpu_seconds": 0.511,
+    "load_end": [
+     5.6,
+     5.28,
+     4.87
+    ],
+    "load_start": [
+     5.6,
+     5.28,
+     4.87
+    ],
+    "peak_rss_bytes_process": 3281813504,
+    "rows": 2,
+    "wall_seconds": 0.512
+   },
+   "affected_before": {
+    "cpu_seconds": 0.461,
+    "load_end": [
+     5.6,
+     5.28,
+     4.87
+    ],
+    "load_start": [
+     5.6,
+     5.28,
+     4.87
+    ],
+    "peak_rss_bytes_process": 3281813504,
+    "rows": 2,
+    "same_rows": true,
+    "wall_seconds": 0.462
+   },
+   "derive": {
+    "columns": 25,
+    "cpu_seconds": 20.66,
+    "load_end": [
+     5.74,
+     5.31,
+     4.87
+    ],
+    "load_start": [
+     5.51,
+     5.24,
+     4.84
+    ],
+    "ms_per_record": 0.0204,
+    "peak_rss_bytes_process": 3281813504,
+    "rows": 1008903,
+    "wall_seconds": 20.545
+   },
+   "environment": {
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
+    "duckdb": "1.5.5",
+    "load": [
+     5.6005859375,
+     5.283203125,
+     4.86669921875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "narrow_affected_rows": 2,
+   "recorded_at": "2026-09-26T01:45:02"
+  },
+  "scale-check": {
+   "check": {
+    "cpu_seconds": 51.227,
+    "load_end": [
+     5.08,
+     4.75,
+     4.58
+    ],
+    "load_start": [
+     5.88,
+     4.79,
+     4.59
+    ],
+    "peak_rss_bytes_process": 9000927232,
+    "wall_seconds": 51.451
    },
    "distinct_occurrences": 1007639,
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     5.5263671875,
-     6.0830078125,
-     7.00634765625
+     5.0771484375,
+     4.74560546875,
+     4.5791015625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "layer_rows_not_typed": 0,
-   "recorded_at": "2026-09-25T22:20:08",
+   "recorded_at": "2026-09-26T01:40:07",
    "rows": 1007639,
    "state_id": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a",
    "typed_rows_missing_from_layer": 0
@@ -1213,9 +1532,9 @@
     "files": 48,
     "other": 0,
     "parquet": 633964365,
-    "record_metadata": 61087,
+    "record_metadata": 61081,
     "sqlite": 16384,
-    "total": 634045085
+    "total": 634045079
    },
    "cutover_json_derive": {
     "minutes": 19.4,
@@ -1223,28 +1542,28 @@
     "peak_gb": 12.5
    },
    "derive": {
-    "cpu_seconds": 51.35,
+    "cpu_seconds": 50.236,
     "load_end": [
-     5.37,
-     6.31,
-     7.17
+     5.49,
+     4.67,
+     4.54
     ],
     "load_start": [
-     4.28,
-     6.34,
-     7.23
+     5.86,
+     4.56,
+     4.5
     ],
-    "ms_per_record": 0.0495,
-    "peak_rss_bytes_process": 3872718848,
-    "wall_seconds": 49.912
+    "ms_per_record": 0.0483,
+    "peak_rss_bytes_process": 3838050304,
+    "wall_seconds": 48.629
    },
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     5.36962890625,
-     6.3125,
-     7.1669921875
+     5.48583984375,
+     4.6650390625,
+     4.53857421875
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -1255,7 +1574,7 @@
     "retention": 9,
     "units": 3
    },
-   "recorded_at": "2026-09-25T22:18:57",
+   "recorded_at": "2026-09-26T01:39:04",
    "report": {
     "base": null,
     "counts": {
@@ -1494,34 +1813,34 @@
     "files": 29,
     "other": 0,
     "parquet": 564982956,
-    "record_metadata": 24772,
+    "record_metadata": 24770,
     "sqlite": 16384,
-    "total": 565025640
+    "total": 565025638
    },
    "derive_including_values": {
-    "cpu_seconds": 182.661,
+    "cpu_seconds": 166.081,
     "load_end": [
-     9.5,
-     7.33,
-     7.26
+     5.42,
+     5.09,
+     4.75
     ],
     "load_start": [
-     6.44,
-     6.17,
-     6.98
+     4.9,
+     4.73,
+     4.58
     ],
-    "ms_per_record": 0.183,
-    "peak_rss_bytes_process": 6923337728,
-    "wall_seconds": 184.437
+    "ms_per_record": 0.164,
+    "peak_rss_bytes_process": 7993884672,
+    "wall_seconds": 165.294
    },
-   "derive_ms_per_record_without_values": 0.1728,
+   "derive_ms_per_record_without_values": 0.1538,
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     9.49853515625,
-     7.33349609375,
-     7.25830078125
+     5.423828125,
+     5.08544921875,
+     4.75
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -1532,34 +1851,34 @@
     "retention": 9,
     "units": 8
    },
-   "recorded_at": "2026-09-25T22:24:04",
+   "recorded_at": "2026-09-26T01:43:13",
    "rows": 1007639,
-   "state_id": "urn:docspec:execution:7f357885-453c-453a-ba49-98c1b92fd600:state",
+   "state_id": "urn:docspec:execution:706ed562-91c2-4f98-8403-12a91ba3a250:state",
    "values_only": {
-    "cpu_seconds": 11.003,
+    "cpu_seconds": 11.011,
     "load_end": [
-     6.44,
-     6.17,
-     6.98
+     4.9,
+     4.73,
+     4.58
     ],
     "load_start": [
-     5.46,
-     5.97,
-     6.92
+     5.15,
+     4.77,
+     4.59
     ],
     "ms_per_record": 0.0102,
-    "peak_rss_bytes_process": 6923337728,
-    "wall_seconds": 10.327
+    "peak_rss_bytes_process": 7993884672,
+    "wall_seconds": 10.28
    }
   },
   "scale-layers": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     8.89794921875,
-     7.24462890625,
-     7.22705078125
+     5.99609375,
+     5.251953125,
+     4.82080078125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -1576,7 +1895,7 @@
      "rows": 1007639
     }
    },
-   "recorded_at": "2026-09-25T22:24:07",
+   "recorded_at": "2026-09-26T01:43:45",
    "typed": {
     "membership": {
      "bytes": 46135063,
@@ -1614,20 +1933,20 @@
   },
   "scale-lookups": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     5.412109375,
-     5.96728515625,
-     6.92431640625
+     5.07080078125,
+     4.74951171875,
+     4.58154296875
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "keys": 50,
-   "read_value_ms": 539.6,
-   "recorded_at": "2026-09-25T22:20:44",
-   "values_256_ms": 2605.6,
+   "read_value_ms": 26.1,
+   "recorded_at": "2026-09-26T01:40:15",
+   "values_256_ms": 1135.7,
    "values_256_rows": 256
   },
   "scale-revise": {
@@ -1637,48 +1956,48 @@
     "files": 57,
     "other": 0,
     "parquet": 76096,
-    "record_metadata": 76863,
+    "record_metadata": 76841,
     "sqlite": -8192,
-    "total": 148016
+    "total": 147994
    },
    "changes": 51,
    "changes_read": {
-    "cpu_seconds": 4.025,
+    "cpu_seconds": 3.958,
     "load_end": [
-     5.15,
-     6.24,
-     7.13
+     5.87,
+     4.77,
+     4.58
     ],
     "load_start": [
-     5.34,
-     6.29,
-     7.15
+     5.69,
+     4.72,
+     4.56
     ],
-    "peak_rss_bytes_process": 3379970048,
-    "wall_seconds": 3.888
+    "peak_rss_bytes_process": 3311878144,
+    "wall_seconds": 3.816
    },
    "derive": {
-    "cpu_seconds": 1.682,
+    "cpu_seconds": 1.619,
     "load_end": [
-     5.34,
-     6.29,
-     7.15
+     5.69,
+     4.72,
+     4.56
     ],
     "load_start": [
-     5.34,
-     6.29,
-     7.15
+     5.69,
+     4.72,
+     4.56
     ],
-    "peak_rss_bytes_process": 3379970048,
-    "wall_seconds": 1.639
+    "peak_rss_bytes_process": 3311878144,
+    "wall_seconds": 1.373
    },
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     5.15234375,
-     6.23583984375,
-     7.12939453125
+     5.8720703125,
+     4.7744140625,
+     4.57861328125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
@@ -1689,7 +2008,7 @@
     "retention": 7,
     "units": 3
    },
-   "recorded_at": "2026-09-25T22:19:08",
+   "recorded_at": "2026-09-26T01:39:11",
    "removed": 1,
    "report": {
     "base": "urn:docspec:core-derive-table:v1:0c7affa3144a3463561262716b69296db8d0a49574a00416fe71d663ea7cf89a",
@@ -1924,31 +2243,31 @@
   },
   "scale-type": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.220703125,
-     6.359375,
-     7.24072265625
+     6.11279296875,
+     4.591796875,
+     4.5078125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "join": {
-    "cpu_seconds": 8.347,
+    "cpu_seconds": 8.16,
     "load_end": [
-     4.22,
-     6.36,
-     7.24
+     6.11,
+     4.59,
+     4.51
     ],
     "load_start": [
-     4.08,
-     6.41,
-     7.27
+     5.95,
+     4.53,
+     4.49
     ],
-    "ms_per_record": 0.0082,
-    "peak_rss_bytes_process": 6957252608,
-    "wall_seconds": 8.236
+    "ms_per_record": 0.008,
+    "peak_rss_bytes_process": 6750289920,
+    "wall_seconds": 8.097
    },
    "misaligned_keys": 0,
    "pins_checked": {
@@ -1960,132 +2279,132 @@
     "sha256:445789ab6f5cee7dc7afec33f4325f6a2cee58f8ec92b8c397fe5096b77f25c3"
    ],
    "prepared_members": 1007639,
-   "recorded_at": "2026-09-25T22:18:01",
+   "recorded_at": "2026-09-26T01:38:14",
    "rows": 1007639,
    "source": [
     "catalogue",
     "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61"
    ],
    "type": {
-    "cpu_seconds": 27.655,
+    "cpu_seconds": 27.077,
     "load_end": [
-     4.08,
-     6.41,
-     7.27
+     5.95,
+     4.53,
+     4.49
     ],
     "load_start": [
-     4.02,
-     6.51,
-     7.32
+     5.71,
+     4.4,
+     4.44
     ],
-    "ms_per_record": 0.0166,
-    "peak_rss_bytes_process": 6957252608,
-    "wall_seconds": 16.728
+    "ms_per_record": 0.0161,
+    "peak_rss_bytes_process": 6750289920,
+    "wall_seconds": 16.239
    },
    "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-1m.typed.parquet",
    "typed_bytes": 471828254
   },
   "type-coverage": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.61474609375,
-     6.74755859375,
-     7.416015625
+     4.14306640625,
+     4.13818359375,
+     4.3837890625
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "prepared": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.jsonl",
-   "recorded_at": "2026-09-25T22:17:25",
+   "recorded_at": "2026-09-26T00:39:33",
    "rows": 10001,
    "source_state": "source",
    "type": {
-    "cpu_seconds": 0.558,
+    "cpu_seconds": 0.574,
     "load_end": [
-     4.61,
-     6.75,
-     7.42
+     4.14,
+     4.14,
+     4.38
     ],
     "load_start": [
-     4.61,
-     6.75,
-     7.42
+     4.14,
+     4.14,
+     4.38
     ],
-    "ms_per_record": 0.0332,
-    "peak_rss_bytes_process": 954155008,
-    "wall_seconds": 0.332
+    "ms_per_record": 0.0336,
+    "peak_rss_bytes_process": 953925632,
+    "wall_seconds": 0.336
    },
    "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/coverage.typed.parquet",
    "unmatched_keys": 0
   },
   "type-fr-10k-1": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.90087890625,
-     6.87548828125,
-     7.46875
+     3.6083984375,
+     4.04248046875,
+     4.35595703125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-1.jsonl",
-   "recorded_at": "2026-09-25T22:17:12",
+   "recorded_at": "2026-09-26T00:39:20",
    "rows": 10000,
    "source_state": "source",
    "type": {
-    "cpu_seconds": 0.649,
+    "cpu_seconds": 0.66,
     "load_end": [
-     4.9,
-     6.88,
-     7.47
+     3.61,
+     4.04,
+     4.36
     ],
     "load_start": [
-     4.9,
-     6.88,
-     7.47
+     3.61,
+     4.04,
+     4.36
     ],
-    "ms_per_record": 0.0383,
-    "peak_rss_bytes_process": 705871872,
-    "wall_seconds": 0.383
+    "ms_per_record": 0.0393,
+    "peak_rss_bytes_process": 707739648,
+    "wall_seconds": 0.393
    },
    "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-10k-1.typed.parquet",
    "unmatched_keys": 0
   },
   "type-fr-10k-2": {
    "environment": {
-    "commit": "7843812c6d4a52dc6cea6927ee70e03969080ce0",
+    "commit": "76382448eb64d8cf539bcd27053c48feeb570097",
     "duckdb": "1.5.5",
     "load": [
-     4.90087890625,
-     6.87548828125,
-     7.46875
+     3.6083984375,
+     4.04248046875,
+     4.35595703125
     ],
     "pyarrow": "25.0.1",
     "python": "3.12.9"
    },
    "prepared": "/Users/mikewolfd/Work/corpora/pm01-gate-2026-09-23/compare/fr-10k.prepared-2.jsonl",
-   "recorded_at": "2026-09-25T22:17:13",
+   "recorded_at": "2026-09-26T00:39:21",
    "rows": 9999,
    "source_state": "urn:docspec:execution:743fbd0a-d981-4919-8b54-8e46a9a4634d:state",
    "type": {
-    "cpu_seconds": 0.648,
+    "cpu_seconds": 0.653,
     "load_end": [
-     4.9,
-     6.88,
-     7.47
+     3.61,
+     4.04,
+     4.36
     ],
     "load_start": [
-     4.9,
-     6.88,
-     7.47
+     3.61,
+     4.04,
+     4.36
     ],
-    "ms_per_record": 0.0374,
-    "peak_rss_bytes_process": 707067904,
-    "wall_seconds": 0.373
+    "ms_per_record": 0.0375,
+    "peak_rss_bytes_process": 715472896,
+    "wall_seconds": 0.375
    },
    "typed": "/Users/mikewolfd/Work/corpora/c29-gate-20260925/inputs/fr-10k-2.typed.parquet",
    "unmatched_keys": 0
@@ -2093,7 +2412,7 @@
  },
  "sort_comparison": {
   "commit": "42e9a81d9ea190ffef73dc2cffc95fe93d74d54a",
-  "note": "first run: the table sorted by member_key (42e9a81), then the same derive with the sort removed; point reads on both",
+  "note": "first run: the table sorted by member_key, then the same derive with the sort removed; point reads on both, when they bound the native spelling",
   "point_reads": {
    "sorted": {
     "read_value_ms": 569.1,
@@ -2116,29 +2435,41 @@
   }
  },
  "watch": {
+  "scale-affected": [
+   "start 2026-09-26T05:43:14Z load { 5.42 5.09 4.75 }",
+   "end 2026-09-26T05:43:44Z load { 6.00 5.25 4.82 } exit 0 peak_tree_rss_kib 2823696"
+  ],
+  "scale-affected-certified": [
+   "start 2026-09-26T05:46:45Z load { 5.61 5.26 4.89 }",
+   "end 2026-09-26T05:47:45Z load { 5.40 5.24 4.91 } exit 0 peak_tree_rss_kib 4661632"
+  ],
+  "scale-affected-wide": [
+   "start 2026-09-26T05:44:38Z load { 5.51 5.24 4.84 }",
+   "end 2026-09-26T05:45:03Z load { 5.60 5.28 4.87 } exit 0 peak_tree_rss_kib 3138784"
+  ],
   "scale-check": [
-   "start 2026-09-26T02:19:12Z load { 5.14 6.21 7.12 }",
-   "end 2026-09-26T02:20:13Z load { 5.32 6.03 6.98 } exit 0 peak_tree_rss_kib 8569616"
+   "start 2026-09-26T05:39:15Z load { 5.88 4.79 4.59 }",
+   "end 2026-09-26T05:40:11Z load { 5.07 4.75 4.58 } exit 0 peak_tree_rss_kib 8813040"
   ],
   "scale-derive": [
-   "start 2026-09-26T02:18:06Z load { 4.28 6.34 7.23 }",
-   "end 2026-09-26T02:19:02Z load { 5.34 6.29 7.15 } exit 0 peak_tree_rss_kib 3812416"
+   "start 2026-09-26T05:38:14Z load { 6.11 4.59 4.51 }",
+   "end 2026-09-26T05:39:05Z load { 5.69 4.72 4.56 } exit 0 peak_tree_rss_kib 3778544"
   ],
   "scale-json": [
-   "start 2026-09-26T02:20:48Z load { 5.46 5.97 6.92 }",
-   "end 2026-09-26T02:24:07Z load { 8.90 7.24 7.23 } exit 0 peak_tree_rss_kib 6778848"
+   "start 2026-09-26T05:40:16Z load { 5.15 4.77 4.59 }",
+   "end 2026-09-26T05:43:14Z load { 5.42 5.09 4.75 } exit 0 peak_tree_rss_kib 7834208"
   ],
   "scale-lookups": [
-   "start 2026-09-26T02:20:13Z load { 5.32 6.03 6.98 }",
-   "end 2026-09-26T02:20:48Z load { 5.46 5.97 6.92 } exit 0 peak_tree_rss_kib 511856"
+   "start 2026-09-26T05:40:11Z load { 5.07 4.75 4.58 }",
+   "end 2026-09-26T05:40:16Z load { 5.15 4.77 4.59 } exit 0 peak_tree_rss_kib 30880"
   ],
   "scale-revise": [
-   "start 2026-09-26T02:19:02Z load { 5.34 6.29 7.15 }",
-   "end 2026-09-26T02:19:12Z load { 5.14 6.21 7.12 } exit 0 peak_tree_rss_kib 859088"
+   "start 2026-09-26T05:39:05Z load { 5.69 4.72 4.56 }",
+   "end 2026-09-26T05:39:15Z load { 5.88 4.79 4.59 } exit 0 peak_tree_rss_kib 838288"
   ],
   "scale-type": [
-   "start 2026-09-26T02:17:35Z load { 4.28 6.61 7.36 }",
-   "end 2026-09-26T02:18:06Z load { 4.28 6.34 7.23 } exit 0 peak_tree_rss_kib 6821792"
+   "start 2026-09-26T05:37:49Z load { 5.71 4.40 4.44 }",
+   "end 2026-09-26T05:38:14Z load { 6.11 4.59 4.51 } exit 0 peak_tree_rss_kib 6116720"
   ]
  }
 }

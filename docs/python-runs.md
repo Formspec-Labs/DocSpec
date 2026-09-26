@@ -264,7 +264,9 @@ otherwise). Re-admitting a pin returns its state and report without writing.
 
 Every reader works on a table-shaped state: `rows`, `values`, `lookup`,
 `read_value`, `changes`, `compare` and selections spell each occurrence record
-natively from its row. `reader.table()` returns the typed rows without JSON.
+from its row, natively for a whole state and by the Python reference for named
+members, each checked against its occurrence, so a point read binds no native
+row expression. `reader.table()` returns the typed rows without JSON.
 An occurrence read by identity resolves through the index to the newest state
 holding it; a publication that references one keeps its exact bytes in the
 ledger. A table-shaped state is revised only by admitting the next generation:
@@ -297,8 +299,10 @@ with CoreWorkspace(workspace_path) as workspace:
         rows.limit(5).fetchall()  # member_key, occurrence_id and the declared columns, typed
 ```
 
-Rows are spilled once to scratch and written natively; nothing about them
-crosses Python row by row. Each row's occurrence follows `docspec-table-row/1`,
+Rows are spilled once to scratch, minted and written natively. Only an
+incremental derive's membership delta, as an admission's does, passes through
+Python row by row, and only up to 65,536 changes; a larger one is rewritten
+natively. Each row's occurrence follows `docspec-table-row/1`,
 scoped by the definition ID and the schema ID, so the same rows under another
 definition are other occurrences and the row digest covers every declared
 column, its source occurrence included. `VARCHAR[]` holds lists, so keywords
@@ -334,8 +338,15 @@ current pointer from the base, or from none, with the stale-base check.
 For a layer joining several inputs, declare `source_occurrence_id` as
 `VARCHAR[]` holding every joined row's occurrence. `reader.affected(older,
 newer)`, given two open readers of one input, yields the typed rows derived
-from a row that `newer` changed or removed: one native anti-join of the two
-memberships and one semi-join, so the caller re-derives only those rows.
+from a member that `newer` changed or removed, so the caller re-derives only
+those rows. It finds the differing members as `changes` does, from certified
+revision history when `newer` descends from `older` through recorded
+revisions and otherwise in one pass over both memberships (table-shaped
+inputs record no revisions), then semi-joins their earlier occurrences with
+the layer's lineage before reading any row. A member `newer` added names no
+existing row, so a row it would newly join, such as a document whose docket
+now exists, is not found: match the added members from `changes` against the
+layer's own join columns.
 
 ## Execute and reuse work
 

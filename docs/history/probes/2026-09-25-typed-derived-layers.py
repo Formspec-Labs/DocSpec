@@ -19,6 +19,8 @@ here writes outside the gate directory, and retained workspaces are read only.
   scale-layers       bytes, files and rows of each full-scale state's layers
   scale-lookups      point reads on the full-scale typed state
   scale-affected     a typed layer over an admitted FR generation, the next admitted, and the rows its changes affect
+  scale-affected-wide  the same over a wide layer of every producer column
+  scale-affected-certified  affected() over the 1M JSON state revised by a certified 50-member derive
 
 The typing step stands in for Search's future typed preparer. It is native
 (DuckDB's JSON functions), and the reference is plain Python over ``json``, so
@@ -789,6 +791,93 @@ def scale_affected(name="affected"):
     _write(f"scale-{name}", receipt)
 
 
+def scale_affected_wide():
+    """affected() on a wide layer over the same admitted generations: every producer column, as a prepared layer is wide."""
+    from docspec.domain import core
+    from docspec.domain.storage import TableSchema
+    from docspec.runtime import CoreWorkspace
+    receipt, base = {}, _read("scale-affected")
+    target = WORKSPACES / "fr-1m-affected"
+    with CoreWorkspace(target, create=False) as workspace:
+        states = [row.value.state_id for batch in workspace.ledger.retained_records(kind="state") for row in batch]
+        admitted = sorted(state for state in states if state.startswith("urn:docspec:generation-admission"))
+        with workspace.open_state(admitted[0]) as first, workspace.open_state(admitted[1]) as second:
+            prior, current = (admitted[0], admitted[1]) if first.record_count < second.record_count else (admitted[1], admitted[0])
+        with workspace.open_state(prior) as reader, reader.table() as relation:
+            producer = [name for name in relation.columns if name not in ("member_key", "occurrence_id")]
+            rows = relation.project("member_key, occurrence_id AS source_occurrence_id, "
+                                    + ", ".join(f'"{name}"' for name in producer)).to_arrow_table()
+        schema = TableSchema("c29-gate-fr-wide:1", (("member_key", "VARCHAR"), ("source_occurrence_id", "VARCHAR"),
+                                                     *((name, "VARCHAR") for name in producer)))
+        with Clock() as clock:
+            wide = workspace.derive_table(rows.to_batches(max_chunksize=2048), schema=schema, batch_id="wide-prior",
+                                          definition=_titles_definition(), inputs=(core.StateInput(label="source", state_id=prior),))
+        receipt["derive"] = {"rows": rows.num_rows, "columns": len(schema.columns), **clock.receipt(rows.num_rows)}
+        del rows
+        with workspace.open_state(prior) as older, workspace.open_state(current) as newer, \
+                workspace.open_state(wide.state_id) as layer, Clock() as clock, layer.affected(older, newer) as affected:
+            found = affected.project("member_key, source_occurrence_id").fetchall()
+        receipt["affected"] = {"rows": len(found), **clock.receipt()}
+        with Clock() as clock:
+            before = _affected_before(workspace, wide.state_id, prior, current)
+        receipt["affected_before"] = {"rows": len(before), "same_rows": sorted(before) == sorted(found), **clock.receipt()}
+    receipt["narrow_affected_rows"] = base["affected"]["rows"]
+    _write("scale-affected-wide", receipt)
+
+
+def scale_affected_certified():
+    """affected() over an input whose history is certified: the 1M JSON state revised by a C26 derive of 50 members.
+
+    A typed layer takes its lineage from the JSON state's membership. The
+    revision records its edited keys, so the diff reads only those; the
+    earlier formulation compares both 1M memberships in full.
+    """
+    from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES
+    from docspec.domain import core
+    from docspec.runtime import CoreWorkspace
+    receipt, target = {}, WORKSPACES / "fr-1m-json"
+    base = _read("scale-json")["state_id"]
+    with CoreWorkspace(target, create=False) as workspace:
+        with workspace.publisher.session() as session, \
+                workspace.records.relations({"members": workspace.states.layers(session, base)["membership"]}) as relations:
+            lineage = relations["members"].project(MEMBERSHIP_ADDRESSES).order("member_key").to_arrow_table()
+        # The typed rows are in member-key order (DocSpec's key-ordered reader wrote them), as is the lineage:
+        # one positional join, checked key by key, streams without a hash table over the wide rows.
+        relinked = INPUTS / "fr-1m.json-lineage.parquet"
+        pairs = f"read_parquet('{INPUTS / 'fr-1m.typed.parquet'}') t POSITIONAL JOIN lineage l"
+        with duckdb.connect(config={"memory_limit": "3GB", "temp_directory": str(GATE / "scratch")}) as connection:
+            connection.register("lineage", lineage)
+            if connection.execute(f"SELECT count(*) FROM {pairs} WHERE t.member_key IS DISTINCT FROM l.member_key").fetchone()[0]:
+                raise SystemExit("the JSON state's keys differ from the typed rows'")
+            connection.execute(f"COPY (SELECT t.* REPLACE (l.occurrence_id AS source_occurrence_id) FROM {pairs}) "
+                               f"TO '{relinked}' (FORMAT parquet)")
+            rows = connection.execute(f"SELECT count(*) FROM read_parquet('{relinked}')").fetchone()[0]
+            rewritten = [key for (key,) in connection.execute(
+                f"SELECT member_key FROM read_parquet('{relinked}') ORDER BY md5(member_key) LIMIT 50").fetchall()]
+        with Clock() as clock:
+            layer = workspace.derive_table(pq.ParquetFile(relinked).iter_batches(batch_size=2048), schema=_schema(),
+                                           batch_id="over-json", definition=_definition(),
+                                           inputs=(core.StateInput(label="source", state_id=base),))
+        receipt["derive"] = {"rows": rows, **clock.receipt(rows)}
+        rewritten, lineage = sorted(rewritten), None
+        relinked.unlink()
+        with workspace.open_state(base) as reader:
+            values = {key: {**value, "title": value["title"] + " C29GATE"} for key, _, value in reader.values(member_keys=rewritten)}
+        with Clock() as clock:
+            revised = workspace.derive(list(values.items()), batch_id="c29-gate-1m-json-revision",
+                                       definition=_definition(), inputs=(), base_state_id=base)
+        receipt["revise_source"] = {"rows": len(values), **clock.receipt()}
+        with workspace.open_state(base) as older, workspace.open_state(revised.state_id) as newer, \
+                workspace.open_state(layer.state_id) as derived, Clock() as clock, derived.affected(older, newer) as affected:
+            found = sorted(key for (key,) in affected.project("member_key").fetchall())
+        receipt["affected"] = {"rows": len(found), "equals_the_rewrites": found == rewritten, **clock.receipt()}
+        with Clock() as clock:
+            before = _affected_before(workspace, layer.state_id, base, revised.state_id)
+        receipt["affected_before"] = {"rows": len(before), "same_rows": sorted(key for key, _ in before) == found,
+                                      **clock.receipt()}
+    _write("scale-affected-certified", receipt)
+
+
 def main():
     command, *arguments = sys.argv[1:]
     if command == "engine-id":
@@ -805,6 +894,10 @@ def main():
                 INPUTS / f"fr-10k-{revision}.source-occurrences.parquet", f"10k-{revision}")
     elif command == "scale-affected":
         scale_affected(*arguments)
+    elif command == "scale-affected-wide":
+        scale_affected_wide()
+    elif command == "scale-affected-certified":
+        scale_affected_certified()
     elif command in {"derive", "revise", "coverage", "json-derive", "scale-type", "scale-derive", "scale-revise",
                      "scale-check", "scale-json", "scale-layers", "scale-lookups"}:
         globals()[command.replace("-", "_")]()

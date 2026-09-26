@@ -107,7 +107,9 @@ membership natively in one file. A derived layer
 definition; an incremental one replaces its touched source members' rows
 through `apply_changes` on the table and the same bounded membership delta.
 Readers join membership to the table by spelled key and build
-each occurrence record natively. A member search sees such a state through its
+each occurrence record natively; a read of named members instead fetches their
+typed rows and spells them with the Python reference, which the oracle holds
+equal, checking each against its occurrence. A member search sees such a state through its
 index, reads only the requested rows, and a pin of a table occurrence stores its
 exact bytes in the ledger rather than naming a layer.
 
