@@ -7,16 +7,16 @@ join payloads per window of compact addresses yet deliver exactly one global ord
 
 from contextlib import closing, contextmanager
 from dataclasses import replace
+import hashlib
 import json
 import subprocess
 import sys
 
-import pyarrow as pa
 import pytest
 
 from docspec.domain import core
 from docspec.errors import IntegrityError, StateTransitionError, StateValueRelationUnavailable
-from docspec.ports.record_storage import BATCH_ROWS, bounded_batches
+from docspec.ports.record_storage import BATCH_ROWS
 from docspec.runtime import CoreWorkspace
 
 
@@ -74,35 +74,59 @@ def test_reopened_reader_preserves_membership_pin_and_native_rows(tmp_path):
             assert reader.pin == pin and reader.read_value("update") == {"title": "Updated"}
 
 
-def test_windowed_payload_joins_deliver_one_global_order(tmp_path):
-    """A small engine allowance forces several payload windows over occurrence IDs unrelated to key order.
+def _read_digest(batches):
+    """SHA-256 over batch row counts and every length-prefixed (member key, occurrence, record) in delivered order."""
+    digest, count = hashlib.sha256(), 0
+    for batch in batches:
+        count += 1
+        digest.update(batch.num_rows.to_bytes(8, "big"))
+        for row in zip(*(batch.column(name).to_pylist() for name in ("member_key", "occurrence_id", "occurrence_record"))):
+            for value in row:
+                data = value.encode() if isinstance(value, str) else value
+                digest.update(len(data).to_bytes(8, "big") + data)
+    return digest.hexdigest(), count
 
-    Rows, order, bytes and batch bounds equal one global sort of the whole join, read at the default
-    allowance; values and changes equal an independent Python diff; a closed session refuses the next batch.
-    """
-    count = 6000
-    values = {f"key-{index:05d}": {"n": index, "text": "x" * (index % 8191)} for index in range(count)}
+
+def _wide(path):
+    """6,000 members with occurrence IDs unrelated to key order, then every second one edited."""
+    values = {f"key-{index:05d}": {"n": index, "text": "x" * (index % 8191)} for index in range(6000)}
     edited = {key: {"n": -value["n"]} for key, value in values.items() if value["n"] % 2 == 0}
-    with CoreWorkspace(tmp_path) as workspace:
+    with CoreWorkspace(path) as workspace:
         workspace.create("wide", values.items())
-        newer = workspace.upsert("wide", edited.items(), batch_id="edit").state_id
-        with workspace.open_state(newer) as reader, reader.relation() as relation, \
-                closing(relation.order("member_key").to_arrow_reader(BATCH_ROWS)) as ordered:
-            expected = list(bounded_batches(ordered, byte_column="occurrence_record"))
+        return values, edited, workspace.upsert("wide", edited.items(), batch_id="edit").state_id
+
+
+def test_spilled_payload_windows_deliver_the_pinned_global_order(tmp_path):
+    """A small engine allowance spills payloads into several windows; the read still equals main's global sort.
+
+    The digest was taken from DocSpec 3133850, which sorted the whole join at once, so a change in rows,
+    order, bytes or batch bounds shows up as a different number. Values and changes equal a Python diff.
+    """
+    values, edited, newer = _wide(tmp_path)
     with CoreWorkspace(tmp_path, create=False, engine_memory_bytes=32 * 1024**2) as workspace:
         with workspace.open_state("wide") as older, workspace.open_state(newer) as reader:
-            window = workspace.states._window_rows(reader._layers["entities"])
-            assert window % BATCH_ROWS == 0 and window < len(edited) < count
+            window = workspace.states._window_rows(reader._layers["entities"], reader.record_count)
+            assert window % BATCH_ROWS == 0 and window < len(edited) < reader.record_count
             with closing(reader.batches()) as batches:
-                actual = list(batches)
-            assert [batch.num_rows for batch in actual] == [batch.num_rows for batch in expected]
-            assert pa.Table.from_batches(actual).equals(pa.Table.from_batches(expected))
+                assert _read_digest(batches) == ("296637f16f9cc629c5de88030807dd177b297c5ddeec46c5b3d81b157e99e79d", 3)
             assert [(key, value) for key, _, value in reader.values()] == sorted({**values, **edited}.items())
             assert [(key, value) for key, _, value in reader.changes(older)] == sorted(edited.items())
             batches = reader.batches()
             next(batches)
         with pytest.raises(StateTransitionError, match="closed"):
             next(batches)
+
+
+@pytest.mark.parametrize("member_keys", [None, ["key-00001", "key-00002"]], ids=["spilled", "one-window"])
+def test_paused_ordered_stream_closes_after_its_workspace(tmp_path, member_keys):
+    """Closing a paused stream after the workspace closed needs no SQL on the closed connection."""
+    _wide(tmp_path)
+    workspace = CoreWorkspace(tmp_path, create=False, engine_memory_bytes=32 * 1024**2)
+    with workspace.open_state("wide") as reader:
+        batches = reader.batches(member_keys=member_keys)
+        next(batches)
+    workspace.close()
+    batches.close()
 
 
 def test_nested_ordered_reads_keep_their_own_addresses(tmp_path):

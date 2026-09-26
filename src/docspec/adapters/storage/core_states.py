@@ -7,7 +7,7 @@ import msgspec
 import pyarrow as pa
 
 from docspec.ports.record_storage import bounded_batches, bounded_rows
-from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
+from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches, spilled_order
 from docspec.adapters.storage.core_entities import ENTITY_SCHEMA, ENTITY_POLICY
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
@@ -483,41 +483,55 @@ class CoreStateStorage:
     def ordered_batches(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
         """Stream the relation's keyed rows in member_key order, as native batches of at most BATCH_ROWS rows.
 
-        Only compact addresses are ordered, once. Payloads then join one window
-        of that order at a time, and each window is ordered alone, so no
-        operator holds or sorts every payload. A window is a whole number of
-        BATCH_ROWS rows, so batch boundaries match one global order, sized from
-        the entity layer's Parquet footers to a quarter of the engine's memory
-        allowance. Each window scans the entity layer once: a state whose
-        payloads exceed that share is scanned again per window instead of
-        spilling them all (docs/history/probes/2026-09-25-read-keys-not-payloads.md).
+        Only compact addresses are sorted. Payloads that fit one window, a
+        sixteenth of the engine allowance sized from the entity layer's Parquet
+        footers, join and sort in one query. Larger ones join once to their
+        address positions and ``spilled_order`` restores the order one window at
+        a time; member keys rejoin each window from the address table. Either
+        way the entity layer is scanned once, and batch boundaries match one
+        global order (docs/history/probes/2026-09-25-read-keys-not-payloads.md).
         """
         references = self.layers(session, state_id) if layers is None else layers
         with (self.records._cursor() if cursor is None else nullcontext(cursor)) as cursor, \
                 self._addressed(session, state_id, scope=scope, addresses=addresses, cursor=cursor,
                                 layers=references) as (members, values):
-            self.records.temp_table(cursor, members.project(
+            ordered = self.records.temp_table(cursor, members.project(
                 "member_key, occurrence_id, row_number() OVER (ORDER BY member_key) AS position"), "ordered_members")
-            try:
-                count = cursor.execute("SELECT count(*) FROM ordered_members").fetchone()[0]
-                window = self._window_rows(references["entities"]) if count > BATCH_ROWS else BATCH_ROWS
-                for start in range(0, count, window):
-                    # Exact window cardinality keeps the payload scan on the probe side.
-                    cursor.execute("CREATE TEMP TABLE member_window AS SELECT member_key, occurrence_id FROM ordered_members "
-                                   f"WHERE position > {start} AND position <= {start + window}")
-                    try:
-                        keyed = _keyed_rows(cursor.table("member_window"), values).order("member_key")
-                        with closing(keyed.to_arrow_reader(BATCH_ROWS)) as batches:
-                            yield from batches
-                    finally:
-                        cursor.execute("DROP TABLE member_window")
-            finally:
-                cursor.execute("DROP TABLE ordered_members")
+            count = cursor.execute("SELECT count(*) FROM ordered_members").fetchone()[0]
+            window = self._window_rows(references["entities"], count)
+            if count <= window:
+                with closing(_keyed_rows(ordered, values).order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
+                    yield from batches
+                return
+            # Joining only (occurrence_id, position) keeps DuckDB's hash table on
+            # the addresses; with member keys too it builds on the payload scan.
+            joined = ordered.project("occurrence_id, position").join(values, "occurrence_id = entity_id", how="left")
+            spilled = spilled_order(joined.project("position, occurrence_record").to_arrow_reader(BATCH_ROWS), count=count,
+                                    window=window, directory=self.records._scratch.name,
+                                    max_bytes=self.records.max_merge_scratch_bytes)
+            with closing(spilled) as batches:
+                for batch in batches:
+                    position = batch.column(0)[0].as_py()
+                    offset = (position - 1) % window
+                    if offset == 0:
+                        keys = ordered.filter(f"position >= {position} AND position < {position + window}") \
+                            .order("position").project("member_key, occurrence_id").to_arrow_table()
+                    part = keys.slice(offset, batch.num_rows).combine_chunks().to_batches()[0]
+                    yield pa.RecordBatch.from_arrays([*part.columns, batch.column(1)],
+                                                     names=["member_key", "occurrence_id", "occurrence_record"])
 
-    def _window_rows(self, entities):
-        stored, rows = self.records.stored_payload(entities.reference)
-        window_bytes = self.records.engine_memory_bytes // 4
-        return max(1, int(window_bytes * rows // max(stored * BATCH_ROWS, 1))) * BATCH_ROWS
+    def _window_rows(self, entities, count):
+        """Rows per window: whole BATCH_ROWS multiples in a sixteenth of the engine allowance.
+
+        Sorting a spilled window holds it about twice, and window size costs no
+        extra scan. A layer whose footers carry no payload bytes has unknown
+        sizes and reads as one window, ordered within the engine allowance.
+        """
+        stored, rows = self.records.stored_payload(entities.reference) if count > BATCH_ROWS else (0, 0)
+        if not stored or not rows:
+            return count
+        window_bytes = self.records.engine_memory_bytes // 16
+        return max(1, int(window_bytes * rows // (stored * BATCH_ROWS))) * BATCH_ROWS
 
     @contextmanager
     def _addressed(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
@@ -535,11 +549,7 @@ class CoreStateStorage:
                 members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
                 members = addresses.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
                 # Materialize compact addresses once before the payload join.
-                selected = self.records.temp_table(cursor, members, "selection_addresses")
-                try:
-                    yield selected, _values(relations["entities"])
-                finally:
-                    cursor.execute("DROP TABLE selection_addresses")
+                yield self.records.temp_table(cursor, members, "selection_addresses"), _values(relations["entities"])
             return
         if scope is not None:
             bucket_count = references["membership"].partition_policy.bucket_count

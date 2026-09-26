@@ -10,9 +10,10 @@ ENGINE_MEMORY_BYTES = 6 * 1024**3
 # iterators through DuckDB's arrow scan; with more threads DuckDB pulls them on its
 # workers, and lazy SQLite-backed sources refuse ("SQLite objects created in a
 # thread can only be used in that same thread"; tests/test_parquet_arrow_stream.py).
-# Four threads would read and rewrite the Federal Register catalogue 2-3x faster
-# (docs/history/probes/2026-09-25-read-keys-not-payloads.md) once that input is
-# pulled on its caller's thread.
+# Four threads would rewrite the Federal Register catalogue's entity layer 2.7x
+# faster once that input is pulled on its caller's thread; its key-ordered read
+# gains nothing, being bound by Arrow work
+# (docs/history/probes/2026-09-25-read-keys-not-payloads.md).
 ENGINE_THREADS = 1
 
 

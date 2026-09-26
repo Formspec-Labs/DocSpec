@@ -455,12 +455,14 @@ class IcebergRecordStorage:
 
         DuckDB shares relation views among every cursor of one connection, so
         the staging view gets a unique name and lives for this statement only.
+        The table replaces an earlier one of that name and closes with its
+        cursor, so no stream needs SQL on a connection that may already be closed.
         """
 
         view = f"{name}_input_{uuid4().hex}"
         relation.create_view(view)
         try:
-            cursor.execute(f"CREATE TEMP TABLE {name} AS SELECT * FROM {view}")
+            cursor.execute(f"CREATE OR REPLACE TEMP TABLE {name} AS SELECT * FROM {view}")
         finally:
             cursor.execute(f"DROP VIEW {view}")
         return cursor.table(name)
