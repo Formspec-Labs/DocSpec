@@ -94,7 +94,7 @@ class CoreWorkspace:
         """
         from docspec.adapters.generation_source import stage_generation
         from docspec.application.generation_admission import admit_generation
-        with stage_generation(source, family=family, table=table, directory=self.path) as generation:
+        with stage_generation(source, family=family, table=table, directory=self.records.staging_directory) as generation:
             return admit_generation(self.operations, generation, family=family, table=table, dataset=dataset)
 
     def generating_request(self, state_id):

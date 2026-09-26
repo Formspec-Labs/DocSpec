@@ -86,14 +86,21 @@ def json_string_sql(expression):
 def _cell(expression, kind):
     if kind == "VARCHAR":
         value = json_string_sql(expression)
-    elif kind in {"BOOLEAN", "SMALLINT", "INTEGER"}:
+    elif kind in {"BOOLEAN", "INTEGER"}:
         value = f"CAST(({expression}) AS VARCHAR)"
     elif kind == "BIGINT":
         value = (f"CASE WHEN ({expression}) BETWEEN {-SAFE_INTEGER} AND {SAFE_INTEGER} "
                  f"THEN CAST(({expression}) AS VARCHAR) ELSE {json_string_sql(f'CAST(({expression}) AS VARCHAR)')} END")
     elif kind == "DOUBLE":
-        value = json_string_sql(f"CASE WHEN isnan(({expression})) THEN 'nan' ELSE CAST(({expression}) AS VARCHAR) END")
-    elif kind in {"DATE", "TIMESTAMP", "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMPTZ"}:
+        # DuckDB 1.5.5 casts ±2^81, ±2^91 and ±2^807 to another value's spelling.
+        # A spelling that reads back as its own value is unique to it; any other
+        # refuses the row rather than give two values one digest.
+        text = f"CAST(({expression}) AS VARCHAR)"
+        value = (f"CASE WHEN isnan(({expression})) THEN '\"nan\"' "
+                 f"WHEN TRY_CAST({text} AS DOUBLE) IS DISTINCT FROM ({expression}) "
+                 "THEN error('table DOUBLE value has no round-trip spelling') "
+                 f"ELSE '\"' || {text} || '\"' END")
+    elif kind in {"DATE", "TIMESTAMP", "TIMESTAMPTZ"}:
         utc = f"timezone('UTC', ({expression}))" if kind == "TIMESTAMPTZ" else f"({expression})"
         text = f"strftime({utc}, '%Y-%m-%d')"
         if kind != "DATE":
@@ -129,10 +136,6 @@ def rows_differ_sql(columns, left, right):
     return " OR ".join(f"({condition})" for condition in differs)
 
 
-def row_digest_sql(columns, *, qualifier=None):
-    return "'sha256:' || sha256(" + row_json_sql(columns, qualifier=qualifier) + ")"
-
-
 def member_key_sql(identity, *, qualifier=None):
     """Spell a declared member key; a NULL or empty component raises while the pass runs.
 
@@ -158,12 +161,6 @@ def _occurrence_frame(family, table, key, digest_json):
     require_text(table, "logical table")
     prefix = canonical_value_bytes([family, table]).decode()[:-1] + ","
     return f"{literal(prefix)} || {json_string_sql(key)} || ',' || {digest_json} || ']'"
-
-
-def occurrence_id_sql(family, table, *, member_key="member_key", row_digest="row_digest", qualifier=None):
-    """Hash the exact stable_urn input, using a sha256:-prefixed row digest column."""
-    key, digest = _column(member_key, qualifier), _column(row_digest, qualifier)
-    return f"'{OCCURRENCE_PREFIX}' || sha256({_occurrence_frame(family, table, key, json_string_sql(digest))})"
 
 
 def occurrence_urn_sql(occurrence_hash):

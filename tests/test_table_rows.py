@@ -1,6 +1,13 @@
-"""Independent Python and DuckDB agreement for versioned table identities."""
+"""Independent Python and DuckDB agreement for versioned table identities.
 
-from datetime import date, datetime, timedelta, timezone
+The shared spelling corpus, bound through DuckDB parameters rather than the
+runtime oracle's Arrow tables, must spell exactly as the Python reference.
+Every power of two and a random sample of doubles must spell as repr or
+refuse, never as another value.
+"""
+
+from datetime import datetime, timezone
+import math
 import random
 import struct
 
@@ -8,17 +15,15 @@ import duckdb
 import pytest
 
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.table_sql import (
-    json_string_sql, membership_json_sql, occurrence_id_sql, occurrence_json_sql,
-    row_digest_sql, row_json_sql,
-)
+from docspec.adapters.storage.table_occurrences import reference_identity
+from docspec.adapters.storage.table_sql import (identity_relation, json_string_sql, membership_json_sql,
+    occurrence_json_sql, occurrence_urn_sql, row_json_sql)
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
-from docspec.domain.table_rows import (
-    ROW_RULE, SAFE_INTEGER, table_columns, table_occurrence_id, table_row_bytes,
-    table_row_digest, table_row_value, table_type,
-)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SPELLING_COLUMNS,
+    SPELLING_ROWS, KeySpelling, TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest,
+    table_row_value, table_type)
 
 
 def native_rows(columns, rows, *, session_timezone="UTC"):
@@ -29,34 +34,31 @@ def native_rows(columns, rows, *, session_timezone="UTC"):
         connection.execute("CREATE TABLE source (" + declarations + ")")
         connection.executemany("INSERT INTO source VALUES (" + ",".join("?" for _ in columns) + ")",
                                [[row[name] for name, _ in columns] for row in rows])
-        return connection.execute("SELECT " + row_json_sql(columns, qualifier="s") + ", "
-                                  + row_digest_sql(columns, qualifier="s") + " FROM source s").fetchall()
+        return connection.execute("SELECT row_json, 'sha256:' || sha256(row_json) FROM (SELECT "
+                                  + row_json_sql(columns, qualifier="s") + " AS row_json FROM source s)").fetchall()
 
 
-def test_supported_typed_corpus_matches_independent_reference():
-    columns = (("text\x1f", "VARCHAR"), ("small", "SMALLINT"), ("integer", "INTEGER"),
-               ("big", "BIGINT"), ("double", "DOUBLE"), ("boolean", "BOOLEAN"),
-               ("day", "DATE"), ("moment", "TIMESTAMP"), ("zoned", "TIMESTAMPTZ"),
-               ("items", "VARCHAR[]"), ("\ue000", "VARCHAR"), ("\U00010000", "VARCHAR"))
-    values = [
-        ("quote\" slash\\ literal\\u001F\n\x00" + "é😀", -32768, -(2**31), -2**63, -0.0, False,
-         date(1, 1, 1), datetime(1, 1, 1), datetime(2026, 9, 25, 1, 2, 3, 123400, tzinfo=timezone(timedelta(hours=5, minutes=30))),
-         ["\x00\x1f", None, "back\\u001F", "😀"], "bmp", "supplementary"),
-        ("", 32767, 2**31 - 1, SAFE_INTEGER, float("inf"), True,
-         date(9999, 12, 31), datetime(2026, 9, 25, 1, 2, 3, 1), datetime(2026, 9, 25, tzinfo=timezone.utc),
-         [], "last", "first"),
-        (None, None, None, SAFE_INTEGER + 1, struct.unpack(">d", bytes.fromhex("fff8000000000001"))[0], None,
-         None, None, None, None, None, None),
-        (None, 0, 0, -(SAFE_INTEGER + 1), float("-inf"), True,
-         date(2024, 2, 29), datetime(2026, 9, 25, 1, 2, 3, 999999), None,
-         [None], "\u2028", "\u2029"),
-    ]
-    rows = [dict(zip((name for name, _ in columns), row, strict=True)) for row in values]
-    expected = [(table_row_bytes(row, columns).decode(), table_row_digest(row, columns)) for row in rows]
-    assert native_rows(columns, rows) == expected
-    assert native_rows(columns, rows, session_timezone="America/New_York") == expected
+def test_shared_corpus_matches_the_independent_reference():
+    expected = [(table_row_bytes(row, SPELLING_COLUMNS).decode(), table_row_digest(row, SPELLING_COLUMNS))
+                for row in SPELLING_ROWS]
+    assert native_rows(SPELLING_COLUMNS, SPELLING_ROWS) == expected
+    assert native_rows(SPELLING_COLUMNS, SPELLING_ROWS, session_timezone="America/New_York") == expected
     assert ROW_RULE == "docspec-table-row/1"
-    assert table_row_value(rows[0], columns)["big"] == str(-(2**63))
+    assert table_row_value(SPELLING_ROWS[0], SPELLING_COLUMNS)["big"] == str(-(2**63))
+
+
+def test_dated_key_components_spell_the_reference_key():
+    identity = TableIdentity("family", "table", KeySpelling("federal-register-source-record-id", "1",
+                                                            ("document_number", "publication_date")), DATED_KEY_COLUMNS)
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE source (document_number VARCHAR, publication_date DATE, title VARCHAR)")
+        connection.executemany("INSERT INTO source VALUES (?, ?, ?)",
+                               [[row[name] for name, _ in DATED_KEY_COLUMNS] for row in DATED_KEY_ROWS])
+        native = identity_relation(connection.table("source"), identity).fetchall()
+    references = [reference_identity(identity, row) for row in DATED_KEY_ROWS]
+    assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
+                                    for key, digest, urn in references)
+    assert {key for key, _, _ in references} == {"2026-\x1f1@2026-09-25", "x@y@0001-01-01", " @9999-12-31"}
 
 
 def test_all_controls_and_literal_escapes_have_exact_string_bytes():
@@ -79,49 +81,57 @@ def test_keys_use_utf16_order_and_safe_sql_quoting():
     assert actual.index("𐀀".encode()) < actual.index("".encode())
 
 
-def test_double_shortest_round_trip_strings_match_repr():
+def test_doubles_spell_as_repr_or_refuse_never_as_another_value():
     rng = random.Random(27)
-    values = [0.0, -0.0, 1e-7, 1e-6, 1e-5, 1e-4, 1e15, 1e16, 1e20, 1e21,
+    values = [0.0, -0.0, 1e-7, 1e-6, 1e-5, 1e-4, 1e15, 1e16, 1e20, 1e21, 0.1, 123456.789,
               5e-324, 2.2250738585072014e-308, 1.7976931348623157e308,
-              float("nan"), float("inf"), float("-inf")]
+              float("nan"), float("inf"), float("-inf"), *ROUND_TRIP_TRAPS]
+    values += [sign * math.ldexp(1.0, exponent) for exponent in range(-1074, 1024) for sign in (1.0, -1.0)]
     values += [struct.unpack(">d", rng.getrandbits(64).to_bytes(8))[0] for _ in range(512)]
-    rows = [{"number": value} for value in values]
-    columns = (("number", "DOUBLE"),)
-    assert native_rows(columns, rows) == [(table_row_bytes(row, columns).decode(), table_row_digest(row, columns)) for row in rows]
+    column, refused = (("number", "DOUBLE"),), set()
+    with duckdb.connect() as connection:
+        spell = f"SELECT {row_json_sql(column)} FROM (SELECT ?::DOUBLE AS number)"
+        for value in values:
+            try:
+                native = connection.execute(spell, [value]).fetchone()[0]
+            except duckdb.InvalidInputException as error:
+                assert "no round-trip spelling" in str(error)
+                refused.add(struct.pack(">d", value))
+                continue
+            assert native.encode() == table_row_bytes({"number": value}, column), value
+    # Only the known traps may refuse; a fixed DuckDB may spell them instead.
+    assert refused <= {struct.pack(">d", value) for value in ROUND_TRIP_TRAPS}
 
 
-def test_timestamp_precision_is_preserved_or_refused():
-    columns = (("second", "TIMESTAMP_S"), ("millisecond", "TIMESTAMP_MS"))
-    row = {"second": datetime(2026, 9, 25, 12, 34, 56), "millisecond": datetime(2026, 9, 25, 12, 34, 56, 123000)}
-    assert native_rows(columns, [row])[0][0].encode() == table_row_bytes(row, columns)
-    for kind in ("TIMESTAMP_S", "TIMESTAMP_MS"):
-        with pytest.raises(ValueError, match="precision"):
-            table_row_bytes({"value": datetime(2026, 1, 1, microsecond=1)}, (("value", kind),))
+def test_timestamps_must_match_their_declared_zone():
     for value, kind in [(datetime(2026, 1, 1), "TIMESTAMPTZ"), (datetime(2026, 1, 1, tzinfo=timezone.utc), "TIMESTAMP")]:
         with pytest.raises(ValueError, match="timezone"):
             table_row_bytes({"value": value}, (("value", kind),))
 
 
 def test_native_identity_membership_and_occurrence_match_existing_owners():
-    columns = (("field", "VARCHAR"),)
-    value = {"field": "row\x1f😀"}
-    payload, digest = table_row_bytes(value, columns), table_row_digest(value, columns)
-    family, table, key = "source\x00family", 'logical\n"table', "key\x1f\\u001F😀"
-    expected = table_occurrence_id(family, table, key, digest)
+    columns = (("field", "VARCHAR"), ("key", "VARCHAR"))
+    identity = TableIdentity("source\x00family", 'logical\n"table', KeySpelling("value", "1", ("key",)), columns)
+    row = {"field": "row\x1f😀", "key": "key\x1f\\u001F😀"}
+    key, digest, expected = reference_identity(identity, row)
+    payload = table_row_bytes(row, columns)
     with duckdb.connect() as connection:
-        connection.execute("CREATE TABLE source(member_key VARCHAR, row_digest VARCHAR, row_json VARCHAR)")
-        connection.execute("INSERT INTO source VALUES (?,?,?)", [key, digest, payload.decode()])
-        relation = "SELECT *, " + occurrence_id_sql(family, table) + " AS occurrence_id FROM source"
-        occurrence, membership, entity = connection.execute("SELECT occurrence_id, " + membership_json_sql()
-            + ", " + occurrence_json_sql('"row_json"') + " FROM (" + relation + ")").fetchone()
-    assert occurrence == expected
+        connection.execute("CREATE TABLE source(field VARCHAR, key VARCHAR)")
+        connection.execute("INSERT INTO source VALUES (?, ?)", [row["field"], row["key"]])
+        identity_relation(connection.table("source"), identity).project(
+            f"member_key, row_digest, {occurrence_urn_sql('occurrence_hash')} AS occurrence_id").create_view("minted")
+        member_key, row_digest, occurrence, membership, entity = connection.execute(
+            "SELECT member_key, row_digest, occurrence_id, " + membership_json_sql() + ", "
+            + occurrence_json_sql(row_json_sql(columns, qualifier="s")) + " FROM source s, minted").fetchone()
+    assert (member_key, row_digest, occurrence) == (key, bytes.fromhex(digest[7:]), expected)
     assert membership.encode() == canonical_value_bytes(record_value(core.Membership(member_key=key, occurrence_id=expected), core.Membership))
     assert entity.encode() == inline_occurrence_payload(expected, payload)
-    assert table_occurrence_id(family, "other", key, digest) != expected
-    assert table_occurrence_id(family, table, "other", digest) != expected
+    assert table_occurrence_id(identity.family, "other", key, digest) != expected
+    assert table_occurrence_id(identity.family, identity.table, "other", digest) != expected
 
 
-@pytest.mark.parametrize("kind", ["FLOAT", "HUGEINT", "UBIGINT", "DECIMAL(20,2)", "BLOB", "STRUCT(a INTEGER)", "INTEGER[]", "TIMESTAMP_NS"])
+@pytest.mark.parametrize("kind", ["FLOAT", "HUGEINT", "UBIGINT", "DECIMAL(20,2)", "BLOB", "STRUCT(a INTEGER)", "INTEGER[]",
+                                  "TIMESTAMP_NS", "SMALLINT", "TIMESTAMP_S", "TIMESTAMP_MS"])
 def test_unsupported_types_refuse_even_null_rows(kind):
     with pytest.raises(ValueError, match="unsupported"):
         table_row_bytes({"value": None}, (("value", kind),))
@@ -129,7 +139,7 @@ def test_unsupported_types_refuse_even_null_rows(kind):
         row_json_sql((("value", kind),))
 
 
-@pytest.mark.parametrize("kind,value", [("BOOLEAN", 1), ("INTEGER", True), ("SMALLINT", 2**15),
+@pytest.mark.parametrize("kind,value", [("BOOLEAN", 1), ("INTEGER", True), ("INTEGER", -(2**31) - 1),
     ("INTEGER", 2**31), ("BIGINT", 2**63), ("DOUBLE", 1), ("DATE", "2026-09-25"),
     ("VARCHAR[]", [1]), ("VARCHAR", b"bytes")])
 def test_reference_refuses_type_coercion(kind, value):

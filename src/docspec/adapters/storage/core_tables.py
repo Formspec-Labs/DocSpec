@@ -16,7 +16,7 @@ import pyarrow as pa
 
 from docspec.adapters.storage.core_entities import MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY, MEMBERSHIP_SCHEMA
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.table_occurrences import (append_occurrences, check_native_spelling, key_rows,
+from docspec.adapters.storage.table_occurrences import (append_occurrences, candidate_rows, check_native_spelling,
     lookup_occurrences, mint_identities, read_occurrences)
 from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_relation, member_key_sql, membership_json_sql,
     occurrence_json_sql, occurrence_urn_sql, row_json_sql, rows_differ_sql)
@@ -75,7 +75,7 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
     removed and changed keys; only those rows are spelled and minted,
     unchanged keys keep their occurrence, and the membership applies the delta
     to the base's, sharing its files. Other columns re-mint every row against
-    the base's index. Every key refusal happens before the member moves in.
+    the base's index. Every key refusal precedes registration.
     Returns the admitted layers and counts: ``generated`` occurrences are new
     to the index and ``adopted`` ones it already held (ruling R1(b));
     ``added``, ``removed`` and ``changed`` compare memberships with the base,
@@ -86,7 +86,7 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
     new_key, old_key = member_key_sql(identity, qualifier="n"), member_key_sql(identity, qualifier="o")
     with records._cursor() as cursor, records.relations({} if base is None else {"old": base["table"]},
                                                         cursor=cursor) as relations:
-        check_native_spelling(cursor)
+        check_native_spelling()
         cursor.read_parquet(str(path)).create_view(views["new"])
         if base is not None:
             relations["old"].create_view(views["old"])
@@ -100,7 +100,6 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
                                   f"WHERE o.{identifier(identity.key.fields[0])} IS NULL OR "
                                   f"{rows_differ_sql(identity.columns, 'n', 'o')}")
             with mint_identities(records, rows, identity, cursor=cursor) as minted:
-                cursor.execute(f"DROP VIEW {views['new']}")
                 table = records.register_parquet(path, layer_kind=TABLE_KIND, schema=schema, member_digest=member_digest)
                 counts = {"rows": table.reference.record_count}
                 if delta:
@@ -209,7 +208,7 @@ def occurrence_relation(records, layers, identity: TableIdentity, *, cursor=None
         if wanted is not None:
             members = wanted.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
         if scope is not None:
-            table = key_rows(table, identity, scope)
+            table = candidate_rows(table, identity, scope)
         yield _occurrences(members, table, identity)
 
 
@@ -269,7 +268,7 @@ def check_table_membership(records, layers, identity: TableIdentity):
     """
     with records._cursor() as cursor, records.relations(
             {"membership": layers["membership"], "table": layers["table"]}, cursor=cursor) as relations:
-        check_native_spelling(cursor)
+        check_native_spelling()
         table = relations["table"]
         if table.aggregate(f"count(*) - count(DISTINCT {member_key_sql(identity)})").fetchone()[0]:
             raise IntegrityError("table contains a duplicate member key")

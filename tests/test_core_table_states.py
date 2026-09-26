@@ -138,7 +138,7 @@ def test_exact_retry_returns_the_state_without_writing(tmp_path):
         assert again == first
         assert sorted(path for path in (workspace.path / "records").rglob("*") if path.is_file()) == files
         assert ledger_counts(workspace) == counts
-        assert not list(workspace.path.glob("generation-*"))
+        assert not list(workspace.records.staging_directory.iterdir())
 
 
 def test_a_later_generation_carries_unchanged_occurrences_and_mints_only_its_delta(tmp_path):
@@ -237,7 +237,7 @@ def test_an_inadmissible_generation_refuses_and_publishes_nothing(tmp_path, name
         with pytest.raises(IntegrityError, match=match):
             workspace.admit_generation(tmp_path / "bad", family=FAMILY, table=TABLE, dataset="fr")
         assert ledger_counts(workspace) == counts and workspace.ledger.current("fr") is None
-        assert not list(workspace.path.glob("generation-*"))
+        assert not list(workspace.records.staging_directory.iterdir())
         # Every refusal precedes registration: no table moved into the store.
         assert not list((workspace.path / "records").glob("iceberg/*"))
 

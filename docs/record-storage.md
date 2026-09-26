@@ -61,10 +61,13 @@ types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
 - `write_table` writes Arrow batches natively. DuckDB's Parquet carries Iceberg
   field IDs, row groups target 1 MiB and files half the member limit, and
   `sort_by` sorts each file. `append_table` adds files and shares every base file.
-- `register_parquet` retains a producer's file by reference. Its footer must read
-  as the declared schema and carry no field IDs; the file then moves into the
-  store unrewritten, and its seal must equal the producer's member digest, which
-  the root records. It is exempt from `max_member_bytes`; a row group above that
+- `register_parquet` retains a producer's file by reference. The file must be
+  staged in the store's `staging_directory`; its footer must read as the declared
+  schema and carry no field IDs. It is then hard-linked, unrewritten, to
+  `iceberg/member-<digest>/data/member.parquet`, and its seal must equal the
+  producer's member digest, which the root records. A refusal keeps the stage; an
+  interrupted registration leaves a directory cleanup can name, and a retry
+  reuses it. The file is exempt from `max_member_bytes`; a row group above that
   limit refuses instead.
 - `available` checks the pinned Iceberg schema against the root. `verify` adds a
   native `count(*)`, the scan's column types and, for a registered table, its one
@@ -76,8 +79,10 @@ Row identity under `docspec-table-row/1` lives in
 each row's member key, row digest and occurrence hash to scratch, after the
 native spelling is checked against the Python reference. The minted-occurrence
 index is an append-only table layer whose appended files are each sorted by
-occurrence hash, so a lookup reads one row group per file; reading an occurrence
-back returns its row's canonical bytes only when their digest matches the index.
+occurrence hash. A lookup of up to 256 occurrences reads at most one row group
+per occurrence in each file; a larger one is a single semi-join scan. Reading an
+occurrence back returns its row's canonical bytes only when their digest matches
+the index.
 
 ## Configure writes
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from docspec.domain import core
 from docspec.domain.identity import require_text, stable_urn
-from docspec.domain.table_rows import KeySpelling, TableIdentity, table_type
+from docspec.domain.table_rows import TableIdentity
 from docspec.errors import IntegrityError
 from docspec.ports.core_ledger import MetadataBatch
 
@@ -39,9 +39,7 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
     if dataset is not None:
         require_text(dataset, "dataset")
     try:
-        identity = TableIdentity(family, table, KeySpelling(generation.key_spelling_id, generation.key_spelling_version,
-                                                            generation.key_fields),
-                                 tuple((name, table_type(kind)) for name, kind in generation.columns))
+        identity = TableIdentity(family, table, generation.key, generation.columns)
     except ValueError as error:
         raise IntegrityError(f"generation table cannot take table-row identity: {error}") from error
     pin = generation.pin

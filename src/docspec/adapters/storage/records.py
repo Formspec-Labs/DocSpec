@@ -7,6 +7,7 @@ the other's layers.
 
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import tempfile
@@ -21,6 +22,7 @@ from uuid import uuid4
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyiceberg.io.pyarrow import UnsupportedPyArrowTypeException
 
 from docspec.ports.record_storage import BATCH_BYTES, bounded_batches, bounded_rows
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, conform_table_batch, encoded_batches, table_arrow_schema
@@ -39,20 +41,25 @@ TABLE_PROFILE_ID = 'urn:docspec:profile:table-storage:iceberg:1'
 _RECORD_ROOT = {'format', 'version', 'layerKind', 'schema', 'partitionPolicy', 'metadata', 'integrity', 'recordCount'}
 _TABLE_ROOT = {'format', 'version', 'layerKind', 'schema', 'memberDigest', 'metadata', 'integrity', 'recordCount'}
 _ADMITTED_LAYER_LIMIT = 8
-# A literal list keeps row-group pruning for point lookups; beyond this many
-# identities a semi-join against an Arrow table is faster.
-_LITERAL_IDENTITIES = 256
+# DuckDB prunes row groups for each value of an IN list, so point lookups stay
+# bounded. A semi-join holding more than 50 values prunes only by their overall
+# range; past this many values, one scan is the cheaper plan.
+LITERAL_IDENTITIES = 256
 
 
-def _identity_filter(cursor, relation, identities):
-    """Keep only rows whose record_identity is one of ``identities``."""
-    identities = list(identities)
-    if not identities:
+def identity_filter(cursor, relation, values, column='record_identity'):
+    """Keep only rows whose ``column`` is one of ``values``: strings or bytes, NUL included.
+
+    Up to ``LITERAL_IDENTITIES`` values are one IN filter of constants; more
+    are one semi-join against an Arrow table, never a query per chunk.
+    """
+    values = list(values)
+    if not values:
         return relation.filter('false')
-    if len(identities) <= _LITERAL_IDENTITIES and not any('\x00' in identity for identity in identities):
-        return relation.filter('record_identity IN (' + ', '.join(literal(identity) for identity in identities) + ')')
-    wanted = cursor.from_arrow(pa.table({'wanted_identity': pa.array(identities, type=pa.string())}))
-    return relation.join(wanted, 'record_identity = wanted_identity', how='semi')
+    if len(values) <= LITERAL_IDENTITIES:
+        return relation.filter(duckdb.ColumnExpression(column).isin(*map(duckdb.ConstantExpression, values)))
+    wanted = cursor.from_arrow(pa.table({'wanted_identity': pa.array(values)}))
+    return relation.join(wanted, f'{identifier(column)} = wanted_identity', how='semi')
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +142,8 @@ class IcebergRecordStorage:
         self.merge_scratch_root = (
             None if merge_scratch_root is None else _storage_root(merge_scratch_root, create=create)
         )
+        # Producer files are staged here, on the store's own filesystem, for registration.
+        self.staging_directory = _contained(self.root, '.staging/member', create_parents=create).parent
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._scratch: tempfile.TemporaryDirectory[str] | None = None
         self._connection_lock = Lock()
@@ -450,7 +459,7 @@ class IcebergRecordStorage:
             if partitions is not None:
                 relation = relation.filter(duckdb.ColumnExpression('bucket').isin(*(duckdb.ConstantExpression(p) for p in partitions))) if partitions else relation.filter('false')
             if record_ids is not None:
-                relation = _identity_filter(cursor, relation, record_ids)
+                relation = identity_filter(cursor, relation, record_ids)
             if identity_ranges is not None:
                 ranges = list(identity_ranges)
                 relation = relation.filter(' OR '.join(f'(record_identity BETWEEN {literal(lo)} AND {literal(hi)})' for lo, hi in ranges) or 'false')
@@ -561,7 +570,7 @@ class IcebergRecordStorage:
             relation = cursor.sql("SELECT record_identity, partition_value, record_json, filename FROM read_parquet(["
                                   + ", ".join(literal(path) for path in paths) + "], filename=true)")
             if identities is not None:
-                relation = _identity_filter(cursor, relation, identities)
+                relation = identity_filter(cursor, relation, identities)
             mapping = cursor.from_arrow(pa.table({'file_path': list(paths), 'locator': list(paths.values())}))
             yield relation.join(mapping, 'filename = file_path').project('record_identity, partition_value, record_json, locator')
 
@@ -890,23 +899,32 @@ class IcebergRecordStorage:
                 cursor.unregister('table_rows')
 
     def register_parquet(self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str) -> AdmittedTableLayer:
-        """Register a producer's Parquet file as a table layer without rewriting it.
+        """Register a producer's Parquet file, staged in ``staging_directory``, as a table layer without rewriting it.
 
-        The footer is checked first, and nothing moves if it refuses: its
+        The footer is checked first, and nothing is placed if it refuses: its
         columns must read as ``schema`` declares them, and a file already
-        carrying field IDs refuses, since Iceberg ``add_files`` reads through
-        a name mapping. The file is exempt from ``max_member_bytes``, which
-        sizes DocSpec's own writes; a row group whose uncompressed data exceeds
-        it refuses instead. The file then moves into a new table directory of
-        this store (staged on the store's filesystem, a rename), and its sealed
-        digest must equal ``member_digest``. A refusal after the move removes
-        the new directory, and with it the moved file.
+        carrying field IDs refuses, since Iceberg ``add_files`` reads through a
+        name mapping. The file is exempt from ``max_member_bytes``, which sizes
+        DocSpec's own writes; a row group whose uncompressed data exceeds it
+        refuses instead. The file is then hard-linked, never copied or
+        replaced, to ``iceberg/member-<digest>/data/member.parquet``, and its
+        seal must equal ``member_digest``. A refusal removes only what this call
+        placed and keeps the stage; success unlinks the stage. An interrupted
+        registration leaves that directory where cleanup can name it, and a
+        retry reuses a placed file holding the member's bytes. Register one
+        member at a time.
         """
         require_text(layer_kind, 'layer_kind')
         require_sha256(member_digest, 'member digest')
         if not isinstance(schema, TableSchema):
             raise IntegrityError('a registered producer file needs a declared table schema')
         source = Path(path)
+        try:
+            staged = source.parent.resolve(strict=True).is_relative_to(self.staging_directory.resolve(strict=True))
+        except OSError:
+            staged = False
+        if not staged or source.is_symlink() or not source.is_file():
+            raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
         with pq.ParquetFile(source) as parquet:
             footer = parquet.metadata
         arrow_schema = footer.schema.to_arrow_schema()
@@ -917,34 +935,50 @@ class IcebergRecordStorage:
         with self._cursor() as cursor:
             if native_columns(cursor.read_parquet(str(source))) != schema.columns:
                 raise IntegrityError('registered Parquet footer differs from its declared schema')
-        location = self.root / 'iceberg' / uuid4().hex
+        directory = f'iceberg/member-{member_digest[7:]}'
+        created, fresh = not (self.root / directory).exists(), False
+        placed = self.root / directory / 'data' / 'member.parquet'
+        receipt = placed.with_name(placed.name + '.sha256')
         try:
-            (location / 'metadata').mkdir(parents=True)
-            (location / 'data').mkdir()
-            placed = location / 'data' / source.name
-            shutil.move(source, placed)
-            if next(recovery_references(self.root, seal(self.root, placed))).digest != member_digest:
+            _contained(self.root, f'{directory}/metadata/placeholder', create_parents=True)
+            _contained(self.root, f'{directory}/data/member.parquet', create_parents=True)
+            if not placed.exists():
+                receipt.unlink(missing_ok=True)  # it describes no file, so seal must hash the new one
+            try:
+                os.link(source, placed)
+                fresh = True
+            except FileExistsError:
+                pass  # an interrupted registration placed it; its bytes are checked below
+            sealed = next(recovery_references(self.root, seal(self.root, placed))).digest
+            # An interrupted attempt's receipt says nothing of the bytes placed now.
+            if sealed != member_digest or (not fresh and sha256_file(placed)[0] != member_digest):
                 raise IntegrityError('registered Parquet differs from its member digest')
             with self._cursor():  # the catalog attaches to the native connection a cursor opens
                 client = self._client()
-            key, created = (self.catalog.namespace, 'register_' + uuid4().hex), None
+            key, handle = (self.catalog.namespace, 'register_' + uuid4().hex), None
             try:
-                created = client.create_table(key, schema=arrow_schema, location=str(location))
-                created.add_files([str(placed)])
+                handle = client.create_table(key, schema=arrow_schema, location=str(self.root / directory))
+                handle.add_files([str(placed)])
                 table = client.load_table(key)
-            except (NotImplementedError, TypeError, ValueError) as error:
+            except (NotImplementedError, TypeError, ValueError, UnsupportedPyArrowTypeException) as error:
                 raise IntegrityError(f'Iceberg refused the registered Parquet: {error}') from error
             finally:
                 # No purge, as for every write handle: the files stay ours.
-                if created is not None:
+                if handle is not None:
                     client.drop_table(key)
             if table_columns(table.schema()) != schema.columns:
                 raise IntegrityError('registered Iceberg schema differs from its declared schema')
-            return self._pin(table, schema=schema, layer_kind=layer_kind, record_count=footer.num_rows,
-                             member_digest=member_digest)
+            layer = self._pin(table, schema=schema, layer_kind=layer_kind, record_count=footer.num_rows,
+                              member_digest=member_digest)
         except BaseException:
-            shutil.rmtree(location, ignore_errors=True)
+            if created:
+                shutil.rmtree(self.root / directory, ignore_errors=True)
+            elif fresh:
+                placed.unlink(missing_ok=True)
+                receipt.unlink(missing_ok=True)
             raise
+        source.unlink()
+        return layer
 
 
 @dataclass(frozen=True, slots=True)

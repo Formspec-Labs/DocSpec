@@ -15,7 +15,9 @@ from rulespec_artifacts import (ArtifactPin, ArtifactVerificationError, LocalMem
 from spicy_docs.schemas import TABLE_CONTRACTS
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher, HttpsContentFetcherConfig
+from docspec.adapters.storage.records import native_columns
 from docspec.domain.content import CandidateFile
+from docspec.domain.table_rows import KeySpelling
 from docspec.errors import IntegrityError, LimitExceededError
 
 
@@ -26,7 +28,11 @@ _CHUNK_BYTES = 1024**2
 
 @dataclass(frozen=True)
 class AdmittedGeneration:
-    """The selected table and its exact source evidence, valid inside the staging context."""
+    """The selected table and its exact source evidence, valid inside the staging context.
+
+    ``columns`` names each column with its table-profile type, ready for a
+    TableSchema; ``key`` is the declared member-key spelling.
+    """
     path: Path
     pin: ArtifactPin
     root_bytes: bytes
@@ -34,9 +40,7 @@ class AdmittedGeneration:
     member: MemberDescriptor
     columns: tuple[tuple[str, str], ...]
     record_count: int
-    key_fields: tuple[str, ...]
-    key_spelling_id: str
-    key_spelling_version: str
+    key: KeySpelling
 
 
 def _mapping(value, label):
@@ -78,9 +82,9 @@ def _key_rule(family, table, description, columns):
     if len(set(fields)) != len(fields) or not set(fields) <= {name for name, _ in columns}:
         raise IntegrityError("table identity fields differ from its columns")
     if (family, table, fields) == ("federal-register", "federal_register", ("document_number", "publication_date")):
-        return fields, "federal-register-source-record-id", "1"
+        return KeySpelling("federal-register-source-record-id", "1", fields)
     if len(fields) == 1:
-        return fields, "value", "1"
+        return KeySpelling("value", "1", fields)
     # The installed provider has no versioned composite key declarations.
     # A provisional join would silently change identity when one is introduced.
     raise IntegrityError("composite table identity requires a versioned spicy-docs key spelling")
@@ -211,13 +215,14 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                         if parquet.metadata.num_rows != description["rows"]:
                             raise IntegrityError("Parquet footer row count differs from its descriptor")
                     with duckdb.connect() as connection:
-                        columns = tuple((row[0], row[1]) for row in connection.execute("DESCRIBE SELECT * FROM read_parquet(?)", [str(path)]).fetchall())
+                        footer = connection.read_parquet(str(path))
+                        columns = tuple(zip(footer.columns, map(str, footer.types), strict=True))
+                        canonical = native_columns(footer)
                     if [list(column) for column in columns] != description.get("columns"):
                         raise IntegrityError("Parquet footer schema differs from its descriptor")
                     if name == filename:
-                        fields, spelling, version = _key_rule(family, table, description, columns)
-                        result.update(path=path, member=member, columns=columns, record_count=description["rows"],
-                                      key_fields=fields, key_spelling_id=spelling, key_spelling_version=version)
+                        result.update(path=path, member=member, columns=canonical, record_count=description["rows"],
+                                      key=_key_rule(family, table, description, columns))
             artifact = admit_artifact(LocalMemberSource(staging), expected_pin=pin, root_byte_limit=_DOCUMENT_BYTES,
                                       manifest_byte_limit=_DOCUMENT_BYTES, semantic_verifier=verify)
             yield AdmittedGeneration(pin=artifact.pin, root_bytes=root_bytes, manifest_bytes=manifest_bytes, **result)

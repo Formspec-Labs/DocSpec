@@ -1,9 +1,12 @@
 """Typed table layers: native writes, producer files registered by reference, and profiles refusing each other.
 
 Registration must keep the producer's exact bytes, seal them under the member
-digest, read the file's own columns and refuse field IDs, a footer unlike its
-declaration, an oversized row group and a changed byte. A relocated copy must
-verify, and each record profile must refuse the other's layers.
+digest in a directory named by it, read the file's own columns, and refuse a
+stage outside the store, field IDs, a footer unlike its declaration, an
+oversized row group, a type Iceberg cannot hold and a changed byte, keeping
+the stage. A retry reuses an interrupted placement. A relocated copy must
+verify, forged roots must not, and each record profile must refuse the
+other's layers.
 """
 
 from contextlib import closing
@@ -18,8 +21,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from docspec.adapters.storage import IcebergRecordStorage
+from docspec.adapters.storage import IcebergRecordStorage, records as records_module
 from docspec.adapters.storage.batches import table_arrow_schema
+from docspec.domain.identity import canonical_json_file_bytes, sha256_digest, stable_urn
+from docspec.domain.references import LayerRef
 from docspec.domain.storage import PartitionPolicy, RecordSchema, TableSchema
 from docspec.errors import IntegrityError, LimitExceededError
 
@@ -49,6 +54,22 @@ def producer_file(path, table, **options):
     path.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, path, **options)
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def member_directory(records, digest):
+    return records.root / "iceberg" / f"member-{digest[7:]}"
+
+
+def forged(records, layer, **changes):
+    """Write ``layer``'s root with ``changes`` and return a reference that matches the forged root."""
+    root = {**layer._root, **changes}
+    payload = canonical_json_file_bytes(root)
+    digest = sha256_digest(payload)
+    locator = f"record-layers/sha256/{digest[7:9]}/{digest[7:]}.json"
+    (records.root / locator).parent.mkdir(parents=True, exist_ok=True)
+    (records.root / locator).write_bytes(payload)
+    return LayerRef(stable_urn("record-layer", root), root["layerKind"], root["schema"]["schemaId"],
+                    layer.reference.profile_id, locator, digest, root["recordCount"])
 
 
 def rows_of(layer):
@@ -170,7 +191,7 @@ def test_registration_keeps_the_producer_bytes_and_reads_their_columns(tmp_path)
                       "pages": list(range(4_000)), "ratio": [index / 7 for index in range(4_000)]})
     store = tmp_path / "store"
     with closing(IcebergRecordStorage(store, max_member_bytes=32 * 1024)) as records:
-        staged = store / "staging" / "federal_register.parquet"
+        staged = records.staging_directory / "generation" / "federal_register.parquet"
         digest = producer_file(staged, table, row_group_size=500)
         original = staged.read_bytes()
         assert len(original) > records.max_member_bytes
@@ -179,6 +200,7 @@ def test_registration_keeps_the_producer_bytes_and_reads_their_columns(tmp_path)
         assert not staged.exists() and layer.member_digest == digest
         assert layer.reference.profile_id == TABLE_PROFILE and layer.reference.record_count == 4_000
         [locator] = records.data_files(layer.reference)
+        assert store / locator == member_directory(records, digest) / "data" / "member.parquet"
         assert (store / locator).read_bytes() == original
         assert {ref.locator: ref.digest for ref in records.physical_references(layer.reference)}[locator] == digest
         assert "schema.name-mapping.default" in layer.table.metadata.properties
@@ -193,7 +215,7 @@ def test_a_relocated_registered_table_verifies_and_a_flipped_byte_refuses(tmp_pa
     table = pa.table({"key": [f"k{index}" for index in range(1_000)], "value": list(range(1_000))})
     store, moved, hidden = tmp_path / "store", tmp_path / "moved", tmp_path / "hidden"
     with closing(IcebergRecordStorage(store)) as records:
-        staged = store / "staging" / "values.parquet"
+        staged = records.staging_directory / "values.parquet"
         layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
                                          member_digest=producer_file(staged, table))
         [locator] = records.data_files(layer.reference)
@@ -210,34 +232,90 @@ def test_a_relocated_registered_table_verifies_and_a_flipped_byte_refuses(tmp_pa
             relocated.verify(layer.reference)
 
 
-@pytest.mark.parametrize("case", ["field-ids", "footer", "nanoseconds", "row-group", "flipped-byte"])
-def test_registration_refuses_before_admitting_a_file(tmp_path, case):
+@pytest.mark.parametrize("case", ["outside", "symlink", "field-ids", "footer", "nanoseconds", "utc-nanoseconds",
+                                  "row-group", "flipped-byte"])
+def test_registration_refusals_keep_the_stage(tmp_path, case):
     columns = (("key", "VARCHAR"), ("at", "TIMESTAMP"))
     fields = [pa.field("key", pa.string()), pa.field("at", pa.timestamp("us"))]
-    declared = columns
     if case == "field-ids":
         fields = [field.with_metadata({"PARQUET:field_id": str(index + 1)}) for index, field in enumerate(fields)]
     elif case == "footer":
-        declared = (("key", "VARCHAR"), ("at", "TIMESTAMPTZ"))
+        columns = (("key", "VARCHAR"), ("at", "TIMESTAMPTZ"))
     elif case == "nanoseconds":
         fields[1] = pa.field("at", pa.timestamp("ns"))
+    elif case == "utc-nanoseconds":
+        # DuckDB reads these as TIMESTAMPTZ, truncating; Iceberg refuses them.
+        columns, fields[1] = (("key", "VARCHAR"), ("at", "TIMESTAMPTZ")), pa.field("at", pa.timestamp("ns", "UTC"))
     table = pa.table({"key": [f"k{index}" for index in range(2_000)],
                       "at": [datetime(2026, 1, 1, second=index % 60) for index in range(2_000)]}, schema=pa.schema(fields))
-    store = tmp_path / "store"
-    with closing(IcebergRecordStorage(store, max_member_bytes=16 * 1024)) as records:
-        staged = store / "staging" / "values.parquet"
+    with closing(IcebergRecordStorage(tmp_path / "store", max_member_bytes=16 * 1024)) as records:
+        staged = records.staging_directory / "values.parquet"
+        if case == "outside":
+            staged = tmp_path / "outside" / "values.parquet"
         digest = producer_file(staged, table, row_group_size=2_000 if case == "row-group" else 200)
+        if case == "symlink":
+            target = tmp_path / "elsewhere.parquet"
+            staged.rename(target)
+            staged.symlink_to(target)
         if case == "flipped-byte":
             payload = bytearray(staged.read_bytes())
             payload[len(payload) // 3] ^= 0x01
             staged.write_bytes(payload)
-        expected = {"field-ids": (IntegrityError, "field IDs"), "footer": (IntegrityError, "footer differs"),
-                    "nanoseconds": (IntegrityError, "footer differs"),
-                    "row-group": (LimitExceededError, "row group"),
-                    "flipped-byte": (IntegrityError, "member digest")}[case]
+        original = staged.read_bytes()
+        expected = {"outside": (IntegrityError, "staging directory"), "symlink": (IntegrityError, "staging directory"),
+                    "field-ids": (IntegrityError, "field IDs"), "footer": (IntegrityError, "footer differs"),
+                    "nanoseconds": (IntegrityError, "footer differs"), "utc-nanoseconds": (IntegrityError, "Iceberg refused"),
+                    "row-group": (LimitExceededError, "row group"), "flipped-byte": (IntegrityError, "member digest")}[case]
         with pytest.raises(expected[0], match=expected[1]):
-            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", declared),
+            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
                                      member_digest=digest)
-        # Footer refusals move nothing; a later refusal removes the new table directory.
-        assert staged.exists() == (case != "flipped-byte")
-        assert (list((store / "iceberg").iterdir()) if (store / "iceberg").exists() else []) == []
+        assert staged.read_bytes() == original and not member_directory(records, digest).exists()
+
+
+def test_a_retry_reuses_an_interrupted_placement_and_refuses_other_bytes(tmp_path):
+    columns = (("key", "VARCHAR"), ("value", "BIGINT"))
+    table = pa.table({"key": ["a", "b"], "value": [1, 2]})
+    with closing(IcebergRecordStorage(tmp_path / "store")) as records:
+        staged = records.staging_directory / "values.parquet"
+        digest = producer_file(staged, table)
+        # An attempt interrupted after placing the member left its directory behind.
+        placed = member_directory(records, digest) / "data" / "member.parquet"
+        placed.parent.mkdir(parents=True)
+        placed.write_bytes(staged.read_bytes())
+        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
+                                         member_digest=digest)
+        assert not staged.exists() and records.data_files(layer.reference) == (placed.relative_to(records.root).as_posix(),)
+        records.verify(layer.reference)
+        # A directory named for this member but holding other bytes refuses and is left alone.
+        other = pa.table({"key": ["c"], "value": [3]})
+        staged = records.staging_directory / "other.parquet"
+        other_digest = producer_file(staged, other)
+        foreign = member_directory(records, other_digest) / "data" / "member.parquet"
+        foreign.parent.mkdir(parents=True)
+        foreign.write_bytes(b"not the member")
+        with pytest.raises(IntegrityError, match="member digest"):
+            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
+                                     member_digest=other_digest)
+        assert staged.exists() and foreign.read_bytes() == b"not the member"
+
+
+def test_forged_table_roots_and_appends_to_sealed_tables_refuse(tmp_path, monkeypatch):
+    columns = (("key", "VARCHAR"), ("value", "BIGINT"))
+    table = pa.table({"key": ["a", "b"], "value": [1, 2]})
+    with closing(IcebergRecordStorage(tmp_path / "store")) as records:
+        staged = records.staging_directory / "values.parquet"
+        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
+                                         member_digest=producer_file(staged, table))
+        with pytest.raises(IntegrityError, match="sealed and refuses appended rows"):
+            records.append_table(layer, pa.table(table.to_pydict(), schema=table_arrow_schema(columns)).to_batches())
+        narrowed = {"schemaId": "values:1", "columns": [["key", "VARCHAR"], ["value", "INTEGER"]]}
+        with pytest.raises(IntegrityError, match="pinned Iceberg metadata"):
+            records.available(forged(records, layer, schema=narrowed))
+        with pytest.raises(IntegrityError, match="row count differs"):
+            records.verify(forged(records, layer, recordCount=3))
+        with pytest.raises(IntegrityError, match="registered table differs from its producer member"):
+            records.verify(forged(records, layer, memberDigest="sha256:" + "0" * 64))
+        # Should DuckDB read a column otherwise than the Iceberg mapping says, verify sees it.
+        monkeypatch.setattr(records_module, "table_columns", lambda schema: (("key", "VARCHAR"), ("value", "INTEGER")))
+        with pytest.raises(IntegrityError, match="scan columns differ"):
+            records.verify(forged(records, layer, schema=narrowed))

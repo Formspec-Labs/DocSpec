@@ -1,21 +1,22 @@
 """Python reference for docspec-table-row/1 spellings and occurrence identity, and a table's identity rules."""
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import math
+import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
+from docspec.domain.storage import TABLE_TYPES, check_column_names
 
 
 ROW_RULE = "docspec-table-row/1"
 SAFE_INTEGER = 2**53 - 1
-_INTEGER_BITS = {"SMALLINT": 16, "INTEGER": 32, "BIGINT": 64}
-_TYPES = {"VARCHAR", "BOOLEAN", *_INTEGER_BITS, "DOUBLE", "DATE", "TIMESTAMP",
-          "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMPTZ", "VARCHAR[]"}
-_ALIASES = {"BOOL": "BOOLEAN", "INT": "INTEGER", "INT2": "SMALLINT", "INT4": "INTEGER",
-            "INT8": "BIGINT", "STRING": "VARCHAR", "TEXT": "VARCHAR",
-            "TIMESTAMP WITH TIME ZONE": "TIMESTAMPTZ", "LIST<VARCHAR>": "VARCHAR[]"}
+_INTEGER_BITS = {"INTEGER": 32, "BIGINT": 64}
+# Every type a table layer holds, except BLOB, which no digest spells.
+_TYPES = TABLE_TYPES - {"BLOB"}
+_ALIASES = {"BOOL": "BOOLEAN", "INT": "INTEGER", "INT4": "INTEGER", "INT8": "BIGINT", "STRING": "VARCHAR",
+            "TEXT": "VARCHAR", "TIMESTAMP WITH TIME ZONE": "TIMESTAMPTZ", "LIST<VARCHAR>": "VARCHAR[]"}
 
 
 def table_type(kind):
@@ -29,28 +30,12 @@ def table_type(kind):
     return normalized
 
 
-def check_column_names(names: Iterable[str]) -> None:
-    """Refuse no columns, an empty or NUL-bearing name, invalid Unicode, or a case-folded duplicate.
-
-    SQL identifiers cannot carry NUL, and DuckDB folds identifier case.
-    """
-    folded = set()
-    for name in names:
-        if not isinstance(name, str) or not name or "\0" in name:
-            raise ValueError("table column names must be nonempty strings without NUL")
-        canonical_value_bytes(name)  # Shared owner refuses invalid Unicode.
-        if name.casefold() in folded:
-            raise ValueError("table column names must be distinct, including SQL case folding")
-        folded.add(name.casefold())
-    if not folded:
-        raise ValueError("table rows require at least one column")
-
-
 def table_columns(columns):
     """Validate declared native types and return columns in canonical UTF-16 order.
 
-    Nanosecond timestamps are refused: the Python reference and the supported
-    Iceberg timestamp profile retain microseconds exactly.
+    Nanosecond timestamps are refused: the Python reference and Iceberg
+    timestamps retain microseconds exactly. DOUBLE spells as its shortest
+    round-trip decimal, Python's ``repr``.
     """
     result = tuple((name, table_type(kind)) for name, kind in columns)
     check_column_names(name for name, _ in result)
@@ -73,12 +58,10 @@ def _value(value, kind):
         return "nan" if math.isnan(value) else repr(value)
     if kind == "DATE" and type(value) is date:
         return value.isoformat()
-    if kind in {"TIMESTAMP", "TIMESTAMP_S", "TIMESTAMP_MS", "TIMESTAMPTZ"} and type(value) is datetime:
+    if kind in {"TIMESTAMP", "TIMESTAMPTZ"} and type(value) is datetime:
         aware = value.utcoffset() is not None
         if aware != (kind == "TIMESTAMPTZ"):
             raise ValueError("timestamp timezone must match its declared table type")
-        if (kind == "TIMESTAMP_S" and value.microsecond) or (kind == "TIMESTAMP_MS" and value.microsecond % 1000):
-            raise ValueError("timestamp precision exceeds its declared table type")
         utc = value.astimezone(timezone.utc) if aware else value.replace(tzinfo=timezone.utc)
         return utc.isoformat().replace("+00:00", "Z")
     if kind == "VARCHAR[]" and type(value) in (list, tuple):
@@ -202,3 +185,43 @@ class TableIdentity:
         key = value["key"]
         return cls(value["family"], value["table"], KeySpelling(key["id"], key["version"], tuple(key["fields"])),
                    tuple(tuple(column) for column in value["columns"]))
+
+
+# The fixed corpus every native spelling must reproduce before an identity is
+# minted, shared by the unit test and the runtime oracle. It covers every type;
+# strings on both native paths (with a control character, and without one but
+# with quote, backslash, solidus, DEL and non-ASCII text); ordinary doubles,
+# signed zero, infinities and a NaN with its sign bit set; integers around 2^53;
+# both date bounds; zoned timestamps; list edge cases; and member keys for both
+# declared spellings, including one with an "@" inside a component.
+SPELLING_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("text\x1f", "VARCHAR"),
+                    ("flag", "BOOLEAN"), ("count", "INTEGER"), ("big", "BIGINT"), ("ratio", "DOUBLE"),
+                    ("day", "DATE"), ("moment", "TIMESTAMP"), ("zoned", "TIMESTAMPTZ"), ("items", "VARCHAR[]"))
+_NEGATIVE_NAN = struct.unpack(">d", bytes.fromhex("fff8000000000001"))[0]
+_INDIA = timezone(timedelta(hours=5, minutes=30))
+SPELLING_ROWS = tuple(dict(zip((name for name, _ in SPELLING_COLUMNS), values, strict=True)) for values in (
+    ("2026-\x1f\"1\\u001F", "2026-09-25", "control \x00\n\x1f \"quoted\" \\u001F", True, -(2**31), -(2**63),
+     _NEGATIVE_NAN, date(1, 1, 1), datetime(1, 1, 1), datetime(2026, 9, 25, 1, 2, 3, 123400, tzinfo=_INDIA),
+     ["\x00\x1f", None, "😀"]),
+    ("quote\"key", "back\\slash/key", "plain \" \\ / \x7f é 😀   \\u001F", False, 2**31 - 1, SAFE_INTEGER + 1,
+     -0.0, date(9999, 12, 31), datetime(2026, 9, 25, 1, 2, 3, 1), datetime(2026, 9, 25, tzinfo=timezone.utc), []),
+    (" ", " ", "", None, 0, SAFE_INTEGER, 0.1, date(2024, 2, 29), datetime(2026, 9, 25, 1, 2, 3, 999999),
+     None, ["\"", "\\", "/\x7f", "é"]),
+    ("x@y", "z", None, None, None, -(SAFE_INTEGER + 1), 1.7976931348623157e308, None, None, None, None),
+    ("2026-00005", "2026-01-02", "a", True, 1, 2**63 - 1, 5e-324, date(1970, 1, 1), None,
+     datetime(1970, 1, 1, tzinfo=timezone.utc), [None]),
+    ("2026-00006", "2026-01-02", "b", False, -1, -SAFE_INTEGER, 123456.789, None, None, None, ["a", "b"]),
+    ("2026-00007", "2026-01-02", "c", None, None, 2**53, 1e21, None, None, None, None),
+    ("2026-00008", "2026-01-02", "d", None, None, None, -1e-7, None, None, None, None),
+    ("2026-00009", "2026-01-02", "e", None, None, None, float("inf"), None, None, None, None),
+    ("2026-00010", "2026-01-02", "f", None, None, None, float("-inf"), None, None, None, None),
+))
+# Keys with a DATE component, as a producer may type publication_date: each
+# spells the key its ISO 8601 text had, at both year bounds.
+DATED_KEY_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "DATE"), ("title", "VARCHAR"))
+DATED_KEY_ROWS = tuple(dict(zip((name for name, _ in DATED_KEY_COLUMNS), values, strict=True)) for values in (
+    ("2026-\x1f1", date(2026, 9, 25), "dated"), ("x@y", date(1, 1, 1), None), (" ", date(9999, 12, 31), "")))
+# Doubles DuckDB 1.5.5 casts to another double's spelling: 2^81 prints as
+# 2^82's shortest decimal, and 2^807 with a hexadecimal digit. A native spelling
+# must refuse them or match the reference, never spell them otherwise.
+ROUND_TRIP_TRAPS = tuple(sign * 2.0 ** exponent for exponent in (81, 91, 807) for sign in (1.0, -1.0))

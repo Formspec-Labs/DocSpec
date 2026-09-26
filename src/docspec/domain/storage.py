@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from dataclasses import dataclass
 
-from docspec.domain.identity import require_text
-from docspec.domain.table_rows import check_column_names
+from docspec.domain.identity import canonical_value_bytes, require_text
 
 
 # What an Iceberg scan yields: Iceberg has no 16-bit integer or second and
@@ -14,6 +14,23 @@ from docspec.domain.table_rows import check_column_names
 # spelling; the occurrence index stores its hashes as BLOB.
 TABLE_TYPES = frozenset({"VARCHAR", "BOOLEAN", "INTEGER", "BIGINT", "DOUBLE", "DATE",
                          "TIMESTAMP", "TIMESTAMPTZ", "VARCHAR[]", "BLOB"})
+
+
+def check_column_names(names: Iterable[str]) -> None:
+    """Refuse no columns, an empty or NUL-bearing name, invalid Unicode, or a case-folded duplicate.
+
+    SQL identifiers cannot carry NUL, and DuckDB folds identifier case.
+    """
+    folded = set()
+    for name in names:
+        if not isinstance(name, str) or not name or "\0" in name:
+            raise ValueError("table column names must be nonempty strings without NUL")
+        canonical_value_bytes(name)  # Shared owner refuses invalid Unicode.
+        if name.casefold() in folded:
+            raise ValueError("table column names must be distinct, including SQL case folding")
+        folded.add(name.casefold())
+    if not folded:
+        raise ValueError("table rows require at least one column")
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,4 +107,4 @@ def partition_bucket(value: str, bucket_count: int) -> int:
     return int.from_bytes(digest[:8], "big") % bucket_count
 
 
-__all__ = ["PartitionPolicy", "RecordSchema", "TABLE_TYPES", "TableSchema", "partition_bucket"]
+__all__ = ["PartitionPolicy", "RecordSchema", "TABLE_TYPES", "TableSchema", "check_column_names", "partition_bucket"]
