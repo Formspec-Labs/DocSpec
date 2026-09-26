@@ -31,11 +31,14 @@
     "tests/test_record_identity_bounds.py::test_writer_bounds_preserve_long_unicode_identities_and_native_lookup",
     "tests/test_iceberg_snapshots.py::test_replacing_a_file_and_its_checksum_cannot_repin_a_snapshot",
     "tests/test_iceberg_snapshots.py::test_failed_pin_leaves_no_catalog_head_or_changed_base",
-    "tests/test_record_identity_bounds.py::test_disjoint_union_keeps_base_files_and_checks_overlap"
+    "tests/test_record_identity_bounds.py::test_disjoint_union_keeps_base_files_and_checks_overlap",
+    "tests/test_table_layers.py::test_a_store_copied_without_its_staging_directory_stages_and_registers"
   ],
   "BLOB-STORE-CONTRACT": [
     "tests/test_storage_adapters.py::test_blob_store_streams_deduplicates_ranges_and_materializes",
     "tests/test_storage_adapters.py::test_blob_store_fails_closed_for_limits_tampering_and_symlinks",
+    "tests/test_storage_adapters.py::test_blob_store_makes_a_missing_staging_directory_at_its_first_write",
+    "tests/test_core_older_workspace.py::test_the_fixture_as_git_delivers_it_writes_and_verifies_a_blob",
     "tests/test_s3_blob_adapter.py::test_blob_store_behavioral_contract",
     "tests/test_s3_blob_adapter.py::test_put_is_bounded_and_checks_declared_identity_before_upload",
     "tests/test_s3_blob_adapter.py::test_conditional_create_accepts_only_an_identical_concurrent_object",

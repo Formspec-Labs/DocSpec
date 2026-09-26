@@ -109,6 +109,9 @@ def _has_field_id(field):
             or any(_has_field_id(field.type.field(index)) for index in range(field.type.num_fields)))
 
 
+_STAGING = '.staging/member'
+
+
 class IcebergRecordStorage:
     """Local retained snapshots; only writes use a catalog, which each store runs in this process.
 
@@ -141,12 +144,20 @@ class IcebergRecordStorage:
         self.merge_scratch_root = (
             None if merge_scratch_root is None else _storage_root(merge_scratch_root, create=create)
         )
-        # Producer files are staged here, on the store's own filesystem, for registration.
-        self.staging_directory = _contained(self.root, '.staging/member', create_parents=create).parent
+        _contained(self.root, _STAGING, create_parents=create)
         self._connection: duckdb.DuckDBPyConnection | None = None
         self._scratch: tempfile.TemporaryDirectory[str] | None = None
         self._connection_lock = Lock()
         self._admissions = local()
+
+    @property
+    def staging_directory(self) -> Path:
+        """Where a producer's file is staged for registration, on the store's own filesystem.
+
+        Made on demand: git cannot track the empty directory, so a store copied from a tracked
+        fixture and opened with create=False has none.
+        """
+        return _contained(self.root, _STAGING, create_parents=True).parent
 
     @contextmanager
     def _cursor(self) -> Iterator[duckdb.DuckDBPyConnection]:

@@ -1,7 +1,8 @@
 """A workspace DocSpec 0.9.1 wrote, with one ledger row per bulk state member, keeps working unmigrated.
 
 The fixture was written by the 0.9.1 source itself (see tests/support/older_workspace.py), so these
-checks do not rely on today's ledger writer to reproduce the old rows.
+checks do not rely on today's ledger writer to reproduce the old rows. Git delivers it without the empty
+blobs/.staging it was written with; the blob writer makes that directory on demand.
 """
 
 from pathlib import Path
@@ -30,7 +31,8 @@ def remove(workspace, update_id, keys):
 def test_member_rows_from_0_9_1_read_pin_and_protect_until_removed(tmp_path, monkeypatch):
     path = tmp_path / "workspace"
     shutil.copytree(FIXTURE, path)
-    (path / "blobs" / ".staging").mkdir()  # 0.9.1 created it empty; git keeps no empty directory.
+    # 0.9.1 created blobs/.staging empty and git keeps no empty directory, so the first write makes it.
+    shutil.rmtree(path / "blobs" / ".staging", ignore_errors=True)
     with CoreWorkspace(path, create=False) as workspace:
         assert rows_by_kind(workspace) == {"entity": MEMBERS, "state": 1, "state_representation": 1}
         searched = []
@@ -76,3 +78,16 @@ def test_removing_some_old_member_rows_keeps_the_rest_readable_and_protected(tmp
                     for row in batch]
         assert [row.available for row in rows] == [False] * 4 + [True] * 4
         assert [row.value.value.value["index"] for row in rows[4:]] == list(range(4, MEMBERS))
+
+
+def test_the_fixture_as_git_delivers_it_writes_and_verifies_a_blob(tmp_path):
+    """git keeps no empty directory, so a copied fixture has no blobs/.staging; the first blob write makes it."""
+    path = tmp_path / "workspace"
+    shutil.copytree(FIXTURE, path)
+    shutil.rmtree(path / "blobs" / ".staging", ignore_errors=True)
+    with CoreWorkspace(path, create=False) as workspace:
+        reference = workspace.blobs.put_if_absent([b"exact bytes"], media_type="text/plain")
+        workspace.blobs.verify(reference)
+        workspace.create("after-copy", [("key", {"n": 1})])
+        with workspace.open_state("after-copy") as reader:
+            assert [(key, value) for key, _, value in reader.values()] == [("key", {"n": 1})]

@@ -247,6 +247,24 @@ def test_registration_keeps_the_producer_bytes_and_reads_their_columns(tmp_path)
             assert relations["table"].order("document_number").fetchall() == list(zip(*table.to_pydict().values()))
 
 
+def test_a_store_copied_without_its_staging_directory_stages_and_registers(tmp_path):
+    """git cannot track the empty staging directory, so a store copied from a tracked fixture has none."""
+    columns = (("key", "VARCHAR"), ("value", "BIGINT"))
+    table = pa.table({"key": ["a", "b"], "value": [1, 2]})
+    with closing(IcebergRecordStorage(tmp_path / "store")):
+        pass
+    (tmp_path / "store" / ".staging").rmdir()
+    with closing(IcebergRecordStorage(tmp_path / "store", create=False)) as records:
+        assert not (records.root / ".staging").exists()
+        staged = records.staging_directory / "values.parquet"
+        pq.write_table(table, staged)  # Not producer_file, which would make the directory itself.
+        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
+                                         member_digest=sha256_digest(staged.read_bytes()))
+        records.verify(layer.reference)
+        with records.relations({"table": layer.reference}) as relations:
+            assert relations["table"].aggregate("count(*), sum(value)").fetchone() == (2, 3)
+
+
 def test_a_relocated_registered_table_verifies_and_a_flipped_byte_refuses(tmp_path):
     columns = (("key", "VARCHAR"), ("value", "BIGINT"))
     table = pa.table({"key": [f"k{index}" for index in range(1_000)], "value": list(range(1_000))})

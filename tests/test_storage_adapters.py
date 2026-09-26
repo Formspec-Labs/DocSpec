@@ -87,6 +87,24 @@ def test_blob_store_streams_deduplicates_ranges_and_materializes(tmp_path: Path)
     assert materialized.read_bytes() == b"exact bytes"
 
 
+def test_blob_store_makes_a_missing_staging_directory_at_its_first_write(tmp_path: Path) -> None:
+    """git cannot track the empty staging directory, so a store copied from a tracked fixture has none."""
+    LocalContentAddressedBlobStore(tmp_path / "blobs")
+    (tmp_path / "blobs" / ".staging").rmdir()
+    store = LocalContentAddressedBlobStore(tmp_path / "blobs", create=False)
+    assert not (store.root / ".staging").exists()
+
+    reference = store.put_if_absent([b"exact ", b"bytes"], media_type="text/plain")
+    store.verify(reference)
+    assert b"".join(store.read(reference)) == b"exact bytes"
+    assert list((store.root / ".staging").iterdir()) == []
+
+    (store.root / ".staging").rmdir()
+    (store.root / ".staging").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    with pytest.raises(IntegrityError, match="symlink"):
+        store.put_if_absent([b"other"], media_type="text/plain")
+
+
 def test_blob_store_fails_closed_for_limits_tampering_and_symlinks(tmp_path: Path) -> None:
     store = LocalContentAddressedBlobStore(tmp_path / "objects", max_blob_bytes=8)
     with pytest.raises(LimitExceededError):

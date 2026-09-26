@@ -17,6 +17,8 @@ from docspec.domain.identity import (
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError, LimitExceededError
 
+_STAGING = ".staging/blob"
+
 
 class LocalContentAddressedBlobStore:
     """Store exact bytes under their SHA-256 digest with conditional creation."""
@@ -34,9 +36,7 @@ class LocalContentAddressedBlobStore:
         self.root = _storage_root(root, create=create)
         self.max_blob_bytes = max_blob_bytes
         self.stream_chunk_bytes = stream_chunk_bytes
-        self._staging = _contained(self.root, ".staging/blob", create_parents=create).parent
-        if create:
-            self._staging.mkdir(exist_ok=True)
+        _contained(self.root, _STAGING, create_parents=create)
 
     @staticmethod
     def _locator(digest: str) -> str:
@@ -55,7 +55,10 @@ class LocalContentAddressedBlobStore:
         """Stage, hash and link exact bytes under their digest, returning their immutable reference."""
 
         require_text(media_type, "blob media_type")
-        with staged_bytes(chunks, directory=self._staging, limit=self.max_blob_bytes, max_bytes=max_bytes,
+        # The staging directory is scratch that git cannot track when empty, so a workspace copied from a
+        # tracked fixture, opened with create=False, has none: make it here, where a write needs it.
+        staging = _contained(self.root, _STAGING, create_parents=True).parent
+        with staged_bytes(chunks, directory=staging, limit=self.max_blob_bytes, max_bytes=max_bytes,
                           expected_digest=expected_digest, expected_size=expected_size) as (temporary, actual_digest, byte_size):
             locator = self._locator(actual_digest)
             _link_content(self.root, temporary, locator, actual_digest, byte_size)
