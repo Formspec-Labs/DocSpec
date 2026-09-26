@@ -92,7 +92,8 @@ dataset's `occurrences` index snapshot and the identity `rules`. The first
 generation's membership is written natively from the spilled identities
 (`retain_relation`, which derives buckets and checks limits without a Python
 row loop); a later one applies its delta to the base's membership with
-`apply_changes`. Readers join membership to the table by spelled key and build
+`apply_changes`, or, beyond 65,536 changes or 16 data files, rewrites the
+membership natively in one file. Readers join membership to the table by spelled key and build
 each occurrence record natively. A member search sees such a state through its
 index, reads only the requested rows, and a pin of a table occurrence stores its
 exact bytes in the ledger rather than naming a layer.

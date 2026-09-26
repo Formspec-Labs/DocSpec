@@ -1079,7 +1079,11 @@ table-layer profile, spellings, identity pass and index of steps 2–5 and 7
 - Steps 1–8: a first admission mints every occurrence from the staged member
   before registering it, writes membership natively (`retain_relation`) and
   starts the index; a later one mints only the added and changed rows of one
-  all-column join and applies the delta with `apply_changes`. One unit
+  all-column join and applies the delta with `apply_changes`, or rewrites the
+  membership natively beyond 65,536 changes or 16 data files, which also
+  compacts it. The unit's identity check matches only the minted occurrences
+  against the ledger. A table with an `*observed_at` or `*fetched_at` column
+  refuses until R5's declared projection exists. One unit
   publishes the state, its representation, the admission's definition,
   request, execution and result, the root and member manifest (bound as whole
   inputs, retained as exact bytes) and a report whose counts separate
