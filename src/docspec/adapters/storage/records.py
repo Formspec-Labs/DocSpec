@@ -872,7 +872,7 @@ class IcebergRecordStorage:
                                  layer_kind=base.reference.layer_kind, record_count=base.reference.record_count + inserted - removed)
 
     def _apply_table_changes(self, base, rows, *, key, removed, cursor):
-        """Delete the rows holding an incoming or removed key, then insert the incoming rows sorted by key, in one commit."""
+        """Delete the rows holding an incoming or removed key, then insert the incoming rows, in one commit."""
         if base._storage is not self:
             raise IntegrityError('incremental base belongs to another record store')
         if base.member_digest is not None:
@@ -903,7 +903,7 @@ class IcebergRecordStorage:
                     if deleted:
                         cursor.execute(f'MERGE INTO {target} t USING ({keys}) s ON {matches} WHEN MATCHED THEN DELETE')
                     if inserted:
-                        cursor.execute(f'INSERT INTO {target} SELECT * FROM {views["rows"]} ORDER BY {names}')
+                        cursor.execute(f'INSERT INTO {target} SELECT * FROM {views["rows"]}')
                     cursor.execute('COMMIT')
                 except BaseException:
                     cursor.execute('ROLLBACK')

@@ -289,8 +289,10 @@ def _set_digest(minted):
 def derive_layers(records, staged: StagedRows, *, state_id, base=None, removals=()):
     """Write a derived layer's table, membership and index from staged rows; over a base, only the changed rows.
 
-    Without a base the rows become a new table sorted by key, the membership is
-    written from their identities and a new index starts. With one, every source
+    Without a base the rows become a new table in the caller's order (a key
+    sort would hold the wide rows in memory, 4.7 GB at 1 M, and point reads
+    are bound by spelling, not pruning), the membership is written from their
+    identities and a new index starts. With one, every source
     member the rows or ``removals`` name is touched: a staged row whose key
     already holds its occurrence is unchanged and not written, and a base row of
     a touched member that no staged row keys is removed. The table and the
@@ -302,7 +304,7 @@ def derive_layers(records, staged: StagedRows, *, state_id, base=None, removals=
     with records._cursor() as cursor:
         if base is None:
             table = records.write_table_relation(staged.rows(cursor), cursor=cursor, layer_kind=TABLE_KIND,
-                                                 schema=staged.schema, sort_by=staged.identity.key.fields)
+                                                 schema=staged.schema)
             membership = records.retain_relation(_membership_rows(staged.minted.relation(cursor)), cursor=cursor,
                                                  layer_kind="core-membership", schema=MEMBERSHIP_SCHEMA,
                                                  partition_policy=MEMBERSHIP_POLICY)
