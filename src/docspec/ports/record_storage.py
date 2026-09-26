@@ -118,6 +118,13 @@ class RecordStorage(Protocol):
         """Write admitted bytes and reuse that proof for native reads in this scope."""
         ...
 
+    def retain_relation(
+        self, rows: duckdb.DuckDBPyRelation, *, cursor: duckdb.DuckDBPyConnection, layer_kind: str,
+        schema: RecordSchema, partition_policy: PartitionPolicy,
+    ) -> AdmittedRecordLayer:
+        """Write encoded records natively from a relation on one of this store's cursors."""
+        ...
+
     def verify(self, reference: LayerRef) -> None: ...
 
     def verify_members(self, reference: LayerRef) -> None:

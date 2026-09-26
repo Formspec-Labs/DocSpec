@@ -218,6 +218,62 @@ members in key order. When the newer state descends from the older one through
 recorded revisions, only the edited keys are compared; otherwise one native pass
 compares both memberships. Only differing members' values are read.
 
+## Admit a producer generation by reference
+
+A spicy-regs rollup generation already holds a table's rows in sealed Parquet.
+`admit_generation` retains that member as a table-shaped state instead of
+copying its rows into occurrence records
+([decision 0007](decisions/0007-table-shaped-states-by-reference.md)):
+
+```python
+with CoreWorkspace(workspace_path) as workspace:
+    admitted = workspace.admit_generation(generation_path, family="federal-register",
+                                          table="federal_register", dataset="federal-register")
+    print(admitted.state_id, admitted.report["counts"])
+    with workspace.open_state(admitted.state_id) as reader, reader.table() as rows:
+        rows.limit(5).fetchall()  # member_key, occurrence_id and the producer's own columns
+```
+
+`generation_path` is a local generation or publication directory, or an HTTPS
+publication base (the `http` extra). A `publication.json` is an untrusted
+pointer: Rulespec admits the pinned complete family, the table's footer must
+match its descriptor, and the member is then linked into the record store
+unrewritten, sealed under its producer digest. The member key is the table's
+declared spelling: identity fields the artifact declares, then spicy-docs'
+single-column table contracts, then `number@date` for Federal Register
+([decision 0003](decisions/0003-federal-register-record-identity.md)). A
+composite key without a versioned spelling, a NULL, empty or repeated key, an
+unsupported column type and a column recording when a row was observed or
+fetched (`*observed_at`, `*fetched_at`, ruling R5) refuse before anything is
+retained.
+
+Each admission publishes one metadata unit, whatever the row count: the state,
+its representation, and a result that binds the generation's root and member
+manifest (retained as exact bytes) and generates the state and a report. An
+occurrence is identified by family, logical table, member key and the digest of
+its row (`docspec-table-row/1`), so an unchanged row keeps its occurrence across
+generations. With `dataset=`, the dataset's current state is the base: one
+native all-column comparison finds the added, removed and changed keys, only
+those rows are minted, and the membership shares the base's files. The report's
+`counts` give `generated` occurrences, new to the dataset's minted-occurrence
+index, and `adopted` ones it already held, including a row restored to an
+earlier value. A later generation must keep the dataset's key spelling; a
+schema change re-mints every row and reports `reminted`. The current pointer
+advances only while the admission's base is still current (`StaleBaseError`
+otherwise). Re-admitting a pin returns its state and report without writing.
+
+Every reader works on a table-shaped state: `rows`, `values`, `lookup`,
+`read_value`, `changes`, `compare` and selections spell each occurrence record
+natively from its row. `reader.table()` returns the typed rows without JSON.
+An occurrence read by identity resolves through the index to the newest state
+holding it; a publication that references one keeps its exact bytes in the
+ledger. A table-shaped state is revised only by admitting the next generation:
+`revise`, `upsert` and `derive` on it refuse. Under ruling R3 a dataset keeps
+its current generation only: once the next generation is current and no
+current result binds the superseded one, remove its state, representation and
+admission result under a retention policy (below); its member file goes with
+them, while files and index entries the newer state shares stay.
+
 ## Execute and reuse work
 
 Use `workspace.operations.run(definition, request, producer)` for a fresh

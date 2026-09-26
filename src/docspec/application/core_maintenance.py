@@ -122,6 +122,8 @@ class CoreMaintenance:
                         raise IntegrityError("retained state membership requires an occurrence in the removal scope")
             for layer in layers.values():
                 self.inventory_layer(index, layer, protected=protected, scanned=scanned)
+            if "entities" not in layers:
+                return  # A table-shaped state's values are inline in its rows.
             # Bulk members have no ledger rows; their layer's data files name the
             # blobs they reference. Revision layers share their base's files,
             # so each file is read once per protection.

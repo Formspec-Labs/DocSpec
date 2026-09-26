@@ -1,10 +1,10 @@
-"""Canonical Core entity rows shared by state, ledger and export writers."""
+"""Canonical Core entity and membership rows shared by state, ledger and export writers."""
 
 from contextlib import closing
 
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches
 from docspec.adapters.streams import owned_iterator
-from docspec.domain.core import Entity
+from docspec.domain.core import Entity, Membership
 from docspec.domain.core_admission import record_parts
 from docspec.domain.storage import PartitionPolicy, RecordSchema
 from docspec.errors import IntegrityError
@@ -12,6 +12,11 @@ from docspec.errors import IntegrityError
 
 ENTITY_SCHEMA = RecordSchema("core-entities:1", ("kind", *Entity.__struct_fields__), "entity_id", "entity_id")
 ENTITY_POLICY = PartitionPolicy("core-values:1", 1)
+MEMBERSHIP_SCHEMA = RecordSchema("core-membership:1", ("kind", *Membership.__struct_fields__), "member_key", "member_key")
+MEMBERSHIP_POLICY = PartitionPolicy("core-keys:1", 1)
+# The native reading of a membership row: its key and occurrence address.
+MEMBERSHIP_ADDRESSES = ("record_identity AS member_key, "
+                        "json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
 
 
 def retain_entities(storage, records):

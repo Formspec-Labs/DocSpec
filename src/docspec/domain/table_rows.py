@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 import math
+import re
 import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
@@ -101,9 +102,36 @@ def table_occurrence_id(family, table, member_key, row_digest):
     return stable_urn("table-occurrence", [family, table, member_key, row_digest])
 
 
+# Ruling R5: a column recording when a row was observed or fetched can change
+# on an unchanged row and re-mint it every generation. Such a table is
+# admitted only through a declared projection without those columns, and no
+# table declares one yet. The 17 fork-host tables R5 counted match by name.
+_VOLATILE_COLUMN = re.compile(r"(?:^|_)(?:observed|fetched)_at$", re.IGNORECASE)
+
+
+def volatile_columns(names) -> tuple[str, ...]:
+    """The columns among ``names`` that record when a row was observed or fetched (ruling R5)."""
+    return tuple(name for name in names if _VOLATILE_COLUMN.search(name))
+
+
+# A key component is nonempty text; a DATE spells ISO 8601, as ``str(date)``
+# does in spicy-docs' references, so a producer that types a date column keeps
+# every key its VARCHAR spelling had.
+KEY_TYPES = frozenset({"VARCHAR", "DATE"})
+
+
+def key_component(value, kind) -> str:
+    """One member-key component's text: nonempty VARCHAR text, or a DATE's ISO 8601 spelling."""
+    if kind == "VARCHAR" and type(value) is str and value:
+        return value
+    if kind == "DATE" and type(value) is date:
+        return value.isoformat()
+    raise ValueError("member key components must be nonempty text or dates")
+
+
 @dataclass(frozen=True, slots=True)
 class KeySpelling:
-    """A declared, versioned member-key spelling over nonempty VARCHAR components.
+    """A declared, versioned member-key spelling over nonempty VARCHAR or DATE components.
 
     spicy-docs owns each spelling's Python reference; the table SQL adapter
     compiles the declared ones and refuses any other. ``value/1`` is one
@@ -131,8 +159,8 @@ class TableIdentity:
     """How rows of one logical table get member keys and occurrences under docspec-table-row/1.
 
     ``columns`` is the declared projection the row digest covers (ruling R5),
-    kept in canonical order; the key fields are VARCHAR columns of it. The
-    table name is the logical name, never a file name.
+    kept in canonical order; the key fields are VARCHAR or DATE columns of it.
+    The table name is the logical name, never a file name.
     """
 
     family: str
@@ -145,9 +173,15 @@ class TableIdentity:
         require_text(self.table, "logical table")
         columns = table_columns(self.columns)
         kinds = dict(columns)
-        if any(kinds.get(field) != "VARCHAR" for field in self.key.fields):
-            raise ValueError("member-key fields must be VARCHAR columns of the declared projection")
+        if any(kinds.get(field) not in KEY_TYPES for field in self.key.fields):
+            raise ValueError("member-key fields must be VARCHAR or DATE columns of the declared projection")
         object.__setattr__(self, "columns", columns)
+
+    @property
+    def key_kinds(self) -> tuple[str, ...]:
+        """The declared type of each member-key field, in key order."""
+        kinds = dict(self.columns)
+        return tuple(kinds[field] for field in self.key.fields)
 
     def to_dict(self) -> dict:
         """Return the closed rules value a table state records and its identity covers."""
@@ -195,6 +229,11 @@ SPELLING_ROWS = tuple(dict(zip((name for name, _ in SPELLING_COLUMNS), values, s
     ("2026-00009", "2026-01-02", "e", None, None, None, float("inf"), None, None, None, None),
     ("2026-00010", "2026-01-02", "f", None, None, None, float("-inf"), None, None, None, None),
 ))
+# Keys with a DATE component, as a producer may type publication_date: each
+# spells the key its ISO 8601 text had, at both year bounds.
+DATED_KEY_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "DATE"), ("title", "VARCHAR"))
+DATED_KEY_ROWS = tuple(dict(zip((name for name, _ in DATED_KEY_COLUMNS), values, strict=True)) for values in (
+    ("2026-\x1f1", date(2026, 9, 25), "dated"), ("x@y", date(1, 1, 1), None), (" ", date(9999, 12, 31), "")))
 # Doubles DuckDB 1.5.5 casts to another double's spelling: 2^81 prints as
 # 2^82's shortest decimal, and 2^807 with a hexadecimal digit. A native spelling
 # must refuse them or match the reference, never spell them otherwise.

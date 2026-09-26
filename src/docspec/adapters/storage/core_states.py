@@ -8,22 +8,43 @@ import pyarrow as pa
 
 from docspec.ports.record_storage import bounded_batches, bounded_rows
 from docspec.adapters.storage.batches import ENCODED_RECORD_SCHEMA, encoded_batches, spilled_order
-from docspec.adapters.storage.core_entities import ENTITY_SCHEMA, ENTITY_POLICY
+from docspec.adapters.storage.core_entities import (ENTITY_POLICY, ENTITY_SCHEMA, MEMBERSHIP_ADDRESSES, MEMBERSHIP_POLICY,
+    MEMBERSHIP_SCHEMA)
+from docspec.adapters.storage.core_tables import (TABLE_KIND, TABLE_SCHEMA_ID, TableStateView, admit_layers,
+    check_minted_copies, check_table_membership, find_table_members, occurrence_addressed, spelled_payload, table_schema,
+    typed_relation)
+from docspec.adapters.storage.records import AdmittedTableLayer
+from docspec.adapters.storage.table_occurrences import INDEX_KIND, OCCURRENCE_INDEX
 from docspec.adapters.streams import owned_iterator
 from docspec.domain import core
 from docspec.domain.core_admission import admit_record, encode_record, record_value, stored_record
 from docspec.domain.identity import canonical_value_bytes, sha256_digest, decode_canonical_json_value
 from docspec.domain.references import BlobRef, LayerRef
-from docspec.domain.storage import PartitionPolicy, RecordSchema, partition_bucket
+from docspec.domain.storage import partition_bucket
+from docspec.domain.table_rows import TableIdentity, table_columns
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.core_ledger import MetadataBatch, MetadataLink
 from docspec.ports.record_storage import BATCH_BYTES, BATCH_ROWS
 
 
-_MEMBERS = RecordSchema("core-membership:1", ("kind", *core.Membership.__struct_fields__), "member_key", "member_key")
-_SCHEMAS = {"entities": ENTITY_SCHEMA, "membership": _MEMBERS}
-_POLICY = PartitionPolicy("core-keys:1", 1)
+_SCHEMAS = {"entities": ENTITY_SCHEMA, "membership": MEMBERSHIP_SCHEMA}
+# Each manifest version names its layers; version 3 is a table-shaped state.
+_VERSION_LAYERS = {2: ("entities", "membership"), 3: ("table", "membership", "occurrences")}
+_LAYER_KINDS = {"entities": ("core-entities", ENTITY_SCHEMA.schema_id),
+                "membership": ("core-membership", MEMBERSHIP_SCHEMA.schema_id),
+                "table": (TABLE_KIND, TABLE_SCHEMA_ID), "occurrences": (INDEX_KIND, OCCURRENCE_INDEX.schema_id)}
 _READY_STATE_LIMIT = 4
+_TABLE_STATE = "a table-shaped state is revised only by admitting its next generation"
+
+
+class StateLayers(dict):
+    """A state's admitted layers by name; a table-shaped state's also carry its identity rules."""
+
+    __slots__ = ("identity",)
+
+    def __init__(self, layers, identity=None):
+        super().__init__(layers)
+        self.identity = identity
 
 
 def _entity_rows(entities, observe=None, *, encoded=False):
@@ -43,7 +64,12 @@ def _entity_rows(entities, observe=None, *, encoded=False):
 
 def _newest_first(layers):
     """Order layer views by commit time from their digest-bound Iceberg metadata, newest first."""
-    return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.committed_ms, layer.reference.layer_id)))
+    return tuple(sorted(layers, reverse=True, key=lambda layer: (layer.committed_ms, _view_key(layer))))
+
+
+def _view_key(view):
+    """A search view's identity: its entity layer, or a table-shaped state's own table."""
+    return view.table.layer_id if isinstance(view, TableStateView) else view.reference.layer_id
 
 
 def _values(entities):
@@ -133,7 +159,7 @@ class CoreStateStorage:
                     yield value["member_key"], value["member_key"], payload
             member_layer = self.records.retain_batches(
                 encoded_batches(member_rows(), ENCODED_RECORD_SCHEMA, byte_column=2), layer_kind="core-membership",
-                schema=_MEMBERS, partition_policy=_POLICY, ordered=False,
+                schema=MEMBERSHIP_SCHEMA, partition_policy=MEMBERSHIP_POLICY, ordered=False,
             )
             self._match_members({"entities": entity_layer, "membership": member_layer})
             content = self._state_content(session, entity_layer, member_layer)
@@ -151,14 +177,53 @@ class CoreStateStorage:
                 retained = self.check_representation(session, record_value(existing.value), retained=True)
                 if not self.same_membership(session, retained, member_layer.reference):
                     raise IntegrityError("retry changes immutable state membership")
-                self._same_values(self._references(session.ready_states[existing.value.membership.digest])["entities"],
-                                  entity_layer)
+                references = self._references(session.ready_states[existing.value.membership.digest])
+                if "entities" not in references:
+                    raise IntegrityError("existing representation is table-shaped")
+                self._same_values(references["entities"], entity_layer)
                 representation = existing.value
             # Identities the ledger already holds are checked inside the publisher's
             # attempt, so a concurrent identity-bearing commit makes it check again.
             session.publish(MetadataBatch(unit_id, records=(state, representation), retained=(("state", state_id),)),
                             identity_check=lambda: self._check_ledger_copies(session, entity_layer, state_id))
             return state
+
+    @contextmanager
+    def admit_table(self, session, path, identity, columns, *, member_digest, state_id, base_state_id=None):
+        """Retain a producer's admitted Parquet as a table-shaped state's layers until its caller publishes them.
+
+        ``columns`` are the member's in physical order. A base is the dataset's
+        current state: it must be table-shaped, of the same family and table,
+        and keep its member-key spelling, since a new spelling is an explicit
+        re-key. Yields the version-3 manifest's content, the admission counts
+        and the identity check the caller's one metadata unit must run: it
+        looks up only the occurrences this admission minted.
+        """
+        session._active()
+        base = None
+        if base_state_id is not None:
+            base = self.layers(session, base_state_id)
+            if base.identity is None or (base.identity.family, base.identity.table) != (identity.family, identity.table):
+                raise IntegrityError("the dataset's current state is not a table-shaped state of this family and table")
+            if base.identity.key != identity.key:
+                raise IntegrityError("a later generation must keep its dataset's member-key spelling; "
+                                     "a new spelling is an explicit re-key")
+        with admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
+                          state_id=state_id, base=base, base_identity=None if base is None else base.identity) \
+                as (layers, counts, minted):
+            manifest = {"format": "docspec-core-state", "version": 3, "rules": identity.to_dict(),
+                        **{name: layer.reference.to_dict() for name, layer in layers.items()}}
+            content = session.retain_value(manifest)
+            self._remember(session, content.digest, manifest)
+            yield content, counts, lambda: check_minted_copies(self.records, session.ledger, layers["table"], identity, minted)
+
+    @contextmanager
+    def typed_relation(self, layers):
+        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the producer's columns."""
+        if layers.identity is None:
+            raise IntegrityError("state is not table-shaped")
+        with typed_relation(self.records, layers, layers.identity) as relation:
+            yield relation
 
     def _state_content(self, session, entities, members):
         """Retain a state after its caller establishes complete membership."""
@@ -207,19 +272,24 @@ class CoreStateStorage:
                 raise IntegrityError("retry conflicts with immutable retained occurrences")
 
     def find_members(self, session, identities, *, layers=None):
-        """Locate occurrences with no ledger row: identity -> (layer view, size, data file or None, sha256 hex).
+        """Locate occurrences with no ledger row: identity -> (view, size, where, sha256 hex).
 
-        Bulk members are registered once per layer, by their state's manifest,
-        not once per member. By default every available state's entity layer is
-        searched; ``layers`` (views, newest first) narrows the search to states
-        the caller names. Layers built on one another share data files, so each
-        file is read once; a layer with delete files is read through its
-        snapshot instead. Copies of one identity must hold identical bytes. The
-        newest layer holding a member is chosen, so a pin never keeps a
-        superseded layer alive.
+        ``where`` is the data file to read, None to read through the layer's
+        snapshot, or a table occurrence's exact bytes. Bulk members are
+        registered once per layer, by their state's manifest, not once per
+        member. By default every available state is searched; ``layers``
+        (views, newest first) narrows the search to states the caller names.
+        Layers built on one another share data files, so each file is read
+        once; a layer with delete files is read through its snapshot instead.
+        A table-shaped state is searched through its minted-occurrence index.
+        Copies of one identity must hold identical bytes. The newest layer
+        holding a member is chosen, so a pin never keeps a superseded layer
+        alive.
         """
         wanted = sorted(set(identities))
         layers = (self.entity_layers(session) if layers is None else tuple(layers)) if wanted else ()
+        tables = tuple(layer for layer in layers if isinstance(layer, TableStateView))
+        layers = tuple(layer for layer in layers if not isinstance(layer, TableStateView))
         rank, owners, found = {layer.reference.layer_id: index for index, layer in enumerate(layers)}, {}, {}
         for layer in layers:
             for locator in () if layer.deletes else layer.files:
@@ -243,13 +313,23 @@ class CoreStateStorage:
             if layer.deletes:
                 with self.records.relations({"layer": layer.reference}, identities={"layer": wanted}) as relations:
                     add(relations["layer"], f"{index} AS layer_index")
+        # Table occurrences resolve through each table-shaped state's pinned
+        # index; their bytes are spelled from the row, never stored.
+        for identity, location in (find_table_members(self.records, wanted, tables) if tables else {}).items():
+            previous = found.get(identity)
+            if previous is not None and previous[3] != location[3]:
+                raise IntegrityError("occurrence identity holds different values in retained layers")
+            if previous is None or location[0].committed_ms > previous[0].committed_ms:
+                found[identity] = location
         return found
 
     def member_payloads(self, located):
         """Stream (identity, exact bytes) for located members, from their data files in bounded batches."""
-        files, layers = {}, {}
+        files, layers, spelled = {}, {}, []
         for identity, (layer, _, locator, _) in located.items():
-            if locator is None:
+            if isinstance(locator, bytes):
+                spelled.append((identity, locator))
+            elif locator is None:
                 layers.setdefault(layer.reference.layer_id, (layer.reference, []))[1].append(identity)
             else:
                 files.setdefault(locator, []).append(identity)
@@ -262,12 +342,14 @@ class CoreStateStorage:
         for reference, group in layers.values():
             for batch in self.records.lookup_batches(reference, sorted(group)):
                 yield from zip(batch.column("record_identity").to_pylist(), batch.column("record_json").to_pylist(), strict=True)
+        yield from spelled
 
     def entity_layers(self, session, *, exclude=()):
-        """Views of the entity layers of available retained representations, newest first.
+        """Search views of available retained representations, newest first.
 
-        A view keeps a layer's reference, commit time and data files, not its
-        Iceberg metadata; each is admitted once per session. Without
+        A view keeps an entity layer's reference, commit time and data files,
+        not its Iceberg metadata, or a table-shaped state's occurrence index,
+        table and membership; each is admitted once per session. Without
         ``exclude`` the list is kept for the session until another commit adds
         bulk layers. Removal planning passes the states and representations in
         its scope to see what survives.
@@ -281,11 +363,11 @@ class CoreStateStorage:
                     membership = row.value.membership if row.available else None
                     if not isinstance(membership, core.ContentRef) or row.key in excluded or ("state", row.value.state_id) in excluded:
                         continue
-                    reference = session.representation_layers.get(row.key[1])
-                    if reference is None:
+                    view = session.representation_layers.get(row.key[1])
+                    if view is None:
                         manifest = session.ready_states.get(membership.digest) or session.read_json(membership, label="Core state manifest")
-                        reference = session.representation_layers[row.key[1]] = self._references(manifest)["entities"]
-                    layers[reference.layer_id] = self.layer_view(session, reference)
+                        view = session.representation_layers[row.key[1]] = self.search_view(session, manifest)
+                    layers[_view_key(view)] = view
         ordered = _newest_first(layers.values())
         if not exclude:
             session.entity_layers = ordered
@@ -298,14 +380,31 @@ class CoreStateStorage:
             view = session.layer_views[reference.layer_id] = self.records.layer_files(reference)
         return view
 
+    def search_view(self, session, manifest):
+        """One state's search view: its entity layer's, or a table-shaped state's index, table and membership."""
+        references = self._references(manifest)
+        if "entities" in references:
+            return self.layer_view(session, references["entities"])
+        view = session.layer_views.get(references["table"].layer_id)
+        if view is None:
+            table = self.records.admitted(references["table"])
+            view = session.layer_views[references["table"].layer_id] = TableStateView(
+                references["occurrences"], table.table.metadata.last_updated_ms, references["table"],
+                references["membership"], self.table_identity(manifest))
+        return view
+
+    def state_view(self, session, state_id):
+        """The search view of one available state's retained representation."""
+        return self.search_view(session, self.manifest(session, state_id))
+
     def add_entity_layer(self, session, membership):
-        """Add a newly published representation's entity layer to the session's search."""
+        """Add a newly published representation's search view to the session's search."""
         if session.entity_layers is None:
             return
         manifest = session.ready_states.get(membership["digest"]) or session.read_json(membership, label="Core state manifest")
-        reference = self._references(manifest)["entities"]
-        if all(layer.reference.layer_id != reference.layer_id for layer in session.entity_layers):
-            session.entity_layers = _newest_first((self.layer_view(session, reference), *session.entity_layers))
+        view = self.search_view(session, manifest)
+        if all(_view_key(layer) != _view_key(view) for layer in session.entity_layers):
+            session.entity_layers = _newest_first((view, *session.entity_layers))
 
     def _check_ledger_copies(self, session, entities, state_id):
         """Refuse a new member whose identity the ledger holds with other bytes, or as a state, or names this state.
@@ -332,28 +431,55 @@ class CoreStateStorage:
                                 raise IntegrityError("state member conflicts with an immutable retained record")
 
     def _references(self, manifest):
-        if (not isinstance(manifest, dict) or set(manifest) != {"format", "version", "entities", "membership"}
-                or manifest["format"] != "docspec-core-state" or type(manifest["version"]) is not int or manifest["version"] != 2):
+        """The layers a manifest names: version 2's entities and membership, or version 3's table, membership and occurrences.
+
+        A version-3 manifest also carries its identity rules; ``table_identity`` reads them.
+        """
+        version = manifest.get("version") if isinstance(manifest, dict) else None
+        names = _VERSION_LAYERS.get(version) if type(version) is int else None
+        if (names is None or set(manifest) != {"format", "version", *names, *(("rules",) if version == 3 else ())}
+                or manifest["format"] != "docspec-core-state"):
             raise IntegrityError("invalid Core state storage manifest")
         try:
-            references = {name: LayerRef.from_dict(manifest[name]) for name in ("entities", "membership")}
+            references = {name: LayerRef.from_dict(manifest[name]) for name in names}
         except (TypeError, ValueError, KeyError) as error:
             raise IntegrityError("invalid Core state layer reference") from error
-        for name, schema in _SCHEMAS.items():
-            if references[name].layer_kind != "core-" + name or references[name].schema_id != schema.schema_id:
-                raise IntegrityError("state layer differs from its required schema")
+        if any((reference.layer_kind, reference.schema_id) != _LAYER_KINDS[name] for name, reference in references.items()):
+            raise IntegrityError("state layer differs from its required schema")
+        self.table_identity(manifest)
         return references
+
+    @staticmethod
+    def table_identity(manifest):
+        """A version-3 manifest's identity rules, or None for a version-2 state."""
+        if manifest.get("version") != 3:
+            return None
+        try:
+            return TableIdentity.from_dict(manifest["rules"])
+        except (TypeError, ValueError, KeyError) as error:
+            raise IntegrityError("invalid table-shaped state rules") from error
 
     def _layers(self, manifest, *, retained=True):
         admit = self.records.admitted if retained else self.records.admit
-        layers = {name: admit(reference) for name, reference in self._references(manifest).items()}
-        if {name: layer.schema for name, layer in layers.items()} != _SCHEMAS:
+        layers = StateLayers({name: admit(reference) for name, reference in self._references(manifest).items()},
+                             self.table_identity(manifest))
+        if layers.identity is None:
+            valid = {name: layer.schema for name, layer in layers.items()} == _SCHEMAS
+        else:
+            table = layers["table"]
+            valid = (isinstance(table, AdmittedTableLayer) and table_columns(table.schema.columns) == layers.identity.columns
+                     and layers["membership"].schema == MEMBERSHIP_SCHEMA and layers["occurrences"].schema == OCCURRENCE_INDEX)
+        if not valid:
             raise IntegrityError("state layer differs from its required schema")
         return layers
 
+    def admitted_layers(self, layers):
+        """The same layers admitted in the current scope, keeping a table-shaped state's rules."""
+        return StateLayers({name: self.records.admitted(layer.reference) for name, layer in layers.items()}, layers.identity)
+
     def _match_members(self, layers):
         with self.records.relations(layers) as relations:
-            members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id, json_type(decode(record_json), '/occurrence_id') AS identity_type")
+            members = relations["membership"].project(MEMBERSHIP_ADDRESSES + ", json_type(decode(record_json), '/occurrence_id') AS identity_type")
             entities = relations["entities"].project("record_identity AS entity_id")
             if members.filter("identity_type IS DISTINCT FROM 'VARCHAR' OR length(occurrence_id)=0").limit(1).fetchone():
                 raise IntegrityError("membership requires an occurrence identity string")
@@ -373,7 +499,9 @@ class CoreStateStorage:
             if not retained:
                 session.blobs.ensure_ready(reference)
             layers = self._layers(manifest, retained=retained)
-            if not retained:
+            if not retained and layers.identity is not None:
+                check_table_membership(self.records, layers, layers.identity)
+            elif not retained:
                 self._match_members(layers)
                 self._check_member_content(session, layers["entities"])
             self._remember(session, content["digest"], manifest)
@@ -457,6 +585,8 @@ class CoreStateStorage:
         source = self.representation(session, state_id)
         manifest = session.ready_states[source.membership.digest]
         references = self._layers(manifest)
+        if references.identity is not None:
+            raise IntegrityError("a table-shaped state holds its producer's rows and has no values to repack")
         members = self.records.compact(references["membership"])
         with self.records.relations(references) as relations:
             used = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS used_id").aggregate("used_id, min(member_key) AS first_key")
@@ -476,7 +606,12 @@ class CoreStateStorage:
 
     @contextmanager
     def relation(self, session, state_id, *, scope=None, addresses=None, cursor=None, layers=None):
-        """Recover unordered keyed values within the caller's protection scope."""
+        """Recover unordered keyed values within the caller's protection scope.
+
+        Yields member_key, occurrence_id and canonical occurrence_record bytes.
+        A table-shaped state spells each record from its row. ``cursor`` is
+        required with native ``addresses`` and optional with a named ``scope``.
+        """
         with self._addressed(session, state_id, scope=scope, addresses=addresses, cursor=cursor, layers=layers) as (members, values):
             yield _keyed_rows(members, values)
 
@@ -498,7 +633,11 @@ class CoreStateStorage:
             ordered = self.records.temp_table(cursor, members.project(
                 "member_key, occurrence_id, row_number() OVER (ORDER BY member_key) AS position"), "ordered_members")
             count = cursor.execute("SELECT count(*) FROM ordered_members").fetchone()[0]
-            window = self._window_rows(references["entities"], count)
+            if references.identity is None:
+                window = self._window_rows(references["entities"], count)
+            else:
+                window = self._window(*spelled_payload(self.records, references["table"], references.identity), count) \
+                    if count > BATCH_ROWS else count
             if count <= window:
                 with closing(_keyed_rows(ordered, values).order("member_key").to_arrow_reader(BATCH_ROWS)) as batches:
                     yield from batches
@@ -527,8 +666,11 @@ class CoreStateStorage:
         extra scan. A layer whose footers carry no payload bytes has unknown
         sizes and reads as one window, ordered within the engine allowance.
         """
-        stored, rows = self.records.stored_payload(entities.reference) if count > BATCH_ROWS else (0, 0)
-        if not stored or not rows:
+        return self._window(*(self.records.stored_payload(entities.reference) if count > BATCH_ROWS else (0, 0)), count)
+
+    def _window(self, stored, rows, count):
+        """Rows per window for ``rows`` records of ``stored`` bytes in all, or ``count`` when unknown."""
+        if count <= BATCH_ROWS or not stored or not rows:
             return count
         window_bytes = self.records.engine_memory_bytes // 16
         return max(1, int(window_bytes * rows // (stored * BATCH_ROWS))) * BATCH_ROWS
@@ -542,11 +684,16 @@ class CoreStateStorage:
             record_value(core.StateMembers(member_selector=core.Whole(), scope=scope), core.Selector)
             tables["wanted"] = pa.table({"wanted_key": pa.array(scope, type=pa.string())})
         references = self.layers(session, state_id) if layers is None else layers
+        if addresses is not None and (scope is not None or cursor is None):
+            raise ValueError("native addresses require their owning cursor and no named scope")
+        if references.identity is not None:
+            with occurrence_addressed(self.records, references, references.identity, cursor=cursor, scope=scope,
+                                      addresses=addresses) as addressed:
+                yield addressed
+            return
         if addresses is not None:
-            if scope is not None or cursor is None:
-                raise ValueError("native addresses require their owning cursor and no named scope")
             with self.records.relations(references, cursor=cursor) as relations:
-                members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
+                members = relations["membership"].project(MEMBERSHIP_ADDRESSES)
                 members = addresses.join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
                 # Materialize compact addresses once before the payload join.
                 yield self.records.temp_table(cursor, members, "selection_addresses"), _values(relations["entities"])
@@ -559,7 +706,7 @@ class CoreStateStorage:
             # The table also retains absent keys and aliases of one occurrence.
             with self.records.relations({"membership": references["membership"]}, partitions=partitions,
                                         tables=tables, identities={"membership": list(scope)}, cursor=cursor) as relations:
-                members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
+                members = relations["membership"].project(MEMBERSHIP_ADDRESSES)
                 members = relations["wanted"].join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
                 addresses = members.to_arrow_table()
             if addresses.nbytes > BATCH_BYTES:
@@ -570,7 +717,7 @@ class CoreStateStorage:
                 yield relations["members"], _values(relations["entities"])
             return
         with self.records.relations(references, partitions=partitions, tables=tables, cursor=cursor) as relations:
-            members = relations["membership"].project("record_identity AS member_key, json_extract_string(decode(record_json), '/occurrence_id') AS occurrence_id")
+            members = relations["membership"].project(MEMBERSHIP_ADDRESSES)
             if scope is not None:
                 members = relations["wanted"].join(members, "wanted_key = member_key", how="left").project("wanted_key AS member_key, occurrence_id")
             yield members, _values(relations["entities"])
@@ -586,10 +733,8 @@ class CoreStateStorage:
         """Compare complete keyed states natively; return only bounded samples."""
         if type(sample_limit) is not int or not 0 <= sample_limit <= BATCH_ROWS:
             raise ValueError("comparison sample limit must be between 0 and 2048")
-        layers = {}
-        for prefix, identity in (("old", older), ("new", newer)):
-            layers.update({prefix + "_" + name: ref for name, ref in self.layers(session, identity).items()})
-        memberships = {name: layer for name, layer in layers.items() if name.endswith("_membership")}
+        layers = {"old": self.layers(session, older), "new": self.layers(session, newer)}
+        memberships = {prefix + "_membership": state["membership"] for prefix, state in layers.items()}
         with self.records._cursor() as cursor, self.records.relations(memberships, cursor=cursor) as relations:
             sides = []
             for prefix in ("old", "new"):
@@ -613,14 +758,15 @@ class CoreStateStorage:
                 cursor.execute("DROP TABLE IF EXISTS comparison_changes")
             samples = []
             if sample.num_rows:
-                entities = {prefix: layers[prefix + "_entities"] for prefix in ("old", "new")}
-                identities = {prefix: list({identity for identity in sample.column(prefix + "_id").to_pylist()
-                                           if identity is not None}) for prefix in entities}
-                with self.records.relations(entities, identities=identities, tables={"sample": sample}, cursor=cursor) as values:
+                # Only the sampled members' values are read, each through its state.
+                keys = sample.column("member_key").to_pylist()
+                with self.records.relations({}, tables={"sample": sample}, cursor=cursor) as values, \
+                        self.relation(session, older, scope=keys, layers=layers["old"], cursor=cursor) as old_rows, \
+                        self.relation(session, newer, scope=keys, layers=layers["new"], cursor=cursor) as new_rows:
                     selected = values["sample"]
-                    for prefix in entities:
-                        records = values[prefix].project(f"record_identity AS {prefix}_entity_id, record_json AS {prefix}_record")
-                        selected = selected.join(records, f"{prefix}_id = {prefix}_entity_id", how="left")
+                    for prefix, rows in (("old", old_rows), ("new", new_rows)):
+                        selected = selected.join(rows.project(f"member_key AS {prefix}_value_key, occurrence_record AS {prefix}_record"),
+                                                 f"member_key = {prefix}_value_key", how="left")
                     samples = selected.project(
                         "member_key, old_id, new_id, change, "
                         "json_extract(decode(old_record), '/value') IS DISTINCT FROM json_extract(decode(new_record), '/value') AS value_changed"
@@ -659,7 +805,10 @@ class CoreStateStorage:
         revision = admit_record(encode_record(revision))
         if not isinstance(revision, core.Revision):
             raise IntegrityError("membership resolution requires a revision")
-        base = self.layers(session, revision.base_state_id)["membership"]
+        layers = self.layers(session, revision.base_state_id)
+        if layers.identity is not None:
+            raise IntegrityError(_TABLE_STATE)
+        base = layers["membership"]
         edits = self._edits(session, revision)
         if not edits:
             return base
@@ -721,8 +870,10 @@ class CoreStateStorage:
         revision = admit_record(encode_record(revision))
         if not isinstance(revision, core.Revision):
             raise IntegrityError("state revision requires a revision record")
-        edits = self._edits(session, revision)
         references = self.layers(session, revision.base_state_id)
+        if references.identity is not None:
+            raise IntegrityError(_TABLE_STATE)
+        edits = self._edits(session, revision)
         base_members = references["membership"]
         members = self._resolve_edits(base_members, edits) if edits else base_members
         delta = self.layers(session, occurrences_state_id)["entities"]

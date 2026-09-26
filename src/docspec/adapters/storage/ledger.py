@@ -22,6 +22,7 @@ from docspec.adapters.locks import lock_descriptor
 from docspec.adapters.storage.core_entities import retain_entity_payloads
 from docspec.adapters.storage.files import _contained, _storage_root, _sync_parents
 from docspec.adapters.storage.provenance import PROVENANCE_SCHEMA, admit_provenance
+from docspec.adapters.storage.records import TABLE_PROFILE_ID
 from docspec.ports.record_storage import bounded_rows
 from docspec.adapters.streams import BATCH_BYTES, BATCH_ROWS, owned_iterator
 from docspec.domain.core import RECORD_ID_FIELDS
@@ -500,6 +501,10 @@ class LocalSqliteCoreLedger:
             value, payload = record_parts(record)
             if value["kind"] != "entity" or value["entity_type"] != "occurrence":
                 raise IntegrityError("only bulk occurrence members are pinned to their layer")
+            if layer.profile_id == TABLE_PROFILE_ID:
+                # A table occurrence is spelled from its row, never stored: its
+                # pin keeps the exact bytes, which no later removal can take.
+                return "entity", value["entity_id"], payload, None, sha256_digest(payload), None, len(payload)
             member_layers[layer.layer_id] = _encode(layer.to_dict())
             return "entity", value["entity_id"], None, None, sha256_digest(payload), layer.layer_id, len(payload)
         for row in _collect_parameters(batch.members, pin):
@@ -576,7 +581,7 @@ class LocalSqliteCoreLedger:
                     # A member removed with its old layer is restored from the copy
                     # the publisher found with the same digest.
                     connection.execute(
-                        "UPDATE records SET source_layer=(SELECT p.source_layer FROM pinned p WHERE p.kind=records.kind AND p.record_id=records.record_id) "
+                        "UPDATE records SET (payload,source_layer)=(SELECT p.payload,p.source_layer FROM pinned p WHERE p.kind=records.kind AND p.record_id=records.record_id) "
                         "WHERE (kind,record_id) IN (SELECT kind,record_id FROM pinned) AND payload IS NULL AND EXISTS("
                         "SELECT 1 FROM retention t WHERE t.kind=records.kind AND t.record_id=records.record_id AND t.available=0)")
                     # A restored member's retention becomes available again below,
@@ -731,6 +736,20 @@ class LocalSqliteCoreLedger:
             cursor = connection.execute(
                 "SELECT r.kind,r.record_id,r.row_digest FROM wanted w JOIN records r "
                 "ON r.record_id=w.record_id AND r.kind IN ('entity','state') ORDER BY w.ordinal")
+            for rows in bounded_rows(cursor, size=_row_size):
+                yield tuple(rows)
+
+    def data_identities_with_prefix(self, prefix: str) -> Iterator[tuple[tuple[str, str, str], ...]]:
+        """Stream (kind, identity, row digest) for entity or state rows whose identity starts with ``prefix``.
+
+        One range read of the data-identity index, in identity order.
+        """
+        require_text(prefix, "identity prefix")
+        upper = prefix[:-1] + chr(ord(prefix[-1]) + 1)
+        with self._transaction() as connection:
+            cursor = connection.execute(
+                "SELECT kind,record_id,row_digest FROM records WHERE kind IN ('entity','state') "
+                "AND record_id >= ? AND record_id < ? ORDER BY record_id", (prefix, upper))
             for rows in bounded_rows(cursor, size=_row_size):
                 yield tuple(rows)
 

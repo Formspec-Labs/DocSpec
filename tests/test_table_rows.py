@@ -21,8 +21,9 @@ from docspec.adapters.storage.table_sql import (identity_relation, json_string_s
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
-from docspec.domain.table_rows import (ROUND_TRIP_TRAPS, ROW_RULE, SPELLING_COLUMNS, SPELLING_ROWS, KeySpelling,
-    TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest, table_row_value, table_type)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SPELLING_COLUMNS,
+    SPELLING_ROWS, KeySpelling, TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest,
+    table_row_value, table_type)
 
 
 def native_rows(columns, rows, *, session_timezone="UTC"):
@@ -44,6 +45,20 @@ def test_shared_corpus_matches_the_independent_reference():
     assert native_rows(SPELLING_COLUMNS, SPELLING_ROWS, session_timezone="America/New_York") == expected
     assert ROW_RULE == "docspec-table-row/1"
     assert table_row_value(SPELLING_ROWS[0], SPELLING_COLUMNS)["big"] == str(-(2**63))
+
+
+def test_dated_key_components_spell_the_reference_key():
+    identity = TableIdentity("family", "table", KeySpelling("federal-register-source-record-id", "1",
+                                                            ("document_number", "publication_date")), DATED_KEY_COLUMNS)
+    with duckdb.connect() as connection:
+        connection.execute("CREATE TABLE source (document_number VARCHAR, publication_date DATE, title VARCHAR)")
+        connection.executemany("INSERT INTO source VALUES (?, ?, ?)",
+                               [[row[name] for name, _ in DATED_KEY_COLUMNS] for row in DATED_KEY_ROWS])
+        native = identity_relation(connection.table("source"), identity).fetchall()
+    references = [reference_identity(identity, row) for row in DATED_KEY_ROWS]
+    assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
+                                    for key, digest, urn in references)
+    assert {key for key, _, _ in references} == {"2026-\x1f1@2026-09-25", "x@y@0001-01-01", " @9999-12-31"}
 
 
 def test_all_controls_and_literal_escapes_have_exact_string_bytes():

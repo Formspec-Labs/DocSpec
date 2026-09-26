@@ -4,58 +4,19 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import hashlib
 import json
-import shutil
 
 import httpx
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from rulespec_artifacts import (ArtifactPin, LocalMemberSource, Producer, build_artifact_root,
-    canonical_json_bytes, describe_member, stamp_root, write_member_manifest)
+from rulespec_artifacts import canonical_json_bytes, stamp_root
 
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
 from docspec.adapters.generation_source import stage_generation
 from docspec.domain.storage import TableSchema
 from docspec.domain.table_rows import KeySpelling
 from docspec.errors import IntegrityError, LimitExceededError
-
-# Rulespec requires a producer pinned by a published digest or full Git object ID.
-_IMPLEMENTATION = "git+https://example.test/spicy-regs@" + "1" * 40
-PRODUCER = Producer("spicy-regs", _IMPLEMENTATION, "urn:test:verifier", "1", _IMPLEMENTATION)
-
-
-def generation(path, *, table="federal_register", family="federal-register", status="complete-family",
-               kind="spicy-regs-rollup-generation", columns=None, rows=None, identity=None, data=None):
-    path.mkdir(parents=True)
-    values = {"document_number": ["2026-1"], "publication_date": ["2026-09-25"], "title": ["A rule"]}
-    if table == "congress_bills":
-        values = {"bill_id": ["119-hr-1"], "title": ["A bill"]}
-    elif table == "bill_actions":
-        values = {"bill_id": ["119-hr-1"], "action_index": ["1"]}
-    data = pa.table(values) if data is None else data
-    pq.write_table(data, path / (table + ".parquet"))
-    member = describe_member(LocalMemberSource(path), object_key=table + ".parquet", role="table",
-                             media_type="application/vnd.apache.parquet", record_count=data.num_rows if rows is None else rows)
-    with (path / "members.json").open("wb") as output:
-        manifest = write_member_manifest(output, scope_kind="global", scope_id=family, object_key="members.json", members=[member])
-    description = {"columns": columns or [[name, "VARCHAR"] for name in values], "rows": member.record_count}
-    if identity is not None:
-        description["identity"] = identity
-    root = build_artifact_root(kind=kind, spec={"family": family, "publicationStatus": status, "tables": {member.object_key: description}},
-                              producer=PRODUCER, manifests=[manifest])
-    (path / "artifact.json").write_bytes(canonical_json_bytes(root))
-    return ArtifactPin(root["logicalId"], root["artifactDigest"]), member, description
-
-
-def publication(base, source, pin, member, description, *, prefix="generations/federal-register/current"):
-    target = base / prefix
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
-    value = {"format": "spicy-regs-publication", "version": 1, "families": {"federal-register": {
-        "prefix": prefix, "logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest,
-        "tables": {member.object_key: {**description, "sha256": member.sha256, "byteSize": member.byte_size}}}}}
-    (base / "publication.json").write_bytes(canonical_json_bytes(value))
-    return value
+from tests.support.generations import generation, publication
 
 
 def test_local_generation_preserves_source_and_returns_exact_evidence(tmp_path):

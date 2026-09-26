@@ -1,0 +1,2652 @@
+{
+ "admissions": {
+  "current": {
+   "admission_seconds": 3.038846708019264,
+   "base": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04",
+   "bytes_written": {
+    "blobs": 52328,
+    "layer_roots": 4037,
+    "membership": {
+     "all_bytes": 28689,
+     "data_bytes": 7473,
+     "data_files_total": 3
+    },
+    "occurrences": {
+     "all_bytes": 17803,
+     "data_bytes": 8482,
+     "data_files_total": 2
+    },
+    "records_total": 156004743,
+    "table": {
+     "all_bytes": 155941068,
+     "data_bytes": 155924250,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 102,
+    "adopted": 1008901,
+    "carried": 1008901,
+    "changed": 2,
+    "generated": 104,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009005
+   },
+   "dataset": "federal-register",
+   "environment": {
+    "at": "2026-09-25T21:21:40",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     7.0498046875,
+     6.79248046875,
+     6.609375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 0,
+     "links": 9,
+     "records": 8,
+     "retention": 8,
+     "units": 3
+    },
+    "bytes": 143360,
+    "bytes_added": 32768
+   },
+   "member": {
+    "byteSize": 155924250,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 1009005,
+    "sha256": "sha256:47ad12123f8076682c8f0a4dd5ed6a63949f6559515df2100900ecb9c08f6891"
+   },
+   "pin": {
+    "artifactDigest": "sha256:731984ca92583f93350fa0c029d7bfa32809c0240b41b5607cd05967996bed28",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:cc996f7f5aa48c80fbe415a3f1973d0ce635e71812f2a0cda688614678001a70"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:36Z load { 7.32 6.84 6.62 }",
+     "end 2026-09-26T01:21:41Z load { 7.05 6.79 6.61 } exit 0 peak_tree_rss_kib 3376"
+    ],
+    "process_wall_seconds": 4.01,
+    "time_l_max_rss_bytes": 2263269376,
+    "watch_sampled_peak_bytes": 3457024
+   },
+   "process_peak_rss_bytes": 2263269376,
+   "source": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/current",
+   "state_id": "urn:docspec:generation-admission:v1:5459848727d6d31d6cdb15e6b2aea301b34b05290e7f1ef04d62a2617d17d57d"
+  },
+  "fr-g3": {
+   "admission_seconds": 3.0418433750164695,
+   "base": "urn:docspec:generation-admission:v1:5459848727d6d31d6cdb15e6b2aea301b34b05290e7f1ef04d62a2617d17d57d",
+   "bytes_written": {
+    "blobs": 4499,
+    "layer_roots": 4037,
+    "membership": {
+     "all_bytes": 27902,
+     "data_bytes": 3296,
+     "data_files_total": 5
+    },
+    "occurrences": {
+     "all_bytes": 12058,
+     "data_bytes": 1454,
+     "data_files_total": 3
+    },
+    "records_total": 324528244,
+    "table": {
+     "all_bytes": 324471111,
+     "data_bytes": 324454276,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 1,
+    "adopted": 1009005,
+    "carried": 1009003,
+    "changed": 2,
+    "generated": 1,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009006
+   },
+   "dataset": "federal-register",
+   "environment": {
+    "at": "2026-09-25T21:21:45",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     6.96533203125,
+     6.779296875,
+     6.60546875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 0,
+     "links": 9,
+     "records": 8,
+     "retention": 8,
+     "units": 3
+    },
+    "bytes": 172032,
+    "bytes_added": 28672
+   },
+   "member": {
+    "byteSize": 324454276,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 1009006,
+    "sha256": "sha256:77d35cddc1e4a56f0859bf196826d9c2350c7dd5a4df67066a69faf2c4365c0b"
+   },
+   "pin": {
+    "artifactDigest": "sha256:0082655f48cf74febf80b178761beb681b30402dcc5eb1f7c2f6ce7182596d79",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:0f94bf24e10385f911142fdd7651487554f5bd7a2495e0dc70431abf6c664288"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:41Z load { 7.05 6.79 6.61 }",
+     "end 2026-09-26T01:21:46Z load { 6.97 6.78 6.61 } exit 0 peak_tree_rss_kib 5568"
+    ],
+    "process_wall_seconds": 3.69,
+    "time_l_max_rss_bytes": 2241527808,
+    "watch_sampled_peak_bytes": 5701632
+   },
+   "process_peak_rss_bytes": 2241527808,
+   "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/fr-g3",
+   "state_id": "urn:docspec:generation-admission:v1:ef0ff1fbd5f16526f34b480173fb29799d16279b9f7cc197b8bca74f3e70defc"
+  },
+  "prior": {
+   "admission_seconds": 14.7511787499825,
+   "base": null,
+   "bytes_written": {
+    "blobs": 7491,
+    "layer_roots": 4037,
+    "membership": {
+     "all_bytes": 46197560,
+     "data_bytes": 46188200,
+     "data_files_total": 1
+    },
+    "occurrences": {
+     "all_bytes": 73210953,
+     "data_bytes": 73201804,
+     "data_files_total": 1
+    },
+    "records_total": 275367311,
+    "table": {
+     "all_bytes": 155941669,
+     "data_bytes": 155924847,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 1008903,
+    "adopted": 0,
+    "carried": 0,
+    "changed": 0,
+    "generated": 1008903,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1008903
+   },
+   "dataset": "federal-register",
+   "environment": {
+    "at": "2026-09-25T21:21:31",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     7.6044921875,
+     6.88818359375,
+     6.640625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 1,
+     "links": 9,
+     "records": 9,
+     "retention": 9,
+     "units": 3
+    },
+    "bytes": 110592,
+    "bytes_added": 110592
+   },
+   "member": {
+    "byteSize": 155924847,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 1008903,
+    "sha256": "sha256:18afcd6eca3e6c5df44ea60b3b86f0ffef320cf645cdeb28c8f996b32dff32ce"
+   },
+   "pin": {
+    "artifactDigest": "sha256:6c2158592129788de7fb5601251e9386b150934496efff4a7155a1ef95df5aed",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:0c9b08c26004270418bf7ab5fec5f7ec99042561fe45e58a667fa68327f424f5"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:16Z load { 7.51 6.83 6.62 }",
+     "end 2026-09-26T01:21:36Z load { 7.32 6.84 6.62 } exit 0 peak_tree_rss_kib 1018496"
+    ],
+    "process_wall_seconds": 15.64,
+    "time_l_max_rss_bytes": 1020084224,
+    "watch_sampled_peak_bytes": 1042939904
+   },
+   "process_peak_rss_bytes": 1020035072,
+   "source": "/Users/mikewolfd/Work/corpora/fork-fr-generation-2026-09-23/prior",
+   "state_id": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04"
+  },
+  "typed-a": {
+   "admission_seconds": 0.4540145419887267,
+   "base": null,
+   "bytes_written": {
+    "blobs": 3607,
+    "layer_roots": 3602,
+    "membership": {
+     "all_bytes": 106970,
+     "data_bytes": 97614,
+     "data_files_total": 1
+    },
+    "occurrences": {
+     "all_bytes": 151294,
+     "data_bytes": 142156,
+     "data_files_total": 1
+    },
+    "records_total": 370540,
+    "table": {
+     "all_bytes": 95598,
+     "data_bytes": 82617,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 2000,
+    "adopted": 0,
+    "carried": 0,
+    "changed": 0,
+    "generated": 2000,
+    "reminted": false,
+    "removed": 0,
+    "rows": 2000
+   },
+   "dataset": "typed",
+   "environment": {
+    "at": "2026-09-25T21:21:47",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     6.96533203125,
+     6.779296875,
+     6.60546875
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 1,
+     "links": 9,
+     "records": 9,
+     "retention": 9,
+     "units": 3
+    },
+    "bytes": 196608,
+    "bytes_added": 24576
+   },
+   "member": {
+    "byteSize": 82617,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 2000,
+    "sha256": "sha256:751c4ffadb0234eb5d3d125b805bf5975ba831e7cb6cdd2bceed28519c037078"
+   },
+   "pin": {
+    "artifactDigest": "sha256:861773f040f92bb9fdfddbb574eef085f9fa52a29c494fae4b2b897aae500b31",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:ddbbc5ecb1a1713b3dc34bbc4efa89ee66acbb3e56445e2a6599ae627d9e92ce"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:46Z load { 6.97 6.78 6.61 }",
+     "end 2026-09-26T01:21:51Z load { 6.89 6.77 6.60 } exit 0 peak_tree_rss_kib 3376"
+    ],
+    "process_wall_seconds": 1.04,
+    "time_l_max_rss_bytes": 298565632,
+    "watch_sampled_peak_bytes": 3457024
+   },
+   "process_peak_rss_bytes": 298237952,
+   "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-a",
+   "state_id": "urn:docspec:generation-admission:v1:a57c95b8ced1504074cbd95dd8dab42b720c580f62d0948530a2a946d816c4a6"
+  },
+  "typed-a2": {
+   "admission_seconds": 0.5697641670121811,
+   "base": "urn:docspec:generation-admission:v1:b7a4f3ae6433c628f5b617753e3b0c259dbf5b6ee0a3c73b58926603d4fc8c76",
+   "bytes_written": {
+    "blobs": 3607,
+    "layer_roots": 3602,
+    "membership": {
+     "all_bytes": 26572,
+     "data_bytes": 3208,
+     "data_files_total": 4
+    },
+    "occurrences": {
+     "all_bytes": 12034,
+     "data_bytes": 1446,
+     "data_files_total": 3
+    },
+    "records_total": 151050,
+    "table": {
+     "all_bytes": 95701,
+     "data_bytes": 82714,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 1,
+    "adopted": 2000,
+    "carried": 1999,
+    "changed": 1,
+    "generated": 1,
+    "reminted": false,
+    "removed": 0,
+    "rows": 2001
+   },
+   "dataset": "typed",
+   "environment": {
+    "at": "2026-09-25T21:21:58",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     6.416015625,
+     6.669921875,
+     6.568359375
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 0,
+     "links": 9,
+     "records": 8,
+     "retention": 8,
+     "units": 3
+    },
+    "bytes": 245760,
+    "bytes_added": 24576
+   },
+   "member": {
+    "byteSize": 82714,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 2001,
+    "sha256": "sha256:d20e5ab7eccdc0a0f71923ccdb276c0c842b9db92e3ce4314113a27cb85e0139"
+   },
+   "pin": {
+    "artifactDigest": "sha256:1f551540b66eeeb6afe62c7ae1b29418bda8b63cc7d5809590f0b45fba4ad707",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:29e616904b5b36bafd56920624da47af1327a209a9c92ec3eab36c3b72144e30"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:57Z load { 6.42 6.67 6.57 }",
+     "end 2026-09-26T01:22:02Z load { 6.38 6.66 6.56 } exit 0 peak_tree_rss_kib 3376"
+    ],
+    "process_wall_seconds": 1.34,
+    "time_l_max_rss_bytes": 297779200,
+    "watch_sampled_peak_bytes": 3457024
+   },
+   "process_peak_rss_bytes": 297467904,
+   "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-a2",
+   "state_id": "urn:docspec:generation-admission:v1:e168fa518f5acc745cbc18454c8b18ff5fbc67be4f75b3c75a9b575e28466881"
+  },
+  "typed-b": {
+   "admission_seconds": 0.5304103330126964,
+   "base": "urn:docspec:generation-admission:v1:a57c95b8ced1504074cbd95dd8dab42b720c580f62d0948530a2a946d816c4a6",
+   "bytes_written": {
+    "blobs": 3607,
+    "layer_roots": 3602,
+    "membership": {
+     "all_bytes": 16269,
+     "data_bytes": 1606,
+     "data_files_total": 2
+    },
+    "occurrences": {
+     "all_bytes": 10767,
+     "data_bytes": 1461,
+     "data_files_total": 2
+    },
+    "records_total": 139379,
+    "table": {
+     "all_bytes": 95624,
+     "data_bytes": 82638,
+     "data_files_total": 1
+    }
+   },
+   "counts": {
+    "added": 0,
+    "adopted": 1999,
+    "carried": 1999,
+    "changed": 1,
+    "generated": 1,
+    "reminted": false,
+    "removed": 0,
+    "rows": 2000
+   },
+   "dataset": "typed",
+   "environment": {
+    "at": "2026-09-25T21:21:53",
+    "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+    "duckdb": "1.5.5",
+    "load": [
+     6.8876953125,
+     6.76611328125,
+     6.6015625
+    ],
+    "pyarrow": "25.0.1",
+    "python": "3.12.9"
+   },
+   "ledger": {
+    "added": {
+     "heads": 0,
+     "links": 9,
+     "records": 8,
+     "retention": 8,
+     "units": 3
+    },
+    "bytes": 221184,
+    "bytes_added": 24576
+   },
+   "member": {
+    "byteSize": 82638,
+    "objectKey": "federal_register.parquet",
+    "recordCount": 2000,
+    "sha256": "sha256:4730ad75a26adf535a0466e97eeb1dc0e741c0f53eb197b191da69a75e9afd88"
+   },
+   "pin": {
+    "artifactDigest": "sha256:62cbb9c4a0bd033104b776ad4202b8395ec8f2a4edccf6ee75b1c6768f6ddf8c",
+    "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:ddbbc5ecb1a1713b3dc34bbc4efa89ee66acbb3e56445e2a6599ae627d9e92ce"
+   },
+   "process": {
+    "load": [
+     "start 2026-09-26T01:21:51Z load { 6.89 6.77 6.60 }",
+     "end 2026-09-26T01:21:57Z load { 6.42 6.67 6.57 } exit 0 peak_tree_rss_kib 5568"
+    ],
+    "process_wall_seconds": 1.19,
+    "time_l_max_rss_bytes": 305577984,
+    "watch_sampled_peak_bytes": 5701632
+   },
+   "process_peak_rss_bytes": 305233920,
+   "source": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/synthetic/typed-b",
+   "state_id": "urn:docspec:generation-admission:v1:b7a4f3ae6433c628f5b617753e3b0c259dbf5b6ee0a3c73b58926603d4fc8c76"
+  }
+ },
+ "baselines": {
+  "like_for_like_derive_estimate_seconds": 540,
+  "row_copy_reimport": {
+   "note": "different content: 7.6 GB of catalog-item JSON",
+   "peak_gib": 8.8,
+   "seconds": 1009
+  },
+  "spike_first_admission": {
+   "peak_gib": 1.09,
+   "seconds": 12.1
+  }
+ },
+ "claim": "C27 admits fork-host federal-register generations by reference; changes equal a direct comparison; A->B->A resolves to the first occurrence",
+ "comparison": {
+  "catalogue": {
+   "absent_from_generation": [
+    "topics_json"
+   ],
+   "compared_keys": 1007639,
+   "exception_columns": [
+    "cfr_references_json"
+   ],
+   "exception_kinds": {
+    "type-only": [
+     "01-10511@2001-04-27",
+     "01-33@2001-01-03",
+     "02-12706@2002-05-21",
+     "02-13808@2002-06-05",
+     "03-4258@2003-05-13",
+     "05-2471@2005-02-11",
+     "05-2578@2005-02-11",
+     "05-2594@2005-02-11",
+     "05-2609@2005-02-11",
+     "05-2665@2005-02-11",
+     "05-2678@2005-02-11",
+     "05-2685@2005-02-11",
+     "05-2690@2005-02-11",
+     "05-2696@2005-02-11",
+     "05-2703@2005-02-11",
+     "05-2704@2005-02-11",
+     "05-2705@2005-02-11",
+     "05-2711@2005-02-11",
+     "05-2715@2005-02-11",
+     "05-2720@2005-02-11",
+     "05-2725@2005-02-11",
+     "2017-00800@2017-01-18",
+     "2017-27296@2017-12-26",
+     "2017-27510@2017-12-26",
+     "2017-27525@2017-12-26",
+     "2017-27622@2017-12-26",
+     "2017-27625@2017-12-26",
+     "2017-27628@2017-12-26",
+     "2017-27650@2017-12-26",
+     "2017-27671@2017-12-26",
+     "2017-27676@2017-12-26",
+     "2017-27677@2017-12-26",
+     "2017-27679@2017-12-26",
+     "2017-27680@2017-12-26",
+     "2017-27718@2017-12-26",
+     "2017-27744@2017-12-26",
+     "2017-27759@2017-12-26",
+     "2017-27774@2017-12-26",
+     "2017-27784@2017-12-26",
+     "2017-27789@2017-12-26",
+     "2017-27794@2017-12-26",
+     "2017-27795@2017-12-26",
+     "2017-27796@2017-12-26",
+     "2017-27797@2017-12-26",
+     "2017-27799@2017-12-26",
+     "2017-27801@2017-12-26",
+     "2017-27802@2017-12-26",
+     "2017-27805@2017-12-26",
+     "2017-27806@2017-12-26",
+     "2017-27815@2017-12-26",
+     "2017-27898@2017-12-26",
+     "2017-27920@2017-12-26",
+     "2019-19226@2019-09-06"
+    ],
+    "value": {
+     "2017-27683@2017-12-26": {
+      "cfr_references_json": [
+       "[{\"chapter\":\"I\",\"citation_url\":null,\"part\":null,\"title\":11}]",
+       "[{\"chapter\":0,\"citation_url\":null,\"part\":null,\"title\":11}]"
+      ]
+     }
+    }
+   },
+   "exceptions_by_key": {
+    "01-10511@2001-04-27": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"413\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"433\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"438\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"463\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"464\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"467\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"471\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":413,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":433,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":438,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":463,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":464,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":467,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":471,\"title\":40}]"
+     ]
+    },
+    "01-33@2001-01-03": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"413\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"433\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"438\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"463\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"464\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"467\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"471\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":413,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":433,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":438,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":463,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":464,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":467,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":471,\"title\":40}]"
+     ]
+    },
+    "02-12706@2002-05-21": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"438\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":438,\"title\":40}]"
+     ]
+    },
+    "02-13808@2002-06-05": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"413\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"433\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"438\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"463\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"464\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"467\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"471\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":413,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":433,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":438,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":463,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":464,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":467,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":471,\"title\":40}]"
+     ]
+    },
+    "03-4258@2003-05-13": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"438\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":438,\"title\":40}]"
+     ]
+    },
+    "05-2471@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"571\",\"title\":49}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":571,\"title\":49}]"
+     ]
+    },
+    "05-2578@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"39\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":39,\"title\":14}]"
+     ]
+    },
+    "05-2594@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"95\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":95,\"title\":14}]"
+     ]
+    },
+    "05-2609@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"39\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":39,\"title\":14}]"
+     ]
+    },
+    "05-2665@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"2\",\"title\":10}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":2,\"title\":10}]"
+     ]
+    },
+    "05-2678@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"770\",\"title\":7}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":770,\"title\":7}]"
+     ]
+    },
+    "05-2685@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"73\",\"title\":47}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":73,\"title\":47}]"
+     ]
+    },
+    "05-2690@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"648\",\"title\":50}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":648,\"title\":50}]"
+     ]
+    },
+    "05-2696@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"39\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":39,\"title\":14}]"
+     ]
+    },
+    "05-2703@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"73\",\"title\":47}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":73,\"title\":47}]"
+     ]
+    },
+    "05-2704@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"73\",\"title\":47}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":73,\"title\":47}]"
+     ]
+    },
+    "05-2705@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"73\",\"title\":47}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":73,\"title\":47}]"
+     ]
+    },
+    "05-2711@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"300\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":300,\"title\":40}]"
+     ]
+    },
+    "05-2715@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"180\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":180,\"title\":40}]"
+     ]
+    },
+    "05-2720@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"202\",\"title\":37}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":202,\"title\":37}]"
+     ]
+    },
+    "05-2725@2005-02-11": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"1\",\"title\":26}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":1,\"title\":26}]"
+     ]
+    },
+    "2017-00800@2017-01-18": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"330\",\"title\":5},{\"chapter\":null,\"citation_url\":null,\"part\":\"332\",\"title\":5},{\"chapter\":null,\"citation_url\":null,\"part\":\"337\",\"title\":5}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":330,\"title\":5},{\"chapter\":null,\"citation_url\":null,\"part\":332,\"title\":5},{\"chapter\":null,\"citation_url\":null,\"part\":337,\"title\":5}]"
+     ]
+    },
+    "2017-27296@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"52\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":52,\"title\":40}]"
+     ]
+    },
+    "2017-27510@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"35\",\"title\":28},{\"chapter\":null,\"citation_url\":null,\"part\":\"36\",\"title\":28}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":35,\"title\":28},{\"chapter\":null,\"citation_url\":null,\"part\":36,\"title\":28}]"
+     ]
+    },
+    "2017-27525@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"260\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"261\",\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":\"262\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":260,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":261,\"title\":40},{\"chapter\":null,\"citation_url\":null,\"part\":262,\"title\":40}]"
+     ]
+    },
+    "2017-27622@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"60\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":60,\"title\":40}]"
+     ]
+    },
+    "2017-27625@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"52\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":52,\"title\":40}]"
+     ]
+    },
+    "2017-27628@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"80\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":80,\"title\":40}]"
+     ]
+    },
+    "2017-27650@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"803\",\"title\":21}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":803,\"title\":21}]"
+     ]
+    },
+    "2017-27671@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"201\",\"title\":19}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":201,\"title\":19}]"
+     ]
+    },
+    "2017-27676@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"97\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":97,\"title\":14}]"
+     ]
+    },
+    "2017-27677@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"97\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":97,\"title\":14}]"
+     ]
+    },
+    "2017-27679@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"97\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":97,\"title\":14}]"
+     ]
+    },
+    "2017-27680@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"97\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":97,\"title\":14}]"
+     ]
+    },
+    "2017-27683@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":\"I\",\"citation_url\":null,\"part\":null,\"title\":11}]",
+      "[{\"chapter\":0,\"citation_url\":null,\"part\":null,\"title\":11}]"
+     ]
+    },
+    "2017-27718@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"117\",\"title\":33}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":117,\"title\":33}]"
+     ]
+    },
+    "2017-27744@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"430\",\"title\":10}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":430,\"title\":10}]"
+     ]
+    },
+    "2017-27759@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"706\",\"title\":32}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":706,\"title\":32}]"
+     ]
+    },
+    "2017-27774@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"33\",\"title\":14}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":33,\"title\":14}]"
+     ]
+    },
+    "2017-27784@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"868\",\"title\":21}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":868,\"title\":21}]"
+     ]
+    },
+    "2017-27789@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"573\",\"title\":21}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":573,\"title\":21}]"
+     ]
+    },
+    "2017-27794@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"300\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":300,\"title\":40}]"
+     ]
+    },
+    "2017-27795@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"62\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":62,\"title\":40}]"
+     ]
+    },
+    "2017-27796@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"62\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":62,\"title\":40}]"
+     ]
+    },
+    "2017-27797@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"63\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":63,\"title\":40}]"
+     ]
+    },
+    "2017-27799@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"82\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":82,\"title\":40}]"
+     ]
+    },
+    "2017-27801@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"300\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":300,\"title\":40}]"
+     ]
+    },
+    "2017-27802@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"300\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":300,\"title\":40}]"
+     ]
+    },
+    "2017-27805@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"180\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":180,\"title\":40}]"
+     ]
+    },
+    "2017-27806@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"180\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":180,\"title\":40}]"
+     ]
+    },
+    "2017-27815@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"372\",\"title\":40}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":372,\"title\":40}]"
+     ]
+    },
+    "2017-27898@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"478\",\"title\":27},{\"chapter\":null,\"citation_url\":null,\"part\":\"479\",\"title\":27}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":478,\"title\":27},{\"chapter\":null,\"citation_url\":null,\"part\":479,\"title\":27}]"
+     ]
+    },
+    "2017-27920@2017-12-26": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"425\",\"title\":42}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":425,\"title\":42}]"
+     ]
+    },
+    "2019-19226@2019-09-06": {
+     "cfr_references_json": [
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":\"17\",\"title\":50}]",
+      "[{\"chapter\":null,\"citation_url\":null,\"part\":17,\"title\":50}]"
+     ]
+    }
+   },
+   "extra_in_generation": [
+    "rin"
+   ],
+   "generation_except_reference": 54,
+   "generation_only_after_catalogue_supply_2026_09_02": true,
+   "generation_only_first_date": "2026-09-03",
+   "generation_only_keys": 1366,
+   "generation_only_listed": [
+    "2026-17988@2026-09-03",
+    "2026-17989@2026-09-03",
+    "2026-17990@2026-09-03",
+    "2026-17992@2026-09-03",
+    "2026-17993@2026-09-03",
+    "2026-17994@2026-09-03",
+    "2026-17995@2026-09-03",
+    "2026-17996@2026-09-03",
+    "2026-17997@2026-09-03",
+    "2026-17998@2026-09-03",
+    "2026-17999@2026-09-03",
+    "2026-18000@2026-09-03",
+    "2026-18001@2026-09-03",
+    "2026-18002@2026-09-03",
+    "2026-18003@2026-09-03",
+    "2026-18004@2026-09-03",
+    "2026-18005@2026-09-03",
+    "2026-18006@2026-09-03",
+    "2026-18007@2026-09-03",
+    "2026-18008@2026-09-03",
+    "2026-18009@2026-09-03",
+    "2026-18010@2026-09-03",
+    "2026-18011@2026-09-03",
+    "2026-18012@2026-09-03",
+    "2026-18013@2026-09-03",
+    "2026-18014@2026-09-03",
+    "2026-18015@2026-09-03",
+    "2026-18016@2026-09-03",
+    "2026-18017@2026-09-03",
+    "2026-18018@2026-09-03",
+    "2026-18019@2026-09-03",
+    "2026-18021@2026-09-03",
+    "2026-18022@2026-09-03",
+    "2026-18023@2026-09-03",
+    "2026-18024@2026-09-03",
+    "2026-18025@2026-09-03",
+    "2026-18026@2026-09-03",
+    "2026-18027@2026-09-03",
+    "2026-18028@2026-09-03",
+    "2026-18029@2026-09-03",
+    "2026-18030@2026-09-03",
+    "2026-18031@2026-09-03",
+    "2026-18032@2026-09-03",
+    "2026-18033@2026-09-03",
+    "2026-18034@2026-09-03",
+    "2026-18035@2026-09-03",
+    "2026-18036@2026-09-03",
+    "2026-18037@2026-09-03",
+    "2026-18038@2026-09-03",
+    "2026-18039@2026-09-03",
+    "2026-18040@2026-09-03",
+    "2026-18043@2026-09-03",
+    "2026-18044@2026-09-03",
+    "2026-18045@2026-09-03",
+    "2026-18047@2026-09-03",
+    "2026-18048@2026-09-03",
+    "2026-18049@2026-09-03",
+    "2026-18050@2026-09-03",
+    "2026-18051@2026-09-03",
+    "2026-18052@2026-09-03",
+    "2026-18053@2026-09-03",
+    "2026-18054@2026-09-03",
+    "2026-18055@2026-09-03",
+    "2026-18056@2026-09-03",
+    "2026-18057@2026-09-03",
+    "2026-18058@2026-09-03",
+    "2026-18059@2026-09-03",
+    "2026-18060@2026-09-03",
+    "2026-18061@2026-09-03",
+    "2026-18062@2026-09-03",
+    "2026-18063@2026-09-03",
+    "2026-18064@2026-09-03",
+    "2026-18065@2026-09-03",
+    "2026-18066@2026-09-03",
+    "2026-18067@2026-09-03",
+    "2026-18068@2026-09-03",
+    "2026-18069@2026-09-03",
+    "2026-18070@2026-09-03",
+    "2026-18071@2026-09-03",
+    "2026-18072@2026-09-03",
+    "2026-18073@2026-09-03",
+    "2026-18074@2026-09-03",
+    "2026-18075@2026-09-03",
+    "2026-18076@2026-09-03",
+    "2026-18077@2026-09-03",
+    "2026-18078@2026-09-03",
+    "2026-18079@2026-09-03",
+    "2026-18080@2026-09-03",
+    "2026-18081@2026-09-03",
+    "2026-18082@2026-09-03",
+    "2026-18083@2026-09-03",
+    "2026-18084@2026-09-03",
+    "2026-18085@2026-09-03",
+    "2026-18086@2026-09-03",
+    "2026-18087@2026-09-03",
+    "2026-18088@2026-09-03",
+    "2026-18089@2026-09-03",
+    "2026-18090@2026-09-03",
+    "2026-18091@2026-09-03",
+    "2026-18092@2026-09-03",
+    "2026-18093@2026-09-03",
+    "2026-18094@2026-09-03",
+    "2026-18095@2026-09-03",
+    "2026-18096@2026-09-03",
+    "2026-18103@2026-09-03",
+    "2026-18104@2026-09-03",
+    "2026-18107@2026-09-03",
+    "2026-18141@2026-09-03",
+    "2026-18097@2026-09-04",
+    "2026-18098@2026-09-04",
+    "2026-18099@2026-09-04",
+    "2026-18100@2026-09-04",
+    "2026-18101@2026-09-04",
+    "2026-18102@2026-09-04",
+    "2026-18105@2026-09-04",
+    "2026-18106@2026-09-04",
+    "2026-18108@2026-09-04",
+    "2026-18109@2026-09-04",
+    "2026-18110@2026-09-04",
+    "2026-18111@2026-09-04",
+    "2026-18112@2026-09-04",
+    "2026-18113@2026-09-04",
+    "2026-18114@2026-09-04",
+    "2026-18115@2026-09-04",
+    "2026-18116@2026-09-04",
+    "2026-18117@2026-09-04",
+    "2026-18118@2026-09-04",
+    "2026-18119@2026-09-04",
+    "2026-18120@2026-09-04",
+    "2026-18121@2026-09-04",
+    "2026-18122@2026-09-04",
+    "2026-18123@2026-09-04",
+    "2026-18124@2026-09-04",
+    "2026-18125@2026-09-04",
+    "2026-18126@2026-09-04",
+    "2026-18127@2026-09-04",
+    "2026-18128@2026-09-04",
+    "2026-18129@2026-09-04",
+    "2026-18130@2026-09-04",
+    "2026-18132@2026-09-04",
+    "2026-18133@2026-09-04",
+    "2026-18134@2026-09-04",
+    "2026-18135@2026-09-04",
+    "2026-18136@2026-09-04",
+    "2026-18137@2026-09-04",
+    "2026-18139@2026-09-04",
+    "2026-18140@2026-09-04",
+    "2026-18142@2026-09-04",
+    "2026-18143@2026-09-04",
+    "2026-18144@2026-09-04",
+    "2026-18145@2026-09-04",
+    "2026-18146@2026-09-04",
+    "2026-18147@2026-09-04",
+    "2026-18148@2026-09-04",
+    "2026-18149@2026-09-04",
+    "2026-18150@2026-09-04",
+    "2026-18151@2026-09-04",
+    "2026-18152@2026-09-04",
+    "2026-18155@2026-09-04",
+    "2026-18158@2026-09-04",
+    "2026-18159@2026-09-04",
+    "2026-18162@2026-09-04",
+    "2026-18163@2026-09-04",
+    "2026-18164@2026-09-04",
+    "2026-18165@2026-09-04",
+    "2026-18166@2026-09-04",
+    "2026-18167@2026-09-04",
+    "2026-18168@2026-09-04",
+    "2026-18169@2026-09-04",
+    "2026-18170@2026-09-04",
+    "2026-18171@2026-09-04",
+    "2026-18172@2026-09-04",
+    "2026-18173@2026-09-04",
+    "2026-18174@2026-09-04",
+    "2026-18175@2026-09-04",
+    "2026-18176@2026-09-04",
+    "2026-18177@2026-09-04",
+    "2026-18178@2026-09-04",
+    "2026-18179@2026-09-04",
+    "2026-18180@2026-09-04",
+    "2026-18181@2026-09-04",
+    "2026-18182@2026-09-04",
+    "2026-18183@2026-09-04",
+    "2026-18184@2026-09-04",
+    "2026-18185@2026-09-04",
+    "2026-18186@2026-09-04",
+    "2026-18187@2026-09-04",
+    "2026-18188@2026-09-04",
+    "2026-18190@2026-09-04",
+    "2026-18192@2026-09-04",
+    "2026-18194@2026-09-04",
+    "2026-18189@2026-09-08",
+    "2026-18191@2026-09-08",
+    "2026-18193@2026-09-08",
+    "2026-18195@2026-09-08",
+    "2026-18196@2026-09-08",
+    "2026-18197@2026-09-08",
+    "2026-18198@2026-09-08",
+    "2026-18199@2026-09-08",
+    "2026-18200@2026-09-08",
+    "2026-18201@2026-09-08",
+    "2026-18202@2026-09-08",
+    "2026-18203@2026-09-08",
+    "2026-18204@2026-09-08",
+    "2026-18205@2026-09-08",
+    "2026-18206@2026-09-08",
+    "2026-18207@2026-09-08",
+    "2026-18208@2026-09-08",
+    "2026-18209@2026-09-08",
+    "2026-18210@2026-09-08",
+    "2026-18211@2026-09-08",
+    "2026-18212@2026-09-08",
+    "2026-18215@2026-09-08",
+    "2026-18216@2026-09-08",
+    "2026-18217@2026-09-08",
+    "2026-18218@2026-09-08",
+    "2026-18219@2026-09-08",
+    "2026-18220@2026-09-08",
+    "2026-18221@2026-09-08",
+    "2026-18222@2026-09-08",
+    "2026-18224@2026-09-08",
+    "2026-18225@2026-09-08",
+    "2026-18226@2026-09-08",
+    "2026-18227@2026-09-08",
+    "2026-18228@2026-09-08",
+    "2026-18229@2026-09-08",
+    "2026-18230@2026-09-08",
+    "2026-18231@2026-09-08",
+    "2026-18232@2026-09-08",
+    "2026-18234@2026-09-08",
+    "2026-18235@2026-09-08",
+    "2026-18236@2026-09-08",
+    "2026-18237@2026-09-08",
+    "2026-18238@2026-09-08",
+    "2026-18239@2026-09-08",
+    "2026-18240@2026-09-08",
+    "2026-18241@2026-09-08",
+    "2026-18242@2026-09-08",
+    "2026-18243@2026-09-08",
+    "2026-18244@2026-09-08",
+    "2026-18245@2026-09-08",
+    "2026-18246@2026-09-08",
+    "2026-18247@2026-09-08",
+    "2026-18248@2026-09-08",
+    "2026-18249@2026-09-08",
+    "2026-18250@2026-09-08",
+    "2026-18251@2026-09-08",
+    "2026-18252@2026-09-08",
+    "2026-18253@2026-09-08",
+    "2026-18254@2026-09-08",
+    "2026-18255@2026-09-08",
+    "2026-18256@2026-09-08",
+    "2026-18257@2026-09-08",
+    "2026-18258@2026-09-08",
+    "2026-18259@2026-09-08",
+    "2026-18260@2026-09-08",
+    "2026-18261@2026-09-08",
+    "2026-18262@2026-09-08",
+    "2026-18279@2026-09-08",
+    "2026-18282@2026-09-08",
+    "2026-18263@2026-09-09",
+    "2026-18264@2026-09-09",
+    "2026-18265@2026-09-09",
+    "2026-18266@2026-09-09",
+    "2026-18267@2026-09-09",
+    "2026-18268@2026-09-09",
+    "2026-18269@2026-09-09",
+    "2026-18270@2026-09-09",
+    "2026-18271@2026-09-09",
+    "2026-18272@2026-09-09",
+    "2026-18273@2026-09-09",
+    "2026-18274@2026-09-09",
+    "2026-18275@2026-09-09",
+    "2026-18276@2026-09-09",
+    "2026-18277@2026-09-09",
+    "2026-18278@2026-09-09",
+    "2026-18280@2026-09-09",
+    "2026-18281@2026-09-09",
+    "2026-18283@2026-09-09",
+    "2026-18284@2026-09-09",
+    "2026-18285@2026-09-09",
+    "2026-18286@2026-09-09",
+    "2026-18287@2026-09-09",
+    "2026-18288@2026-09-09",
+    "2026-18289@2026-09-09",
+    "2026-18290@2026-09-09",
+    "2026-18291@2026-09-09",
+    "2026-18292@2026-09-09",
+    "2026-18293@2026-09-09",
+    "2026-18294@2026-09-09",
+    "2026-18295@2026-09-09",
+    "2026-18296@2026-09-09",
+    "2026-18297@2026-09-09",
+    "2026-18298@2026-09-09",
+    "2026-18299@2026-09-09",
+    "2026-18300@2026-09-09",
+    "2026-18301@2026-09-09",
+    "2026-18302@2026-09-09",
+    "2026-18303@2026-09-09",
+    "2026-18304@2026-09-09",
+    "2026-18305@2026-09-09",
+    "2026-18306@2026-09-09",
+    "2026-18307@2026-09-09",
+    "2026-18308@2026-09-09",
+    "2026-18310@2026-09-09",
+    "2026-18311@2026-09-09",
+    "2026-18312@2026-09-09",
+    "2026-18313@2026-09-09",
+    "2026-18315@2026-09-09",
+    "2026-18316@2026-09-09",
+    "2026-18317@2026-09-09",
+    "2026-18318@2026-09-09",
+    "2026-18319@2026-09-09",
+    "2026-18320@2026-09-09",
+    "2026-18321@2026-09-09",
+    "2026-18322@2026-09-09",
+    "2026-18323@2026-09-09",
+    "2026-18324@2026-09-09",
+    "2026-18325@2026-09-09",
+    "2026-18326@2026-09-09",
+    "2026-18327@2026-09-09",
+    "2026-18328@2026-09-09",
+    "2026-18329@2026-09-09",
+    "2026-18330@2026-09-09",
+    "2026-18331@2026-09-09",
+    "2026-18332@2026-09-09",
+    "2026-18333@2026-09-09",
+    "2026-18334@2026-09-09",
+    "2026-18335@2026-09-09",
+    "2026-18336@2026-09-09",
+    "2026-18337@2026-09-09",
+    "2026-18338@2026-09-09",
+    "2026-18339@2026-09-09",
+    "2026-18340@2026-09-09",
+    "2026-18341@2026-09-09",
+    "2026-18342@2026-09-09",
+    "2026-18343@2026-09-09",
+    "2026-18344@2026-09-09",
+    "2026-18345@2026-09-09",
+    "2026-18346@2026-09-09",
+    "2026-18347@2026-09-09",
+    "2026-18348@2026-09-09",
+    "2026-18349@2026-09-09",
+    "2026-18351@2026-09-09",
+    "2026-18352@2026-09-09",
+    "2026-18353@2026-09-09",
+    "2026-18354@2026-09-09",
+    "2026-18355@2026-09-09",
+    "2026-18356@2026-09-09",
+    "2026-18357@2026-09-09",
+    "2026-18358@2026-09-09",
+    "2026-18359@2026-09-09",
+    "2026-18360@2026-09-09",
+    "2026-18361@2026-09-09",
+    "2026-18362@2026-09-09",
+    "2026-18363@2026-09-09",
+    "2026-18364@2026-09-09",
+    "2026-18365@2026-09-09",
+    "2026-18366@2026-09-09",
+    "2026-18367@2026-09-09",
+    "2026-18368@2026-09-09",
+    "2026-18369@2026-09-09",
+    "2026-18370@2026-09-09",
+    "2026-18371@2026-09-09",
+    "2026-18372@2026-09-09",
+    "2026-18373@2026-09-09",
+    "2026-18374@2026-09-09",
+    "2026-18375@2026-09-09",
+    "2026-18376@2026-09-09",
+    "2026-18378@2026-09-09",
+    "2026-18379@2026-09-09",
+    "2026-18380@2026-09-09",
+    "2026-18381@2026-09-09",
+    "2026-18382@2026-09-09",
+    "2026-18383@2026-09-09",
+    "2026-18384@2026-09-09",
+    "2026-18385@2026-09-09",
+    "2026-18386@2026-09-09",
+    "2026-18387@2026-09-09",
+    "2026-18388@2026-09-09",
+    "2026-18389@2026-09-09",
+    "2026-18390@2026-09-09",
+    "2026-18391@2026-09-09",
+    "2026-18392@2026-09-09",
+    "2026-18393@2026-09-09",
+    "2026-18394@2026-09-09",
+    "2026-18396@2026-09-09",
+    "2026-18395@2026-09-10",
+    "2026-18397@2026-09-10",
+    "2026-18398@2026-09-10",
+    "2026-18399@2026-09-10",
+    "2026-18400@2026-09-10",
+    "2026-18401@2026-09-10",
+    "2026-18402@2026-09-10",
+    "2026-18403@2026-09-10",
+    "2026-18404@2026-09-10",
+    "2026-18405@2026-09-10",
+    "2026-18406@2026-09-10",
+    "2026-18408@2026-09-10",
+    "2026-18409@2026-09-10",
+    "2026-18410@2026-09-10",
+    "2026-18411@2026-09-10",
+    "2026-18412@2026-09-10",
+    "2026-18413@2026-09-10",
+    "2026-18414@2026-09-10",
+    "2026-18415@2026-09-10",
+    "2026-18418@2026-09-10",
+    "2026-18419@2026-09-10",
+    "2026-18420@2026-09-10",
+    "2026-18421@2026-09-10",
+    "2026-18422@2026-09-10",
+    "2026-18423@2026-09-10",
+    "2026-18424@2026-09-10",
+    "2026-18425@2026-09-10",
+    "2026-18426@2026-09-10",
+    "2026-18427@2026-09-10",
+    "2026-18428@2026-09-10",
+    "2026-18429@2026-09-10",
+    "2026-18430@2026-09-10",
+    "2026-18431@2026-09-10",
+    "2026-18432@2026-09-10",
+    "2026-18433@2026-09-10",
+    "2026-18434@2026-09-10",
+    "2026-18435@2026-09-10",
+    "2026-18436@2026-09-10",
+    "2026-18437@2026-09-10",
+    "2026-18438@2026-09-10",
+    "2026-18439@2026-09-10",
+    "2026-18440@2026-09-10",
+    "2026-18441@2026-09-10",
+    "2026-18442@2026-09-10",
+    "2026-18443@2026-09-10",
+    "2026-18444@2026-09-10",
+    "2026-18445@2026-09-10",
+    "2026-18446@2026-09-10",
+    "2026-18447@2026-09-10",
+    "2026-18448@2026-09-10",
+    "2026-18449@2026-09-10",
+    "2026-18450@2026-09-10",
+    "2026-18451@2026-09-10",
+    "2026-18452@2026-09-10",
+    "2026-18453@2026-09-10",
+    "2026-18454@2026-09-10",
+    "2026-18455@2026-09-10",
+    "2026-18456@2026-09-10",
+    "2026-18457@2026-09-10",
+    "2026-18458@2026-09-10",
+    "2026-18459@2026-09-10",
+    "2026-18461@2026-09-10",
+    "2026-18462@2026-09-10",
+    "2026-18463@2026-09-10",
+    "2026-18464@2026-09-10",
+    "2026-18465@2026-09-10",
+    "2026-18466@2026-09-10",
+    "2026-18467@2026-09-10",
+    "2026-18468@2026-09-10",
+    "2026-18469@2026-09-10",
+    "2026-18470@2026-09-10",
+    "2026-18471@2026-09-10",
+    "2026-18472@2026-09-10",
+    "2026-18473@2026-09-10",
+    "2026-18474@2026-09-10",
+    "2026-18475@2026-09-10",
+    "2026-18476@2026-09-10",
+    "2026-18477@2026-09-10",
+    "2026-18478@2026-09-10",
+    "2026-18479@2026-09-10",
+    "2026-18480@2026-09-10",
+    "2026-18481@2026-09-10",
+    "2026-18482@2026-09-10",
+    "2026-18483@2026-09-10",
+    "2026-18484@2026-09-10",
+    "2026-18485@2026-09-10",
+    "2026-18486@2026-09-10",
+    "2026-18487@2026-09-10",
+    "2026-18488@2026-09-10",
+    "2026-18489@2026-09-10",
+    "2026-18490@2026-09-10",
+    "2026-18491@2026-09-10",
+    "2026-18492@2026-09-10",
+    "2026-18493@2026-09-10",
+    "2026-18494@2026-09-10",
+    "2026-18495@2026-09-10",
+    "2026-18496@2026-09-10",
+    "2026-18497@2026-09-10",
+    "2026-18498@2026-09-10",
+    "2026-18499@2026-09-10",
+    "2026-18500@2026-09-10",
+    "2026-18501@2026-09-10",
+    "2026-18502@2026-09-10",
+    "2026-18503@2026-09-10",
+    "2026-18504@2026-09-10",
+    "2026-18505@2026-09-10",
+    "2026-18506@2026-09-10",
+    "2026-18507@2026-09-10",
+    "2026-18508@2026-09-10",
+    "2026-18509@2026-09-10",
+    "2026-18510@2026-09-10",
+    "2026-18511@2026-09-10",
+    "2026-18520@2026-09-10",
+    "2026-18522@2026-09-10",
+    "2026-18567@2026-09-10",
+    "2026-18571@2026-09-10",
+    "2026-18573@2026-09-10",
+    "2026-18589@2026-09-10",
+    "C1-2026-17324@2026-09-10",
+    "2026-18512@2026-09-11",
+    "2026-18513@2026-09-11",
+    "2026-18514@2026-09-11",
+    "2026-18515@2026-09-11",
+    "2026-18516@2026-09-11",
+    "2026-18517@2026-09-11",
+    "2026-18518@2026-09-11",
+    "2026-18519@2026-09-11",
+    "2026-18521@2026-09-11",
+    "2026-18523@2026-09-11",
+    "2026-18524@2026-09-11",
+    "2026-18525@2026-09-11",
+    "2026-18526@2026-09-11",
+    "2026-18527@2026-09-11",
+    "2026-18528@2026-09-11",
+    "2026-18529@2026-09-11",
+    "2026-18530@2026-09-11",
+    "2026-18531@2026-09-11",
+    "2026-18532@2026-09-11",
+    "2026-18533@2026-09-11",
+    "2026-18534@2026-09-11",
+    "2026-18535@2026-09-11",
+    "2026-18536@2026-09-11",
+    "2026-18537@2026-09-11",
+    "2026-18538@2026-09-11",
+    "2026-18539@2026-09-11",
+    "2026-18540@2026-09-11",
+    "2026-18541@2026-09-11",
+    "2026-18542@2026-09-11",
+    "2026-18543@2026-09-11",
+    "2026-18544@2026-09-11",
+    "2026-18545@2026-09-11",
+    "2026-18546@2026-09-11",
+    "2026-18547@2026-09-11",
+    "2026-18548@2026-09-11",
+    "2026-18549@2026-09-11",
+    "2026-18550@2026-09-11",
+    "2026-18551@2026-09-11",
+    "2026-18552@2026-09-11",
+    "2026-18553@2026-09-11",
+    "2026-18554@2026-09-11",
+    "2026-18555@2026-09-11",
+    "2026-18556@2026-09-11",
+    "2026-18557@2026-09-11",
+    "2026-18558@2026-09-11",
+    "2026-18559@2026-09-11",
+    "2026-18560@2026-09-11",
+    "2026-18561@2026-09-11",
+    "2026-18562@2026-09-11",
+    "2026-18563@2026-09-11",
+    "2026-18564@2026-09-11",
+    "2026-18565@2026-09-11",
+    "2026-18566@2026-09-11",
+    "2026-18568@2026-09-11",
+    "2026-18569@2026-09-11",
+    "2026-18570@2026-09-11",
+    "2026-18572@2026-09-11",
+    "2026-18574@2026-09-11",
+    "2026-18575@2026-09-11",
+    "2026-18576@2026-09-11",
+    "2026-18577@2026-09-11",
+    "2026-18578@2026-09-11",
+    "2026-18579@2026-09-11",
+    "2026-18580@2026-09-11",
+    "2026-18581@2026-09-11",
+    "2026-18582@2026-09-11",
+    "2026-18583@2026-09-11",
+    "2026-18584@2026-09-11",
+    "2026-18585@2026-09-11",
+    "2026-18586@2026-09-11",
+    "2026-18587@2026-09-11",
+    "2026-18588@2026-09-11",
+    "2026-18590@2026-09-11",
+    "2026-18591@2026-09-11",
+    "2026-18592@2026-09-11",
+    "2026-18593@2026-09-11",
+    "2026-18594@2026-09-11",
+    "2026-18595@2026-09-11",
+    "2026-18596@2026-09-11",
+    "2026-18597@2026-09-11",
+    "2026-18598@2026-09-11",
+    "2026-18599@2026-09-11",
+    "2026-18600@2026-09-11",
+    "2026-18601@2026-09-11",
+    "2026-18602@2026-09-11",
+    "2026-18603@2026-09-11",
+    "2026-18604@2026-09-11",
+    "2026-18605@2026-09-11",
+    "2026-18606@2026-09-11",
+    "2026-18607@2026-09-11",
+    "2026-18608@2026-09-11",
+    "2026-18609@2026-09-11",
+    "2026-18610@2026-09-11",
+    "2026-18611@2026-09-11",
+    "2026-18612@2026-09-11",
+    "2026-18613@2026-09-11",
+    "2026-18614@2026-09-11",
+    "2026-18615@2026-09-11",
+    "2026-18616@2026-09-11",
+    "2026-18617@2026-09-11",
+    "2026-18618@2026-09-11",
+    "2026-18619@2026-09-11",
+    "2026-18620@2026-09-11",
+    "2026-18621@2026-09-11",
+    "2026-18622@2026-09-11",
+    "2026-18623@2026-09-11",
+    "2026-18624@2026-09-11",
+    "2026-18625@2026-09-11",
+    "2026-18630@2026-09-11",
+    "2026-18631@2026-09-11",
+    "2026-18645@2026-09-11",
+    "2026-18648@2026-09-11",
+    "2026-18670@2026-09-11",
+    "2026-18738@2026-09-11",
+    "2026-18739@2026-09-11",
+    "2026-18626@2026-09-14",
+    "2026-18627@2026-09-14",
+    "2026-18628@2026-09-14",
+    "2026-18629@2026-09-14",
+    "2026-18632@2026-09-14",
+    "2026-18633@2026-09-14",
+    "2026-18634@2026-09-14",
+    "2026-18635@2026-09-14",
+    "2026-18636@2026-09-14",
+    "2026-18637@2026-09-14",
+    "2026-18638@2026-09-14",
+    "2026-18639@2026-09-14",
+    "2026-18640@2026-09-14",
+    "2026-18641@2026-09-14",
+    "2026-18642@2026-09-14",
+    "2026-18643@2026-09-14",
+    "2026-18644@2026-09-14",
+    "2026-18646@2026-09-14",
+    "2026-18647@2026-09-14",
+    "2026-18649@2026-09-14",
+    "2026-18650@2026-09-14",
+    "2026-18651@2026-09-14",
+    "2026-18652@2026-09-14",
+    "2026-18653@2026-09-14",
+    "2026-18654@2026-09-14",
+    "2026-18655@2026-09-14",
+    "2026-18656@2026-09-14",
+    "2026-18657@2026-09-14",
+    "2026-18658@2026-09-14",
+    "2026-18659@2026-09-14",
+    "2026-18660@2026-09-14",
+    "2026-18661@2026-09-14",
+    "2026-18662@2026-09-14",
+    "2026-18663@2026-09-14",
+    "2026-18664@2026-09-14",
+    "2026-18665@2026-09-14",
+    "2026-18666@2026-09-14",
+    "2026-18667@2026-09-14",
+    "2026-18668@2026-09-14",
+    "2026-18669@2026-09-14",
+    "2026-18671@2026-09-14",
+    "2026-18672@2026-09-14",
+    "2026-18673@2026-09-14",
+    "2026-18674@2026-09-14",
+    "2026-18675@2026-09-14",
+    "2026-18676@2026-09-14",
+    "2026-18677@2026-09-14",
+    "2026-18678@2026-09-14",
+    "2026-18679@2026-09-14",
+    "2026-18680@2026-09-14",
+    "2026-18681@2026-09-14",
+    "2026-18682@2026-09-14",
+    "2026-18683@2026-09-14",
+    "2026-18684@2026-09-14",
+    "2026-18685@2026-09-14",
+    "2026-18686@2026-09-14",
+    "2026-18687@2026-09-14",
+    "2026-18688@2026-09-14",
+    "2026-18689@2026-09-14",
+    "2026-18690@2026-09-14",
+    "2026-18691@2026-09-14",
+    "2026-18692@2026-09-14",
+    "2026-18693@2026-09-14",
+    "2026-18694@2026-09-14",
+    "2026-18695@2026-09-14",
+    "2026-18696@2026-09-14",
+    "2026-18697@2026-09-14",
+    "2026-18698@2026-09-14",
+    "2026-18699@2026-09-14",
+    "2026-18700@2026-09-14",
+    "2026-18701@2026-09-14",
+    "2026-18702@2026-09-14",
+    "2026-18703@2026-09-14",
+    "2026-18704@2026-09-14",
+    "2026-18705@2026-09-14",
+    "2026-18706@2026-09-14",
+    "2026-18707@2026-09-14",
+    "2026-18708@2026-09-14",
+    "2026-18709@2026-09-14",
+    "2026-18710@2026-09-14",
+    "2026-18711@2026-09-14",
+    "2026-18712@2026-09-14",
+    "2026-18713@2026-09-14",
+    "2026-18714@2026-09-14",
+    "2026-18715@2026-09-14",
+    "2026-18716@2026-09-14",
+    "2026-18717@2026-09-14",
+    "2026-18718@2026-09-14",
+    "2026-18719@2026-09-14",
+    "2026-18720@2026-09-14",
+    "2026-18721@2026-09-14",
+    "2026-18722@2026-09-14",
+    "2026-18723@2026-09-14",
+    "2026-18724@2026-09-14",
+    "2026-18725@2026-09-14",
+    "2026-18727@2026-09-14",
+    "2026-18728@2026-09-14",
+    "2026-18729@2026-09-14",
+    "2026-18730@2026-09-14",
+    "2026-18731@2026-09-14",
+    "2026-18732@2026-09-14",
+    "2026-18733@2026-09-14",
+    "2026-18734@2026-09-14",
+    "2026-18735@2026-09-14",
+    "2026-18736@2026-09-14",
+    "2026-18737@2026-09-14",
+    "2026-18740@2026-09-14",
+    "2026-18741@2026-09-14",
+    "2026-18742@2026-09-14",
+    "2026-18743@2026-09-14",
+    "2026-18744@2026-09-14",
+    "2026-18745@2026-09-14",
+    "2026-18746@2026-09-14",
+    "2026-18747@2026-09-14",
+    "2026-18748@2026-09-14",
+    "2026-18749@2026-09-14",
+    "2026-18750@2026-09-14",
+    "2026-18751@2026-09-14",
+    "2026-18752@2026-09-14",
+    "2026-18753@2026-09-14",
+    "2026-18754@2026-09-14",
+    "2026-18755@2026-09-14",
+    "2026-18756@2026-09-14",
+    "2026-18757@2026-09-14",
+    "2026-18758@2026-09-14",
+    "2026-18759@2026-09-14",
+    "2026-18760@2026-09-14",
+    "2026-18761@2026-09-14",
+    "2026-18762@2026-09-14",
+    "2026-18763@2026-09-14",
+    "2026-18764@2026-09-14",
+    "2026-18765@2026-09-14",
+    "2026-18766@2026-09-14",
+    "2026-18767@2026-09-14",
+    "2026-18768@2026-09-14",
+    "2026-18769@2026-09-14",
+    "2026-18770@2026-09-14",
+    "2026-18771@2026-09-14",
+    "2026-18772@2026-09-14",
+    "2026-18773@2026-09-14",
+    "2026-18774@2026-09-14",
+    "2026-18775@2026-09-14",
+    "2026-18776@2026-09-14",
+    "2026-18777@2026-09-14",
+    "2026-18778@2026-09-14",
+    "2026-18779@2026-09-14",
+    "2026-18780@2026-09-14",
+    "2026-18781@2026-09-14",
+    "2026-18782@2026-09-14",
+    "2026-18796@2026-09-14",
+    "2026-18799@2026-09-14",
+    "2026-18835@2026-09-14",
+    "2026-18836@2026-09-14",
+    "2026-18837@2026-09-14",
+    "2026-18838@2026-09-14",
+    "2026-18839@2026-09-14",
+    "2026-18783@2026-09-15",
+    "2026-18784@2026-09-15",
+    "2026-18785@2026-09-15",
+    "2026-18786@2026-09-15",
+    "2026-18787@2026-09-15",
+    "2026-18788@2026-09-15",
+    "2026-18789@2026-09-15",
+    "2026-18790@2026-09-15",
+    "2026-18791@2026-09-15",
+    "2026-18792@2026-09-15",
+    "2026-18793@2026-09-15",
+    "2026-18794@2026-09-15",
+    "2026-18795@2026-09-15",
+    "2026-18797@2026-09-15",
+    "2026-18798@2026-09-15",
+    "2026-18800@2026-09-15",
+    "2026-18801@2026-09-15",
+    "2026-18802@2026-09-15",
+    "2026-18803@2026-09-15",
+    "2026-18804@2026-09-15",
+    "2026-18805@2026-09-15",
+    "2026-18806@2026-09-15",
+    "2026-18807@2026-09-15",
+    "2026-18808@2026-09-15",
+    "2026-18809@2026-09-15",
+    "2026-18810@2026-09-15",
+    "2026-18811@2026-09-15",
+    "2026-18812@2026-09-15",
+    "2026-18813@2026-09-15",
+    "2026-18814@2026-09-15",
+    "2026-18815@2026-09-15",
+    "2026-18816@2026-09-15",
+    "2026-18817@2026-09-15",
+    "2026-18818@2026-09-15",
+    "2026-18819@2026-09-15",
+    "2026-18820@2026-09-15",
+    "2026-18821@2026-09-15",
+    "2026-18822@2026-09-15",
+    "2026-18823@2026-09-15",
+    "2026-18824@2026-09-15",
+    "2026-18825@2026-09-15",
+    "2026-18826@2026-09-15",
+    "2026-18827@2026-09-15",
+    "2026-18828@2026-09-15",
+    "2026-18830@2026-09-15",
+    "2026-18831@2026-09-15",
+    "2026-18832@2026-09-15",
+    "2026-18833@2026-09-15",
+    "2026-18834@2026-09-15",
+    "2026-18840@2026-09-15",
+    "2026-18841@2026-09-15",
+    "2026-18842@2026-09-15",
+    "2026-18843@2026-09-15",
+    "2026-18844@2026-09-15",
+    "2026-18845@2026-09-15",
+    "2026-18846@2026-09-15",
+    "2026-18847@2026-09-15",
+    "2026-18848@2026-09-15",
+    "2026-18849@2026-09-15",
+    "2026-18850@2026-09-15",
+    "2026-18852@2026-09-15",
+    "2026-18853@2026-09-15",
+    "2026-18854@2026-09-15",
+    "2026-18855@2026-09-15",
+    "2026-18856@2026-09-15",
+    "2026-18857@2026-09-15",
+    "2026-18858@2026-09-15",
+    "2026-18859@2026-09-15",
+    "2026-18860@2026-09-15",
+    "2026-18861@2026-09-15",
+    "2026-18862@2026-09-15",
+    "2026-18863@2026-09-15",
+    "2026-18864@2026-09-15",
+    "2026-18865@2026-09-15",
+    "2026-18866@2026-09-15",
+    "2026-18867@2026-09-15",
+    "2026-18868@2026-09-15",
+    "2026-18869@2026-09-15",
+    "2026-18870@2026-09-15",
+    "2026-18871@2026-09-15",
+    "2026-18872@2026-09-15",
+    "2026-18873@2026-09-15",
+    "2026-18874@2026-09-15",
+    "2026-18875@2026-09-15",
+    "2026-18876@2026-09-15",
+    "2026-18877@2026-09-15",
+    "2026-18878@2026-09-15",
+    "2026-18879@2026-09-15",
+    "2026-18880@2026-09-15",
+    "2026-18881@2026-09-15",
+    "2026-18882@2026-09-15",
+    "2026-18883@2026-09-15",
+    "2026-18884@2026-09-15",
+    "2026-18885@2026-09-15",
+    "2026-18886@2026-09-15",
+    "2026-18887@2026-09-15",
+    "2026-18888@2026-09-15",
+    "2026-18889@2026-09-15",
+    "2026-18890@2026-09-15",
+    "2026-18891@2026-09-15",
+    "2026-18892@2026-09-15",
+    "2026-18893@2026-09-15",
+    "2026-18894@2026-09-15",
+    "2026-18895@2026-09-15",
+    "2026-18896@2026-09-15",
+    "2026-18897@2026-09-15",
+    "2026-18898@2026-09-15",
+    "2026-18899@2026-09-15",
+    "2026-18900@2026-09-15",
+    "2026-18901@2026-09-15",
+    "2026-18902@2026-09-15",
+    "2026-18903@2026-09-15",
+    "2026-18904@2026-09-15",
+    "2026-18905@2026-09-15",
+    "2026-18907@2026-09-15",
+    "2026-18909@2026-09-15",
+    "2026-18911@2026-09-15",
+    "2026-18927@2026-09-15",
+    "2026-18943@2026-09-15",
+    "2026-18944@2026-09-15",
+    "2026-18959@2026-09-15",
+    "2026-18912@2026-09-16",
+    "2026-18914@2026-09-16",
+    "2026-18915@2026-09-16",
+    "2026-18916@2026-09-16",
+    "2026-18917@2026-09-16",
+    "2026-18918@2026-09-16",
+    "2026-18919@2026-09-16",
+    "2026-18920@2026-09-16",
+    "2026-18921@2026-09-16",
+    "2026-18922@2026-09-16",
+    "2026-18923@2026-09-16",
+    "2026-18924@2026-09-16",
+    "2026-18925@2026-09-16",
+    "2026-18926@2026-09-16",
+    "2026-18928@2026-09-16",
+    "2026-18929@2026-09-16",
+    "2026-18930@2026-09-16",
+    "2026-18931@2026-09-16",
+    "2026-18932@2026-09-16",
+    "2026-18933@2026-09-16",
+    "2026-18934@2026-09-16",
+    "2026-18935@2026-09-16",
+    "2026-18936@2026-09-16",
+    "2026-18937@2026-09-16",
+    "2026-18938@2026-09-16",
+    "2026-18939@2026-09-16",
+    "2026-18940@2026-09-16",
+    "2026-18941@2026-09-16",
+    "2026-18942@2026-09-16",
+    "2026-18945@2026-09-16",
+    "2026-18946@2026-09-16",
+    "2026-18947@2026-09-16",
+    "2026-18948@2026-09-16",
+    "2026-18949@2026-09-16",
+    "2026-18950@2026-09-16",
+    "2026-18951@2026-09-16",
+    "2026-18952@2026-09-16",
+    "2026-18953@2026-09-16",
+    "2026-18954@2026-09-16",
+    "2026-18955@2026-09-16",
+    "2026-18956@2026-09-16",
+    "2026-18957@2026-09-16",
+    "2026-18958@2026-09-16",
+    "2026-18960@2026-09-16",
+    "2026-18961@2026-09-16",
+    "2026-18962@2026-09-16",
+    "2026-18963@2026-09-16",
+    "2026-18964@2026-09-16",
+    "2026-18965@2026-09-16",
+    "2026-18966@2026-09-16",
+    "2026-18967@2026-09-16",
+    "2026-18968@2026-09-16",
+    "2026-18969@2026-09-16",
+    "2026-18970@2026-09-16",
+    "2026-18971@2026-09-16",
+    "2026-18972@2026-09-16",
+    "2026-18973@2026-09-16",
+    "2026-18974@2026-09-16",
+    "2026-18975@2026-09-16",
+    "2026-18976@2026-09-16",
+    "2026-18977@2026-09-16",
+    "2026-18978@2026-09-16",
+    "2026-18979@2026-09-16",
+    "2026-18980@2026-09-16",
+    "2026-18981@2026-09-16",
+    "2026-18982@2026-09-16",
+    "2026-18983@2026-09-16",
+    "2026-18984@2026-09-16",
+    "2026-18985@2026-09-16",
+    "2026-18986@2026-09-16",
+    "2026-18987@2026-09-16",
+    "2026-18988@2026-09-16",
+    "2026-18989@2026-09-16",
+    "2026-18990@2026-09-16",
+    "2026-18991@2026-09-16",
+    "2026-18992@2026-09-16",
+    "2026-18993@2026-09-16",
+    "2026-18994@2026-09-16",
+    "2026-18995@2026-09-16",
+    "2026-18996@2026-09-16",
+    "2026-18997@2026-09-16",
+    "2026-18998@2026-09-16",
+    "2026-18999@2026-09-16",
+    "2026-19000@2026-09-16",
+    "2026-19001@2026-09-16",
+    "2026-19002@2026-09-16",
+    "2026-19003@2026-09-16",
+    "2026-19004@2026-09-16",
+    "2026-19005@2026-09-16",
+    "2026-19006@2026-09-16",
+    "2026-19007@2026-09-16",
+    "2026-19008@2026-09-16",
+    "2026-19009@2026-09-16",
+    "2026-19010@2026-09-16",
+    "2026-19011@2026-09-16",
+    "2026-19012@2026-09-16",
+    "2026-19013@2026-09-16",
+    "2026-19014@2026-09-16",
+    "2026-19015@2026-09-16",
+    "2026-19016@2026-09-16",
+    "2026-19017@2026-09-16",
+    "2026-19027@2026-09-16",
+    "2026-19053@2026-09-16",
+    "C1-2026-13420@2026-09-16",
+    "2026-19018@2026-09-17",
+    "2026-19019@2026-09-17",
+    "2026-19020@2026-09-17",
+    "2026-19021@2026-09-17",
+    "2026-19022@2026-09-17",
+    "2026-19023@2026-09-17",
+    "2026-19024@2026-09-17",
+    "2026-19025@2026-09-17",
+    "2026-19026@2026-09-17",
+    "2026-19028@2026-09-17",
+    "2026-19029@2026-09-17",
+    "2026-19030@2026-09-17",
+    "2026-19031@2026-09-17",
+    "2026-19033@2026-09-17",
+    "2026-19034@2026-09-17",
+    "2026-19035@2026-09-17",
+    "2026-19036@2026-09-17",
+    "2026-19037@2026-09-17",
+    "2026-19038@2026-09-17",
+    "2026-19039@2026-09-17",
+    "2026-19040@2026-09-17",
+    "2026-19041@2026-09-17",
+    "2026-19042@2026-09-17",
+    "2026-19043@2026-09-17",
+    "2026-19044@2026-09-17",
+    "2026-19045@2026-09-17",
+    "2026-19046@2026-09-17",
+    "2026-19047@2026-09-17",
+    "2026-19048@2026-09-17",
+    "2026-19049@2026-09-17",
+    "2026-19050@2026-09-17",
+    "2026-19052@2026-09-17",
+    "2026-19054@2026-09-17",
+    "2026-19055@2026-09-17",
+    "2026-19056@2026-09-17",
+    "2026-19057@2026-09-17",
+    "2026-19058@2026-09-17",
+    "2026-19059@2026-09-17",
+    "2026-19060@2026-09-17",
+    "2026-19061@2026-09-17",
+    "2026-19062@2026-09-17",
+    "2026-19063@2026-09-17",
+    "2026-19064@2026-09-17",
+    "2026-19065@2026-09-17",
+    "2026-19066@2026-09-17",
+    "2026-19067@2026-09-17",
+    "2026-19068@2026-09-17",
+    "2026-19069@2026-09-17",
+    "2026-19070@2026-09-17",
+    "2026-19071@2026-09-17",
+    "2026-19072@2026-09-17",
+    "2026-19073@2026-09-17",
+    "2026-19074@2026-09-17",
+    "2026-19075@2026-09-17",
+    "2026-19077@2026-09-17",
+    "2026-19078@2026-09-17",
+    "2026-19079@2026-09-17",
+    "2026-19080@2026-09-17",
+    "2026-19081@2026-09-17",
+    "2026-19082@2026-09-17",
+    "2026-19083@2026-09-17",
+    "2026-19084@2026-09-17",
+    "2026-19085@2026-09-17",
+    "2026-19086@2026-09-17",
+    "2026-19087@2026-09-17",
+    "2026-19088@2026-09-17",
+    "2026-19089@2026-09-17",
+    "2026-19090@2026-09-17",
+    "2026-19091@2026-09-17",
+    "2026-19092@2026-09-17",
+    "2026-19093@2026-09-17",
+    "2026-19094@2026-09-17",
+    "2026-19095@2026-09-18",
+    "2026-19096@2026-09-18",
+    "2026-19097@2026-09-18",
+    "2026-19098@2026-09-18",
+    "2026-19099@2026-09-18",
+    "2026-19100@2026-09-18",
+    "2026-19101@2026-09-18",
+    "2026-19102@2026-09-18",
+    "2026-19103@2026-09-18",
+    "2026-19104@2026-09-18",
+    "2026-19105@2026-09-18",
+    "2026-19106@2026-09-18",
+    "2026-19107@2026-09-18",
+    "2026-19109@2026-09-18",
+    "2026-19110@2026-09-18",
+    "2026-19111@2026-09-18",
+    "2026-19112@2026-09-18",
+    "2026-19113@2026-09-18",
+    "2026-19114@2026-09-18",
+    "2026-19115@2026-09-18",
+    "2026-19117@2026-09-18",
+    "2026-19118@2026-09-18",
+    "2026-19119@2026-09-18",
+    "2026-19120@2026-09-18",
+    "2026-19121@2026-09-18",
+    "2026-19122@2026-09-18",
+    "2026-19123@2026-09-18",
+    "2026-19124@2026-09-18",
+    "2026-19125@2026-09-18",
+    "2026-19126@2026-09-18",
+    "2026-19127@2026-09-18",
+    "2026-19128@2026-09-18",
+    "2026-19129@2026-09-18",
+    "2026-19130@2026-09-18",
+    "2026-19131@2026-09-18",
+    "2026-19132@2026-09-18",
+    "2026-19133@2026-09-18",
+    "2026-19134@2026-09-18",
+    "2026-19135@2026-09-18",
+    "2026-19136@2026-09-18",
+    "2026-19137@2026-09-18",
+    "2026-19138@2026-09-18",
+    "2026-19139@2026-09-18",
+    "2026-19140@2026-09-18",
+    "2026-19141@2026-09-18",
+    "2026-19142@2026-09-18",
+    "2026-19143@2026-09-18",
+    "2026-19144@2026-09-18",
+    "2026-19145@2026-09-18",
+    "2026-19146@2026-09-18",
+    "2026-19147@2026-09-18",
+    "2026-19148@2026-09-18",
+    "2026-19149@2026-09-18",
+    "2026-19150@2026-09-18",
+    "2026-19151@2026-09-18",
+    "2026-19152@2026-09-18",
+    "2026-19153@2026-09-18",
+    "2026-19154@2026-09-18",
+    "2026-19155@2026-09-18",
+    "2026-19156@2026-09-18",
+    "2026-19157@2026-09-18",
+    "2026-19158@2026-09-18",
+    "2026-19159@2026-09-18",
+    "2026-19160@2026-09-18",
+    "2026-19161@2026-09-18",
+    "2026-19162@2026-09-18",
+    "2026-19163@2026-09-18",
+    "2026-19164@2026-09-18",
+    "2026-19165@2026-09-18",
+    "2026-19166@2026-09-18",
+    "2026-19167@2026-09-18",
+    "2026-19168@2026-09-18",
+    "2026-19169@2026-09-18",
+    "2026-19170@2026-09-18",
+    "2026-19171@2026-09-18",
+    "2026-19172@2026-09-18",
+    "2026-19173@2026-09-18",
+    "2026-19174@2026-09-18",
+    "2026-19175@2026-09-18",
+    "2026-19176@2026-09-18",
+    "2026-19177@2026-09-18",
+    "2026-19178@2026-09-18",
+    "2026-19179@2026-09-18",
+    "2026-19180@2026-09-18",
+    "2026-19181@2026-09-18",
+    "2026-19182@2026-09-18",
+    "2026-19183@2026-09-18",
+    "2026-19184@2026-09-18",
+    "2026-19185@2026-09-18",
+    "2026-19186@2026-09-18",
+    "2026-19187@2026-09-18",
+    "2026-19188@2026-09-18",
+    "2026-19189@2026-09-18",
+    "2026-19190@2026-09-18",
+    "2026-19191@2026-09-18",
+    "2026-19192@2026-09-18",
+    "2026-19193@2026-09-18",
+    "2026-19194@2026-09-18",
+    "2026-19195@2026-09-18",
+    "2026-19196@2026-09-18",
+    "2026-19197@2026-09-18",
+    "2026-19198@2026-09-18",
+    "2026-19199@2026-09-18",
+    "2026-19200@2026-09-18",
+    "2026-19201@2026-09-18",
+    "2026-19202@2026-09-18",
+    "2026-19203@2026-09-18",
+    "2026-19204@2026-09-18",
+    "2026-19205@2026-09-18",
+    "2026-19206@2026-09-18",
+    "2026-19207@2026-09-18",
+    "2026-19211@2026-09-18",
+    "2026-19222@2026-09-18",
+    "2026-19251@2026-09-18",
+    "2026-19208@2026-09-21",
+    "2026-19209@2026-09-21",
+    "2026-19210@2026-09-21",
+    "2026-19212@2026-09-21",
+    "2026-19213@2026-09-21",
+    "2026-19215@2026-09-21",
+    "2026-19216@2026-09-21",
+    "2026-19217@2026-09-21",
+    "2026-19218@2026-09-21",
+    "2026-19219@2026-09-21",
+    "2026-19220@2026-09-21",
+    "2026-19221@2026-09-21",
+    "2026-19223@2026-09-21",
+    "2026-19224@2026-09-21",
+    "2026-19225@2026-09-21",
+    "2026-19226@2026-09-21",
+    "2026-19228@2026-09-21",
+    "2026-19229@2026-09-21",
+    "2026-19230@2026-09-21",
+    "2026-19231@2026-09-21",
+    "2026-19232@2026-09-21",
+    "2026-19233@2026-09-21",
+    "2026-19234@2026-09-21",
+    "2026-19235@2026-09-21",
+    "2026-19236@2026-09-21",
+    "2026-19237@2026-09-21",
+    "2026-19238@2026-09-21",
+    "2026-19239@2026-09-21",
+    "2026-19240@2026-09-21",
+    "2026-19241@2026-09-21",
+    "2026-19242@2026-09-21",
+    "2026-19243@2026-09-21",
+    "2026-19244@2026-09-21",
+    "2026-19245@2026-09-21",
+    "2026-19246@2026-09-21",
+    "2026-19247@2026-09-21",
+    "2026-19248@2026-09-21",
+    "2026-19249@2026-09-21",
+    "2026-19250@2026-09-21",
+    "2026-19252@2026-09-21",
+    "2026-19253@2026-09-21",
+    "2026-19254@2026-09-21",
+    "2026-19255@2026-09-21",
+    "2026-19256@2026-09-21",
+    "2026-19258@2026-09-21",
+    "2026-19259@2026-09-21",
+    "2026-19260@2026-09-21",
+    "2026-19261@2026-09-21",
+    "2026-19262@2026-09-21",
+    "2026-19263@2026-09-21",
+    "2026-19264@2026-09-21",
+    "2026-19265@2026-09-21",
+    "2026-19266@2026-09-21",
+    "2026-19267@2026-09-21",
+    "2026-19268@2026-09-21",
+    "2026-19269@2026-09-21",
+    "2026-19270@2026-09-21",
+    "2026-19271@2026-09-21",
+    "2026-19272@2026-09-21",
+    "2026-19273@2026-09-21",
+    "2026-19274@2026-09-21",
+    "2026-19275@2026-09-21",
+    "2026-19276@2026-09-21",
+    "2026-19277@2026-09-21",
+    "2026-19278@2026-09-21",
+    "2026-19279@2026-09-21",
+    "2026-19280@2026-09-21",
+    "2026-19281@2026-09-21",
+    "2026-19282@2026-09-21",
+    "2026-19283@2026-09-21",
+    "2026-19284@2026-09-21",
+    "2026-19290@2026-09-21",
+    "2026-19333@2026-09-21",
+    "2026-19334@2026-09-21",
+    "2026-19335@2026-09-21",
+    "2026-19336@2026-09-21",
+    "2026-19285@2026-09-22",
+    "2026-19287@2026-09-22",
+    "2026-19288@2026-09-22",
+    "2026-19289@2026-09-22",
+    "2026-19291@2026-09-22",
+    "2026-19292@2026-09-22",
+    "2026-19293@2026-09-22",
+    "2026-19294@2026-09-22",
+    "2026-19295@2026-09-22",
+    "2026-19296@2026-09-22",
+    "2026-19297@2026-09-22",
+    "2026-19298@2026-09-22",
+    "2026-19299@2026-09-22",
+    "2026-19300@2026-09-22",
+    "2026-19301@2026-09-22",
+    "2026-19302@2026-09-22",
+    "2026-19303@2026-09-22",
+    "2026-19304@2026-09-22",
+    "2026-19305@2026-09-22",
+    "2026-19306@2026-09-22",
+    "2026-19307@2026-09-22",
+    "2026-19308@2026-09-22",
+    "2026-19309@2026-09-22",
+    "2026-19310@2026-09-22",
+    "2026-19311@2026-09-22",
+    "2026-19312@2026-09-22",
+    "2026-19313@2026-09-22",
+    "2026-19314@2026-09-22",
+    "2026-19315@2026-09-22",
+    "2026-19316@2026-09-22",
+    "2026-19317@2026-09-22",
+    "2026-19318@2026-09-22",
+    "2026-19319@2026-09-22",
+    "2026-19320@2026-09-22",
+    "2026-19321@2026-09-22",
+    "2026-19322@2026-09-22",
+    "2026-19323@2026-09-22",
+    "2026-19324@2026-09-22",
+    "2026-19325@2026-09-22",
+    "2026-19326@2026-09-22",
+    "2026-19327@2026-09-22",
+    "2026-19328@2026-09-22",
+    "2026-19329@2026-09-22",
+    "2026-19330@2026-09-22",
+    "2026-19331@2026-09-22",
+    "2026-19332@2026-09-22",
+    "2026-19337@2026-09-22",
+    "2026-19338@2026-09-22",
+    "2026-19339@2026-09-22",
+    "2026-19340@2026-09-22",
+    "2026-19341@2026-09-22",
+    "2026-19342@2026-09-22",
+    "2026-19343@2026-09-22",
+    "2026-19344@2026-09-22",
+    "2026-19345@2026-09-22",
+    "2026-19346@2026-09-22",
+    "2026-19347@2026-09-22",
+    "2026-19348@2026-09-22",
+    "2026-19349@2026-09-22",
+    "2026-19350@2026-09-22",
+    "2026-19351@2026-09-22",
+    "2026-19352@2026-09-22",
+    "2026-19353@2026-09-22",
+    "2026-19354@2026-09-22",
+    "2026-19355@2026-09-22",
+    "2026-19356@2026-09-22",
+    "2026-19357@2026-09-22",
+    "2026-19358@2026-09-22",
+    "2026-19359@2026-09-22",
+    "2026-19360@2026-09-22",
+    "2026-19361@2026-09-22",
+    "2026-19362@2026-09-22",
+    "2026-19363@2026-09-22",
+    "2026-19364@2026-09-22",
+    "2026-19365@2026-09-22",
+    "2026-19366@2026-09-22",
+    "2026-19367@2026-09-22",
+    "2026-19368@2026-09-22",
+    "2026-19369@2026-09-22",
+    "2026-19370@2026-09-22",
+    "2026-19372@2026-09-22",
+    "2026-19373@2026-09-22",
+    "2026-19374@2026-09-22",
+    "2026-19375@2026-09-22",
+    "2026-19376@2026-09-22",
+    "2026-19377@2026-09-22",
+    "2026-19378@2026-09-22",
+    "2026-19379@2026-09-22",
+    "2026-19380@2026-09-22",
+    "2026-19381@2026-09-22",
+    "2026-19382@2026-09-22",
+    "2026-19383@2026-09-22",
+    "2026-19384@2026-09-22",
+    "2026-19385@2026-09-22",
+    "2026-19386@2026-09-22",
+    "2026-19387@2026-09-22",
+    "2026-19388@2026-09-22",
+    "2026-19389@2026-09-22",
+    "2026-19390@2026-09-22",
+    "2026-19391@2026-09-22",
+    "2026-19416@2026-09-22",
+    "2026-19417@2026-09-22"
+   ],
+   "generation_only_on_or_before_2026_09_14": 777,
+   "json_columns_compared_as_json": [
+    "agencies_json",
+    "docket_ids_json",
+    "regulation_id_numbers_json",
+    "cfr_references_json"
+   ],
+   "json_text_differences": {
+    "agencies_json": 1001753,
+    "cfr_references_json": 54,
+    "docket_ids_json": 0,
+    "regulation_id_numbers_json": 0
+   },
+   "modify_date_non_null": {
+    "generation": 0,
+    "reference": 0
+   },
+   "reference_except_generation": 54,
+   "reference_only_keys": 0,
+   "reference_rows": 1007639,
+   "shared_columns": [
+    "document_number",
+    "title",
+    "abstract",
+    "document_type",
+    "publication_date",
+    "effective_on",
+    "comments_close_on",
+    "signing_date",
+    "agencies_json",
+    "agency_slugs",
+    "docket_ids_json",
+    "regulation_id_numbers_json",
+    "cfr_references_json",
+    "html_url",
+    "pdf_url",
+    "body_html_url",
+    "volume",
+    "start_page",
+    "end_page",
+    "subtype",
+    "executive_order_number",
+    "modify_date"
+   ]
+  },
+  "changes": {
+   "carried_same_occurrence": 1008901,
+   "changed_keys": [
+    "2026-19240@2026-09-21",
+    "2026-19258@2026-09-21"
+   ],
+   "compare": {
+    "added": 102,
+    "changed": 2,
+    "removed": 0
+   },
+   "direct": {
+    "added": 102,
+    "changed": 2,
+    "removed": 0,
+    "unchanged": 1008901
+   },
+   "docspec": {
+    "added": 102,
+    "changed": 2,
+    "removed": 0
+   },
+   "equal": true,
+   "report": {
+    "added": 102,
+    "adopted": 1008901,
+    "carried": 1008901,
+    "changed": 2,
+    "generated": 104,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009005
+   }
+  },
+  "counts": {
+   "current": {
+    "admitted": 1009005,
+    "pin_matches": true,
+    "recordCount": 1009005
+   },
+   "prior": {
+    "admitted": 1008903,
+    "pin_matches": true,
+    "recordCount": 1008903
+   }
+  },
+  "environment": {
+   "at": "2026-09-25T21:22:10",
+   "commit": "214b06305edde2cd392e08ffbb452e38303db9f7",
+   "duckdb": "1.5.5",
+   "load": [
+    6.63720703125,
+    6.70263671875,
+    6.58154296875
+   ],
+   "pyarrow": "25.0.1",
+   "python": "3.12.9"
+  },
+  "fr_oracle": {
+   "mismatch_sample": [],
+   "mismatches": 0,
+   "native_rows": 1009005,
+   "rows": 1009005
+  },
+  "fr_restored": {
+   "control_key_present": true,
+   "differs_from_second": true,
+   "first_state": {
+    "2026-19240@2026-09-21": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04",
+    "2026-19258@2026-09-21": "urn:docspec:generation-admission:v1:2b5990fe878dc401e35ddf6f6819c7917d348a1dd844a1a49f12161daa420e04"
+   },
+   "first_state_is_prior": true,
+   "keys": [
+    "2026-19240@2026-09-21",
+    "2026-19258@2026-09-21"
+   ],
+   "report": {
+    "added": 1,
+    "adopted": 1009005,
+    "carried": 1009003,
+    "changed": 2,
+    "generated": 1,
+    "reminted": false,
+    "removed": 0,
+    "rows": 1009006
+   },
+   "rules_match": true,
+   "same_as_first": true
+  },
+  "fresh_process": true,
+  "process": {
+   "load": [
+    "start 2026-09-26T01:22:09Z load { 6.64 6.70 6.58 }",
+    "end 2026-09-26T01:23:26Z load { 5.36 6.34 6.45 } exit 0 peak_tree_rss_kib 9646208"
+   ],
+   "process_wall_seconds": 72.77,
+   "time_l_max_rss_bytes": 9977954304,
+   "watch_sampled_peak_bytes": 9877716992
+  },
+  "process_peak_rss_bytes": 9977954304,
+  "seconds": 71.79632637501345,
+  "typed": {
+   "first_state_is_a": true,
+   "oracle": {
+    "typed-a": {
+     "mismatch_sample": [],
+     "mismatches": 0,
+     "native_rows": 2000,
+     "rows": 2000
+    },
+    "typed-a2": {
+     "mismatch_sample": [],
+     "mismatches": 0,
+     "native_rows": 2001,
+     "rows": 2001
+    },
+    "typed-b": {
+     "mismatch_sample": [],
+     "mismatches": 0,
+     "native_rows": 2000,
+     "rows": 2000
+    }
+   },
+   "reports": {
+    "typed-a": {
+     "added": 2000,
+     "adopted": 0,
+     "carried": 0,
+     "changed": 0,
+     "generated": 2000,
+     "reminted": false,
+     "removed": 0,
+     "rows": 2000
+    },
+    "typed-a2": {
+     "added": 1,
+     "adopted": 2000,
+     "carried": 1999,
+     "changed": 1,
+     "generated": 1,
+     "reminted": false,
+     "removed": 0,
+     "rows": 2001
+    },
+    "typed-b": {
+     "added": 0,
+     "adopted": 1999,
+     "carried": 1999,
+     "changed": 1,
+     "generated": 1,
+     "reminted": false,
+     "removed": 0,
+     "rows": 2000
+    }
+   },
+   "restored_same_as_first": true,
+   "rules_match": true
+  }
+ },
+ "earlier_runs": {
+  "6ebe108": {
+   "current": {
+    "admission_seconds": 2.714023292006459,
+    "counts": {
+     "added": 102,
+     "adopted": 1008901,
+     "carried": 1008901,
+     "changed": 2,
+     "generated": 104,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1009005
+    },
+    "process_peak_rss_bytes": 2264662016
+   },
+   "fr-g3": {
+    "admission_seconds": 2.754864832997555,
+    "counts": {
+     "added": 1,
+     "adopted": 1009005,
+     "carried": 1009003,
+     "changed": 2,
+     "generated": 1,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1009006
+    },
+    "process_peak_rss_bytes": 2238152704
+   },
+   "prior": {
+    "admission_seconds": 13.96813037499669,
+    "counts": {
+     "added": 1008903,
+     "adopted": 0,
+     "carried": 0,
+     "changed": 0,
+     "generated": 1008903,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1008903
+    },
+    "process_peak_rss_bytes": 1062502400
+   }
+  },
+  "e61576b": {
+   "current": {
+    "admission_seconds": 3.2161524170078337,
+    "counts": {
+     "added": 102,
+     "adopted": 1008901,
+     "carried": 1008901,
+     "changed": 2,
+     "generated": 104,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1009005
+    },
+    "process_peak_rss_bytes": 2276999168
+   },
+   "fr-g3": {
+    "admission_seconds": 3.3687917909992393,
+    "counts": {
+     "added": 1,
+     "adopted": 1009005,
+     "carried": 1009003,
+     "changed": 2,
+     "generated": 1,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1009006
+    },
+    "process_peak_rss_bytes": 2245279744
+   },
+   "prior": {
+    "admission_seconds": 14.35204408300342,
+    "counts": {
+     "added": 1008903,
+     "adopted": 0,
+     "carried": 0,
+     "changed": 0,
+     "generated": 1008903,
+     "reminted": false,
+     "removed": 0,
+     "rows": 1008903
+    },
+    "process_peak_rss_bytes": 1015562240
+   }
+  }
+ },
+ "identity_check_probe_400k_rows": {
+  "before_review_fix_seconds": {
+   "0": 0,
+   "2048": 0.28,
+   "8192": 1.09
+  },
+  "pins": {
+   "0": {
+    "admission_seconds": 1.6547689589788206,
+    "check_seconds": 0.000578750012209639,
+    "minted": 400000
+   },
+   "2048": {
+    "admission_seconds": 1.7705872500082478,
+    "check_seconds": 0.09931016701739281,
+    "minted": 400000
+   },
+   "8192": {
+    "admission_seconds": 1.797523084009299,
+    "check_seconds": 0.17278537500533275,
+    "minted": 400000
+   }
+  }
+ },
+ "receipts": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/receipts",
+ "reference": {
+  "catalogue": {
+   "decoded": 1007639,
+   "distinct_keys": 1007639,
+   "pin": "sha256:b456349d6ec916a8f145ec9ab5ee39e95f5e13a0de70ca7220dfe1c6a5508a61",
+   "record_count": 1007639,
+   "rows": 1007639,
+   "seconds": 34.24014533299487,
+   "state": "catalogue"
+  },
+  "synthetic": {
+   "fr-g3": {
+    "artifactDigest": "sha256:0082655f48cf74febf80b178761beb681b30402dcc5eb1f7c2f6ce7182596d79",
+    "control_key": "2026-\u001fC27@2026-09-25",
+    "restored_keys": [
+     "2026-19240@2026-09-21",
+     "2026-19258@2026-09-21"
+    ],
+    "rows": 1009006
+   },
+   "typed": {
+    "typed-a": {
+     "artifactDigest": "sha256:861773f040f92bb9fdfddbb574eef085f9fa52a29c494fae4b2b897aae500b31",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:ddbbc5ecb1a1713b3dc34bbc4efa89ee66acbb3e56445e2a6599ae627d9e92ce",
+     "rows": 2000
+    },
+    "typed-a2": {
+     "artifactDigest": "sha256:1f551540b66eeeb6afe62c7ae1b29418bda8b63cc7d5809590f0b45fba4ad707",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:29e616904b5b36bafd56920624da47af1327a209a9c92ec3eab36c3b72144e30",
+     "rows": 2001
+    },
+    "typed-b": {
+     "artifactDigest": "sha256:62cbb9c4a0bd033104b776ad4202b8395ec8f2a4edccf6ee75b1c6768f6ddf8c",
+     "logicalId": "urn:spicy:artifact:spicy-regs-rollup-generation:ddbbc5ecb1a1713b3dc34bbc4efa89ee66acbb3e56445e2a6599ae627d9e92ce",
+     "rows": 2000
+    }
+   },
+   "typed_restored_key": "2026-00007@2026-01-08"
+  }
+ },
+ "thresholds": {
+  "admitted_count_equals_recordCount": true,
+  "carried_forward": 1008901,
+  "changes_equal_direct_comparison": true,
+  "compared_keys_equal_reference": true,
+  "except_zero_both_ways_beyond_listed_keys": true,
+  "exceptions_type_only": 53,
+  "exceptions_value": [
+   "2017-27683@2017-12-26"
+  ],
+  "ledger_records_per_generation": [
+   9,
+   8,
+   8
+  ],
+  "pins_match_fork_host": true,
+  "python_reference_mismatches": 0,
+  "restored_row_resolves_to_first_occurrence": true,
+  "rules_match_schema": true
+ },
+ "workspace": "/Users/mikewolfd/Work/corpora/c27-gate-20260925/workspace"
+}

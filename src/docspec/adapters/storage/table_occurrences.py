@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping
 from contextlib import closing, contextmanager
 from dataclasses import dataclass
+from datetime import date
 from functools import reduce
 from pathlib import Path
 import re
@@ -19,8 +20,8 @@ from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_rela
 from docspec.domain.identity import require_text, sha256_digest
 from docspec.domain.references import LayerRef
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import (ROUND_TRIP_TRAPS, SPELLING_COLUMNS, SPELLING_ROWS, KeySpelling, TableIdentity,
-    table_occurrence_id, table_row_bytes, table_row_digest)
+from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, SPELLING_COLUMNS, SPELLING_ROWS,
+    KeySpelling, TableIdentity, table_occurrence_id, table_row_bytes, table_row_digest)
 from docspec.errors import IntegrityError
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -29,17 +30,22 @@ OCCURRENCE_INDEX = TableSchema("core-table-occurrences:1", (
     ("occurrence_hash", "BLOB"), ("member_key", "VARCHAR"), ("row_digest", "BLOB"), ("first_state_id", "VARCHAR")))
 INDEX_KIND = "core-table-occurrences"
 _HEX64 = re.compile(r"[0-9a-f]{64}")
-_ORACLE_IDENTITIES = (
-    TableIdentity("oracle\x1ffamily", 'oracle"table', KeySpelling(
-        "federal-register-source-record-id", "1", ("document_number", "publication_date")), SPELLING_COLUMNS),
-    TableIdentity("oracle", "table", KeySpelling("value", "1", ("document_number",)), SPELLING_COLUMNS),
+_FEDERAL_REGISTER_KEY = KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+# Each shared corpus with the identities it must mint exactly as the reference.
+_ORACLE_CASES = (
+    (SPELLING_COLUMNS, SPELLING_ROWS, (
+        TableIdentity("oracle\x1ffamily", 'oracle"table', _FEDERAL_REGISTER_KEY, SPELLING_COLUMNS),
+        TableIdentity("oracle", "table", KeySpelling("value", "1", ("document_number",)), SPELLING_COLUMNS))),
+    (DATED_KEY_COLUMNS, DATED_KEY_ROWS, (
+        TableIdentity("oracle", "dated", _FEDERAL_REGISTER_KEY, DATED_KEY_COLUMNS),
+        TableIdentity("oracle", "dates", KeySpelling("value", "1", ("publication_date",)), DATED_KEY_COLUMNS))),
 )
 _ORACLE_PASSED = set()
 
 
 def reference_identity(identity: TableIdentity, row: Mapping) -> tuple[str, str, str]:
     """The Python reference for one row: its member key, row digest and occurrence URN."""
-    key = reference_member_key(identity.key, row)
+    key = reference_member_key(identity, row)
     digest = table_row_digest({name: row[name] for name, _ in identity.columns}, identity.columns)
     return key, digest, table_occurrence_id(identity.family, identity.table, key, digest)
 
@@ -55,12 +61,13 @@ def check_native_spelling() -> None:
     if duckdb.__version__ in _ORACLE_PASSED:
         return
     with duckdb.connect() as connection:
-        source = connection.from_arrow(pa.Table.from_pylist(list(SPELLING_ROWS), schema=table_arrow_schema(SPELLING_COLUMNS)))
-        for identity in _ORACLE_IDENTITIES:
-            expected = [(key, bytes.fromhex(digest[7:]), bytes.fromhex(occurrence[len(OCCURRENCE_PREFIX):]))
-                        for key, digest, occurrence in (reference_identity(identity, row) for row in SPELLING_ROWS)]
-            if sorted(identity_relation(source, identity).fetchall()) != sorted(expected):
-                raise IntegrityError(f"DuckDB {duckdb.__version__} spells docspec-table-row/1 unlike its Python reference")
+        for columns, rows, identities in _ORACLE_CASES:
+            source = connection.from_arrow(pa.Table.from_pylist(list(rows), schema=table_arrow_schema(columns)))
+            for identity in identities:
+                expected = [(key, bytes.fromhex(digest[7:]), bytes.fromhex(occurrence[len(OCCURRENCE_PREFIX):]))
+                            for key, digest, occurrence in (reference_identity(identity, row) for row in rows)]
+                if sorted(identity_relation(source, identity).fetchall()) != sorted(expected):
+                    raise IntegrityError(f"DuckDB {duckdb.__version__} spells docspec-table-row/1 unlike its Python reference")
         column = (("value", "DOUBLE"),)
         for value in ROUND_TRIP_TRAPS:
             try:
@@ -187,6 +194,38 @@ def lookup_occurrences(records, index, identity: TableIdentity, occurrence_ids: 
     return found
 
 
+def _component_value(text, kind):
+    """A candidate component as its column holds it, or None when no such value spells ``text``."""
+    if kind != "DATE":
+        return text
+    try:
+        value = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return value if value.isoformat() == text else None
+
+
+def candidate_rows(rows, identity: TableIdentity, keys):
+    """Narrow ``rows`` to a superset of the rows spelling one of ``keys``, pruning row groups.
+
+    Up to 256 keys push every component tuple that could spell one of them
+    into the scan as IN filters on the key columns, typed as the columns
+    hold them; beyond that ``rows`` is returned whole. Callers match the
+    spelled key exactly.
+    """
+    keys = set(keys)
+    if not keys or len(keys) > LITERAL_IDENTITIES:
+        return rows if keys else rows.filter("false")
+    candidates = {tuple(_component_value(part, kind) for part, kind in zip(parts, identity.key_kinds, strict=True))
+                  for key in keys for parts in key_components(identity.key, key) if all(parts)}
+    candidates = [parts for parts in candidates if all(part is not None for part in parts)]
+    if not candidates:
+        return rows.filter("false")
+    return rows.filter(reduce(lambda left, right: left & right, (
+        duckdb.ColumnExpression(field).isin(*map(duckdb.ConstantExpression, {parts[index] for parts in candidates}))
+        for index, field in enumerate(identity.key.fields))))
+
+
 def read_occurrences(records, table, identity: TableIdentity, occurrences: Mapping[str, IndexedOccurrence]) -> dict[str, bytes]:
     """Read the rows holding ``occurrences`` from ``table`` and return each one's canonical row bytes.
 
@@ -204,12 +243,7 @@ def read_occurrences(records, table, identity: TableIdentity, occurrences: Mappi
         available = dict(native_columns(rows))
         if any(available.get(name) != kind for name, kind in identity.columns):
             raise IntegrityError("table rows differ from the declared identity projection")
-        if keys and len(keys) <= LITERAL_IDENTITIES:
-            candidates = [parts for key in keys for parts in key_components(identity.key, key) if all(parts)]
-            rows = rows.filter(reduce(lambda left, right: left & right, (
-                duckdb.ColumnExpression(field).isin(*map(duckdb.ConstantExpression, {parts[index] for parts in candidates}))
-                for index, field in enumerate(identity.key.fields)))) if candidates else rows.filter("false")
-        keyed = rows.project(f"{member_key_sql(identity.key)} AS __docspec_key, "
+        keyed = candidate_rows(rows, identity, keys).project(f"{member_key_sql(identity)} AS __docspec_key, "
                              + ", ".join(identifier(name) for name, _ in identity.columns))
         selected = identity_filter(cursor, keyed, keys, column="__docspec_key").project(
             f"__docspec_key, {row_json_sql(identity.columns)} AS __docspec_row")

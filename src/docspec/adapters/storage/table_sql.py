@@ -12,7 +12,7 @@ from spicy_docs.sources.federal_register.native import federal_register_source_r
 
 from docspec.adapters.storage.iceberg import identifier, literal
 from docspec.domain.identity import canonical_value_bytes, require_text
-from docspec.domain.table_rows import SAFE_INTEGER, table_columns
+from docspec.domain.table_rows import SAFE_INTEGER, key_component, table_columns
 from docspec.errors import IntegrityError
 
 
@@ -47,12 +47,14 @@ def _declared(spelling):
     return declared
 
 
-def reference_member_key(spelling, row) -> str:
-    """spicy-docs' reference key of one row; a NULL, empty or non-text component refuses."""
-    values = tuple(row[field] for field in spelling.fields)
-    if any(type(value) is not str or not value for value in values):
-        raise ValueError("member key components must be nonempty strings")
-    return _declared(spelling).reference(values)
+def reference_member_key(identity, row) -> str:
+    """spicy-docs' reference key of one row; a NULL, empty or mistyped component refuses.
+
+    A DATE component reaches the reference as its ISO 8601 text.
+    """
+    declared = _declared(identity.key)
+    return declared.reference(tuple(key_component(row[field], kind)
+                                    for field, kind in zip(identity.key.fields, identity.key_kinds, strict=True)))
 
 
 def key_components(spelling, key: str) -> tuple[tuple[str, ...], ...]:
@@ -119,13 +121,38 @@ def row_json_sql(columns, *, qualifier=None):
     return "'{' || " + " || ',' || ".join(parts) + " || '}'"
 
 
-def member_key_sql(spelling, *, qualifier=None):
-    """Spell a declared member key; a NULL or empty component raises while the pass runs."""
-    declared = _declared(spelling)
-    parts = [_column(field, qualifier) for field in spelling.fields]
-    invalid = " OR ".join(f"{part} IS NULL OR {part} = ''" for part in parts)
+def rows_differ_sql(columns, left, right):
+    """Whether two relations' rows, qualified ``left`` and ``right``, spell differently under docspec-table-row/1.
+
+    A direct comparison between generations: every type but DOUBLE spells
+    injectively, so SQL distinctness is spelling distinctness, NULLs and list
+    elements included. SQL equates 0.0 with -0.0, whose spellings differ, and
+    every NaN with every other, which all spell ``nan``.
+    """
+    differs = []
+    for name, kind in table_columns(columns):
+        a, b = _column(name, left), _column(name, right)
+        differs.append(f"{a} IS DISTINCT FROM {b}" + (f" OR ({a} = 0 AND signbit({a}) <> signbit({b}))" if kind == "DOUBLE" else ""))
+    return " OR ".join(f"({condition})" for condition in differs)
+
+
+def member_key_sql(identity, *, qualifier=None):
+    """Spell a declared member key; a NULL or empty component raises while the pass runs.
+
+    A DATE component spells ISO 8601, like the row rule, and refuses outside
+    years 1 through 9999 as it does.
+    """
+    declared = _declared(identity.key)
+    columns = [_column(field, qualifier) for field in identity.key.fields]
+    invalid = " OR ".join(f"{column} IS NULL" if kind == "DATE" else f"{column} IS NULL OR {column} = ''"
+                          for column, kind in zip(columns, identity.key_kinds, strict=True))
+    dates = " OR ".join(f"NOT isfinite({column}) OR year({column}) NOT BETWEEN 1 AND 9999"
+                        for column, kind in zip(columns, identity.key_kinds, strict=True) if kind == "DATE")
+    parts = [f"strftime({column}, '%Y-%m-%d')" if kind == "DATE" else column
+             for column, kind in zip(columns, identity.key_kinds, strict=True)]
     return (f"CASE WHEN {invalid} THEN error('table member key has a NULL or empty component') "
-            f"ELSE {declared.sql(parts)} END")
+            + (f"WHEN {dates} THEN error('table date is outside years 1 through 9999') " if dates else "")
+            + f"ELSE {declared.sql(parts)} END")
 
 
 def _occurrence_frame(family, table, key, digest_json):
@@ -147,7 +174,7 @@ def identity_relation(rows, identity):
     The inner projection spells each row's canonical JSON once; the outer one
     frames the occurrence from that digest, so no row is spelled or hashed twice.
     """
-    inner = (f"{member_key_sql(identity.key)} AS member_key, "
+    inner = (f"{member_key_sql(identity)} AS member_key, "
              f"sha256({row_json_sql(identity.columns)}) AS row_hex")
     frame = _occurrence_frame(identity.family, identity.table, "member_key", "'\"sha256:' || row_hex || '\"'")
     return rows.project(inner).project(f"member_key, unhex(row_hex) AS row_digest, unhex(sha256({frame})) AS occurrence_hash")
