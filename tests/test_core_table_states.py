@@ -85,10 +85,10 @@ def test_first_admission_publishes_one_unit_and_every_reader_serves_the_referenc
         request = workspace.generating_request(admitted.state_id)
         assert [item.label for item in request.inputs] == ["root", "members"]
         reference = expected(ROWS)
-        assert {key: (entity.entity_id, entity) for key, entity in workspace.rows(admitted.state_id)} == {
-            key: (urn, core.Entity(format_version=1, entity_id=urn, entity_type="occurrence",
-                                   value=core.InlineValue(value=table_row_value(row, COLUMNS))))
-            for row in ROWS for key, (urn, _) in [(reference_identity(IDENTITY, row)[0], reference[reference_identity(IDENTITY, row)[0]])]}
+        assert dict(workspace.rows(admitted.state_id)) == {
+            key: core.Entity(format_version=1, entity_id=urn, entity_type="occurrence",
+                             value=core.InlineValue(value=table_row_value(row, COLUMNS)))
+            for row in ROWS for key, _, urn in [reference_identity(IDENTITY, row)]}
         with workspace.open_state(admitted.state_id) as reader:
             assert reader.record_count == 3
             with reader.relation() as relation:
@@ -240,6 +240,19 @@ def test_an_inadmissible_generation_refuses_and_publishes_nothing(tmp_path, name
         assert not list(workspace.records.staging_directory.iterdir())
         # Every refusal precedes registration: no table moved into the store.
         assert not list((workspace.path / "records").glob("iceberg/*"))
+
+
+@pytest.mark.parametrize("duplicate", [ROWS[1], {**ROWS[1], "title": "a second copy"}])
+def test_a_later_generation_refuses_a_duplicate_key_across_all_its_rows(tmp_path, duplicate):
+    # An unchanged duplicate is never minted, so only the whole-generation check sees it.
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first = admit_all(workspace, tmp_path, [ROWS])[0]
+        counts = ledger_counts(workspace)
+        source = tmp_path / "duplicated"
+        write(source, [*ROWS, duplicate])
+        with pytest.raises(IntegrityError, match="duplicate member key"):
+            workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
+        assert ledger_counts(workspace) == counts and workspace.ledger.current("fr") == ("state", first.state_id)
 
 
 def test_a_wrong_pin_and_a_spelling_change_refuse(tmp_path):
