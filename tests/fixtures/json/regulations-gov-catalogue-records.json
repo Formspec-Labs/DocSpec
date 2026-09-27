@@ -1,0 +1,677 @@
+[
+ [
+  "ACF-2006-0004",
+  {
+   "sourceItemId": "ACF-2006-0004",
+   "sourceNativeFacts": [
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "agencyId": "ACF",
+        "category": null,
+        "displayProperties": [],
+        "dkAbstract": null,
+        "docketType": "Nonrulemaking",
+        "effectiveDate": null,
+        "field1": null,
+        "field2": null,
+        "generic": null,
+        "keywords": null,
+        "legacyId": null,
+        "modifyDate": "2014-04-22T19:28:24Z",
+        "objectId": "0b00006480126514",
+        "organization": null,
+        "petitionNbr": null,
+        "program": null,
+        "rin": null,
+        "shortTitle": null,
+        "subType": null,
+        "subType2": null,
+        "title": "Notice of Public Comment on the Proposed Adoption of ANA Program Policies and Procedures"
+       },
+       "id": "ACF-2006-0004",
+       "links": {
+        "self": "https://api.regulations.gov/v4/dockets/ACF-2006-0004"
+       },
+       "type": "dockets"
+      }
+     },
+     "schemaDigest": "sha256:d9f5c9b14067a47d731bb52fafc1af52f193a7f06fa12f9494ff827af284b2c0",
+     "schemaName": "regulations-gov-docket-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-dockets"
+    }
+   ]
+  }
+ ],
+ [
+  "EPA-HQ-OAR-2014-0557-0010",
+  {
+   "sourceItemId": "EPA-HQ-OAR-2014-0557-0010",
+   "sourceNativeFacts": [
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "additionalRins": null,
+        "address1": null,
+        "address2": null,
+        "agencyId": "EPA",
+        "allowLateComments": false,
+        "authorDate": "2014-06-17T04:00:00Z",
+        "authors": [
+         "\u0019\u0002\b\u001a\u0004\u001b\u0003\u0010\u0011\u0006\u001c\u000e\u0011\u0003\u0003\u0011\u0002\u0003Elizabeth Scheehle "
+        ],
+        "category": null,
+        "cfrPart": null,
+        "city": null,
+        "comment": null,
+        "commentEndDate": null,
+        "commentStartDate": null,
+        "country": null,
+        "displayProperties": [
+         {
+          "label": "Page Count",
+          "name": "pageCount",
+          "tooltip": "Number of pages In the content file"
+         },
+         {
+          "label": "Authors",
+          "name": "authors",
+          "tooltip": "Individuals and/or organizations that authored the document"
+         }
+        ],
+        "docAbstract": "6/17/2014 email as a cover page from \u0019\u0002\b\u001a\u0004\u001b\u0003\u0010\u0011\u0006\u001c\u000e\u0011\u0003\u0003\u0011\u0002\u0003Elizabeth Scheele, Chief, Alternative Fuels Branch, Stationary Source Division, California Air Resources Board (CARB); to provide \u001d\u0004\u0002\b\u0007California Air Resources Board (CARB) comments to the USEPA.",
+        "docketId": "EPA-HQ-OAR-2014-0557",
+        "documentType": "Supporting & Related Material",
+        "effectiveDate": null,
+        "email": null,
+        "exhibitLocation": null,
+        "exhibitType": null,
+        "fax": null,
+        "field1": null,
+        "field2": null,
+        "fileFormats": [
+         {
+          "fileUrl": "https://downloads.regulations.gov/EPA-HQ-OAR-2014-0557-0010/content.pdf",
+          "format": "pdf",
+          "size": 68140
+         }
+        ],
+        "firstName": null,
+        "frDocNum": null,
+        "frVolNum": null,
+        "govAgency": null,
+        "govAgencyType": null,
+        "implementationDate": null,
+        "lastName": null,
+        "legacyId": null,
+        "media": "Electronic",
+        "modifyDate": "2014-09-04T16:51:07Z",
+        "objectId": "0900006481827718",
+        "ombApproval": null,
+        "openForComment": false,
+        "organization": null,
+        "originalDocumentId": null,
+        "pageCount": 1,
+        "paperLength": 0,
+        "paperWidth": 0,
+        "phone": null,
+        "postedDate": "2014-09-04T04:00:00Z",
+        "postmarkDate": null,
+        "reasonWithdrawn": null,
+        "receiveDate": "2014-08-15T04:00:00Z",
+        "regWriterInstruction": null,
+        "restrictReason": null,
+        "restrictReasonType": null,
+        "sourceCitation": null,
+        "startEndPage": null,
+        "stateProvinceRegion": null,
+        "subject": null,
+        "submitterRep": null,
+        "submitterRepAddress": null,
+        "submitterRepCityState": null,
+        "subtype": "E-mail",
+        "title": "CARB US EPA White Paper Letter 060314 (Signed)",
+        "topics": null,
+        "trackingNbr": "1jy-8dt6-20rd",
+        "withdrawn": false,
+        "zip": null
+       },
+       "id": "EPA-HQ-OAR-2014-0557-0010",
+       "links": {
+        "self": "https://api.regulations.gov/v4/documents/EPA-HQ-OAR-2014-0557-0010"
+       },
+       "relationships": {
+        "attachments": {
+         "links": {
+          "related": "https://api.regulations.gov/v4/documents/EPA-HQ-OAR-2014-0557-0010/attachments",
+          "self": "https://api.regulations.gov/v4/documents/EPA-HQ-OAR-2014-0557-0010/relationships/attachments"
+         }
+        }
+       },
+       "type": "documents"
+      }
+     },
+     "schemaDigest": "sha256:0afa43d0285b338fac0d14769f22629270aa6421bc4618a472deea512316f299",
+     "schemaName": "regulations-gov-document-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-documents"
+    },
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "agencyId": "EPA",
+        "category": null,
+        "displayProperties": [
+         {
+          "label": "Location",
+          "name": "generic",
+          "tooltip": "Agency specific program associated with a docket (regulatory action); equivalents: Bureau, Docket Item Code, Program Area."
+         },
+         {
+          "label": "Description",
+          "name": "abstract",
+          "tooltip": "Describes an agency's specific regulatory action; equivalents: Abstract, Docket Subject, General Info, Related To, Summary."
+         }
+        ],
+        "dkAbstract": "EPA developed five oil and gas white papers and posted those papers on April 15, 2014 on the EPA oil and gas website. The public submitted technical information and data to an email box OilandGas.Whitepapers@epa.gov between April 15, 2014 and June 16, 2014. This docket contain those submittals.",
+        "docketType": "Nonrulemaking",
+        "effectiveDate": null,
+        "field1": null,
+        "field2": null,
+        "generic": "HQ-OAR",
+        "keywords": [
+         "Oil and Gas"
+        ],
+        "legacyId": null,
+        "modifyDate": "2024-04-16T01:02:42Z",
+        "objectId": "0b000064817cf6f0",
+        "organization": null,
+        "petitionNbr": null,
+        "program": null,
+        "rin": null,
+        "shortTitle": null,
+        "subType": null,
+        "subType2": null,
+        "title": "Oil and Gas White Papers Public Submittals of Technical Information and Data"
+       },
+       "id": "EPA-HQ-OAR-2014-0557",
+       "links": {
+        "self": "https://api.regulations.gov/v4/dockets/EPA-HQ-OAR-2014-0557"
+       },
+       "type": "dockets"
+      }
+     },
+     "schemaDigest": "sha256:d9f5c9b14067a47d731bb52fafc1af52f193a7f06fa12f9494ff827af284b2c0",
+     "schemaName": "regulations-gov-docket-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-dockets"
+    }
+   ]
+  }
+ ],
+ [
+  "EPA-HQ-OPP-2022-0153",
+  {
+   "sourceItemId": "EPA-HQ-OPP-2022-0153",
+   "sourceNativeFacts": [
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "agencyId": "EPA",
+        "category": null,
+        "displayProperties": [
+         {
+          "label": "Location",
+          "name": "generic",
+          "tooltip": "Agency specific program associated with a docket (regulatory action); equivalents: Bureau, Docket Item Code, Program Area."
+         },
+         {
+          "label": "Description",
+          "name": "abstract",
+          "tooltip": "Describes an agency's specific regulatory action; equivalents: Abstract, Docket Subject, General Info, Related To, Summary."
+         },
+         {
+          "label": "Short Title",
+          "name": "shortTitle",
+          "tooltip": "A combination of letters and or numbers assigned to an agency's regulatory action for purposes of brevity."
+         }
+        ],
+        "dkAbstract": "Registration Review",
+        "docketType": "Nonrulemaking",
+        "effectiveDate": null,
+        "field1": null,
+        "field2": null,
+        "generic": "HQ-OPP",
+        "keywords": [
+         "Glycoprotein",
+         "•\tPZP  •\tPorcine Zona Pellucida"
+        ],
+        "legacyId": null,
+        "modifyDate": "2024-05-06T09:18:37Z",
+        "objectId": "0b00006484f3b71e",
+        "organization": null,
+        "petitionNbr": null,
+        "program": null,
+        "rin": null,
+        "shortTitle": "Porcine Zona Pellucida (PZP)",
+        "subType": null,
+        "subType2": null,
+        "title": "Porcine Zona Pellucida (PZP) Registration Review Docket"
+       },
+       "id": "EPA-HQ-OPP-2022-0153",
+       "links": {
+        "self": "https://api.regulations.gov/v4/dockets/EPA-HQ-OPP-2022-0153"
+       },
+       "type": "dockets"
+      }
+     },
+     "schemaDigest": "sha256:d9f5c9b14067a47d731bb52fafc1af52f193a7f06fa12f9494ff827af284b2c0",
+     "schemaName": "regulations-gov-docket-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-dockets"
+    }
+   ]
+  }
+ ],
+ [
+  "EPA-HQ-OW-2024-0592-0024",
+  {
+   "sourceItemId": "EPA-HQ-OW-2024-0592-0024",
+   "sourceNativeFacts": [
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "additionalRins": null,
+        "address1": null,
+        "address2": null,
+        "agencyId": "EPA",
+        "allowLateComments": false,
+        "authorDate": "2017-12-06T05:00:00Z",
+        "authors": [
+         "Andersen, Stine Linding",
+         "Andersen, Stig",
+         "Liew, Zeyan",
+         "Vestergaard, Peter",
+         "Olsen, Jørn"
+        ],
+        "category": null,
+        "cfrPart": null,
+        "city": null,
+        "comment": null,
+        "commentEndDate": null,
+        "commentStartDate": null,
+        "country": null,
+        "displayProperties": [
+         {
+          "label": "Authors",
+          "name": "authors",
+          "tooltip": "Individuals and/or organizations that authored the document"
+         },
+         {
+          "label": "Page Count",
+          "name": "pageCount",
+          "tooltip": "Number of pages In the content file"
+         }
+        ],
+        "docAbstract": "Context: Abnormal maternal thyroid function in pregnancy may impair fetal brain development, but more evidence is needed to refine and corroborate the hypothesis. Objective: To estimate the association between maternal thyroid function in early pregnancy and neuropsychological performance of the child at 5 years of age. Design: Follow-up study. Participants: A cohort of 1153 women and their children sampled from the Danish National Birth Cohort. Maternal thyroid-stimulating hormone (TSH) and free thyroxine (fT4) were measured in stored biobank sera from early pregnancy. Main outcomes measures: Child neuropsychological test results (Wechsler Intelligence Scale/Test of Everyday Attention), test of motor function (Movement Assessment Battery), and results of parent and teacher reports (Behavior Rating Inventory of Executive Function/Strengths and Difficulties Questionnaire). Results: Altogether 145 children (12.6%) were born to mothers with abnormal thyroid function in the early pregnancy. High maternal TSH and low fT4 were associated with lower child verbal intelligence quotient (adjusted mean difference TSH ≥ 10 mIU/L vs 0.1 to 2.49 mIU/L, -8.9 [95% confidence interval (CI), -15 to -2.4]; fT4 < 10 pmol/l vs 12.0 to 18.99 pmol/l, -13 [95% CI, -19 to -7.3]). Abnormal maternal thyroid function was also associated with adverse motor function and teacher-reported problems of executive function and behavior, and these associations were dominated by exposure to maternal hypothyroxinemia. Conclusions: Maternal thyroid hormone abnormalities were associated with adverse neuropsychological function of the child at 5 years of age. For intelligence, marked hypothyroidism was important, whereas for motor function and executive and behavior problems, maternal hypothyroxinemia was predominant.  Please contact the EPA Docket Center, Public Reading Room to view this document. Address: 1301 Constitution Ave. NW, Room 3334, Washington, DC 20004. Telephone: 202-566-1744. Fax: 202-566-9744. Email: docket-customerservice@epa.gov.",
+        "docketId": "EPA-HQ-OW-2024-0592",
+        "documentType": "Supporting & Related Material",
+        "effectiveDate": null,
+        "email": null,
+        "exhibitLocation": null,
+        "exhibitType": null,
+        "fax": null,
+        "field1": null,
+        "field2": null,
+        "fileFormats": null,
+        "firstName": null,
+        "frDocNum": null,
+        "frVolNum": null,
+        "govAgency": null,
+        "govAgencyType": null,
+        "implementationDate": null,
+        "lastName": null,
+        "legacyId": null,
+        "media": "Electronic",
+        "modifyDate": "2026-01-06T20:24:02Z",
+        "objectId": "09000064b8ef9738",
+        "ombApproval": null,
+        "openForComment": false,
+        "organization": null,
+        "originalDocumentId": null,
+        "pageCount": 11,
+        "paperLength": 0,
+        "paperWidth": 0,
+        "phone": null,
+        "postedDate": "2026-01-06T05:00:00Z",
+        "postmarkDate": null,
+        "reasonWithdrawn": null,
+        "receiveDate": "2025-08-12T04:00:00Z",
+        "regWriterInstruction": null,
+        "restrictReason": null,
+        "restrictReasonType": "Copyrighted",
+        "sourceCitation": "The Journal of Clinical Endocrinology & Metabolism 103.2 (2018): 660-670",
+        "startEndPage": null,
+        "stateProvinceRegion": null,
+        "subject": null,
+        "submitterRep": null,
+        "submitterRepAddress": null,
+        "submitterRepCityState": null,
+        "subtype": "Publication - Copyrighted Materials",
+        "title": "Andersen et al. (2018) Maternal thyroid function in early pregnancy and neuropsychological performance of the child at 5 years of age. Journal Article",
+        "topics": null,
+        "trackingNbr": "me8-wfct-wvi1",
+        "withdrawn": false,
+        "withinCommentPeriod": false,
+        "zip": null
+       },
+       "id": "EPA-HQ-OW-2024-0592-0024",
+       "links": {
+        "self": "https://api.regulations.gov/v4/documents/EPA-HQ-OW-2024-0592-0024"
+       },
+       "relationships": {
+        "attachments": {
+         "links": {
+          "related": "https://api.regulations.gov/v4/documents/EPA-HQ-OW-2024-0592-0024/attachments",
+          "self": "https://api.regulations.gov/v4/documents/EPA-HQ-OW-2024-0592-0024/relationships/attachments"
+         }
+        }
+       },
+       "type": "documents"
+      }
+     },
+     "schemaDigest": "sha256:0afa43d0285b338fac0d14769f22629270aa6421bc4618a472deea512316f299",
+     "schemaName": "regulations-gov-document-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-documents"
+    },
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "agencyId": "EPA",
+        "category": null,
+        "displayProperties": [
+         {
+          "label": "Location",
+          "name": "generic",
+          "tooltip": "Agency specific program associated with a docket (regulatory action); equivalents: Bureau, Docket Item Code, Program Area."
+         },
+         {
+          "label": "Short Title",
+          "name": "shortTitle",
+          "tooltip": "A combination of letters and or numbers assigned to an agency's regulatory action for purposes of brevity."
+         }
+        ],
+        "dkAbstract": "The U.S. Environmental Protection Agency (EPA) is conducting rulemaking activities to develop a National Primary Drinking Water Regulation for perchlorate in drinking water.",
+        "docketType": "Rulemaking",
+        "effectiveDate": null,
+        "field1": null,
+        "field2": null,
+        "generic": "HQ-OW",
+        "keywords": [
+         "perchlorate, ClO4, NPDWR, Drinking Water, SDWA"
+        ],
+        "legacyId": null,
+        "modifyDate": "2026-03-12T16:08:47Z",
+        "objectId": "0b0000648684c087",
+        "organization": null,
+        "petitionNbr": null,
+        "program": null,
+        "rin": "2040-AG36",
+        "shortTitle": "Perchlorate NPDWR",
+        "subType": null,
+        "subType2": null,
+        "title": "Perchlorate National Primary Drinking Water Regulation"
+       },
+       "id": "EPA-HQ-OW-2024-0592",
+       "links": {
+        "self": "https://api.regulations.gov/v4/dockets/EPA-HQ-OW-2024-0592"
+       },
+       "type": "dockets"
+      }
+     },
+     "schemaDigest": "sha256:d9f5c9b14067a47d731bb52fafc1af52f193a7f06fa12f9494ff827af284b2c0",
+     "schemaName": "regulations-gov-docket-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-dockets"
+    }
+   ]
+  }
+ ],
+ [
+  "OSHA-2025-0040-0002",
+  {
+   "sourceItemId": "OSHA-2025-0040-0002",
+   "sourceNativeFacts": [
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "additionalRins": null,
+        "address1": null,
+        "address2": null,
+        "agencyId": "OSHA",
+        "allowLateComments": false,
+        "authorDate": null,
+        "authors": null,
+        "category": null,
+        "cfrPart": "29 CFR Part 1926",
+        "city": null,
+        "comment": null,
+        "commentEndDate": "2025-11-02T03:59:59Z",
+        "commentStartDate": "2025-07-01T04:00:00Z",
+        "country": null,
+        "displayProperties": [
+         {
+          "label": "Page Count",
+          "name": "pageCount",
+          "tooltip": "Number of pages In the content file"
+         }
+        ],
+        "docAbstract": "Federal Register of July 1, 2025. (90 FR 28366)",
+        "docketId": "OSHA-2025-0040",
+        "documentType": "Proposed Rule",
+        "effectiveDate": null,
+        "email": null,
+        "exhibitLocation": null,
+        "exhibitType": null,
+        "fax": null,
+        "field1": null,
+        "field2": null,
+        "fileFormats": [
+         {
+          "fileUrl": "https://downloads.regulations.gov/OSHA-2025-0040-0002/content.pdf",
+          "format": "pdf",
+          "size": 278804
+         },
+         {
+          "fileUrl": "https://downloads.regulations.gov/OSHA-2025-0040-0002/content.html",
+          "format": "html",
+          "size": 31979
+         }
+        ],
+        "firstName": null,
+        "frDocNum": "2025-11645",
+        "frVolNum": "90",
+        "govAgency": null,
+        "govAgencyType": null,
+        "implementationDate": null,
+        "lastName": null,
+        "legacyId": null,
+        "media": null,
+        "modifyDate": "2025-12-02T10:00:20Z",
+        "objectId": "09000064b8e4b1b3",
+        "ombApproval": null,
+        "openForComment": false,
+        "organization": null,
+        "originalDocumentId": "OSHA_FRDOC_0001-1734",
+        "pageCount": 5,
+        "paperLength": 0,
+        "paperWidth": 0,
+        "phone": null,
+        "postedDate": "2025-07-01T04:00:00Z",
+        "postmarkDate": null,
+        "reasonWithdrawn": null,
+        "receiveDate": "2025-07-01T04:00:00Z",
+        "regWriterInstruction": null,
+        "restrictReason": null,
+        "restrictReasonType": null,
+        "sourceCitation": null,
+        "startEndPage": "28366 - 28370",
+        "stateProvinceRegion": null,
+        "subject": "Construction Industry, Occupational Safety and Health, Lighting",
+        "submitterRep": null,
+        "submitterRepAddress": null,
+        "submitterRepCityState": null,
+        "subtype": "Request for Comment",
+        "title": "Construction Illumination",
+        "topics": [
+         "Construction Industry",
+         "Occupational Safety and Health"
+        ],
+        "trackingNbr": null,
+        "withdrawn": false,
+        "withinCommentPeriod": false,
+        "zip": null
+       },
+       "id": "OSHA-2025-0040-0002",
+       "links": {
+        "self": "https://api.regulations.gov/v4/documents/OSHA-2025-0040-0002"
+       },
+       "relationships": {
+        "attachments": {
+         "links": {
+          "related": "https://api.regulations.gov/v4/documents/OSHA-2025-0040-0002/attachments",
+          "self": "https://api.regulations.gov/v4/documents/OSHA-2025-0040-0002/relationships/attachments"
+         }
+        }
+       },
+       "type": "documents"
+      }
+     },
+     "schemaDigest": "sha256:0afa43d0285b338fac0d14769f22629270aa6421bc4618a472deea512316f299",
+     "schemaName": "regulations-gov-document-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-documents"
+    },
+    {
+     "fields": {
+      "data": {
+       "attributes": {
+        "agencyId": "OSHA",
+        "category": null,
+        "displayProperties": [
+         {
+          "label": "Short Title",
+          "name": "shortTitle",
+          "tooltip": "A combination of letters and or numbers assigned to an agency's regulatory action for purposes of brevity."
+         }
+        ],
+        "dkAbstract": "The Occupational Safety and Health Administration (OSHA) is proposing to remove from the Code of Federal Regulations its Construction Illumination Standards (29 CFR 1926.26; 1926.56) (Docket No.). The standards do not substantially reduce a significant risk to workers. This is a deregulatory action per Executive Order 14192, “Unleashing Prosperity Through Deregulation” (90 FR 9065, Feb. 6, 2025). ",
+        "docketType": "Rulemaking",
+        "effectiveDate": null,
+        "field1": null,
+        "field2": null,
+        "generic": null,
+        "keywords": null,
+        "legacyId": null,
+        "modifyDate": "2025-12-01T15:39:23Z",
+        "objectId": "0b000064b8e1a344",
+        "organization": null,
+        "petitionNbr": null,
+        "program": null,
+        "rin": "1218-AD70",
+        "shortTitle": "Construction Illumination",
+        "subType": "Construction",
+        "subType2": null,
+        "title": "Construction Illumination"
+       },
+       "id": "OSHA-2025-0040",
+       "links": {
+        "self": "https://api.regulations.gov/v4/dockets/OSHA-2025-0040"
+       },
+       "type": "dockets"
+      }
+     },
+     "schemaDigest": "sha256:d9f5c9b14067a47d731bb52fafc1af52f193a7f06fa12f9494ff827af284b2c0",
+     "schemaName": "regulations-gov-docket-raw",
+     "schemaVersion": "1.0",
+     "scopeId": "regulations-gov-dockets"
+    },
+    {
+     "fields": {
+      "abstract": "The Occupational Safety and Health Administration (OSHA) is proposing to rescind the construction illumination requirements, codified in 29 CFR 1926.26 and 1926.56.",
+      "agencies": [
+       {
+        "id": 271,
+        "json_url": "https://www.federalregister.gov/api/v1/agencies/271",
+        "name": "Labor Department",
+        "parent_id": null,
+        "raw_name": "DEPARTMENT OF LABOR",
+        "slug": "labor-department",
+        "url": "https://www.federalregister.gov/agencies/labor-department"
+       },
+       {
+        "id": 386,
+        "json_url": "https://www.federalregister.gov/api/v1/agencies/386",
+        "name": "Occupational Safety and Health Administration",
+        "parent_id": 271,
+        "raw_name": "Occupational Safety and Health Administration",
+        "slug": "occupational-safety-and-health-administration",
+        "url": "https://www.federalregister.gov/agencies/occupational-safety-and-health-administration"
+       }
+      ],
+      "agency_names": [
+       "Labor Department",
+       "Occupational Safety and Health Administration"
+      ],
+      "body_html_url": "https://www.federalregister.gov/documents/full_text/html/2025/07/01/2025-11645.html",
+      "cfr_references": [
+       {
+        "chapter": null,
+        "citation_url": null,
+        "part": "1926",
+        "title": 29
+       }
+      ],
+      "comments_close_on": "2025-09-02",
+      "docket_ids": [
+       "Docket No. OSHA-2025-0040"
+      ],
+      "document_number": "2025-11645",
+      "effective_on": null,
+      "end_page": 28370,
+      "executive_order_number": null,
+      "html_url": "https://www.federalregister.gov/documents/2025/07/01/2025-11645/construction-illumination",
+      "pdf_url": "https://www.govinfo.gov/content/pkg/FR-2025-07-01/pdf/2025-11645.pdf",
+      "publication_date": "2025-07-01",
+      "regulation_id_numbers": [
+       "1218-AD70"
+      ],
+      "signing_date": null,
+      "start_page": 28366,
+      "subtype": null,
+      "title": "Construction Illumination",
+      "topics": [
+       "Construction industry",
+       "Occupational safety and health"
+      ],
+      "type": "Proposed Rule",
+      "volume": 90
+     },
+     "schemaDigest": "sha256:7ad9b4354025ff8947020d548ffe8cc07f68097c9f2235f79b86821cb1ff7eb0",
+     "schemaName": "federal-register-document",
+     "schemaVersion": "1.0",
+     "scopeId": "federal-register-documents"
+    }
+   ]
+  }
+ ]
+]

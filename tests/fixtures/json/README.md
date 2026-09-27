@@ -11,3 +11,12 @@ These unmodified publisher responses come from SpicyDocs commit
 The JSON reader tests check the original hashes, retained metadata and exact
 record slices against the frozen reader from DocSpec `051ce05`. Whitespace
 mutations are made in memory. Neither these files nor their spellings change.
+
+`regulations-gov-catalogue-records.json` holds five members of DocSpec's
+Regulations.gov `catalogue` state (pin
+`sha256:2200b5e68601decb8ac664d824d025c4e2031663c10bae900dcfcd20cbd74643`) as
+`[member key, value]` pairs: each value's `sourceItemId` and `sourceNativeFacts`
+verbatim, its interpretations and renditions dropped. They were chosen for
+their spelling hazards (control characters and non-ASCII text in `authors`
+and `keywords`, an empty `displayProperties`) and state no submitter contact
+details. `tests/test_export_regulations_attributes.py` reads them.
