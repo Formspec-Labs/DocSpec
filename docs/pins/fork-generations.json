@@ -5,15 +5,21 @@
   "pins": [
     {
       "family": "federal-register",
-      "artifactDigest": "sha256:40dfab8ea2cab01c89375780764806ce0ea96735b83a1109bec94d45712c8f84",
+      "artifactDigest": "sha256:497be73c5c70ccd14cc1d5f99200e76a703baf4860fbe20c5025587a57a4e1d7",
       "role": "production",
-      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (port 8091; receipts/admit-b.json)"
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (port 8091; receipts/refresh-refresh-b2-20260926-admit.json)"
+    },
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:40dfab8ea2cab01c89375780764806ce0ea96735b83a1109bec94d45712c8f84",
+      "role": "evidence",
+      "cites": "spicyengine docs/history/2026-09-26-typed-layer-cutover (first typed-layer production, until refresh-b2-20260926)"
     },
     {
       "family": "federal-register",
       "artifactDigest": "sha256:4a40a635e5af3f12bdebb630cd8f0e5472474fc6ff69d1c7612b4c4dc3b0568d",
       "role": "evidence",
-      "cites": "~/Work/corpora/fr-contract-check-20260926 (B2; becomes production at the next refresh)"
+      "cites": "~/Work/corpora/fr-contract-check-20260926 (B2 contract check; same federal_register table sha256:7c42aec8… as 497be73c)"
     },
     {
       "family": "federal-register",
@@ -48,8 +54,8 @@
     {
       "family": "dockets",
       "artifactDigest": "sha256:e601dbf6ac0bc4fbd9856b0b6b5cbc2e0d0ece726543cef5b2c52463c89c8f4e",
-      "role": "evidence",
-      "cites": "~/Work/corpora/candidate-typed-20260926/workspace (candidate A; receipts/admit.json)"
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b docket spine (port 8091; receipts/refresh-refresh-b2-20260926-admit.json); docs/history/probes/2026-09-25-admit-regulations-gate.json"
     }
   ]
 }
