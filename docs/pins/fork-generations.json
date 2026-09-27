@@ -56,6 +56,18 @@
       "artifactDigest": "sha256:e601dbf6ac0bc4fbd9856b0b6b5cbc2e0d0ece726543cef5b2c52463c89c8f4e",
       "role": "production",
       "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b docket spine (port 8091; receipts/refresh-refresh-b2-20260926-admit.json); docs/history/probes/2026-09-25-admit-regulations-gate.json"
+    },
+    {
+      "family": "document-attributes",
+      "artifactDigest": "sha256:30f9aa294cfd56db2329aac965aadc5bdaffb843e384dddf243c27f187d74532",
+      "role": "evidence",
+      "cites": "the post-sweep generation of 2026-09-27 (2,002,888 rows; ETL 36351853866 on spicy-regs d1c6703); admitted by ~/Work/corpora/candidate-byref-20260927 for the by-reference layer, production at the 8091 switch"
+    },
+    {
+      "family": "docket-attributes",
+      "artifactDigest": "sha256:ba5aba75343d354182f415d123b5c613c503d4a755a9c6692eedb0e822f06ab8",
+      "role": "evidence",
+      "cites": "the post-sweep generation of 2026-09-27 (279,406 rows; ETL 36351853866 on spicy-regs d1c6703); admitted by ~/Work/corpora/candidate-byref-20260927 for the by-reference layer, production at the 8091 switch"
     }
   ]
 }
