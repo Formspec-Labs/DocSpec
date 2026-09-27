@@ -42,7 +42,8 @@ MAX_MEMBER_BYTES = 2**30
 MAX_ROW_GROUP_BYTES = 64 * 2**20
 ROW_GROUP_TARGET = 48 * 2**20  # of the estimate below, which ignores levels and page headers
 _VECTOR_ROWS = 2048  # DuckDB rounds a row group up to whole vectors
-_INSTANT = r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z"
+# An instant as spicy-docs' reference projection admits one: whole seconds, UTC, spelled exactly so.
+_INSTANT = r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})Z"
 # displayProperties, as the source's canonical record holds it: an array of {label, name, tooltip} in that key
 # order, each null or a printable-ASCII string whose only escape is \". Such text is already json_column's spelling.
 _DISPLAY_OBJECT = '\\{"label":S,"name":S,"tooltip":S\\}'.replace("S", r'(null|"([ !#-\[\]-~]|\\")*")')
@@ -121,7 +122,7 @@ def _value_sql(attribute, kind, context):
         return (f"CASE WHEN regexp_full_match({value}, {_literal(_INSTANT)}) "
                 f"AND NOT starts_with({value}, '0000') AND TRY_CAST({value} AS TIMESTAMPTZ) IS NOT NULL "
                 f"THEN CAST({value} AS TIMESTAMPTZ) "
-                f"ELSE error({_literal(context + ' is not an ISO 8601 UTC instant in whole microseconds: ')} "
+                f"ELSE error({_literal(context + ' is not an instant spelled YYYY-MM-DDTHH:MM:SSZ: ')} "
                 f"|| {value}) END")
     if kind == LIST:
         return (f"CASE WHEN list_bool_or(list_transform({value}, lambda item: item IS NULL)) "
@@ -378,9 +379,8 @@ def _reference_value(kind, stated, context):
     if kind == INTEGER and type(stated) is int and -2**31 <= stated < 2**31:
         return stated
     if kind == TIMESTAMPTZ and isinstance(stated, str) and (match := re.fullmatch(_INSTANT, stated)):
-        *parts, fraction = match.groups()
         try:
-            return datetime(*map(int, parts), int((fraction or "").ljust(6, "0")), tzinfo=timezone.utc)
+            return datetime(*map(int, match.groups()), tzinfo=timezone.utc)
         except ValueError as error:
             raise ValueError(f"{context} states {stated!r}: {error}") from error
     if kind == LIST and isinstance(stated, list) and all(isinstance(item, str) for item in stated):

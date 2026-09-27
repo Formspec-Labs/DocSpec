@@ -49,8 +49,8 @@ def native_rows(table, values):
 def test_native_typing_equals_the_python_reference():
     cases = [*({"text": text} for text in [*HAZARDS, None]), {"flag": True}, {"flag": False},
              *({"count": count} for count in (0, -5, 2**31 - 1, -2**31)),
-             *({"at": at} for at in ("2005-10-24T04:00:00Z", "2005-10-24T04:00:00.5Z", "2026-09-02T23:59:59.123456Z",
-                                     "0001-01-01T00:00:00Z", "9999-12-31T23:59:59Z")),
+             *({"at": at} for at in ("2005-10-24T04:00:00Z", "2026-09-02T23:59:59Z", "0001-01-01T00:00:00Z",
+                                     "9999-12-31T23:59:59Z")),
              {"items": HAZARDS}, {"items": []}, {"displayProperties": [DISPLAY, {**DISPLAY, "label": None}]},
              {"displayProperties": []}, {}]
     values = [(f"k{index}", record(f"k{index}", attributes)) for index, attributes in enumerate(cases)]
@@ -61,16 +61,17 @@ def test_native_typing_equals_the_python_reference():
             {name: wanted for name, wanted in expected.items() if name != "document_id"}, key
         assert native[key]["source_occurrence_id"] == f"occurrence:{key}"
     assert native["k7"]["flag"] is True and native["k11"]["count"] == 2**31 - 1
-    assert native["k15"]["at"] == datetime(2026, 9, 2, 23, 59, 59, 123456, tzinfo=timezone.utc)
-    assert native["k18"]["items"] == HAZARDS
-    assert native["k20"]["display_properties_json"] == json_column([DISPLAY, {**DISPLAY, "label": None}])
+    assert native["k14"]["at"] == datetime(2026, 9, 2, 23, 59, 59, tzinfo=timezone.utc)
+    assert native["k17"]["items"] == HAZARDS
+    assert native["k19"]["display_properties_json"] == json_column([DISPLAY, {**DISPLAY, "label": None}])
 
 
 @pytest.mark.parametrize(("attribute", "stated"), [
     ("text", 7), ("text", True), ("text", ["a"]), ("text", {"a": "b"}), ("text", 1.5),
     ("flag", "true"), ("flag", 1),
     ("count", 1.5), ("count", "5"), ("count", 2**31), ("count", -2**31 - 1), ("count", 2**64), ("count", True),
-    ("at", "2005-10-24"), ("at", "2005-10-24T04:00:00+01:00"), ("at", "2005-10-24T04:00:00.1234567Z"),
+    ("at", "2005-10-24"), ("at", "2005-10-24T04:00:00+01:00"), ("at", "2005-10-24T04:00:00.5Z"),
+    ("at", "2005-10-24T04:00:00.123456Z"),
     ("at", "2005-10-24 04:00:00Z"), ("at", "2005-02-30T00:00:00Z"), ("at", "0000-01-01T00:00:00Z"), ("at", 5),
     ("items", ["a", None]), ("items", ["a", 1]), ("items", [["a"]]), ("items", [{"a": "b"}]), ("items", "a"),
     ("displayProperties", [{**DISPLAY, "label": "é"}]), ("displayProperties", [{**DISPLAY, "label": "a\\b"}]),
