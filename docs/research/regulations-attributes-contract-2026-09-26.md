@@ -6,10 +6,10 @@
   unreleased), with these columns and types. Two owner rulings, spicy-regs
   decisions 66 and 67, replaced this proposal's first defaults: the submitter
   contact fields are published, and the columns are typed natively.
-- Produced by: DocSpec `5435912` (`lane/regulations-attributes`),
+- Produced by: DocSpec `7d1c069` (`lane/regulations-attributes`),
   [`tools/export_regulations_attributes.py`](../../tools/export_regulations_attributes.py).
-  `e3ceeea` then narrowed instants to whole seconds, which leaves every
-  exported byte unchanged. The untyped first export (`a93ecd4`) is superseded.
+  `5ca3fe8` then narrowed instants to whole seconds, which leaves every
+  exported byte unchanged. The untyped first export (`52f4a13`) is superseded.
 - Evidence: `~/Work/corpora/regulations-attributes-20260926/`:
   - `run-v2.sh`, with its `receipts-v2a/` and `logs-v2a/`;
   - `members-v2/`, the bootstrap members;
@@ -268,9 +268,9 @@ follow the C29 rules: `value/1` over `member_key`, scoped by the definition.
   of the dockets. A delta keyed on `lastModifiedDate` will never reach those,
   so filling them needs a full pass over the publisher's mirror. The other
   5,075 documents and 799 dockets changed on or after 2026-09-02.
-- **Determinism:** two runs of `5435912`, each from its own fresh clone, gave
+- **Determinism:** two runs of `7d1c069`, each from its own fresh clone, gave
   byte-identical members and the same derived state IDs.
-- **After `e3ceeea`:** re-deriving both layers retyped every row and returned
+- **After `5ca3fe8`:** re-deriving both layers retyped every row and returned
   the same published states, whose request binds the rows' digest. The export
   was byte-identical.
 - **Tests:** `tests/test_export_regulations_attributes.py` covers:
