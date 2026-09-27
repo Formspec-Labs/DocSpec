@@ -189,10 +189,11 @@ class CoreStateStorage:
             return state
 
     @contextmanager
-    def admit_table(self, session, path, identity, columns, *, member_digest, state_id, base_state_id=None):
+    def admit_table(self, session, members, identity, columns, *, state_id, base_state_id=None):
         """Retain a producer's admitted Parquet as a table-shaped state's layers until its caller publishes them.
 
-        ``columns`` are the member's in physical order. A base is the dataset's
+        ``members`` are the table's staged ``(path, member digest)`` pairs, one
+        or several; ``columns`` are theirs in physical order. A base is the dataset's
         current state: it must be table-shaped, of the same family and table,
         and keep its member-key spelling, since a new spelling is an explicit
         re-key. Yields the version-3 manifest's content, the admission counts
@@ -208,9 +209,8 @@ class CoreStateStorage:
             if base.identity.key != identity.key:
                 raise IntegrityError("a later generation must keep its dataset's member-key spelling; "
                                      "a new spelling is an explicit re-key")
-        with admit_layers(self.records, path, identity, table_schema(columns), member_digest=member_digest,
-                          state_id=state_id, base=base, base_identity=None if base is None else base.identity) \
-                as (layers, counts, minted):
+        with admit_layers(self.records, members, identity, table_schema(columns), state_id=state_id,
+                          base=base, base_identity=None if base is None else base.identity) as (layers, counts, minted):
             yield self._table_content(session, identity, layers), counts, \
                 lambda: check_minted_copies(self.records, session.ledger, layers["table"], identity, minted)
 

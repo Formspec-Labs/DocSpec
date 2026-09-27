@@ -78,11 +78,13 @@ MEMBERSHIP_FILES = 16
 
 
 @contextmanager
-def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *, member_digest, state_id,
+def admit_layers(records, members, identity: TableIdentity, schema: TableSchema, *, state_id,
                  base=None, base_identity=None):
-    """Mint a staged producer member's identities, register it, then retain its membership and index.
+    """Mint a staged producer table's identities, register it, then retain its membership and index.
 
-    ``base`` holds the admitted layers of the dataset's current state, whose
+    ``members`` are the table's staged ``(path, member digest)`` pairs, one or
+    several; their rows are read as one relation, so identity never depends on
+    how the table was split. ``base`` holds the admitted layers of the dataset's current state, whose
     rules ``base_identity`` share this identity's family, table and key
     spelling. Without a base, one native pass mints every occurrence. With a
     base of the same columns, one direct all-column join finds the added,
@@ -103,7 +105,8 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
     with records._cursor() as cursor, records.relations({} if base is None else {"old": base["table"]},
                                                         cursor=cursor) as relations:
         check_native_spelling()
-        cursor.read_parquet(str(path)).create_view(views["new"])
+        # Hive partitioning off: a split member's <col>=<value> directory must never stand in for its column.
+        cursor.read_parquet([str(path) for path, _ in members], hive_partitioning=False).create_view(views["new"])
         if base is not None:
             relations["old"].create_view(views["old"])
         try:
@@ -116,7 +119,7 @@ def admit_layers(records, path, identity: TableIdentity, schema: TableSchema, *,
                                   f"WHERE o.{identifier(identity.key.fields[0])} IS NULL OR "
                                   f"{rows_differ_sql(identity.columns, 'n', 'o')}")
             with mint_identities(records, rows, identity, cursor=cursor) as minted:
-                table = records.register_parquet(path, layer_kind=TABLE_KIND, schema=schema, member_digest=member_digest)
+                table = records.register_parquet(members, layer_kind=TABLE_KIND, schema=schema)
                 counts = {"rows": table.reference.record_count}
                 if delta:
                     membership = _apply_delta(records, cursor, table, identity, base, minted, counts)

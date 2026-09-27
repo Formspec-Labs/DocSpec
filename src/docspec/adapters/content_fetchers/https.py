@@ -21,6 +21,10 @@ class HttpsContentFetcherError(ConnectionError, DocSpecError):
     """An HTTPS operation failed without exposing provider details."""
 
 
+class HttpsNotFoundError(IntegrityError):
+    """The server answered 404: nothing is published at the candidate's locator, so a caller may try another."""
+
+
 def _https_host(value: object) -> str:
     """Validate one exact lowercase ASCII host name, refusing ports, credentials, and a trailing dot."""
 
@@ -208,7 +212,8 @@ class HttpsContentFetcher:
         """Stream one candidate within the allowed hosts, redirect, size, and identity-encoding bounds.
 
         A 429 or 5xx response is retryable and raises HttpsContentFetcherError;
-        any other non-200 status, redirect bound, or size mismatch refuses with
+        a 404 raises HttpsNotFoundError, an IntegrityError that says nothing is
+        published there; any other non-200 status, redirect bound, or size mismatch refuses with
         IntegrityError.
         """
 
@@ -259,6 +264,9 @@ class HttpsContentFetcher:
         if status == 429 or status >= 500:
             self._close(context)
             raise HttpsContentFetcherError("HTTPS acquisition returned a retryable response")
+        if status == 404:
+            self._close(context)
+            raise HttpsNotFoundError("HTTPS candidate returned status 404")
         if status != 200:
             self._close(context)
             raise IntegrityError(f"HTTPS candidate returned status {status}")

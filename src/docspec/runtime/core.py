@@ -102,9 +102,11 @@ class CoreWorkspace:
         """Admit one table of a producer's complete generation by reference, as a table-shaped state.
 
         ``source`` is a local generation or publication directory, or an HTTPS
-        publication base (the ``http`` extra). Its ``publication.json`` is an
-        untrusted pointer: Rulespec admits the pinned family before its member
-        is linked into the record store unrewritten. Re-admitting a pin returns its
+        publication base (the ``http`` extra). Its ``publication.v2.json``, or
+        ``publication.json`` while no version 2 is served, is an untrusted
+        pointer: Rulespec admits the pinned family before the table's member,
+        or every member of a table published split, is linked into the record
+        store unrewritten. Re-admitting a pin returns its
         state; ``dataset=`` makes the state current over the dataset's base,
         whose unchanged rows keep their occurrences. See decision 0007.
         """

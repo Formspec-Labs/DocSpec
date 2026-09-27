@@ -235,12 +235,18 @@ with CoreWorkspace(workspace_path) as workspace:
 ```
 
 `generation_path` is a local generation or publication directory, or an HTTPS
-publication base (the `http` extra). A `publication.json` is an untrusted
-pointer: Rulespec admits the pinned complete family, the table's footer must
-match its descriptor and, where its spicy-docs contract types columns, give each
-column the contract names the contract's type (VARCHAR unless typed), and the
-member is then linked into the record store
-unrewritten, sealed under its producer digest. The member key is the table's
+publication base (the `http` extra). The publication pointer is untrusted:
+`publication.v2.json` when the publisher serves one, else `publication.json`
+(only absence falls back). Rulespec admits the pinned complete family, the
+table's footer must match its descriptor and, where its spicy-docs contract
+types columns, give each column the contract names the contract's type (VARCHAR
+unless typed), and the member is then linked into the record store unrewritten,
+sealed under its producer digest. A table published split (version 2's
+`partitionColumns` and `members`) is one state over all its members: each
+member's key names its partition, its rows hold only that partition's values,
+its footer has the declared columns, and member rows sum to the table's. Its
+occurrences are those of the same rows published as one file
+([history](history/2026-09-27-publication-v2/README.md)). The member key is the table's
 declared spelling: identity fields the artifact declares (one field spells as
 `value/1`), then the identity and `name/version` key spelling its spicy-docs
 table contract declares, an entry of `KEY_SPELLINGS` whose function is the

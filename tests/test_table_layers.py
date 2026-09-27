@@ -13,6 +13,7 @@ from contextlib import closing
 from dataclasses import replace
 from datetime import date, datetime, timezone
 import hashlib
+import json
 import math
 import shutil
 import struct
@@ -232,8 +233,8 @@ def test_registration_keeps_the_producer_bytes_and_reads_their_columns(tmp_path)
         digest = producer_file(staged, table, row_group_size=500)
         original = staged.read_bytes()
         assert len(original) > records.max_member_bytes
-        layer = records.register_parquet(staged, layer_kind="producer-table",
-                                         schema=TableSchema("federal-register:1", columns), member_digest=digest)
+        layer = records.register_parquet([(staged, digest)], layer_kind="producer-table",
+                                         schema=TableSchema("federal-register:1", columns))
         assert not staged.exists() and layer.member_digest == digest
         assert layer.reference.profile_id == TABLE_PROFILE and layer.reference.record_count == 4_000
         [locator] = records.data_files(layer.reference)
@@ -258,8 +259,8 @@ def test_a_store_copied_without_its_staging_directory_stages_and_registers(tmp_p
         assert not (records.root / ".staging").exists()
         staged = records.staging_directory / "values.parquet"
         pq.write_table(table, staged)  # Not producer_file, which would make the directory itself.
-        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                         member_digest=sha256_digest(staged.read_bytes()))
+        layer = records.register_parquet([(staged, sha256_digest(staged.read_bytes()))], layer_kind="producer-table",
+                                         schema=TableSchema("values:1", columns))
         records.verify(layer.reference)
         with records.relations({"table": layer.reference}) as relations:
             assert relations["table"].aggregate("count(*), sum(value)").fetchone() == (2, 3)
@@ -271,8 +272,8 @@ def test_a_relocated_registered_table_verifies_and_a_flipped_byte_refuses(tmp_pa
     store, moved, hidden = tmp_path / "store", tmp_path / "moved", tmp_path / "hidden"
     with closing(IcebergRecordStorage(store)) as records:
         staged = records.staging_directory / "values.parquet"
-        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                         member_digest=producer_file(staged, table))
+        layer = records.register_parquet([(staged, producer_file(staged, table))], layer_kind="producer-table",
+                                         schema=TableSchema("values:1", columns))
         [locator] = records.data_files(layer.reference)
     shutil.copytree(store, moved)
     store.rename(hidden)
@@ -322,8 +323,8 @@ def test_registration_refusals_keep_the_stage(tmp_path, case):
                     "nanoseconds": (IntegrityError, "footer differs"), "utc-nanoseconds": (IntegrityError, "Iceberg refused"),
                     "row-group": (LimitExceededError, "row group"), "flipped-byte": (IntegrityError, "member digest")}[case]
         with pytest.raises(expected[0], match=expected[1]):
-            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                     member_digest=digest)
+            records.register_parquet([(staged, digest)], layer_kind="producer-table",
+                                     schema=TableSchema("values:1", columns))
         assert staged.read_bytes() == original and not member_directory(records, digest).exists()
 
 
@@ -337,8 +338,8 @@ def test_a_retry_reuses_an_interrupted_placement_and_refuses_other_bytes(tmp_pat
         placed = member_directory(records, digest) / "data" / "member.parquet"
         placed.parent.mkdir(parents=True)
         placed.write_bytes(staged.read_bytes())
-        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                         member_digest=digest)
+        layer = records.register_parquet([(staged, digest)], layer_kind="producer-table",
+                                         schema=TableSchema("values:1", columns))
         assert not staged.exists() and records.data_files(layer.reference) == (placed.relative_to(records.root).as_posix(),)
         records.verify(layer.reference)
         # A directory named for this member but holding other bytes refuses and is left alone.
@@ -349,8 +350,8 @@ def test_a_retry_reuses_an_interrupted_placement_and_refuses_other_bytes(tmp_pat
         foreign.parent.mkdir(parents=True)
         foreign.write_bytes(b"not the member")
         with pytest.raises(IntegrityError, match="member digest"):
-            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                     member_digest=other_digest)
+            records.register_parquet([(staged, other_digest)], layer_kind="producer-table",
+                                     schema=TableSchema("values:1", columns))
         assert staged.exists() and foreign.read_bytes() == b"not the member"
 
 
@@ -359,8 +360,8 @@ def test_forged_table_roots_and_appends_to_sealed_tables_refuse(tmp_path, monkey
     table = pa.table({"key": ["a", "b"], "value": [1, 2]})
     with closing(IcebergRecordStorage(tmp_path / "store")) as records:
         staged = records.staging_directory / "values.parquet"
-        layer = records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", columns),
-                                         member_digest=producer_file(staged, table))
+        layer = records.register_parquet([(staged, producer_file(staged, table))], layer_kind="producer-table",
+                                         schema=TableSchema("values:1", columns))
         with pytest.raises(IntegrityError, match="sealed and refuses appended rows"):
             records.append_table(layer, pa.table(table.to_pydict(), schema=table_arrow_schema(columns)).to_batches())
         with records._cursor() as cursor, pytest.raises(IntegrityError, match="sealed and refuses changed rows"):
@@ -377,3 +378,88 @@ def test_forged_table_roots_and_appends_to_sealed_tables_refuse(tmp_path, monkey
         monkeypatch.setattr(records_module, "table_columns", lambda schema: (("key", "VARCHAR"), ("value", "INTEGER")))
         with pytest.raises(IntegrityError, match="scan columns differ"):
             records.verify(forged(records, layer, schema=narrowed))
+
+
+
+SPLIT_COLUMNS = (("key", "VARCHAR"), ("congress", "VARCHAR"), ("value", "BIGINT"))
+
+
+def congress_rows(congress, count):
+    return pa.table({"key": [f"{congress}-{index}" for index in range(count)], "congress": [str(congress)] * count,
+                     "value": list(range(count))})
+
+
+def split_stage(records, tables, **options):
+    """Stage each table as a split member at ``bill_sections/congress=<N>/part-000000.parquet``; return (path, digest) pairs."""
+    paths = [records.staging_directory / "generation" / "bill_sections" / f"congress={118 + index}" / "part-000000.parquet"
+             for index in range(len(tables))]
+    return [(path, producer_file(path, table, **options)) for path, table in zip(paths, tables)]
+
+
+def test_a_split_table_registers_every_member_by_reference_under_one_order_free_digest(tmp_path):
+    tables = [congress_rows(118, 300), congress_rows(119, 200), congress_rows(120, 100)]
+    digests = set()
+    for name, order in (("one", slice(None)), ("two", slice(None, None, -1))):
+        with closing(IcebergRecordStorage(tmp_path / name)) as records:
+            staged = split_stage(records, tables)
+            inodes = {digest: path.stat().st_ino for path, digest in staged}
+            originals = {digest: path.read_bytes() for path, digest in staged}
+            layer = records.register_parquet(staged[order], layer_kind="producer-table",
+                                             schema=TableSchema("values:1", SPLIT_COLUMNS))
+            assert not any(path.exists() for path, _ in staged)
+            # The table digest, re-derived with another encoder: sha256 of the sorted member digests' JSON array.
+            members = sorted(originals)
+            digests.add(layer.member_digest)
+            assert layer.member_digest == "sha256:" + hashlib.sha256(json.dumps(members, separators=(",", ":")).encode()).hexdigest()
+            # verify recomputes it from the catalog's file order, which need not be the descriptor's.
+            assert records_module.table_digest(reversed(members)) == layer.member_digest
+            directory = member_directory(records, layer.member_digest)
+            assert {records.root / locator for locator in records.data_files(layer.reference)} == {
+                directory / "data" / f"{digest[7:]}.parquet" for digest in members}
+            sealed = {ref.locator: ref.digest for ref in records.physical_references(layer.reference)}
+            for digest in members:  # hard-linked, never copied, and sealed under its own digest
+                path = directory / "data" / f"{digest[7:]}.parquet"
+                assert path.stat().st_ino == inodes[digest] and path.read_bytes() == originals[digest]
+                assert sealed[path.relative_to(records.root).as_posix()] == digest
+            records.verify(layer.reference)
+            assert layer.reference.record_count == 600
+            with records.relations({"table": layer.reference}) as relations:
+                assert relations["table"].aggregate("congress, count(*)", "congress").order("congress").fetchall() == [
+                    ("118", 300), ("119", 200), ("120", 100)]
+            with pytest.raises(IntegrityError, match="sealed and refuses appended rows"):
+                records.append_table(layer, congress_rows(121, 1).to_batches())
+            with pytest.raises(IntegrityError, match="registered table differs from its producer members"):
+                records.verify(forged(records, layer, memberDigest=members[0]))
+            # One member's flipped byte is the whole table's refusal.
+            path = directory / "data" / f"{members[1][7:]}.parquet"
+            payload = bytearray(path.read_bytes())
+            payload[len(payload) // 2] ^= 0x01
+            path.write_bytes(payload)
+            with pytest.raises(IntegrityError, match="differs from its checksum"):
+                records.verify(layer.reference)
+    assert len(digests) == 1  # the listing order changed nothing
+
+
+@pytest.mark.parametrize("case", ["field-ids", "row-group", "footer", "same-bytes"])
+def test_a_split_registration_refuses_before_placing_any_member(tmp_path, case):
+    """The second member refuses, so the first, which would register alone, is never placed either."""
+    first, second = congress_rows(118, 2_000), congress_rows(119, 2_000)
+    if case == "field-ids":
+        second = second.cast(pa.schema([field.with_metadata({"PARQUET:field_id": str(index + 1)})
+                                        for index, field in enumerate(second.schema)]))
+    elif case == "footer":
+        second = second.append_column("extra", pa.array(["x"] * 2_000))
+    elif case == "same-bytes":
+        second = first
+    with closing(IcebergRecordStorage(tmp_path / "store", max_member_bytes=16 * 1024)) as records:
+        stage = records.staging_directory / "generation" / "bill_sections"
+        staged = [(path, producer_file(path, table, row_group_size=size)) for path, table, size in (
+            (stage / "congress=118" / "part-000000.parquet", first, 200),
+            (stage / "congress=119" / "part-000000.parquet", second, 2_000 if case == "row-group" else 200))]
+        originals = [path.read_bytes() for path, _ in staged]
+        expected = {"field-ids": (IntegrityError, "field IDs"), "row-group": (LimitExceededError, "row group"),
+                    "footer": (IntegrityError, "footer differs"), "same-bytes": (IntegrityError, "distinct member digests")}
+        with pytest.raises(expected[case][0], match=expected[case][1]):
+            records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", SPLIT_COLUMNS))
+        assert [path.read_bytes() for path, _ in staged] == originals
+        assert not list((records.root / "iceberg").glob("member-*"))

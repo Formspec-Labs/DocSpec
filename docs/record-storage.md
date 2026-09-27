@@ -70,17 +70,21 @@ types an Iceberg scan yields (`TABLE_TYPES`). It is the storage for
   incoming or removed key and inserts the incoming rows, so the
   table keeps one row per key, shares every untouched base file and descends
   from its base's snapshot. A registered producer table refuses.
-- `register_parquet` retains a producer's file by reference. The file must be
-  staged in the store's `staging_directory`; its footer must read as the declared
-  schema and carry no field IDs. It is then hard-linked, unrewritten, to
-  `iceberg/member-<digest>/data/member.parquet`, and its seal must equal the
-  producer's member digest, which the root records. A refusal keeps the stage; an
-  interrupted registration leaves a directory cleanup can name, and a retry
-  reuses it. The file is exempt from `max_member_bytes`; a row group above that
-  limit refuses instead.
+- `register_parquet` retains a producer's table by reference: one file, or the
+  members of a table published split. Every member must be staged in the store's
+  `staging_directory`; every footer must read as the declared schema and carry no
+  field IDs before anything is placed. Each member is then hard-linked,
+  unrewritten, into `iceberg/member-<table digest>/data/` (one member as
+  `member.parquet`, several each as `<its digest>.parquet`), each seal must equal
+  its member digest, and one Iceberg snapshot registers them all. The root
+  records the table digest: the one member's digest, or the sha256 of the sorted
+  member digests' canonical JSON array, so it never depends on listing order. A
+  refusal keeps the stage; an interrupted registration leaves a directory
+  cleanup can name, and a retry reuses it. Members are exempt from
+  `max_member_bytes`; a row group above that limit refuses instead.
 - `available` checks the pinned Iceberg schema against the root. `verify` adds a
-  native `count(*)`, the scan's column types and, for a registered table, its one
-  data file's digest. File-level admission, physical references and deletion are
+  native `count(*)`, the scan's column types and, for a registered table, the
+  table digest of its data files' digests. File-level admission, physical references and deletion are
   shared with encoded layers; each profile's reads and writes refuse the other's.
 
 Row identity under `docspec-table-row/1` lives in

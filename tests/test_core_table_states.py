@@ -16,7 +16,6 @@ import shutil
 import struct
 from types import SimpleNamespace
 
-import httpx
 import pyarrow as pa
 import pytest
 from rulespec_artifacts import canonical_json_bytes
@@ -24,7 +23,6 @@ from spicy_docs.schemas import TABLE_CONTRACTS
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 
 from docspec.adapters import generation_source
-from docspec.adapters.content_fetchers.https import HttpsContentFetcher
 from docspec.adapters.storage import core_tables, table_sql
 from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
@@ -35,7 +33,8 @@ from docspec.domain.references import LayerRef
 from docspec.domain.table_rows import KeySpelling, TableIdentity, table_row_bytes, table_row_value
 from docspec.errors import IntegrityError, StaleBaseError
 from docspec.runtime import CoreWorkspace
-from tests.support.generations import generation, publication
+from tests.support.generations import (family_generation, generation, publication, publish, serve_https,
+    split_members)
 
 FAMILY, TABLE = "federal-register", "federal_register"
 NAN = struct.unpack(">d", bytes.fromhex("fff8000000000001"))[0]
@@ -315,12 +314,7 @@ def test_an_https_publication_admits_through_the_existing_transport(tmp_path, mo
     source, published = tmp_path / "g1", tmp_path / "published"
     pin, member, description = generation(source, pa.Table.from_pylist(ROWS, schema=SCHEMA))
     publication(published, source, pin, member, description)
-
-    def respond(request):
-        return httpx.Response(200, stream=httpx.ByteStream((published / request.url.path.removeprefix("/data/")).read_bytes()),
-                              request=request)
-    monkeypatch.setattr(HttpsContentFetcher, "from_httpx", lambda config: HttpsContentFetcher(
-        httpx.Client(transport=httpx.MockTransport(respond)), config))
+    serve_https(monkeypatch, published)
     with CoreWorkspace(tmp_path / "workspace") as workspace:
         remote = workspace.admit_generation("https://example.test/data", family=FAMILY, table=TABLE)
         local = workspace.admit_generation(source, family=FAMILY, table=TABLE)
@@ -569,3 +563,89 @@ def test_a_newly_declared_key_spelling_re_keys_explicitly(tmp_path, monkeypatch)
         renamed = workspace.admit_generation(second, family="bill-family", table="congress_bills", dataset="bills-renamed")
         assert key(workspace, renamed) == {"id": "value", "version": "2", "fields": ["bill_id"]}
         assert workspace.ledger.current("bills") == ("state", original.state_id)
+
+
+def split(path, rows, *, column="publication_date"):
+    """Seal ``rows`` as a generation whose table is published split by ``column``, one member per value."""
+    return family_generation(path, {TABLE: split_members(pa.Table.from_pylist(rows, schema=SCHEMA), column)},
+                             family=FAMILY, partitions={TABLE: [column]})
+
+
+def admitted_evidence(workspace, admitted):
+    """What an admission leaves that any workspace must reproduce: its record, occurrences, membership and member bytes."""
+    table, membership = (layer(workspace, admitted.state_id, name) for name in ("table", "membership"))
+    with workspace.records.relations({"membership": membership}) as relations:
+        members = sorted(relations["membership"].project("record_identity, record_json").fetchall())
+    files = sorted((workspace.records.root / locator).read_bytes() for locator in workspace.records.data_files(table))
+    return admitted, occurrences(workspace, admitted.state_id), members, files
+
+
+def test_version_2_admits_a_single_file_table_as_version_1_does(tmp_path):
+    pin, member, description = generation(tmp_path / "g1", pa.Table.from_pylist(ROWS, schema=SCHEMA))
+    evidence = []
+    for versions in ((1,), (2, 1)):
+        base = tmp_path / f"published-{len(versions)}"
+        publish(base, tmp_path / "g1", pin, [member], {member.object_key: description}, family=FAMILY, versions=versions)
+        with CoreWorkspace(tmp_path / f"workspace-{len(versions)}") as workspace:
+            evidence.append(admitted_evidence(workspace, workspace.admit_generation(base, family=FAMILY, table=TABLE,
+                                                                                   dataset="fr")))
+    assert evidence[0] == evidence[1]
+    assert evidence[0][0].report["member"]["sha256"] == member.sha256 and "members" not in evidence[0][0].report
+
+
+def test_occurrences_do_not_depend_on_how_a_table_is_split(tmp_path):
+    """The same rows as one file and as members mint the same occurrences, so changes() between them reports nothing."""
+    write(tmp_path / "whole", ROWS)
+    split(tmp_path / "split", ROWS)
+    changed = {**ROWS[0], "title": "An amended rule"}
+    added = {**ROWS[2], "document_number": "2026-00004"}
+    split(tmp_path / "split-changed", [changed, ROWS[1], ROWS[2], added])
+    reference = {key: urn for key, (urn, _) in expected(ROWS).items()}
+    unchanged = {"rows": 3, "generated": 0, "adopted": 3, "added": 0, "removed": 0, "changed": 0, "carried": 3,
+                 "reminted": False}
+    with CoreWorkspace(tmp_path / "whole-first") as workspace:
+        whole = workspace.admit_generation(tmp_path / "whole", family=FAMILY, table=TABLE, dataset="fr")
+        parts = workspace.admit_generation(tmp_path / "split", family=FAMILY, table=TABLE, dataset="fr")
+        assert parts.report["base"] == whole.state_id and parts.report["counts"] == unchanged
+        assert [member["objectKey"] for member in parts.report["members"]] == [
+            f"{TABLE}/publication_date=2026-09-0{day}/part-000000.parquet" for day in (1, 2, 3)]
+        assert parts.report["partitionColumns"] == ["publication_date"]
+        assert occurrences(workspace, whole.state_id) == occurrences(workspace, parts.state_id) == reference
+        with workspace.open_state(whole.state_id) as older, workspace.open_state(parts.state_id) as newer:
+            assert list(newer.changes(older)) == []
+        # One partition's row changes and another partition gains a row: only those two are minted and reported.
+        later = workspace.admit_generation(tmp_path / "split-changed", family=FAMILY, table=TABLE, dataset="fr")
+        assert later.report["counts"] == {"rows": 4, "generated": 2, "adopted": 2, "added": 1, "removed": 0,
+                                          "changed": 1, "carried": 2, "reminted": False}
+        with workspace.open_state(parts.state_id) as older, workspace.open_state(later.state_id) as newer:
+            assert [key for key, _, _ in newer.changes(older)] == ["2026-00001@2026-09-01", "2026-00004@2026-09-03"]
+        split_state = parts.state_id
+    with CoreWorkspace(tmp_path / "split-first") as workspace:
+        parts = workspace.admit_generation(tmp_path / "split", family=FAMILY, table=TABLE, dataset="fr")
+        whole = workspace.admit_generation(tmp_path / "whole", family=FAMILY, table=TABLE, dataset="fr")
+        assert parts.state_id == split_state and parts.report["counts"]["generated"] == 3
+        assert whole.report["counts"] == unchanged
+        assert occurrences(workspace, parts.state_id) == occurrences(workspace, whole.state_id) == reference
+        workspace.records.verify(layer(workspace, parts.state_id, "table"))
+
+
+def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_version_2(tmp_path):
+    sections = pa.table({"section_id": ["118-hr-1#1", "118-hr-2#1", "119-s-5#1"], "congress": ["118", "118", "119"],
+                         "body": ["a", "b", "c"]})
+    bills = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})
+    # The installed contract's composite identity has no key spelling (ruling R6); these rows declare their own.
+    pin, members, descriptions = family_generation(
+        tmp_path / "source", {"congress_bills": bills, "bill_sections": split_members(sections, "congress")},
+        partitions={"bill_sections": ["congress"]}, overrides={"bill_sections": {"identity": ["section_id"]}})
+    publish(tmp_path / "published", tmp_path / "source", pin, members, descriptions)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        single = workspace.admit_generation(tmp_path / "published", family="bill-family", table="congress_bills")
+        several = workspace.admit_generation(tmp_path / "published", family="bill-family", table="bill_sections")
+        assert single.report["member"]["objectKey"] == "congress_bills.parquet"
+        assert [(member["objectKey"], member["recordCount"]) for member in several.report["members"]] == [
+            ("bill_sections/congress=118/part-000000.parquet", 2), ("bill_sections/congress=119/part-000000.parquet", 1)]
+        assert set(occurrences(workspace, single.state_id)) == {"118-hr-1", "119-s-5"}
+        assert set(occurrences(workspace, several.state_id)) == {"118-hr-1#1", "118-hr-2#1", "119-s-5#1"}
+        table = layer(workspace, several.state_id, "table")
+        workspace.records.verify(table)
+        assert len(workspace.records.data_files(table)) == 2

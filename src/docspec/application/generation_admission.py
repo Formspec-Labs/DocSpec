@@ -31,8 +31,10 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
     definition, request, execution and result. The request binds the
     generation's root and member manifest, retained as exact bytes; the result
     generates the state and a report whose counts separate occurrences
-    generated here from those the dataset's index already held. No per-row
-    ledger record is written.
+    generated here from those the dataset's index already held. A table
+    published as several members is one state over all of them, with the same
+    identity rules and occurrences as its rows published as one file. No
+    per-row ledger record is written.
     """
     for value, label in ((family, "table family"), (table, "logical table")):
         require_text(value, label)
@@ -62,14 +64,17 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
         if current is not None and current[0] != "state":
             raise IntegrityError("the dataset's current target is not a state")
         base = None if current is None else current[1]
-        with session.states.admit_table(session, generation.path, identity, generation.columns,
-                                        member_digest=generation.member.sha256, state_id=state_id,
+        with session.states.admit_table(session, [(path, member.sha256) for path, member in generation.members],
+                                        identity, generation.columns, state_id=state_id,
                                         base_state_id=base) as (content, counts, identity_check):
+            members = [{"objectKey": member.object_key, "sha256": member.sha256, "byteSize": member.byte_size,
+                        "recordCount": member.record_count} for _, member in generation.members]
+            # A single-file table's report is unchanged; a split table names every member and its partitioning.
+            shape = ({"members": members, "partitionColumns": list(generation.partition_columns)}
+                     if generation.partition_columns else {"member": members[0]})
             report = {"format": REPORT_FORMAT, "version": 1,
                       "pin": {"logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest},
-                      "member": {"objectKey": generation.member.object_key, "sha256": generation.member.sha256,
-                                 "byteSize": generation.member.byte_size, "recordCount": generation.record_count},
-                      "dataset": dataset, "base": base, "counts": counts}
+                      **shape, "dataset": dataset, "base": base, "counts": counts}
             session.publish(_unit(session, identity, generation, state_id, report, content), identity_check=identity_check)
     advance(operations, dataset, state_id, base, kind="generation-current")
     return GenerationAdmission(state_id, report)

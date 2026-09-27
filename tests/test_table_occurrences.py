@@ -58,7 +58,7 @@ def table_layer(records, rows, *, columns=COLUMNS, writer="native"):
     staged = records.staging_directory / (hashlib.sha256(repr(rows).encode()).hexdigest()[:16] + ".parquet")
     pq.write_table(data, staged)
     digest = "sha256:" + hashlib.sha256(staged.read_bytes()).hexdigest()
-    return records.register_parquet(staged, layer_kind="producer-table", schema=schema, member_digest=digest)
+    return records.register_parquet([(staged, digest)], layer_kind="producer-table", schema=schema)
 
 
 @contextmanager

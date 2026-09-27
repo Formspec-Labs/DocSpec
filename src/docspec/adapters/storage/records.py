@@ -109,6 +109,23 @@ def _has_field_id(field):
             or any(_has_field_id(field.type.field(index)) for index in range(field.type.num_fields)))
 
 
+def table_digest(member_digests):
+    """A registered producer table's digest: its one member's, or the sha256 of its member digests' sorted canonical JSON array.
+
+    It depends only on the set of member bytes, never on their listing order,
+    keys or partitions, so a one-member split table registers as that file
+    published whole. A Parquet file starts ``PAR1`` and the array ``[``, so the
+    two forms cannot collide. Digests must be distinct: two equal members of a
+    split table would be the same rows twice.
+    """
+    digests = sorted(member_digests)
+    if not digests or len(set(digests)) != len(digests):
+        raise IntegrityError('a registered table needs one or more distinct member digests')
+    for digest in digests:
+        require_sha256(digest, 'member digest')
+    return digests[0] if len(digests) == 1 else sha256_digest(canonical_json_bytes(digests))
+
+
 _STAGING = '.staging/member'
 
 
@@ -423,8 +440,8 @@ class IcebergRecordStorage:
         """Verify member files and the declared record count.
 
         A typed table also compares a native count(*) and the scan's column
-        types with its description, and a registered table checks that its one
-        data file is the producer member its root names.
+        types with its description, and a registered table checks that its data
+        files are the producer members its root's table digest names, in any order.
         """
 
         self.verify_members(reference)
@@ -441,8 +458,12 @@ class IcebergRecordStorage:
         if layer.member_digest is not None:
             digests = {ref.locator: ref.digest for ref in self.physical_references(reference)}
             files = [digests.get(path.relative_to(self.root).as_posix()) for path, _ in snapshot_data_files(layer.table)]
-            if files != [layer.member_digest]:
-                raise IntegrityError('registered table differs from its producer member')
+            try:
+                registered = table_digest(files)
+            except (IntegrityError, TypeError, ValueError):  # a file without a sealed digest, or one listed twice
+                registered = None
+            if registered != layer.member_digest:
+                raise IntegrityError('registered table differs from its producer members')
 
     def admit(self, reference):
         """Fully verify a layer and return it admitted."""
@@ -1047,67 +1068,78 @@ class IcebergRecordStorage:
         with self._cursor() as cursor, self._table_stream(cursor, batches, schema):
             return self._insert(cursor, 'table_rows', schema=schema, layer_kind=layer_kind, sort_by=sort_by, base=base)
 
-    def register_parquet(self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str) -> AdmittedTableLayer:
-        """Register a producer's Parquet file, staged in ``staging_directory``, as a table layer without rewriting it.
+    def register_parquet(self, members, *, layer_kind: str, schema: TableSchema) -> AdmittedTableLayer:
+        """Register a producer table's Parquet members, staged in ``staging_directory``, as one table layer, rewriting none.
 
-        The footer is checked first, and nothing is placed if it refuses: its
-        columns must read as ``schema`` declares them, and a file already
-        carrying field IDs refuses, since Iceberg ``add_files`` reads through a
-        name mapping. The file is exempt from ``max_member_bytes``, which sizes
-        DocSpec's own writes; a row group whose uncompressed data exceeds it
-        refuses instead. The file is then hard-linked, never copied or
-        replaced, to ``iceberg/member-<digest>/data/member.parquet``, and its
-        seal must equal ``member_digest``. A refusal removes only what this call
-        placed and keeps the stage; success unlinks the stage. An interrupted
-        registration leaves that directory where cleanup can name it, and a
-        retry reuses a placed file holding the member's bytes. Register one
-        member at a time.
+        ``members`` are ``(path, member digest)`` pairs in any order: one for a
+        single file, several for a table published split. Every footer is
+        checked first, and nothing is placed if one refuses: its columns must
+        read as ``schema`` declares them, with hive partitioning off, and a file
+        already carrying field IDs refuses, since Iceberg ``add_files`` reads
+        through a name mapping. Members are exempt from ``max_member_bytes``,
+        which sizes DocSpec's own writes; a row group whose uncompressed data
+        exceeds it refuses instead. Each member is then hard-linked, never
+        copied or replaced, into ``iceberg/member-<table digest>/data/``: one
+        member as ``member.parquet``, several each as ``<its digest>.parquet``.
+        Each seal must equal its member digest, and one ``add_files`` registers
+        them all in one snapshot; the root records the ``table_digest``. A
+        refusal removes only what this call placed and keeps the stage; success
+        unlinks the stage. An interrupted registration leaves that directory
+        where cleanup can name it, and a retry reuses a placed file holding its
+        member's bytes. Register one table at a time.
         """
         require_text(layer_kind, 'layer_kind')
-        require_sha256(member_digest, 'member digest')
         if not isinstance(schema, TableSchema):
             raise IntegrityError('a registered producer file needs a declared table schema')
-        source = Path(path)
-        try:
-            staged = source.parent.resolve(strict=True).is_relative_to(self.staging_directory.resolve(strict=True))
-        except OSError:
-            staged = False
-        if not staged or source.is_symlink() or not source.is_file():
-            raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
-        with pq.ParquetFile(source) as parquet:
-            footer = parquet.metadata
-        arrow_schema = footer.schema.to_arrow_schema()
-        if any(_has_field_id(field) for field in arrow_schema):
-            raise IntegrityError('registered Parquet already carries field IDs')
-        if any(footer.row_group(index).total_byte_size > self.max_member_bytes for index in range(footer.num_row_groups)):
-            raise LimitExceededError('registered Parquet row group exceeds the member byte limit')
+        # The snapshot lists files in digest order, whatever order the caller gave.
+        members = sorted(((Path(path), member_digest) for path, member_digest in members), key=lambda member: member[1])
+        digest = table_digest(member_digest for _, member_digest in members)
+        directory = f'iceberg/member-{digest[7:]}'
+        targets = [f'{directory}/data/' + ('member.parquet' if len(members) == 1 else f'{member_digest[7:]}.parquet')
+                   for _, member_digest in members]
+        staging, footers = self.staging_directory.resolve(strict=True), []
         with self._cursor() as cursor:
-            if native_columns(cursor.read_parquet(str(source))) != schema.columns:
-                raise IntegrityError('registered Parquet footer differs from its declared schema')
-        directory = f'iceberg/member-{member_digest[7:]}'
-        created, fresh = not (self.root / directory).exists(), False
-        placed = self.root / directory / 'data' / 'member.parquet'
-        receipt = placed.with_name(placed.name + '.sha256')
+            for source, _ in members:
+                try:
+                    staged = source.parent.resolve(strict=True).is_relative_to(staging)
+                except OSError:
+                    staged = False
+                if not staged or source.is_symlink() or not source.is_file():
+                    raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
+                with pq.ParquetFile(source) as parquet:
+                    footer = parquet.metadata
+                if any(_has_field_id(field) for field in footer.schema.to_arrow_schema()):
+                    raise IntegrityError('registered Parquet already carries field IDs')
+                if any(footer.row_group(index).total_byte_size > self.max_member_bytes for index in range(footer.num_row_groups)):
+                    raise LimitExceededError('registered Parquet row group exceeds the member byte limit')
+                if native_columns(cursor.read_parquet(str(source), hive_partitioning=False)) != schema.columns:
+                    raise IntegrityError('registered Parquet footer differs from its declared schema')
+                footers.append(footer)
+        created, placed = not (self.root / directory).exists(), []
         try:
             _contained(self.root, f'{directory}/metadata/placeholder', create_parents=True)
-            _contained(self.root, f'{directory}/data/member.parquet', create_parents=True)
-            if not placed.exists():
-                receipt.unlink(missing_ok=True)  # it describes no file, so seal must hash the new one
-            try:
-                os.link(source, placed)
-                fresh = True
-            except FileExistsError:
-                pass  # an interrupted registration placed it; its bytes are checked below
-            sealed = next(recovery_references(self.root, seal(self.root, placed))).digest
-            # An interrupted attempt's receipt says nothing of the bytes placed now.
-            if sealed != member_digest or (not fresh and sha256_file(placed)[0] != member_digest):
-                raise IntegrityError('registered Parquet differs from its member digest')
+            for (source, member_digest), locator in zip(members, targets, strict=True):
+                target = _contained(self.root, locator, create_parents=True)
+                receipt = target.with_name(target.name + '.sha256')
+                if not target.exists():
+                    receipt.unlink(missing_ok=True)  # it describes no file, so seal must hash the new one
+                try:
+                    os.link(source, target)
+                    placed.append((target, receipt))
+                    fresh = True
+                except FileExistsError:
+                    fresh = False  # an interrupted registration placed it; its bytes are checked below
+                sealed = next(recovery_references(self.root, seal(self.root, target))).digest
+                # An interrupted attempt's receipt says nothing of the bytes placed now.
+                if sealed != member_digest or (not fresh and sha256_file(target)[0] != member_digest):
+                    raise IntegrityError('registered Parquet differs from its member digest')
             with self._cursor():  # the catalog attaches to the native connection a cursor opens
                 client = self._client()
             key, handle = (self._catalog.namespace, 'register_' + uuid4().hex), None
             try:
-                handle = client.create_table(key, schema=arrow_schema, location=str(self.root / directory))
-                handle.add_files([str(placed)])
+                handle = client.create_table(key, schema=footers[0].schema.to_arrow_schema(),
+                                             location=str(self.root / directory))
+                handle.add_files([str(self.root / locator) for locator in targets])
                 table = client.load_table(key)
             except (NotImplementedError, TypeError, ValueError, UnsupportedPyArrowTypeException) as error:
                 raise IntegrityError(f'Iceberg refused the registered Parquet: {error}') from error
@@ -1117,16 +1149,18 @@ class IcebergRecordStorage:
                     client.drop_table(key)
             if table_columns(table.schema()) != schema.columns:
                 raise IntegrityError('registered Iceberg schema differs from its declared schema')
-            layer = self._pin(table, schema=schema, layer_kind=layer_kind, record_count=footer.num_rows,
-                              member_digest=member_digest)
+            layer = self._pin(table, schema=schema, layer_kind=layer_kind,
+                              record_count=sum(footer.num_rows for footer in footers), member_digest=digest)
         except BaseException:
             if created:
                 shutil.rmtree(self.root / directory, ignore_errors=True)
-            elif fresh:
-                placed.unlink(missing_ok=True)
-                receipt.unlink(missing_ok=True)
+            else:
+                for target, receipt in placed:
+                    target.unlink(missing_ok=True)
+                    receipt.unlink(missing_ok=True)
             raise
-        source.unlink()
+        for source, _ in members:
+            source.unlink()
         return layer
 
 
@@ -1167,7 +1201,7 @@ class AdmittedTableLayer:
 
     @property
     def member_digest(self) -> str | None:
-        """The producer member a registered table holds unchanged; None for DocSpec's own writes."""
+        """The ``table_digest`` of the producer members a registered table holds unchanged; None for DocSpec's own writes."""
         return self._root['memberDigest']
 
     @contextmanager

@@ -41,7 +41,7 @@ class AdmittedTableLayer(Protocol):
 
     @property
     def member_digest(self) -> str | None:
-        """The producer member a registered table holds unchanged; None for DocSpec's own writes."""
+        """The table digest of the producer members a registered table holds unchanged; None for DocSpec's own writes."""
         ...
 
     def relation(self) -> AbstractContextManager[duckdb.DuckDBPyRelation]: ...
@@ -94,9 +94,12 @@ class RecordStorage(Protocol):
         ...
 
     def register_parquet(
-        self, path: Path, *, layer_kind: str, schema: TableSchema, member_digest: str,
+        self, members: Iterable[tuple[Path, str]], *, layer_kind: str, schema: TableSchema,
     ) -> AdmittedTableLayer:
-        """Retain a producer's Parquet file by reference, unrewritten, sealed under its member digest."""
+        """Retain a producer table's Parquet members, ``(path, member digest)`` pairs, by reference as one table.
+
+        Each member is unrewritten and sealed under its own digest; the layer records their table digest.
+        """
         ...
 
     def admit(self, reference: LayerRef) -> AdmittedRecordLayer | AdmittedTableLayer: ...
