@@ -649,3 +649,20 @@ def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_versi
         table = layer(workspace, several.state_id, "table")
         workspace.records.verify(table)
         assert len(workspace.records.data_files(table)) == 2
+
+
+def test_a_member_path_never_supplies_a_column(tmp_path):
+    """Partition discovery is off at every read: a member under congress=118/ keeps its VARCHAR '118'.
+
+    With discovery on, DuckDB would read the directory as a BIGINT congress of 118 in place of the file's column.
+    """
+    sections = pa.table({"section_id": ["118-hr-1#1", "119-s-5#1"], "congress": ["118", "119"], "body": ["a", "b"]})
+    family_generation(tmp_path / "source", {"bill_sections": split_members(sections, "congress")},
+                      partitions={"bill_sections": ["congress"]}, overrides={"bill_sections": {"identity": ["section_id"]}})
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admitted = workspace.admit_generation(tmp_path / "source", family="bill-family", table="bill_sections")
+        with workspace.open_state(admitted.state_id) as reader, reader.table() as rows:
+            assert dict(zip(rows.columns, map(str, rows.types)))["congress"] == "VARCHAR"
+            assert sorted(rows.project("congress").fetchall()) == [("118",), ("119",)]
+    assert [member["objectKey"] for member in admitted.report["members"]] == [
+        f"bill_sections/congress={congress}/part-000000.parquet" for congress in (118, 119)]

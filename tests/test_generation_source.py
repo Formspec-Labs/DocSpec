@@ -157,7 +157,7 @@ def test_https_uses_existing_transport_and_checks_same_pointer(tmp_path, monkeyp
     publication(base, source, pin, member, description)
     requests, clients = serve_https(monkeypatch, base)
     with stage_generation("https://example.test/data", family="federal-register", table="federal_register") as admitted:
-        assert admitted.pin == pin and pq.read_table(admitted.members[0].path).num_rows == 1
+        assert admitted.pin == pin and pq.ParquetFile(admitted.members[0].path).metadata.num_rows == 1
     assert all(client.is_closed for client in clients)
     # No version 2 is served, so its 404 falls back to version 1.
     assert [url.rsplit("/", 1)[1] for url in requests[:2]] == ["publication.v2.json", "publication.json"]
@@ -283,7 +283,7 @@ def test_a_mixed_family_stages_either_table_through_version_2_and_its_derived_ve
         assert [descriptor.object_key for _, descriptor in sections.members] == [
             "bill_sections/congress=118/part-000000.parquet", "bill_sections/congress=119/part-000000.parquet"]
         assert sections.partition_columns == ("congress",) and sections.record_count == 4
-        assert [pq.read_table(path).num_rows for path, _ in sections.members] == [2, 2]
+        assert [pq.ParquetFile(path).metadata.num_rows for path, _ in sections.members] == [2, 2]
         assert sections.key == KeySpelling("value", "1", ("section_id",))
     # Version 1 omits the split table, so a reader of version 1 alone refuses the whole family, congress_bills too.
     (base / "publication.v2.json").unlink()
