@@ -1,4 +1,15 @@
 {
+  "agreementFields": [
+    "stateId",
+    "pin",
+    "members",
+    "counts",
+    "occurrences",
+    "membership",
+    "table.files",
+    "table.memberDigest",
+    "table.layerDigest"
+  ],
   "differingFields": {
     "HTTPS falling back to version 1 against local version 1": {
       "fr-v1 = fr-https": [

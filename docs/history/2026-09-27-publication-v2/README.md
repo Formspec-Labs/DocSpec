@@ -53,6 +53,17 @@ table: a key without `/` is its own table; `<table>/…` belongs to
   order does not matter. A repeated key refuses.
 - Every member's footer is checked on one DuckDB connection, rather than one
   connection per table as today.
+- A member's `col=value` directory never supplies its column. Four reads open
+  member paths: the staging footer, the partition scan, the registration footer
+  and the admission identity pass. Only the partition scan is SQL
+  (`read_parquet(?, hive_partitioning = false)` in `_check_partition`), and
+  SQL's default discovers partitions: a `congress=118/` member would read as a
+  BIGINT 118 in place of its own column. That `hive_partitioning = false` is the
+  load-bearing guard, and the partition-value tests go red without it. The other
+  three are DuckDB's Python `read_parquet`, which in DuckDB 1.5.5 does not
+  discover partitions unless asked; they pass `hive_partitioning=False`
+  explicitly, and `test_a_member_path_never_supplies_a_column` goes red if any of
+  them turns discovery on. That test does not cover the partition scan.
 
 **`AdmittedGeneration`** carries `members`, which are `(path, descriptor)` pairs
 in key order, and `partition_columns`, in place of one `path` and `member`.
@@ -115,9 +126,12 @@ this directly, in both directions and with one changed partition.
 
 The first real `bill_sections` split also adds a `congress` column, which
 changes every row digest. That re-mint comes from the schema change (like B2's
-`topics_json`), not from the split. It costs nothing today: `bill_sections` has
-a composite identity with no spicy-docs key spelling, so ruling R6 keeps it out
-of admission.
+`topics_json`), not from the split. It costs nothing today: spicy-docs 0.46.0
+declares `bill_sections`' key spelling as `at-joined/1`, which DocSpec does not
+compile yet, so `declared_spelling` (`adapters/storage/table_sql.py`) refuses the
+table before anything is admitted. Before 0.46.0 spicy-docs declared no spelling
+for its composite identity (ruling R6); `measure.py` supplies a provisional one
+for these measurements.
 
 ## What stays byte-identical, and the proof
 
@@ -138,13 +152,26 @@ registration directory and the data file.
   2,002,888 rows) and admitted against the live single-file generation in both
   orders; `bill_sections` (2,659,863 rows) was admitted as the live-derived
   one-file table and as its 7-member split, in both orders.
-- **What is compared.** State ID, report, occurrence set, membership rows and
-  the registered data file's digest.
+- **What is compared.** `receipt.json`'s `differingFields` checks the fields
+  it lists as `agreementFields`: state ID, pin, members, counts, occurrence set,
+  membership rows, and the table layer's data-file digests, member digest and
+  layer digest. Of those, `table.layerDigest` is the only one that differs
+  between same-pin runs, but it is not the only stored field that differs.
 - **Baseline.** Two version-1 admissions into two workspaces are compared the
-  same way. The Iceberg metadata files carry UUIDs and commit times, so layer
-  references differ between any two workspaces. The version-2 run must differ
-  from version 1 in exactly the fields two version-1 runs differ in, and in no
-  others.
+  same way. A full comparison of everything a workspace stores for the state
+  finds the same 18 paths differing between two version-1 runs as between a
+  version-1 and a version-2 run of the same generation: the table, membership
+  and occurrences layer references (digest, layerId, stateRef and physical
+  files); the state's read pin, which hashes those references; and the
+  representation's membership digest and locator. (The review's dumps,
+  `~/Work/corpora/review-docspec-v2-20260927/ev`, list each layer digest twice;
+  the release re-proof's,
+  `~/Work/corpora/docspec-publication-v2-20260927/release-proof-9482927/dumps`,
+  find the same fields as 15 paths.) Iceberg metadata carries UUIDs and commit
+  times, so every layer reference belongs to its workspace. Everything else is
+  equal: state ID, report, occurrences, occurrence records, membership rows and
+  the data-file digest. A fresh workspace therefore reproduces production's
+  state ID and occurrences, but never its read pin.
 - **What a split costs** (`receipt.json` again; every step under pm01's 12 GiB
   watch). A first admission costs the same either way: `documents` 2,002,888
   rows in 15–16 s at about 1.6 GiB, `bill_sections` 2,659,863 rows in about
@@ -162,8 +189,8 @@ Each refusal has a test.
 - A pointer of an unknown version, or of the wrong version for its key.
 - A version-1 entry listing members.
 - A version-2 fetch failure other than absence.
-- A member outside its table's directory, or outside the family prefix.
-- A member listed twice. Two members with equal digests.
+- A member outside its table's directory.
+- Two members with equal digests.
 - A partition value that disagrees with the member's rows.
 - A partition column that is not a declared column.
 - Member rows that do not sum to the table's, or a member whose footer count
@@ -172,7 +199,10 @@ Each refusal has a test.
   schemas).
 - A member carrying field IDs, or with a row group over the bound. Nothing is
   placed in either case.
-- A version-2 entry that differs from the artifact.
+- A version-2 entry that differs from the artifact. This one equality check is
+  all that refuses an entry naming a member outside the family prefix, listing
+  a member twice, or whose rows do not sum; none of those has a check of its
+  own.
 - A registered split table whose data files are tampered with, or whose file set
   changed.
 - A version-1 pointer for a family with a split table. The derived version 1
@@ -183,7 +213,10 @@ Each refusal has a test.
   the family prefix, a member listed twice, rows that do not sum, and one
   member rewritten and the artifact resealed with Rulespec so only DocSpec's
   own partition check can refuse it. Every one refused before anything was
-  registered.
+  registered. The three pointer edits (outside the prefix, listed twice, rows
+  not summing) were all refused by the version-2 entry-equality check
+  (`publication table descriptor differs from its pinned member`): they exercise
+  that one check three times, not three checks.
 
 ## How it scales
 

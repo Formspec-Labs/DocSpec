@@ -236,8 +236,8 @@ def test_a_contract_must_declare_a_spelling_docspec_compiles(monkeypatch):
 
 
 # The bill family once bill_sections splits (spicy-regs multi-file design): congress_bills stays one file and
-# bill_sections is one member per Congress. The installed contract's composite identity has no key spelling
-# (ruling R6), so these rows declare a one-field identity of their own.
+# bill_sections is one member per Congress. The installed contract declares at-joined/1, which DocSpec does not
+# compile yet, so these rows declare a one-field identity of their own.
 SECTIONS = pa.table({"section_id": ["118-hr-1#1", "118-hr-2#1", "119-s-5#1", "119-s-5#2"],
                      "congress": ["118", "118", "119", "119"], "body": ["a", "b", "c", "d"]})
 BILLS = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})
@@ -372,6 +372,7 @@ def test_a_version_2_entry_that_differs_from_the_artifact_refuses(tmp_path, chan
     ("mixed-schemas", "footer schema differs"),
     ("duplicate-bytes", "same member bytes twice"),
     ("stray-member", "table set differs"),
+    ("unsplit-nested", "table set differs"),
 ])
 def test_a_split_table_that_disagrees_with_its_members_refuses(tmp_path, case, match):
     sections, options = split_members(SECTIONS, "congress"), {}
@@ -399,6 +400,9 @@ def test_a_split_table_that_disagrees_with_its_members_refuses(tmp_path, case, m
         stray = describe_member(LocalMemberSource(source), object_key="stray.parquet", role="table",
                                 media_type="application/vnd.apache.parquet", record_count=2)
         seal_generation(source, "bill-family", [*members, stray], descriptions)
+    elif case == "unsplit-nested":  # split members under a descriptor that declares no partitionColumns
+        unsplit = {key: value for key, value in descriptions["bill_sections.parquet"].items() if key != "partitionColumns"}
+        seal_generation(source, "bill-family", members, {**descriptions, "bill_sections.parquet": unsplit})
     with pytest.raises(IntegrityError, match=match):
         with stage_generation(source, family="bill-family", table="congress_bills"):
             pytest.fail("inconsistent split table admitted")

@@ -145,7 +145,10 @@ def whole(root, fixture):
 
 
 def provisional_bill_sections_key():
-    """Measurement only: ruling R6 admits bill_sections only once spicy-docs declares its composite key spelling.
+    """Measurement only: DocSpec compiles no key spelling for bill_sections, so it admits only with this one.
+
+    spicy-docs declared none for the composite identity before 0.46.0 (ruling R6); 0.46.0 declares at-joined/1,
+    which DocSpec does not compile yet.
 
     This spells (bill_id, version_code, source, seq) as a canonical JSON array
     in-process, so the admission path can be timed over real rows; what it
@@ -356,7 +359,10 @@ def receipt(root, out, production):
                            "memberSetEqualsRegisteredFiles": sorted(run["members"]) == run["table"]["files"],
                            "memberRowsSumToTable": sum(member["recordCount"] for member in evidence["members"])
                            == run["counts"]["rows"]}
-    summary = {"differingFields": agreement, "productionStateIds": crosscheck, "splitTables": split}
+    # Only these fields are compared; every layer reference, the read pin and the representation's membership
+    # digest and locator differ between any two workspaces too (README, "Baseline").
+    summary = {"agreementFields": list(fields), "differingFields": agreement, "productionStateIds": crosscheck,
+               "splitTables": split}
     Path(out).write_text(json.dumps({"runs": runs, **summary}, indent=2, sort_keys=True) + "\n")
     print(json.dumps(summary, indent=2))
 

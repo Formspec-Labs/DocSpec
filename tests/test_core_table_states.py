@@ -633,7 +633,7 @@ def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_versi
     sections = pa.table({"section_id": ["118-hr-1#1", "118-hr-2#1", "119-s-5#1"], "congress": ["118", "118", "119"],
                          "body": ["a", "b", "c"]})
     bills = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})
-    # The installed contract's composite identity has no key spelling (ruling R6); these rows declare their own.
+    # The installed contract declares at-joined/1, which DocSpec does not compile yet; these rows declare their own.
     pin, members, descriptions = family_generation(
         tmp_path / "source", {"congress_bills": bills, "bill_sections": split_members(sections, "congress")},
         partitions={"bill_sections": ["congress"]}, overrides={"bill_sections": {"identity": ["section_id"]}})
@@ -652,9 +652,12 @@ def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_versi
 
 
 def test_a_member_path_never_supplies_a_column(tmp_path):
-    """Partition discovery is off at every read: a member under congress=118/ keeps its VARCHAR '118'.
+    """A member under congress=118/ keeps its VARCHAR '118': the directory never supplies the column.
 
     With discovery on, DuckDB would read the directory as a BIGINT congress of 118 in place of the file's column.
+    This goes red if the staging footer, registration footer or identity-pass read turns discovery on; those use
+    DuckDB's Python read_parquet, which in 1.5.5 does not discover unless asked. The partition scan's SQL read, whose
+    default discovers, is guarded by the partition-value tests in tests/test_generation_source.py instead.
     """
     sections = pa.table({"section_id": ["118-hr-1#1", "119-s-5#1"], "congress": ["118", "119"], "body": ["a", "b"]})
     family_generation(tmp_path / "source", {"bill_sections": split_members(sections, "congress")},
