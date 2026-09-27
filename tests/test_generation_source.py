@@ -13,7 +13,7 @@ import pytest
 from rulespec_artifacts import canonical_json_bytes, stamp_root
 
 from spicy_docs.schemas import TABLE_CONTRACTS
-from spicy_docs.schemas.tables import KEY_SPELLINGS
+from spicy_docs.schemas.tables import KEY_SPELLINGS, table_contract
 
 from docspec.adapters import generation_source
 from docspec.adapters.content_fetchers.https import HttpsContentFetcher
@@ -182,6 +182,28 @@ def contracts(monkeypatch, entries, spellings=None):
     registry = {**KEY_SPELLINGS, **(spellings or {})}
     monkeypatch.setattr(generation_source, "KEY_SPELLINGS", registry)
     monkeypatch.setattr(table_sql, "KEY_SPELLINGS", registry)
+
+
+def test_a_typed_contract_refuses_a_footer_of_other_types(tmp_path, monkeypatch):
+    columns = {"row_id": "The key.", "open": "A flag.", "pages": "A count.", "posted": "An instant.",
+               "topics": "Labels.", "title": "Text."}
+    contracts(monkeypatch, {"typed_rows": table_contract(
+        "typed_rows", grain="One row.", identity=("row_id",), version_column=None, columns=columns,
+        key_spelling="value/1", types={"open": "BOOLEAN", "pages": "INTEGER", "posted": "TIMESTAMPTZ",
+                                       "topics": "VARCHAR[]"})})
+    typed = {"row_id": ["r-1"], "open": [True], "pages": pa.array([3], pa.int32()),
+             "posted": pa.array([datetime(2026, 9, 25, tzinfo=timezone.utc)], pa.timestamp("us", "UTC")),
+             "topics": [["a", "b"]], "title": ["A title"]}
+    generation(tmp_path / "typed", pa.table(typed), family="typed-family", table="typed_rows")
+    with stage_generation(tmp_path / "typed", family="typed-family", table="typed_rows") as admitted:
+        assert dict(admitted.columns) == {"row_id": "VARCHAR", "open": "BOOLEAN", "pages": "INTEGER",
+                                          "posted": "TIMESTAMPTZ", "topics": "VARCHAR[]", "title": "VARCHAR"}
+    # A v1-style member spells the flag and the count as text; the typed contract refuses it.
+    generation(tmp_path / "text", pa.table({**typed, "open": ["true"], "pages": pa.array([3], pa.int64())}),
+               family="typed-family", table="typed_rows")
+    with pytest.raises(IntegrityError, match="open is VARCHAR, not BOOLEAN; pages is BIGINT, not INTEGER"):
+        with stage_generation(tmp_path / "text", family="typed-family", table="typed_rows"):
+            pytest.fail("mistyped member admitted")
 
 
 def test_the_federal_register_contract_and_the_decision_0003_fallback_agree(monkeypatch):

@@ -117,6 +117,24 @@ def _key_rule(family, table, description, columns):
     return spelling
 
 
+def _contract_types(table, columns):
+    """Refuse a member whose footer types differ from its table's typed spicy-docs contract.
+
+    Only a contract that types a column is checked, since an untyped contract's
+    tables may be published natively typed. Each column both name must have the
+    contract's type (VARCHAR unless ``types`` names it). ``columns`` are the
+    member's, spelled as table profiles spell them, as ``COLUMN_TYPES`` are.
+    A column only one side names is not this check's concern.
+    """
+    contract = TABLE_CONTRACTS.get(table)
+    if contract is None or not getattr(contract, "types", None):
+        return
+    differing = [f"{name} is {kind}, not {contract.column_type(name)}" for name, kind in columns
+                 if name in contract.columns and kind != contract.column_type(name)]
+    if differing:
+        raise IntegrityError(f"Parquet footer types differ from the {table} contract: " + "; ".join(differing))
+
+
 @contextmanager
 def _reader(source):
     """Use the existing safe local reader or host-bounded HTTPS transport."""
@@ -248,6 +266,7 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                     if [list(column) for column in columns] != description.get("columns"):
                         raise IntegrityError("Parquet footer schema differs from its descriptor")
                     if name == filename:
+                        _contract_types(table, canonical)
                         result.update(path=path, member=member, columns=canonical, record_count=description["rows"],
                                       key=_key_rule(family, table, description, canonical))
             artifact = admit_artifact(LocalMemberSource(staging), expected_pin=pin, root_byte_limit=_DOCUMENT_BYTES,

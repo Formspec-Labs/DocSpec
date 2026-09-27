@@ -237,7 +237,9 @@ with CoreWorkspace(workspace_path) as workspace:
 `generation_path` is a local generation or publication directory, or an HTTPS
 publication base (the `http` extra). A `publication.json` is an untrusted
 pointer: Rulespec admits the pinned complete family, the table's footer must
-match its descriptor, and the member is then linked into the record store
+match its descriptor and, where its spicy-docs contract types columns, give each
+column the contract names the contract's type (VARCHAR unless typed), and the
+member is then linked into the record store
 unrewritten, sealed under its producer digest. The member key is the table's
 declared spelling: identity fields the artifact declares (one field spells as
 `value/1`), then the identity and `name/version` key spelling its spicy-docs
