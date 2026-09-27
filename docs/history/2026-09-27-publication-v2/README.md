@@ -13,7 +13,8 @@ DocSpec 0.11.4 checks `set(tables) == set(members)` and so refuses the whole
 family, `congress_bills` included.
 
 This note records what changes, what must stay byte-identical, and what
-refuses. Evidence is in this directory (`receipt.json`, `measure.py`).
+refuses. Evidence is in this directory (`receipt.json`, `measure.py`, `run.sh`,
+`split_documents.py`), laid out by `run.sh` under a candidate root.
 
 ## What changes
 
@@ -132,7 +133,11 @@ registration directory and the data file.
   pin), `dockets`, `documents` and the bill family's `congress_bills` were each
   admitted through the live version-1 pointer. Each was admitted again through a
   version-2 pointer built with the publisher's own code (`{**parse_index(v1),
-  "version": 2}`, as its bootstrap writes it).
+  "version": 2}`, as its bootstrap writes it). `documents` was also published
+  split by `agency_code` with spicy-regs' own builder at 8d24b96 (316 members,
+  2,002,888 rows) and admitted against the live single-file generation in both
+  orders; `bill_sections` (2,659,863 rows) was admitted as the live-derived
+  one-file table and as its 7-member split, in both orders.
 - **What is compared.** State ID, report, occurrence set, membership rows and
   the registered data file's digest.
 - **Baseline.** Two version-1 admissions into two workspaces are compared the
@@ -140,6 +145,16 @@ registration directory and the data file.
   references differ between any two workspaces. The version-2 run must differ
   from version 1 in exactly the fields two version-1 runs differ in, and in no
   others.
+- **What a split costs** (`receipt.json` again; every step under pm01's 12 GiB
+  watch). A first admission costs the same either way: `documents` 2,002,888
+  rows in 15–16 s at about 1.6 GiB, `bill_sections` 2,659,863 rows in about
+  230 s at about 2 GiB. A split successor over a single-file base, or the
+  reverse, carries every row and generates none: `documents` in 2–3 s,
+  `bill_sections` in 29 s at 7 GiB (the all-column join under DuckDB's engine
+  allowance), with `changes()` alone reporting 0 in 0.7–1.0 s. `bill_sections`
+  over the live table without `congress` re-mints every row — 199 s admitting,
+  205 s for `changes()` alone at 8.5 GiB — the schema change's cost, not the
+  split's.
 
 ## Refusals
 
@@ -163,6 +178,12 @@ Each refusal has a test.
 - A version-1 pointer for a family with a split table. The derived version 1
   omits the table, so the family's table set disagrees and it refuses. That is
   why version 2 must be read.
+- Five of these were also staged over the real 316-member `documents` split
+  (`receipt.json`'s `refusals`): the version-1-only pointer, a member outside
+  the family prefix, a member listed twice, rows that do not sum, and one
+  member rewritten and the artifact resealed with Rulespec so only DocSpec's
+  own partition check can refuse it. Every one refused before anything was
+  registered.
 
 ## How it scales
 
