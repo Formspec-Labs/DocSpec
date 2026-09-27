@@ -121,12 +121,17 @@ class SourceFixture:
 
 @dataclass(frozen=True, slots=True)
 class SourceObject:
-    """One raw provider object with the key, ETag and version the reader reports."""
+    """One raw provider object with the key, ETag, version and last-modified time the reader reports.
+
+    Documents' reader pins each object's listed LastModified (policy 1.3, a
+    timezone-aware value), so every object carries one.
+    """
 
     key: str
     etag: str
     version_id: str | None
     content: bytes
+    last_modified: datetime
 
 
 class ObjectReader:
@@ -362,6 +367,7 @@ def source_object(collection: str, value: dict[str, object]) -> SourceObject:
         f'"{collection}-etag"',
         f"{collection}-version",
         json.dumps(value, indent=2, sort_keys=True).encode("utf-8"),
+        datetime(2026, 8, 25, 1, 2, 3, tzinfo=UTC),
     )
 
 
