@@ -450,15 +450,16 @@ def _spelled_values(cursor, table, identity: TableIdentity, held):
 
 
 @contextmanager
-def typed_relation(records, layers, identity: TableIdentity, *, cursor=None, keys=None):
+def typed_relation(records, layers, identity: TableIdentity, *, cursor=None, keys=None, member_keys=None):
     """Yield (member_key, occurrence_id, <the table's columns>) for a table-shaped state, without JSON.
 
     A key spelled from a member_key column, as every derived layer's is, keeps
     that column as member_key: the state's key for a one-to-one layer, the
     source member's for a one-to-many one, keyed member_key#segment_index.
-    ``keys``, a relation of the key fields on ``cursor``, narrows the rows to
-    those keys before any row is addressed: up to 256 push their components
-    into the table scan and their identities into the membership's.
+    ``keys``, a relation of the key fields on ``cursor``, or ``member_keys``,
+    the state's own keys, narrows the rows to those keys before any row is
+    addressed: up to 256 push their components into the table scan and their
+    identities into the membership's; more semi-join the membership.
     """
     fields = layers["table"].schema.fields
     own = identity.key.fields[0] == DERIVED_MEMBER
@@ -470,10 +471,11 @@ def typed_relation(records, layers, identity: TableIdentity, *, cursor=None, key
         if keys is not None:
             spelled = keys.project(f"{member_key_sql(identity)} AS narrowed_key")
             if spelled.aggregate("count(*)").fetchone()[0] <= LITERAL_IDENTITIES:
-                wanted = [key for (key,) in spelled.fetchall()]
-                table, membership = candidate_rows(table, identity, wanted), identity_filter(cursor, membership, wanted)
+                member_keys = [key for (key,) in spelled.fetchall()]
             else:
                 membership = membership.join(spelled, "record_identity = narrowed_key", how="semi")
+        if member_keys is not None:
+            table, membership = candidate_rows(table, identity, member_keys), identity_filter(cursor, membership, member_keys)
         joined, key, occurrence = _keyed(table, identity, membership.project(MEMBERSHIP_ADDRESSES))
         head = identifier(DERIVED_MEMBER) if own else f"{identifier(key)} AS member_key"
         yield joined.project(", ".join([head, f"{identifier(occurrence)} AS occurrence_id",

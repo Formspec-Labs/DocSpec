@@ -96,16 +96,24 @@ class CoreStateReader:
             yield relation
 
     @contextmanager
-    def table(self):
+    def table(self, *, member_keys=None):
         """Yield a table-shaped state's typed rows: member_key, occurrence_id and the table's own columns.
 
         Typed consumers read the columns natively instead of decoding
         occurrence records; a state that is not table-shaped refuses. A
         derived layer's member_key is its own column: the state's key, or for
         a one-to-many layer the source member's, keyed member_key#segment_index.
+        ``member_keys``, any collection of the state's own keys, yields only
+        the rows it holds at them, silently skipping the rest: up to 256 keys
+        push their components into the table scan, so row groups holding none
+        are never read; more semi-join the membership over one scan.
         """
         self._session._active()
-        with self._states.typed_relation(self._layers) as relation:
+        if member_keys is not None:
+            member_keys = set(member_keys)
+            if any(not isinstance(key, str) or not key for key in member_keys):
+                raise ValueError("member keys must be nonempty strings")
+        with self._states.typed_relation(self._layers, member_keys=member_keys) as relation:
             yield relation
 
     def table_reference(self):
@@ -229,6 +237,24 @@ class CoreStateReader:
                     else:
                         entity = stored_record(payload)
                         yield key, entity.entity_id, self._read_value(entity)
+
+    @contextmanager
+    def key_changes(self, older):
+        """Yield where this state differs from ``older`` natively, as keys only: member_key and occurrence_id.
+
+        ``changes`` without its values: the same members, occurrence_id NULL
+        where this state removed one, in no order. No occurrence record or
+        table row is read, so a consumer that maps its own columns reads only
+        what it needs, with ``table(member_keys=...)``. The keys are found as
+        ``changes`` finds them.
+        """
+        if not isinstance(older, CoreStateReader):
+            raise TypeError("changes require another open state reader")
+        self._session._active()
+        older._session._active()
+        with self._states.key_changes(self._session, older.state_id, self._state_id, older_layers=older._layers,
+                                      newer_layers=self._layers) as relation:
+            yield relation
 
     def lookup(self, member_key, *, occurrence_id=None):
         """Read one current member; an expected occurrence must match exactly."""

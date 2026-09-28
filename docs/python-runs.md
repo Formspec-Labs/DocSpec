@@ -218,6 +218,23 @@ members in key order. When the newer state descends from the older one through
 recorded revisions, only the edited keys are compared; otherwise one native pass
 compares both memberships. Only differing members' values are read.
 
+`newer.key_changes(older)` finds the same members the same way but reads no
+value: it yields a native relation of `member_key` and `occurrence_id` (NULL
+where the member was removed), in no order, from the two memberships alone. A
+table-shaped state's `reader.table(member_keys=keys)` yields its typed rows at
+those keys only, skipping keys it does not hold: up to 256 push their
+components into the table scan, so row groups holding none are not read; more
+semi-join the membership over one scan. Together they let an update read what
+changed, and only the columns it maps:
+
+```python
+with workspace.open_state(previous_id) as older, workspace.open_state(current_id) as newer:
+    with newer.key_changes(older) as changed:
+        written = [key for key, occurrence_id in changed.fetchall() if occurrence_id is not None]
+    with newer.table(member_keys=written) as rows:
+        rows.project("member_key, title").fetchall()
+```
+
 ## Admit a producer generation by reference
 
 A spicy-regs rollup generation already holds a table's rows in sealed Parquet.

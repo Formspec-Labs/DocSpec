@@ -23,7 +23,7 @@ from spicy_docs.schemas import TABLE_CONTRACTS
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 
 from docspec.adapters import generation_source
-from docspec.adapters.storage import core_tables, table_sql
+from docspec.adapters.storage import core_states, core_tables, table_sql
 from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
 from docspec.domain import core
@@ -32,7 +32,7 @@ from docspec.domain.identity import canonical_value_bytes
 from docspec.domain.references import LayerRef
 from docspec.domain.table_rows import KeySpelling, TableIdentity, table_row_bytes, table_row_value
 from docspec.errors import IntegrityError, StaleBaseError
-from docspec.runtime import CoreWorkspace
+from docspec.runtime import CoreWorkspace, state_reader
 from tests.support.generations import (family_generation, generation, publication, publish, serve_https,
     split_members)
 
@@ -169,6 +169,52 @@ def test_a_later_generation_carries_unchanged_occurrences_and_mints_only_its_del
         comparison = workspace.compare(first.state_id, second.state_id)
         assert comparison["counts"] == {"added": 1, "removed": 1, "changed": 1}
         assert [row["value_changed"] for row in comparison["sample"]] == [True, True, True]
+
+
+def test_key_changes_name_what_changes_names_without_reading_a_row(tmp_path, monkeypatch):
+    """Search's keys-only diff: the members changes() yields, with their occurrences, from the memberships alone."""
+    changed = {**ROWS[0], "title": "An amended rule"}
+    added = {**ROWS[2], "document_number": "2026-00004"}
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        first, second = admit_all(workspace, tmp_path, [ROWS, [changed, ROWS[1], added]])
+        before = occurrences(workspace, first.state_id)
+        with workspace.open_state(first.state_id) as older, workspace.open_state(second.state_id) as newer:
+            expected_keys = [(key, urn) for key, urn, _ in newer.changes(older)]
+            # No occurrence record is read or decoded, and no table row is scanned.
+            for owner, name in ((core_states.CoreStateStorage, "ordered_batches"), (state_reader, "stored_record"),
+                                (core_tables, "typed_relation"), (core_tables, "spell_rows")):
+                monkeypatch.setattr(owner, name, lambda *args, **kwargs: pytest.fail("key_changes read a row"))
+            with newer.key_changes(older) as keys:
+                assert keys.columns == ["member_key", "occurrence_id"]
+                assert keys.order("member_key").fetchall() == expected_keys
+            with older.key_changes(newer) as keys:
+                assert sorted(keys.fetchall()) == [(key, before.get(key)) for key in (
+                    "2026-00001@2026-09-01", "2026-00003@2026-09-03", "2026-00004@2026-09-03")]
+            with newer.key_changes(newer) as keys:
+                assert keys.fetchall() == []
+
+
+def test_a_keyed_table_reads_only_the_rows_its_keys_name(tmp_path):
+    """table(member_keys=...) pushes up to 256 keys' components into the scan; more semi-join the membership."""
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        [admitted] = admit_all(workspace, tmp_path, [ROWS])
+        with workspace.open_state(admitted.state_id) as reader:
+            with reader.table() as whole:
+                everything = {row[0]: row for row in whole.fetchall()}
+            wanted = {"2026-\x1f02@2026-09-02", "absent@2026-01-01"}
+            with reader.table(member_keys=wanted) as keyed:
+                assert keyed.fetchall() == [everything["2026-\x1f02@2026-09-02"]]
+                scan = keyed.explain().split("ICEBERG_SCAN", 1)[1]
+                assert "2026-\x1f02" in scan and "absent" in scan, "the key components must reach the table scan"
+            many = {f"{index}@2026-01-01" for index in range(300)} | {"2026-00003@2026-09-03"}
+            with reader.table(member_keys=many) as keyed:
+                assert keyed.fetchall() == [everything["2026-00003@2026-09-03"]]
+            with reader.table(member_keys=[]) as keyed:
+                assert keyed.fetchall() == []
+            for bad in ([""], [None]):
+                with pytest.raises(ValueError, match="nonempty strings"):
+                    with reader.table(member_keys=bad):
+                        pytest.fail("a key that is not a nonempty string was accepted")
 
 
 def test_a_restored_row_resolves_to_its_first_occurrence(tmp_path):

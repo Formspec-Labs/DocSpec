@@ -266,11 +266,14 @@ class CoreStateStorage:
                 yield relation
 
     @contextmanager
-    def typed_relation(self, layers):
-        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the producer's columns."""
+    def typed_relation(self, layers, *, member_keys=None):
+        """Yield a table-shaped state's typed rows: member_key, occurrence_id and the producer's columns.
+
+        ``member_keys``, the state's own keys, narrows the rows to those it holds.
+        """
         if layers.identity is None:
             raise IntegrityError("state is not table-shaped")
-        with typed_relation(self.records, layers, layers.identity) as relation:
+        with typed_relation(self.records, layers, layers.identity, member_keys=member_keys) as relation:
             yield relation
 
     def _state_content(self, session, entities, members):
@@ -834,10 +837,22 @@ class CoreStateStorage:
             yield from self.ordered_batches(session, newer, addresses=changed.project("wanted_key"), cursor=cursor,
                                             layers=newer_layers)
 
-    def _differing(self, session, older, newer, *, older_layers, newer_layers, cursor):
-        """Materialize, on ``cursor``, the keys whose address differs between two states, with older's occurrence.
+    @contextmanager
+    def key_changes(self, session, older, newer, *, older_layers, newer_layers):
+        """Yield member_key and newer's occurrence_id, NULL where newer removed the member, at every differing key.
 
-        Columns are wanted_key and old_occurrence, NULL for a key older lacks.
+        The keys are ``_differing``'s, read from the two memberships alone: no
+        occurrence record or table row is read.
+        """
+        with self.records._cursor() as cursor:
+            yield self._differing(session, older, newer, older_layers=older_layers, newer_layers=newer_layers,
+                                  cursor=cursor).project("wanted_key AS member_key, new_occurrence AS occurrence_id")
+
+    def _differing(self, session, older, newer, *, older_layers, newer_layers, cursor):
+        """Materialize, on ``cursor``, the keys whose address differs between two states, with each side's occurrence.
+
+        Columns are wanted_key, old_occurrence and new_occurrence, NULL on the
+        side that lacks the key.
         Certified revision history narrows both memberships to edited keys;
         otherwise one native outer join compares the compact memberships, as
         ``compare`` does.
@@ -853,7 +868,8 @@ class CoreStateStorage:
             return self.records.temp_table(cursor, old.join(new, "old_key = new_key", how="outer").filter(
                 "old_member IS DISTINCT FROM new_member").project(
                 "coalesce(old_key, new_key) AS wanted_key, "
-                "json_extract_string(decode(old_member), '/occurrence_id') AS old_occurrence"), "state_changes")
+                "json_extract_string(decode(old_member), '/occurrence_id') AS old_occurrence, "
+                "json_extract_string(decode(new_member), '/occurrence_id') AS new_occurrence"), "state_changes")
 
     def resolve_membership(self, session, revision, *, full=False):
         """Validate every edit before reducing keys; write only the changed rows.

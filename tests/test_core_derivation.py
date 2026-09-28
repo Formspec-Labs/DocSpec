@@ -132,6 +132,9 @@ def test_changes_stream_rewritten_added_and_removed_members(tmp_path):
             assert list(newer.changes(older)) == [("a", ids["a"], 10), ("b", None, None), ("d", ids["d"], None)]
             assert [(key, value) for key, _, value in older.changes(newer)] == [("a", 1), ("b", 2), ("d", None)]
             assert list(newer.changes(newer)) == []
+            # The keys-only form names the same members and occurrences, for JSON states too.
+            with newer.key_changes(older) as keys:
+                assert keys.order("member_key").fetchall() == [("a", ids["a"]), ("b", None), ("d", ids["d"])]
 
 
 def test_changes_use_certified_history_and_agree_with_a_full_comparison(tmp_path, monkeypatch):
@@ -154,6 +157,9 @@ def test_changes_use_certified_history_and_agree_with_a_full_comparison(tmp_path
             assert certified == [True]
             compared = [(key, value) for key, _, value in copy.changes(older)]
             assert certified == [True, False]
+            with newer.key_changes(older) as narrowed, copy.key_changes(older) as full:
+                assert sorted(key for key, _ in narrowed.fetchall()) == sorted(key for key, _ in full.fetchall())
+            assert certified == [True, False, True, False]
         assert chained == compared == [("a", 10), ("b", None)]
 
 
