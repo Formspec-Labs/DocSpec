@@ -153,10 +153,12 @@ class KeySpelling:
     Python reference and the component types it takes, and refuses any other.
     ``value/1`` is one VARCHAR or DATE field's own text;
     ``federal-register-source-record-id/1`` is spicy-docs' ``number@date`` over
-    document_number and publication_date; DocSpec's ``member-segment/1`` is a
-    derived layer's ``member_key#segment_index``. The ID and version enter the
-    state identity, so a new spelling is an explicit re-key; composite producer
-    spellings wait for spicy-docs to declare them (ruling R6).
+    document_number and publication_date; spicy-docs' ``at-joined/1`` is any
+    composite identity's components in declared order joined by ``@``, none
+    empty or holding ``@``; DocSpec's ``member-segment/1`` is a derived layer's
+    ``member_key#segment_index``. The ID and version enter the state identity,
+    so a new spelling is an explicit re-key; a composite identity admits only
+    through a spelling spicy-docs declares (ruling R6).
     """
 
     spelling_id: str
@@ -286,6 +288,17 @@ SEGMENT_KEY_ROWS = tuple(dict(zip((name for name, _ in SEGMENT_KEY_COLUMNS), val
 WIDE_SEGMENT_KEY_COLUMNS = (("member_key", "VARCHAR"), ("segment_index", "BIGINT"), ("text", "VARCHAR"))
 WIDE_SEGMENT_KEY_ROWS = tuple(dict(zip((name for name, _ in WIDE_SEGMENT_KEY_COLUMNS), values, strict=True))
                               for values in (("a#1", 2**63 - 1, "wide"), ("a", -(2**63), None), ("b", SAFE_INTEGER + 1, "")))
+# Composite keys (at-joined/1) over every component type at its bounds: text
+# with controls, quotes, a backslash, whitespace and non-BMP characters (none
+# may hold "@"), DATE at both year bounds, INTEGER and BIGINT past 2^53.
+AT_JOINED_KEY_COLUMNS = (("bill_id", "VARCHAR"), ("day", "DATE"), ("seq", "INTEGER"), ("wide", "BIGINT"),
+                         ("body", "VARCHAR"))
+AT_JOINED_KEY_ROWS = tuple(dict(zip((name for name, _ in AT_JOINED_KEY_COLUMNS), values, strict=True)) for values in (
+    ("118-hr-1", date(2026, 9, 25), 1, 2**63 - 1, "one"),
+    ("\x00\x1f\"\\/ é😀", date(1, 1, 1), -(2**31), -(2**63), None),
+    (" ", date(9999, 12, 31), 2**31 - 1, SAFE_INTEGER + 1, ""),
+    ("#1", date(1970, 1, 1), 0, -1, "hash"),
+))
 # Doubles DuckDB 1.5.5 casts to another double's spelling: 2^81 prints as
 # 2^82's shortest decimal, and 2^807 with a hexadecimal digit. A native spelling
 # must refuse them or match the reference, never spell them otherwise.

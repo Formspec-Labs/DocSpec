@@ -237,8 +237,8 @@ def test_a_contract_must_declare_a_spelling_docspec_compiles(monkeypatch):
 
 
 # The bill family once bill_sections splits (spicy-regs multi-file design): congress_bills stays one file and
-# bill_sections is one member per Congress. The installed contract declares at-joined/1, which DocSpec does not
-# compile yet, so these rows declare a one-field identity of their own.
+# bill_sections is one member per Congress. These rows declare a one-field identity of their own, which comes
+# before the contract's four-column at-joined/1 (admitted in tests/test_core_table_states.py).
 SECTIONS = pa.table({"section_id": ["118-hr-1#1", "118-hr-2#1", "119-s-5#1", "119-s-5#2"],
                      "congress": ["118", "118", "119", "119"], "body": ["a", "b", "c", "d"]})
 BILLS = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})

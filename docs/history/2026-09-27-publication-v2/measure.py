@@ -145,10 +145,10 @@ def whole(root, fixture):
 
 
 def provisional_bill_sections_key():
-    """Measurement only: DocSpec compiles no key spelling for bill_sections, so it admits only with this one.
+    """Measurement only: the key these measurements used for bill_sections, before DocSpec compiled one.
 
     spicy-docs declared none for the composite identity before 0.46.0 (ruling R6); 0.46.0 declares at-joined/1,
-    which DocSpec does not compile yet.
+    which DocSpec compiles since 0.12.1. This one keeps the recorded numbers reproducible.
 
     This spells (bill_id, version_code, source, seq) as a canonical JSON array
     in-process, so the admission path can be timed over real rows; what it
@@ -165,7 +165,8 @@ def provisional_bill_sections_key():
     generation_source.TABLE_CONTRACTS = {**TABLE_CONTRACTS, "bill_sections": SimpleNamespace(
         identity=BILL_SECTIONS_KEY, key_spelling=name, types=None)}
     table_sql._SPELLINGS[("measurement-json-array", "1")] = table_sql._Spelling(
-        BILL_SECTIONS_KEY, None, lambda parts: table_sql.json_array_sql(*parts), table_sql._producer(name), lambda key: ())
+        BILL_SECTIONS_KEY, (frozenset({"VARCHAR"}),) * len(BILL_SECTIONS_KEY), lambda parts: table_sql.json_array_sql(*parts),
+        table_sql._producer(name), lambda key: ())
 
 
 def _stream_digest(relation, columns):

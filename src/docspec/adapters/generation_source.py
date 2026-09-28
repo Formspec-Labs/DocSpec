@@ -136,9 +136,10 @@ def _key_rule(family, table, description, columns):
     and its ``name/version`` key spelling, an entry of ``KEY_SPELLINGS`` whose
     function is the Python reference DocSpec's SQL is checked against; a
     contract that declares none refuses, a composite (ruling R6) or a single
-    column. Decision 0003's ``number@date`` applies to Federal Register only
-    when spicy-docs has no contract for it, and is the spelling that contract
-    declares. ``columns`` are the member's, with table-profile types.
+    column, and a composite admits through ``at-joined/1``. Decision 0003's
+    ``number@date`` applies to Federal Register only when spicy-docs has no
+    contract for it, and is the spelling that contract declares. ``columns``
+    are the member's, with table-profile types.
     """
     contract = TABLE_CONTRACTS.get(table)
     artifact = fields = description.get("identity")

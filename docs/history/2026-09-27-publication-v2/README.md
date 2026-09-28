@@ -126,12 +126,13 @@ this directly, in both directions and with one changed partition.
 
 The first real `bill_sections` split also adds a `congress` column, which
 changes every row digest. That re-mint comes from the schema change (like B2's
-`topics_json`), not from the split. It costs nothing today: spicy-docs 0.46.0
-declares `bill_sections`' key spelling as `at-joined/1`, which DocSpec does not
-compile yet, so `declared_spelling` (`adapters/storage/table_sql.py`) refuses the
-table before anything is admitted. Before 0.46.0 spicy-docs declared no spelling
-for its composite identity (ruling R6); `measure.py` supplies a provisional one
-for these measurements.
+`topics_json`), not from the split. In 0.12.0 it cost nothing: spicy-docs 0.46.0
+declares `bill_sections`' key spelling as `at-joined/1`, which DocSpec 0.12.0 did
+not compile, so `declared_spelling` (`adapters/storage/table_sql.py`) refused the
+table before anything was admitted. DocSpec 0.12.1 compiles it. Before 0.46.0
+spicy-docs declared no spelling for its composite identity (ruling R6);
+`measure.py` supplies a provisional one for these measurements, so its numbers
+stay reproducible.
 
 ## What stays byte-identical, and the proof
 

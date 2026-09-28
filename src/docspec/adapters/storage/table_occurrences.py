@@ -20,9 +20,10 @@ from docspec.adapters.storage.table_sql import (OCCURRENCE_PREFIX, identity_rela
 from docspec.domain.identity import require_text, sha256_digest
 from docspec.domain.references import LayerRef
 from docspec.domain.storage import TableSchema
-from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, SEGMENT_KEY_COLUMNS,
-    SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling,
-    TableIdentity, table_occurrence_id, table_row_bytes, table_row_digest, table_rows_bytes)
+from docspec.domain.table_rows import (AT_JOINED_KEY_COLUMNS, AT_JOINED_KEY_ROWS, DATED_KEY_COLUMNS, DATED_KEY_ROWS,
+    ROUND_TRIP_TRAPS, SEGMENT_KEY_COLUMNS, SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS,
+    WIDE_SEGMENT_KEY_ROWS, KeySpelling, TableIdentity, table_occurrence_id, table_row_bytes, table_row_digest,
+    table_rows_bytes)
 from docspec.errors import IntegrityError
 from docspec.ports.record_storage import BATCH_ROWS
 
@@ -46,6 +47,9 @@ _ORACLE_CASES = (
         TableIdentity("urn:oracle:definition", "texts", KeySpelling("value", "1", ("member_key",)), SEGMENT_KEY_COLUMNS))),
     (WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, (
         TableIdentity("urn:oracle:definition", "wide", _SEGMENT_KEY, WIDE_SEGMENT_KEY_COLUMNS),)),
+    (AT_JOINED_KEY_COLUMNS, AT_JOINED_KEY_ROWS, (
+        TableIdentity("oracle", "joined", KeySpelling("at-joined", "1", ("bill_id", "day", "seq", "wide")),
+                      AT_JOINED_KEY_COLUMNS),)),
 )
 _ORACLE_PASSED = set()
 
@@ -232,7 +236,7 @@ def candidate_rows(rows, identity: TableIdentity, keys):
     if not keys or len(keys) > LITERAL_IDENTITIES:
         return rows if keys else rows.filter("false")
     candidates = {tuple(_component_value(part, kind) for part, kind in zip(parts, identity.key_kinds, strict=True))
-                  for key in keys for parts in key_components(identity.key, key) if all(parts)}
+                  for key in keys for parts in key_components(identity.key, key)}
     candidates = [parts for parts in candidates if all(part is not None for part in parts)]
     if not candidates:
         return rows.filter("false")

@@ -7,13 +7,14 @@ canonical spellings differ.
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import sys
 
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 from spicy_docs.sources.federal_register.native import federal_register_source_record_id
 
 from docspec.adapters.storage.iceberg import identifier, literal
 from docspec.domain.identity import canonical_value_bytes, require_text
-from docspec.domain.table_rows import SAFE_INTEGER, key_component, table_columns
+from docspec.domain.table_rows import KEY_TYPES, SAFE_INTEGER, key_component, table_columns
 from docspec.errors import IntegrityError
 
 
@@ -23,8 +24,8 @@ _SHORT_ESCAPES = {8: "\\b", 9: "\\t", 10: "\\n", 12: "\\f", 13: "\\r"}
 
 @dataclass(frozen=True, slots=True)
 class _Spelling:
-    fields: tuple[str, ...] | None  # None: any one field
-    kinds: tuple[frozenset[str], ...] | None  # each component's column types; None: one text or date field
+    fields: tuple[str, ...] | range  # exactly these fields, or any fields, as many as the range holds
+    kinds: tuple[frozenset[str], ...] | frozenset[str]  # each component's column types, or every component's
     sql: Callable[[list[str]], str]
     reference: Callable[[tuple[str, ...]], str]
     components: Callable[[str], tuple[tuple[str, ...], ...]]
@@ -58,14 +59,22 @@ def _producer(name, fallback=None):
     return reference
 
 
+def _at_joined_sql(parts):
+    """Components joined by "@"; one holding "@" would make the key ambiguous, so its row refuses."""
+    holds, joined = " OR ".join(f"contains({part}, '@')" for part in parts), " || '@' || ".join(parts)
+    return f"CASE WHEN {holds} THEN error('table member key component holds the @ joiner') ELSE {joined} END"
+
+
 # Each declared spelling compiles to SQL over its components' text, next to
 # its Python reference and the component tuples that could spell a key.
 # spicy-docs owns the producer spellings and their references (KEY_SPELLINGS),
-# which the spelling oracle holds this SQL to; DocSpec owns member-segment/1,
-# a one-to-many derived layer's key (C29), injective because the segment
-# index spells as a canonical integer after the last "#".
+# which the spelling oracle holds this SQL to. at-joined/1 serves any identity
+# of two or more components, and splits back at every "@" because no
+# component may hold one. DocSpec owns member-segment/1, a one-to-many
+# derived layer's key (C29), injective because the segment index spells as a
+# canonical integer after the last "#".
 _SPELLINGS = {
-    ("value", "1"): _Spelling(None, None, lambda parts: parts[0], _producer("value/1"), lambda key: ((key,),)),
+    ("value", "1"): _Spelling(range(1, 2), _TEXT, lambda parts: parts[0], _producer("value/1"), lambda key: ((key,),)),
     ("federal-register-source-record-id", "1"): _Spelling(
         _FEDERAL_REGISTER, (_TEXT, _TEXT), lambda parts: f"{parts[0]} || '@' || {parts[1]}",
         _producer("federal-register-source-record-id/1", fallback=lambda values: federal_register_source_record_id(
@@ -75,15 +84,18 @@ _SPELLINGS = {
         ("member_key", "segment_index"), (frozenset({"VARCHAR"}), frozenset({"INTEGER", "BIGINT"})),
         lambda parts: f"{parts[0]} || '#' || {parts[1]}", lambda values: values[0] + "#" + values[1],
         _segment_components),
+    ("at-joined", "1"): _Spelling(range(2, sys.maxsize), KEY_TYPES, _at_joined_sql, _producer("at-joined/1"),
+                                  lambda key: (tuple(key.split("@")),)),
 }
 
 
 def declared_spelling(spelling, kinds=None):
     """The spelling DocSpec compiles for these fields, refusing an unknown one or a column type it does not take."""
     declared = _SPELLINGS.get((spelling.spelling_id, spelling.version))
-    if declared is None or (len(spelling.fields) != 1 if declared.fields is None else spelling.fields != declared.fields):
+    if declared is None or (len(spelling.fields) not in declared.fields if isinstance(declared.fields, range)
+                            else spelling.fields != declared.fields):
         raise IntegrityError("member-key spelling is not declared for these fields")
-    allowed = (_TEXT,) * len(spelling.fields) if declared.kinds is None else declared.kinds
+    allowed = (declared.kinds,) * len(spelling.fields) if isinstance(declared.kinds, frozenset) else declared.kinds
     if kinds is not None and any(kind not in types for kind, types in zip(kinds, allowed, strict=True)):
         raise IntegrityError("member-key spelling is not declared for these fields' types")
     return declared
@@ -101,8 +113,9 @@ def reference_member_key(identity, row) -> str:
 
 
 def key_components(spelling, key: str) -> tuple[tuple[str, ...], ...]:
-    """Every component tuple that could spell ``key``; lookups push them into scans."""
-    return declared_spelling(spelling).components(key)
+    """Every component tuple that could spell ``key``, one nonempty component per field; lookups push them into scans."""
+    return tuple(parts for parts in declared_spelling(spelling).components(key)
+                 if len(parts) == len(spelling.fields) and all(parts))
 
 
 def _column(name, qualifier=None):

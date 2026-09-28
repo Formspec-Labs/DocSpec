@@ -633,7 +633,7 @@ def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_versi
     sections = pa.table({"section_id": ["118-hr-1#1", "118-hr-2#1", "119-s-5#1"], "congress": ["118", "118", "119"],
                          "body": ["a", "b", "c"]})
     bills = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})
-    # The installed contract declares at-joined/1, which DocSpec does not compile yet; these rows declare their own.
+    # These rows declare a one-field identity of their own, which comes before the contract's at-joined/1.
     pin, members, descriptions = family_generation(
         tmp_path / "source", {"congress_bills": bills, "bill_sections": split_members(sections, "congress")},
         partitions={"bill_sections": ["congress"]}, overrides={"bill_sections": {"identity": ["section_id"]}})
@@ -649,6 +649,52 @@ def test_a_mixed_family_admits_its_split_and_its_single_file_table_through_versi
         table = layer(workspace, several.state_id, "table")
         workspace.records.verify(table)
         assert len(workspace.records.data_files(table)) == 2
+
+
+def test_bill_sections_admits_split_under_its_contracts_at_joined_key(tmp_path):
+    """spicy-docs declares bill_sections' four-column identity at-joined/1: every member admits, keyed by it."""
+    congresses = [str(congress) for congress in range(113, 120)]
+    sections = pa.table({"bill_id": [f"{congress}-hr-1" for congress in congresses], "version_code": ["ih"] * 7,
+                         "source": ["govinfo"] * 7, "seq": ["1"] * 7, "congress": congresses,
+                         "body": [f"Section one of the {congress}th" for congress in congresses]})
+    bills = pa.table({"bill_id": ["118-hr-1", "119-s-5"], "title": ["A bill", "Another bill"]})
+    pin, members, descriptions = family_generation(
+        tmp_path / "source", {"congress_bills": bills, "bill_sections": split_members(sections, "congress")},
+        partitions={"bill_sections": ["congress"]})
+    publish(tmp_path / "published", tmp_path / "source", pin, members, descriptions)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admitted = workspace.admit_generation(tmp_path / "published", family="bill-family", table="bill_sections")
+        assert [member["objectKey"] for member in admitted.report["members"]] == [
+            f"bill_sections/congress={congress}/part-000000.parquet" for congress in congresses]
+        with workspace.publisher.session() as session:
+            assert workspace.states.manifest(session, admitted.state_id)["rules"]["key"] == {
+                "id": "at-joined", "version": "1", "fields": ["bill_id", "version_code", "source", "seq"]}
+        found = occurrences(workspace, admitted.state_id)
+        assert set(found) == {f"{congress}-hr-1@ih@govinfo@1" for congress in congresses}
+        with workspace.publisher.session() as session:
+            assert set(workspace.states.find_members(session, list(found.values()))) == set(found.values())
+        bills_state = workspace.admit_generation(tmp_path / "published", family="bill-family", table="congress_bills")
+        assert set(occurrences(workspace, bills_state.state_id)) == {"118-hr-1", "119-s-5"}
+
+
+def test_a_composite_key_of_text_dates_and_integers_admits_and_resolves_by_key(tmp_path, monkeypatch):
+    """at-joined/1 over VARCHAR, DATE and BIGINT columns: keys spell their text, and a lookup splits a key back."""
+    rows = pa.table({"docket": ["EPA-1", "EPA-1", "EPA 2"], "day": [date(2026, 9, 25), date(2026, 9, 26), date(1, 1, 1)],
+                     "seq": pa.array([1, 1, -(2**62)], pa.int64()), "title": ["a", "b", "c"]})
+    monkeypatch.setattr(generation_source, "TABLE_CONTRACTS", {**TABLE_CONTRACTS, "filings": SimpleNamespace(
+        identity=("docket", "day", "seq"), key_spelling="at-joined/1")})
+    generation(tmp_path / "filings", rows, table="filings", family="filing-family")
+    identity = TableIdentity("filing-family", "filings", KeySpelling("at-joined", "1", ("docket", "day", "seq")),
+                             (("docket", "VARCHAR"), ("day", "DATE"), ("seq", "BIGINT"), ("title", "VARCHAR")))
+    reference = expected(rows.to_pylist(), identity)
+    assert set(reference) == {"EPA-1@2026-09-25@1", "EPA-1@2026-09-26@1", f"EPA 2@0001-01-01@{-(2**62)}"}
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admitted = workspace.admit_generation(tmp_path / "filings", family="filing-family", table="filings")
+        assert occurrences(workspace, admitted.state_id) == {key: urn for key, (urn, _) in reference.items()}
+        urn, payload = reference["EPA-1@2026-09-26@1"]
+        with workspace.publisher.session() as session:
+            assert {found: location[2] for found, location in workspace.states.find_members(session, [urn]).items()} == {
+                urn: payload}
 
 
 def test_a_member_path_never_supplies_a_column(tmp_path):

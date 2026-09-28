@@ -6,25 +6,28 @@ Every power of two and a random sample of doubles must spell as repr or
 refuse, never as another value.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import math
 import random
 import struct
+import sys
 
 import duckdb
 import pytest
 
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.table_occurrences import reference_identity
-from docspec.adapters.storage.table_sql import (identity_relation, json_array_sql, json_string_sql, key_components,
-    membership_json_sql, occurrence_json_sql, occurrence_urn_sql, row_json_sql)
+from docspec.adapters.storage.table_sql import (declared_spelling, identity_relation, json_array_sql, json_string_sql,
+    key_components, membership_json_sql, occurrence_json_sql, occurrence_urn_sql, reference_member_key, row_json_sql)
 from docspec.domain import core
 from docspec.domain.core_admission import inline_occurrence_payload, record_value
 from docspec.domain.identity import canonical_value_bytes
-from docspec.domain.table_rows import (DATED_KEY_COLUMNS, DATED_KEY_ROWS, ROUND_TRIP_TRAPS, ROW_RULE, SEGMENT_KEY_COLUMNS,
-    SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS, WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling,
-    TableIdentity, table_columns, table_occurrence_id, table_row_bytes, table_row_digest, table_row_value, table_type)
+from docspec.domain.table_rows import (AT_JOINED_KEY_COLUMNS, AT_JOINED_KEY_ROWS, DATED_KEY_COLUMNS, DATED_KEY_ROWS,
+    KEY_TYPES, ROUND_TRIP_TRAPS, ROW_RULE, SEGMENT_KEY_COLUMNS, SEGMENT_KEY_ROWS, SPELLING_COLUMNS, SPELLING_ROWS,
+    WIDE_SEGMENT_KEY_COLUMNS, WIDE_SEGMENT_KEY_ROWS, KeySpelling, TableIdentity, table_columns, table_occurrence_id,
+    table_row_bytes, table_row_digest, table_row_value, table_type)
+from docspec.errors import IntegrityError
 
 
 def native_rows(columns, rows, *, session_timezone="UTC"):
@@ -48,14 +51,20 @@ def test_shared_corpus_matches_the_independent_reference():
     assert table_row_value(SPELLING_ROWS[0], SPELLING_COLUMNS)["big"] == str(-(2**63))
 
 
+def native_identities(columns, rows, identity):
+    """The identity pass over ``rows`` bound through DuckDB parameters into a typed table."""
+    with duckdb.connect() as connection:
+        declarations = ", ".join(f"{identifier(name)} {table_type(kind)}" for name, kind in columns)
+        connection.execute(f"CREATE TABLE source ({declarations})")
+        connection.executemany(f"INSERT INTO source VALUES ({', '.join('?' for _ in columns)})",
+                               [[row[name] for name, _ in columns] for row in rows])
+        return identity_relation(connection.table("source"), identity).fetchall()
+
+
 def test_dated_key_components_spell_the_reference_key():
     identity = TableIdentity("family", "table", KeySpelling("federal-register-source-record-id", "1",
                                                             ("document_number", "publication_date")), DATED_KEY_COLUMNS)
-    with duckdb.connect() as connection:
-        connection.execute("CREATE TABLE source (document_number VARCHAR, publication_date DATE, title VARCHAR)")
-        connection.executemany("INSERT INTO source VALUES (?, ?, ?)",
-                               [[row[name] for name, _ in DATED_KEY_COLUMNS] for row in DATED_KEY_ROWS])
-        native = identity_relation(connection.table("source"), identity).fetchall()
+    native = native_identities(DATED_KEY_COLUMNS, DATED_KEY_ROWS, identity)
     references = [reference_identity(identity, row) for row in DATED_KEY_ROWS]
     assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
                                     for key, digest, urn in references)
@@ -67,12 +76,7 @@ def test_dated_key_components_spell_the_reference_key():
 def test_segment_keys_spell_the_reference_and_split_back_into_their_components(columns, rows):
     spelling = KeySpelling("member-segment", "1", ("member_key", "segment_index"))
     identity = TableIdentity("urn:definition", "segments", spelling, columns)
-    with duckdb.connect() as connection:
-        declarations = ", ".join(f"{identifier(name)} {kind}" for name, kind in columns)
-        connection.execute(f"CREATE TABLE source ({declarations})")
-        connection.executemany(f"INSERT INTO source VALUES ({', '.join('?' for _ in columns)})",
-                               [[row[name] for name, _ in columns] for row in rows])
-        native = identity_relation(connection.table("source"), identity).fetchall()
+    native = native_identities(columns, rows, identity)
     references = [reference_identity(identity, row) for row in rows]
     assert sorted(native) == sorted((key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1]))
                                     for key, digest, urn in references)
@@ -82,6 +86,80 @@ def test_segment_keys_spell_the_reference_and_split_back_into_their_components(c
     assert len({key for key, _, _ in references}) == len(rows)
     for key in ("a", "a#", "#3", "a#03", "a#-0", "a#+3", "a# 3", "a#3.0"):
         assert key_components(spelling, key) == ()
+
+
+
+# Awkward text: controls, quotes, a backslash, whitespace, DEL, separators and non-BMP characters; never "@".
+_AWKWARD = [chr(code) for code in range(32)] + list("\"\\/ #-:é  \x7f😀𝄞") + ["ab", "EPA-HQ", "118"]
+_JOINED_FIELDS = (("bill_id", "day", "seq", "wide"), ("wide", "bill_id"), ("day", "seq", "bill_id", "wide", "body"))
+
+
+def generated_joined_rows(count, seed):
+    rng = random.Random(seed)
+
+    def text():
+        return "".join(rng.choice(_AWKWARD) for _ in range(rng.randrange(1, 6)))
+    return [dict(zip((name for name, _ in AT_JOINED_KEY_COLUMNS), values, strict=True)) for values in (
+        (text(), date(1, 1, 1) + timedelta(days=rng.randrange(3_652_059)), rng.randrange(-(2**31), 2**31),
+         rng.choice([rng.randrange(-(2**63), 2**63), rng.randrange(-(2**53), 2**53)]), text())
+        for _ in range(count))]
+
+
+@pytest.mark.parametrize("fields", _JOINED_FIELDS)
+def test_at_joined_keys_spell_the_reference_over_text_dates_and_integers(fields):
+    """The generic composite spelling over any two or more VARCHAR, DATE, INTEGER or BIGINT fields, in declared order.
+
+    Its SQL must equal spicy-docs' at_joined_key on every row, and each key must split back into exactly its
+    components, so a lookup pushes one component tuple into the scan.
+    """
+    rows = generated_joined_rows(300, 20260928) + [row for row in AT_JOINED_KEY_ROWS if row["body"]]
+    identity = TableIdentity("oracle", "joined", KeySpelling("at-joined", "1", fields), AT_JOINED_KEY_COLUMNS)
+    references = [reference_identity(identity, row) for row in rows]
+    assert sorted(native_identities(AT_JOINED_KEY_COLUMNS, rows, identity)) == sorted(
+        (key, bytes.fromhex(digest[7:]), bytes.fromhex(urn.rsplit(":", 1)[1])) for key, digest, urn in references)
+    text = {"VARCHAR": str, "DATE": date.isoformat, "INTEGER": str, "BIGINT": str}
+    kinds = dict(AT_JOINED_KEY_COLUMNS)
+    assert [key_components(identity.key, key) for key, _, _ in references] == [
+        (tuple(text[kinds[field]](row[field]) for field in fields),) for row in rows]
+    assert references[0][0] == "@".join(text[kinds[field]](rows[0][field]) for field in fields)
+    for key in ("", "a", "@".join("a" * (len(fields) - 1)), "@".join("a" * (len(fields) + 1)),
+                "@" + "@".join("a" * (len(fields) - 1)), "@".join("a" * (len(fields) - 1)) + "@"):
+        assert key_components(identity.key, key) == ()  # wrong arity or an empty component
+
+
+@pytest.mark.parametrize("change,reference_refusal,native_refusal", [
+    ({"bill_id": "118@hr-1"}, "refuses a component holding '@'", "holds the @ joiner"),
+    ({"bill_id": "@"}, "refuses a component holding '@'", "holds the @ joiner"),
+    ({"bill_id": ""}, "member key components must be nonempty", "NULL or empty component"),
+    ({"bill_id": None}, "member key components must be nonempty", "NULL or empty component"),
+    ({"day": None}, "member key components must be nonempty", "NULL or empty component"),
+    ({"seq": None}, "member key components must be nonempty", "NULL or empty component"),
+])
+def test_at_joined_refuses_an_empty_component_or_one_holding_its_joiner(change, reference_refusal, native_refusal):
+    """A component holding "@" would make the key ambiguous; both spellings refuse the row rather than escape it."""
+    identity = TableIdentity("oracle", "joined", KeySpelling("at-joined", "1", _JOINED_FIELDS[0]), AT_JOINED_KEY_COLUMNS)
+    row = {**AT_JOINED_KEY_ROWS[0], **change}
+    with pytest.raises(ValueError, match=reference_refusal):
+        reference_member_key(identity, row)
+    with pytest.raises(duckdb.InvalidInputException, match=native_refusal):
+        native_identities(AT_JOINED_KEY_COLUMNS, [AT_JOINED_KEY_ROWS[2], row], identity)
+
+
+def test_at_joined_serves_any_composite_identity_of_key_types_and_nothing_else():
+    for count in (2, 3, 8):
+        fields = tuple(f"c{index}" for index in range(count))
+        for kind in sorted(KEY_TYPES):
+            assert declared_spelling(KeySpelling("at-joined", "1", fields), (kind,) * count).fields == range(2, sys.maxsize)
+    with pytest.raises(IntegrityError, match="not declared for these fields$"):
+        declared_spelling(KeySpelling("at-joined", "1", ("bill_id",)), ("VARCHAR",))
+    for kind in ("DOUBLE", "BOOLEAN", "TIMESTAMP", "TIMESTAMPTZ", "VARCHAR[]"):
+        with pytest.raises(IntegrityError, match="not declared for these fields' types"):
+            declared_spelling(KeySpelling("at-joined", "1", ("bill_id", "other")), ("VARCHAR", kind))
+    # The Federal Register keeps its own sealed name for the same two-component bytes.
+    fr = KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+    with pytest.raises(IntegrityError, match="not declared for these fields$"):
+        declared_spelling(KeySpelling("federal-register-source-record-id", "1", ("document_number", "day")))
+    assert declared_spelling(fr, ("VARCHAR", "DATE")).fields == ("document_number", "publication_date")
 
 
 def test_all_controls_and_literal_escapes_have_exact_string_bytes():

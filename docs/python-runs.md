@@ -250,7 +250,9 @@ occurrences are those of the same rows published as one file
 declared spelling: identity fields the artifact declares (one field spells as
 `value/1`), then the identity and `name/version` key spelling its spicy-docs
 table contract declares, an entry of `KEY_SPELLINGS` whose function is the
-reference DocSpec's SQL is checked against, then, only while the installed
+reference DocSpec's SQL is checked against (DocSpec compiles `value/1`,
+`federal-register-source-record-id/1` and `at-joined/1`, the last for any
+identity of two or more VARCHAR, DATE or integer columns), then, only while the installed
 spicy-docs has no Federal Register contract, `number@date`
 ([decision 0003](decisions/0003-federal-register-record-identity.md)). A
 contract that declares no spelling, or one DocSpec does not compile, a NULL,
