@@ -224,8 +224,11 @@ where the member was removed), in no order, from the two memberships alone. A
 table-shaped state's `reader.table(member_keys=keys)` yields its typed rows at
 those keys only, skipping keys it does not hold: up to 256 push their
 components into the table scan, so row groups holding none are not read; more
-semi-join the membership over one scan. Together they let an update read what
-changed, and only the columns it maps:
+semi-join the membership over one scan. The saving depends on where the keys
+sit: a row group is skipped only when it holds none of them, so 110 adjacent
+keys of bill_sections read in 0.16 s against 1.36 s for the whole table, and
+110 scattered keys in 1.31 s (2026-09-28). Together they let an update read
+what changed, and only the columns it maps:
 
 ```python
 with workspace.open_state(previous_id) as older, workspace.open_state(current_id) as newer:
