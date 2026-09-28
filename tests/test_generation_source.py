@@ -196,6 +196,45 @@ def test_a_typed_contract_refuses_a_footer_of_other_types(tmp_path, monkeypatch)
     with pytest.raises(IntegrityError, match="open is VARCHAR, not BOOLEAN; pages is BIGINT, not INTEGER"):
         with stage_generation(tmp_path / "text", family="typed-family", table="typed_rows"):
             pytest.fail("mistyped member admitted")
+    # A column only one side names is not the check's concern: a member without the contract's title, or with a
+    # column the contract has not declared yet, stages.
+    generation(tmp_path / "fewer", pa.table({**{name: typed[name] for name in typed if name != "title"},
+                                             "extra": ["x"]}), family="typed-family", table="typed_rows")
+    with stage_generation(tmp_path / "fewer", family="typed-family", table="typed_rows") as admitted:
+        assert "title" not in dict(admitted.columns) and dict(admitted.columns)["extra"] == "VARCHAR"
+
+
+# The tables admitted in production (docs/pins/fork-generations.json). Their identity and key spelling enter every
+# state ID and their types the typed footer check, so a vendored spicy-docs must not move them unannounced.
+ADMITTED_TODAY = {
+    "federal_register": (("document_number", "publication_date"), "federal-register-source-record-id/1", {}),
+    "documents": (("document_id",), "value/1", {}),
+    "dockets": (("docket_id",), "value/1", {}),
+    "document_attributes": (("document_id",), "value/1", {
+        "allow_late_comments": "BOOLEAN", "author_date": "TIMESTAMPTZ", "authors": "VARCHAR[]",
+        "effective_date": "TIMESTAMPTZ", "implementation_date": "TIMESTAMPTZ", "open_for_comment": "BOOLEAN",
+        "page_count": "INTEGER", "postmark_date": "TIMESTAMPTZ", "receive_date": "TIMESTAMPTZ", "topics": "VARCHAR[]",
+        "within_comment_period": "BOOLEAN"}),
+    "docket_attributes": (("docket_id",), "value/1", {"effective_date": "TIMESTAMPTZ", "keywords": "VARCHAR[]"}),
+}
+
+
+def test_the_tables_admitted_today_keep_their_identities_spellings_and_types():
+    assert {name: (TABLE_CONTRACTS[name].identity, TABLE_CONTRACTS[name].key_spelling, dict(TABLE_CONTRACTS[name].types))
+            for name in ADMITTED_TODAY} == ADMITTED_TODAY
+
+
+def test_documents_stage_with_or_without_the_column_spicy_docs_0_50_0_inserts(tmp_path):
+    """0.50.0 inserts attachment_records_json mid-table; an untyped contract's columns never refuse a member."""
+    columns = TABLE_CONTRACTS["documents"].columns
+    assert "attachment_records_json" in columns[1:-1]
+    for name, kept in (("before", [column for column in columns if column != "attachment_records_json"]),
+                       ("after", list(columns))):
+        generation(tmp_path / name, pa.table({column: [f"{column}-1"] for column in kept}), family="documents",
+                   table="documents")
+        with stage_generation(tmp_path / name, family="documents", table="documents") as admitted:
+            assert [column for column, _ in admitted.columns] == kept
+            assert admitted.key == KeySpelling("value", "1", ("document_id",))
 
 
 def test_the_federal_register_contract_and_the_decision_0003_fallback_agree(monkeypatch):

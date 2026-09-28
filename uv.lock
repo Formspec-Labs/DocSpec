@@ -273,8 +273,8 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=25,<26" },
     { name = "pyiceberg", extras = ["sql-sqlite"], specifier = "==0.12.0" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.1.2-py3-none-any.whl" },
-    { name = "spicy-docs", path = "vendor/spicy_docs-0.46.0-py3-none-any.whl" },
-    { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.46.0-py3-none-any.whl" },
+    { name = "spicy-docs", path = "vendor/spicy_docs-0.50.0-py3-none-any.whl" },
+    { name = "spicy-docs", extras = ["pdf-pypdf"], marker = "extra == 'pdf'", path = "vendor/spicy_docs-0.50.0-py3-none-any.whl" },
     { name = "tiktoken", marker = "extra == 'tokens'", specifier = ">=0.7,<1" },
 ]
 provides-extras = ["http", "s3", "tokens", "pdf", "dagster"]
@@ -285,7 +285,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6,<7" },
     { name = "pytest" },
     { name = "ruff", specifier = ">=0.12,<0.13" },
-    { name = "spicy-docs", extras = ["public-table"], path = "vendor/spicy_docs-0.46.0-py3-none-any.whl" },
+    { name = "spicy-docs", extras = ["public-table"], path = "vendor/spicy_docs-0.50.0-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -1122,14 +1122,14 @@ wheels = [
 
 [[package]]
 name = "spicy-docs"
-version = "0.46.0"
-source = { path = "vendor/spicy_docs-0.46.0-py3-none-any.whl" }
+version = "0.50.0"
+source = { path = "vendor/spicy_docs-0.50.0-py3-none-any.whl" }
 dependencies = [
     { name = "jsonschema" },
     { name = "rulespec-artifacts" },
 ]
 wheels = [
-    { filename = "spicy_docs-0.46.0-py3-none-any.whl", hash = "sha256:2af2dfff55f0e2801bdc2ac2d928cbbd4e63701afbd87b719dd597736ef0b799" },
+    { filename = "spicy_docs-0.50.0-py3-none-any.whl", hash = "sha256:c739bc6f6bd488ca2afcb37d1bbcff57f14c0abe051638d4679ed17abf9eb64b" },
 ]
 
 [package.optional-dependencies]
