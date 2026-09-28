@@ -4,16 +4,40 @@
   "note": "Fork generations DocSpec workspaces have admitted by reference. The spicy-regs retention job (decision 36) keeps every listed pin. Update at each production move; keep a digest as evidence while a receipt cites it.",
   "pins": [
     {
+      "family": "docket-attributes",
+      "artifactDigest": "sha256:5a16c73d2a3ecb5ebfed5b156f4214e2b5490d5fddb0c45e298a881b30aa759e",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 08:16Z, generation 8fe0fbeb…; refresh-1/admit-refresh-1.json, refresh-1/README.md)"
+    },
+    {
+      "family": "document-attributes",
+      "artifactDigest": "sha256:e47f6f8cafb21a08fe09328eb7b3579e73217fa9af0d2468c0968d619efc6f65",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 08:16Z, generation 8fe0fbeb…; refresh-1/admit-refresh-1.json, refresh-1/README.md)"
+    },
+    {
+      "family": "dockets",
+      "artifactDigest": "sha256:76eb732ffb8d471ed24c158c3b8681dcef74155aa63e3e8deb6acef4743e8052",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 08:16Z, generation 8fe0fbeb…; refresh-1/admit-refresh-1.json, refresh-1/README.md)"
+    },
+    {
+      "family": "documents",
+      "artifactDigest": "sha256:913d87370e1be2022eb944c37a6560e4ea04c8e57cf900ee8c3c0b62c199edfc",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 08:16Z, generation 8fe0fbeb…; refresh-1/admit-refresh-1.json, refresh-1/README.md)"
+    },
+    {
       "family": "dockets",
       "artifactDigest": "sha256:000e6263ad21431a7f0fbcc7625ad67f358259466ee7e9ccbf7f2c2221e777d7",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (served on 8091 2026-09-28 02:48–08:10Z as generation 23363354…; the refreshed layer's base; documents b4f1d751 was published out of band, see spicy-regs' ledger)"
     },
     {
       "family": "documents",
       "artifactDigest": "sha256:b4f1d7519a523e831cee1ce2adf33143e88d130d51d77aa478b17866980b0bcb",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (served on 8091 2026-09-28 02:48–08:10Z as generation 23363354…; the refreshed layer's base; documents b4f1d751 was published out of band, see spicy-regs' ledger)"
     },
     {
       "family": "federal-register",
@@ -78,14 +102,14 @@
     {
       "family": "document-attributes",
       "artifactDigest": "sha256:30f9aa294cfd56db2329aac965aadc5bdaffb843e384dddf243c27f187d74532",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (served on 8091 2026-09-28 02:48–08:10Z as generation 23363354…; the refreshed layer's base; documents b4f1d751 was published out of band, see spicy-regs' ledger)"
     },
     {
       "family": "docket-attributes",
       "artifactDigest": "sha256:ba5aba75343d354182f415d123b5c613c503d4a755a9c6692eedb0e822f06ab8",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (served on 8091 2026-09-28 02:48–08:10Z as generation 23363354…; the refreshed layer's base; documents b4f1d751 was published out of band, see spicy-regs' ledger)"
     }
   ]
 }
