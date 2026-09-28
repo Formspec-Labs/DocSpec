@@ -97,16 +97,77 @@ def _typed(layer):
     return layer
 
 
+def profile_columns(columns):
+    """Name each (column, DuckDB type name) pair with its table-profile type, or DuckDB's name for any other."""
+    return tuple((name, 'TIMESTAMPTZ' if kind == 'TIMESTAMP WITH TIME ZONE' else kind) for name, kind in columns)
+
+
 def native_columns(relation):
     """Name each column of a native relation with its table-profile type, or DuckDB's name for any other."""
-    return tuple((name, 'TIMESTAMPTZ' if str(kind) == 'TIMESTAMP WITH TIME ZONE' else str(kind))
-                 for name, kind in zip(relation.columns, relation.types, strict=True))
+    return profile_columns(zip(relation.columns, map(str, relation.types), strict=True))
 
 
-def _has_field_id(field):
-    """Whether an Arrow field read from a Parquet footer, or a field nested in it, carries an ID."""
-    return (b'PARQUET:field_id' in (field.metadata or {})
-            or any(_has_field_id(field.type.field(index)) for index in range(field.type.num_fields)))
+@dataclass(frozen=True, slots=True)
+class ParquetFooter:
+    """What admission checks in one Parquet file's footer.
+
+    ``columns`` are the top-level columns with the DuckDB type names
+    ``read_parquet`` binds; ``statistics`` maps each requested column to its
+    row groups' (min value, max value, null count), in row-group order.
+    """
+
+    rows: int
+    row_group_bytes: tuple[int, ...]
+    field_ids: bool
+    columns: tuple[tuple[str, str], ...]
+    statistics: Mapping[str, tuple[tuple[Any, Any, Any], ...]]
+
+
+def parquet_footers(cursor, paths, *, statistics=()) -> dict[str, ParquetFooter]:
+    """Read the footers of ``paths`` in one call per kind of fact, whatever the file count; keyed by ``str(path)``.
+
+    Only footers are read, so hive partitioning plays no part. ``parquet_schema``
+    types a flat column as ``read_parquet`` binds it, but only a nested
+    column's leaves, so a file with a nested top-level column is bound once
+    for its columns. A row group's bytes are its uncompressed data, as
+    ``max_member_bytes`` sizes it; field IDs are any schema element's.
+    """
+    paths = [str(path) for path in paths]
+    rows = dict(cursor.execute('SELECT file_name, num_rows FROM parquet_file_metadata(?)', [paths]).fetchall())
+    if set(rows) != set(paths):
+        raise IntegrityError('Parquet footers were not read for every member')
+    groups, stats = {path: [] for path in paths}, {path: {} for path in paths}
+    for path, _, size in cursor.execute('SELECT DISTINCT file_name, row_group_id, row_group_bytes FROM parquet_metadata(?) '
+                                     'ORDER BY file_name, row_group_id', [paths]).fetchall():
+        groups[path].append(size)
+    if statistics:
+        for path, column, low, high, nulls in cursor.execute(
+                'SELECT file_name, path_in_schema, stats_min_value, stats_max_value, stats_null_count FROM parquet_metadata(?) '
+                'WHERE list_contains(?, path_in_schema) ORDER BY file_name, row_group_id', [paths, list(statistics)]).fetchall():
+            stats[path].setdefault(column, []).append((low, high, nulls))
+    columns, ids, open_children = {}, {}, {}
+    for path, name, children, kind, field_id in cursor.execute(
+            'SELECT file_name, name, num_children, duckdb_type, field_id FROM parquet_schema(?) '
+            'ORDER BY file_name, column_id', [paths]).fetchall():
+        stack = open_children.setdefault(path, [])
+        if path not in columns:  # the root element: its children are the top-level columns
+            columns[path], ids[path] = [], False
+            stack.append(children or 0)
+            continue
+        if len(stack) == 1:
+            columns[path].append((name, kind))
+        ids[path] = ids[path] or field_id is not None
+        stack[-1] -= 1
+        if children:
+            stack.append(children)
+        while len(stack) > 1 and not stack[-1]:
+            stack.pop()
+    for path, named in columns.items():
+        if any(kind is None for _, kind in named):
+            bound = cursor.read_parquet(path, hive_partitioning=False)
+            columns[path] = list(zip(bound.columns, map(str, bound.types), strict=True))
+    return {path: ParquetFooter(rows[path], tuple(groups[path]), ids[path], tuple(columns[path]),
+                                {column: tuple(values) for column, values in stats[path].items()}) for path in paths}
 
 
 def table_digest(member_digests):
@@ -1097,24 +1158,25 @@ class IcebergRecordStorage:
         directory = f'iceberg/member-{digest[7:]}'
         targets = [f'{directory}/data/' + ('member.parquet' if len(members) == 1 else f'{member_digest[7:]}.parquet')
                    for _, member_digest in members]
-        staging, footers = self.staging_directory.resolve(strict=True), []
+        staging = self.staging_directory.resolve(strict=True)
+        for source, _ in members:
+            try:
+                staged = source.parent.resolve(strict=True).is_relative_to(staging)
+            except OSError:
+                staged = False
+            if not staged or source.is_symlink() or not source.is_file():
+                raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
         with self._cursor() as cursor:
-            for source, _ in members:
-                try:
-                    staged = source.parent.resolve(strict=True).is_relative_to(staging)
-                except OSError:
-                    staged = False
-                if not staged or source.is_symlink() or not source.is_file():
-                    raise IntegrityError("a registered producer file must be a regular file in the store's staging directory")
-                with pq.ParquetFile(source) as parquet:
-                    footer = parquet.metadata
-                if any(_has_field_id(field) for field in footer.schema.to_arrow_schema()):
-                    raise IntegrityError('registered Parquet already carries field IDs')
-                if any(footer.row_group(index).total_byte_size > self.max_member_bytes for index in range(footer.num_row_groups)):
-                    raise LimitExceededError('registered Parquet row group exceeds the member byte limit')
-                if native_columns(cursor.read_parquet(str(source), hive_partitioning=False)) != schema.columns:
-                    raise IntegrityError('registered Parquet footer differs from its declared schema')
-                footers.append(footer)
+            footers = parquet_footers(cursor, [source for source, _ in members])
+        for footer in footers.values():
+            if footer.field_ids:
+                raise IntegrityError('registered Parquet already carries field IDs')
+            if any(size > self.max_member_bytes for size in footer.row_group_bytes):
+                raise LimitExceededError('registered Parquet row group exceeds the member byte limit')
+            if profile_columns(footer.columns) != schema.columns:
+                raise IntegrityError('registered Parquet footer differs from its declared schema')
+        with pq.ParquetFile(members[0][0]) as parquet:  # every member's columns are the schema's
+            arrow_schema = parquet.metadata.schema.to_arrow_schema()
         created, placed = not (self.root / directory).exists(), []
         try:
             _contained(self.root, f'{directory}/metadata/placeholder', create_parents=True)
@@ -1137,8 +1199,7 @@ class IcebergRecordStorage:
                 client = self._client()
             key, handle = (self._catalog.namespace, 'register_' + uuid4().hex), None
             try:
-                handle = client.create_table(key, schema=footers[0].schema.to_arrow_schema(),
-                                             location=str(self.root / directory))
+                handle = client.create_table(key, schema=arrow_schema, location=str(self.root / directory))
                 handle.add_files([str(self.root / locator) for locator in targets])
                 table = client.load_table(key)
             except (NotImplementedError, TypeError, ValueError, UnsupportedPyArrowTypeException) as error:
@@ -1150,7 +1211,7 @@ class IcebergRecordStorage:
             if table_columns(table.schema()) != schema.columns:
                 raise IntegrityError('registered Iceberg schema differs from its declared schema')
             layer = self._pin(table, schema=schema, layer_kind=layer_kind,
-                              record_count=sum(footer.num_rows for footer in footers), member_digest=digest)
+                              record_count=sum(footer.rows for footer in footers.values()), member_digest=digest)
         except BaseException:
             if created:
                 shutil.rmtree(self.root / directory, ignore_errors=True)

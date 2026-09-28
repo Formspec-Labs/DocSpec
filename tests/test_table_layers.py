@@ -463,3 +463,59 @@ def test_a_split_registration_refuses_before_placing_any_member(tmp_path, case):
             records.register_parquet(staged, layer_kind="producer-table", schema=TableSchema("values:1", SPLIT_COLUMNS))
         assert [path.read_bytes() for path, _ in staged] == originals
         assert not list((records.root / "iceberg").glob("member-*"))
+
+
+def _carries_field_id(field):
+    return b"PARQUET:field_id" in (field.metadata or {}) or any(
+        _carries_field_id(field.type.field(index)) for index in range(field.type.num_fields))
+
+
+def test_footers_read_in_one_call_per_fact_equal_each_file_read_alone(tmp_path):
+    """parquet_footers replaced about five footer opens per member with one batched call per fact.
+
+    Each fact must equal the per-file read it replaced: pyarrow's row count,
+    row-group bytes and field IDs (top-level or nested), DuckDB's bound column
+    types (nested columns included), and one column's statistics, over flat
+    and nested types, an empty file, several row groups and a hive-style
+    directory that must not supply a column.
+    """
+    import duckdb
+    ided = pa.field("element", pa.string(), metadata={b"PARQUET:field_id": b"3"})
+    tables = {
+        "flat.parquet": pa.table({
+            "s": ["a", None, "c"], "i": pa.array([1, 2, 3], pa.int32()), "b": pa.array([1, 2, 3], pa.int64()),
+            "d": [1.5, None, 0.0], "day": [date(2026, 1, 1), None, date(1, 1, 1)],
+            "ts": pa.array([datetime(2026, 1, 1)] * 3, pa.timestamp("us")),
+            "tz": pa.array([datetime(2026, 1, 1, tzinfo=timezone.utc)] * 3, pa.timestamp("us", "UTC")),
+            "f": [True, None, False], "bl": [b"x", None, b""], "dec": pa.array([1, 2, 3], pa.decimal128(10, 2))}),
+        "nested.parquet": pa.table({"s": ["a", "b"], "l": [["x", None], []], "st": [{"a": 1, "b": "x"}, None],
+                                    "ll": [[["a"]], None]}),
+        "top-ids.parquet": pa.table({"s": ["a"]}, schema=pa.schema([pa.field("s", pa.string(),
+                                                                             metadata={b"PARQUET:field_id": b"1"})])),
+        "nested-ids.parquet": pa.table({"s": ["a"], "l": [["b"]]},
+                                       schema=pa.schema([pa.field("s", pa.string()), pa.field("l", pa.list_(ided))])),
+        "empty.parquet": pa.table({"s": pa.array([], pa.string())}),
+        "congress=118/part-000000.parquet": pa.table({"s": ["x", "y"]}),
+    }
+    paths = []
+    for name, table in tables.items():
+        paths.append(tmp_path / name)
+        paths[-1].parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(table, paths[-1], row_group_size=1 if name == "flat.parquet" else None)
+    with duckdb.connect() as connection:
+        footers = records_module.parquet_footers(connection, paths, statistics=("s",))
+        assert set(footers) == {str(path) for path in paths}
+        for path in paths:
+            footer, alone = footers[str(path)], pq.ParquetFile(path).metadata
+            bound = connection.read_parquet(str(path), hive_partitioning=False)
+            assert footer.rows == alone.num_rows
+            assert footer.row_group_bytes == tuple(alone.row_group(index).total_byte_size
+                                                   for index in range(alone.num_row_groups))
+            assert footer.field_ids == any(_carries_field_id(field) for field in alone.schema.to_arrow_schema())
+            assert footer.columns == tuple(zip(bound.columns, map(str, bound.types), strict=True))
+            assert footer.statistics.get("s", ()) == tuple(connection.execute(
+                "SELECT stats_min_value, stats_max_value, stats_null_count FROM parquet_metadata(?) "
+                "WHERE path_in_schema = 's' ORDER BY row_group_id", [str(path)]).fetchall())
+    assert [footers[str(tmp_path / name)].field_ids for name in ("top-ids.parquet", "nested-ids.parquet")] == [True, True]
+    assert footers[str(tmp_path / "congress=118/part-000000.parquet")].columns == (("s", "VARCHAR"),)
+    assert len(footers[str(tmp_path / "flat.parquet")].row_group_bytes) == 3

@@ -238,3 +238,10 @@ Each refusal has a test.
 Not done here, and not needed for correctness: design §4.3's per-partition
 admission saving. An unchanged member's rows are still compared in the one
 all-column join.
+
+Since 0.12.1 the staging and registration footer checks read each table's
+footers in one batched call per fact (`parquet_file_metadata`,
+`parquet_metadata`, `parquet_schema`) rather than about five opens per
+member, and footers from `parquet_schema` involve no directory. Staging the
+whole family to admit one table stays, a known cost: admitting
+`congress_bills` (31 MB) stages about 1.25 GB.

@@ -18,7 +18,6 @@ from typing import NamedTuple
 from urllib.parse import quote, urlsplit
 
 import duckdb
-import pyarrow.parquet as pq
 from rulespec_artifacts import (ArtifactPin, ArtifactVerificationError, LocalMemberSource,
     MemberDescriptor, MemberNotFoundError, MemberSourceError, admit_artifact, iter_member_descriptors,
     parse_canonical_json, validate_object_key)
@@ -28,7 +27,7 @@ from spicy_docs.schemas.tables import KEY_SPELLINGS
 from docspec.adapters.content_fetchers.https import (HttpsContentFetcher, HttpsContentFetcherConfig, HttpsNotFoundError,
     HttpsRetryableResponseError)
 from docspec.adapters.storage.iceberg import identifier
-from docspec.adapters.storage.records import native_columns
+from docspec.adapters.storage.records import parquet_footers, profile_columns
 from docspec.adapters.storage.table_sql import declared_spelling
 from docspec.domain.content import CandidateFile
 from docspec.domain.table_rows import KeySpelling
@@ -41,7 +40,7 @@ _CHUNK_BYTES = 1024**2
 # Read in this order; only absence of the first falls back to the second.
 _POINTERS = (("publication.v2.json", 2), ("publication.json", 1))
 _PARQUET = "application/vnd.apache.parquet"
-_PART = re.compile(r"part-\d{6}\.parquet\Z")
+_PART = re.compile(r"part-[0-9]{6}\.parquet\Z")  # ASCII digits only: \d also matches other scripts' digits
 # A public read retries the transient answers r2.dev gives under load: in all
 # _RETRY_ATTEMPTS requests, waiting the answer's Retry-After seconds or else
 # _RETRY_BACKOFF_SECONDS, doubling. A stated wait over _RETRY_MAX_WAIT_SECONDS
@@ -189,7 +188,7 @@ def _partition(table, key, columns):
     return {column: value for column, _, value in directories}
 
 
-def _check_partition(connection, path, partition):
+def _check_partition(connection, path, footer, partition):
     """Refuse a split member whose rows hold other values than its key names, compared as text.
 
     Every row group's footer statistics showing no nulls and min = max = the
@@ -197,8 +196,7 @@ def _check_partition(connection, path, partition):
     that one column scanned instead. Statistics only ever prove agreement.
     """
     for column, value in partition.items():
-        groups = connection.execute("SELECT stats_min_value, stats_max_value, stats_null_count FROM parquet_metadata(?) "
-                                    "WHERE path_in_schema = ?", [str(path), column]).fetchall()
+        groups = footer.statistics.get(column, ())
         if groups and all(low == high == value and nulls == 0 for low, high, nulls in groups):
             continue
         # Hive partitioning off: the member's <col>=<value> directory must not stand in for its column.
@@ -219,7 +217,8 @@ def _check_table(connection, staging, name, description, members, indexed):
     table's rows. Every member's footer rows equal its record count and its
     columns, read with hive partitioning off, equal the declared ones, so
     mixed schemas refuse. A publication entry must equal the artifact's, its
-    members compared in key order. Only footers and statistics are read.
+    members compared in key order. Only footers and statistics are read, each
+    fact for all of the table's members in one call.
     """
     declared, split = description.get("columns"), "partitionColumns" in description
     partitioning = description["partitionColumns"] if split else []
@@ -231,21 +230,22 @@ def _check_table(connection, staging, name, description, members, indexed):
         raise IntegrityError("generation table set differs from its members or publication index")
     if len({member.sha256 for member in members}) != len(members):
         raise IntegrityError(f"{name} lists the same member bytes twice")
-    columns, partitions = None, []
+    partitions = []
     for member in members:
         if member.role != "table" or member.media_type != _PARQUET or type(member.record_count) is not int:
             raise IntegrityError("generation table descriptor differs from its member")
-        path = staging.joinpath(*member.object_key.split("/"))
-        with pq.ParquetFile(path) as parquet:
-            if parquet.metadata.num_rows != member.record_count:
-                raise IntegrityError("Parquet footer row count differs from its descriptor")
-        footer = connection.read_parquet(str(path), hive_partitioning=False)
-        if [[column, str(kind)] for column, kind in zip(footer.columns, footer.types, strict=True)] != declared:
+    paths = [staging.joinpath(*member.object_key.split("/")) for member in members]
+    footers = parquet_footers(connection, paths, statistics=partitioning)
+    for member, path in zip(members, paths, strict=True):
+        footer = footers[str(path)]
+        if footer.rows != member.record_count:
+            raise IntegrityError("Parquet footer row count differs from its descriptor")
+        if [list(column) for column in footer.columns] != declared:
             raise IntegrityError("Parquet footer schema differs from its descriptor")
-        columns = native_columns(footer)
         if split:
             partitions.append(_partition(name, member.object_key, partitioning))
-            _check_partition(connection, path, partitions[-1])
+            _check_partition(connection, path, footer, partitions[-1])
+    columns = profile_columns(footers[str(paths[0])].columns)
     if type(description.get("rows")) is not int or sum(member.record_count for member in members) != description["rows"]:
         raise IntegrityError("generation table descriptor differs from its member")
     if indexed is not None:
@@ -259,7 +259,8 @@ def _check_table(connection, staging, name, description, members, indexed):
         else:
             expected = {**description, "byteSize": members[0].byte_size, "sha256": members[0].sha256}
         if entry != expected:
-            raise IntegrityError("publication table descriptor differs from its pinned member")
+            fields = sorted(key for key in entry.keys() | expected.keys() if entry.get(key) != expected.get(key))
+            raise IntegrityError(f"publication table descriptor differs from its pinned member: {name} {', '.join(fields)}")
     return columns, tuple(partitioning)
 
 
@@ -374,7 +375,9 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
     no split table. Every family member is staged and checked by Rulespec
     admission and ``_check_table``; only the selected table is returned, as one
     member or, published split, several. Producer files are never moved or
-    modified.
+    modified. A known cost: admitting one table stages its whole family, since
+    the pin binds every member (congress_bills' 31 MB stages about 1.25 GB of
+    the bill family, 2026-09-27 review).
     """
     if not isinstance(family, str) or not family or not isinstance(table, str) or not table or "/" in table or "\\" in table:
         raise ValueError("family and logical table name must be nonempty strings")
@@ -390,7 +393,10 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
             direct = not remote and (Path(source) / "artifact.json").exists()
             if not direct:
                 publication = _publication(chunks)
-                selected = _mapping(_mapping(publication.get("families"), "publication families").get(family), "publication family")
+                families = _mapping(publication.get("families"), "publication families")
+                if family not in families:
+                    raise IntegrityError(f"publication lists no family {family!r}")
+                selected = _mapping(families[family], "publication family")
                 pin = ArtifactPin(selected["logicalId"], selected["artifactDigest"])
                 prefix = validate_object_key(selected["prefix"], path="generation prefix") + "/"
                 indexed = _mapping(selected.get("tables"), "publication tables")

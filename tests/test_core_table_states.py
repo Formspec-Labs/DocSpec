@@ -23,7 +23,7 @@ from spicy_docs.schemas import TABLE_CONTRACTS
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 
 from docspec.adapters import generation_source
-from docspec.adapters.storage import core_states, core_tables, table_sql
+from docspec.adapters.storage import core_states, core_tables, records as records_module, table_sql
 from docspec.adapters.storage.core_tables import spelled_payload
 from docspec.adapters.storage.table_occurrences import lookup_occurrences, reference_identity
 from docspec.domain import core
@@ -723,6 +723,25 @@ def test_bill_sections_admits_split_under_its_contracts_at_joined_key(tmp_path):
         assert set(occurrences(workspace, bills_state.state_id)) == {"118-hr-1", "119-s-5"}
 
 
+def test_footers_are_read_once_per_table_not_per_member(tmp_path, monkeypatch):
+    """Staging reads each table's footers in one batched call, registration its own table's in one more."""
+    calls, original = [], records_module.parquet_footers
+    for owner in (generation_source, records_module):
+        def counted(cursor, paths, *, name=owner.__name__.rsplit(".", 1)[1], **options):
+            calls.append((name, len(paths)))
+            return original(cursor, paths, **options)
+        monkeypatch.setattr(owner, "parquet_footers", counted)
+    sections = pa.table({"section_id": [f"{congress}-hr-1#1" for congress in range(113, 120)],
+                         "congress": [str(congress) for congress in range(113, 120)], "body": ["a"] * 7})
+    family_generation(
+        tmp_path / "source", {"congress_bills": pa.table({"bill_id": ["118-hr-1"], "title": ["A bill"]}),
+                              "bill_sections": split_members(sections, "congress")},
+        partitions={"bill_sections": ["congress"]}, overrides={"bill_sections": {"identity": ["section_id"]}})
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        workspace.admit_generation(tmp_path / "source", family="bill-family", table="bill_sections")
+    assert sorted(calls) == [("generation_source", 1), ("generation_source", 7), ("records", 7)]
+
+
 def test_a_composite_key_of_text_dates_and_integers_admits_and_resolves_by_key(tmp_path, monkeypatch):
     """at-joined/1 over VARCHAR, DATE and BIGINT columns: keys spell their text, and a lookup splits a key back."""
     rows = pa.table({"docket": ["EPA-1", "EPA-1", "EPA 2"], "day": [date(2026, 9, 25), date(2026, 9, 26), date(1, 1, 1)],
@@ -747,8 +766,9 @@ def test_a_member_path_never_supplies_a_column(tmp_path):
     """A member under congress=118/ keeps its VARCHAR '118': the directory never supplies the column.
 
     With discovery on, DuckDB would read the directory as a BIGINT congress of 118 in place of the file's column.
-    This goes red if the staging footer, registration footer or identity-pass read turns discovery on; those use
-    DuckDB's Python read_parquet, which in 1.5.5 does not discover unless asked. The partition scan's SQL read, whose
+    This goes red if the identity-pass read, or a nested column's footer bind, turns discovery on; those use DuckDB's
+    Python read_parquet, which in 1.5.5 does not discover unless asked. The staging and registration footers come from
+    parquet_schema, which reads no directory (tests/test_table_layers.py). The partition scan's SQL read, whose
     default discovers, is guarded by the partition-value tests in tests/test_generation_source.py instead.
     """
     sections = pa.table({"section_id": ["118-hr-1#1", "119-s-5#1"], "congress": ["118", "119"], "body": ["a", "b"]})

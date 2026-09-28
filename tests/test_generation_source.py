@@ -396,20 +396,32 @@ def _lying_index(change):
     return edit
 
 
-@pytest.mark.parametrize("change", ["outside", "duplicate", "missing", "partition", "bytes"])
-def test_a_version_2_entry_that_differs_from_the_artifact_refuses(tmp_path, change):
+@pytest.mark.parametrize("change,fields", [("outside", "members"), ("duplicate", "byteSize, members, rows"),
+                                           ("missing", "byteSize, members, rows"), ("partition", "members"),
+                                           ("bytes", "byteSize")])
+def test_a_version_2_entry_that_differs_from_the_artifact_refuses(tmp_path, change, fields):
+    """The refusal names the table and every field that differs."""
     base, pointer = published_bill_family(tmp_path)
     _lying_index(change)(pointer["families"]["bill-family"]["tables"]["bill_sections.parquet"])
     (base / "publication.v2.json").write_bytes(canonical_json_bytes(pointer))
-    with pytest.raises(IntegrityError, match="publication table descriptor differs"):
+    with pytest.raises(IntegrityError, match=f"publication table descriptor differs from its pinned member: "
+                                             f"bill_sections.parquet {fields}$"):
         with stage_generation(base, family="bill-family", table="congress_bills"):
             pytest.fail("lying version-2 entry admitted")
+
+
+def test_a_family_the_pointer_does_not_list_is_named(tmp_path):
+    base, _ = published_bill_family(tmp_path)
+    with pytest.raises(IntegrityError, match="publication lists no family 'dockets'"):
+        with stage_generation(base, family="dockets", table="dockets"):
+            pytest.fail("a family the pointer does not list was staged")
 
 
 @pytest.mark.parametrize("case,match", [
     ("partition-value", "differ from the partition congress=118"),
     ("key-grammar", "does not spell its partition"),
     ("key-column", "does not spell its partition"),
+    ("key-digits", "does not spell its partition"),
     ("undeclared-partition", "partition columns must be distinct declared columns"),
     ("rows-sum", "descriptor differs from its member"),
     ("member-count", "footer row count"),
@@ -426,6 +438,8 @@ def test_a_split_table_that_disagrees_with_its_members_refuses(tmp_path, case, m
         sections[0] = ("congress=118/sections.parquet", sections[0][1])
     elif case == "key-column":
         sections[0] = ("session=118/part-000000.parquet", sections[0][1])
+    elif case == "key-digits":  # Arabic-Indic digits, which \d matches
+        sections[0] = ("congress=118/part-٠٠٠٠٠٠.parquet", sections[0][1])
     elif case == "undeclared-partition":
         options["overrides"] = {"bill_sections": {"partitionColumns": ["session"]}}
     elif case == "rows-sum":
