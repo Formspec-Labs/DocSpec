@@ -4,10 +4,28 @@
   "note": "Fork generations DocSpec workspaces have admitted by reference. The spicy-regs retention job (decision 36) keeps every listed pin. Update at each production move; keep a digest as evidence while a receipt cites it.",
   "pins": [
     {
+      "family": "dockets",
+      "artifactDigest": "sha256:000e6263ad21431a7f0fbcc7625ad67f358259466ee7e9ccbf7f2c2221e777d7",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+    },
+    {
+      "family": "documents",
+      "artifactDigest": "sha256:b4f1d7519a523e831cee1ce2adf33143e88d130d51d77aa478b17866980b0bcb",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+    },
+    {
+      "family": "federal-register",
+      "artifactDigest": "sha256:30a081f40554227a32f3408c37597ac1e42bdbeda63795b821eec5787a23d7ad",
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
+    },
+    {
       "family": "federal-register",
       "artifactDigest": "sha256:497be73c5c70ccd14cc1d5f99200e76a703baf4860fbe20c5025587a57a4e1d7",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (port 8091; receipts/refresh-refresh-b2-20260926-admit.json)"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (the 8091 rollback runtime, generation 6078f9d8…, until retired)"
     },
     {
       "family": "federal-register",
@@ -54,20 +72,20 @@
     {
       "family": "dockets",
       "artifactDigest": "sha256:e601dbf6ac0bc4fbd9856b0b6b5cbc2e0d0ece726543cef5b2c52463c89c8f4e",
-      "role": "production",
-      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b docket spine (port 8091; receipts/refresh-refresh-b2-20260926-admit.json); docs/history/probes/2026-09-25-admit-regulations-gate.json"
+      "role": "evidence",
+      "cites": "~/Work/corpora/candidate-typed-20260926/workspace-b (the 8091 rollback runtime, generation 6078f9d8…, until retired)"
     },
     {
       "family": "document-attributes",
       "artifactDigest": "sha256:30f9aa294cfd56db2329aac965aadc5bdaffb843e384dddf243c27f187d74532",
-      "role": "evidence",
-      "cites": "the post-sweep generation of 2026-09-27 (2,002,888 rows; ETL 36351853866 on spicy-regs d1c6703); admitted by ~/Work/corpora/candidate-byref-20260927 for the by-reference layer, production at the 8091 switch"
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
     },
     {
       "family": "docket-attributes",
       "artifactDigest": "sha256:ba5aba75343d354182f415d123b5c613c503d4a755a9c6692eedb0e822f06ab8",
-      "role": "evidence",
-      "cites": "the post-sweep generation of 2026-09-27 (279,406 rows; ETL 36351853866 on spicy-regs d1c6703); admitted by ~/Work/corpora/candidate-byref-20260927 for the by-reference layer, production at the 8091 switch"
+      "role": "production",
+      "cites": "~/Work/corpora/candidate-c-20260928/workspace (port 8091 since 2026-09-28 02:48Z; receipts/admit.json, receipts/switch-8091.json)"
     }
   ]
 }
