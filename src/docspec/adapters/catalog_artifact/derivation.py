@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import heapq
+import multiprocessing
 import os
 import pickle
+import threading
+import time
 from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any
 
@@ -44,6 +48,19 @@ _MAX_DERIVE_WORKERS = 8
 #: is not a performance knob: it only elapses when workers cannot run at all,
 #: and then the serial derivation still produces the identical result.
 _PARALLEL_PROBE_TIMEOUT_SECONDS = 60.0
+
+#: How long the parent waits on one partition's result before refusing. A
+#: partition is a fixed 1/64th of the catalog (CATALOG_PARTITION_BUCKET_COUNT);
+#: 5d4a273's full-universe extrapolation, about 2 h on eight workers, puts one
+#: near 15 min, so this is about 8x headroom. It bounds only a live worker that
+#: stops making progress: a worker that dies is noticed within
+#: _WORKER_CHECK_SECONDS.
+_PARTITION_TIMEOUT_SECONDS = 2 * 60 * 60.0
+_WORKER_CHECK_SECONDS = 1.0
+
+#: How long pool shutdown may take before the workers still alive are killed,
+#: and again after the kill before shutdown refuses.
+_POOL_SHUTDOWN_SECONDS = 10.0
 
 
 def _derive_worker_count(item_count: int, workers: int | None) -> int:
@@ -116,9 +133,62 @@ def _derive_pool_context() -> Any:
     :mod:`multiprocessing`.
     """
 
-    import multiprocessing
-
     return multiprocessing.get_context("spawn")
+
+
+@contextmanager
+def _bounded_pool(context: Any, worker_count: int) -> Iterator[Any]:
+    """A worker pool whose shutdown is bounded: workers still alive when it overruns are killed.
+
+    ``Pool.terminate()`` signals every worker, then joins each without a
+    bound. On 2026-09-27 a worker survived the signal and held two test runs
+    at 0% CPU in that join (``multiprocessing/pool.py``, ``_terminate_pool``).
+    Termination runs on a helper thread; after ``_POOL_SHUTDOWN_SECONDS`` the
+    pool's live workers are killed, which ends the join. The pool's worker
+    list is CPython's ``Pool._pool``, the list ``_terminate_pool`` joins.
+    """
+
+    pool = context.Pool(worker_count)
+    try:
+        yield pool
+    finally:
+        stopping = threading.Thread(target=pool.terminate, name="docspec-derive-pool-shutdown", daemon=True)
+        stopping.start()
+        stopping.join(_POOL_SHUTDOWN_SECONDS)
+        if stopping.is_alive():
+            for worker in list(pool._pool):
+                if worker.exitcode is None:
+                    worker.kill()
+            stopping.join(_POOL_SHUTDOWN_SECONDS)
+            if stopping.is_alive():
+                raise TimeoutError("catalog derive pool did not shut down after its workers were killed")
+
+
+def _await_partition(result: Any, partition_id: str, workers: Sequence[Any], pending: Sequence[str]) -> Any:
+    """One partition's summary, refusing a worker that died or a partition that overran its bound.
+
+    Pool replaces a worker that dies mid-task and never fails that task, so
+    an untimed ``get()`` waits forever. The pool retires no worker before
+    shutdown (no ``maxtasksperchild``), so any exit among the workers it
+    started means a task was lost; which one is unknowable, so the refusal
+    names every partition still pending. ``workers`` are those processes.
+    """
+
+    deadline = time.monotonic() + _PARTITION_TIMEOUT_SECONDS
+    while True:
+        try:
+            return result.get(timeout=max(0.0, min(_WORKER_CHECK_SECONDS, deadline - time.monotonic())))
+        except multiprocessing.TimeoutError:
+            pass
+        exits = sorted({worker.exitcode for worker in workers if worker.exitcode is not None})
+        if exits:
+            raise ChildProcessError(
+                f"a catalog derive worker exited with code {exits[0]} while partitions {', '.join(pending)} were pending"
+            )
+        if time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"catalog partition {partition_id} did not finish within {_PARTITION_TIMEOUT_SECONDS:g} s"
+            )
 
 
 def _derive_partition_worker(
@@ -309,7 +379,7 @@ def _derive_catalog_parallel(
 
         summaries: list[tuple[str, str, int, dict[str, int], dict[str, dict[str, int]], int, int, int]] = []
         arguments = task_arguments()
-        with context.Pool(worker_count) as pool:
+        with _bounded_pool(context, worker_count) as pool:
             try:
                 # Must be the timed asynchronous form. An interpreter whose
                 # __main__ cannot be re-imported (frozen, embedded, stdin)
@@ -332,21 +402,24 @@ def _derive_catalog_parallel(
                     workers=1,
                 )
                 return replace(fallback, derivation={"path": "serial-fallback", "workers": 1})
-            pending: list[Any] = []
+            workers = tuple(pool._pool)
+            pending: list[tuple[str, Any]] = []
 
             def submit_next() -> bool:
                 try:
                     args = next(arguments)
                 except StopIteration:
                     return False
-                pending.append(pool.apply_async(_derive_partition_worker, (args,)))
+                pending.append((args[0], pool.apply_async(_derive_partition_worker, (args,))))
                 return True
 
             for _ in range(worker_count * 2):
                 if not submit_next():
                     break
             while pending:
-                summaries.append(pending.pop(0).get())
+                partition_id, result = pending[0]
+                summaries.append(_await_partition(result, partition_id, workers, [unit for unit, _ in pending]))
+                pending.pop(0)
                 submit_next()
 
         tally = _DispositionTally()

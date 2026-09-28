@@ -3,12 +3,14 @@ streamed partition handle rather than partition bytes, and a pool that never sta
 derivation whose result and reference are identical.
 
 Also pins the automatic worker count resolving on the pinned interpreter, task arguments staying smaller than
-the partitions they stand for, and the derivation recording which engine (serial, parallel or serial-fallback)
-produced the build and gate digests.
+the partitions they stand for, the derivation recording which engine (serial, parallel or serial-fallback)
+produced the build and gate digests, and that a worker which dies mid-task or ignores shutdown fails the
+derivation in bounded time instead of hanging it.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -20,17 +22,15 @@ from docspec.adapters.catalog_artifact import rules as catalog_rules
 from docspec.adapters.catalog_artifact import verification as catalog_verification
 from docspec.adapters.catalog_artifact.reader import SourceCatalogArtifactReader
 from docspec.domain.source_catalog import CatalogDisposition
+from tests.support import derive_workers
 from tests.support.source_catalog import FakeSource, description, producer, record, renditions
 from tests.support.source_catalog_builds import (
     build,
 )
 
 
-def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: Path) -> None:
-    """Workers may change wall time, never a digest: serial and two-worker derivation of a real multi-partition
-    catalog agree on every digest, count and diagnostic, because both spill the same payload bytes and merge
-    them in the same global order.
-    """
+def _partitioned_catalog(tmp_path: Path) -> tuple[Any, tuple[Any, ...], Any]:
+    """A built and admitted seven-item catalog: its blob source, its verified partitions (several) and summary."""
 
     from rulespec_artifacts import LocalMemberSource, admit_artifact
 
@@ -41,38 +41,39 @@ def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: P
         tuple(r for identity in identities for r in renditions(identity)),
     )
     store, result = build(tmp_path, source)
-    reader = SourceCatalogArtifactReader(store, producer=producer())
-    summary = reader.verify_snapshot(result.reference)
-
+    summary = SourceCatalogArtifactReader(store, producer=producer()).verify_snapshot(result.reference)
     blob_source = store.blob_source()
-    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
     verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
     admit_artifact(
-        LocalMemberSource(artifact_root),
+        LocalMemberSource(Path(store.root) / result.reference.digest.removeprefix("sha256:")),
         blob_source=blob_source,
         expected_pin=None,
         scratch_directory=tmp_path / "admit-scratch",
         semantic_verifier=verifier,
     )
     assert len(verifier.partitions) > 1, "test needs a multi-partition catalog"
+    return blob_source, verifier.partitions, summary
 
-    selected_count = summary.disposition_counts[
-        CatalogDisposition.SELECTED.value
-    ]
-    serial = catalog_derivation._derive_catalog(
+
+def _derive(blob_source: Any, partitions: Any, summary: Any, workers: int) -> Any:
+    return catalog_derivation._derive_catalog(
         blob_source,
-        verifier.partitions,
+        partitions,
         item_count=summary.item_count,
-        selected_count=selected_count,
-        workers=1,
+        selected_count=summary.disposition_counts[CatalogDisposition.SELECTED.value],
+        workers=workers,
     )
-    parallel = catalog_derivation._derive_catalog(
-        blob_source,
-        verifier.partitions,
-        item_count=summary.item_count,
-        selected_count=selected_count,
-        workers=2,
-    )
+
+
+def test_the_parallel_derivation_is_byte_identical_to_the_serial_one(tmp_path: Path) -> None:
+    """Workers may change wall time, never a digest: serial and two-worker derivation of a real multi-partition
+    catalog agree on every digest, count and diagnostic, because both spill the same payload bytes and merge
+    them in the same global order.
+    """
+
+    blob_source, partitions, summary = _partitioned_catalog(tmp_path)
+    serial = _derive(blob_source, partitions, summary, 1)
+    parallel = _derive(blob_source, partitions, summary, 2)
     # Everything but the engine's own name must agree; the name must not.
     assert replace(parallel, derivation={}) == replace(serial, derivation={})
     assert serial.derivation == {"path": "serial", "workers": 1}
@@ -106,29 +107,7 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
 
     import pickle
 
-    from rulespec_artifacts import LocalMemberSource, admit_artifact
-
-    identities = [f"2026-0000{i}" for i in range(1, 8)]
-    source = FakeSource(
-        description(),
-        tuple(record(identity) for identity in identities),
-        tuple(r for identity in identities for r in renditions(identity)),
-    )
-    store, result = build(tmp_path, source)
-    reader = SourceCatalogArtifactReader(store, producer=producer())
-    summary = reader.verify_snapshot(result.reference)
-    blob_source = store.blob_source()
-    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
-    verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
-    admit_artifact(
-        LocalMemberSource(artifact_root),
-        blob_source=blob_source,
-        expected_pin=None,
-        scratch_directory=tmp_path / "admit-scratch",
-        semantic_verifier=verifier,
-    )
-    partitions = verifier.partitions
-    assert len(partitions) > 1, "test needs a multi-partition catalog"
+    blob_source, partitions, summary = _partitioned_catalog(tmp_path)
     partition_sizes = [value.member.byte_size or 0 for value in partitions]
     assert min(partition_sizes) > 512, "test needs partitions with real bytes in them"
 
@@ -153,22 +132,19 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
 
     class RecordingPool:
         def __init__(self, pool: Any) -> None:
-            self._pool = pool
+            self._inner = pool
 
-        def __enter__(self) -> RecordingPool:
-            self._pool.__enter__()
-            return self
+        @property
+        def _pool(self) -> Any:
+            return self._inner._pool
 
-        def __exit__(self, *details: object) -> Any:
-            return self._pool.__exit__(*details)
-
-        def apply(self, function: Any, *args: Any, **kwargs: Any) -> Any:
-            return self._pool.apply(function, *args, **kwargs)
+        def terminate(self) -> None:
+            self._inner.terminate()
 
         def apply_async(self, function: Any, args: tuple[Any, ...] = (), **kwargs: Any) -> Any:
             if args:  # the worker probe carries none; only real tasks are measured
                 recorded.append(scrubbed_size(args[0]))
-            return self._pool.apply_async(function, args, **kwargs)
+            return self._inner.apply_async(function, args, **kwargs)
 
     inner = catalog_derivation._derive_pool_context()
 
@@ -176,26 +152,11 @@ def test_derive_workers_receive_a_stream_not_the_partition_bytes(tmp_path: Path)
         def Pool(self, *args: Any, **kwargs: Any) -> RecordingPool:
             return RecordingPool(inner.Pool(*args, **kwargs))
 
-    selected_count = summary.disposition_counts[
-        CatalogDisposition.SELECTED.value
-    ]
-    serial = catalog_derivation._derive_catalog(
-        blob_source,
-        partitions,
-        item_count=summary.item_count,
-        selected_count=selected_count,
-        workers=1,
-    )
+    serial = _derive(blob_source, partitions, summary, 1)
     original = catalog_derivation._derive_pool_context
     catalog_derivation._derive_pool_context = RecordingContext  # type: ignore[assignment]
     try:
-        parallel = catalog_derivation._derive_catalog(
-            blob_source,
-            partitions,
-            item_count=summary.item_count,
-            selected_count=selected_count,
-            workers=2,
-        )
+        parallel = _derive(blob_source, partitions, summary, 2)
     finally:
         catalog_derivation._derive_pool_context = original  # type: ignore[assignment]
 
@@ -219,28 +180,7 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
 
     import multiprocessing
 
-    from rulespec_artifacts import LocalMemberSource, admit_artifact
-
-    identities = [f"2026-0000{i}" for i in range(1, 8)]
-    source = FakeSource(
-        description(),
-        tuple(record(identity) for identity in identities),
-        tuple(r for identity in identities for r in renditions(identity)),
-    )
-    store, result = build(tmp_path, source)
-    reader = SourceCatalogArtifactReader(store, producer=producer())
-    summary = reader.verify_snapshot(result.reference)
-    blob_source = store.blob_source()
-    artifact_root = Path(store.root) / result.reference.digest.removeprefix("sha256:")
-    verifier = catalog_verification.SourceCatalogArtifactVerifier(producer(), blob_source)
-    admit_artifact(
-        LocalMemberSource(artifact_root),
-        blob_source=blob_source,
-        expected_pin=None,
-        scratch_directory=tmp_path / "admit-scratch",
-        semantic_verifier=verifier,
-    )
-    assert len(verifier.partitions) > 1, "test needs a multi-partition catalog"
+    blob_source, partitions, summary = _partitioned_catalog(tmp_path)
 
     class NeverAnswers:
         def get(self, timeout: float | None = None) -> Any:
@@ -252,11 +192,8 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
             raise multiprocessing.TimeoutError
 
     class DeadPool:
-        def __enter__(self) -> DeadPool:
-            return self
-
-        def __exit__(self, *details: object) -> bool:
-            return False
+        def terminate(self) -> None:
+            pass
 
         def apply(self, *args: Any, **kwargs: Any) -> Any:
             raise AssertionError(
@@ -270,32 +207,64 @@ def test_a_worker_pool_that_never_starts_falls_back_instead_of_hanging(tmp_path:
         def Pool(self, *args: Any, **kwargs: Any) -> DeadPool:
             return DeadPool()
 
-    selected_count = summary.disposition_counts[
-        CatalogDisposition.SELECTED.value
-    ]
-    serial = catalog_derivation._derive_catalog(
-        blob_source,
-        verifier.partitions,
-        item_count=summary.item_count,
-        selected_count=selected_count,
-        workers=1,
-    )
+    serial = _derive(blob_source, partitions, summary, 1)
     original = catalog_derivation._derive_pool_context
     catalog_derivation._derive_pool_context = DeadContext  # type: ignore[assignment]
     try:
-        fell_back = catalog_derivation._derive_catalog(
-            blob_source,
-            verifier.partitions,
-            item_count=summary.item_count,
-            selected_count=selected_count,
-            workers=2,
-        )
+        fell_back = _derive(blob_source, partitions, summary, 2)
     finally:
         catalog_derivation._derive_pool_context = original  # type: ignore[assignment]
 
     assert replace(fell_back, derivation={}) == replace(serial, derivation={})
     assert fell_back.derivation == {"path": "serial-fallback", "workers": 1}
     assert fell_back.catalog_state_digest == summary.catalog_state_digest
+
+
+def test_a_worker_killed_mid_task_fails_the_derivation_naming_its_partitions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pool replaces a worker that dies mid-task and never fails its task, so the untimed wait on its result
+    blocked forever. The wait notices the exit within a second and refuses, naming the partitions pending.
+    """
+
+    blob_source, partitions, summary = _partitioned_catalog(tmp_path)
+    monkeypatch.setattr(catalog_derivation, "_derive_partition_worker", derive_workers.die_mid_task)
+    started = time.monotonic()
+    with pytest.raises(ChildProcessError, match=r"exited with code -9 while partitions .+ were pending") as refused:
+        _derive(blob_source, partitions, summary, 2)
+    assert time.monotonic() - started < catalog_derivation._POOL_SHUTDOWN_SECONDS + 30
+    first = sorted(partitions, key=lambda value: catalog_rules._utf16_key(value.partition_id))[0].partition_id
+    assert first in str(refused.value)
+
+
+def test_a_worker_that_ignores_shutdown_is_killed_after_its_partition_times_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live worker that never returns fails its partition at the partition bound, naming it; one that also
+    survives the pool's termination signal, which held two test runs at 0% CPU in Pool's join, is killed.
+    """
+
+    blob_source, partitions, summary = _partitioned_catalog(tmp_path)
+    monkeypatch.setattr(catalog_derivation, "_derive_partition_worker", derive_workers.ignore_shutdown)
+    monkeypatch.setattr(catalog_derivation, "_PARTITION_TIMEOUT_SECONDS", 2.0)
+    monkeypatch.setattr(catalog_derivation, "_POOL_SHUTDOWN_SECONDS", 1.0)
+    created: list[Any] = []
+    inner = catalog_derivation._derive_pool_context()
+
+    class RememberingContext:
+        def Pool(self, *args: Any, **kwargs: Any) -> Any:
+            created.append(inner.Pool(*args, **kwargs))
+            return created[-1]
+
+    monkeypatch.setattr(catalog_derivation, "_derive_pool_context", RememberingContext)
+    first = sorted(partitions, key=lambda value: catalog_rules._utf16_key(value.partition_id))[0].partition_id
+    started = time.monotonic()
+    with pytest.raises(TimeoutError, match=f"catalog partition {first} did not finish within 2 s"):
+        _derive(blob_source, partitions, summary, 2)
+    assert time.monotonic() - started < 30
+    workers = list(created[0]._pool)
+    assert workers and all(worker.exitcode is not None for worker in workers)
+    assert any(worker.exitcode == -9 for worker in workers), "a worker ignoring SIGTERM must have been killed"
 
 
 def test_derivation_names_the_engine_that_produced_the_digests(
