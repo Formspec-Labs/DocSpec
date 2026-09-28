@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import re
 from tempfile import TemporaryDirectory
+from time import sleep
 from typing import NamedTuple
 from urllib.parse import quote, urlsplit
 
@@ -24,7 +25,8 @@ from rulespec_artifacts import (ArtifactPin, ArtifactVerificationError, LocalMem
 from spicy_docs.schemas import TABLE_CONTRACTS
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 
-from docspec.adapters.content_fetchers.https import HttpsContentFetcher, HttpsContentFetcherConfig, HttpsNotFoundError
+from docspec.adapters.content_fetchers.https import (HttpsContentFetcher, HttpsContentFetcherConfig, HttpsNotFoundError,
+    HttpsRetryableResponseError)
 from docspec.adapters.storage.iceberg import identifier
 from docspec.adapters.storage.records import native_columns
 from docspec.adapters.storage.table_sql import declared_spelling
@@ -40,6 +42,15 @@ _CHUNK_BYTES = 1024**2
 _POINTERS = (("publication.v2.json", 2), ("publication.json", 1))
 _PARQUET = "application/vnd.apache.parquet"
 _PART = re.compile(r"part-\d{6}\.parquet\Z")
+# A public read retries the transient answers r2.dev gives under load: in all
+# _RETRY_ATTEMPTS requests, waiting the answer's Retry-After seconds or else
+# _RETRY_BACKOFF_SECONDS, doubling. A stated wait over _RETRY_MAX_WAIT_SECONDS
+# refuses rather than stalls. Any other status keeps its meaning: a 404 is
+# absence (the version-1 fallback), anything else refuses at once.
+_TRANSIENT_STATUSES = frozenset({429, 502, 503, 504})
+_RETRY_ATTEMPTS = 4
+_RETRY_BACKOFF_SECONDS = 1.0
+_RETRY_MAX_WAIT_SECONDS = 60.0
 
 
 class StagedMember(NamedTuple):
@@ -269,6 +280,18 @@ def _contract_types(table, columns):
         raise IntegrityError(f"Parquet footer types differ from the {table} contract: " + "; ".join(differing))
 
 
+def _fetch(fetcher, candidate, limit):
+    """Open one public read, retrying a transient answer; the retried request has sent no byte to the caller."""
+    for attempt in range(1, _RETRY_ATTEMPTS + 1):
+        try:
+            return fetcher.fetch(candidate, max_bytes=limit, task_id="generation-admission", attempt_id="stage")
+        except HttpsRetryableResponseError as error:
+            wait = _RETRY_BACKOFF_SECONDS * 2 ** (attempt - 1) if error.retry_after is None else error.retry_after
+            if error.status not in _TRANSIENT_STATUSES or attempt == _RETRY_ATTEMPTS or wait > _RETRY_MAX_WAIT_SECONDS:
+                raise
+        sleep(wait)
+
+
 @contextmanager
 def _reader(source):
     """Use the existing safe local reader or host-bounded HTTPS transport."""
@@ -283,7 +306,7 @@ def _reader(source):
                 key = validate_object_key(key, path="generation object")
                 url = str(source).rstrip("/") + "/" + "/".join(quote(part, safe="") for part in key.split("/"))
                 candidate = CandidateFile(key, url, "application/octet-stream")
-                with fetcher.fetch(candidate, max_bytes=limit, task_id="generation-admission", attempt_id="stage") as stream:
+                with _fetch(fetcher, candidate, limit) as stream:
                     yield from stream.chunks
             yield chunks, True
         finally:

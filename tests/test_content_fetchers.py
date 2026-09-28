@@ -446,14 +446,16 @@ def test_https_fetcher_rejects_unsealed_urls_and_classifies_retryable_status() -
             )
     assert client.requests == []
 
-    unavailable = _HttpResponse(status_code=503)
-    retryable = HttpsContentFetcher(
-        _HttpClient({"https://sources.example/document": unavailable}),
-        _https_config(),
-    )
-    with pytest.raises(HttpsContentFetcherError, match="retryable"):
-        retryable.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt")
-    assert unavailable.close_count == 1
+    # The fetcher never retries: it reports the status and any delay-seconds Retry-After to its caller.
+    for headers, retry_after in (({"retry-after": " 5 "}, 5.0), ({"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}, None),
+                                 ({"retry-after": "-1"}, None), ({}, None)):
+        unavailable = _HttpResponse(status_code=503, headers=headers)
+        client = _HttpClient({"https://sources.example/document": unavailable})
+        retryable = HttpsContentFetcher(client, _https_config())
+        with pytest.raises(HttpsContentFetcherError, match="retryable") as refused:
+            retryable.fetch(_https_candidate(), max_bytes=20, task_id="task", attempt_id="attempt")
+        assert (refused.value.status, refused.value.retry_after) == (503, retry_after)
+        assert unavailable.close_count == 1 and len(client.requests) == 1
 
 
 def test_anonymous_s3_fetcher_streams_pinned_object_and_closes() -> None:

@@ -21,6 +21,26 @@ class HttpsContentFetcherError(ConnectionError, DocSpecError):
     """An HTTPS operation failed without exposing provider details."""
 
 
+class HttpsRetryableResponseError(HttpsContentFetcherError):
+    """The server answered 429 or 5xx, so a later request may succeed; the fetcher itself never retries.
+
+    ``status`` is the answer's; ``retry_after`` the delay-seconds its
+    Retry-After header states, or ``None`` for none or an HTTP-date.
+    """
+
+    def __init__(self, status: int, retry_after: float | None) -> None:
+        self.status = status
+        self.retry_after = retry_after
+        super().__init__(f"HTTPS acquisition returned a retryable response (status {status})")
+
+
+def _retry_after_seconds(value: object) -> float | None:
+    """The delay-seconds a Retry-After header states; ``None`` for none or an HTTP-date."""
+
+    text = value.strip() if isinstance(value, str) else ""
+    return float(text) if text.isascii() and text.isdecimal() else None
+
+
 class HttpsNotFoundError(IntegrityError):
     """The server answered 404: nothing is published at the candidate's locator, so a caller may try another."""
 
@@ -211,7 +231,8 @@ class HttpsContentFetcher:
     ) -> FetchStream:
         """Stream one candidate within the allowed hosts, redirect, size, and identity-encoding bounds.
 
-        A 429 or 5xx response is retryable and raises HttpsContentFetcherError;
+        A 429 or 5xx response is retryable and raises HttpsRetryableResponseError,
+        an HttpsContentFetcherError carrying the status and Retry-After;
         a 404 raises HttpsNotFoundError, an IntegrityError that says nothing is
         published there; any other non-200 status, redirect bound, or size mismatch refuses with
         IntegrityError.
@@ -263,7 +284,7 @@ class HttpsContentFetcher:
         status = response.status_code
         if status == 429 or status >= 500:
             self._close(context)
-            raise HttpsContentFetcherError("HTTPS acquisition returned a retryable response")
+            raise HttpsRetryableResponseError(status, _retry_after_seconds(response.headers.get("retry-after")))
         if status == 404:
             self._close(context)
             raise HttpsNotFoundError("HTTPS candidate returned status 404")

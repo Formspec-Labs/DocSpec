@@ -147,16 +147,24 @@ def serve_https(monkeypatch, base, *, status=None):
     """Serve directory ``base`` at ``https://example.test/data`` through the existing HTTPS transport.
 
     A missing object answers 404, as R2 does; ``status`` maps an object key to
-    another status to answer instead. Returns the requested URLs and the clients
-    made, so a test can check order and closing.
+    another status to answer instead, or to a list of answers to give first, in
+    order, before serving it: each a status or a (status, headers) pair.
+    Returns the requested URLs and the clients made, so a test can check order
+    and closing.
     """
     requests, clients, status = [], [], status or {}
+    fixed = {key: answer for key, answer in status.items() if not isinstance(answer, list)}
+    queued = {key: list(answers) for key, answers in status.items() if isinstance(answers, list)}
 
     def respond(request):
         requests.append(str(request.url))
         key = request.url.path.removeprefix("/data/")
-        if key in status or not (base / key).exists():
-            return httpx.Response(status.get(key, 404), request=request)
+        answer = queued[key].pop(0) if queued.get(key) else fixed.get(key)
+        if answer is None and not (base / key).exists():
+            answer = 404
+        if answer is not None:
+            code, headers = answer if isinstance(answer, tuple) else (answer, {})
+            return httpx.Response(code, headers=headers, request=request)
         return httpx.Response(200, stream=httpx.ByteStream((base / key).read_bytes()), request=request)
 
     def fetcher(config):

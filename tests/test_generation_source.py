@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from types import SimpleNamespace
+from urllib.parse import unquote
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -315,12 +316,55 @@ def test_https_reads_version_2_and_falls_back_only_when_it_is_absent(tmp_path, m
     with stage_generation("https://example.test/data", family="bill-family", table="bill_sections") as admitted:
         assert len(admitted.members) == 2
     assert "https://example.test/data/publication.json" not in requests
-    # A version-2 read that fails for any reason but absence refuses; it never falls back to version 1.
-    requests, _ = serve_https(monkeypatch, base, status={"publication.v2.json": 503})
-    with pytest.raises(IntegrityError, match="retryable"):
+    # Absence, a 404, reads version 1 at once; no other answer does (below).
+    pin, member, description = generation(tmp_path / "register")
+    publish(tmp_path / "register-published", tmp_path / "register", pin, [member], {member.object_key: description},
+            family="federal-register", versions=(2, 1))
+    requests, _ = serve_https(monkeypatch, tmp_path / "register-published", status={"publication.v2.json": 404})
+    with stage_generation("https://example.test/data", family="federal-register", table="federal_register") as admitted:
+        assert admitted.pin == pin
+    assert [url.rsplit("/", 1)[1] for url in requests[:2]] == ["publication.v2.json", "publication.json"]
+
+
+def test_a_public_read_retries_transient_answers_honouring_retry_after(tmp_path, monkeypatch):
+    """r2.dev answers 429 and 502–504 under load; a daily refresh must not fail on one.
+
+    Each read waits the answer's Retry-After seconds, or else a doubling
+    backoff (an HTTP-date is not waited on), and asks again; what is staged is
+    exactly what an undisturbed read stages.
+    """
+    base, pointer = published_bill_family(tmp_path)
+    with stage_generation(base, family="bill-family", table="bill_sections") as local:
+        expected = [(path.read_bytes(), descriptor) for path, descriptor in local.members]
+    member = pointer["families"]["bill-family"]["prefix"] + "/" + expected[0][1].object_key
+    waits = []
+    monkeypatch.setattr(generation_source, "sleep", waits.append)
+    requests, _ = serve_https(monkeypatch, base, status={
+        "publication.v2.json": [503, (429, {"retry-after": "7"})],
+        member: [502, 504, (503, {"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"})]})
+    with stage_generation("https://example.test/data", family="bill-family", table="bill_sections") as admitted:
+        assert [(path.read_bytes(), descriptor) for path, descriptor in admitted.members] == expected
+    assert waits == [1.0, 7.0, 1.0, 2.0, 4.0]
+    keys = [unquote(url.removeprefix("https://example.test/data/")) for url in requests]
+    assert (keys.count("publication.v2.json"), keys.count(member), keys.count("publication.json")) == (3, 4, 0)
+
+
+@pytest.mark.parametrize("answers,requested,waited", [
+    ([503] * 4, 4, [1.0, 2.0, 4.0]),  # still failing at the bound
+    ([(429, {"retry-after": "61"})], 1, []),  # a stated wait over the bound is not waited out
+    ([500], 1, []), ([501], 1, []), ([403], 1, []), ([410], 1, []),  # not transient
+])
+def test_a_public_read_refuses_what_retrying_cannot_fix(tmp_path, monkeypatch, answers, requested, waited):
+    """Every answer but the scripted ones serves the pointer, so a retry past its bound would admit."""
+    base, _ = published_bill_family(tmp_path)
+    waits = []
+    monkeypatch.setattr(generation_source, "sleep", waits.append)
+    requests, _ = serve_https(monkeypatch, base, status={"publication.v2.json": answers})
+    with pytest.raises(IntegrityError):
         with stage_generation("https://example.test/data", family="bill-family", table="congress_bills"):
-            pytest.fail("admitted through version 1 while version 2 failed")
-    assert [url.rsplit("/", 1)[1] for url in requests] == ["publication.v2.json"]
+            pytest.fail("admitted past a refusal, or through version 1 while version 2 failed")
+    assert [url.rsplit("/", 1)[1] for url in requests] == ["publication.v2.json"] * requested
+    assert waits == waited
 
 
 def test_members_listed_in_any_order_admit(tmp_path):

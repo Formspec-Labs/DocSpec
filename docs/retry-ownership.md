@@ -9,6 +9,7 @@ inside one execution. Those counts describe different work.
 | Dagster | Native scheduled operation, with run events, retry policy and cancellation |
 | Core | Actual execution and authoritative progress; explicit verified continuation retains the original attempt |
 | S3 SDK | A HEAD or GET call, bounded by the configured `sdk_total_attempts` |
+| Generation admission | A public read of a published generation object answering 429, 502, 503 or 504: four requests in all, waiting its Retry-After seconds (at most 60) or 1, 2, 4 s |
 | Source provider | Its collection calls and reported source observations |
 
 The built-in S3 constructor defaults `sdk_total_attempts` to one, including the
@@ -16,6 +17,12 @@ initial request. An unpinned object may require both HEAD and GET; each has its
 own SDK limit. Two actual Core attempts with three SDK attempts each can issue
 six failed HEAD requests while retaining two failed Core results. An injected
 SDK client remains responsible for its own internal retry behavior.
+
+The HTTPS content fetcher itself never retries: it reports a 429 or 5xx with its
+status and Retry-After (`HttpsRetryableResponseError`), and a scheduled
+acquisition leaves the retry to its scheduler. Generation admission retries
+only the transient answers of a public bucket, before any byte is read; a 404
+stays absence and every other status refuses at once.
 
 Core does not add a second generic retry loop. A successful completed selection
 can be recovered without invoking the producer. Explicit failed-work repair uses
