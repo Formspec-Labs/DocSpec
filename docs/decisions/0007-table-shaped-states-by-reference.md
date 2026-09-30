@@ -1,17 +1,18 @@
 # Decision 0007: a table-shaped state may reference a producer's sealed Parquet, with occurrence identity from key and row content
 
 - Date: 2026-09-23, revised the same day after a cross-stack review.
-- Status: **proposed, not accepted.** The owner must rule on this record: it is
-  ruling 1 of the consolidation path (spicy-docs
-  `docs/research/consolidation-path-2026-09-22.md`, §5), plus open rulings
-  R1–R6 below, now decided.
+- Status: **implemented under the owner's rulings R1–R6**, with the limits
+  below. Status reconciled 2026-09-30 against the implementation and its tests.
+  The original proposal and dated rulings remain below as decision history;
+  the current implementation notes govern where the delivered scope differs.
   [C27](../core-model-implementation-tasks.md#c27--admit-a-producer-generation-by-reference)
-  implements it and passed its
-  [gate](../history/probes/2026-09-25-admit-generation-gate.md) on 2026-09-25;
+  implements generation admission and passed its
+  [gate](../history/probes/2026-09-25-admit-generation-gate.md) on 2026-09-25.
   [C29](../core-model-implementation-tasks.md#c29--typed-derived-layers)
-  implements item 9 and passed its
-  [gate](../history/probes/2026-09-25-typed-derived-layers.md), for DocSpec's
-  part, the same day.
+  implements typed derivation and passed its
+  [DocSpec gate](../history/probes/2026-09-25-typed-derived-layers.md) the same day.
+  These establish local implementation and the recorded qualification scope;
+  they do not establish a consumer's deployment or a package's publication.
 - Evidence:
   - the [D2 spike](../history/probes/2026-09-23-admit-by-reference-spike.md),
     with its review corrections;
@@ -20,7 +21,49 @@
 - Amends: the consolidation path's D1, which proposed occurrence IDs made by
   hashing the pin and the key.
 
-## The proposed ruling
+## Current implementation and limits (2026-09-30)
+
+The public entry points are `CoreWorkspace.admit_generation` and
+`CoreWorkspace.derive_table`; `CoreStateReader.table` reads typed rows.
+See [Python runs](../python-runs.md#admit-a-producer-generation-by-reference)
+for usage and the C27/C29 task records above for delivered scope and measurements.
+The implementation owners are
+[`generation_admission.py`](../../src/docspec/application/generation_admission.py),
+[`table_derivation.py`](../../src/docspec/application/table_derivation.py), and
+[`core_tables.py`](../../src/docspec/adapters/storage/core_tables.py).
+
+- Admission supports publication version 2, including split tables. It falls
+  back to version 1 only when version 2 is absent; malformed or unavailable
+  version-2 content does not silently select version 1. See the
+  [publication-v2 record](../history/2026-09-27-publication-v2/README.md).
+- Unchanged rows keep their occurrence IDs. `key_changes()` compares keys and
+  occurrence IDs without reading row payloads; `table(member_keys=...)` reads
+  selected rows. Its savings depend on how keys are grouped in the files; see
+  the measured limits in [Python runs](../python-runs.md).
+- Retention follows the reduced C27 scope under R3: pinned occurrences retain
+  their exact bytes in the ledger, and shared files remain protected. The
+  original item 8's pin transfer and retired-occurrence layer were not built.
+  Re-admitting the exact pin of a removed state refuses; a later generation
+  can restore a row and adopt its original occurrence ID.
+- R5's declared selection of columns remains unimplemented. Tables with
+  observed- or fetched-time columns refuse admission. Composite keys require
+  a declared, supported spelling; the implementation now supports `at-joined/1`.
+- The C27 record retains resource limits: the index exceeded its original
+  size estimate, later admission holds base rows for comparison, and the
+  identity scratch file is not charged to `max_merge_scratch_bytes`.
+
+Executable checks live in
+[`test_core_table_states.py`](../../tests/test_core_table_states.py),
+[`test_core_table_derivation.py`](../../tests/test_core_table_derivation.py), and
+[`test_generation_source.py`](../../tests/test_generation_source.py).
+The focused reader, generation, table-state, typed-derivation and package-boundary
+suites passed on 2026-09-30 at `9b6905a`, with DocSpec 0.12.2 and SpicyDocs 0.53.0
+installed. This was not a full regression run or a fresh capacity measurement.
+
+## Original proposal (2026-09-23)
+
+The text below preserves the proposal's assumptions and estimates. Read it with
+the dated owner rulings and current implementation notes above.
 
 1. **A keyed root state may be table-shaped.** Its members are the rows of a
    pinned Iceberg table whose data files are a producer's admitted member
@@ -106,7 +149,8 @@
 ## Rulings (owner, 2026-09-24)
 
 Each was put to the owner with the options below; the decision is recorded
-under its item. The design stays proposed until C27 is implemented.
+under its item. At the time, implementation of C27 was the condition for
+leaving proposed status; C27 subsequently passed its gate on 2026-09-25.
 
 - **R1: provenance of a reappearing occurrence.** If a key goes A → B → A, the
   third generation's member is the first generation's occurrence. Comparing
