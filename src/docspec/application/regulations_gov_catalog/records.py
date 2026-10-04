@@ -37,7 +37,6 @@ _COMMENT_SCHEMA = "regulations-gov-comment-raw"
 _FEDERAL_REGISTER_SCOPE = "federal-register-documents"
 
 _FEDERAL_REGISTER_SCHEMA = "federal-register-document"
-_FEDERAL_REGISTER_SCHEMA_VERSION = "1.1"
 
 _SCHEMA_VERSION = "1.0"
 

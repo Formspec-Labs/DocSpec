@@ -381,12 +381,43 @@ def test_publisher_xml_is_selected_when_offered_with_html_as_an_absent_xml_alter
     assert preference["families"][-1]["offeredRenditionIds"] == (f"{identity}/pdf",)
 
 
-def test_federal_register_policy_requires_current_schema_and_rejects_earlier_policy():
+def test_federal_register_policy_reads_both_schemas_and_rejects_earlier_policy():
     policy = FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE)
-    assert policy.universe_inputs[0].schema_version == "1.1" and policy.policy_version == "1.2.0"
+    assert [selector.schema_version for selector in policy.universe_inputs] == ["1.1", "1.2"]
+    assert policy.policy_version == "1.3.0"
+    assert FederalRegisterCatalogPolicy.from_member(policy.to_member()) == policy
     prior = policy.to_member() | {"policyVersion": "1.0.0"}
     with pytest.raises(ValueError, match="installed policy version"):
         FederalRegisterCatalogPolicy.from_member(prior)
+
+
+def test_a_schema_1_2_release_reads_as_1_1_does_and_keeps_its_added_fields(tmp_path: Path) -> None:
+    """SpicyDocs 0.54.0 states Federal Register schema 1.2: five added fields, no earlier field changed."""
+    added = {
+        "action": "Final rule.",
+        "correction_of": None,
+        "corrections": [],
+        "significant": False,
+        "regulations_dot_gov_info": {"docket_id": "EPA-HQ-2026-0001"},
+    }
+    newer = record("2026-00001") | {"schemaVersion": "1.2"}
+    newer["record"] = newer["record"] | added
+    builds = {
+        version: build(tmp_path / version, FakeSource(description(), (source_record,), renditions("2026-00001")))
+        for version, source_record in (("1.1", record("2026-00001")), ("1.2", newer))
+    }
+    items = {
+        version: next(SourceCatalogArtifactReader(store, producer=producer()).open_snapshot(result.reference).items)
+        for version, (store, result) in builds.items()
+    }
+
+    assert items["1.2"].disposition is CatalogDisposition.SELECTED
+    assert items["1.2"].normalized_metadata == items["1.1"].normalized_metadata
+    assert items["1.2"].selection == items["1.1"].selection
+    (facts,) = items["1.2"].source_native_facts
+    assert facts["schemaVersion"] == "1.2"
+    # Read back frozen, as every retained array is.
+    assert {name: facts["fields"][name] for name in added} == added | {"corrections": ()}
 
 
 def test_raw_agency_headings_are_evidence_not_identifiers():

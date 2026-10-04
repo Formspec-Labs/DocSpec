@@ -40,6 +40,11 @@ from docspec.ports.source_catalog import (
 )
 
 _RENDITION_ORDER = ("full_text_xml_url", "body_html_url", "html_url", "pdf_url")
+#: SpicyDocs source schema 1.2 (0.54.0, commit 079b2ea) adds five fields to 1.1 and changes no earlier field or the
+#: record identity, so one policy reads both: a release states one version for all its rows, the normalization reads
+#: only fields both versions carry, and the new fields stay verbatim in the item's native facts. Sealed 1.1 releases
+#: stay readable.
+FEDERAL_REGISTER_SOURCE_SCHEMA_VERSIONS = ("1.1", "1.2")
 _NORMALIZED_FIELDS = (
     "title",
     "agencies",
@@ -125,19 +130,20 @@ class FederalRegisterCatalogPolicy:
     _policy_digest: str | None = field(default=None, init=False, repr=False, compare=False)
 
     policy_id = "urn:docspec:catalog-policy:federal-register:1"
-    policy_version = "1.2.0"
+    policy_version = "1.3.0"
 
     @property
     def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
-        """Declare the one Federal Register universe input this policy reads."""
-        return (
+        """Declare the Federal Register universe inputs this policy reads, one per source schema version."""
+        return tuple(
             SourceInputSelector(
                 self.expected_source_system_id,
                 "v1",
                 "federal-register-documents",
                 "federal-register-document",
-                "1.1",
-            ),
+                version,
+            )
+            for version in FEDERAL_REGISTER_SOURCE_SCHEMA_VERSIONS
         )
 
     @property
@@ -221,9 +227,9 @@ class FederalRegisterCatalogPolicy:
             error=ValueError,
         )
         universe_inputs = configuration["universeInputs"]
-        if not isinstance(universe_inputs, list) or len(universe_inputs) != 1:
+        if not isinstance(universe_inputs, list) or not universe_inputs:
             raise ValueError(
-                "Federal Register catalog policy requires one universe input"
+                "Federal Register catalog policy requires its universe inputs"
             )
         selector = SourceInputSelector.from_dict(universe_inputs[0])
         policy = cls(selector.source_system_id)

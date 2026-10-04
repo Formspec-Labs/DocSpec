@@ -10,7 +10,10 @@ from docspec.application.catalog_policy import (
     http_url as _http_url,
     utf16_key as _utf16_key,
 )
-from docspec.application.federal_register_catalog import _RENDITION_ORDER as _FEDERAL_REGISTER_RENDITION_ORDER
+from docspec.application.federal_register_catalog import (
+    FEDERAL_REGISTER_SOURCE_SCHEMA_VERSIONS,
+    _RENDITION_ORDER as _FEDERAL_REGISTER_RENDITION_ORDER,
+)
 from docspec.domain.identity import canonical_json_bytes, closed_mapping, sha256_digest
 from docspec.domain.source_catalog import (
     CatalogDisposition,
@@ -42,7 +45,6 @@ from .records import (
     _DOCUMENT_SCHEMA,
     _DOCUMENT_SCOPE,
     _FEDERAL_REGISTER_SCHEMA,
-    _FEDERAL_REGISTER_SCHEMA_VERSION,
     _FEDERAL_REGISTER_SCOPE,
     _NORMALIZED_FIELDS,
     _PUBLISHER_WITHHOLDING_CODES,
@@ -87,22 +89,24 @@ class RegulationsGovCatalogPolicy:
 
     def __post_init__(self) -> None:
         """Validate selectors, names, language, URL template and budget, sorting agency names."""
+        # The Federal Register lookup names the one schema version its release states; the Register's own policy
+        # reads both, and so does this join, which reads only fields both versions carry.
         expected = (
-            (self.document_input, _DOCUMENT_SCOPE, _DOCUMENT_SCHEMA, _SCHEMA_VERSION),
-            (self.docket_input, _DOCKET_SCOPE, _DOCKET_SCHEMA, _SCHEMA_VERSION),
-            (self.comment_input, _COMMENT_SCOPE, _COMMENT_SCHEMA, _SCHEMA_VERSION),
+            (self.document_input, _DOCUMENT_SCOPE, _DOCUMENT_SCHEMA, (_SCHEMA_VERSION,)),
+            (self.docket_input, _DOCKET_SCOPE, _DOCKET_SCHEMA, (_SCHEMA_VERSION,)),
+            (self.comment_input, _COMMENT_SCOPE, _COMMENT_SCHEMA, (_SCHEMA_VERSION,)),
             (
                 self.federal_register_input,
                 _FEDERAL_REGISTER_SCOPE,
                 _FEDERAL_REGISTER_SCHEMA,
-                _FEDERAL_REGISTER_SCHEMA_VERSION,
+                FEDERAL_REGISTER_SOURCE_SCHEMA_VERSIONS,
             ),
         )
-        for selector, scope_id, schema_name, schema_version in expected:
+        for selector, scope_id, schema_name, schema_versions in expected:
             if selector is not None and (
                 selector.scope_id != scope_id
                 or selector.schema_name != schema_name
-                or selector.schema_version != schema_version
+                or selector.schema_version not in schema_versions
             ):
                 raise ValueError("Regulations.gov catalog input selector differs from its source family")
         names = dict(self.agency_names)

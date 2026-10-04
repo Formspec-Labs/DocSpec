@@ -79,8 +79,9 @@ the resulting member contains its sealed identity and settings. Use the
 Catalog build and verification commands live in
 [`cli/source_catalog.py`](../src/docspec/cli/source_catalog.py).
 
-Federal Register policy `1.2.0` accepts source schema `1.1` and selects the first
-usable family: publisher-stated XML, body HTML, landing-page HTML, then PDF.
+Federal Register policy `1.3.0` accepts source schemas `1.1` and `1.2` (SpicyDocs
+0.54.0 adds five fields; a release states one version, and the new fields stay in
+the item's native facts) and selects the first usable family: publisher-stated XML, body HTML, landing-page HTML, then PDF.
 All offered families and source fields remain evidence; `html_url` remains the
 normalized landing-page reference. HTML/PDF are alternatives when XML is absent,
 not automatic retries after an XML download fails. No XML URL is constructed.

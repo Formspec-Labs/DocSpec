@@ -515,7 +515,8 @@ def regulations_policy() -> RegulationsGovCatalogPolicy:
             FEDERAL_REGISTER_PROFILE.source_system_version,
             "federal-register-documents",
             "federal-register-document",
-            "1.1",
+            # The schema version the pinned SpicyDocs Federal Register profile publishes.
+            "1.2",
         ),
         {"EPA": "Environmental Protection Agency"},
         comment_input=SourceInputSelector(
