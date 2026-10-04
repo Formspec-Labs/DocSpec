@@ -1,0 +1,361 @@
+{
+  "revision": "2c0146f8299752e4b45122c23c24a31c1cddd8be",
+  "harness_sha256": "be66d3846aa56782d5cefd4c0cffd2556bbd6e77ffb8a64830116abce19d0d25",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "python": "3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0 ]",
+  "cpu_count": 14,
+  "versions": {
+    "docspec": "0.12.2",
+    "spicy-docs": "0.53.0",
+    "dagster": "1.13.16",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1"
+  },
+  "cases": [
+    {
+      "arm": "direct",
+      "parent_pid": 51491,
+      "setup_seconds": 5.875001079402864e-06,
+      "tasks_sha256": "51f408ce5b6f295f9ac460983ca35d5a191b55fb4023e60e669789905a2641dd",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.2951874999998836,
+          "producer_calls": [
+            {
+              "pid": 51491,
+              "seconds": 0.07005400000343798
+            },
+            {
+              "pid": 51491,
+              "seconds": 0.11053050000191433
+            }
+          ],
+          "producer_seconds_sum": 0.1805845000053523,
+          "selected_result_ids": [
+            "urn:docspec:execution:ce3d03ff-1b2a-4df3-b44e-e48e654acf7d:result",
+            "urn:docspec:execution:7635eba7-3c4a-4a89-bacc-f1f371998da3:result"
+          ],
+          "output_sha256": "7a482cd4be96dc3b11c7cba6879b9890100a70a963998db304ce2fa938480711",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b212343657579694afb6e47dcfaec9dc647e0eac92497da57ace49e5e6b727f3",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:71feeaad87ed99f67193fc1058007c1ff40e85ae82442678dc1dc5d30b838822",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:e04f417b0a23650045466a981856838923df26a4539c577f72c1f23a8819dc7c",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:6a7afbeadd7d0ef19629b693fee69e80295dc127227f7af1a2ec81c3f647b3bf",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.04395454200130189,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:ce3d03ff-1b2a-4df3-b44e-e48e654acf7d:result",
+            "urn:docspec:execution:7635eba7-3c4a-4a89-bacc-f1f371998da3:result"
+          ],
+          "output_sha256": "7a482cd4be96dc3b11c7cba6879b9890100a70a963998db304ce2fa938480711",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b212343657579694afb6e47dcfaec9dc647e0eac92497da57ace49e5e6b727f3",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:71feeaad87ed99f67193fc1058007c1ff40e85ae82442678dc1dc5d30b838822",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:e04f417b0a23650045466a981856838923df26a4539c577f72c1f23a8819dc7c",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:6a7afbeadd7d0ef19629b693fee69e80295dc127227f7af1a2ec81c3f647b3bf",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_in_process",
+      "parent_pid": 51534,
+      "setup_seconds": 0.36279683300381294,
+      "tasks_sha256": "f6532a8ea0db08db150866b6ff7dda36290bda4feb18373b57c02c506ab8f3df",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.4468927080015419,
+          "producer_calls": [
+            {
+              "pid": 51534,
+              "seconds": 0.11277758299547713
+            },
+            {
+              "pid": 51534,
+              "seconds": 0.06855737500154646
+            }
+          ],
+          "producer_seconds_sum": 0.1813349579970236,
+          "selected_result_ids": [
+            "urn:docspec:execution:bfed0148-6eaa-4996-9e21-99ea6d04a3aa:result",
+            "urn:docspec:execution:0db12f63-8f06-4243-9480-923b055721f5:result"
+          ],
+          "output_sha256": "e42f0186eb7d8267cd3dd59b45cca91cf3741475f2b5485c78c56d07cfe397e7",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:2ae226be882094759807709478848e7677be49fe8ab4f9686995263914ccdd8c",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:f66cb0b508ff2af915e6089da19df2840826ab360a6537964b57403eedc53aa4",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:462c48aabdc93c3813dc88119f7665b248f0b3664858306223f38575496ab1d5",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:7ab7759abf6deec529e9034afdbcb9092c71175a1fdffa5ee35296abc8a864bd",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.14339612500043586,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:bfed0148-6eaa-4996-9e21-99ea6d04a3aa:result",
+            "urn:docspec:execution:0db12f63-8f06-4243-9480-923b055721f5:result"
+          ],
+          "output_sha256": "e42f0186eb7d8267cd3dd59b45cca91cf3741475f2b5485c78c56d07cfe397e7",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:2ae226be882094759807709478848e7677be49fe8ab4f9686995263914ccdd8c",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:f66cb0b508ff2af915e6089da19df2840826ab360a6537964b57403eedc53aa4",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:462c48aabdc93c3813dc88119f7665b248f0b3664858306223f38575496ab1d5",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:7ab7759abf6deec529e9034afdbcb9092c71175a1fdffa5ee35296abc8a864bd",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "failures": [
+    {
+      "case": "1-dagster_in_process",
+      "error": "",
+      "log": "/private/tmp/docspec-dagster-benchmark-20260930/1-dagster_in_process.log"
+    }
+  ]
+}

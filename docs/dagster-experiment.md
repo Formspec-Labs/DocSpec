@@ -25,3 +25,12 @@ The [adapter](../src/docspec/adapters/dagster.py) imports Dagster only when sele
 [installed example tests](../tests/test_dagster_experiment.py) cover native
 execution and reuse. This example is bounded behavior evidence, not a capacity
 qualification.
+
+## Local scheduling cost
+
+The [direct-versus-Dagster benchmark](history/probes/2026-09-30-dagster-benchmark/README.md)
+compares this example through direct Core calls, in-process Dagster and native
+Dagster workers. It checks identical inputs and outputs, and measures initial
+processing separately from exact recovery. Direct execution had the lowest
+latency for this small fixture; the receipt records the ranges and setup cost.
+This does not establish throughput for larger operations or a persistent scheduler.

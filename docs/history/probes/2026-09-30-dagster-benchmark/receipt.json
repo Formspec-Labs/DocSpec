@@ -1,0 +1,1592 @@
+{
+  "revision": "2c0146f8299752e4b45122c23c24a31c1cddd8be",
+  "harness_sha256": "55916c0e7bf5e0028e4de9efc2615eb6deea0ffe588e63bc0a742f390a030706",
+  "platform": "macOS-26.6-arm64-arm-64bit",
+  "python": "3.12.9 (main, Mar 17 2025, 21:36:21) [Clang 20.1.0 ]",
+  "cpu_count": 14,
+  "versions": {
+    "docspec": "0.12.2",
+    "spicy-docs": "0.53.0",
+    "dagster": "1.13.16",
+    "duckdb": "1.5.5",
+    "pyarrow": "25.0.1"
+  },
+  "cases": [
+    {
+      "arm": "direct",
+      "parent_pid": 51723,
+      "setup_seconds": 1.1660013115033507e-06,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.46698508400004357,
+          "producer_calls": [
+            {
+              "pid": 51723,
+              "seconds": 0.255377415996918
+            },
+            {
+              "pid": 51723,
+              "seconds": 0.08113254199997755
+            }
+          ],
+          "producer_seconds_sum": 0.33650995799689554,
+          "selected_result_ids": [
+            "urn:docspec:execution:7a21fe46-c958-4607-8f60-a9c3c36e5045:result",
+            "urn:docspec:execution:d7b66cc8-be92-4945-bfbe-ddaa43dfe355:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.035769292000622954,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:7a21fe46-c958-4607-8f60-a9c3c36e5045:result",
+            "urn:docspec:execution:d7b66cc8-be92-4945-bfbe-ddaa43dfe355:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_in_process",
+      "parent_pid": 51730,
+      "setup_seconds": 0.33137320799869485,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.5261237919985433,
+          "producer_calls": [
+            {
+              "pid": 51730,
+              "seconds": 0.07071554199501406
+            },
+            {
+              "pid": 51730,
+              "seconds": 0.19486945800599642
+            }
+          ],
+          "producer_seconds_sum": 0.2655850000010105,
+          "selected_result_ids": [
+            "urn:docspec:execution:55745b85-eee9-4f54-9506-1649d76d0c69:result",
+            "urn:docspec:execution:f7cbb2d1-d237-4bd9-95ea-3b9d95896175:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.1449720839955262,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:55745b85-eee9-4f54-9506-1649d76d0c69:result",
+            "urn:docspec:execution:f7cbb2d1-d237-4bd9-95ea-3b9d95896175:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_multiprocess",
+      "parent_pid": 51755,
+      "setup_seconds": 0.3189222920045722,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 2.424094750000222,
+          "producer_calls": [
+            {
+              "pid": 51771,
+              "seconds": 0.20123037500161445
+            },
+            {
+              "pid": 51770,
+              "seconds": 0.20495383300294634
+            }
+          ],
+          "producer_seconds_sum": 0.4061842080045608,
+          "selected_result_ids": [
+            "urn:docspec:execution:7a608960-4ea8-4fce-8cce-fa7268fb8ff2:result",
+            "urn:docspec:execution:0c1ae4ff-7d2a-4087-a761-b55850c93ae7:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 2.272038667004381,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:7a608960-4ea8-4fce-8cce-fa7268fb8ff2:result",
+            "urn:docspec:execution:0c1ae4ff-7d2a-4087-a761-b55850c93ae7:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_in_process",
+      "parent_pid": 51818,
+      "setup_seconds": 0.38859291699918685,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.5621590000009746,
+          "producer_calls": [
+            {
+              "pid": 51818,
+              "seconds": 0.2018106670002453
+            },
+            {
+              "pid": 51818,
+              "seconds": 0.081328084001143
+            }
+          ],
+          "producer_seconds_sum": 0.2831387510013883,
+          "selected_result_ids": [
+            "urn:docspec:execution:88bac333-0226-46e4-b499-d5855e66a031:result",
+            "urn:docspec:execution:94acaf3d-2253-4c08-8d9f-08ec26203f4d:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.1503869170046528,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:88bac333-0226-46e4-b499-d5855e66a031:result",
+            "urn:docspec:execution:94acaf3d-2253-4c08-8d9f-08ec26203f4d:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_multiprocess",
+      "parent_pid": 51833,
+      "setup_seconds": 0.33840404199872864,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 2.593601332999242,
+          "producer_calls": [
+            {
+              "pid": 51871,
+              "seconds": 0.2799683749981341
+            },
+            {
+              "pid": 51870,
+              "seconds": 0.2939882499995292
+            }
+          ],
+          "producer_seconds_sum": 0.5739566249976633,
+          "selected_result_ids": [
+            "urn:docspec:execution:bed4a40e-c621-4ed0-bad4-3118dc359d42:result",
+            "urn:docspec:execution:333e5174-1a3c-4ae7-b6b4-8836b0d550da:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 2.1980979169966304,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:bed4a40e-c621-4ed0-bad4-3118dc359d42:result",
+            "urn:docspec:execution:333e5174-1a3c-4ae7-b6b4-8836b0d550da:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "direct",
+      "parent_pid": 51906,
+      "setup_seconds": 1.0830044629983604e-06,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.443541833999916,
+          "producer_calls": [
+            {
+              "pid": 51906,
+              "seconds": 0.2553459170012502
+            },
+            {
+              "pid": 51906,
+              "seconds": 0.06958845799817936
+            }
+          ],
+          "producer_seconds_sum": 0.32493437499942956,
+          "selected_result_ids": [
+            "urn:docspec:execution:2e1ec076-c1bb-48c5-a7a4-fca471ed4c8d:result",
+            "urn:docspec:execution:08325834-d495-4046-b4f5-d25a5f13ab2e:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.03456120900227688,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:2e1ec076-c1bb-48c5-a7a4-fca471ed4c8d:result",
+            "urn:docspec:execution:08325834-d495-4046-b4f5-d25a5f13ab2e:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_multiprocess",
+      "parent_pid": 51918,
+      "setup_seconds": 0.34018570899934275,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 2.4520624580036383,
+          "producer_calls": [
+            {
+              "pid": 52014,
+              "seconds": 0.19631933300115634
+            },
+            {
+              "pid": 52013,
+              "seconds": 0.20128237499739043
+            }
+          ],
+          "producer_seconds_sum": 0.39760170799854677,
+          "selected_result_ids": [
+            "urn:docspec:execution:cea391e7-7169-4efe-8eaa-8abedd8c0b5f:result",
+            "urn:docspec:execution:00faa12c-533d-4884-a693-4d3761abda72:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 2.176692875000299,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:cea391e7-7169-4efe-8eaa-8abedd8c0b5f:result",
+            "urn:docspec:execution:00faa12c-533d-4884-a693-4d3761abda72:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "direct",
+      "parent_pid": 52062,
+      "setup_seconds": 1.1250012903474271e-06,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.46528233400022145,
+          "producer_calls": [
+            {
+              "pid": 52062,
+              "seconds": 0.2701768750048359
+            },
+            {
+              "pid": 52062,
+              "seconds": 0.0725619579970953
+            }
+          ],
+          "producer_seconds_sum": 0.3427388330019312,
+          "selected_result_ids": [
+            "urn:docspec:execution:76aa1659-8595-48ab-b807-05e0a2eb6bd1:result",
+            "urn:docspec:execution:df08301b-f3a5-4e13-96b2-b77cbad23ffd:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.03690812499553431,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:76aa1659-8595-48ab-b807-05e0a2eb6bd1:result",
+            "urn:docspec:execution:df08301b-f3a5-4e13-96b2-b77cbad23ffd:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    },
+    {
+      "arm": "dagster_in_process",
+      "parent_pid": 52067,
+      "setup_seconds": 0.3393405409951811,
+      "tasks_sha256": "356f46282c8ea9a7df88af8df7dac5c6a006982a7fdf7fefe9ecc6d97f99dfe2",
+      "phases": {
+        "fresh": {
+          "wall_seconds": 0.5053474579981412,
+          "producer_calls": [
+            {
+              "pid": 52067,
+              "seconds": 0.1948882090000552
+            },
+            {
+              "pid": 52067,
+              "seconds": 0.06956141599948751
+            }
+          ],
+          "producer_seconds_sum": 0.2644496249995427,
+          "selected_result_ids": [
+            "urn:docspec:execution:e585acaa-8394-4bb1-b582-cbdc86b90d1a:result",
+            "urn:docspec:execution:5f61a772-27f8-4e41-9bee-9b234f16440c:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        },
+        "recovery": {
+          "wall_seconds": 0.16230320899921935,
+          "producer_calls": [],
+          "producer_seconds_sum": 0,
+          "selected_result_ids": [
+            "urn:docspec:execution:e585acaa-8394-4bb1-b582-cbdc86b90d1a:result",
+            "urn:docspec:execution:5f61a772-27f8-4e41-9bee-9b234f16440c:result"
+          ],
+          "output_sha256": "4971cc97bb549d06cde1df14b29c5c8be9cbceb4607ac3c8872f9385da894870",
+          "output_values": [
+            {
+              "byteCount": 22,
+              "contentDigest": "sha256:b801194e69d5ad407f6ac8c1abfc5783d0a5622311d2a433b8e5e3a0843b7ea6",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 22,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:0db12f42e75836e9588dc6d8411a6ee18f1c590e6cef8fb14b209c2caf77e120",
+              "utf8CodepointCount": 22,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 24,
+              "contentDigest": "sha256:d4d01f9d8eb2cdcfe8abcb5dfbc2632cab0ffb5873c6aae5f5ffd531c7e5aa16",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 48,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:26951a716c76f1920c5a615cfd3db9478527da37d045ed5fa0e3897e23266624",
+                "start": 24
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:35cc999df2900be658dff336823f87efc62d0a8229f2f40b03e576ddf7da5b6b",
+              "utf8CodepointCount": 24,
+              "wordCount": 3
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:26e94cf409701b3e18a455995c7828123073e068113782906084286a0a523607",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 58,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 30
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:b12118e07cfb4b67ebe8ccc01611aec8775a0bb7d30a77263a41651d1d25c49a",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            },
+            {
+              "byteCount": 28,
+              "contentDigest": "sha256:a332d319653960760068f291a2259c8ea2424b96ec5492287c4b97049fee6387",
+              "evidence": {
+                "coordinateSystem": "utf8-byte-range",
+                "end": 28,
+                "page": null,
+                "region": null,
+                "sourceDigest": "sha256:67bd1f5994ca8c1b36280b22a5716ef98e66d19473ccfa69c3018f97d152c3e3",
+                "start": 0
+              },
+              "lineCount": 1,
+              "segmentId": "urn:docspec:segment:v1:ba0c0fad873705df6ab1c95735c8bbd6598c04231d633b14027b6271f55ad344",
+              "utf8CodepointCount": 28,
+              "wordCount": 4
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "failures": [],
+  "summary": {
+    "direct": {
+      "setup_seconds": {
+        "median": 1.1250012903474271e-06,
+        "min": 1.0830044629983604e-06,
+        "max": 1.1660013115033507e-06
+      },
+      "fresh": {
+        "median": 0.46528233400022145,
+        "min": 0.443541833999916,
+        "max": 0.46698508400004357
+      },
+      "recovery": {
+        "median": 0.035769292000622954,
+        "min": 0.03456120900227688,
+        "max": 0.03690812499553431
+      }
+    },
+    "dagster_in_process": {
+      "setup_seconds": {
+        "median": 0.3393405409951811,
+        "min": 0.33137320799869485,
+        "max": 0.38859291699918685
+      },
+      "fresh": {
+        "median": 0.5261237919985433,
+        "min": 0.5053474579981412,
+        "max": 0.5621590000009746
+      },
+      "recovery": {
+        "median": 0.1503869170046528,
+        "min": 0.1449720839955262,
+        "max": 0.16230320899921935
+      }
+    },
+    "dagster_multiprocess": {
+      "setup_seconds": {
+        "median": 0.33840404199872864,
+        "min": 0.3189222920045722,
+        "max": 0.34018570899934275
+      },
+      "fresh": {
+        "median": 2.4520624580036383,
+        "min": 2.424094750000222,
+        "max": 2.593601332999242
+      },
+      "recovery": {
+        "median": 2.1980979169966304,
+        "min": 2.176692875000299,
+        "max": 2.272038667004381
+      }
+    }
+  },
+  "elapsed_seconds": 27.262849541999458
+}
