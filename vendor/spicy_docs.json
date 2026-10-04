@@ -1,7 +1,7 @@
 {
-  "filename": "spicy_docs-0.53.0+etl.d830f1a9b029-py3-none-any.whl",
-  "version": "0.53.0+etl.d830f1a9b029",
-  "sha256": "754fa3eb05d897f2649f418835c6861aacdd71e9180d28aad89b0d090c28244d",
-  "sourceRevision": "d830f1a9b0296a0866ace51ee70a00f7c7c05cf6",
-  "sourceState": "Committed source; local build, not published"
+  "filename": "spicy_docs-0.54.0-py3-none-any.whl",
+  "version": "0.54.0",
+  "sha256": "c17f7b36b6a6756e7475e6b50d21e172b1ab69ef21fd2255ed4a2c3539f27bae",
+  "sourceRevision": "ae2c71ee55388d4218a5cd8c14c695f7f174067a",
+  "sourceState": "Release commit; wheel rebuilt byte-identical from a clean archive of it, not uploaded to an index"
 }
