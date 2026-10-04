@@ -18,6 +18,7 @@ from docspec.adapters.catalog_artifact.rules import (
     _SOURCE_RECORD_FIELDS,
     _SOURCE_RENDITION_REQUIRED_FIELDS,
     _SOURCE_ROW_NAMESPACE_PREFIX,
+    _STAGED_SCHEMA_NAMESPACE,
     _UNIVERSE_ACCOUNTING_NAMESPACE,
     MAX_SOURCE_RENDITION_BYTES_PER_RECORD,
     MAX_SOURCE_RENDITIONS_PER_RECORD,
@@ -134,6 +135,12 @@ def _source_rows(source: SourceNativeRecordSource) -> Iterator[tuple[Mapping[str
         raise IntegrityError("source-native rendition has no matching record")
 
 
+def _schema_family(selector: Mapping[str, Any]) -> tuple[Any, ...]:
+    """A source row family apart from its schema version, from a selector's dict spelling."""
+
+    return (selector["sourceSystemId"], selector["sourceSystemVersion"], selector["scopeId"], selector["schemaName"])
+
+
 _RESUME_NAMESPACE = "source-catalog/resume"
 
 
@@ -238,6 +245,7 @@ class _CatalogPolicyInputs:
         self._opened: collections.Counter[SourceInputSelector] = collections.Counter()
         self._universe_passes = 0
         self._completed: set[SourceInputSelector] = set()
+        self._staged_schemas: set[SourceInputSelector] = set()
 
     @property
     def descriptions(self) -> tuple[SourceNativeDescription, ...]:
@@ -277,6 +285,8 @@ class _CatalogPolicyInputs:
                     record["schemaName"],
                     record["schemaVersion"],
                 )
+                if selector not in self._staged_schemas:
+                    self._record_staged_schema(selector, description.logical_id)
                 namespace = self._namespace(selector)
                 incoming = {
                     "sourceIndex": source_index,
@@ -289,6 +299,37 @@ class _CatalogPolicyInputs:
                     self._resolve_repeat(namespace, selector, incoming, error)
             self._ledger.mark_input(source_index, description.logical_id)
         self._loaded = True
+
+    def _record_staged_schema(self, selector: SourceInputSelector, logical_id: str) -> None:
+        """Note, once per build, that rows of this family and schema version were staged."""
+
+        self._staged_schemas.add(selector)
+        key = tuple(selector.to_dict().values())
+        if self._workspace.get(_STAGED_SCHEMA_NAMESPACE, key) is None:
+            self._workspace.put(_STAGED_SCHEMA_NAMESPACE, key, {**selector.to_dict(), "logicalId": logical_id})
+
+    def _refuse_unread_schema_versions(self, selector: SourceInputSelector) -> None:
+        """Refuse a read that would skip staged rows of its own family stated in a schema version it does not read.
+
+        Rows are staged under the version their source states, and a read sees only its selector's namespace, so a
+        release in a version the policy does not name used to yield no rows and an empty catalog rather than an
+        error: SpicyDocs 0.54.0's Federal Register schema 1.2 met a policy reading only 1.1 that way. A family the
+        universe declares is readable in every version the universe names, a lookup in its own.
+        """
+
+        family = _schema_family(selector.to_dict())
+        readable = {selector.schema_version} | {
+            universe.schema_version
+            for universe in self._universe_inputs
+            if _schema_family(universe.to_dict()) == family
+        }
+        for staged in self._workspace.iter_ordered(_STAGED_SCHEMA_NAMESPACE):
+            if _schema_family(staged) == family and staged["schemaVersion"] not in readable:
+                raise IntegrityError(
+                    f"source-native input {staged['logicalId']} states {staged['schemaName']} schema version "
+                    f"{staged['schemaVersion']} in scope {staged['scopeId']}, which this catalog policy does not read "
+                    f"(it reads {', '.join(sorted(readable))}); refusing instead of building a catalog without those rows"
+                )
 
     def _resolve_repeat(
         self,
@@ -381,6 +422,7 @@ class _CatalogPolicyInputs:
             raise IntegrityError("catalog policy attempted to read one selected input more than twice")
         self._opened[selector] += 1
         self._load()
+        self._refuse_unread_schema_versions(selector)
         previous: str | None = None
         for value in self._workspace.iter_ordered(self._namespace(selector), after=None if after is None else (after,)):
             row = self._row(value)

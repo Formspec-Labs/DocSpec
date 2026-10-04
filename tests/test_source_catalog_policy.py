@@ -12,7 +12,7 @@ source completeness.
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +26,7 @@ from docspec.adapters.source_catalog_store import LocalSourceCatalogStore
 from docspec.application.federal_register_catalog import FederalRegisterCatalogPolicy
 from docspec.domain.identity import canonical_json_bytes, sha256_digest
 from docspec.domain.source_catalog import CatalogDisposition, SourceCatalogItem
+from docspec.errors import IntegrityError
 from docspec.ports.source_catalog import CatalogPolicyInputs, CatalogPolicyWorkspace, SourceInputSelector
 from tests.support.source_catalog import (
     _FEDERAL_REGISTER_SOURCE,
@@ -156,6 +157,39 @@ def test_multi_source_rows_are_streamed_once_and_globally_merged(tmp_path: Path)
     assert (second.records_opened, second.renditions_opened) == (1, 1)
 
 
+@dataclass(frozen=True)
+class _LookupPolicy:
+    """The Federal Register policy, reading one lookup input first and keeping the ids it read."""
+
+    delegate: FederalRegisterCatalogPolicy
+    lookup_selector: SourceInputSelector
+    lookup_ids: list[str] = field(default_factory=list)
+
+    @property
+    def policy_id(self) -> str:
+        return self.delegate.policy_id
+
+    @property
+    def policy_version(self) -> str:
+        return self.delegate.policy_version
+
+    @property
+    def configuration(self) -> Mapping[str, Any]:
+        return self.delegate.configuration
+
+    @property
+    def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
+        return self.delegate.universe_inputs
+
+    def iter_items(
+        self,
+        inputs: CatalogPolicyInputs,
+        workspace: CatalogPolicyWorkspace,
+    ) -> Iterator[SourceCatalogItem]:
+        self.lookup_ids.extend(row.record["sourceRecordId"] for row in inputs.iter_lookup_rows(self.lookup_selector))
+        yield from self.delegate.iter_items(inputs, workspace)
+
+
 def test_one_pass_facade_selects_separate_row_families_from_the_same_source_system(
     tmp_path: Path,
 ) -> None:
@@ -205,44 +239,16 @@ def test_one_pass_facade_selects_separate_row_families_from_the_same_source_syst
         (),
     )
 
-    @dataclass(frozen=True)
-    class LookupPolicy:
-        delegate: FederalRegisterCatalogPolicy
-
-        @property
-        def policy_id(self) -> str:
-            return self.delegate.policy_id
-
-        @property
-        def policy_version(self) -> str:
-            return self.delegate.policy_version
-
-        @property
-        def configuration(self) -> Mapping[str, Any]:
-            return self.delegate.configuration
-
-        @property
-        def universe_inputs(self) -> tuple[SourceInputSelector, ...]:
-            return self.delegate.universe_inputs
-
-        def iter_items(
-            self,
-            inputs: CatalogPolicyInputs,
-            workspace: CatalogPolicyWorkspace,
-        ) -> Iterator[SourceCatalogItem]:
-            assert [row.record["sourceRecordId"] for row in inputs.iter_lookup_rows(lookup_selector)] == [
-                "environmental-protection-agency"
-            ]
-            yield from self.delegate.iter_items(inputs, workspace)
-
     store = LocalSourceCatalogStore(tmp_path)
+    policy = _LookupPolicy(FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE), lookup_selector)
     result = SourceCatalogBuilder(
         store=store,
-        policy=LookupPolicy(FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE)),
+        policy=policy,
         request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
         workspace_factory=SqliteCatalogPolicyWorkspace,
     ).build((universe_source, lookup_source))
 
+    assert policy.lookup_ids == ["environmental-protection-agency"]
     assert result.summary.item_count == 1
     assert (universe_source.records_opened, universe_source.renditions_opened) == (1, 1)
     assert (lookup_source.records_opened, lookup_source.renditions_opened) == (1, 1)
@@ -418,6 +424,78 @@ def test_a_schema_1_2_release_reads_as_1_1_does_and_keeps_its_added_fields(tmp_p
     assert facts["schemaVersion"] == "1.2"
     # Read back frozen, as every retained array is.
     assert {name: facts["fields"][name] for name in added} == added | {"corrections": ()}
+
+
+def test_a_release_in_a_schema_version_the_policy_does_not_read_is_refused_not_emptied(tmp_path: Path) -> None:
+    """Rows are staged under the version they state; a policy that never reads it used to publish zero items."""
+    unread = record("2026-00001") | {"schemaVersion": "1.0"}
+
+    with pytest.raises(IntegrityError, match=r"schema version 1\.0 .* does not read \(it reads 1\.1, 1\.2\)"):
+        build(tmp_path, FakeSource(description(), (unread,), renditions("2026-00001")))
+
+    assert not [path for path in tmp_path.iterdir() if path.name != ".staging"]
+
+
+def test_a_resumed_build_refuses_the_unread_schema_version_without_staging_again(tmp_path: Path) -> None:
+    """A resumed build skips inputs it already staged, so the refusal reads what the first run recorded."""
+
+    class CountingSource(FakeSource):
+        records_opened = 0
+
+        def iter_records(self) -> Iterator[Mapping[str, Any]]:
+            self.records_opened += 1
+            yield from self.records
+
+    source = CountingSource(
+        description(), (record("2026-00001") | {"schemaVersion": "1.0"},), renditions("2026-00001")
+    )
+    workspace_path = tmp_path / "workspace.sqlite3"
+    for _ in range(2):
+        with pytest.raises(IntegrityError, match="does not read"):
+            SourceCatalogBuilder(
+                store=LocalSourceCatalogStore(tmp_path / "store"),
+                policy=FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE),
+                request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
+                workspace_factory=lambda: SqliteCatalogPolicyWorkspace(path=workspace_path),
+            ).build((source,))
+
+    assert source.records_opened == 1
+
+
+def test_a_lookup_in_a_schema_version_its_selector_does_not_name_is_refused(tmp_path: Path) -> None:
+    lookup_selector = SourceInputSelector(
+        _FEDERAL_REGISTER_SOURCE, "v1", "federal-register-agencies", "federal-register-agency", "1.0"
+    )
+    lookup_record = {
+        "sourceRecordId": "environmental-protection-agency",
+        "scopeId": lookup_selector.scope_id,
+        "schemaName": lookup_selector.schema_name,
+        "schemaVersion": "1.1",
+        "schemaDigest": _SHA_C,
+        "record": {"slug": "environmental-protection-agency"},
+        "fieldDiagnostics": [],
+    }
+    lookup_source = FakeSource(
+        replace(
+            description(),
+            logical_id="urn:spicy:artifact:spicyregs-source-native-release:" + "d" * 64,
+            artifact_digest="sha256:" + "d" * 64,
+            source_state_digest="sha256:" + "e" * 64,
+        ),
+        (lookup_record,),
+        (),
+    )
+    policy = _LookupPolicy(FederalRegisterCatalogPolicy(_FEDERAL_REGISTER_SOURCE), lookup_selector)
+
+    with pytest.raises(IntegrityError, match=r"federal-register-agency schema version 1\.1 .* \(it reads 1\.0\)"):
+        SourceCatalogBuilder(
+            store=LocalSourceCatalogStore(tmp_path),
+            policy=policy,
+            request=SourceCatalogBuildRequest("urn:docspec:catalog:federal-register", producer()),
+            workspace_factory=SqliteCatalogPolicyWorkspace,
+        ).build((FakeSource(description(), (record("2026-00001"),), renditions("2026-00001")), lookup_source))
+
+    assert policy.lookup_ids == []
 
 
 def test_raw_agency_headings_are_evidence_not_identifiers():

@@ -63,7 +63,10 @@ uv run --frozen --extra dagster docspec source-catalog write-policy \
 For `regulations-gov`, the input object requires `document_input` and
 `agency_names`. Each input selector has exactly `sourceSystemId`,
 `sourceSystemVersion`, `scopeId`, `schemaName`, and `schemaVersion`, using the
-identities in the source release. `agency_names` is either an object mapping
+identities in the source release. A build refuses an input whose rows state a
+schema version the policy does not read for that scope and schema name (the
+Federal Register lookup names the version its release states), rather than
+building a catalog without them. `agency_names` is either an object mapping
 agency IDs to names or a JSON file path resolved relative to `fields.json`.
 Optional fields are `docket_input`, `federal_register_input`, `comment_input`,
 `sample`, `max_selected_items`, `language`, and `source_url_template`. Omitted

@@ -93,6 +93,12 @@ _OUTPUT_PARTITION_NAMESPACE_PREFIX = "docspec-internal/output-partition/"
 _SOURCE_ROW_NAMESPACE_PREFIX = "docspec-internal/source-rows/"
 
 
+#: One entry per source row family and schema version the loader staged. A policy that reads a family under other
+#: versions would otherwise find that version's namespace empty and build a catalog without its rows; kept in the
+#: workspace, so a resumed build, which does not stage again, still refuses.
+_STAGED_SCHEMA_NAMESPACE = "docspec-internal/staged-schemas"
+
+
 # Each of these is an integrity fingerprint over a derived, in-memory per-row
 # projection (see `_derive_catalog`'s and `_derive_catalog_parallel`'s
 # `diagnostics` dict below) -- not a reference to a published member. No
