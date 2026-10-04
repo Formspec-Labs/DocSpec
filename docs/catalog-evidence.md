@@ -85,8 +85,7 @@ remain native through Parquet and Iceberg. Canonical row values encode
 out-of-range JSON integers and decimals as exact strings for inspection;
 typed table reads keep their original native types.
 
-A nonnullable single text identity retains `value/1`. Composite, numeric or
-nullable policy identities use DocSpec's versioned `native-tuple/1`: a
+All native policy identities use DocSpec's versioned `native-tuple/1`: a
 canonical JSON array of component text or null, in policy order. Dates use
 ISO dates and integers use decimal text. This keeps null distinct from empty
 text and permits delimiters inside values. The spelling is part of the state

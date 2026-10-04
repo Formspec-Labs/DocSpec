@@ -606,7 +606,8 @@
     "tests/test_core_table_states.py::test_version_2_admits_a_single_file_table_as_version_1_does",
     "tests/test_core_table_states.py::test_occurrences_do_not_depend_on_how_a_table_is_split",
     "tests/test_core_table_states.py::test_a_mixed_family_admits_its_split_and_its_single_file_table_through_version_2",
-    "tests/test_core_table_states.py::test_a_member_path_never_supplies_a_column"
+    "tests/test_core_table_states.py::test_a_member_path_never_supplies_a_column",
+    "tests/test_native_generation_receipts.py::test_single_native_text_identity_admits_every_policy_permitted_value"
   ],
   "CORE-TYPED-DERIVE": [
     "tests/test_core_table_derivation.py::test_a_typed_derive_publishes_one_unit_and_every_reader_serves_the_reference",

@@ -94,3 +94,29 @@ def test_native_composite_identity_preserves_null_empty_and_delimiters():
         for row in rows:
             key = reference_member_key(identity, row)
             assert candidate_rows(relation, identity, [key]).to_arrow_table().to_pylist() == [row]
+
+
+@pytest.mark.parametrize("key", ["", "plain", "a@b", "null"])
+def test_single_native_text_identity_admits_every_policy_permitted_value(tmp_path, key):
+    from docspec.adapters.generation_receipts import _digest, _exact
+
+    source = tmp_path / "source"
+    shutil.copytree(FIXTURE, source)
+    table = pq.read_table(source / "fixture_native.parquet")
+    [row] = table.to_pylist()
+    row["id"] = key
+    pq.write_table(pa.Table.from_pylist([row], schema=table.schema), source / "fixture_native.parquet")
+    receipts = pq.read_table(source / "etl_receipts.parquet")
+    [receipt] = receipts.to_pylist()
+    identity = [["id", key]]
+    receipt.update(record_id=_digest(["fixture_native", identity]),
+                   subject_version=_digest(["fixture_native", row]), identity_json=_exact(identity))
+    receipt["receipt_id"] = _digest({name: value for name, value in receipt.items() if name != "receipt_id"})
+    pq.write_table(pa.Table.from_pylist([receipt], schema=receipts.schema), source / "etl_receipts.parquet")
+    reseal(source)
+    with CoreWorkspace(tmp_path / "workspace") as workspace:
+        admitted = workspace.admit_generation(source, family="fixture-native", table="fixture_native", dataset="native")
+        with workspace.open_state(admitted.state_id) as reader:
+            with reader.table() as rows:
+                [stored] = rows.to_arrow_table().to_pylist()
+            assert reader.read_value(stored["member_key"])["id"] == key

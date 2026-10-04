@@ -144,11 +144,10 @@ def _key_rule(family, table, description, columns, policy=None):
     if policy is not None:
         fields = tuple(policy["identity_fields"])
         # Native policies declare the useful row's identity independently of
-        # the older source-processing schema. The versioned spelling preserves
-        # nulls, empty strings and delimiter characters in composite keys.
+        # source-processing schemas. One spelling preserves nulls, empty strings
+        # and delimiter characters for every allowed policy identity.
         kinds = dict(columns)
-        name = "value" if len(fields) == 1 and kinds[fields[0]] == "VARCHAR" and not policy["nullable_identity_fields"] else "native-tuple"
-        spelling = KeySpelling(name, "1", fields)
+        spelling = KeySpelling("native-tuple", "1", fields)
         declared_spelling(spelling, tuple(kinds[field] for field in fields))
         return spelling
     contract = TABLE_CONTRACTS.get(table)
