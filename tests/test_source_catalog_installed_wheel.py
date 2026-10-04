@@ -314,3 +314,14 @@ def test_the_vendored_wheel_is_tracked_by_git() -> None:
         f"{RULESPEC_WHEEL.name} exists but git does not track it; "
         f"add it to vendor/.gitignore's allowlist. {tracked.stderr.strip()}"
     )
+
+
+def test_git_tracks_only_the_pinned_spicy_docs_wheel() -> None:
+    """CI installs ``vendor/spicy_docs-*.whl`` into an empty environment; a second tracked wheel makes uv refuse
+    conflicting URLs for one package, and a missing one leaves a fresh clone without its required reader.
+    """
+
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", "vendor/spicy_docs-*.whl"], cwd=ROOT, capture_output=True, text=True, check=True
+    )
+    assert tracked.stdout.split() == [str(SPICY_DOCS_WHEEL.relative_to(ROOT))]

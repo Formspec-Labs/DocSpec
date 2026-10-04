@@ -5,6 +5,11 @@ annual-CFR and FEC metadata tests use one wheel. `spicy_docs.json` records its
 version, source revision and SHA-256; `pyproject.toml` and `uv.lock` select that
 same file. These dependency wheels are not bundled inside DocSpec's built wheel.
 
+The current local wheel includes the shared OCR readers and native ETL source
+readers from the committed `sourceRevision`. Its version suffix identifies that
+source revision; the manifest pins the wheel bytes. The local build has not been
+published.
+
 When accepting a new SpicyDocs release, replace the wheel and manifest, update
 the package pin and lock, and run the source-catalog, GovInfo bill/CFR, FEC and
 package boundary tests. Retain acquisition as an optional provider extra. See
