@@ -12,6 +12,7 @@ from typing import Any
 _EXPORTS = {
     "AnonymousS3ContentFetcher": "docspec.adapters.content_fetchers",
     "AnonymousS3ContentFetcherConfig": "docspec.adapters.content_fetchers",
+    "DOCLING_OCR_MODELS": "docspec.adapters.docling_ocr",
     "HttpsContentFetcher": "docspec.adapters.content_fetchers",
     "HttpsContentFetcherConfig": "docspec.adapters.content_fetchers",
     "HttpsContentFetcherError": "docspec.adapters.content_fetchers",
@@ -27,6 +28,7 @@ _EXPORTS = {
     "SpicyDocsSourceNativeAdapter": "docspec.adapters.spicy_docs_source_native",
     "TiktokenCounter": "docspec.adapters.token_counters",
     "build_dagster_definitions": "docspec.adapters.dagster",
+    "create_docling_ocr_extractor": "docspec.adapters.docling_ocr",
 }
 
 __all__ = sorted(_EXPORTS)

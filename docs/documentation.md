@@ -26,6 +26,7 @@ Maintainers edit these guides directly alongside their code changes.
 | Configure an experiment, retain its result, and recover saved work | [Python runs](python-runs.md) |
 | Inject components through native resources and execute with Dagster | [Dagster experiment](dagster-experiment.md) |
 | Choose markup, visible text, PDF, or image handling and understand source coordinates | [Representations](representations.md) |
+| Read scanned PDFs or images with a pinned OCR or local vision model | [Scanned documents](scanned-documents.md) |
 | Configure document transports and understand acquisition evidence | [Fetchers](fetchers.md) |
 | Retry accepted failures while preserving completed inputs | [Repair failed work](repairing-failures.md) |
 | Understand SDK requests, item attempts, and native task retries | [Retry ownership](retry-ownership.md) |

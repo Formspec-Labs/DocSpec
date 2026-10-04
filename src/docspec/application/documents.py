@@ -23,7 +23,7 @@ from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.content_fetcher import BoundContentFetcher
 from docspec.ports.record_storage import bounded_rows
 from docspec.processing.artifacts import RepresentationPayload
-from docspec.processing.extraction import DefaultExtractorRegistry
+from docspec.processing.extraction import DefaultExtractorRegistry, ExtractionEvidence
 from docspec.processing.segmentation import DefaultSegmenterRegistry
 
 
@@ -147,12 +147,23 @@ class DocumentPipeline:
         def extract(context):
             current = CapturedFile.from_dict(context.read_value(inputs["capture"]))
             with closing(context.read_chunks(inputs["content"], max_bytes=self.max_file_bytes)) as chunks:
-                extracted = self.extractor.extract(current, b"".join(chunks))
+                try:
+                    extracted = self.extractor.extract(current, b"".join(chunks))
+                except Exception as error:
+                    for item in getattr(error, "extraction_evidence", ()):
+                        if not isinstance(item, ExtractionEvidence):
+                            raise IntegrityError("failed extraction evidence must be ExtractionEvidence") from error
+                        output = context.generate(session.retain_bytes([item.content], media_type=item.media_type),
+                            label=item.label, role="derived")
+                        context.derive(output.entity_id, inputs["content"])
+                    raise
             payload = extracted.payload
             content = context.generate(session.retain_bytes([payload.content], media_type=payload.representation.blob.media_type), label="content")
             metadata = context.generate(core.InlineValue(value={"representation": payload.representation.to_dict(),
                 "receipt": extracted.receipt.to_dict()}), label="representation")
-            for output in (content, metadata):
+            evidence = tuple(context.generate(session.retain_bytes([item.content], media_type=item.media_type),
+                label=item.label, role="derived") for item in extracted.evidence)
+            for output in (content, metadata, *evidence):
                 context.derive(output.entity_id, inputs["content"])
         return self._stage(session, definition=definition, identity=identity, inputs=inputs, producer=extract,
             target=core.Origin(parent_entity_id=inputs["content"]), fresh=fresh)

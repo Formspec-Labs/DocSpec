@@ -26,8 +26,9 @@ test doubles for providers and DocSpec's in-process Iceberg catalog for storage;
 see [record storage](docs/record-storage.md). Optional dependencies may cause documented
 skips; the full regression command appears below under “Check the same things as CI.” `uv sync --frozen --extra dagster` enables the real Dagster adapter test.
 Select the same extra on subsequent `uv run` commands to keep it installed.
-Other extras are `http`, `s3`, `pdf`, and `tokens`; install only those needed for
-the adapter you are exercising. Core imports must work without them. A checkout
+Other extras are `http`, `s3`, `pdf`, `ocr`, `ocr-vlm`, and `tokens`; install only those needed for
+the adapter you are exercising; `ocr-vlm` and `dagster` need incompatible ANTLR
+runtimes and cannot share an environment. Core imports must work without them. A checkout
 moved after `uv sync` keeps console-script shebangs pointing at the old path, and
 `uv sync` does not repair them; when a bare command reports a missing
 interpreter, recreate the environment with `rm -rf .venv && uv sync --frozen` and

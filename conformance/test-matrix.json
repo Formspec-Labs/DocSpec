@@ -626,5 +626,11 @@
     "tests/test_table_layers.py::test_typed_changes_replace_rows_by_key_in_one_snapshot_sharing_base_files",
     "tests/test_table_rows.py::test_segment_keys_spell_the_reference_and_split_back_into_their_components",
     "tests/test_table_rows.py::test_engine_prepared_ids_are_the_sha256_of_a_canonical_json_array"
+  ],
+  "OCR-MODEL-CHOICE": [
+    "tests/test_docling_ocr_options.py::test_model_option_retains_provider_settings_and_replayable_page_evidence",
+    "tests/test_docling_ocr_options.py::test_model_settings_and_prepared_bytes_change_reuse_identity",
+    "tests/test_docling_ocr_options.py::test_invalid_model_or_generation_settings_do_not_prepare_weights",
+    "tests/test_docling_ocr_options.py::test_public_options_import_without_model_libraries"
   ]
 }

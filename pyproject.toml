@@ -15,11 +15,19 @@ dependencies = [
     "pyiceberg[sql-sqlite]==0.12.0",
 ]
 
+[tool.uv]
+# The two extras need incompatible ANTLR runtimes; see the dagster extra.
+conflicts = [[{ extra = "dagster" }, { extra = "ocr-vlm" }]]
+
 [tool.uv.sources]
 rulespec-artifacts = { path = "vendor/rulespec_artifacts-1.1.2-py3-none-any.whl" }
 spicy-docs = { path = "vendor/spicy_docs-0.53.0+etl.d830f1a9b029-py3-none-any.whl" }
 
 [project.optional-dependencies]
+# Shared rendering and the local macOS OCR example; other backends remain caller-selected.
+ocr = ["spicy-docs[pdf,pdf-apple]==0.53.0+etl.d830f1a9b029"]
+# Local Docling VLM options; importing core DocSpec remains dependency-light.
+ocr-vlm = ["spicy-docs[pdf,pdf-docling,pdf-mlx]==0.53.0+etl.d830f1a9b029"]
 http = [
     "httpx>=0.27,<1",
 ]
@@ -34,6 +42,9 @@ pdf = [
 ]
 dagster = [
     "dagster>=1.13,<2",
+    # Dagster's generated asset-selection parser needs the 4.10+ ATN format but
+    # does not declare it. Docling's RapidOCR route (ocr-vlm) pins 4.9 through omegaconf.
+    "antlr4-python3-runtime>=4.10",
 ]
 [dependency-groups]
 dev = [

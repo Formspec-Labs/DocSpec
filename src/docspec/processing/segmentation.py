@@ -13,6 +13,7 @@ from docspec.errors import IntegrityError
 from docspec.ports.segmenter import Segmenter
 from docspec.processing.artifacts import (
     PDF_PAGE_TEXT_TRANSFORM,
+    OCR_PAGE_TRANSFORM,
     RepresentationPayload,
     SegmentPayload,
     build_segment,
@@ -148,7 +149,7 @@ class PageSegmenter:
             raise IntegrityError("page segmentation requires a pdf-text representation")
         pages: list[SegmentPayload] = []
         for ordinal, mapping in enumerate(representation.representation.evidence_mappings):
-            if mapping.transformation != PDF_PAGE_TEXT_TRANSFORM or mapping.evidence.page is None:
+            if mapping.transformation not in {PDF_PAGE_TEXT_TRANSFORM, OCR_PAGE_TRANSFORM} or mapping.evidence.page is None:
                 raise IntegrityError("PDF text representation has a non-page evidence link")
             pages.append(
                 build_segment(
@@ -159,7 +160,8 @@ class PageSegmenter:
                     end=mapping.representation_end,
                     segmenter_id=self.segmenter_id,
                     policy_digest=self.policy_digest,
-                    derivation=("pypdf-embedded-text", f"page:{mapping.evidence.page}"),
+                    derivation=(("ocr-recognition" if mapping.transformation == OCR_PAGE_TRANSFORM else "pypdf-embedded-text"),
+                        f"page:{mapping.evidence.page}"),
                 )
             )
         return tuple(pages)

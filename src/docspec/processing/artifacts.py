@@ -23,6 +23,7 @@ from docspec.errors import IntegrityError
 
 IDENTITY_TRANSFORM = IDENTITY_BYTE_SLICE_TRANSFORMATION
 PDF_PAGE_TEXT_TRANSFORM = "pypdf-page-text"
+OCR_PAGE_TRANSFORM = "spicy-docs-page-recognition/v1"
 
 
 def content_blob_ref(content: bytes, media_type: str) -> BlobRef:

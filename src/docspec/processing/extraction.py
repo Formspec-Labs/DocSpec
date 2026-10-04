@@ -153,13 +153,38 @@ class ExtractionReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class ExtractionEvidence:
+    """Additional worker-local bytes retained by the ordinary extraction stage."""
+
+    label: str
+    content: bytes
+    media_type: str
+
+    def __post_init__(self) -> None:
+        require_text(self.label, "extraction evidence label")
+        require_text(self.media_type, "extraction evidence media type")
+        if self.label in {"content", "representation"}:
+            raise ValueError("extraction evidence label is reserved")
+        if not isinstance(self.content, bytes):
+            raise TypeError("extraction evidence must be bytes")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"label": self.label, "blob": content_blob_ref(self.content, self.media_type).to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractionResult:
     """A representation payload and the receipt that proves how it was made."""
 
     payload: RepresentationPayload
     receipt: ExtractionReceipt
+    evidence: tuple[ExtractionEvidence, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.evidence, tuple) or len({item.label for item in self.evidence}) != len(self.evidence):
+            raise IntegrityError("extraction evidence labels must be unique")
+        if self.evidence and thaw_json(self.receipt.metadata).get("evidence") != [item.to_dict() for item in self.evidence]:
+            raise IntegrityError("extraction evidence differs from its receipt")
         representation = self.payload.representation
         if self.receipt.extractor_id != representation.extractor_id:
             raise IntegrityError("extraction receipt names a different extractor")

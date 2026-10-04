@@ -58,6 +58,8 @@ Python connects the native components and validates control records. Dagster is
 an optional scheduler over the same Core lifecycle; it owns worker management,
 retries, cancellation, and events. See [architecture](docs/architecture.md),
 [record storage](docs/record-storage.md), and [Dagster](docs/dagster-experiment.md).
+The [scanned-document adapter](docs/scanned-documents.md) retains OCR observations
+and searchable page text through this same lifecycle.
 
 ## Boundaries
 

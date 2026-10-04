@@ -560,6 +560,8 @@ provider_requirements = [
 ]
 assert set(provider_requirements) == {
     "spicy-docs==__SPICY_DOCS_VERSION__",
+    "spicy-docs[pdf,pdf-apple]==__SPICY_DOCS_VERSION__;extra=='ocr'",
+    "spicy-docs[pdf,pdf-docling,pdf-mlx]==__SPICY_DOCS_VERSION__;extra=='ocr-vlm'",
     "spicy-docs[pdf-pypdf]==__SPICY_DOCS_VERSION__;extra=='pdf'",
 }
 environment_root = Path(sys.prefix).resolve(strict=True)

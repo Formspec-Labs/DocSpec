@@ -113,6 +113,8 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     assert set(project["project"]["optional-dependencies"]) == {
         "dagster",
         "http",
+        "ocr",
+        "ocr-vlm",
         "pdf",
         "s3",
         "tokens",
@@ -122,6 +124,8 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
     assert "spicy-docs==" + provider["version"] in project["project"]["dependencies"]
     assert any(requirement.startswith("httpx") for requirement in extras["http"])
     assert extras["pdf"] == [f"spicy-docs[pdf-pypdf]=={provider["version"]}"]
+    assert extras["ocr"] == [f"spicy-docs[pdf,pdf-apple]=={provider["version"]}"]
+    assert extras["ocr-vlm"] == [f"spicy-docs[pdf,pdf-docling,pdf-mlx]=={provider["version"]}"]
     assert any(requirement.startswith("boto3") for requirement in extras["s3"])
     assert any(requirement.startswith("dagster") for requirement in extras["dagster"])
     assert any(requirement.startswith("tiktoken") for requirement in extras["tokens"])
@@ -299,10 +303,14 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
                 "assert next(workspace.rows('state'))[0] == 'key'; workspace.close(); "
                 "from docspec.adapters import build_dagster_definitions; "
                 "assert callable(build_dagster_definitions); "
+                "from docspec.adapters import create_docling_ocr_extractor, DOCLING_OCR_MODELS; "
+                "assert callable(create_docling_ocr_extractor); "
+                "assert set(DOCLING_OCR_MODELS) == {'ovisocr2', 'glm-ocr', 'nuextract3'}; "
                 "from docspec.source_catalog import requested_universe_set_digest; "
                 "from docspec.source_catalog import AdmittedSourceCatalog, open_admitted_source_catalog; "
                 "assert requested_universe_set_digest(0, ()).startswith('sha256:'); "
                 "import importlib.util, sys; "
+                "assert 'docling' not in sys.modules and 'mlx_vlm' not in sys.modules; "
                     "import docspec.cli; "
                     "import docspec.result_export; "
                 "assert importlib.util.find_spec('rulespec_conformance') is None; "

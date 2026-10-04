@@ -11,6 +11,7 @@ from docspec.processing.artifacts import (
 from docspec.domain.content import EvidenceMapping
 from docspec.processing.extraction import (
     DefaultExtractorRegistry,
+    ExtractionEvidence,
     ExtractionReceipt,
     ExtractionResult,
     HtmlExtractor,
@@ -39,6 +40,7 @@ from docspec.processing.bounded_segmentation import (
     TextSpan,
     TokenCounter,
 )
+from docspec.processing.ocr import OcrExtractor
 from docspec.processing.segmentation import (
     DefaultSegmenterRegistry,
     PageSegmenter,
@@ -65,6 +67,7 @@ __all__ = [
     "EXCLUDED_EMPTY",
     "EXCLUDED_NOT_EVIDENCE_ELIGIBLE",
     "ExcludedRegion",
+    "ExtractionEvidence",
     "ExtractionReceipt",
     "ExtractionResult",
     "HeadingRegion",
@@ -72,6 +75,7 @@ __all__ = [
     "ImageExtractor",
     "JsonExtractor",
     "LazyPypdfExtractor",
+    "OcrExtractor",
     "PageSegmenter",
     "ParagraphSegmenter",
     "RecordSegmenter",

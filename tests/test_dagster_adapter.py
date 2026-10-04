@@ -173,6 +173,11 @@ def test_native_executor_and_retry_settings_remain_owned_by_dagster(tmp_path):
         build_dagster_definitions({})
 
 
+def test_installed_antlr_runtime_loads_dagster_selection_grammar():
+    """The dagster extra floors the ANTLR runtime Dagster's generated parser needs but does not declare."""
+    assert dagster.AssetSelection.from_string("key:docspec") is not None
+
+
 def test_adapter_import_keeps_dagster_optional():
     result = subprocess.run([sys.executable, "-c", "import sys; import docspec.adapters.dagster; assert 'dagster' not in sys.modules"], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

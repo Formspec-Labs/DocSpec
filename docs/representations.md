@@ -155,7 +155,8 @@ segmenter = PageSegmenter()
 
 This extracts embedded text, not optical character recognition (OCR). Empty
 pages retain their page identity and generate warnings. Scanned pages can
-therefore yield no useful text. Encrypted PDFs are refused; no password or
+therefore yield no useful text; [scanned documents](scanned-documents.md)
+describes the optional OCR extractor. Encrypted PDFs are refused; no password or
 decryption profile is supplied by the default route. Text order comes from the
 parser, not a verified reconstruction of reading order, tables or columns.
 
