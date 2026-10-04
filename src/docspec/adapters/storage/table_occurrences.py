@@ -36,6 +36,10 @@ _FEDERAL_REGISTER_KEY = KeySpelling("federal-register-source-record-id", "1", ("
 _SEGMENT_KEY = KeySpelling("member-segment", "1", ("member_key", "segment_index"))
 # Each shared corpus with the identities it must mint exactly as the reference.
 _ORACLE_CASES = (
+    ((("group", "VARCHAR"), ("seq", "BIGINT")),
+     ({"group": "a@b", "seq": None}, {"group": "", "seq": 2**60}, {"group": None, "seq": 0}),
+     (TableIdentity("oracle", "native", KeySpelling("native-tuple", "1", ("group", "seq")),
+                    (("group", "VARCHAR"), ("seq", "BIGINT"))),)),
     (SPELLING_COLUMNS, SPELLING_ROWS, (
         TableIdentity("oracle\x1ffamily", 'oracle"table', _FEDERAL_REGISTER_KEY, SPELLING_COLUMNS),
         TableIdentity("oracle", "table", KeySpelling("value", "1", ("document_number",)), SPELLING_COLUMNS))),
@@ -215,7 +219,7 @@ def lookup_occurrences(records, index, identity: TableIdentity, occurrence_ids: 
 
 def _component_value(text, kind):
     """A candidate component as its column holds it, or None when no such value spells ``text``."""
-    if kind == "VARCHAR":
+    if text is None or kind == "VARCHAR":
         return text
     try:
         value = date.fromisoformat(text) if kind == "DATE" else int(text)
@@ -237,12 +241,17 @@ def candidate_rows(rows, identity: TableIdentity, keys):
         return rows if keys else rows.filter("false")
     candidates = {tuple(_component_value(part, kind) for part, kind in zip(parts, identity.key_kinds, strict=True))
                   for key in keys for parts in key_components(identity.key, key)}
-    candidates = [parts for parts in candidates if all(part is not None for part in parts)]
+    if identity.key.spelling_id != "native-tuple":
+        candidates = [parts for parts in candidates if all(part is not None for part in parts)]
     if not candidates:
         return rows.filter("false")
-    return rows.filter(reduce(lambda left, right: left & right, (
-        duckdb.ColumnExpression(field).isin(*map(duckdb.ConstantExpression, {parts[index] for parts in candidates}))
-        for index, field in enumerate(identity.key.fields))))
+    filters = []
+    for index, field in enumerate(identity.key.fields):
+        values = {parts[index] for parts in candidates}
+        column = duckdb.ColumnExpression(field)
+        test = column.isin(*map(duckdb.ConstantExpression, values - {None})) if values - {None} else duckdb.ConstantExpression(False)
+        filters.append(test | column.isnull() if None in values else test)
+    return rows.filter(reduce(lambda left, right: left & right, filters))
 
 
 def row_bytes(records, table, identity: TableIdentity, keys) -> dict[str, bytes]:

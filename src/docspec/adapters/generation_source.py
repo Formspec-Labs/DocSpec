@@ -77,6 +77,7 @@ class AdmittedGeneration:
     columns: tuple[tuple[str, str], ...]
     record_count: int
     key: KeySpelling
+    receipts: tuple[StagedMember, ...] = ()
 
 
 def _mapping(value, label):
@@ -127,7 +128,7 @@ _FEDERAL_REGISTER = ("federal-register", "federal_register")
 _FEDERAL_REGISTER_KEY = ("document_number", "publication_date"), "federal-register-source-record-id/1"
 
 
-def _key_rule(family, table, description, columns):
+def _key_rule(family, table, description, columns, policy=None):
     """The member-key spelling a table is admitted under, as its producer declares it.
 
     Identity fields the artifact declares come first; one field spells as
@@ -140,6 +141,16 @@ def _key_rule(family, table, description, columns):
     contract for it, and is the spelling that contract declares. ``columns``
     are the member's, with table-profile types.
     """
+    if policy is not None:
+        fields = tuple(policy["identity_fields"])
+        # Native policies declare the useful row's identity independently of
+        # the older source-processing schema. The versioned spelling preserves
+        # nulls, empty strings and delimiter characters in composite keys.
+        kinds = dict(columns)
+        name = "value" if len(fields) == 1 and kinds[fields[0]] == "VARCHAR" and not policy["nullable_identity_fields"] else "native-tuple"
+        spelling = KeySpelling(name, "1", fields)
+        declared_spelling(spelling, tuple(kinds[field] for field in fields))
+        return spelling
     contract = TABLE_CONTRACTS.get(table)
     artifact = fields = description.get("identity")
     name = None
@@ -389,6 +400,7 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
             chunks, remote = stack.enter_context(_reader(source))
             staging = Path(stack.enter_context(TemporaryDirectory(prefix="generation-", dir=directory)))
             indexed, prefix = None, ""
+            indexed_receipts = None
             # Direct local generations need no mutable publication pointer.
             direct = not remote and (Path(source) / "artifact.json").exists()
             if not direct:
@@ -400,6 +412,7 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                 pin = ArtifactPin(selected["logicalId"], selected["artifactDigest"])
                 prefix = validate_object_key(selected["prefix"], path="generation prefix") + "/"
                 indexed = _mapping(selected.get("tables"), "publication tables")
+                indexed_receipts = selected.get("etlReceipts")
                 if publication["version"] == 1 and any("members" in _mapping(entry, "publication table")
                                                        for entry in indexed.values()):
                     raise IntegrityError("a version-1 publication pointer lists a split table")
@@ -419,6 +432,24 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                 grouped = {}
                 for member in iter_member_descriptors(artifact, member_source):
                     grouped.setdefault(_member_table(member.object_key), []).append(member)
+                receipt_declaration = spec.get("etlReceipts")
+                receipts = ()
+                policies = {}
+                if receipt_declaration is not None:
+                    from docspec.adapters.generation_receipts import KEY, verify_receipts
+
+                    receipt_members = grouped.pop(KEY, [])
+                    if (len(receipt_members) != 1 or receipt_members[0].object_key != KEY
+                            or receipt_members[0].role != "table" or receipt_members[0].media_type != _PARQUET):
+                        raise IntegrityError("Generation must name one shared ETL receipt member")
+                    if not direct and indexed_receipts is None:
+                        raise IntegrityError("Publication does not select the pinned receipt member")
+                    verify_receipts(staging, receipt_declaration, tables, grouped, receipt_members[0], indexed=indexed_receipts)
+                    policies = {policy["dataset"]: policy for policy in receipt_declaration["policies"]}
+                    receipts = tuple(StagedMember(staging / member.object_key, member) for member in receipt_members)
+                elif indexed_receipts is not None:
+                    raise IntegrityError("Publication names receipts absent from the artifact")
+                result["receipts"] = receipts
                 if set(tables) != set(grouped) or filename not in grouped or indexed is not None and set(indexed) != set(tables):
                     raise IntegrityError("generation table set differs from its members or publication index")
                 with duckdb.connect() as connection:
@@ -427,11 +458,12 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                         description = _mapping(tables[name], "generation table")
                         canonical, partitioning = _check_table(connection, staging, name, description, members, indexed)
                         if name == filename:
-                            _contract_types(table, canonical)
+                            if not policies:
+                                _contract_types(table, canonical)
                             result.update(members=tuple(StagedMember(staging.joinpath(*member.object_key.split("/")), member)
                                                         for member in members),
                                           partition_columns=partitioning, columns=canonical,
-                                          record_count=description["rows"], key=_key_rule(family, table, description, canonical))
+                                          record_count=description["rows"], key=_key_rule(family, table, description, canonical, policies.get(table)))
             artifact = admit_artifact(LocalMemberSource(staging), expected_pin=pin, root_byte_limit=_DOCUMENT_BYTES,
                                       manifest_byte_limit=_DOCUMENT_BYTES, semantic_verifier=verify)
             yield AdmittedGeneration(pin=artifact.pin, root_bytes=root_bytes, manifest_bytes=manifest_bytes, **result)

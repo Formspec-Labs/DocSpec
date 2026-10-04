@@ -99,7 +99,15 @@ def _typed(layer):
 
 def profile_columns(columns):
     """Name each (column, DuckDB type name) pair with its table-profile type, or DuckDB's name for any other."""
-    return tuple((name, 'TIMESTAMPTZ' if kind == 'TIMESTAMP WITH TIME ZONE' else kind) for name, kind in columns)
+    from docspec.domain.table_rows import table_type
+
+    def normalized(kind):
+        try:
+            return table_type(kind)
+        except ValueError:
+            return kind  # Preserve unsupported names for the caller's validation.
+
+    return tuple((name, normalized(kind)) for name, kind in columns)
 
 
 def native_columns(relation):

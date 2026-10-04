@@ -3,12 +3,13 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, localcontext
 import math
 import re
 import struct
 
 from docspec.domain.identity import canonical_value_bytes, require_sha256, require_text, sha256_digest, stable_urn
-from docspec.domain.storage import TABLE_TYPES, TableSchema, check_column_names
+from docspec.domain.storage import TABLE_TYPES, TableSchema, check_column_names, type_tree, type_name
 
 
 ROW_RULE = "docspec-table-row/1"
@@ -29,9 +30,21 @@ def table_type(kind):
         raise ValueError("table column type must be a native type name")
     normalized = " ".join(kind.upper().strip().split())
     normalized = _ALIASES.get(normalized, normalized)
-    if normalized not in _TYPES:
-        raise ValueError(f"unsupported table row type: {kind}")
-    return normalized
+    if normalized in _TYPES:
+        return normalized
+    try:
+        tokens = re.split(r'("(?:[^"]|"")*")', kind.strip())
+        for index in range(0, len(tokens), 2):
+            tokens[index] = re.sub(r"\bTIMESTAMP WITH TIME ZONE\b", "TIMESTAMPTZ", tokens[index])
+        tree = type_tree("".join(tokens))
+        def has_blob(node):
+            return node[0] == "BLOB" or (node[0] == "LIST" and has_blob(node[1])) or (
+                node[0] == "STRUCT" and any(has_blob(child) for _, child in node[1]))
+        if has_blob(tree):
+            raise ValueError("BLOB has no canonical row spelling")
+        return type_name(tree)
+    except ValueError as error:
+        raise ValueError(f"unsupported table row type: {kind}") from error
 
 
 def table_columns(columns):
@@ -68,9 +81,18 @@ def _value(value, kind):
             raise ValueError("timestamp timezone must match its declared table type")
         utc = value.astimezone(timezone.utc) if aware else value.replace(tzinfo=timezone.utc)
         return utc.isoformat().replace("+00:00", "Z")
-    if kind == "VARCHAR[]" and type(value) in (list, tuple):
-        if all(item is None or type(item) is str for item in value):
-            return list(value)
+    tree = type_tree(kind)
+    if tree[0] == "LIST" and type(value) in (list, tuple):
+        return [_value(item, type_name(tree[1])) for item in value]
+    if tree[0] == "STRUCT" and isinstance(value, Mapping) and set(value) == {key for key, _ in tree[1]}:
+        return {key: _value(value[key], type_name(child)) for key, child in tree[1]}
+    if tree[0] == "DECIMAL" and isinstance(value, Decimal) and value.is_finite():
+        with localcontext() as context:
+            context.prec = 80
+            scaled = value * Decimal(10) ** tree[2]
+            if scaled != scaled.to_integral_value() or abs(scaled) >= Decimal(10) ** tree[1]:
+                raise ValueError(f"table decimal is outside {kind}")
+            return format(abs(value) if value == 0 else value, f".{tree[2]}f")
     raise ValueError(f"table value does not match {kind}")
 
 
@@ -158,7 +180,11 @@ class KeySpelling:
     empty or holding ``@``; DocSpec's ``member-segment/1`` is a derived layer's
     ``member_key#segment_index``. The ID and version enter the state identity,
     so a new spelling is an explicit re-key; a composite identity admits only
-    through a spelling spicy-docs declares (ruling R6).
+    through a spelling spicy-docs declares (ruling R6). Native ETL policies
+    explicitly declare their identity fields; ``native-tuple/1`` spells their
+    ordered components as a canonical JSON array of text or null, preserving
+    empty strings and delimiter characters. The state records this rule, so
+    changing an existing dataset's identity still requires an explicit re-key.
     """
 
     spelling_id: str

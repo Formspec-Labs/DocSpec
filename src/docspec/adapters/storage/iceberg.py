@@ -12,11 +12,12 @@ from pyiceberg.io.pyarrow import PyArrowFileIO
 from pyiceberg.manifest import DataFileContent
 from pyiceberg.table import StaticTable
 from pyiceberg.table.metadata import TableMetadataUtil
-from pyiceberg.types import (BinaryType, BooleanType, DateType, DoubleType, IntegerType, ListType, LongType,
+from pyiceberg.types import (BinaryType, BooleanType, DateType, DecimalType, DoubleType, IntegerType, ListType, LongType, StructType,
     StringType, TimestampType, TimestamptzType)
 
 from docspec.adapters.storage.files import _contained, _read_exact, _sync_file, _sync_parents, _write_once, sha256_file
 from docspec.domain.identity import canonical_value_bytes, decode_canonical_json_value
+from docspec.domain.storage import type_name
 from docspec.domain.references import BlobRef
 from docspec.errors import IntegrityError
 
@@ -60,15 +61,18 @@ class SnapshotIO(PyArrowFileIO):
 
 def table_columns(schema):
     """Name each top-level Iceberg field with its table-profile type, refusing any other type."""
-    columns = []
-    for field in schema.fields:
-        kind = field.field_type
-        name = ('VARCHAR[]' if isinstance(kind, ListType) and isinstance(kind.element_type, StringType)
-                else _TABLE_TYPES.get(type(kind)))
+    def tree(kind):
+        if isinstance(kind, ListType):
+            return ("LIST", tree(kind.element_type))
+        if isinstance(kind, StructType):
+            return ("STRUCT", tuple((field.name, tree(field.field_type)) for field in kind.fields))
+        if isinstance(kind, DecimalType):
+            return ("DECIMAL", kind.precision, kind.scale)
+        name = _TABLE_TYPES.get(type(kind))
         if name is None:
             raise IntegrityError(f'Iceberg column type {kind} is outside the table profile')
-        columns.append((field.name, name))
-    return tuple(columns)
+        return (name,)
+    return tuple((field.name, type_name(tree(field.field_type))) for field in schema.fields)
 
 
 def snapshot(root, reference):

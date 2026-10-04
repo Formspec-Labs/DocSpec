@@ -253,7 +253,7 @@ def test_native_identity_membership_and_occurrence_match_existing_owners():
     assert table_occurrence_id(identity.family, identity.table, "other", digest) != expected
 
 
-@pytest.mark.parametrize("kind", ["FLOAT", "HUGEINT", "UBIGINT", "DECIMAL(20,2)", "BLOB", "STRUCT(a INTEGER)", "INTEGER[]",
+@pytest.mark.parametrize("kind", ["FLOAT", "HUGEINT", "UBIGINT", "DECIMAL(39,2)", "BLOB", "STRUCT(a UNKNOWN)", "HUGEINT[]",
                                   "TIMESTAMP_NS", "SMALLINT", "TIMESTAMP_S", "TIMESTAMP_MS"])
 def test_unsupported_types_refuse_even_null_rows(kind):
     with pytest.raises(ValueError, match="unsupported"):

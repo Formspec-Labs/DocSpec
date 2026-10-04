@@ -8,12 +8,14 @@ canonical spellings differ.
 from collections.abc import Callable
 from dataclasses import dataclass
 import sys
+import json
 
 from spicy_docs.schemas.tables import KEY_SPELLINGS
 from spicy_docs.sources.federal_register.native import federal_register_source_record_id
 
 from docspec.adapters.storage.iceberg import identifier, literal
 from docspec.domain.identity import canonical_value_bytes, require_text
+from docspec.domain.storage import type_tree, type_name
 from docspec.domain.table_rows import KEY_TYPES, SAFE_INTEGER, key_component, table_columns
 from docspec.errors import IntegrityError
 
@@ -33,6 +35,20 @@ class _Spelling:
 
 _TEXT = frozenset({"VARCHAR", "DATE"})
 _FEDERAL_REGISTER = ("document_number", "publication_date")
+
+
+def _native_components(key):
+    try:
+        parts = json.loads(key)
+    except (ValueError, TypeError):
+        return ()
+    if not isinstance(parts, list) or any(part is not None and not isinstance(part, str) for part in parts):
+        return ()
+    return (tuple(parts),) if canonical_value_bytes(parts).decode() == key else ()
+
+
+def _native_tuple_sql(parts):
+    return "'[' || " + " || ',' || ".join(f"coalesce({json_string_sql(part)}, 'null')" for part in parts) + " || ']'"
 
 
 def _segment_components(key):
@@ -74,6 +90,8 @@ def _at_joined_sql(parts):
 # derived layer's key (C29), injective because the segment index spells as a
 # canonical integer after the last "#".
 _SPELLINGS = {
+    ("native-tuple", "1"): _Spelling(range(1, sys.maxsize), KEY_TYPES, _native_tuple_sql,
+                                      lambda parts: canonical_value_bytes(list(parts)).decode(), _native_components),
     ("value", "1"): _Spelling(range(1, 2), _TEXT, lambda parts: parts[0], _producer("value/1"), lambda key: ((key,),)),
     ("federal-register-source-record-id", "1"): _Spelling(
         _FEDERAL_REGISTER, (_TEXT, _TEXT), lambda parts: f"{parts[0]} || '@' || {parts[1]}",
@@ -108,6 +126,9 @@ def reference_member_key(identity, row) -> str:
     its decimal text.
     """
     declared = declared_spelling(identity.key, identity.key_kinds)
+    if identity.key.spelling_id == "native-tuple":
+        return declared.reference(tuple(None if row[field] is None else row[field] if kind == "VARCHAR" else key_component(row[field], kind)
+                                        for field, kind in zip(identity.key.fields, identity.key_kinds, strict=True)))
     return declared.reference(tuple(key_component(row[field], kind)
                                     for field, kind in zip(identity.key.fields, identity.key_kinds, strict=True)))
 
@@ -115,7 +136,7 @@ def reference_member_key(identity, row) -> str:
 def key_components(spelling, key: str) -> tuple[tuple[str, ...], ...]:
     """Every component tuple that could spell ``key``, one nonempty component per field; lookups push them into scans."""
     return tuple(parts for parts in declared_spelling(spelling).components(key)
-                 if len(parts) == len(spelling.fields) and all(parts))
+                 if len(parts) == len(spelling.fields) and (spelling.spelling_id == "native-tuple" or all(parts)))
 
 
 def _column(name, qualifier=None):
@@ -147,7 +168,7 @@ def json_array_sql(*expressions):
     return "'[' || " + " || ',' || ".join(json_string_sql(expression) for expression in expressions) + " || ']'"
 
 
-def _cell(expression, kind):
+def _cell(expression, kind, depth=0):
     if kind == "VARCHAR":
         value = json_string_sql(expression)
     elif kind in {"BOOLEAN", "INTEGER"}:
@@ -172,9 +193,21 @@ def _cell(expression, kind):
                     f"CASE WHEN strftime({utc}, '%f') = '000000' THEN '' ELSE '.' || strftime({utc}, '%f') END || 'Z'")
         value = (f"CASE WHEN NOT isfinite({utc}) OR year({utc}) NOT BETWEEN 1 AND 9999 "
                  f"THEN error('table date is outside years 1 through 9999') ELSE {json_string_sql(text)} END")
-    else:  # table_columns admits only VARCHAR[] here.
-        element = f"coalesce({json_string_sql('table_item')}, 'null')"
-        value = f"'[' || coalesce(array_to_string(list_transform(({expression}), table_item -> {element}), ','), '') || ']'"
+    else:
+        tree = type_tree(kind)
+        if tree[0] == "LIST":
+            item = f"table_item_{depth}"
+            element = _cell(item, type_name(tree[1]), depth + 1)
+            value = f"'[' || coalesce(array_to_string(list_transform(({expression}), {item} -> {element}), ','), '') || ']'"
+        elif tree[0] == "STRUCT":
+            fields = sorted(tree[1], key=lambda pair: pair[0].encode("utf-16-be"))
+            parts = [literal(canonical_value_bytes(name).decode() + ':') + ' || ' +
+                     _cell(f"({expression}).{identifier(name)}", type_name(child), depth + 1) for name, child in fields]
+            value = "'{' || " + " || ',' || ".join(parts) + " || '}'"
+        elif tree[0] == "DECIMAL":
+            value = json_string_sql(f"CAST(({expression}) AS VARCHAR)")
+        else:
+            raise ValueError(f"No canonical SQL spelling for {kind}")
     return f"CASE WHEN ({expression}) IS NULL THEN 'null' ELSE {value} END"
 
 
@@ -196,6 +229,9 @@ def rows_differ_sql(columns, left, right):
     differs = []
     for name, kind in table_columns(columns):
         a, b = _column(name, left), _column(name, right)
+        if type_tree(kind)[0] in {"LIST", "STRUCT"}:
+            differs.append(f"{_cell(a, kind)} IS DISTINCT FROM {_cell(b, kind)}")
+            continue
         differs.append(f"{a} IS DISTINCT FROM {b}" + (f" OR ({a} = 0 AND signbit({a}) <> signbit({b}))" if kind == "DOUBLE" else ""))
     return " OR ".join(f"({condition})" for condition in differs)
 
@@ -214,6 +250,8 @@ def member_key_sql(identity, *, qualifier=None):
                         for column, kind in zip(columns, identity.key_kinds, strict=True) if kind == "DATE")
     parts = [f"strftime({column}, '%Y-%m-%d')" if kind == "DATE" else column if kind == "VARCHAR"
              else f"CAST({column} AS VARCHAR)" for column, kind in zip(columns, identity.key_kinds, strict=True)]
+    if identity.key.spelling_id == "native-tuple":
+        return f"CASE WHEN {dates} THEN error('table date is outside years 1 through 9999') ELSE {declared.sql(parts)} END" if dates else declared.sql(parts)
     return (f"CASE WHEN {invalid} THEN error('table member key has a NULL or empty component') "
             + (f"WHEN {dates} THEN error('table date is outside years 1 through 9999') " if dates else "")
             + f"ELSE {declared.sql(parts)} END")

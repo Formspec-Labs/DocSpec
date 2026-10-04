@@ -65,3 +65,29 @@ partitions and visited rows. Close partially consumed iterators (or use
 The public API provides DocSpec's side of [SpicySearch's reader
 request](history/2026-09-05-reader-api-requests.md). Updating that consumer and its
 wheel pin belongs to SpicySearch SC01.
+
+## Native tables and ETL receipts
+
+A SpicyRegs generation can declare `spec.etlReceipts`: one shared Parquet
+member, a generation ID, and explicit per-dataset policies. Each policy pins
+its Arrow schema, identity fields, processing fields, and any nullable
+identity fields. DocSpec verifies those declarations independently of
+SpicyRegs. Every native row must match one accepted receipt for its exact
+identity and content version. Missing, duplicate, stale and orphan accepted
+receipts refuse the entire family. Receipt-only attempts remain evidence.
+The publication pointer must select the same receipt member as the pinned
+artifact. The admitted request retains its exact bytes beside the root and
+member manifest, so source evidence survives temporary staging cleanup.
+
+Native policies define the resulting subject schema; the older source-reader
+processing schema does not override it. Lists, structures and exact decimals
+remain native through Parquet and Iceberg. Canonical row values encode
+out-of-range JSON integers and decimals as exact strings for inspection;
+typed table reads keep their original native types.
+
+A nonnullable single text identity retains `value/1`. Composite, numeric or
+nullable policy identities use DocSpec's versioned `native-tuple/1`: a
+canonical JSON array of component text or null, in policy order. Dates use
+ISO dates and integers use decimal text. This keeps null distinct from empty
+text and permits delimiters inside values. The spelling is part of the state
+identity; an existing dataset cannot silently change its identity rules.

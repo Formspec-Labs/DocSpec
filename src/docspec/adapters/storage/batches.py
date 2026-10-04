@@ -8,6 +8,8 @@ from tempfile import TemporaryDirectory
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from docspec.domain.storage import type_tree
+
 from docspec.errors import IntegrityError, LimitExceededError
 from docspec.ports.record_storage import bounded_rows
 from docspec.adapters.streams import BATCH_BYTES as BATCH_BYTES, BATCH_ROWS as BATCH_ROWS, owned_iterator
@@ -25,7 +27,15 @@ _TABLE_ARROW_TYPES = {
 
 def table_arrow_schema(columns) -> pa.Schema:
     """The Arrow schema typed table rows cross the boundary in; TIMESTAMPTZ travels as UTC microseconds."""
-    return pa.schema([(name, _TABLE_ARROW_TYPES[kind]) for name, kind in columns])
+    def arrow(tree):
+        if tree[0] == "LIST":
+            return pa.list_(arrow(tree[1]))
+        if tree[0] == "STRUCT":
+            return pa.struct([(name, arrow(child)) for name, child in tree[1]])
+        if tree[0] == "DECIMAL":
+            return pa.decimal128(tree[1], tree[2])
+        return _TABLE_ARROW_TYPES[tree[0]]
+    return pa.schema([(name, arrow(type_tree(kind))) for name, kind in columns])
 
 
 def conform_table_batch(batch: pa.RecordBatch, schema: pa.Schema) -> pa.RecordBatch:
@@ -35,8 +45,15 @@ def conform_table_batch(batch: pa.RecordBatch, schema: pa.Schema) -> pa.RecordBa
     to microseconds or int64 to int32, would change or lose values.
     """
     def same(actual, expected):
-        return actual == expected or (pa.types.is_timestamp(actual) and actual.unit == "us"
-                                      and actual.tz is not None and expected.tz == "UTC")
+        if actual == expected:
+            return True
+        if pa.types.is_timestamp(actual) and pa.types.is_timestamp(expected):
+            return actual.unit == expected.unit == "us" and actual.tz is not None and expected.tz == "UTC"
+        if pa.types.is_list(actual) and pa.types.is_list(expected):
+            return same(actual.value_type, expected.value_type)
+        if pa.types.is_struct(actual) and pa.types.is_struct(expected):
+            return actual.names == expected.names and all(same(a.type, b.type) for a, b in zip(actual, expected, strict=True))
+        return False
     if batch.schema.names != schema.names or not all(map(same, batch.schema.types, schema.types)):
         raise IntegrityError("table batch differs from its declared schema")
     return batch if batch.schema.equals(schema) else batch.cast(schema)

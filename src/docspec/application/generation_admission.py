@@ -72,9 +72,11 @@ def admit_generation(operations, generation, *, family, table, dataset=None):
             # A single-file table's report is unchanged; a split table names every member and its partitioning.
             shape = ({"members": members, "partitionColumns": list(generation.partition_columns)}
                      if generation.partition_columns else {"member": members[0]})
+            receipt_members = [{"objectKey": member.object_key, "sha256": member.sha256, "byteSize": member.byte_size,
+                                "recordCount": member.record_count} for _, member in generation.receipts]
             report = {"format": REPORT_FORMAT, "version": 1,
                       "pin": {"logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest},
-                      **shape, "dataset": dataset, "base": base, "counts": counts}
+                      **shape, **({"etlReceipts": receipt_members} if receipt_members else {}), "dataset": dataset, "base": base, "counts": counts}
             session.publish(_unit(session, identity, generation, state_id, report, content), identity_check=identity_check)
     advance(operations, dataset, state_id, base, kind="generation-current")
     return GenerationAdmission(state_id, report)
@@ -87,12 +89,21 @@ def _unit(session, identity, generation, state_id, report, content):
         stored = session.retain_bytes([payload], media_type="application/json")
         evidence.append(core.Entity(format_version=1, entity_id=stable_urn("generation-" + label, stored.digest),
                                     entity_type="artifact", value=stored))
+    labels = ["root", "members"]
+    for index, (path, member) in enumerate(generation.receipts):
+        with path.open("rb") as stream:
+            stored = session.retain_bytes(iter(lambda: stream.read(1024 * 1024), b""), media_type=member.media_type)
+        if stored.digest != member.sha256:
+            raise IntegrityError("Receipt bytes changed after generation admission")
+        evidence.append(core.Entity(format_version=1, entity_id=stable_urn("generation-etl-receipts", stored.digest),
+                                    entity_type="artifact", value=stored))
+        labels.append(f"etl-receipts-{index}")
     configuration = {"family": identity.family, "table": identity.table, "rules": identity.to_dict()}
     definition = core.OperationDefinition(
         format_version=1, definition_id=stable_urn("generation-admission-definition", configuration),
         implementation_id="docspec.admit-generation", implementation_version="1", operation_kind="transformation",
         configuration=configuration)
     inputs = tuple(core.WholeInput(label=label, entity_id=entity.entity_id)
-                   for label, entity in zip(("root", "members"), evidence, strict=True))
+                   for label, entity in zip(labels, evidence, strict=True))
     return table_state_unit(session, state_id=state_id, unit="admission", definition=definition, inputs=inputs,
                             report=report, content=content, evidence=evidence)

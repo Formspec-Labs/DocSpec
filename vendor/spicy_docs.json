@@ -1,6 +1,7 @@
 {
-  "filename": "spicy_docs-0.53.0-py3-none-any.whl",
-  "version": "0.53.0",
-  "sha256": "2ec43dcec80aa65d14db0c6fb9138bd1e6c17bcfc62b0065cbab2c5aa5bfce52",
-  "sourceRevision": "4bf3d04f0de7e43bf8ca6e87194c942bcd2ba96e"
+  "filename": "spicy_docs-0.53.0+etl.61425a808877-py3-none-any.whl",
+  "version": "0.53.0+etl.61425a808877",
+  "sha256": "c97798e2146e61f5b012623411f33e7d394e76b4ddc2ea29398a1ebd8f3d0414",
+  "sourceRevision": "61425a808877e99bc35aa07f3026349393c5a942",
+  "sourceState": "Committed source; local build, not published"
 }
