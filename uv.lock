@@ -575,7 +575,7 @@ standard = [
 
 [[package]]
 name = "docspec"
-version = "0.12.3"
+version = "0.12.4"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
@@ -583,6 +583,7 @@ dependencies = [
     { name = "msgspec" },
     { name = "pyarrow" },
     { name = "pyiceberg", extra = ["sql-sqlite"] },
+    { name = "pytz" },
     { name = "rulespec-artifacts" },
     { name = "spicy-docs" },
 ]
@@ -631,6 +632,7 @@ requires-dist = [
     { name = "msgspec", specifier = ">=0.21.1,<1" },
     { name = "pyarrow", specifier = ">=25,<26" },
     { name = "pyiceberg", extras = ["sql-sqlite"], specifier = "==0.12.0" },
+    { name = "pytz", specifier = ">=2026,<2027" },
     { name = "rulespec-artifacts", path = "vendor/rulespec_artifacts-1.1.2-py3-none-any.whl" },
     { name = "spicy-docs", path = "vendor/spicy_docs-0.54.0-py3-none-any.whl" },
     { name = "spicy-docs", extras = ["pdf", "pdf-apple"], marker = "extra == 'ocr'", path = "vendor/spicy_docs-0.54.0-py3-none-any.whl" },

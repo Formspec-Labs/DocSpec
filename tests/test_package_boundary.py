@@ -102,6 +102,7 @@ def test_project_declares_shared_artifact_utilities_and_one_command() -> None:
 
     assert project["project"]["version"] == __version__
     assert "rulespec-artifacts==1.1.2" in project["project"]["dependencies"]
+    assert "pytz>=2026,<2027" in project["project"]["dependencies"]
     assert project["tool"]["uv"]["sources"]["rulespec-artifacts"] == {
         "path": "vendor/rulespec_artifacts-1.1.2-py3-none-any.whl"
     }
@@ -301,6 +302,11 @@ def test_installed_wheel_preserves_public_runtime_and_packaged_resources(tmp_pat
                 "workspace = CoreWorkspace(Path.cwd() / 'core-import-probe'); "
                 "workspace.create('state', [('key', {'value': 1})]); "
                 "assert next(workspace.rows('state'))[0] == 'key'; workspace.close(); "
+                "import duckdb; "
+                "from datetime import datetime, UTC; "
+                "connection = duckdb.connect(); "
+                "stamp = connection.sql(\"SELECT TIMESTAMPTZ '2026-01-01 00:00:00+00'\").fetchone()[0]; "
+                "assert stamp == datetime(2026, 1, 1, tzinfo=UTC); connection.close(); "
                 "from docspec.adapters import build_dagster_definitions; "
                 "assert callable(build_dagster_definitions); "
                 "from docspec.adapters import create_docling_ocr_extractor, DOCLING_OCR_MODELS; "
