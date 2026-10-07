@@ -131,4 +131,4 @@ The resulting lifecycle should have these measurable properties:
 
 **The first implementation should prove these properties on the complete Comments lifecycle.** Hold a small update fixed while increasing dataset size and retained history. Measure bytes scanned, decoded, written, and transferred; requests; memory; scratch space; and time through verified publication. Include cold runs, unchanged reruns, and failures between phases.
 
-That would show whether the new structure makes small changes inexpensive—and whether Rust adds further execution gains—before committing to a broad rewrite.
+The first lifecycle experiment qualifies the assembled design and tests whether the new structure makes small changes inexpensive. Any claim about Rust-specific gains requires a separate comparison holding algorithms, layout, I/O, validation, resource limits, and work performed equivalent.

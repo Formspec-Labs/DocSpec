@@ -1,0 +1,38 @@
+{
+  "reviewed_commit": "40e891ccece79495f7ab850d441ed8633be73449",
+  "method": "Three fresh-context subagents with independent hypotheses and no peer reports or author conversation supplied. Historical review inspected as lineage after hypotheses. Root verified sources and consolidated after independent reports completed.",
+  "original_directory": "/tmp/docspec-rust-adversarial-20261007.Q1ofi0",
+  "copy_change": "Only scratch-directory references replaced with retained report directory; findings and verdicts unchanged.",
+  "files": [
+    {
+      "file": "consistency.md",
+      "original_sha256": "c83d677aa0d1deb085b4286c13e2bd1b52c058161b89ec2d71128ff06e6bb4b2",
+      "saved_sha256": "3e9da043199bd871bc23b4810feb2149278129ab573848f3538b3e9556c1dc5d"
+    },
+    {
+      "file": "consistency-hypotheses.md",
+      "original_sha256": "0ab710bf6020fde287319a456743411a899557cc6cf5b114773ef9a014ed70f4",
+      "saved_sha256": "0ab710bf6020fde287319a456743411a899557cc6cf5b114773ef9a014ed70f4"
+    },
+    {
+      "file": "performance.md",
+      "original_sha256": "476ce667f706209ddd0ef642e02df4e58ab488c57234448109044fc0a46d3723",
+      "saved_sha256": "0e5127acef9fd59e96b3a75b1409fbeddfc3bb3dca6f3976829cce0905d88388"
+    },
+    {
+      "file": "performance-hypotheses.md",
+      "original_sha256": "a0917bf8a0900d4f089cf5cb9fec72fdace29535a4cb31e14e3477cc2f42e27d",
+      "saved_sha256": "a0917bf8a0900d4f089cf5cb9fec72fdace29535a4cb31e14e3477cc2f42e27d"
+    },
+    {
+      "file": "operations.md",
+      "original_sha256": "0278185d6b60cd773625bda5dddd117d03b408983fe2b93b25b823b8e88f051b",
+      "saved_sha256": "3c5bb1e65f89d40e07a76b4f31480aa5fee285152f6234a5387dd7f6fe91bda6"
+    },
+    {
+      "file": "operations-hypotheses.md",
+      "original_sha256": "e2e399ed3263df1451c9ef7e45cf40098c427ef229dd209a8f0eada28a793ff4",
+      "saved_sha256": "e2e399ed3263df1451c9ef7e45cf40098c427ef229dd209a8f0eada28a793ff4"
+    }
+  ]
+}

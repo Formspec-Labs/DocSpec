@@ -146,6 +146,8 @@ Correctness requires exact agreement with independent reconstruction for values,
 
 Required recovery cases include failure after qualified receipt transfer, failure while formatting a report after validation, a trusted unchanged-input rerun, a receipt-only change, and interruption after public write but before readback completes. Completed eligible phases must be reused; incomplete or invalidated checks must run.
 
+The [adversarial qualification cases](07-operations-qualification.md#adversarial-qualification-cases) define concrete failure sequences, passing results, and owner tasks. Run the applicable memory, concurrency, and cleanup probes before component/layout selection; qualify the complete owned behavior before claiming support. The [independent review](ADVERSARIAL-REVIEW.md) records the rationale.
+
 Hold a small change set fixed while increasing dataset size and retained history. Measure selection, decoding, and validation passes; bytes scanned, written, and transferred; requests; cold admission and index construction; catalog commit cost; reader verification; whole-process and engine memory; scratch-space high-water marks; recovery work; and total time to a verified release. Include cold, warm, unchanged, and resumed operations. Retain failed runs and explain unavoidable full-scope work. Proposed improvements remain hypotheses until measured on equivalent inputs and guarantees.
 
 ## Decisions still required
