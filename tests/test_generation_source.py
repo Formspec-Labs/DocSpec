@@ -16,7 +16,7 @@ from spicy_docs.schemas import TABLE_CONTRACTS
 from spicy_docs.schemas.tables import KEY_SPELLINGS, table_contract
 
 from docspec.adapters import generation_source
-from docspec.adapters.generation_source import stage_generation
+from docspec.adapters.generation_source import resolve_generation, stage_generation
 from docspec.adapters.storage import table_sql
 from docspec.domain.storage import TableSchema
 from docspec.domain.table_rows import KeySpelling, TableIdentity
@@ -49,11 +49,18 @@ def test_local_publication_descriptor_and_explicit_pin_are_checked(tmp_path):
     pointer = publication(base, source, pin, member, description)
     with stage_generation(base, family="federal-register", table="federal_register") as admitted:
         assert admitted.pin == pin
+    wrong = replace(pin, artifact_digest="sha256:" + "0" * 64)
     with pytest.raises(IntegrityError, match="expected generation pin"):
-        with stage_generation(base, family="federal-register", table="federal_register", expected_pin=replace(pin, artifact_digest="sha256:" + "0" * 64)):
+        with stage_generation(base, family="federal-register", table="federal_register", expected_pin=wrong):
             pytest.fail("changed pin admitted")
+    with resolve_generation(base, family="federal-register", table="federal_register") as resolved:  # an already resolved source
+        with pytest.raises(IntegrityError, match="expected generation pin"):
+            with stage_generation(resolved, family="federal-register", table="federal_register", expected_pin=wrong):
+                pytest.fail("changed pin admitted for a resolved source")
+        with stage_generation(resolved, family="federal-register", table="federal_register", expected_pin=pin) as admitted:
+            assert admitted.pin == pin
     pointer["families"]["federal-register"]["tables"][member.object_key]["byteSize"] += 1
-    (base / "publication.json").write_bytes(canonical_json_bytes(pointer))
+    (base / "publication.v2.json").write_bytes(canonical_json_bytes(pointer))
     with pytest.raises(IntegrityError, match="publication table descriptor"):
         with stage_generation(base, family="federal-register", table="federal_register"):
             pytest.fail("changed pointer admitted")
@@ -128,7 +135,7 @@ def test_unsafe_or_malformed_input_never_escapes_staging(tmp_path, attack):
         base = tmp_path / "published"
         pointer = publication(base, source, pin, member, description)
         pointer["families"]["federal-register"]["prefix"] = "../source"
-        (base / "publication.json").write_bytes(canonical_json_bytes(pointer))
+        (base / "publication.v2.json").write_bytes(canonical_json_bytes(pointer))
         source = base
     elif attack == "symlink":
         original = source / "federal_register.parquet"
@@ -160,9 +167,8 @@ def test_https_uses_existing_transport_and_checks_same_pointer(tmp_path, monkeyp
     with stage_generation("https://example.test/data", family="federal-register", table="federal_register") as admitted:
         assert admitted.pin == pin and pq.ParquetFile(admitted.members[0].path).metadata.num_rows == 1
     assert all(client.is_closed for client in clients)
-    # No version 2 is served, so its 404 falls back to version 1.
-    assert [url.rsplit("/", 1)[1] for url in requests[:2]] == ["publication.v2.json", "publication.json"]
-    assert len(requests) == 5 and all(url.startswith("https://example.test/data/") for url in requests)
+    assert requests[0].endswith("/publication.v2.json")
+    assert len(requests) == 4 and all(url.startswith("https://example.test/data/") for url in requests)
 
 
 FEDERAL_REGISTER_COLUMNS = (("document_number", "VARCHAR"), ("publication_date", "VARCHAR"), ("title", "VARCHAR"))
@@ -224,38 +230,38 @@ def test_the_tables_admitted_today_keep_their_identities_spellings_and_types():
             for name in ADMITTED_TODAY} == ADMITTED_TODAY
 
 
-def test_documents_stage_with_or_without_the_column_spicy_docs_0_50_0_inserts(tmp_path):
-    """0.50.0 inserts attachment_records_json mid-table; an untyped contract's columns never refuse a member."""
+def test_documents_stage_the_current_declared_columns(tmp_path):
     columns = TABLE_CONTRACTS["documents"].columns
-    assert "attachment_records_json" in columns[1:-1]
-    for name, kept in (("before", [column for column in columns if column != "attachment_records_json"]),
-                       ("after", list(columns))):
-        generation(tmp_path / name, pa.table({column: [f"{column}-1"] for column in kept}), family="documents",
-                   table="documents")
-        with stage_generation(tmp_path / name, family="documents", table="documents") as admitted:
-            assert [column for column, _ in admitted.columns] == kept
-            assert admitted.key == KeySpelling("value", "1", ("document_id",))
+    generation(tmp_path / "source", pa.table({column: [f"{column}-1"] for column in columns}),
+               family="documents", table="documents")
+    with stage_generation(tmp_path / "source", family="documents", table="documents") as admitted:
+        assert [column for column, _ in admitted.columns] == list(columns)
+        assert admitted.key == KeySpelling("value", "1", ("document_id",))
 
 
-def test_the_federal_register_contract_and_the_decision_0003_fallback_agree(monkeypatch):
+def test_federal_register_uses_the_current_owner_key_reference(monkeypatch):
     row = {"document_number": "00-111", "publication_date": "2000-01-18", "title": "A notice"}
-    fallback = generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
-    fallback_key = table_sql.reference_member_key(
-        TableIdentity("federal-register", "federal_register", fallback, FEDERAL_REGISTER_COLUMNS), row)
     spelled = []
-
-    def federal_register_record_key(parts):  # the reference spicy-docs registers for the contract
+    def reference(parts):
         spelled.append(parts)
         return f"{parts[0]}@{parts[1]}"
-    contracts(monkeypatch, {"federal_register": SimpleNamespace(
-        identity=("document_number", "publication_date"), key_spelling="federal-register-source-record-id/1")},
-        {"federal-register-source-record-id/1": federal_register_record_key})
-    declared = generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
-    declared_key = table_sql.reference_member_key(
-        TableIdentity("federal-register", "federal_register", declared, FEDERAL_REGISTER_COLUMNS), row)
-    assert declared == fallback == KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
-    assert declared_key == fallback_key == "00-111@2000-01-18"
-    assert spelled == [("00-111", "2000-01-18")]  # the contract path spelled through spicy-docs' own reference
+    contracts(monkeypatch, {}, {"federal-register-source-record-id/1": reference})
+    key = generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
+    assert key == KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+    assert table_sql.reference_member_key(TableIdentity("federal-register", "federal_register", key,
+                                                        FEDERAL_REGISTER_COLUMNS), row) == "00-111@2000-01-18"
+    assert spelled == [("00-111", "2000-01-18")]
+
+
+def test_federal_register_requires_the_owner_contract_and_registry(monkeypatch):
+    monkeypatch.setattr(generation_source, "TABLE_CONTRACTS", {})
+    with pytest.raises(IntegrityError, match="no declared identity"):
+        generation_source._key_rule("federal-register", "federal_register", {}, FEDERAL_REGISTER_COLUMNS)
+    monkeypatch.setattr(table_sql, "KEY_SPELLINGS", {})
+    key = KeySpelling("federal-register-source-record-id", "1", ("document_number", "publication_date"))
+    with pytest.raises(IntegrityError, match="declares no key spelling"):
+        table_sql.reference_member_key(TableIdentity("federal-register", "federal_register", key,
+            FEDERAL_REGISTER_COLUMNS), {"document_number": "00-111", "publication_date": "2000-01-18", "title": "Notice"})
 
 
 def test_a_contract_must_declare_a_spelling_docspec_compiles(monkeypatch):
@@ -291,30 +297,24 @@ def bill_family(path, sections=None, *, overrides=None, **options):
                              partitions=SPLIT, overrides={**IDENTITY, **(overrides or {})}, **options)
 
 
-def published_bill_family(tmp_path, sections=None, *, versions=(2, 1), **options):
+def published_bill_family(tmp_path, sections=None, **options):
     """Publish a sealed bill family under ``tmp_path/published``; return the base and its version-2 pointer."""
     pin, members, descriptions = bill_family(tmp_path / "source", sections, **options)
     base = tmp_path / "published"
-    return base, publish(base, tmp_path / "source", pin, members, descriptions, versions=versions)[0]
+    return base, publish(base, tmp_path / "source", pin, members, descriptions)
 
 
-def test_version_2_stages_a_single_file_table_exactly_as_version_1(tmp_path):
-    """Everything after the pointer is the same evidence: only the version-2 key and version differ."""
+def test_version_2_stages_a_single_file_table(tmp_path):
     pin, member, description = generation(tmp_path / "source")
-    staged = {}
-    for versions in ((1,), (2, 1)):
-        base = tmp_path / f"published-{len(versions)}"
-        publish(base, tmp_path / "source", pin, [member], {member.object_key: description}, family="federal-register",
-                versions=versions)
-        with stage_generation(base, family="federal-register", table="federal_register") as admitted:
-            staged[versions] = replace(admitted, members=tuple((path.read_bytes(), descriptor)
-                                                                for path, descriptor in admitted.members))
-    v1, v2 = (tmp_path / "published-2" / key for key in ("publication.json", "publication.v2.json"))
-    assert json.loads(v2.read_bytes()) == {**json.loads(v1.read_bytes()), "version": 2}
-    assert staged[(1,)] == staged[(2, 1)]
+    base = tmp_path / "published"
+    publish(base, tmp_path / "source", pin, [member], {member.object_key: description}, family="federal-register")
+    with stage_generation(base, family="federal-register", table="federal_register") as admitted:
+        assert admitted.pin == pin
+        assert admitted.members[0].descriptor == member
+        assert admitted.members[0].path.read_bytes() == (tmp_path / "source" / member.object_key).read_bytes()
 
 
-def test_a_mixed_family_stages_either_table_through_version_2_and_its_derived_version_1_refuses(tmp_path):
+def test_a_mixed_family_stages_each_table_through_version_2(tmp_path):
     base, _ = published_bill_family(tmp_path)
     with stage_generation(base, family="bill-family", table="congress_bills") as bills:
         assert [descriptor.object_key for _, descriptor in bills.members] == ["congress_bills.parquet"]
@@ -325,44 +325,31 @@ def test_a_mixed_family_stages_either_table_through_version_2_and_its_derived_ve
         assert sections.partition_columns == ("congress",) and sections.record_count == 4
         assert [pq.ParquetFile(path).metadata.num_rows for path, _ in sections.members] == [2, 2]
         assert sections.key == KeySpelling("value", "1", ("section_id",))
-    # Version 1 omits the split table, so a reader of version 1 alone refuses the whole family, congress_bills too.
-    (base / "publication.v2.json").unlink()
-    with pytest.raises(IntegrityError, match="table set differs"):
-        with stage_generation(base, family="bill-family", table="congress_bills"):
-            pytest.fail("a family missing its split table admitted")
 
 
-@pytest.mark.parametrize("key,value,match", [
-    ("publication.v2.json", 3, "unsupported generation publication pointer"),
-    ("publication.v2.json", 1, "unsupported generation publication pointer"),
-    ("publication.json", 2, "unsupported generation publication pointer"),
-    ("publication.json", "members", "version-1 publication pointer lists a split table"),
-])
-def test_a_pointer_of_another_version_refuses(tmp_path, key, value, match):
+@pytest.mark.parametrize("value", [1, 3, "2", True])
+def test_a_pointer_of_another_version_refuses(tmp_path, value):
     base, pointer = published_bill_family(tmp_path)
-    if key == "publication.json":
-        (base / "publication.v2.json").unlink()
-    written = {**pointer, "version": 1} if value == "members" else {**pointer, "version": value}
-    (base / key).write_bytes(canonical_json_bytes(written))
-    with pytest.raises(IntegrityError, match=match):
+    (base / "publication.v2.json").write_bytes(canonical_json_bytes({**pointer, "version": value}))
+    with pytest.raises(IntegrityError, match="unsupported generation publication pointer"):
         with stage_generation(base, family="bill-family", table="congress_bills"):
             pytest.fail("pointer of another version admitted")
 
 
-def test_https_reads_version_2_and_falls_back_only_when_it_is_absent(tmp_path, monkeypatch):
-    base, _ = published_bill_family(tmp_path)
-    requests, _ = serve_https(monkeypatch, base)
-    with stage_generation("https://example.test/data", family="bill-family", table="bill_sections") as admitted:
-        assert len(admitted.members) == 2
-    assert "https://example.test/data/publication.json" not in requests
-    # Absence, a 404, reads version 1 at once; no other answer does (below).
-    pin, member, description = generation(tmp_path / "register")
-    publish(tmp_path / "register-published", tmp_path / "register", pin, [member], {member.object_key: description},
-            family="federal-register", versions=(2, 1))
-    requests, _ = serve_https(monkeypatch, tmp_path / "register-published", status={"publication.v2.json": 404})
-    with stage_generation("https://example.test/data", family="federal-register", table="federal_register") as admitted:
-        assert admitted.pin == pin
-    assert [url.rsplit("/", 1)[1] for url in requests[:2]] == ["publication.v2.json", "publication.json"]
+@pytest.mark.parametrize("transport", ["local", "https"])
+def test_only_a_legacy_pointer_refuses_without_discovery(tmp_path, monkeypatch, transport):
+    base, pointer = published_bill_family(tmp_path)
+    (base / "publication.json").write_bytes(canonical_json_bytes({**pointer, "version": 1}))
+    (base / "publication.v2.json").unlink()
+    location, requests = base, None
+    if transport == "https":
+        requests, _ = serve_https(monkeypatch, base)
+        location = "https://example.test/data"
+    with pytest.raises(IntegrityError, match="requires publication.v2.json"):
+        with stage_generation(location, family="bill-family", table="congress_bills"):
+            pytest.fail("legacy publication admitted")
+    if requests is not None:
+        assert requests == ["https://example.test/data/publication.v2.json"]
 
 
 def test_a_public_read_retries_transient_answers_honouring_retry_after(tmp_path, monkeypatch):
@@ -385,7 +372,7 @@ def test_a_public_read_retries_transient_answers_honouring_retry_after(tmp_path,
         assert [(path.read_bytes(), descriptor) for path, descriptor in admitted.members] == expected
     assert waits == [1.0, 7.0, 1.0, 2.0, 4.0]
     keys = [unquote(url.removeprefix("https://example.test/data/")) for url in requests]
-    assert (keys.count("publication.v2.json"), keys.count(member), keys.count("publication.json")) == (3, 4, 0)
+    assert (keys.count("publication.v2.json"), keys.count(member)) == (3, 4)
 
 
 @pytest.mark.parametrize("answers,requested,waited", [
@@ -401,7 +388,7 @@ def test_a_public_read_refuses_what_retrying_cannot_fix(tmp_path, monkeypatch, a
     requests, _ = serve_https(monkeypatch, base, status={"publication.v2.json": answers})
     with pytest.raises(IntegrityError):
         with stage_generation("https://example.test/data", family="bill-family", table="congress_bills"):
-            pytest.fail("admitted past a refusal, or through version 1 while version 2 failed")
+            pytest.fail("admitted past a refused current publication")
     assert [url.rsplit("/", 1)[1] for url in requests] == ["publication.v2.json"] * requested
     assert waits == waited
 

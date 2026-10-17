@@ -102,18 +102,43 @@ class CoreWorkspace:
         """Admit one table of a producer's complete generation by reference, as a table-shaped state.
 
         ``source`` is a local generation or publication directory, or an HTTPS
-        publication base (the ``http`` extra). Its ``publication.v2.json``, or
-        ``publication.json`` while no version 2 is served, is an untrusted
-        pointer: Rulespec admits the pinned family before the table's member,
+        publication base (the ``http`` extra). Its ``publication.v2.json`` is an
+        untrusted pointer: Rulespec admits the pinned family before the table's member,
         or every member of a table published split, is linked into the record
-        store unrewritten. Re-admitting a pin returns its
-        state; ``dataset=`` makes the state current over the dataset's base,
+        store unrewritten. Re-admitting a pin in the same workspace returns its
+        state (below); ``dataset=`` makes the state current over the dataset's base,
         whose unchanged rows keep their occurrences. See decision 0007.
+
+        A repeat first resolves current source metadata, then checks this
+        workspace's completed admission and freshly hashes retained files.
+        Matching version-2 owner validation avoids source payload staging.
+        Unsupported reports or changed validators require a new workspace
+        destination; historical evidence remains unchanged. No immutable file
+        custody or producer-written success flag is assumed. If another admission
+        publishes the same state between that check and this one's publication,
+        ``StaleBaseError`` asks the caller to retry; the retry reuses it.
         """
-        from docspec.adapters.generation_source import stage_generation
-        from docspec.application.generation_admission import admit_generation
-        with stage_generation(source, family=family, table=table, directory=self.records.staging_directory) as generation:
-            return admit_generation(self.operations, generation, family=family, table=table, dataset=dataset)
+        from docspec.adapters.generation_source import resolve_generation, stage_generation
+        from docspec.adapters.generation_validator import validator_identity
+        from docspec.application.generation_admission import admit_generation, retained_generation
+
+        if dataset is not None:
+            require_text(dataset, "dataset")
+
+        def verify_state(state_id):
+            with self.open_state(state_id):
+                pass
+
+        validator = validator_identity(table)
+        with resolve_generation(source, family=family, table=table) as resolved:
+            retained = retained_generation(self.operations, resolved.selected(family, table), family=family,
+                table=table, dataset=dataset, validator=validator, verify_state=verify_state)
+            if retained is not None:
+                return retained
+            with stage_generation(resolved, family=family, table=table,
+                                  directory=self.records.staging_directory) as generation:
+                return admit_generation(self.operations, generation, family=family, table=table, dataset=dataset,
+                                        validator=validator)
 
     def generating_request(self, state_id):
         """Return the request whose successful execution generated a state, or None for an imported state.

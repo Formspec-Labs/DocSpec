@@ -255,26 +255,24 @@ with CoreWorkspace(workspace_path) as workspace:
 ```
 
 `generation_path` is a local generation or publication directory, or an HTTPS
-publication base (the `http` extra). The publication pointer is untrusted:
-`publication.v2.json` when the publisher serves one, else `publication.json`
-(only absence falls back). Rulespec admits the pinned complete family, the
-table's footer must match its descriptor and, where its spicy-docs contract
-types columns, give each column the contract names the contract's type (VARCHAR
-unless typed), and the member is then linked into the record store unrewritten,
-sealed under its producer digest. A table published split (version 2's
-`partitionColumns` and `members`) is one state over all its members: each
-member's key names its partition, its rows hold only that partition's values,
-its footer has the declared columns, and member rows sum to the table's. Its
-occurrences are those of the same rows published as one file
+publication base (the `http` extra). The publication pointer is untrusted: only
+`publication.v2.json`, version 2, is read; a missing or other-version pointer
+refuses, and `publication.json` is never consulted. Rulespec admits the pinned
+complete family, the table's footer must match its descriptor and, where its
+spicy-docs contract types columns, give each column the contract names the
+contract's type (VARCHAR unless typed), and the member is then linked into the
+record store unrewritten, sealed under its producer digest. A table published
+split (version 2's `partitionColumns` and `members`) is one state over all its
+members: each member's key names its partition, its rows hold only that
+partition's values, its footer has the declared columns, and member rows sum to
+the table's. Its occurrences are those of the same rows published as one file
 ([history](history/2026-09-27-publication-v2/README.md)). The member key is the table's
 declared spelling: identity fields the artifact declares (one field spells as
 `value/1`), then the identity and `name/version` key spelling its spicy-docs
 table contract declares, an entry of `KEY_SPELLINGS` whose function is the
 reference DocSpec's SQL is checked against (DocSpec compiles `value/1`,
 `federal-register-source-record-id/1` and `at-joined/1`, the last for any
-identity of two or more VARCHAR, DATE or integer columns), then, only while the installed
-spicy-docs has no Federal Register contract, `number@date`
-([decision 0003](decisions/0003-federal-register-record-identity.md)). A
+identity of two or more VARCHAR, DATE or integer columns). A
 contract that declares no spelling, or one DocSpec does not compile, a NULL,
 empty or repeated key, an
 unsupported column type and a column recording when a row was observed or
@@ -294,7 +292,16 @@ index, and `adopted` ones it already held, including a row restored to an
 earlier value. A later generation must keep the dataset's key spelling; a
 schema change re-mints every row and reports `reminted`. The current pointer
 advances only while the admission's base is still current (`StaleBaseError`
-otherwise). Re-admitting a pin returns its state and report without writing.
+otherwise). Re-admitting a pin in the same workspace reads only the
+publication pointer (when the source is a publication), root and member
+manifest, rechecks the retained admission (exact root and manifest bytes, owner
+result, re-hashed state files) and returns its state and report without staging
+or publishing anything (it may still advance `dataset`'s current pointer). A
+retained report of an older format, or one written under another validator
+(DocSpec, SpicyDocs or Rulespec source, or native runtime versions), refuses;
+admit that pin into a new workspace. A new pin still admits. An admission that
+finds its state published concurrently, before or during its own publication,
+raises `StaleBaseError`; retry the call and it reuses the committed admission.
 
 Every reader works on a table-shaped state: `rows`, `values`, `lookup`,
 `read_value`, `changes`, `compare` and selections spell each occurrence record

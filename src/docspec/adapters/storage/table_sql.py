@@ -11,7 +11,6 @@ import sys
 import json
 
 from spicy_docs.schemas.tables import KEY_SPELLINGS
-from spicy_docs.sources.federal_register.native import federal_register_source_record_id
 
 from docspec.adapters.storage.iceberg import identifier, literal
 from docspec.domain.identity import canonical_value_bytes, require_text
@@ -61,14 +60,10 @@ def _segment_components(key):
     return ((head, tail),) if canonical and head else ()
 
 
-def _producer(name, fallback=None):
-    """A producer spelling's Python reference: its entry in spicy-docs' ``KEY_SPELLINGS``, read when called.
-
-    ``fallback`` serves only while the installed spicy-docs registers no such
-    entry: decision 0003's ``number@date`` before spicy-docs declared it.
-    """
+def _producer(name):
+    """Use the current spicy-docs registry's Python reference, refusing a missing entry."""
     def reference(values):
-        function = KEY_SPELLINGS.get(name, fallback)
+        function = KEY_SPELLINGS.get(name)
         if function is None:
             raise IntegrityError(f"spicy-docs declares no key spelling {name}")
         return function(tuple(values))
@@ -95,8 +90,7 @@ _SPELLINGS = {
     ("value", "1"): _Spelling(range(1, 2), _TEXT, lambda parts: parts[0], _producer("value/1"), lambda key: ((key,),)),
     ("federal-register-source-record-id", "1"): _Spelling(
         _FEDERAL_REGISTER, (_TEXT, _TEXT), lambda parts: f"{parts[0]} || '@' || {parts[1]}",
-        _producer("federal-register-source-record-id/1", fallback=lambda values: federal_register_source_record_id(
-            dict(zip(_FEDERAL_REGISTER, values, strict=True)))),
+        _producer("federal-register-source-record-id/1"),
         lambda key: tuple((key[:index], key[index + 1:]) for index, char in enumerate(key) if char == "@")),
     ("member-segment", "1"): _Spelling(
         ("member_key", "segment_index"), (frozenset({"VARCHAR"}), frozenset({"INTEGER", "BIGINT"})),

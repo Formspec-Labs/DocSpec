@@ -32,10 +32,20 @@ The implementation owners are
 [`table_derivation.py`](../../src/docspec/application/table_derivation.py), and
 [`core_tables.py`](../../src/docspec/adapters/storage/core_tables.py).
 
-- Admission supports publication version 2, including split tables. It falls
-  back to version 1 only when version 2 is absent; malformed or unavailable
-  version-2 content does not silently select version 1. See the
+- Admission supports only publication version 2, including split tables.
+  Missing or unsupported pointers refuse without discovery of older files. See the
   [publication-v2 record](../history/2026-09-27-publication-v2/README.md).
+- Re-admission resolves the current source pointer and bounded root/manifest
+  before staging payloads. Matching retained admissions reuse DocSpec's own
+  completed operation, exact evidence, current table policy and validator
+  identity. Retained state and receipt bytes are freshly hashed; producer
+  success flags have no authority. Only version-2 admission reports with the
+  current validator are reused. Re-admitting a pin whose retained report
+  is older or names another validator refuses and requires a new workspace
+  destination; a new pin still admits, and historical evidence stays intact.
+  An admission that finds its state already published, before or during its
+  own publication, raises `StaleBaseError` and is retried explicitly; the
+  retry reuses the committed admission.
 - Unchanged rows keep their occurrence IDs. `key_changes()` compares keys and
   occurrence IDs without reading row payloads; `table(member_keys=...)` reads
   selected rows. Its savings depend on how keys are grouped in the files; see
@@ -54,8 +64,9 @@ The implementation owners are
 
 Executable checks live in
 [`test_core_table_states.py`](../../tests/test_core_table_states.py),
-[`test_core_table_derivation.py`](../../tests/test_core_table_derivation.py), and
-[`test_generation_source.py`](../../tests/test_generation_source.py).
+[`test_core_table_derivation.py`](../../tests/test_core_table_derivation.py),
+[`test_generation_source.py`](../../tests/test_generation_source.py), and
+[`test_generation_reuse.py`](../../tests/test_generation_reuse.py).
 The focused reader, generation, table-state, typed-derivation and package-boundary
 suites passed on 2026-09-30 at `9b6905a`, with DocSpec 0.12.2 and SpicyDocs 0.53.0
 installed. This was not a full regression run or a fresh capacity measurement.

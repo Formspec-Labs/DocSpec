@@ -1,8 +1,7 @@
 """Stage and admit a complete producer generation before publishing a table state.
 
-A publication base serves spicy-regs' untrusted pointer: ``publication.v2.json``
-when the publisher writes one, else ``publication.json``. Version 2 may list a
-table split into several members; version 1 never does (spicy-regs
+A publication base serves spicy-regs' untrusted ``publication.v2.json`` pointer.
+Version 2 supports single-file and split tables (spicy-regs
 ``docs/research/multi-file-tables-2026-09-26.md``; this repository's
 ``docs/history/2026-09-27-publication-v2/``).
 """
@@ -37,15 +36,14 @@ from docspec.errors import IntegrityError, LimitExceededError
 _DOCUMENT_BYTES = 8 * 1024**2
 _STAGED_BYTES = 64 * 1024**3
 _CHUNK_BYTES = 1024**2
-# Read in this order; only absence of the first falls back to the second.
-_POINTERS = (("publication.v2.json", 2), ("publication.json", 1))
 _PARQUET = "application/vnd.apache.parquet"
+_POINTER = "publication.v2.json"
 _PART = re.compile(r"part-[0-9]{6}\.parquet\Z")  # ASCII digits only: \d also matches other scripts' digits
 # A public read retries the transient answers r2.dev gives under load: in all
 # _RETRY_ATTEMPTS requests, waiting the answer's Retry-After seconds or else
 # _RETRY_BACKOFF_SECONDS, doubling. A stated wait over _RETRY_MAX_WAIT_SECONDS
 # refuses rather than stalls. Any other status keeps its meaning: a 404 is
-# absence (the version-1 fallback), anything else refuses at once.
+# absence; no older publication is discovered.
 _TRANSIENT_STATUSES = frozenset({429, 502, 503, 504})
 _RETRY_ATTEMPTS = 4
 _RETRY_BACKOFF_SECONDS = 1.0
@@ -61,7 +59,10 @@ class StagedMember(NamedTuple):
 
 @dataclass(frozen=True)
 class AdmittedGeneration:
-    """The selected table and its exact source evidence, valid inside the staging context.
+    """Selected table metadata and evidence; payload files are valid only after staging.
+
+    ``GenerationSource.selected`` also builds a metadata-only candidate for
+    retained lookup. Its relative paths must never be read as staged files.
 
     ``members`` are the table's staged files in object-key order: one for a
     single-file table, or several for a table published split, whose
@@ -80,6 +81,65 @@ class AdmittedGeneration:
     receipts: tuple[StagedMember, ...] = ()
 
 
+@dataclass(frozen=True)
+class GenerationSource:
+    """Bounded, untrusted metadata and its open source reader; no payload staged yet."""
+    chunks: object
+    prefix: str
+    direct: bool
+    pin: ArtifactPin
+    root_bytes: bytes
+    manifest_bytes: bytes
+    indexed: dict | None
+    indexed_receipts: dict | None
+
+    def selected(self, family, table):
+        """Describe a candidate for retained lookup; only exact retained evidence can authorize reuse."""
+        from docspec.adapters.generation_receipts import KEY, receipt_index
+        root = parse_canonical_json(self.root_bytes)
+        manifest = parse_canonical_json(self.manifest_bytes)
+        name = table + ".parquet"
+        spec = _mapping(root["spec"], "generation spec")
+        tables = _mapping(spec["tables"], "generation tables")
+        description = _mapping(tables[name], "generation table")
+        members = [MemberDescriptor.from_dict(raw, path="generation/member") for raw in manifest["members"]]
+        seen = {"artifact.json", "members.json"}
+        for member in members:
+            if member.object_key is None or member.object_key in seen:
+                raise IntegrityError("generation requires distinct local member objects")
+            seen.add(member.object_key)
+        grouped = {}
+        for member in sorted(members, key=lambda member: member.object_key):
+            grouped.setdefault(_member_table(member.object_key), []).append(member)
+        declaration = spec.get("etlReceipts")
+        if declaration is not None:
+            declaration = _mapping(declaration, "ETL receipt declaration")
+        receipts = grouped.pop(KEY, []) if declaration is not None else []
+        if declaration is not None and (len(receipts) != 1 or receipts[0].object_key != KEY):
+            raise IntegrityError("Generation must name one shared ETL receipt member")
+        if set(tables) != set(grouped):
+            raise IntegrityError("generation table set differs from its members")
+        selected = grouped[name]
+        partitioning = tuple(description.get("partitionColumns", ()))
+        if self.indexed is not None:
+            if set(self.indexed) != set(tables):
+                raise IntegrityError("generation table set differs from its publication index")
+            for filename, declared in tables.items():
+                declared = _mapping(declared, "generation table")
+                _check_index(filename, declared, grouped[filename],
+                             self.indexed, declared.get("partitionColumns", ()))
+        if not self.direct:
+            expected = None if declaration is None else receipt_index(declaration, receipts[0])
+            if self.indexed_receipts != expected:
+                raise IntegrityError("Publication receipt selection differs from the pinned declaration")
+        columns = profile_columns(description["columns"])
+        policy = next((policy for policy in (declaration or {}).get("policies", ()) if policy["dataset"] == table), None)
+        return AdmittedGeneration(self.pin, self.root_bytes, self.manifest_bytes,
+            tuple(StagedMember(Path(m.object_key), m) for m in selected), partitioning, columns, description["rows"],
+            _key_rule(family, table, description, columns, policy),
+            tuple(StagedMember(Path(m.object_key), m) for m in receipts))
+
+
 def _mapping(value, label):
     if not isinstance(value, dict):
         raise IntegrityError(f"{label} must be an object")
@@ -95,37 +155,24 @@ def _unique(pairs):
     return result
 
 
-def _pointer(payload, version):
+def _publication(chunks):
+    """Read the one supported pointer, ``publication.v2.json`` version 2; absence or another version refuses.
+
+    No older pointer is discovered: a publisher serving only ``publication.json`` is unsupported.
+    """
+    try:
+        payload = _read(chunks, _POINTER)
+    except (MemberNotFoundError, HttpsNotFoundError) as error:
+        raise IntegrityError(
+            f"generation publication requires {_POINTER}; older publication pointers are unsupported") from error
     try:
         value = json.loads(payload, object_pairs_hook=_unique)
     except (ValueError, UnicodeError) as error:
         raise IntegrityError("generation pointer is not valid JSON") from error
     value = _mapping(value, "publication")
-    if value.get("format") != "spicy-regs-publication" or type(value.get("version")) is not int or value["version"] != version:
+    if value.get("format") != "spicy-regs-publication" or type(value.get("version")) is not int or value["version"] != 2:
         raise IntegrityError("unsupported generation publication pointer")
     return value
-
-
-def _publication(chunks):
-    """The version-2 pointer when the publisher serves one, else version 1.
-
-    Only absence (a missing local file, an HTTPS 404) falls back; any other
-    failure refuses. Each key must hold its own version.
-    """
-    for key, version in _POINTERS:
-        try:
-            payload = _read(chunks, key)
-        except (MemberNotFoundError, HttpsNotFoundError):
-            if version == 1:
-                raise
-            continue
-        return _pointer(payload, version)
-
-
-# Decision 0003's spelling of a Federal Register record, the fallback while the
-# installed spicy-docs has no federal_register contract to declare it.
-_FEDERAL_REGISTER = ("federal-register", "federal_register")
-_FEDERAL_REGISTER_KEY = ("document_number", "publication_date"), "federal-register-source-record-id/1"
 
 
 def _key_rule(family, table, description, columns, policy=None):
@@ -135,11 +182,9 @@ def _key_rule(family, table, description, columns, policy=None):
     ``value/1``. Otherwise the table's spicy-docs contract names the identity
     and its ``name/version`` key spelling, an entry of ``KEY_SPELLINGS`` whose
     function is the Python reference DocSpec's SQL is checked against; a
-    contract that declares none refuses, a composite (ruling R6) or a single
-    column, and a composite admits through ``at-joined/1``. Decision 0003's
-    ``number@date`` applies to Federal Register only when spicy-docs has no
-    contract for it, and is the spelling that contract declares. ``columns``
-    are the member's, with table-profile types.
+    contract that declares none refuses. Composite keys (ruling R6) require
+    a declared spelling, including ``at-joined/1``. ``columns`` are the
+    member's, with table-profile types.
     """
     if policy is not None:
         fields = tuple(policy["identity_fields"])
@@ -155,8 +200,6 @@ def _key_rule(family, table, description, columns, policy=None):
     name = None
     if contract is not None and (fields is None or fields == list(contract.identity)):
         fields, name = list(contract.identity), getattr(contract, "key_spelling", None)
-    elif fields is None and (family, table) == _FEDERAL_REGISTER:
-        fields, name = list(_FEDERAL_REGISTER_KEY[0]), _FEDERAL_REGISTER_KEY[1]
     if not isinstance(fields, (list, tuple)) or not fields or any(not isinstance(field, str) or not field for field in fields):
         raise IntegrityError("table has no declared identity fields")
     kinds = dict(columns)
@@ -171,7 +214,7 @@ def _key_rule(family, table, description, columns, policy=None):
     spelling_id, _, version = name.rpartition("/")
     if not spelling_id or not version:
         raise IntegrityError(f"key spelling {name!r} is not a name/version")
-    if name not in KEY_SPELLINGS and (fields, name) != (list(_FEDERAL_REGISTER_KEY[0]), _FEDERAL_REGISTER_KEY[1]):
+    if name not in KEY_SPELLINGS:
         raise IntegrityError(f"spicy-docs declares no key spelling {name}")
     spelling = KeySpelling(spelling_id, version, tuple(fields))
     declared_spelling(spelling, tuple(kinds[field] for field in fields))
@@ -258,7 +301,17 @@ def _check_table(connection, staging, name, description, members, indexed):
     columns = profile_columns(footers[str(paths[0])].columns)
     if type(description.get("rows")) is not int or sum(member.record_count for member in members) != description["rows"]:
         raise IntegrityError("generation table descriptor differs from its member")
+    _check_index(name, description, members, indexed, partitioning)
+    return columns, tuple(partitioning)
+
+
+def _check_index(name, description, members, indexed, partitioning):
+    """Check the mutable publication selection using pinned metadata only."""
+    if not members:
+        raise IntegrityError("generation table has no local members")
     if indexed is not None:
+        split = "partitionColumns" in description
+        partitions = [_partition(name, m.object_key, partitioning) for m in members] if split else []
         entry = _mapping(indexed[name], "publication table")
         if split:
             expected = {**description, "byteSize": sum(member.byte_size for member in members), "members": [
@@ -271,7 +324,6 @@ def _check_table(connection, staging, name, description, members, indexed):
         if entry != expected:
             fields = sorted(key for key in entry.keys() | expected.keys() if entry.get(key) != expected.get(key))
             raise IntegrityError(f"publication table descriptor differs from its pinned member: {name} {', '.join(fields)}")
-    return columns, tuple(partitioning)
 
 
 def _contract_types(table, columns):
@@ -340,13 +392,12 @@ def _read(chunks, key):
     return b"".join(chunks(key, _DOCUMENT_BYTES))
 
 
-def _stage(chunks, prefix, staging, root_bytes, max_bytes):
+def _stage(chunks, prefix, staging, root_bytes, manifest_bytes, max_bytes):
     """Copy declared members only; shared admission owns their hash verification."""
     root = _mapping(parse_canonical_json(root_bytes), "generation root")
     manifests = root.get("memberManifests")
     if not isinstance(manifests, list) or len(manifests) != 1 or manifests[0].get("objectKey") != "members.json":
         raise IntegrityError("generation requires one members.json manifest")
-    manifest_bytes = _read(chunks, prefix + "members.json")
     manifest = _mapping(parse_canonical_json(manifest_bytes), "generation manifest")
     members = manifest.get("members")
     if not isinstance(members, list):
@@ -376,31 +427,14 @@ def _stage(chunks, prefix, staging, root_bytes, max_bytes):
 
 
 @contextmanager
-def stage_generation(source, *, family, table, directory=None, expected_pin=None, max_bytes=_STAGED_BYTES):
-    """Admit one complete family, yielding its selected table in a temporary directory.
-
-    A local generation directory supplies its self-declared pin unless the caller
-    supplies expected_pin. A publication base supplies an untrusted pinned
-    pointer, version 2 when served (``_publication``); a version-1 pointer lists
-    no split table. Every family member is staged and checked by Rulespec
-    admission and ``_check_table``; only the selected table is returned, as one
-    member or, published split, several. Producer files are never moved or
-    modified. A known cost: admitting one table stages its whole family, since
-    the pin binds every member (congress_bills' 31 MB stages about 1.25 GB of
-    the bill family, 2026-09-27 review).
-    """
+def resolve_generation(source, *, family, table, expected_pin=None):
+    """Resolve the current pointer and bounded pin metadata without reading payload members."""
     if not isinstance(family, str) or not family or not isinstance(table, str) or not table or "/" in table or "\\" in table:
         raise ValueError("family and logical table name must be nonempty strings")
-    if type(max_bytes) is not int or max_bytes <= 0:
-        raise ValueError("max_bytes must be positive")
-    filename = validate_object_key(table + ".parquet", path="generation table")
+    validate_object_key(table + ".parquet", path="generation table")
     try:
-        with ExitStack() as stack:
-            chunks, remote = stack.enter_context(_reader(source))
-            staging = Path(stack.enter_context(TemporaryDirectory(prefix="generation-", dir=directory)))
-            indexed, prefix = None, ""
-            indexed_receipts = None
-            # Direct local generations need no mutable publication pointer.
+        with _reader(source) as (chunks, remote):
+            indexed, indexed_receipts, prefix = None, None, ""
             direct = not remote and (Path(source) / "artifact.json").exists()
             if not direct:
                 publication = _publication(chunks)
@@ -412,16 +446,41 @@ def stage_generation(source, *, family, table, directory=None, expected_pin=None
                 prefix = validate_object_key(selected["prefix"], path="generation prefix") + "/"
                 indexed = _mapping(selected.get("tables"), "publication tables")
                 indexed_receipts = selected.get("etlReceipts")
-                if publication["version"] == 1 and any("members" in _mapping(entry, "publication table")
-                                                       for entry in indexed.values()):
-                    raise IntegrityError("a version-1 publication pointer lists a split table")
                 if expected_pin is not None and pin != expected_pin:
                     raise IntegrityError("publication differs from the expected generation pin")
             root_bytes = _read(chunks, prefix + "artifact.json")
             root = _mapping(parse_canonical_json(root_bytes), "generation root")
             if direct:
                 pin = expected_pin or ArtifactPin(root["logicalId"], root["artifactDigest"])
-            manifest_bytes = _stage(chunks, prefix, staging, root_bytes, max_bytes)
+            manifest_bytes = _read(chunks, prefix + "members.json")
+            yield GenerationSource(chunks, prefix, direct, pin, root_bytes, manifest_bytes, indexed, indexed_receipts)
+    except (ArtifactVerificationError, MemberSourceError, KeyError, TypeError, ValueError, OSError, duckdb.Error) as error:
+        raise IntegrityError(f"generation admission refused: {error}") from error
+
+
+@contextmanager
+def stage_generation(source, *, family, table, directory=None, expected_pin=None, max_bytes=_STAGED_BYTES):
+    """Stage and independently validate every member of a complete producer family.
+
+    The runtime may supply an already resolved source after checking its own
+    retained admission. Public callers otherwise resolve the source here.
+    Producer files are never moved or modified.
+    """
+    if type(max_bytes) is not int or max_bytes <= 0:
+        raise ValueError("max_bytes must be positive")
+    filename = validate_object_key(table + ".parquet", path="generation table")
+    try:
+        with ExitStack() as stack:
+            if isinstance(source, GenerationSource):
+                resolved = source
+                if expected_pin is not None and resolved.pin != expected_pin:
+                    raise IntegrityError("publication differs from the expected generation pin")
+            else:
+                resolved = stack.enter_context(resolve_generation(source, family=family, table=table, expected_pin=expected_pin))
+            chunks, prefix, direct, pin = resolved.chunks, resolved.prefix, resolved.direct, resolved.pin
+            root_bytes, indexed, indexed_receipts = resolved.root_bytes, resolved.indexed, resolved.indexed_receipts
+            staging = Path(stack.enter_context(TemporaryDirectory(prefix="generation-", dir=directory)))
+            manifest_bytes = _stage(chunks, prefix, staging, root_bytes, resolved.manifest_bytes, max_bytes)
             result = {}
             def verify(artifact, member_source):
                 spec = _mapping(artifact.root.get("spec"), "generation spec")

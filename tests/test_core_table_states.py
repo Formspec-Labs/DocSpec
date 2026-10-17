@@ -345,7 +345,7 @@ def test_a_wrong_pin_and_a_spelling_change_refuse(tmp_path):
     pointer = publication(published, source, pin, member, description)
     with CoreWorkspace(tmp_path / "workspace") as workspace:
         pointer["families"][FAMILY]["artifactDigest"] = "sha256:" + "0" * 64
-        (published / "publication.json").write_bytes(canonical_json_bytes(pointer))
+        (published / "publication.v2.json").write_bytes(canonical_json_bytes(pointer))
         with pytest.raises(IntegrityError, match="generation admission refused"):
             workspace.admit_generation(published, family=FAMILY, table=TABLE)
         workspace.admit_generation(source, family=FAMILY, table=TABLE, dataset="fr")
@@ -626,15 +626,16 @@ def admitted_evidence(workspace, admitted):
     return admitted, occurrences(workspace, admitted.state_id), members, files
 
 
-def test_version_2_admits_a_single_file_table_as_version_1_does(tmp_path):
-    pin, member, description = generation(tmp_path / "g1", pa.Table.from_pylist(ROWS, schema=SCHEMA))
+def test_version_2_and_direct_current_generation_admit_the_same_evidence(tmp_path):
+    source = tmp_path / "g1"
+    pin, member, description = generation(source, pa.Table.from_pylist(ROWS, schema=SCHEMA))
+    base = tmp_path / "published"
+    publish(base, source, pin, [member], {member.object_key: description}, family=FAMILY)
     evidence = []
-    for versions in ((1,), (2, 1)):
-        base = tmp_path / f"published-{len(versions)}"
-        publish(base, tmp_path / "g1", pin, [member], {member.object_key: description}, family=FAMILY, versions=versions)
-        with CoreWorkspace(tmp_path / f"workspace-{len(versions)}") as workspace:
-            evidence.append(admitted_evidence(workspace, workspace.admit_generation(base, family=FAMILY, table=TABLE,
-                                                                                   dataset="fr")))
+    for index, location in enumerate((source, base)):
+        with CoreWorkspace(tmp_path / f"workspace-{index}") as workspace:
+            evidence.append(admitted_evidence(workspace, workspace.admit_generation(location, family=FAMILY,
+                table=TABLE, dataset="fr")))
     assert evidence[0] == evidence[1]
     assert evidence[0][0].report["member"]["sha256"] == member.sha256 and "members" not in evidence[0][0].report
 

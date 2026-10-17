@@ -105,13 +105,8 @@ def member_table(key):
     return key if "/" not in key else key.split("/", 1)[0] + ".parquet"
 
 
-def publish(base, source, pin, members, descriptions, *, family="bill-family", prefix=None, versions=(2, 1)):
-    """Publish ``source`` under ``base`` as spicy-regs does; return the version-2 and version-1 pointer values.
-
-    Version 2 names every table, a split one by its members; version 1 is
-    derived from it and omits split tables, and a family left with none.
-    ``versions`` chooses which of ``publication.v2.json`` and ``publication.json`` are written.
-    """
+def publish(base, source, pin, members, descriptions, *, family="bill-family", prefix=None):
+    """Publish the single supported version-2 pointer, naming every table and member."""
     prefix = prefix or f"generations/{family}/current"
     target = base / prefix
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -127,20 +122,14 @@ def publish(base, source, pin, members, descriptions, *, family="bill-family", p
             {"key": member.object_key, "sha256": member.sha256, "byteSize": member.byte_size, "rows": member.record_count,
              "partition": dict(part.split("=", 1) for part in member.object_key.split("/")[1:-1])} for member in owned]}
     entry = {"prefix": prefix, "logicalId": pin.logical_id, "artifactDigest": pin.artifact_digest, "tables": tables}
-    single = {key: table for key, table in tables.items() if "members" not in table}
-    pointers = {2: {"format": "spicy-regs-publication", "version": 2, "families": {family: entry}},
-                1: {"format": "spicy-regs-publication", "version": 1,
-                    "families": {family: {**entry, "tables": single}} if single else {}}}
-    for version, key in ((2, "publication.v2.json"), (1, "publication.json")):
-        if version in versions:
-            (base / key).write_bytes(canonical_json_bytes(pointers[version]))
-    return pointers[2], pointers[1]
+    pointer = {"format": "spicy-regs-publication", "version": 2, "families": {family: entry}}
+    (base / "publication.v2.json").write_bytes(canonical_json_bytes(pointer))
+    return pointer
 
 
 def publication(base, source, pin, member, description, *, family="federal-register", prefix=None):
-    """Publish ``source`` under ``base`` with only the ``publication.json`` pointer, as before version 2; return it."""
-    return publish(base, source, pin, [member], {member.object_key: description}, family=family, prefix=prefix,
-                   versions=(1,))[1]
+    """Publish one table through the current version-2 pointer."""
+    return publish(base, source, pin, [member], {member.object_key: description}, family=family, prefix=prefix)
 
 
 def serve_https(monkeypatch, base, *, status=None):

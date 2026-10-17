@@ -104,16 +104,21 @@ def _policies(declarations):
     return policies
 
 
+def receipt_index(declaration, member):
+    """The publication selection of a pinned receipt member."""
+    return {"key": KEY, "sha256": member.sha256, "byteSize": member.byte_size,
+                      "rows": member.record_count, "columns": declaration["columns"],
+                      "generationId": declaration["generationId"],
+                      "datasets": [policy["dataset"] for policy in declaration["policies"]]}
+
+
 def verify_receipts(staging, declaration, tables, grouped, member, *, indexed=None):
     """Validate every family row and receipt with a disk-backed one-to-one index."""
     if (set(declaration) != {"key", "generationId", "policies", "columns", "rows"}
             or declaration["key"] != KEY or not isinstance(declaration["generationId"], str)
             or not declaration["generationId"]):
         raise IntegrityError("Invalid ETL receipt declaration")
-    expected_index = {"key": KEY, "sha256": member.sha256, "byteSize": member.byte_size,
-                      "rows": member.record_count, "columns": declaration["columns"],
-                      "generationId": declaration["generationId"],
-                      "datasets": [policy["dataset"] for policy in declaration["policies"]]}
+    expected_index = receipt_index(declaration, member)
     if indexed is not None and indexed != expected_index:
         raise IntegrityError("Publication receipt selection differs from pinned artifact")
     policies = _policies(declaration["policies"])
